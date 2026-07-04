@@ -7,10 +7,15 @@
  */
 import * as React from 'react';
 import { useNavigate } from 'react-router';
-import { CommandPalette as SharedCommandPalette, type CommandPaletteGroup } from '@eduai/ui';
+import {
+  CommandPalette as SharedCommandPalette,
+  buildAppSwitcherGroup,
+  type CommandPaletteGroup,
+} from '@eduai/ui';
 import { IconBooks, IconReport, IconSettings, IconLayoutGrid } from '@tabler/icons-react';
 
 import { useLocalUser } from '~/hooks/useLocalUser';
+import { CURRENT_APP_ID, getLauncherApps } from '~/lib/apps';
 import { getNavForUser } from '~/lib/rbac/nav';
 import type { AtNavItemKey } from '~/lib/rbac/types';
 import api from '~/lib/api';
@@ -75,6 +80,11 @@ export function CommandPalette() {
         onSelect: () => navigate(`${coursePrefix}/courses/${c.id}`),
       })),
     },
+    buildAppSwitcherGroup({
+      apps: getLauncherApps(),
+      currentAppId: CURRENT_APP_ID,
+      role: user.role,
+    }),
   ];
 
   return (

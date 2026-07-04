@@ -66,7 +66,7 @@ export { BrandSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher"
 export type { BrandSwitcherProps, LauncherApp } from "./app-launcher"
 export { SiteHeader } from "./site-header"
 export type { SiteHeaderProps } from "./site-header"
-export { CommandPalette, CommandSearchButton } from "./command-palette"
+export { CommandPalette, CommandSearchButton, buildAppSwitcherGroup } from "./command-palette"
 export type {
   CommandPaletteProps,
   CommandPaletteGroup,

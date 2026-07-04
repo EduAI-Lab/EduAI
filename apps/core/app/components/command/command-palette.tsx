@@ -30,7 +30,12 @@ import {
   type Icon,
 } from "@tabler/icons-react";
 
-import { CommandPalette as SharedCommandPalette, type CommandPaletteGroup } from "@eduai/ui";
+import {
+  CommandPalette as SharedCommandPalette,
+  buildAppSwitcherGroup,
+  type CommandPaletteGroup,
+} from "@eduai/ui";
+import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import type { User } from "~/lib/auth/types";
 import type { NavItem, NavItemKey } from "~/lib/rbac/types";
 import { getNavForUser, getNavSecondaryForUser } from "~/lib/rbac/nav";
@@ -117,6 +122,11 @@ export function CommandPalette({ user }: { user: User }) {
         onSelect: () => navigate(`/courses/${course.id}`),
       })),
     },
+    buildAppSwitcherGroup({
+      apps: getLauncherApps(),
+      currentAppId: CURRENT_APP_ID,
+      role: user.role,
+    }),
   ];
 
   return (

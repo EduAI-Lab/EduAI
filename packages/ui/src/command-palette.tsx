@@ -18,6 +18,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "./ui/command"
+import { visibleAppsForRole, type LauncherApp } from "./app-launcher"
 import { cn } from "./utils"
 
 export interface CommandPaletteItem {
@@ -35,6 +36,34 @@ export interface CommandPaletteItem {
 export interface CommandPaletteGroup {
   heading?: string
   items: CommandPaletteItem[]
+}
+
+/**
+ * Build a "Switch app" palette group from the shared launcher app list — jump
+ * between EduAI apps (Core, AI Tutor, Question Maker) straight from ⌘K. RBAC-gated
+ * via each app's `roles`, and the current app is dropped. Apps live on different
+ * origins, so selecting one navigates with a full-page load. Shared so all three
+ * palettes offer the identical switcher.
+ */
+export function buildAppSwitcherGroup(opts: {
+  apps: LauncherApp[]
+  currentAppId: string
+  role?: string | null
+  heading?: string
+}): CommandPaletteGroup {
+  const { apps, currentAppId, role, heading = "Switch app" } = opts
+  const items: CommandPaletteItem[] = visibleAppsForRole(apps, role)
+    .filter((app) => app.id !== currentAppId)
+    .map((app) => ({
+      label: app.name,
+      sublabel: app.description,
+      value: `app ${app.name}`,
+      icon: app.icon,
+      onSelect: () => {
+        if (typeof window !== "undefined") window.location.href = app.url
+      },
+    }))
+  return { heading, items }
 }
 
 export interface CommandPaletteProps {

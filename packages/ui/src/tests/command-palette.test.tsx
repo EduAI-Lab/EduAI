@@ -1,7 +1,35 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { CommandSearchButton } from "../command-palette";
+import { CommandSearchButton, buildAppSwitcherGroup } from "../command-palette";
+import type { LauncherApp } from "../app-launcher";
+
+const APPS: LauncherApp[] = [
+  { id: "core", name: "EduAI Core", url: "http://core", description: "Hub" },
+  { id: "ai-tutor", name: "AI Tutor", url: "http://tutor", description: "Chat" },
+  { id: "question-maker", name: "Question Maker", url: "http://qm", description: "Assess", roles: ["INSTRUCTOR", "ADMIN"] },
+];
+
+describe("buildAppSwitcherGroup", () => {
+  it("excludes the current app and RBAC-gates the rest", () => {
+    const g = buildAppSwitcherGroup({ apps: APPS, currentAppId: "core", role: "STUDENT" });
+    const labels = g.items.map((i) => i.label);
+    expect(labels).toContain("AI Tutor");
+    expect(labels).not.toContain("EduAI Core"); // current app dropped
+    expect(labels).not.toContain("Question Maker"); // role-gated out for STUDENT
+  });
+
+  it("includes role-gated apps for permitted roles", () => {
+    const g = buildAppSwitcherGroup({ apps: APPS, currentAppId: "ai-tutor", role: "ADMIN" });
+    const labels = g.items.map((i) => i.label);
+    expect(labels).toEqual(expect.arrayContaining(["EduAI Core", "Question Maker"]));
+    expect(labels).not.toContain("AI Tutor");
+  });
+
+  it("uses a Switch app heading by default", () => {
+    expect(buildAppSwitcherGroup({ apps: APPS, currentAppId: "core" }).heading).toBe("Switch app");
+  });
+});
 
 describe("CommandSearchButton", () => {
   it("calls onOpen when provided", () => {
