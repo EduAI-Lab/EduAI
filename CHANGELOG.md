@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Changed
+
+- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#PR, @GlowyBlack, 2026-07-03)
+
 ### Fixed
 
 - [core] fix: Material upload embedding insert — format pgvector literals as validated bracket strings before `prisma.$executeRaw`/`$queryRaw` (fixes intermittent `Couldn't serialize value` on `number[]`); sanitize upload failure messages so Prisma internals are not shown in the UI (#54, @ssaada08, 2026-07-02) — [#855](https://github.com/EduAI-Lab/EduAI/pull/855)
