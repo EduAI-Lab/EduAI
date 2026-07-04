@@ -343,7 +343,11 @@ export function DashboardView({
       </div>
 
       {/* Analytics charts */}
-      {analytics && <ScrollReveal index={3}>{analytics}</ScrollReveal>}
+      {analytics && (
+        <ScrollReveal index={3}>
+          <div data-tour="dashboard-analytics">{analytics}</div>
+        </ScrollReveal>
+      )}
 
       {/* 2-column body */}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">

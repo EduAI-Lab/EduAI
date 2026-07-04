@@ -113,10 +113,19 @@ export function HelpView({ role }: { role?: string }) {
 
   return (
     <div className="flex flex-col gap-6 px-4 lg:px-6 pb-10">
-      <PageHeading
-        heading="Help & guide"
-        subheading="How to get around EduAI and make the most of it."
-      />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PageHeading
+          heading="Help & guide"
+          subheading="How to get around EduAI and make the most of it."
+        />
+        <Link
+          to="/dashboard?tour=1"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+        >
+          <IconRocket className="size-4" aria-hidden />
+          Replay guided tour
+        </Link>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[200px_1fr] lg:items-start">
         {/* Jump-link rail */}
