@@ -17,6 +17,7 @@ export default [
   route("/chat", "routes/chat.tsx"),
   route("/chat/:chatId", "routes/chat.$chatId.tsx"),
   route("/settings", "routes/settings.tsx"),
+  route("/help", "routes/help.tsx"),
   route("/api/canvas/*", "routes/api/canvas.$.ts"),
   route("/api/chat", "routes/api/chat.ts"),
   route("/api/assistive-events", "routes/api/assistive-events.ts"),
