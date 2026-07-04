@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#PR, @GlowyBlack, 2026-07-03)
+- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#837, @GlowyBlack, 2026-07-03) — [#898](https://github.com/EduAI-Lab/EduAI/pull/898)
 
 ### Fixed
 
