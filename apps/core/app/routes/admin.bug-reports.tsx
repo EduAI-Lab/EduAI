@@ -17,7 +17,7 @@ import {
 import { auth } from "~/lib/auth/server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return redirect("/auth/login");

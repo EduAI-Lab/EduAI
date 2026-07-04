@@ -13,7 +13,7 @@
         "supertest",
         "dotenv"
       ],
-      "policy": "ignore"
+      "isIgnored": true
     },
     {
       "label": "react-router — intentionally split (Core 7.5.x, AI Tutor 7.13.x)",
@@ -23,29 +23,51 @@
         "@react-router/node",
         "@react-router/serve"
       ],
-      "policy": "ignore"
+      "isIgnored": true
     },
     {
       "label": "AI SDK — intentionally split (Core v4, AI Tutor v5)",
       "dependencies": ["ai"],
-      "policy": "ignore"
+      "isIgnored": true
     },
     {
       "label": "vite — intentionally split (Core v6, AI Tutor v8); QM v4 handled above",
       "packages": ["edu-ai", "ai-tutor"],
       "dependencies": ["vite"],
-      "policy": "ignore"
+      "isIgnored": true
     },
     {
-      "label": "better-auth — 1.2.8 pinned via overrides for Core/QM; AI Tutor tracks newer",
+      "label": "better-auth — 1.6.22 pinned via overrides for Core/QM; AI Tutor tracks newer",
       "dependencies": ["better-auth", "@better-auth/cli"],
-      "policy": "ignore"
+      "isIgnored": true
     },
     {
       "label": "question-maker-backend workspace reference — * is valid here",
       "packages": ["question-maker-frontend"],
       "dependencies": ["question-maker-backend"],
-      "policy": "ignore"
+      "isIgnored": true
+    },
+    {
+      "label": "drizzle-orm — root devDep pins patched version for @better-auth/cli transitive vuln",
+      "packages": ["eduai-monorepo"],
+      "dependencies": ["drizzle-orm"],
+      "isIgnored": true
+    },
+    {
+      "label": "@eduai/ui peerDependencies use * intentionally (consuming app controls the version)",
+      "packages": ["@eduai/ui"],
+      "dependencyTypes": ["peer"],
+      "isIgnored": true
+    },
+    {
+      "label": "internal workspace packages referenced with * — npm workspace convention",
+      "dependencies": ["@eduai/ui", "@eduai/types"],
+      "isIgnored": true
+    },
+    {
+      "label": "react-markdown — intentionally split (Core v10, QM frontend v9)",
+      "dependencies": ["react-markdown"],
+      "isIgnored": true
     }
   ]
 }

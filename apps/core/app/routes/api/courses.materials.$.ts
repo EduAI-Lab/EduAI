@@ -16,6 +16,7 @@ import {
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
+import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 
 function json(status: number, body: unknown) {
@@ -36,7 +37,7 @@ async function resolveMaterialsAccess(
   | { response: Response; user?: never; access?: never; isPublished?: never }
   | { response?: never; user: Session['user']; access: AccessLevel; isPublished: boolean }
 > {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return { response: json(401, { error: 'Unauthorized' }) };
   }
@@ -357,13 +358,16 @@ async function uploadMaterial(
   } catch (error) {
     console.error('Error processing material upload:', error);
     return json(500, {
-      error: error instanceof Error ? error.message : 'Failed to process material',
+      error: toMaterialUploadUserMessage(error),
     });
   }
 }
 
+const PREVIEW_EXCERPT_MAX = 4000;
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
+  const materialId = params.materialId;
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
   }
@@ -386,6 +390,39 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       user,
       action: 'material.list',
       courseId,
+    });
+  }
+
+  if (materialId) {
+    const material = await prisma.courseMaterial.findFirst({
+      where: { id: materialId, courseId, deletedAt: null },
+      select: {
+        id: true,
+        title: true,
+        mimeType: true,
+        fileSize: true,
+        status: true,
+        createdAt: true,
+        rawText: true,
+      },
+    });
+
+    if (!material) {
+      return json(404, { error: 'Material not found' });
+    }
+
+    if (material.status !== 'READY') {
+      return json(409, { error: 'Material is not ready for preview' });
+    }
+
+    const rawText = material.rawText ?? '';
+    const truncated = rawText.length > PREVIEW_EXCERPT_MAX;
+    const { rawText: _rawText, ...meta } = material;
+
+    return json(200, {
+      material: meta,
+      excerpt: truncated ? rawText.slice(0, PREVIEW_EXCERPT_MAX) : rawText,
+      truncated,
     });
   }
 

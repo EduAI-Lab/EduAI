@@ -7,6 +7,7 @@ import {
   type AdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
+import { ADHD_ASSIST_POLICY_VERSION } from "~/lib/ai/adhd-assist";
 import type { OversightMethod } from "~/lib/ai/adhd-oversight";
 
 /** Server-written after each assistant turn. */
@@ -64,6 +65,8 @@ export type ResponseComplianceExtras = {
   oversightCompletionTokens?: number;
   responseProfile?: AdhdTurnProfile;
   profileStructuralPass?: boolean;
+  /** Whether any tool (RAG / web) ran this turn; lets analysis score citation compliance. */
+  toolsUsed?: boolean;
 };
 
 export async function recordResponseComplianceEvent(args: {
@@ -102,6 +105,10 @@ export async function recordResponseComplianceEvent(args: {
     oversightCompletionTokens: args.extras?.oversightCompletionTokens ?? null,
     responseProfile: args.extras?.responseProfile ?? null,
     profileStructuralPass,
+    toolsUsed: args.extras?.toolsUsed ?? null,
+    // Stamp the Assist policy version so cohorts before/after a policy change
+    // stay separable in analysis. Null for baseline (non-Assist) turns.
+    policyVersion: args.adhdAssist ? ADHD_ASSIST_POLICY_VERSION : null,
   };
 
   await recordAssistiveEvent({
