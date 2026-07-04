@@ -612,6 +612,38 @@ describe("PATCH /api/courses/:courseId/materials/:materialId action", () => {
     const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
     expect(res.status).toBe(403);
   });
+
+  it("returns 403 for a TA changing student visibility on their OWN material (§7 rename-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+      title: "Old name",
+      visibleToStudents: true,
+      availableAt: null,
+    } as never);
+    const res = await action(makeRenameArgs("mat-1", { visibleToStudents: false }));
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a TA scheduling availableAt on their OWN material (§7 rename-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+      title: "Old name",
+      visibleToStudents: true,
+      availableAt: null,
+    } as never);
+    const res = await action(
+      makeRenameArgs("mat-1", { availableAt: "2099-01-01T00:00:00.000Z" }),
+    );
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
