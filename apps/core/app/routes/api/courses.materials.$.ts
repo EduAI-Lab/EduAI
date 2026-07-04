@@ -201,7 +201,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
       // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
       // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
-      const isOwnTaEdit = access.level === 'ta' && material.uploadedBy === user.id;
+      // The TA carve-out covers renames only; student-visibility controls
+      // (visibleToStudents / availableAt) require instructor/admin/unit access,
+      // matching the UI that hides the visibility eye from TAs.
+      const changesVisibility = hasVisibility || hasAvailableAt;
+      const isOwnTaEdit =
+        access.level === 'ta' && material.uploadedBy === user.id && !changesVisibility;
       if (access.rank < 2 && !isOwnTaEdit) {
         return json(403, { error: 'Forbidden' });
       }
