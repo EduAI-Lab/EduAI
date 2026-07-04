@@ -4,12 +4,12 @@ import cron from "node-cron";
 import type { RbacUser } from "~/lib/auth/course-access.server";
 import { CreateAIProviderSchema, CreateAIModelSchema, UpdateAIProviderSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import {
-  clearCourseEmbeddingSettingsCache,
   isEmbeddingIndexStale,
   parseEmbeddingSettingsUpdate,
   resolveEffectiveEmbeddingSettings,
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding-config";
+import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
 import {
   findActiveReEmbedJob,
   getReEmbedJobForCourse,
@@ -578,7 +578,7 @@ export async function updateAdminPolicy(
     return { error: "UNKNOWN_POLICY_KEY" };
   }
 
-  await setPolicy(key, value);
+  await setPolicy(key, value, actor.id);
   return { ok: true, key, value };
 }
 
