@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
-import { useTheme } from "@eduai/ui";
+import { useTheme, CommandSearchButton } from "@eduai/ui";
 import { BugReportSubmitDialog } from "~/components/shared/bug-report-submit-dialog";
 import { AIServiceIndicators } from "~/components/ai/ai-service-indicators";
+import { CORE_COMMAND_EVENT } from "~/components/command/command-palette";
 import { Separator, SidebarTrigger, useSidebar } from "@eduai/ui";
 import { IconSun, IconMoon } from "@tabler/icons-react";
 
@@ -109,6 +110,7 @@ export function SiteHeader({
         ) : null}
         <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
           {actions}
+          <CommandSearchButton eventName={CORE_COMMAND_EVENT} />
           <AIServiceIndicators />
           <button
             type="button"

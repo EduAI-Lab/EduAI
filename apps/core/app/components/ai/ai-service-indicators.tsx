@@ -1,56 +1,32 @@
 /**
- * Dual AI-service status indicator (issue #764 — parity with QuestionMaker's
- * AIServiceIndicators). Two small pills in the header — "Cloud" and "UBC" — each
- * showing whether that provider path is live, so it's obvious which one is
- * serving. Polls `/api/ai-status`; the server caches probes, so polling is cheap.
+ * Core's AI-service status chips — a thin adapter over the shared `@eduai/ui`
+ * AIServiceIndicators (issue #764), so Core, QuestionMaker, and AI Tutor show the
+ * same two independent chips (Cloud / UBC-hosted). Polls `/api/ai-status`; the
+ * server caches probes, so polling is cheap. Each chip reflects only its own
+ * service state.
  */
 import * as React from "react";
+import {
+  AIServiceIndicators as SharedAIServiceIndicators,
+  type ServiceStatus,
+} from "@eduai/ui";
 
-type ServiceState = "online" | "offline" | "unknown";
-type ServiceStatus = { state: ServiceState; detail: string };
-type AiServiceStatus = { cloud: ServiceStatus; ubc: ServiceStatus };
+type ApiServiceStatus = { state: "online" | "offline" | "unknown"; detail?: string };
+type ApiStatus = { cloud: ApiServiceStatus; ubc: ApiServiceStatus };
 
 const POLL_MS = 60_000;
 
-const DOT_CLASS: Record<ServiceState, string> = {
-  online: "bg-emerald-500",
-  offline: "bg-red-500",
-  unknown: "bg-muted-foreground/50",
-};
-
-const STATE_WORD: Record<ServiceState, string> = {
-  online: "online",
-  offline: "offline",
-  unknown: "unknown",
-};
-
-function Indicator({ label, status }: { label: string; status: ServiceStatus }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-xs font-medium text-muted-foreground"
-      title={`${label}: ${STATE_WORD[status.state]} — ${status.detail}`}
-      role="status"
-      aria-label={`${label} AI service ${STATE_WORD[status.state]}`}
-    >
-      <span
-        className={`size-1.5 rounded-full ${DOT_CLASS[status.state]}`}
-        aria-hidden
-      />
-      {label}
-    </span>
-  );
-}
+const LOADING: ServiceStatus = { state: "loading" };
 
 export function AIServiceIndicators() {
-  const [status, setStatus] = React.useState<AiServiceStatus | null>(null);
+  const [status, setStatus] = React.useState<ApiStatus | null>(null);
+  const refreshRef = React.useRef<() => void>(() => {});
 
   React.useEffect(() => {
     let cancelled = false;
     let inFlight: AbortController | null = null;
 
     const load = async () => {
-      // Abort any still-pending poll before starting a new one so a hung request
-      // can't pile up across the interval.
       inFlight?.abort();
       const controller = new AbortController();
       inFlight = controller;
@@ -58,7 +34,7 @@ export function AIServiceIndicators() {
       try {
         const res = await fetch("/api/ai-status", { signal: controller.signal });
         if (!res.ok) return;
-        const data = (await res.json()) as AiServiceStatus;
+        const data = (await res.json()) as ApiStatus;
         if (!cancelled) setStatus(data);
       } catch {
         // Transient / aborted — keep the last known status until the next poll.
@@ -67,6 +43,7 @@ export function AIServiceIndicators() {
       }
     };
 
+    refreshRef.current = () => void load();
     void load();
     const timer = setInterval(load, POLL_MS);
     return () => {
@@ -76,16 +53,16 @@ export function AIServiceIndicators() {
     };
   }, []);
 
-  if (!status) return null;
+  const toStatus = (s?: ApiServiceStatus): ServiceStatus =>
+    s ? { state: s.state, detail: s.detail } : LOADING;
 
   return (
-    <div
-      className="hidden items-center gap-1.5 sm:flex"
-      aria-label="AI service status"
-      data-tour="ai-status"
-    >
-      <Indicator label="Cloud" status={status.cloud} />
-      <Indicator label="UBC" status={status.ubc} />
-    </div>
+    <span data-tour="ai-status" className="hidden sm:inline-flex">
+      <SharedAIServiceIndicators
+        cloud={toStatus(status?.cloud)}
+        ubc={toStatus(status?.ubc)}
+        onRefresh={() => refreshRef.current()}
+      />
+    </span>
   );
 }
