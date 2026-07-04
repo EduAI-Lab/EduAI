@@ -49,7 +49,7 @@ function makeLoaderArgs(
     ),
     params: { courseId, ...(topicId ? { topicId } : {}) },
     context: {} as never,
-  };
+  } as any;
 }
 
 function makeActionArgs(
@@ -67,7 +67,7 @@ function makeActionArgs(
     ),
     params: { courseId },
     context: {} as never,
-  };
+  } as any;
 }
 
 function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: unknown) {
@@ -80,7 +80,7 @@ function missingCourseIdArgs(method: "GET" | "POST" | "DELETE", body?: unknown) 
     }),
     params: {} as Record<string, string>,
     context: {} as never,
-  };
+  } as any;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +415,7 @@ describe("POST /api/courses/:courseId/topics", () => {
         ),
         params: { courseId, topicId },
         context: {} as never,
-      });
+      } as any);
       expect(patched.status).toBe(200);
       expect((await patched.json()).name).toBe("Lifecycle Topic v2");
 

@@ -16,7 +16,7 @@ import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 
 async function requireManageSession(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return { error: jsonResponse({ error: "Unauthorized" }, 401) };
   }

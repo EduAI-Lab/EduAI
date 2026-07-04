@@ -29,9 +29,8 @@ import {
   getNavForUser,
   getNavSecondaryForUser,
   type NavItemKey,
-  type NavGroupItem,
 } from "~/lib/rbac"
-import { usePolicies } from "~/hooks/api/use-policies"
+import { usePolicyGate } from "~/components/policy/policy-gate"
 import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
@@ -67,6 +66,8 @@ function toNavMainItems(
           url: child.url,
           icon: NAV_ICONS[child.key],
           external: child.external,
+          disabled: child.disabled,
+          disabledReason: child.disabledReason,
           badge:
             child.url === "/admin/cron-jobs" && cronStatusColor ? cronStatusColor : undefined,
         })),
@@ -77,6 +78,8 @@ function toNavMainItems(
       url: item.url,
       icon: NAV_ICONS[item.key],
       external: item.external,
+      disabled: item.disabled,
+      disabledReason: item.disabledReason,
     } satisfies NavMainItem
   })
 }
@@ -105,10 +108,10 @@ export function AppSidebar({
   variant = "sidebar",
   ...props
 }: AppSidebarProps) {
+  const { isEnabled } = usePolicyGate()
   const { pathname } = useLocation()
-  const { policies } = usePolicies()
   // Prefer the server-resolved flag from the root loader (authoritative,
-  // default-aware, no paint flash). Fall back to the client policy fetch only
+  // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
   // if root data is somehow unavailable.
   const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
 
@@ -116,17 +119,10 @@ export function AppSidebar({
 
   // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
   // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
-  const navItems = React.useMemo(
-    () =>
-      getNavForUser(user, {
-        canInvite: rootData?.canInvite ?? Boolean(policies["unitAdmins.canInvite"]),
-      }),
-    [user, rootData?.canInvite, policies],
-  )
-  const autoNav = React.useMemo(
-    () => toNavMainItems(navItems, cronStatusColor),
-    [navItems, cronStatusColor],
-  )
+  const navItems = getNavForUser(user, {
+    canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
+  })
+  const autoNav = toNavMainItems(navItems, cronStatusColor)
   const navMain = navMainOverride ?? autoNav
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))

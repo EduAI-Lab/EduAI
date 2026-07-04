@@ -26,7 +26,7 @@ export async function handleAiModelsApiRequest(request: Request) {
 
   switch (request.method) {
     case "GET": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user) {
         if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
           const serviceKeyGuard = await requireServiceKey(request);
@@ -58,7 +58,7 @@ export async function handleAiModelsApiRequest(request: Request) {
     }
 
     case "POST": {
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -121,7 +121,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");
@@ -196,7 +196,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         return apiError(400, "MODEL_ID_REQUIRED");
       }
 
-      const session = apiKeySession ?? (await auth.api.getSession(request));
+      const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user || session.user.role !== "ADMIN") {
         logAdminDenied(session?.user ?? null);
         return apiError(403, "Forbidden");

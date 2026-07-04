@@ -62,7 +62,7 @@ function asAnon() {
   getSessionSpy.mockResolvedValue(null as never);
 }
 
-const ctx = { context: {} as never };
+const ctx = { context: {} as never } as any;
 function createReq(body: unknown) {
   return {
     request: new Request("http://localhost/api/invitations", {
@@ -539,15 +539,14 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
 
-    // Better Auth sign-up also uses prisma.$transaction — only fail the promote step.
-    const origTransaction = prisma.$transaction.bind(prisma);
-    let transactionCalls = 0;
-    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (arg, ...rest) => {
-      transactionCalls += 1;
-      if (transactionCalls === 1) {
-        return origTransaction(arg as never, ...(rest as never[]));
-      }
-      throw new Error("db hiccup");
+    // recordPasswordHistory (called during Better Auth sign-up) uses $transaction
+    // too, so we let the first call pass and reject only the second one (promote).
+    let txCallCount = 0;
+    const realTx = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation((...args: Parameters<typeof prisma.$transaction>) => {
+      txCallCount++;
+      if (txCallCount < 2) return (realTx as any)(...args);
+      return Promise.reject(new Error("db hiccup"));
     });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();

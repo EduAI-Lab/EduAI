@@ -6,10 +6,8 @@ export default defineConfig({
     globals: true,
     include: ['tests/**/*.test.js'],
     setupFiles: ['tests/setup.js'],
+    fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true },
-    },
     env: { LOG_LEVEL: process.env.LOG_LEVEL || 'silent' },
   },
 });
