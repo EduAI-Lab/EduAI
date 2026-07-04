@@ -456,6 +456,9 @@ Each section should use this format:
 | [`UsersTable.test.tsx`](apps/core/app/tests/unit/UsersTable.test.tsx) | Admin users table — empty state message, renders the user name/email per row, conditionally renders the Add User button, and filters rows by name. |
 | [`utils.test.ts`](apps/core/app/tests/unit/utils.test.ts) | Tests that the cn() utility merges conflicting Tailwind classes, drops falsy values, and handles conditional objects and nested arrays. |
 | [`web-tool-ui.test.ts`](apps/core/app/tests/unit/web-tool-ui.test.ts) | Tests `isWebChatToolName` and `getChatToolDisplayName` — web-tool labels gated by `X-Web-Tools-Enabled`; course RAG labels always shown. |
+| [`ai-service-status.test.ts`](apps/core/app/tests/unit/ai-service-status.test.ts) | `classifyCloudStatus` maps cloud API-key presence to online/offline (whitespace-only keys treated as absent) and names each configured provider; `resolveUbcBaseUrls` reads and trims the vLLM/Ollama env URLs and returns undefined for unset/blank ones (#764). |
+| [`command-palette.test.ts`](apps/core/app/tests/unit/command-palette.test.ts) | `paletteNavItems` RBAC filter — students get core links but no admin links, ADMIN sees the admin section, the policy-disabled UNIT_ADMIN invite link is dropped, and no disabled item is surfaced for any role (#764). |
+| [`product-tour.test.tsx`](apps/core/app/tests/unit/product-tour.test.tsx) | `ProductTour` force-starts on `?tour=1`, auto-skips anchored steps whose target is absent, marks the tour seen in localStorage when finished, and does not auto-start once already seen (#764). |
 
 ---
 
@@ -508,13 +511,16 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 
 | Test file | What it tests |
 |-----------|---------------|
+| [`ai-service-indicators.test.tsx`](packages/ui/src/tests/ai-service-indicators.test.tsx) | `AIServiceIndicators` renders two independent Cloud/UBC status chips — each chip's aria-label reflects only its own state (online/offline/loading/unknown), and clicking a chip fires `onRefresh` (#764). |
 | [`app-launcher.test.tsx`](packages/ui/src/tests/app-launcher.test.tsx) | `visibleAppsForRole` RBAC gate — hides Question Maker from students and null roles, shows it to INSTRUCTOR/ADMIN/UNIT_ADMIN, and always keeps apps with no `roles` restriction; `BrandSwitcher` renders the brand as a home link and only shows the app-switcher (waffle) button when 2+ apps are accessible (#836). |
 | [`avatar.test.tsx`](packages/ui/src/tests/avatar.test.tsx) | `Avatar` renders an image when given a src, falls back to initials, handles image load errors, and forwards custom props. |
 | [`bug-report-dialog.test.tsx`](packages/ui/src/tests/bug-report-dialog.test.tsx) | `BugReportDialog` opens the dialog, gates submit on input, and fires `onSubmit` with the report payload. |
 | [`combobox.test.tsx`](packages/ui/src/tests/combobox.test.tsx) | `Combobox` and `MultiSelect` (searchable single/multi pickers): trigger renders placeholder vs selected label, `MultiSelect` summarises the selected count, and both honour the `disabled` state. |
+| [`command-palette.test.tsx`](packages/ui/src/tests/command-palette.test.tsx) | `CommandSearchButton` calls `onOpen` / dispatches the given window event, renders its label, and shows `⌘K` on macOS vs `Ctrl K` elsewhere; `buildAppSwitcherGroup` drops the current app and RBAC-gates the rest (hides Question Maker for students, includes it for permitted roles) (#764, #900). |
 | [`course-card.test.tsx`](packages/ui/src/tests/course-card.test.tsx) | `CourseCard` renders course code/name/description, status and badges, the actions menu, and course links. |
 | [`course-color-bar.test.tsx`](packages/ui/src/tests/course-color-bar.test.tsx) | `CourseColorBar` applies the expected height, maps color indices, and cycles through `COURSE_COLORS`. |
 | [`course-hero-card.test.tsx`](packages/ui/src/tests/course-hero-card.test.tsx) | `CourseHeroCard` renders course code/term/year/name, descriptions, topics, badges, and handles year-type variations. |
+| [`course-switcher.test.tsx`](packages/ui/src/tests/course-switcher.test.tsx) | `CourseSwitcher` shows the current course label on the trigger, falls back to a placeholder for an unknown id, and accepts both string and number ids (#764). |
 | [`nav-user.test.tsx`](packages/ui/src/tests/nav-user.test.tsx) | `NavUser` renders the user name/email/avatar, opens the profile dropdown, renders custom items and a passed logout element, and fires `onLogout`. |
 | [`page-heading.test.tsx`](packages/ui/src/tests/page-heading.test.tsx) | `PageHeading` renders the heading text and accent bar, and renders an optional subheading including React-node children. |
 | [`page-tabs.test.tsx`](packages/ui/src/tests/page-tabs.test.tsx) | `PageTabs` (List/Trigger/Content) renders the tab structure and default content, reflects active states, and applies custom classes. |
