@@ -52,4 +52,18 @@ describe("CommandSearchButton", () => {
     render(<CommandSearchButton label="Find" onOpen={() => {}} />);
     expect(screen.getByText("Find")).toBeInTheDocument();
   });
+
+  it("shows ⌘K on macOS and Ctrl K elsewhere", async () => {
+    const setPlatform = (value: string) =>
+      Object.defineProperty(window.navigator, "platform", { value, configurable: true });
+
+    setPlatform("MacIntel");
+    const mac = render(<CommandSearchButton onOpen={() => {}} />);
+    expect(await mac.findByText("⌘K")).toBeInTheDocument();
+    mac.unmount();
+
+    setPlatform("Win32");
+    const win = render(<CommandSearchButton onOpen={() => {}} />);
+    expect(await win.findByText("Ctrl K")).toBeInTheDocument();
+  });
 });
