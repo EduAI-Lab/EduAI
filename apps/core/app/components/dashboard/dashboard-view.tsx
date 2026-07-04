@@ -70,6 +70,8 @@ export type DashboardViewProps = {
   leftPanelTitle?: string;
   recentChats: DashboardRecentChat[];
   recentChatsLoading?: boolean;
+  /** Optional analytics row (charts) rendered full-width below the stat cards. */
+  analytics?: React.ReactNode;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ export function DashboardView({
   leftPanelTitle,
   recentChats,
   recentChatsLoading = false,
+  analytics,
 }: DashboardViewProps) {
   const showQuickActions = Boolean(quickActions && quickActions.length > 0);
   const panelTitle = leftPanelTitle ?? (showQuickActions ? "Quick actions" : "Your courses");
@@ -338,6 +341,9 @@ export function DashboardView({
           </ScrollReveal>
         ))}
       </div>
+
+      {/* Analytics charts */}
+      {analytics && <ScrollReveal index={3}>{analytics}</ScrollReveal>}
 
       {/* 2-column body */}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-stretch">
