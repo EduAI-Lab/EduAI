@@ -26,8 +26,12 @@ import {
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
-import { usePolicies } from '~/hooks/api/use-policies'
 import { groupCoursesByDate } from '~/lib/courses/term-grouping'
+import {
+  PolicyTooltip,
+  usePolicyGate,
+  DEFAULT_POLICY_DISABLED_MESSAGE,
+} from '~/components/policy/policy-gate'
 
 interface Props {
   courses: Course[]
@@ -64,13 +68,20 @@ function InstructorCourseGrid({ courses, canPublish, canDelete, onPublishToggle,
           href={`/courses/${course.id}`}
           LinkComponent={Link}
           actions={{
-            showPublish: canPublish,
+            // §2 / issue #807: keep publish & delete visible but greyed-out
+            // when the instructor's policy flag is off, so the missing action
+            // reads as "admin turned this off", not a bug.
+            showPublish: true,
             isPublished: course.isPublished,
             onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+            publishDisabled: !canPublish,
+            publishDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
             showEdit: true,
             onEdit: () => setTimeout(() => onEdit(course), 0),
-            showDelete: canDelete,
+            showDelete: true,
             onDelete: () => setTimeout(() => onDelete(course), 0),
+            deleteDisabled: !canDelete,
+            deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
           }}
         />
       ))}
@@ -86,13 +97,14 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
   const { options: departmentOptions, loading: deptLoading } = useDisciplines()
 
-  const { policies, isLoading: policiesLoading } = usePolicies()
-  // Mirror the backend policy gates so the UI never offers an action the server
-  // will 403. Stay restrictive until policies load — otherwise a disabled flag
-  // would briefly flash Create/Publish/Delete before the fetch resolves.
-  const canCreate = !policiesLoading && (policies['instructors.canCreateCourses'] ?? true)
-  const canPublish = !policiesLoading && (policies['instructors.canPublishCourses'] ?? true)
-  const canDelete = !policiesLoading && (policies['instructors.canDeleteCourses'] ?? true)
+  const { isEnabled } = usePolicyGate()
+  // Mirror the backend policy gates. Instead of hiding controls an admin turned
+  // off (which reads as a bug — issue #807), we keep them visible but greyed-out
+  // with a tooltip. While policies load these report enabled, so an admin-on
+  // control never flickers to disabled.
+  const canCreate = isEnabled('instructors.canCreateCourses')
+  const canPublish = isEnabled('instructors.canPublishCourses')
+  const canDelete = isEnabled('instructors.canDeleteCourses')
 
   // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
   // pointer-events:none on <body>, clear it once no dialog is open.
@@ -143,7 +155,14 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
       <div className="flex items-start justify-between gap-4">
         <PageHeading heading="My Courses" subheading="Courses you are teaching" />
 
-        {canCreate && (
+        {!canCreate ? (
+          <PolicyTooltip flag="instructors.canCreateCourses">
+            <Button>
+              <IconPlus className="w-4 h-4 mr-2" />
+              Create course
+            </Button>
+          </PolicyTooltip>
+        ) : (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -235,11 +254,18 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
           <CardContent className="flex flex-col items-center justify-center py-8">
             <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">You have no courses assigned yet.</p>
-            {canCreate && (
+            {canCreate ? (
               <Button className="mt-4" onClick={() => setCreateOpen(true)}>
                 <IconPlus className="w-4 h-4 mr-2" />
                 Create first course
               </Button>
+            ) : (
+              <PolicyTooltip flag="instructors.canCreateCourses">
+                <Button className="mt-4">
+                  <IconPlus className="w-4 h-4 mr-2" />
+                  Create first course
+                </Button>
+              </PolicyTooltip>
             )}
           </CardContent>
         </Card>
