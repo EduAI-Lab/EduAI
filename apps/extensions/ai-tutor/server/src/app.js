@@ -13,6 +13,7 @@ import aiModelRoutes from './routes/ai-models.js';
 import adminRoutes from './routes/admin.js';
 import suggestedPromptRoutes from './routes/suggested-prompts.js';
 import bugReportRoutes from './routes/bug-reports.js';
+import aiStatusRoutes from './routes/ai-status.js';
 import { prisma } from './config/database.js';
 
 function isAllowedAdminPath(path) {
@@ -82,6 +83,9 @@ export async function createApp(options = {}) {
   // /admin/settings/* or /admin/users* (system config / user management).
   app.use('/api', (req, res, next) => {
     if (req.path === '/health') return next();
+    // AI-service status is available to every authenticated role (incl. admins),
+    // so exempt it from the admin-only path isolation below.
+    if (req.path === '/ai-status') return next();
     if (!req.user) return next();
     if (req.user.role === 'ADMIN') {
       if (isAllowedAdminPath(req.path)) return next();
@@ -107,6 +111,7 @@ export async function createApp(options = {}) {
   app.use('/api', adminRoutes);
   app.use('/api', suggestedPromptRoutes);
   app.use('/api', bugReportRoutes);
+  app.use('/api', aiStatusRoutes);
 
   return app;
 }
