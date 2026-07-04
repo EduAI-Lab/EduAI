@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "BugReportType" AS ENUM ('UI_DISPLAY', 'FEATURE_NOT_WORKING', 'PERFORMANCE', 'CONTENT_ERROR', 'ACCESS_PERMISSION', 'OTHER');
+
+-- AlterTable
+ALTER TABLE "bug_reports" ADD COLUMN "bugType" "BugReportType";

@@ -151,6 +151,62 @@ describe("createBugReport — anonymous vs. non-anonymous persistence", () => {
   });
 });
 
+describe("createBugReport — bugType", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
+    prismaMock.bugReport.create.mockResolvedValue({});
+  });
+
+  it("persists a valid bugType", async () => {
+    const r = await createBugReport({ ...BASE_PAYLOAD, bugType: "FEATURE_NOT_WORKING" });
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.bugType).toBe("FEATURE_NOT_WORKING");
+  });
+
+  it("persists null bugType when field is absent", async () => {
+    const r = await createBugReport(BASE_PAYLOAD);
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.bugType).toBeNull();
+  });
+
+  it("persists null bugType when field is explicitly null", async () => {
+    const r = await createBugReport({ ...BASE_PAYLOAD, bugType: null });
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.bugType).toBeNull();
+  });
+
+  it("returns VALIDATION_ERROR for an unrecognized bugType value", async () => {
+    const r = await createBugReport({ ...BASE_PAYLOAD, bugType: "MADE_UP_TYPE" });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { bugType: expect.any(String) },
+    });
+    expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts all defined bugType values", async () => {
+    const validTypes = [
+      "UI_DISPLAY",
+      "FEATURE_NOT_WORKING",
+      "PERFORMANCE",
+      "CONTENT_ERROR",
+      "ACCESS_PERMISSION",
+      "OTHER",
+    ];
+    for (const bugType of validTypes) {
+      prismaMock.bugReport.create.mockClear();
+      const r = await createBugReport({ ...BASE_PAYLOAD, bugType });
+      expect(r).toEqual({ ok: true });
+      expect(prismaMock.bugReport.create.mock.calls[0][0].data.bugType).toBe(bugType);
+    }
+  });
+});
+
 describe("createBugReport — optional fields", () => {
   beforeEach(() => {
     vi.clearAllMocks();
