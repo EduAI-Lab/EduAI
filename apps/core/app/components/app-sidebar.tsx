@@ -13,6 +13,7 @@ import {
   IconRobot,
   IconSettings,
   IconShieldLock,
+  IconHelp,
   IconMail,
   IconUser,
   IconUsers,
@@ -33,6 +34,7 @@ import {
 } from "~/lib/rbac"
 import { usePolicyGate } from "~/components/policy/policy-gate"
 import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
+import { CommandPalette } from "~/components/command/command-palette"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
@@ -49,6 +51,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "unitadmin-invites": IconMail,
   "admin-cron": IconClockCog,
   settings: IconSettings,
+  help: IconHelp,
   "ai-tutor": IconMessageChatbot,
 }
 
@@ -134,9 +137,11 @@ export function AppSidebar({
   )
 
   return (
-    <SharedAppSidebar
-      logo={logo}
-      logoHref="/dashboard"
+    <>
+      <CommandPalette user={user} />
+      <SharedAppSidebar
+        logo={logo}
+        logoHref="/dashboard"
       navMain={navMain}
       navSecondary={navSecondary}
       currentPath={pathname}
@@ -174,8 +179,9 @@ export function AppSidebar({
           </Form>
         ),
       }}
-      variant={variant}
-      {...props}
-    />
+        variant={variant}
+        {...props}
+      />
+    </>
   )
 }
