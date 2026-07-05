@@ -18,7 +18,7 @@ DELETED=$(psql_core -v ON_ERROR_STOP=1 -t -A <<'SQL'
   DELETE FROM invitations
   WHERE (status = 'REVOKED' AND "updatedAt" < NOW() - INTERVAL '30 days')
      OR (status = 'PENDING' AND "expiresAt" < NOW() - INTERVAL '30 days')
-  RETURNING id, email, status;
+  RETURNING id, status;
 SQL
 )
 
