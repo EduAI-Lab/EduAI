@@ -9,6 +9,11 @@ vi.mock("~/lib/prisma.server", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    canvasMaterialExclusion: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    },
   },
 }));
 
@@ -43,6 +48,8 @@ import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
+  excludeCanvasMaterial,
+  unexcludeCanvasMaterial,
 } from "~/lib/canvas/materials.server";
 
 const CREDENTIALS = {
@@ -83,6 +90,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
+  vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
 });
 
 describe("discoverCanvasMaterialsForCourse", () => {
@@ -156,5 +164,27 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toEqual([
       { canvasFileId: "9999", message: "File not found or not importable for this course" },
     ]);
+  });
+});
+
+describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
+  it("upserts an exclusion row scoped to the course", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.create).mockResolvedValue({} as never);
+
+    await excludeCanvasMaterial("user-1", "core-course-1", "1001");
+
+    expect(prisma.canvasMaterialExclusion.create).toHaveBeenCalledWith({
+      data: { courseId: "core-course-1", canvasFileId: "1001", excludedByUserId: "user-1" },
+    });
+  });
+
+  it("deletes the exclusion row on unexclude", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.delete).mockResolvedValue({} as never);
+
+    await unexcludeCanvasMaterial("user-1", "core-course-1", "1001");
+
+    expect(prisma.canvasMaterialExclusion.delete).toHaveBeenCalledWith({
+      where: { courseId_canvasFileId: { courseId: "core-course-1", canvasFileId: "1001" } },
+    });
   });
 });

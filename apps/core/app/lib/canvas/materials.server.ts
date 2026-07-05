@@ -330,3 +330,27 @@ export async function syncSelectedCanvasMaterials(
 
   return result;
 }
+
+/** Marks a Canvas file as permanently excluded from sync for this course. */
+export async function excludeCanvasMaterial(
+  userId: string,
+  courseId: string,
+  canvasFileId: string,
+): Promise<void> {
+  await assertCanvasLinkedCourse(courseId, userId);
+  await prisma.canvasMaterialExclusion.create({
+    data: { courseId, canvasFileId, excludedByUserId: userId },
+  });
+}
+
+/** Removes a Canvas file's exclusion, making it importable again. */
+export async function unexcludeCanvasMaterial(
+  userId: string,
+  courseId: string,
+  canvasFileId: string,
+): Promise<void> {
+  await assertCanvasLinkedCourse(courseId, userId);
+  await prisma.canvasMaterialExclusion.delete({
+    where: { courseId_canvasFileId: { courseId, canvasFileId } },
+  });
+}
