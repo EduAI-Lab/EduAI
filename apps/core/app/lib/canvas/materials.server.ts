@@ -218,7 +218,8 @@ async function importSingleCanvasFile(
   file: CanvasFileApi,
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
-): Promise<"imported" | "updated" | "skipped"> {
+  excludedIds: Set<string>,
+): Promise<"imported" | "updated" | "skipped-not-modified" | "skipped-unpublished" | "skipped-excluded"> {
   const mimeType = normalizeMimeType(file);
   if (!mimeType) {
     throw new Error("Unsupported file type");
@@ -231,6 +232,15 @@ async function importSingleCanvasFile(
   }
 
   const canvasFileId = String(file.id);
+
+  if (excludedIds.has(canvasFileId)) {
+    return "skipped-excluded";
+  }
+
+  if (!computeCanvasFilePublishState(file).isPublished) {
+    return "skipped-unpublished";
+  }
+
   const existing = await prisma.courseMaterial.findFirst({
     where: {
       courseId,
@@ -243,7 +253,7 @@ async function importSingleCanvasFile(
   // Soft-delete is a one-way EduAI-side removal; Canvas re-sync must not revive
   // it. Leave the row deleted and report it as skipped.
   if (existing?.deletedAt) {
-    return "skipped";
+    return "skipped-not-modified";
   }
 
   const canvasUpdatedAt = new Date(file.updated_at);
@@ -253,7 +263,7 @@ async function importSingleCanvasFile(
     canvasUpdatedAt <= existing.canvasUpdatedAt &&
     existing.status === "READY"
   ) {
-    return "skipped";
+    return "skipped-not-modified";
   }
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
@@ -269,7 +279,7 @@ async function importSingleCanvasFile(
   });
 
   if (duplicateByChecksum && duplicateByChecksum.id !== existing?.id) {
-    return "skipped";
+    return "skipped-not-modified";
   }
 
   let materialId: string;
@@ -335,17 +345,21 @@ export async function syncSelectedCanvasMaterials(
   const course = await assertCanvasLinkedCourse(courseId, userId);
   const credentials = await requireCanvasCredentials(userId);
 
-  const available = await listImportableCanvasFiles(
-    credentials,
-    course.externalId!,
-    fetchImpl,
-  );
+  const [available, exclusions] = await Promise.all([
+    listImportableCanvasFiles(credentials, course.externalId!, fetchImpl),
+    prisma.canvasMaterialExclusion.findMany({
+      where: { courseId },
+      select: { canvasFileId: true },
+    }),
+  ]);
   const availableById = new Map(available.map((file) => [String(file.id), file]));
+  const excludedIds = new Set(exclusions.map((row) => row.canvasFileId));
 
   const result: SyncCanvasMaterialsResult = {
     imported: 0,
     updated: 0,
     skipped: 0,
+    skippedItems: [],
     failed: [],
   };
 
@@ -366,10 +380,19 @@ export async function syncSelectedCanvasMaterials(
         file,
         credentials,
         fetchImpl,
+        excludedIds,
       );
-      if (outcome === "imported") result.imported += 1;
-      else if (outcome === "updated") result.updated += 1;
-      else result.skipped += 1;
+      if (outcome === "imported") {
+        result.imported += 1;
+      } else if (outcome === "updated") {
+        result.updated += 1;
+      } else {
+        result.skipped += 1;
+        const reason = outcome === "skipped-unpublished" ? "unpublished"
+          : outcome === "skipped-excluded" ? "excluded"
+          : "not-modified";
+        result.skippedItems.push({ canvasFileId, reason });
+      }
     } catch (error) {
       result.failed.push({
         canvasFileId,

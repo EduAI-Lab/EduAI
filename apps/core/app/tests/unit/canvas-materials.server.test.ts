@@ -234,6 +234,32 @@ describe("syncSelectedCanvasMaterials", () => {
       { canvasFileId: "9999", message: "File not found or not importable for this course" },
     ]);
   });
+
+  it("skips and reports an unpublished file without importing it", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "unpublished" }]);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("skips and reports an excluded file without importing it", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
+      { canvasFileId: "1001" },
+    ] as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "excluded" }]);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
 });
 
 describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
