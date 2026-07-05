@@ -27,6 +27,21 @@ vi.mock("~/lib/canvas/client.server", () => ({
   CANVAS_EXTERNAL_SOURCE: "canvas",
   listCanvasCourseFiles: vi.fn(),
   downloadCanvasFile: vi.fn(),
+  computeCanvasFilePublishState: (
+    file: { hidden?: boolean; locked?: boolean; lock_at?: string | null; unlock_at?: string | null },
+    now: Date = new Date(),
+  ) => {
+    if (file.hidden || file.locked) {
+      return { isPublished: false };
+    }
+    if (file.unlock_at && new Date(file.unlock_at) > now) {
+      return { isPublished: false };
+    }
+    if (file.lock_at && new Date(file.lock_at) <= now) {
+      return { isPublished: false };
+    }
+    return { isPublished: true };
+  },
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
@@ -127,6 +142,60 @@ describe("discoverCanvasMaterialsForCourse", () => {
     const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
     expect(files[0]?.importStatus).toBe("imported");
     expect(files[0]?.coreMaterialId).toBe("mat-existing");
+  });
+
+  it("flags an unpublished Canvas file as not importable", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]).toMatchObject({ isPublished: false, isExcluded: false });
+  });
+
+  it("flags an excluded Canvas file and omits it from import eligibility", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
+      { canvasFileId: "1001" },
+    ] as never);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]).toMatchObject({ isExcluded: true });
+  });
+
+  it("sets unpublishedAt on a previously-imported material that becomes unpublished", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-existing" },
+      data: { unpublishedAt: expect.any(Date) },
+    });
+  });
+
+  it("clears unpublishedAt on a material that becomes published again", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: new Date("2025-02-01T00:00:00.000Z"),
+      },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
+      where: { id: "mat-existing" },
+      data: { unpublishedAt: null },
+    });
   });
 });
 
