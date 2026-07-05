@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CanvasApiError,
   CanvasVerificationError,
+  computeCanvasFilePublishState,
   downloadCanvasFile,
   listCanvasCourseStudents,
   parseAndValidateCanvasUrl,
@@ -188,5 +189,45 @@ describe("CanvasApiError", () => {
   it("carries statusCode", () => {
     const error = new CanvasApiError("Canvas API error: 500", 500);
     expect(error.statusCode).toBe(500);
+  });
+});
+
+describe("computeCanvasFilePublishState", () => {
+  const now = new Date("2026-07-05T12:00:00.000Z");
+
+  it("treats a plain file with no lock fields as published", () => {
+    expect(computeCanvasFilePublishState({}, now)).toEqual({ isPublished: true });
+  });
+
+  it("treats hidden as unpublished", () => {
+    expect(computeCanvasFilePublishState({ hidden: true }, now)).toEqual({ isPublished: false });
+  });
+
+  it("treats locked as unpublished", () => {
+    expect(computeCanvasFilePublishState({ locked: true }, now)).toEqual({ isPublished: false });
+  });
+
+  it("treats a future unlock_at as unpublished", () => {
+    expect(
+      computeCanvasFilePublishState({ unlock_at: "2026-07-06T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: false });
+  });
+
+  it("treats a past unlock_at as published", () => {
+    expect(
+      computeCanvasFilePublishState({ unlock_at: "2026-07-01T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: true });
+  });
+
+  it("treats a past lock_at as unpublished", () => {
+    expect(
+      computeCanvasFilePublishState({ lock_at: "2026-07-01T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: false });
+  });
+
+  it("treats a future lock_at as still published", () => {
+    expect(
+      computeCanvasFilePublishState({ lock_at: "2026-07-06T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: true });
   });
 });
