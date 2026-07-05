@@ -47,7 +47,28 @@ export type CanvasFileApi = {
   size: number;
   updated_at: string;
   url: string;
+  hidden?: boolean;
+  locked?: boolean;
+  lock_at?: string | null;
+  unlock_at?: string | null;
 };
+
+/** Computes whether a Canvas file is currently visible to students (not hidden/locked/outside its unlock-lock window). */
+export function computeCanvasFilePublishState(
+  file: Pick<CanvasFileApi, "hidden" | "locked" | "lock_at" | "unlock_at">,
+  now: Date = new Date(),
+): { isPublished: boolean } {
+  if (file.hidden || file.locked) {
+    return { isPublished: false };
+  }
+  if (file.unlock_at && new Date(file.unlock_at) > now) {
+    return { isPublished: false };
+  }
+  if (file.lock_at && new Date(file.lock_at) <= now) {
+    return { isPublished: false };
+  }
+  return { isPublished: true };
+}
 
 export type CanvasModuleItemApi = {
   id: number;
