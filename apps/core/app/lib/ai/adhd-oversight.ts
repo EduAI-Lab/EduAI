@@ -27,6 +27,7 @@ REQUIRED MARKDOWN STRUCTURE:
 4) End with a standalone line: **Next?** <one short continuation offer>
 
 LENGTH: Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.
+Remove any urgency or time-pressure wording (e.g. "quickly", "fast", "hurry", "right away"); never rush the learner.
 No emojis. No filler ("Great question!", "Certainly!").
 Return ONLY the rewritten response.`;
 
@@ -38,6 +39,7 @@ RULES:
 - Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
 - End with one clear forward continuation question if missing.
 - Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
+- Remove any urgency or time-pressure wording ("quickly", "fast", "hurry"); never rush the learner.
 - No emojis. No filler.
 Return ONLY the rewritten response.`;
 
@@ -340,7 +342,10 @@ export async function auditAndMaybeRewrite(args: {
     };
   }
 
-  if (passesProfileStructure(beforeMetrics, profile, trimmed)) {
+  // Content pass = profile structure AND no urgency language. Citations are
+  // measured (metrics.hasSources) but not enforced here: the Dean has no access
+  // to the source material and must never confabulate a Sources footer.
+  if (passesProfileStructure(beforeMetrics, profile, trimmed) && beforeMetrics.noUrgency) {
     return {
       text: trimmed,
       rewritten: false,
@@ -359,15 +364,20 @@ export async function auditAndMaybeRewrite(args: {
       profile,
       deterministic,
     );
-    return {
-      text: deterministic,
-      rewritten: true,
-      method: "deterministic",
-      beforeMetrics,
-      afterMetrics,
-      oversightDurationMs: 0,
-      oversightUsage: null,
-    };
+    // The deterministic fix only repairs structure; it cannot remove urgency
+    // wording, so accept it only when the draft is already urgency-clean.
+    // Otherwise fall through to the LLM rewrite.
+    if (afterMetrics.noUrgency) {
+      return {
+        text: deterministic,
+        rewritten: true,
+        method: "deterministic",
+        beforeMetrics,
+        afterMetrics,
+        oversightDurationMs: 0,
+        oversightUsage: null,
+      };
+    }
   }
 
   const oversightStartedAt = Date.now();
@@ -387,9 +397,13 @@ export async function auditAndMaybeRewrite(args: {
       llmText,
     );
 
+    // When urgency triggered the rewrite, only accept a result that is clean;
+    // a rewrite that still trips urgency is rejected and the draft is kept.
+    const urgencyWasProblem = !beforeMetrics.noUrgency;
     const useLlm =
       llmText.length > 0 &&
       afterMetrics.underCap &&
+      (!urgencyWasProblem || afterMetrics.noUrgency) &&
       (afterMetrics.profileStructuralPass ||
         profileStructuralScore(afterMetrics, profile, llmText) >
           profileStructuralScore(beforeMetrics, profile, trimmed));
