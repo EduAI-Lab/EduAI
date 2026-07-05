@@ -7,9 +7,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
-### Changed
+### Added
 
-- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#837, @GlowyBlack, 2026-07-03) — [#898](https://github.com/EduAI-Lab/EduAI/pull/898)
+- [core, ai-tutor, question-maker] feat: Cascade-delete a course from Core to QM and AI Tutor — `deleteCourse` now pushes a best-effort delete to both extensions' new internal, service-key-authenticated endpoints (`DELETE /api/internal/courses/:coreCourseId` / `:coreOfferingId`) right after the soft-delete, so linked data doesn't outlive the course. QM cascades via Sequelize (fixed two associations — `Course→Assessments` and `Variants→SectionVariants` — that silently defaulted to `SET NULL`/`NO ACTION` instead of `CASCADE`, verified empirically against a real Postgres DB); AI Tutor cascades via its existing Prisma `onDelete: Cascade` FKs. Each extension's daily reconcile cron is upgraded from nullifying the Core link to deleting the local mirror outright, so a missed live push (extension down, network partition) still self-heals instead of leaving orphaned records. (#802, @evanbones, 2026-07-02) — [#850](https://github.com/EduAI-Lab/EduAI/pull/850)
 
 ### Fixed
 
@@ -20,6 +20,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [infra] fix: Pin `better-auth`/`@better-auth/core` back to `1.4.22` and bump `drizzle-orm` to `^0.45.2` specifically within `@better-auth/cli`'s dependency subtree via nested `overrides` — the CLI is hard-pinned to exact `1.4.22`/`^0.41.0` internally, and forcing the whole subtree to the root's `1.6.22`/`0.45.2` versions breaks `@better-auth/cli` at runtime (`@better-auth/core`'s `exports` map dropped the `./utils` subpath the CLI's compiled generators import). Scoping the override to just `drizzle-orm` clears the high-severity SQL injection advisory (GHSA-gpj5-g38j-94v9) while keeping `auth:generate`/`auth:migrate` working; the `better-auth` OAuth-state advisory (GHSA-wxw3-q3m9-c3jr) has no available fix upstream and remains, isolated to this dev-only tool. (#804, @evanbones, 2026-06-30)
 - [infra] fix: Bump `@mrleebo/prisma-ast` to `^0.16.0` (chevrotain 10.5→12) within the same `@better-auth/cli` nested override — `@better-auth/cli`'s own declared range (`^0.13.0`) was stuck on a chevrotain series carrying the high-severity lodash code-injection/prototype-pollution advisories (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg). Verified `npx @better-auth/cli generate` still parses/merges the real `apps/core` Prisma schema correctly against a scratch output file before landing this. npm audit dropped from 17 to 10 vulnerabilities (0 critical/high remaining); the two left (`@ai-sdk/provider-utils` resource consumption, `better-auth` OAuth-state) both require a breaking major-version bump of the `ai` SDK or break `@better-auth/cli` respectively, so they're left as accepted, documented risk rather than forced. (#804, @evanbones, 2026-06-30)
 - [infra] fix: Explicitly copy `apps/core`'s nested `node_modules` from the `deps` stage into the `test` and `build` stages in `docker/tests/Dockerfile.eduai` — `apps/core` requires `ai@^4.3.17` while AI Tutor requires `ai@^5.0.97`, a genuine major-version conflict, so npm hoists one to root and nests the other under its own workspace; which one wins the root slot isn't stable across lockfile regenerations (it flipped during the vulnerability cleanup above) and the Docker stages only ever propagated root `node_modules`, so a re-hoist silently broke the `@ai-sdk/openai`/`@ai-sdk/react`/`ollama-ai-provider` imports in CI. Also added a root `.dockerignore` excluding `node_modules` so a locally-present `node_modules` can never mask this by leaking into the build context again. Verified both stages build and the full `eduai` vitest suite (157 files / 1625 tests) passes inside the actual `node:24-alpine` container. (#804, @evanbones, 2026-07-01)
+
+### Changed
+
+- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#837, @GlowyBlack, 2026-07-03) — [#898](https://github.com/EduAI-Lab/EduAI/pull/898)
+
 
 ## [Week 8 — June 22–28, 2026]
 
