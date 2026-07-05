@@ -16,6 +16,7 @@ import {
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
+import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 
 function json(status: number, body: unknown) {
@@ -357,7 +358,7 @@ async function uploadMaterial(
   } catch (error) {
     console.error('Error processing material upload:', error);
     return json(500, {
-      error: error instanceof Error ? error.message : 'Failed to process material',
+      error: toMaterialUploadUserMessage(error),
     });
   }
 }
