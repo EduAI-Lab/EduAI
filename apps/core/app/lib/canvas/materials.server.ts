@@ -4,6 +4,7 @@ import {
   CANVAS_EXTERNAL_SOURCE,
   type CanvasFileApi,
   type CanvasIntegrationCredentials,
+  computeCanvasFilePublishState,
   downloadCanvasFile,
   listCanvasCourseFiles,
 } from "~/lib/canvas/client.server";
@@ -124,29 +125,42 @@ export async function discoverCanvasMaterialsForCourse(
     fetchImpl,
   );
 
-  const imported = await prisma.courseMaterial.findMany({
-    where: {
-      courseId,
-      externalSource: CANVAS_EXTERNAL_SOURCE,
-      externalId: { not: null },
-      // Soft-deleted rows are EduAI-side removals — never resurface them as
-      // "imported"; they should read back as available to (re-)import.
-      deletedAt: null,
-    },
-    select: { id: true, externalId: true, canvasUpdatedAt: true },
-  });
+  const [imported, exclusions] = await Promise.all([
+    prisma.courseMaterial.findMany({
+      where: {
+        courseId,
+        externalSource: CANVAS_EXTERNAL_SOURCE,
+        externalId: { not: null },
+        // Soft-deleted rows are EduAI-side removals — never resurface them as
+        // "imported"; they should read back as available to (re-)import.
+        deletedAt: null,
+      },
+      select: { id: true, externalId: true, canvasUpdatedAt: true, unpublishedAt: true },
+    }),
+    prisma.canvasMaterialExclusion.findMany({
+      where: { courseId },
+      select: { canvasFileId: true },
+    }),
+  ]);
 
   const importedByExternalId = new Map(
     imported
       .filter((row) => row.externalId != null)
-      .map((row) => [row.externalId as string, row as { id: string; canvasUpdatedAt: Date | null }]),
+      .map((row) => [
+        row.externalId as string,
+        row as { id: string; canvasUpdatedAt: Date | null; unpublishedAt: Date | null },
+      ]),
   );
+  const excludedIds = new Set(exclusions.map((row) => row.canvasFileId));
+
+  await syncUnpublishedState(canvasFiles, importedByExternalId);
 
   return canvasFiles.map((file) => {
     const canvasFileId = String(file.id);
     const mimeType = normalizeMimeType(file)!;
     const material = importedByExternalId.get(canvasFileId);
     const canvasUpdatedAt = new Date(file.updated_at);
+    const { isPublished } = computeCanvasFilePublishState(file);
 
     return {
       canvasFileId,
@@ -156,8 +170,44 @@ export async function discoverCanvasMaterialsForCourse(
       canvasUpdatedAt: canvasUpdatedAt.toISOString(),
       importStatus: resolveImportStatus(canvasUpdatedAt, material),
       coreMaterialId: material?.id ?? null,
+      isPublished,
+      isExcluded: excludedIds.has(canvasFileId),
     };
   });
+}
+
+/**
+ * Re-checks publish state for already-imported materials against the freshly
+ * fetched Canvas file list, setting/clearing `unpublishedAt`. Runs as a side
+ * effect of discovery (the natural manual re-sync trigger) rather than a
+ * separate scheduled job — see issue #777 criterion 3.
+ */
+async function syncUnpublishedState(
+  canvasFiles: CanvasFileApi[],
+  importedByExternalId: Map<string, { id: string; unpublishedAt: Date | null }>,
+): Promise<void> {
+  const canvasFileById = new Map(canvasFiles.map((file) => [String(file.id), file]));
+
+  for (const [canvasFileId, material] of importedByExternalId) {
+    const file = canvasFileById.get(canvasFileId);
+    if (!file) {
+      continue;
+    }
+
+    const { isPublished } = computeCanvasFilePublishState(file);
+
+    if (!isPublished && !material.unpublishedAt) {
+      await prisma.courseMaterial.update({
+        where: { id: material.id },
+        data: { unpublishedAt: new Date() },
+      });
+    } else if (isPublished && material.unpublishedAt) {
+      await prisma.courseMaterial.update({
+        where: { id: material.id },
+        data: { unpublishedAt: null },
+      });
+    }
+  }
 }
 
 const MAX_CANVAS_FILE_SIZE = 50 * 1024 * 1024; // 50 MB — matches file-processing.ts cap
