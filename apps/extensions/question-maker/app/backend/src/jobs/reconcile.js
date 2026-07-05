@@ -5,15 +5,19 @@ import { logger } from '../utils/logger.js';
 
 /**
  * Daily reconciliation job: iterates all courses, topics, and variants that
- * hold a Core reference and nullifies any that return 404 from Core.
+ * hold a Core reference and cleans up any that return 404 from Core.
  *
  * Skips individual rows on 5xx or network errors — they will be retried on
- * the next run. Only a strict 404 triggers nullification.
+ * the next run. Only a strict 404 triggers cleanup.
  */
 export async function runReconciliation() {
   logger.info('[reconcile] Starting daily reconciliation');
 
-  // Phase 1 — courses.core_course_id
+  // Phase 1 — courses.core_course_id. A 404 here means the course was deleted
+  // in Core, so the whole local course (and everything hanging off it — topics,
+  // questions, assessments, variants) is cascade-deleted rather than just
+  // unlinked. This is the safety net for §802's live push: if Core's cascade
+  // call to QM was missed (QM down, network partition), this run catches it.
   const courses = await Course.findAll({
     where: { coreCourseId: { [Op.not]: null } },
     attributes: ['id', 'coreCourseId'],
@@ -23,8 +27,8 @@ export async function runReconciliation() {
     try {
       const result = await getCourseFromCore(course.coreCourseId);
       if (result === null) {
-        await course.update({ coreCourseId: null });
-        logger.info(`[reconcile] Nullified coreCourseId on Course ${course.id} (Core 404)`);
+        await course.destroy();
+        logger.info(`[reconcile] Deleted Course ${course.id} (Core 404, cascades to topics/questions/assessments)`);
       }
     } catch (err) {
       logger.warn(`[reconcile] Skipping Course ${course.id}: ${err.message}`);
