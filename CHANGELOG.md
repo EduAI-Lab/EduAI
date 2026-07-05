@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 9 — June 29–July 5, 2026]
 
+### Added
+
+- [core, ai-tutor, question-maker] feat: Cascade-delete a course from Core to QM and AI Tutor — `deleteCourse` now pushes a best-effort delete to both extensions' new internal, service-key-authenticated endpoints (`DELETE /api/internal/courses/:coreCourseId` / `:coreOfferingId`) right after the soft-delete, so linked data doesn't outlive the course. QM cascades via Sequelize (fixed two associations — `Course→Assessments` and `Variants→SectionVariants` — that silently defaulted to `SET NULL`/`NO ACTION` instead of `CASCADE`, verified empirically against a real Postgres DB); AI Tutor cascades via its existing Prisma `onDelete: Cascade` FKs. Each extension's daily reconcile cron is upgraded from nullifying the Core link to deleting the local mirror outright, so a missed live push (extension down, network partition) still self-heals instead of leaving orphaned records. (#802, @evanbones, 2026-07-02) — [#850](https://github.com/EduAI-Lab/EduAI/pull/850)
+
 ### Fixed
 
 - [ai-tutor] fix: Write through student enrollment removal to Core for EduAI-linked courses — `DELETE /admin/courses/:courseId/enrollments/:userId` previously only deleted the local `CourseEnrollment` mirror row, so Core still reported the enrollment active and a later `syncCourseEnrollments` re-imported the student. Now calls `deleteCoreEnrollment` (forwarding the acting user's session cookie) before removing the local row; Core errors are forwarded as the response status and the local row is left untouched on failure. (#812) — [#897](https://github.com/EduAI-Lab/EduAI/pull/897)
