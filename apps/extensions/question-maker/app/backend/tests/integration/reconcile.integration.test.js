@@ -58,16 +58,18 @@ describeDb('runReconciliation (integration)', () => {
     if (sequelize) await sequelize.close();
   });
 
-  it('nullifies coreCourseId when Core returns 404 and leaves the course row intact', async () => {
+  it('deletes the course (and cascades) when Core returns 404 — §802 reconcile safety net', async () => {
     const course = await Course.create({ userId: TEST_USER.id, name: 'Test Course', coreCourseId: 'core-cuid-1' });
+    const topic = await Topics.create({ courseId: course.id, name: 'Chapter 1' });
+    await Question_Metadata.create({ courseId: course.id, primaryTopicId: topic.id, type: 'SA' });
 
     mockGetCourseFromCore.mockResolvedValue(null); // Core 404
 
     await runReconciliation();
 
-    await course.reload();
-    expect(course.coreCourseId).toBeNull();
-    expect(course.name).toBe('Test Course');
+    await expect(Course.findByPk(course.id)).resolves.toBeNull();
+    await expect(Topics.findByPk(topic.id)).resolves.toBeNull();
+    await expect(Question_Metadata.count({ where: { courseId: course.id } })).resolves.toBe(0);
   });
 
   it('nullifies coreTopicId when Core returns 404 for the topic, leaving topic row intact', async () => {
