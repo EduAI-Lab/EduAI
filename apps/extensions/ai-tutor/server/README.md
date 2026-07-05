@@ -13,7 +13,7 @@ server/
       database.js         # PrismaClient singleton
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
-      auth.js             # attachSession, requireAuth, requireRole, requireRoles
+      auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
     routes/
       authentication.js   # GET /me
       courses.js          # Course CRUD, EduAI import, publish/unpublish
@@ -96,8 +96,7 @@ The middleware chain in `app.js` processes requests in this order:
 
 | Function | Purpose |
 |----------|---------|
-| `attachSession(req, res, next)` | Resolves session from cookies, hydrates `req.user` |
-| `requireAuth(req, res, next)` | Returns 401 if `req.user` is null |
+| `requireAuth(req, res, next)` | Validates the session cookie against Core and hydrates `req.user`; returns 401 if absent/invalid |
 | `requireRole(role)` | Returns 403 if `req.user.role !== role` |
 | `requireRoles([...])` | Returns 403 if `req.user.role` not in array |
 | `requireInstructorPolicy(flag)` | Returns 403 for an `INSTRUCTOR` when the named Core policy flag is disabled (ADMIN/UNIT_ADMIN unaffected) |
