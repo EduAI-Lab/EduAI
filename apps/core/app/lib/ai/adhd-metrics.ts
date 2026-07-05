@@ -26,7 +26,69 @@ export type AdhdResponseMetrics = {
   underCap: boolean;
   /** Placeholder for future single-topic heuristics; null = not evaluated. */
   oneTopic: boolean | null;
+  /** False when time-pressure / urgency language is present (policy STYLE rule). */
+  noUrgency: boolean;
+  /** True when the reply ends with a Sources footer (citation presence). */
+  hasSources: boolean;
 };
+
+/**
+ * Time-pressure / urgency terms banned by the ADHD Assist STYLE rule. A baseline
+ * study failure was the participant "feeling rushed"; ADHD participants flagged
+ * words like "quickly" / "fast" leaking through. Per prompt-policy OQ2 the
+ * detector is intentionally blunt — the oversight rewrite decides phrasing, and a
+ * rewrite that still trips is rejected rather than corrupting output.
+ */
+export const ADHD_URGENCY_TERMS = [
+  "quickly",
+  "quick",
+  "fast",
+  "faster",
+  "hurry",
+  "hurried",
+  "hurrying",
+  "rush",
+  "rushed",
+  "rushing",
+  "asap",
+  "immediately",
+  "right away",
+  "as soon as possible",
+  "no time",
+  "running out of time",
+] as const;
+
+/** Return the lower-cased urgency terms found in the text (empty when clean). */
+export function detectUrgencyTerms(text: string): string[] {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return [];
+  // Build a fresh regex per call so the global flag's lastIndex never leaks.
+  const re = new RegExp(`\\b(?:${ADHD_URGENCY_TERMS.join("|")})\\b`, "gi");
+  const matches = trimmed.match(re);
+  return matches ? matches.map((m) => m.toLowerCase()) : [];
+}
+
+const SOURCES_MARKER_RE = /^\s*(?:\*\*sources\*?\*?|#{1,6}\s*sources\b|sources:)/i;
+const NEXT_LINE_PARAGRAPH_RE = /^\s*\*\*next\?\*\*/i;
+
+/**
+ * Detect a Sources footer (e.g. "**Sources**", "### Sources", "Sources:").
+ * Anchored to the tail of the reply, not just any matching line: a mid-answer
+ * "Sources:" aside or a "## Sources of X" heading with real content afterward
+ * is not a footer. Scans paragraphs from the end, allowing the template's
+ * trailing "**Next?**" paragraph to sit after the footer.
+ */
+export function hasSourcesFooter(text: string): boolean {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+  const paragraphs = trimmed.split(/\n\s*\n/);
+  for (let i = paragraphs.length - 1; i >= 0; i--) {
+    const paragraph = paragraphs[i];
+    if (SOURCES_MARKER_RE.test(paragraph)) return true;
+    if (!NEXT_LINE_PARAGRAPH_RE.test(paragraph)) return false;
+  }
+  return false;
+}
 
 export type AdhdStructuralCompliance = AdhdResponseMetrics & {
   structuralPass: boolean;
@@ -51,7 +113,10 @@ export function computeAdhdResponseMetrics(
 
   const underCap = wordCount <= wordCap;
 
-  return { wordCount, topSummary, nextLine, underCap, oneTopic: null };
+  const noUrgency = detectUrgencyTerms(trimmed).length === 0;
+  const hasSources = hasSourcesFooter(trimmed);
+
+  return { wordCount, topSummary, nextLine, underCap, oneTopic: null, noUrgency, hasSources };
 }
 
 export function isStructuralCompliancePass(metrics: AdhdResponseMetrics): boolean {
