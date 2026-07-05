@@ -96,6 +96,36 @@ describe("recordResponseComplianceEvent", () => {
     });
     expect(JSON.stringify(metricsJson)).not.toContain("dishwashing");
   });
+
+  it("stamps the policy version, tool usage, and urgency/source metrics on Assist turns", async () => {
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: true,
+      assistantText: "**Top summary**\n- A\n\n**Sources** ch.2\n\n**Next?** More?",
+      extras: { toolsUsed: true },
+    });
+
+    const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
+    expect(metricsJson).toMatchObject({
+      policyVersion: "1.1",
+      toolsUsed: true,
+      hasSources: true,
+      noUrgency: true,
+    });
+  });
+
+  it("does not stamp a policy version on baseline (non-Assist) turns", async () => {
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: false,
+      assistantText: "Plain baseline answer.",
+    });
+
+    const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
+    expect(metricsJson.policyVersion).toBeNull();
+  });
 });
 
 describe("sanitizeClientMetrics", () => {
