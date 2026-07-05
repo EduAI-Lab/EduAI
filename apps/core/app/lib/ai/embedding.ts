@@ -13,6 +13,7 @@ import {
   DEFAULT_OPENAI_EMBEDDING_MODEL,
   resolveEffectiveEmbeddingSettings,
 } from "./embedding-config";
+import { formatPgVectorLiteral } from "./pgvector";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -628,7 +629,7 @@ export async function findRelevantContent(
   const threshold =
     courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
 
-  const queryEmbedding = await generateEmbedding(userQuery, courseId);
+  const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
@@ -841,9 +842,10 @@ export async function processMaterialEmbeddings(
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
     for (let i = 0; i < chunksByIndex.length; i++) {
+      const vectorLiteral = formatPgVectorLiteral(embeddings[i].embedding);
       await tx.$executeRaw`
         INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${embeddings[i].embedding}::vector, NOW())
+        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${vectorLiteral}::vector, NOW())
       `;
     }
   });
