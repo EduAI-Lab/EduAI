@@ -65,15 +65,8 @@ services:
       target: serve
     environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-frontend-test-db:5432/aitutor_integration
-      BETTER_AUTH_SECRET: test-integration-secret
-      BETTER_AUTH_URL: http://ai-tutor-frontend-test-server:4000/api/auth
-      COOKIE_DOMAIN: localhost
       PORT: "4000"
-      EDUAI_DISCOVERY_URL: http://localhost:3000/api/auth/.well-known/openid-configuration
-      EDUAI_CLIENT_ID: test-client-id
-      EDUAI_CLIENT_SECRET: test-client-secret
       EDUAI_BASE_URL: http://localhost:3000/api
-      AI_SUPERVISOR_ENABLED: "false"
     depends_on:
       ai-tutor-frontend-test-db:
         condition: service_healthy
@@ -154,11 +147,6 @@ services:
       target: test
     environment:
       DATABASE_URL: postgresql://postgres:postgres@ai-tutor-server-test-db:5432/aitutor_test
-      DB_HOST: ai-tutor-server-test-db
-      DB_PORT: "5432"
-      BETTER_AUTH_SECRET: test-secret-not-for-production
-      BETTER_AUTH_URL: http://localhost:4001/api/auth
-      COOKIE_DOMAIN: localhost
       PORT: "4001"
     command: ["npm", "run", "test:integration"]
     depends_on:
