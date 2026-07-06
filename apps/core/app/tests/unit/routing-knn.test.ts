@@ -6,7 +6,7 @@ import {
   voteTierFromNeighbors,
 } from "~/lib/ai/routing/knn";
 
-vi.mock("node:fs", () => ({
+const fsMock = vi.hoisted(() => ({
   existsSync: vi.fn(() => true),
   readFileSync: vi.fn(() =>
     JSON.stringify({
@@ -17,6 +17,11 @@ vi.mock("node:fs", () => ({
       ],
     }),
   ),
+}));
+
+vi.mock("node:fs", () => ({
+  ...fsMock,
+  default: fsMock,
 }));
 
 vi.mock("~/lib/ai/embedding", () => ({
