@@ -9,6 +9,18 @@ import { logger } from "../utils/logger.js";
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
 
+/**
+ * Cloud providers we can probe for the connectivity badge, in preference order,
+ * each paired with a lightweight probe model. Keys mirror the browser-stored
+ * provider ids (see the frontend apiKeyStorage `CLOUD_PROVIDERS`).
+ */
+const CLOUD_PROBE_MODELS = {
+  google: "google:gemini-2.5-flash",
+  openai: "openai:gpt-4o-mini",
+  deepseek: "deepseek:deepseek-chat",
+  anthropic: "anthropic:claude-3-5-haiku-latest",
+};
+
 class EduAIService {
   constructor() {
     this.baseURL = config.eduaiApiUrl;
@@ -60,24 +72,34 @@ class EduAIService {
   }
 
   /**
-   * Picks a lightweight model for connectivity checks. Prefers a cloud (Google)
-   * provider whenever a key is available — from the client (browser-stored key)
-   * or the server config — so the badge reflects cloud availability even when the
-   * UBC-hosted (Ollama) provider is offline. Falls back to Ollama only when no
-   * cloud key exists at all.
+   * Picks a lightweight model for connectivity checks. Prefers whichever cloud
+   * provider the caller has a key for (browser-stored key), then the server's
+   * Google key — so the badge reflects cloud availability for ANY supported cloud
+   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
+   * offline. Falls back to Ollama only when no cloud key exists at all.
    */
   getConnectivityTestParams(clientApiKeys = {}) {
-    const clientGoogleKey = clientApiKeys?.google?.apiKey?.trim?.();
-    const googleKey = clientGoogleKey || config.googleGenerativeAiApiKey?.trim();
-    if (googleKey) {
+    for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
+      const clientKey = clientApiKeys?.[provider]?.apiKey?.trim?.();
+      if (clientKey) {
+        return {
+          provider,
+          model: CLOUD_PROBE_MODELS[provider],
+          apiKeys: { [provider]: { apiKey: clientKey, isEnabled: true } },
+        };
+      }
+    }
+
+    // No client cloud key — fall back to the server-configured Google key if present.
+    const serverGoogleKey = config.googleGenerativeAiApiKey?.trim();
+    if (serverGoogleKey) {
       return {
         provider: "google",
-        model: "google:gemini-2.5-flash",
-        apiKeys: {
-          google: { apiKey: googleKey, isEnabled: true },
-        },
+        model: CLOUD_PROBE_MODELS.google,
+        apiKeys: { google: { apiKey: serverGoogleKey, isEnabled: true } },
       };
     }
+
     return {
       provider: "ollama",
       model: "ollama:gpt-oss:120b",
