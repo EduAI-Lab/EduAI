@@ -1,4 +1,5 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
 
 /**
@@ -73,6 +74,25 @@ export function extractSetCookies(response: APIResponse): string {
     .filter((h) => h.name.toLowerCase() === 'set-cookie')
     .map((h) => h.value.split(';')[0])
     .join('; ');
+}
+
+/**
+ * Assert that a response has the expected HTTP status.
+ * On failure, includes the response body so CI output shows WHY the status
+ * was wrong (e.g. "got 200 with body {user: ...}" instead of just "got 200").
+ */
+export async function checkStatus(
+  res: APIResponse,
+  expected: number,
+  label?: string,
+): Promise<void> {
+  if (res.status() !== expected) {
+    const body = await res.text().catch(() => '(unreadable)');
+    const tag = label ?? res.url();
+    throw new Error(
+      `${tag}: expected HTTP ${expected}, got ${res.status()}\nBody: ${body}`,
+    );
+  }
 }
 
 /**

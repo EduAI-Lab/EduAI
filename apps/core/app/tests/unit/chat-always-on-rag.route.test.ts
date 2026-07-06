@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Route tests for smart course RAG gate (#484 + research grounding).
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -76,6 +76,9 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import { getChatModelCapabilities } from "~/lib/ai/providers.server";
+import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
+import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
+import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -90,7 +93,7 @@ function makeRequest(body: object) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockStream() {
@@ -125,6 +128,19 @@ function lastStreamConfig(): { system?: string; maxTokens?: number } {
     | { system?: string; maxTokens?: number }
     | undefined;
   return call ?? {};
+}
+
+function mockAuditResult(text: string = "Audited reply.") {
+  const metrics = withStructuralPass(computeAdhdResponseMetrics(text));
+  vi.mocked(auditAndMaybeRewrite).mockResolvedValue({
+    text,
+    rewritten: false,
+    method: "none",
+    beforeMetrics: metrics,
+    afterMetrics: metrics,
+    oversightDurationMs: 0,
+    oversightUsage: null,
+  } as never);
 }
 
 beforeEach(() => {
@@ -287,6 +303,74 @@ describe("Smart course RAG gate (#484)", () => {
       expect(res.status).toBe(200);
       expect(lastStreamConfig().system).toContain("Late work loses 10%");
       expect(lastStreamConfig().system).toContain("getInformation");
+    });
+  });
+
+  describe("ADHD Assist citation telemetry from hybrid/preloaded RAG (#722 review)", () => {
+    const originalOversight = process.env.ADHD_ASSIST_OVERSIGHT;
+
+    beforeEach(() => {
+      vi.mocked(getChatModelCapabilities).mockResolvedValue({
+        supportsTools: false,
+        maxTokens: null,
+        name: null,
+      });
+      process.env.ADHD_ASSIST_OVERSIGHT = "true";
+      vi.mocked(prisma.chat.findFirst).mockResolvedValue({
+        id: CHAT_ID,
+        userId: "user-1",
+        courseId: COURSE_ID,
+        adhdAssist: true,
+        systemPrompt: null,
+      } as never);
+      mockAuditResult();
+    });
+
+    afterEach(() => {
+      if (originalOversight === undefined) delete process.env.ADHD_ASSIST_OVERSIGHT;
+      else process.env.ADHD_ASSIST_OVERSIGHT = originalOversight;
+    });
+
+    it("marks toolsUsed when hybrid RAG context is injected with no tool call", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([
+        { content: "Trees are hierarchical.", similarity: 0.7, materialTitle: "Ch 3" },
+      ]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            adhdAssist: true,
+            messages: [
+              { id: "msg-1", role: "user", content: "What did chapter 3 say about trees?" },
+            ],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(recordResponseComplianceEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          extras: expect.objectContaining({ toolsUsed: true }),
+        }),
+      );
+    });
+
+    it("leaves toolsUsed false when no RAG context was injected", async () => {
+      vi.mocked(findRelevantContent).mockResolvedValue([]);
+      mockStream();
+      const res = await action(
+        makeRequest(
+          baseBody({
+            adhdAssist: true,
+            messages: [{ id: "msg-1", role: "user", content: "What is gradient descent?" }],
+          }),
+        ),
+      );
+      expect(res.status).toBe(200);
+      expect(recordResponseComplianceEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          extras: expect.objectContaining({ toolsUsed: false }),
+        }),
+      );
     });
   });
 });

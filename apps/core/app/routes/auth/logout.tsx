@@ -17,7 +17,7 @@ export async function loader(_args: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
   // Clear per-user chat prefs before the session is invalidated (#420).
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (session?.user) {
     try {
       await clearUserPreference(session.user.id);

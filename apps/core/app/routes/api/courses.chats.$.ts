@@ -27,7 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: "Course ID is required" }, 400);
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return json({ error: "Unauthorized" }, 401);
   }

@@ -276,8 +276,28 @@ async function validateContextAndAccess(user, context) {
  * re-derives trust from ids in the payload instead of assuming the frontend's
  * contextual metadata is correct.
  */
+const VALID_BUG_TYPES = new Set([
+  'UI_DISPLAY',
+  'FEATURE_NOT_WORKING',
+  'PERFORMANCE',
+  'CONTENT_ERROR',
+  'ACCESS_PERMISSION',
+  'OTHER',
+]);
+
+function normalizeBugType(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || !VALID_BUG_TYPES.has(value)) {
+    throw new BugReportError(400, `bugType must be one of: ${[...VALID_BUG_TYPES].join(', ')}`);
+  }
+  return value;
+}
+
 export async function createBugReport(user, payload) {
   const description = normalizeDescription(payload?.description);
+  const bugType = normalizeBugType(payload?.bugType);
   const consoleLogs = normalizeOptionalString(payload?.consoleLogs, 'consoleLogs');
   const networkLogs = normalizeOptionalString(payload?.networkLogs, 'networkLogs');
   const screenshot = normalizeOptionalString(payload?.screenshot, 'screenshot');
@@ -290,6 +310,7 @@ export async function createBugReport(user, payload) {
 
   await postCoreBugReport(user.id, {
     description,
+    bugType,
     consoleLogs,
     networkLogs,
     screenshot,

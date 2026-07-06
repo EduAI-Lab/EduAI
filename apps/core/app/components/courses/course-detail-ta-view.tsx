@@ -35,6 +35,7 @@ import {
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
+import { resolvePaletteAccent } from '@eduai/ui'
 import { StatusBadge } from '@eduai/ui'
 import { Avatar } from '@eduai/ui'
 import { CourseMaterialsUpload } from '~/components/course-materials-upload'
@@ -43,7 +44,10 @@ import type { CourseMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
-import { usePolicies } from '~/hooks/api/use-policies'
+import {
+  PolicyTooltip,
+  usePolicyGate,
+} from '~/components/policy/policy-gate'
 
 interface Props {
   course: CourseDetail
@@ -115,16 +119,15 @@ export function CourseDetailTaView({
   onDeleteTopic,
   onUpdateAiInstructions,
 }: Props) {
-  const { policies } = usePolicies()
-  // §2 gate: a TA sees upload/embedding controls only when tas.canManageMaterials
-  // is on (default true). When off, materials are read-only (mirrors backend).
-  const canManageMaterials = policies['tas.canManageMaterials'] ?? true
-  // tas.canSetAiInstructions grant (default off): a TA may edit the AI
-  // instructions field only. When off, the field is read-only (mirrors backend).
-  const canSetAiInstructions = policies['tas.canSetAiInstructions'] ?? false
-  // tas.canManageTopics grant (default off): a TA may create/delete any topic.
-  // When off, topics are read-only (mirrors backend §8).
-  const canManageTopics = policies['tas.canManageTopics'] ?? false
+  const { isEnabled } = usePolicyGate()
+  // §2 / issue #807: controls an admin turned off stay visible but greyed-out
+  // with a tooltip rather than vanishing.
+  // tas.canManageMaterials (default true): upload/embedding controls.
+  const canManageMaterials = isEnabled('tas.canManageMaterials')
+  // tas.canSetAiInstructions (default off): edit the AI instructions field only.
+  const canSetAiInstructions = isEnabled('tas.canSetAiInstructions')
+  // tas.canManageTopics (default off): create/delete any topic.
+  const canManageTopics = isEnabled('tas.canManageTopics')
 
   const [uploadOpen, setUploadOpen] = useState(false)
   const [embeddingOpen, setEmbeddingOpen] = useState(false)
@@ -368,6 +371,7 @@ export function CourseDetailTaView({
             year={course.year}
             name={course.name}
             description={course.description}
+            accentColor={resolvePaletteAccent(course.id)}
             topRightBadges={topRightBadges}
             topics={topics.map((t) => t.name)}
           />
@@ -430,6 +434,8 @@ export function CourseDetailTaView({
                     <div className="pt-3 border-t border-border">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
                       <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
+                      {/* §807: explain why this is read-only rather than just showing static text. */}
+                      <p className="text-[11px] italic text-muted-foreground/80 mt-1.5">Editing turned off by your administrator.</p>
                     </div>
                   )
                 )}
@@ -513,9 +519,11 @@ export function CourseDetailTaView({
                 {' · '}{materials.filter(m => m.status === 'READY').length} embedded in AI
               </p>
             </div>
-            {canManageMaterials && (
-              <div className="flex items-center gap-2">
-                {courseId && (
+            {/* §807: keep upload/embedding controls visible, greyed when the
+                TA's manage-materials policy is off. */}
+            <div className="flex items-center gap-2">
+              {courseId && (
+                <PolicyTooltip flag="tas.canManageMaterials">
                   <Button
                     variant="outline"
                     size="sm"
@@ -524,13 +532,15 @@ export function CourseDetailTaView({
                     <IconSettings className="h-4 w-4 mr-1.5" />
                     Embedding settings
                   </Button>
-                )}
+                </PolicyTooltip>
+              )}
+              <PolicyTooltip flag="tas.canManageMaterials">
                 <Button size="sm" onClick={() => setUploadOpen(true)}>
                   <IconUpload className="h-4 w-4 mr-1.5" />
                   Upload material
                 </Button>
-              </div>
-            )}
+              </PolicyTooltip>
+            </div>
           </div>
 
           {/* A1: Single materials list (no duplicate) */}
@@ -617,7 +627,9 @@ export function CourseDetailTaView({
         {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
         <PageTabsContent value="topics" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
           <div className="flex flex-col gap-4">
-            {canManageTopics && (
+            {/* §807: keep the add-topic form visible, greyed when the TA's
+                manage-topics policy is off. */}
+            {canManageTopics ? (
               <form onSubmit={handleTopicCreate} className="flex gap-2">
                 <Input
                   value={newTopic}
@@ -629,6 +641,16 @@ export function CourseDetailTaView({
                   Add
                 </Button>
               </form>
+            ) : (
+              <PolicyTooltip flag="tas.canManageTopics">
+                <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
+                  <Input value="" readOnly disabled placeholder="New topic name" />
+                  <Button type="submit" disabled>
+                    <IconPlus className="w-4 h-4 mr-1" />
+                    Add
+                  </Button>
+                </form>
+              </PolicyTooltip>
             )}
             {topics.length === 0 ? (
               <Card>
@@ -642,7 +664,7 @@ export function CourseDetailTaView({
                   <Card key={t.id}>
                     <CardContent className="flex items-center justify-between py-3">
                       <span className="text-sm">{t.name}</span>
-                      {canManageTopics && (
+                      {canManageTopics ? (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -652,6 +674,17 @@ export function CourseDetailTaView({
                         >
                           <IconTrash className="w-4 h-4" />
                         </Button>
+                      ) : (
+                        <PolicyTooltip flag="tas.canManageTopics">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Delete topic"
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <IconTrash className="w-4 h-4" />
+                          </Button>
+                        </PolicyTooltip>
                       )}
                     </CardContent>
                   </Card>

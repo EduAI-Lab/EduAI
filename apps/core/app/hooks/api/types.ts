@@ -1,7 +1,8 @@
 import type { CreateUserInput, UpdateUserInput } from "~/lib/auth/schemas";
 import type { AIModel, AIProvider } from "~/types/ai";
+import type { BugReportType } from "@prisma/client";
 
-export type { CreateUserInput, UpdateUserInput, AIModel, AIProvider };
+export type { CreateUserInput, UpdateUserInput, AIModel, AIProvider, BugReportType };
 
 export type PlatformUser = {
   id: string;
@@ -38,6 +39,7 @@ export type BugReportSource = "CORE" | "AI_TUTOR" | "QUESTION_MAKER";
 export type BugReport = {
   id: string;
   description: string;
+  bugType: BugReportType | null;
   status: BugReportStatus;
   source: BugReportSource;
   isAnonymous: boolean;
@@ -50,5 +52,6 @@ export type BugReport = {
 export type SubmitBugReportInput = {
   /** Merged description to persist (title, if any, should be folded in by the caller). */
   description: string;
+  bugType?: BugReportType | null;
   isAnonymous?: boolean;
 };

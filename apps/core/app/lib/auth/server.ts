@@ -75,7 +75,7 @@ export const auth = betterAuth({
               }
             }
           } else {
-            const session = await getSessionFromCtx(ctx);
+            const session = await getSessionFromCtx(ctx as any);
             userId = session?.user?.id ?? null;
           }
 

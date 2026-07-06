@@ -12,6 +12,7 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
+import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -150,7 +151,7 @@ export async function getCourses(request: Request) {
     });
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -190,7 +191,7 @@ export async function getCourses(request: Request) {
  * flag is enabled; they are auto-enrolled as the course instructor.
  */
 export async function createCourse(request: Request) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   const role = session?.user?.role ?? "";
   const canCreate =
     (session?.user != null && canCreateCourse(session.user as RbacUser)) ||
@@ -281,7 +282,7 @@ export async function createCourse(request: Request) {
  * INSTRUCTOR(C) per §5 (rank >= 2).
  */
 export async function updateCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -405,7 +406,7 @@ export async function updateCourse(request: Request, courseId: string) {
  * UNIT_ADMIN(D), INSTRUCTOR(C) per §5.
  */
 export async function deleteCourse(request: Request, courseId: string) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -458,6 +459,12 @@ export async function deleteCourse(request: Request, courseId: string) {
     data: { deletedAt: new Date() },
   });
 
+  // Best-effort cascade to extensions (§802) — fire-and-forget so it never blocks
+  // the delete response; failures are logged and self-heal via each extension's
+  // reconcile job. cascadeDeleteToExtensions never throws (each push is wrapped
+  // in try/catch + logSystemError), so there's no unhandled-rejection risk.
+  void cascadeDeleteToExtensions(courseId);
+
   return new Response(null, { status: 204 });
 }
 
@@ -494,7 +501,7 @@ export async function setPublishState(request: Request, courseId: string, publis
   }
 
   // User session path (admin UI / direct API access)
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,

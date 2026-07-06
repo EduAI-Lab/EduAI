@@ -7,7 +7,6 @@ import {
   SidebarInset,
   SiteHeader,
   ThemeToggle,
-  BugReportDialog,
   Breadcrumb,
   BreadcrumbList,
   BreadcrumbItem,
@@ -15,15 +14,14 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
   Button,
-  type BugReportPayload,
 } from '@eduai/ui';
 import {
   IconBooks,
+  IconBug,
   IconDashboard,
   IconLibrary,
   IconSettings,
   IconHelpCircle,
-  IconExternalLink,
   IconSearch,
   IconRoute,
   type Icon,
@@ -35,11 +33,11 @@ import { useCourses } from '@/hooks/useCourses';
 import { AIServiceIndicators } from '@/components/eduai/AIServiceIndicators';
 import { useEduAIStatus } from '@/hooks/useEduAIStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
-import { BugReportContext } from '@/contexts/BugReportContext';
-import { bugReportApi } from '@/services/bugReportApi';
+import { useBugReport } from '@/contexts/BugReportContext';
 import { Tooltip } from '@/components/ui/tooltip';
 import { CourseSwitcher } from '@/components/layout/CourseSwitcher';
 import { CommandPalette } from '@/components/command/CommandPalette';
+import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -114,15 +112,13 @@ type NavItemKey =
   | 'dashboard'
   | 'courses'
   | 'library'
-  | 'help'
-  | 'back-to-eduai';
+  | 'help';
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
   courses: IconBooks,
   library: IconLibrary,
   help: IconHelpCircle,
-  'back-to-eduai': IconExternalLink,
 };
 
 interface NavItem {
@@ -145,19 +141,11 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
   if (!user) return [];
   // Settings lives in the navUser dropdown (like Core).
   // Bug reports is in the site-header top actions (like Core).
-  // Secondary nav only has Help and Back to EduAI.
-  const items: NavItem[] = [
+  // Cross-app navigation (EduAI Core + other extensions) lives in the
+  // header BrandSwitcher. Secondary nav only has Help.
+  return [
     { key: 'help', title: 'Help', href: '/help' },
   ];
-
-  items.push({
-    key: 'back-to-eduai',
-    title: 'Back to EduAI',
-    href: `${import.meta.env.VITE_CORE_URL || 'http://localhost:3000'}`,
-    external: true,
-  });
-
-  return items;
 }
 
 function QmSiteHeader() {
@@ -167,29 +155,13 @@ function QmSiteHeader() {
   const { startTour } = useGuidedTour();
   const { courses, isLoading: isCoursesLoading } = useCourses();
   const { guidedTourHandler } = useQmLayout();
+  const bugReport = useBugReport();
 
   const handleGuidedTourClick = () => {
     if (guidedTourHandler) {
       guidedTourHandler();
     } else {
       startTour('main');
-    }
-  };
-
-  const handleBugReportSubmit = async (payload: BugReportPayload) => {
-    try {
-      await bugReportApi.submit({
-        description: payload.description,
-        consoleLogs: '[]',
-        networkLogs: '[]',
-        screenshot: null,
-        pageUrl: window.location.href,
-        userAgent: navigator.userAgent,
-        isAnonymous: payload.isAnonymous,
-      });
-    } catch (error) {
-      console.error('Failed to submit bug report:', error);
-      throw error;
     }
   };
 
@@ -233,7 +205,12 @@ function QmSiteHeader() {
             )}
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
-          <BugReportDialog onSubmit={handleBugReportSubmit} triggerClassName="h-9" />
+          {bugReport ? (
+            <Button variant="outline" size="sm" onClick={bugReport.openBugReport}>
+              <IconBug className="h-4 w-4 mr-1" />
+              Report a bug
+            </Button>
+          ) : null}
         </>
       }
     />
@@ -293,6 +270,7 @@ function QmAppLayoutInner() {
         navSecondary={navSecondary}
         currentPath={pathname}
         LinkComponent={Link}
+        launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
         user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
         navUser={
           user ? {
@@ -387,6 +365,7 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
           navSecondary={navSecondary}
           currentPath="/"
           LinkComponent={Link}
+          launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
           user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
           navUser={
             user ? {
