@@ -41,7 +41,7 @@ type GuardResult = {
  * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
  * Returns `{ response, session }` so callers can reuse the fetched session.
  *
- * With `disableSessionForAPIKeys: true`, Better Auth will not auto-mock a
+ * With `enableSessionForAPIKeys: false`, Better Auth will not auto-mock a
  * session from x-api-key; this guard verifies the key and loads the owner.
  */
 export async function enforceAdminIfApiKey(request: Request): Promise<GuardResult> {
@@ -59,7 +59,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     body: { key: apiKeyHeader },
   });
 
-  if (!verification?.valid || !verification.key?.userId) {
+  if (!verification?.valid || !verification.key?.referenceId) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(cookieSession?.user ?? null),
@@ -81,7 +81,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: verification.key.userId },
+    where: { id: verification.key.referenceId },
     select: {
       id: true,
       email: true,

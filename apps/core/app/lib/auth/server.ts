@@ -48,9 +48,9 @@ export const auth = betterAuth({
   plugins: [
     apiKey({
       apiKeyHeaders: ["x-api-key"],
-      // Do not treat x-api-key as a durable user session on /api/* routes.
-      // Admin automation must pass explicit route guards (enforceAdminIfApiKey).
-      disableSessionForAPIKeys: true,
+      // Default: enableSessionForAPIKeys is false — x-api-key does not auto-mock
+      // a session on /api/* routes. Admin automation uses enforceAdminIfApiKey.
+      enableSessionForAPIKeys: false,
     }),
   ],
   hooks: {
