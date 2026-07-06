@@ -10,6 +10,8 @@ import {
 export function buildChatToolRegistry(options: {
   effectiveCourseId: string | null;
   webToolsEnabled: boolean;
+  /** #839: when true (student caller), exclude hidden/scheduled materials from RAG. */
+  restrictToStudentVisible?: boolean;
 }) {
   const registry = {
     getInformation: tool({
@@ -28,6 +30,8 @@ export function buildChatToolRegistry(options: {
             question,
             options.effectiveCourseId,
             HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            options.restrictToStudentVisible ?? false,
           );
           const capped = capRagHitsForTool(relevantContent);
           return {
