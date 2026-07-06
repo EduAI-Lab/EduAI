@@ -28,6 +28,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
   requireServiceKey: vi.fn(),
 }));
 
+vi.mock("~/lib/courses/cascadeDelete.server", () => ({
+  cascadeDeleteToExtensions: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn(),
   logPolicyDenial: vi.fn(),
@@ -66,6 +70,7 @@ import {
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { getPolicy } from "~/lib/policy.server";
+import { cascadeDeleteToExtensions } from "~/lib/courses/cascadeDelete.server";
 
 describe("getCourse", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -677,6 +682,7 @@ describe("deleteCourse", () => {
     const res = await deleteCourse(makeDeleteRequest(), "c1");
     expect(res.status).toBe(403);
     expect(prismaMock.course.update).not.toHaveBeenCalled();
+    expect(cascadeDeleteToExtensions).not.toHaveBeenCalled();
   });
 
   it("soft-deletes (sets deletedAt) for an enrolled INSTRUCTOR and returns 204", async () => {
@@ -691,6 +697,24 @@ describe("deleteCourse", () => {
       where: { id: "c1" },
       data: { deletedAt: expect.any(Date) },
     });
+  });
+
+  it("pushes cascade-delete to QM and AI Tutor after a successful soft-delete (§802)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.course.update.mockResolvedValue({ id: "c1" });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    const res = await deleteCourse(makeDeleteRequest(), "c1");
+    expect(res.status).toBe(204);
+    expect(cascadeDeleteToExtensions).toHaveBeenCalledWith("c1");
+    expect(cascadeDeleteToExtensions).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not push cascade-delete when the course was not found", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue(null);
+    await deleteCourse(makeDeleteRequest(), "missing");
+    expect(cascadeDeleteToExtensions).not.toHaveBeenCalled();
   });
 
   it("returns 403 for an INSTRUCTOR when instructors.canDeleteCourses is off", async () => {
