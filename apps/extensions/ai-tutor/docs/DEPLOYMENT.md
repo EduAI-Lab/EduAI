@@ -174,26 +174,16 @@ All values default to local-dev sane values; production must override the secret
 |----------|---------|---------|
 | `DATABASE_URL` | (none) | Prisma Postgres connection string. Local: `postgresql://postgres:postgres@localhost:54321/aitutor`. |
 | `PORT` | `4000` | API listen port. |
-| `BETTER_AUTH_SECRET` | dev placeholder; **required in prod** | HMAC secret for Better Auth sessions. The auth.js bootstrap throws if unset and `NODE_ENV=production`. |
-| `BETTER_AUTH_URL` | `http://localhost:4000/api/auth` | Public URL of the Better Auth handler. |
-| `COOKIE_DOMAIN` | `localhost` | Session-cookie scope. Set to `aitutor.ok.ubc.ca` in production. |
+| `CORE_URL` | (none) | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
 | `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`). |
 | `EDUAI_API_KEY` | (none) | Optional server-wide fallback API key. Overridden at runtime by the `EDUAI_API_KEY` row in `SystemSetting` if set via the admin UI. |
 | `EDUAI_MODEL` | `google:gemini-2.5-flash` | Default model id passed to EduAI when the request body omits one. |
-| `AI_SUPERVISOR_ENABLED` | (env example only) | Documentation hint. Runtime behavior is currently driven by the `AI_MODEL_POLICY` row, not this variable. |
 
-EduAI OAuth values (used by `genericOAuth` in `auth.js`) — also live in `server/.env`:
-
-| Variable | Default |
-|----------|---------|
-| `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
-| `EDUAI_CLIENT_ID`     | `aitutor-local` |
-| `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
-
-> No `JWT_SECRET` is required by the current auth flow. If it is set, `auth.js` will accept it as
-> a secondary fallback for `BETTER_AUTH_SECRET`, but new deployments should set `BETTER_AUTH_SECRET`
-> explicitly.
+> `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, `AI_SUPERVISOR_ENABLED`, and the
+> `genericOAuth`/EduAI OAuth vars (`EDUAI_DISCOVERY_URL`, `EDUAI_USERINFO_URL`, `EDUAI_CLIENT_ID`,
+> `EDUAI_CLIENT_SECRET`) previously documented here are not read anywhere in the current
+> `server/src` — this server has no local Better Auth instance or OAuth flow of its own; it
+> proxies session validation to Core. Removed per #817.
 
 ---
 
@@ -205,9 +195,6 @@ The backend test suite uses a **separate** Postgres database to keep developer d
 
 ```bash
 DATABASE_URL="postgresql://postgres:postgres@localhost:54321/aitutor_test"
-BETTER_AUTH_SECRET="test-secret-not-for-production"
-BETTER_AUTH_URL="http://localhost:4000/api/auth"
-COOKIE_DOMAIN="localhost"
 PORT=4001
 ```
 
