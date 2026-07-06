@@ -182,20 +182,22 @@ export default function AdminChatPage() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} />
-      <SidebarInset>
+      <AppSidebar user={user} />
+      <SidebarInset className="flex flex-col min-h-0">
         <SiteHeader
           breadcrumbs={
             <Breadcrumb>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/dashboard">Home</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
-              </BreadcrumbItem>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <Link to="/dashboard">Home</Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
             </Breadcrumb>
           }
         />
