@@ -32,10 +32,12 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SyncCanvasCoursesResult | null>(null);
 
-  const loadCourses = useCallback(async () => {
+  const loadCourses = useCallback(async (options?: { preserveResult?: boolean }) => {
     setLoading(true);
     setError(null);
-    setResult(null);
+    if (!options?.preserveResult) {
+      setResult(null);
+    }
     try {
       const items = await listCanvasCourses();
       setCourses(items);
@@ -76,13 +78,20 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
         canvasCourseIds: [...selectedIds],
       });
       setResult(syncResult);
-      await loadCourses();
+      await loadCourses({ preserveResult: true });
+      if (syncResult.synced.length > 0 || syncResult.unsynced.length > 0) {
+        window.dispatchEvent(new CustomEvent("eduai:courses-changed"));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to sync Canvas courses");
     } finally {
       setSyncing(false);
     }
   };
+
+  const hasSyncedCourses = courses.some((course) => course.isSynced);
+  const canSave =
+    courses.length > 0 && (selectedIds.size > 0 || hasSyncedCourses);
 
   const resultSummary = result
     ? [
@@ -93,6 +102,12 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
         .filter(Boolean)
         .join(", ")
     : null;
+
+  const noChanges =
+    result != null &&
+    result.synced.length === 0 &&
+    result.unsynced.length === 0 &&
+    result.errors.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -143,7 +158,18 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
           </div>
         )}
 
+        {!loading && courses.length > 0 && selectedIds.size === 0 && !hasSyncedCourses && (
+          <p className="text-sm text-muted-foreground">
+            Check the courses you want to import, then click Save sync.
+          </p>
+        )}
+
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {noChanges && (
+          <p className="text-sm text-muted-foreground">
+            No changes made. Select at least one course to sync into EduAI.
+          </p>
+        )}
         {resultSummary && (
           <p className="text-sm text-green-700 dark:text-green-400">Sync complete: {resultSummary}.</p>
         )}
@@ -170,7 +196,7 @@ export function CanvasCourseSyncDialog({ open, onOpenChange }: CanvasCourseSyncD
           <Button
             type="button"
             onClick={() => void handleSync()}
-            disabled={loading || syncing || courses.length === 0}
+            disabled={loading || syncing || !canSave}
           >
             {syncing ? (
               <>

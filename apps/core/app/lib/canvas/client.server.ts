@@ -338,6 +338,38 @@ export async function listTeacherCanvasCourses(
   );
 }
 
+/**
+ * Fetches one course with `include[]=term`. Prefer this over the teacher list
+ * payload when resolving dates — Canvas often omits term `start_at` / `end_at`
+ * on the list endpoint even when the single-course GET includes them.
+ */
+export async function getCanvasCourseWithTerm(
+  credentials: CanvasIntegrationCredentials,
+  canvasCourseId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CanvasCourseApi | null> {
+  if (credentials.isTestMode) {
+    return (
+      MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null
+    );
+  }
+
+  const url = buildCanvasApiUrl(
+    credentials.canvasUrl,
+    `/courses/${canvasCourseId}?include[]=term`,
+  );
+
+  try {
+    const { data } = await canvasFetchJson<CanvasCourseApi>(url, credentials.apiKey, fetchImpl);
+    return data;
+  } catch (error) {
+    if (error instanceof CanvasApiError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** Lists students enrolled in a Canvas course. */
 export async function listCanvasCourseStudents(
   credentials: CanvasIntegrationCredentials,

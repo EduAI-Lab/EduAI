@@ -67,4 +67,28 @@ describe("CanvasCourseSyncDialog", () => {
       });
     });
   });
+
+  it("disables save when no courses are selected and none are synced yet", async () => {
+    vi.mocked(listCanvasCourses).mockResolvedValue([
+      {
+        canvasId: "102",
+        name: "Data Structures",
+        courseCode: "COSC 211",
+        isSynced: false,
+        coreCourseId: null,
+        lastSyncedAt: null,
+      },
+    ]);
+
+    render(<CanvasCourseSyncDialog open={true} onOpenChange={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Data Structures")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "Save sync" })).toBeDisabled();
+    expect(
+      screen.getByText("Check the courses you want to import, then click Save sync."),
+    ).toBeInTheDocument();
+  });
 });
