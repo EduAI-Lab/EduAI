@@ -221,6 +221,28 @@ describe("withIdempotency", () => {
     );
   });
 
+  it("scopes the same key to distinct routes (e.g. per-course enrollments)", async () => {
+    prismaMock.idempotencyRecord.create.mockResolvedValue({});
+
+    const body = { userId: "u9", role: "STUDENT" };
+    const requestHash = hashRequestBody(body);
+
+    const courseOne = await claimIdempotency({
+      key: "enroll-shared",
+      route: "POST /api/courses/course-1/enrollments",
+      requestHash,
+    });
+    const courseTwo = await claimIdempotency({
+      key: "enroll-shared",
+      route: "POST /api/courses/course-2/enrollments",
+      requestHash,
+    });
+
+    expect(courseOne).toEqual({ kind: "claimed" });
+    expect(courseTwo).toEqual({ kind: "claimed" });
+    expect(prismaMock.idempotencyRecord.create).toHaveBeenCalledTimes(2);
+  });
+
   it("releases claim on non-2xx handler response", async () => {
     prismaMock.idempotencyRecord.create.mockResolvedValue({});
     prismaMock.idempotencyRecord.deleteMany.mockResolvedValue({ count: 1 });

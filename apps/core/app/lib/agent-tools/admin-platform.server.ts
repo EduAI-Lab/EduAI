@@ -266,9 +266,9 @@ export async function listAdminCourseMaterials(
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
-      name: true,
+      title: true,
       mimeType: true,
-      sizeBytes: true,
+      fileSize: true,
       createdAt: true,
       uploadedBy: true,
     },
@@ -294,8 +294,8 @@ export async function renameAdminCourseMaterial(
 
   const material = await prisma.courseMaterial.update({
     where: { id: opts.materialId, courseId, deletedAt: null },
-    data: { name: opts.name },
-    select: { id: true, name: true },
+    data: { title: opts.name },
+    select: { id: true, title: true },
   });
   return { ok: true, material };
 }
@@ -403,7 +403,7 @@ export async function startAdminCourseReEmbed(
     return adminPayload({ job: serializeReEmbedJob(active), alreadyRunning: true });
   }
 
-  const job = await startReEmbedJob(courseId, actor.id);
+  const job = await startReEmbedJob(courseId);
   return adminPayload({ job: serializeReEmbedJob(job), alreadyRunning: false });
 }
 

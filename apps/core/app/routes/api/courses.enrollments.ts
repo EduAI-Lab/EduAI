@@ -147,7 +147,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
 
   return withIdempotency(
-    { request, route: "POST /api/courses/:id/enrollments" },
+    { request, route: `POST /api/courses/${courseId}/enrollments` },
     async (body) => {
       const requiredRank = body?.role === "INSTRUCTOR" ? 3 : 2;
       if (!access || access.rank < requiredRank) {

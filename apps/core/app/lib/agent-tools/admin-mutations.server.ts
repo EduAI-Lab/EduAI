@@ -692,6 +692,10 @@ export async function deleteAdminCourseTopic(
   );
 }
 
+function isToolError(result: { error?: string }): result is { error: string; fields?: Record<string, string> } {
+  return typeof result.error === "string";
+}
+
 function mapToolError(result: { error: string; fields?: Record<string, string> }): MutationResult {
   return mutationFailure(result);
 }
@@ -707,7 +711,7 @@ export async function createAdminInvitationMutation(
   },
 ): Promise<MutationResult> {
   const result = await createAdminInvitation(actor, input);
-  if ("error" in result) {
+  if (isToolError(result)) {
     return mapToolError(result);
   }
   return mutationPayload(result);
@@ -719,7 +723,7 @@ export async function revokeAdminInvitationMutation(
   invitationId: string,
 ): Promise<MutationResult> {
   const result = await revokeAdminInvitation(actor, invitationId);
-  if ("error" in result) {
+  if (isToolError(result)) {
     return mapToolError(result);
   }
   return mutationPayload(result);
@@ -731,7 +735,7 @@ export async function resendAdminInvitationMutation(
   invitationId: string,
 ): Promise<MutationResult> {
   const result = await resendAdminInvitation(actor, invitationId);
-  if ("error" in result) {
+  if (isToolError(result)) {
     return mapToolError(result);
   }
   return mutationPayload(result);
