@@ -20,7 +20,7 @@ EduAI/
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── infra/
-│   └── cron/                        # Server backup scripts (pg_dump, off-site sync, rotation) + cron.env config
+│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
@@ -117,11 +117,11 @@ On first run (or after a database wipe), the Core and AI Tutor databases are see
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
 
-After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
+After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for a consolidated reference of every variable across the monorepo.
 
 **Service API key (`EDUAI_API_KEY`)**
 
-AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and Question Maker AI chat / question generation (proxied to Core's `/api/chat`). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and Question Maker AI chat / question generation (proxied to Core's `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
 You must set the **same value** in all three services:
 
@@ -137,7 +137,18 @@ Generate a value with:
 openssl rand -hex 32
 ```
 
-Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, Question Maker topic/question push to Core, and Question Maker AI chat / question generation (proxied to Core).
+Without this key the following features will not work: bug report submission from AI Tutor and Question Maker, AI Tutor course import from Core, AI Tutor enrollment sync, Question Maker topic/question push to Core, Question Maker AI chat / question generation (proxied to Core), and cascade-delete propagation from Core to both extensions.
+
+**Cascade-delete propagation (`QM_BACKEND_URL`, `AI_TUTOR_SERVER_URL`)**
+
+When a course is deleted in Core, Core pushes a best-effort delete to QM and AI Tutor's internal endpoints (`DELETE /api/internal/courses/:coreCourseId` / `:coreOfferingId`, service-key authenticated) so linked data doesn't outlive the course. Set these in `apps/core/.env` to point at each extension's backend:
+
+| Variable | Default (dev) |
+| --- | --- |
+| `QM_BACKEND_URL` | `http://localhost:8000` |
+| `AI_TUTOR_SERVER_URL` | `http://localhost:4000` |
+
+Leave either unset in an environment where that extension isn't running — the push is skipped silently for that extension, and its own daily reconcile cron will delete the local mirror on its next run instead (eventual-consistency safety net).
 
 **Dev server ports**
 

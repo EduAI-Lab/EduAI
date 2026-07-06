@@ -20,6 +20,7 @@ import assessmentVariantRoutes from './routes/assessmentVariant.js';
 import topicRoutes from './routes/topics.js';
 import authRoutes from './routes/auth.js';
 import bugReportRoutes from './routes/bug-reports.js';
+import internalRoutes from './routes/internal.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
 import './schema/index.js';
@@ -107,6 +108,7 @@ app.use('/api/assessment-variant', assessmentVariantRoutes);
 app.use('/api/topics', topicRoutes);
 app.use('/api', authRoutes);
 app.use('/api', bugReportRoutes);
+app.use('/api/internal', internalRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
