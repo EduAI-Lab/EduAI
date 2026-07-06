@@ -6,6 +6,8 @@ export type ChatToolContext = {
   user: RbacUser;
   effectiveCourseId: string | null;
   effectiveCourseCode?: string | null;
+  /** #839: when true (student caller), exclude hidden/scheduled materials from RAG. */
+  restrictToStudentVisible?: boolean;
 };
 
 export function parseChatMode(value: unknown): ChatMode {
