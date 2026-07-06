@@ -411,8 +411,10 @@ export async function excludeCanvasMaterial(
   canvasFileId: string,
 ): Promise<void> {
   await assertCanvasLinkedCourse(courseId, userId);
-  await prisma.canvasMaterialExclusion.create({
-    data: { courseId, canvasFileId, excludedByUserId: userId },
+  await prisma.canvasMaterialExclusion.upsert({
+    where: { courseId_canvasFileId: { courseId, canvasFileId } },
+    create: { courseId, canvasFileId, excludedByUserId: userId },
+    update: {},
   });
 }
 
@@ -423,7 +425,7 @@ export async function unexcludeCanvasMaterial(
   canvasFileId: string,
 ): Promise<void> {
   await assertCanvasLinkedCourse(courseId, userId);
-  await prisma.canvasMaterialExclusion.delete({
-    where: { courseId_canvasFileId: { courseId, canvasFileId } },
+  await prisma.canvasMaterialExclusion.deleteMany({
+    where: { courseId, canvasFileId },
   });
 }

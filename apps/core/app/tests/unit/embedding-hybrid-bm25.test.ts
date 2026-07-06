@@ -201,6 +201,13 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain('cm."deletedAt" IS NULL');
     expect(sql).toContain('cm."unpublishedAt" IS NULL');
   });
+
+  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain("NOT EXISTS");
+    expect(sql).toContain("canvas_material_exclusions");
+  });
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -239,5 +246,12 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain('cm."unpublishedAt" IS NULL');
+  });
+
+  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain("NOT EXISTS");
+    expect(sql).toContain("canvas_material_exclusions");
   });
 });
