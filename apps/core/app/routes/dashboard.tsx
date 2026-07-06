@@ -21,11 +21,11 @@ import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import { usePolicies } from "~/hooks/api/use-policies";
+import { usePolicyGate } from "~/components/policy/policy-gate";
 import type { User } from "~/lib/auth/types";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
 
   if (!session?.user) {
     return redirect("/auth/login");
@@ -87,14 +87,15 @@ function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
 }
 
 function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
-  const { policies } = usePolicies();
-  // Instructors only see the Canvas sync card when the policy is on; ADMIN is
-  // unaffected. Mirrors the `instructors.canManageCanvasIntegration` gate on
-  // the Canvas API (canvas.$.ts).
+  const { isEnabled } = usePolicyGate();
+  // §807: roles that qualify for Canvas keep the sync card visible but greyed
+  // when the policy is off, instead of the card vanishing. ADMIN is unaffected.
+  // Mirrors the `instructors.canManageCanvasIntegration` gate on the Canvas API
+  // (canvas.$.ts) and the Settings Canvas tab.
   const canvasPolicyOk =
     user.role === "ADMIN" ||
-    (policies["instructors.canManageCanvasIntegration"] ?? true);
-  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "") && canvasPolicyOk;
+    isEnabled("instructors.canManageCanvasIntegration");
+  const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
 
   let view;
   switch (user.role) {
@@ -120,7 +121,7 @@ function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
       {view}
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
-          <CanvasDashboardCard />
+          <CanvasDashboardCard disabled={!canvasPolicyOk} />
         </div>
       )}
     </>

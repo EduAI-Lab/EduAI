@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useTheme } from '@eduai/ui';
 import { IconBug, IconMoon, IconSun } from '@tabler/icons-react';
-import { Button, Separator, SidebarTrigger } from '@eduai/ui';
+import { Button, BugReportDialog, Separator, SidebarTrigger } from '@eduai/ui';
+import type { BugReportSubmitData } from '@eduai/ui';
 
+import api from '~/lib/api';
 import { useLocalUser } from '~/hooks/useLocalUser';
-import { BugReportDialog } from '../bug-report/BugReportDialog';
 import { useBugReport } from '../bug-report/useBugReport';
 
 export type AppSiteHeaderProps = {
@@ -20,7 +21,7 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
   const { user } = useLocalUser();
-  const { captureScreenshot } = useBugReport();
+  const { captureScreenshot, getCapturedData, context } = useBugReport();
   const { resolvedTheme, setTheme } = useTheme();
   const canReportBug = Boolean(user);
 
@@ -32,6 +33,20 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
     } finally {
       setCapturingScreenshot(false);
     }
+  };
+
+  const handleSubmit = async (data: BugReportSubmitData) => {
+    await api.submitBugReport({
+      description: data.description,
+      bugType: data.bugType,
+      isAnonymous: data.isAnonymous,
+      consoleLogs: data.consoleLogs ?? '[]',
+      networkLogs: data.networkLogs ?? '[]',
+      screenshot: data.screenshot ?? null,
+      pageUrl: data.pageUrl ?? window.location.href,
+      userAgent: data.userAgent ?? navigator.userAgent,
+      context,
+    });
   };
 
   const toggleTheme = () => {
@@ -80,13 +95,19 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
                 className="shrink-0"
               >
                 <IconBug className="mr-1 h-4 w-4" aria-hidden="true" />
-                {capturingScreenshot ? 'Preparing…' : 'Report bug'}
+                {capturingScreenshot ? 'Preparing…' : 'Report a bug'}
               </Button>
             ) : null}
           </div>
         </div>
       </header>
-      <BugReportDialog open={bugReportOpen} setOpen={setBugReportOpen} />
+      <BugReportDialog
+        open={bugReportOpen}
+        onOpenChange={setBugReportOpen}
+        onSubmit={handleSubmit}
+        captureScreenshot={captureScreenshot}
+        getCapturedData={getCapturedData}
+      />
     </>
   );
 }

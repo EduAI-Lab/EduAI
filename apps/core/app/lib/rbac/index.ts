@@ -23,6 +23,7 @@ export {
   canViewTopics,
   canManageTopics,
   courseChatViewPolicyKey,
+  manageEnrollmentsPolicyKey,
   canViewCourseChats,
   isStudentAccess,
 } from './permissions'

@@ -14,6 +14,9 @@ import {
   IconLoader,
   IconCircleCheck,
   IconCircleX,
+  IconEye,
+  IconEyeOff,
+  IconClock,
 } from "@tabler/icons-react";
 import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
@@ -42,12 +45,14 @@ import {
   PageTabsContent,
 } from "@eduai/ui";
 import { CourseHeroCard } from "@eduai/ui";
+import { resolvePaletteAccent } from "@eduai/ui";
 import { StatusBadge } from "@eduai/ui";
 import { Avatar } from "@eduai/ui";
 import { StatCard } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { MultiSelect, Combobox } from "@eduai/ui";
 import { Label } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
@@ -57,9 +62,13 @@ import type { CourseDetail } from "~/hooks/api/use-course-detail";
 import type { CourseTopic } from "~/hooks/api/use-course-topics";
 import type { CourseEnrollment } from "~/hooks/api/use-course-enrollments";
 import type { CourseTA } from "~/hooks/api/use-course-tas";
-import { canManageTopics, canManageInstructors, canManageStudents, canViewCourseChats } from "~/lib/rbac";
+import { canManageTopics, canManageInstructors, canManageStudents, courseChatViewPolicyKey, manageEnrollmentsPolicyKey } from "~/lib/rbac";
 import type { CourseAccess } from "~/lib/rbac";
-import { usePolicies } from "~/hooks/api/use-policies";
+import {
+  PolicyTooltip,
+  DisabledTooltip,
+  usePolicyGate,
+} from "~/components/policy/policy-gate";
 
 interface StaffUser {
   id: string;
@@ -121,6 +130,42 @@ function MaterialStatusIcon({ status }: { status: CourseMaterial["status"] }) {
   if (status === "FAILED")
     return <IconCircleX className="h-4 w-4 text-red-500" />;
   return <IconFileText className="h-4 w-4 text-muted-foreground" />;
+}
+
+/**
+ * Student-visibility indicator for the staff material list (#839): a chip when a
+ * material is hidden or scheduled for a future reveal. Nothing renders when the
+ * material is plainly visible now.
+ */
+function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
+  if (material.visibleToStudents === false) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+        title="Hidden from students"
+      >
+        <IconEyeOff className="h-3 w-3" />
+        Hidden
+      </span>
+    );
+  }
+  if (material.availableAt && new Date(material.availableAt).getTime() > Date.now()) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ background: "oklch(0.97 0.03 250)", color: "oklch(0.5 0.15 250)" }}
+        title={`Visible to students on ${new Date(material.availableAt).toLocaleString()}`}
+      >
+        <IconClock className="h-3 w-3" />
+        {new Date(material.availableAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        })}
+      </span>
+    );
+  }
+  return null;
 }
 
 function MaterialStatusChip({ status }: { status: CourseMaterial["status"] }) {
@@ -200,6 +245,12 @@ export function CourseDetailManagerView({
   const [renameTitle, setRenameTitle] = useState("");
   const [renamingMaterial, setRenamingMaterial] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
+  // Per-material student-visibility scheduling (#839).
+  const [visibilityMaterialId, setVisibilityMaterialId] = useState<string | null>(null);
+  const [visibilityVisible, setVisibilityVisible] = useState(true);
+  const [visibilityDate, setVisibilityDate] = useState("");
+  const [savingVisibility, setSavingVisibility] = useState(false);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [ragTopK, setRagTopK] = useState<string>(course.ragTopK?.toString() ?? "");
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
@@ -221,19 +272,24 @@ export function CourseDetailManagerView({
     prevSuccessRef.current = materialsSuccess;
   }, [materialsSuccess]);
 
-  const { policies, isLoading: policiesLoading } = usePolicies();
-  const canManage = canManageTopics(access, policies["tas.canManageTopics"] ?? false);
+  const { isEnabled } = usePolicyGate();
+  const canManage = canManageTopics(access, isEnabled("tas.canManageTopics"));
   // Reassigning the instructor stays ADMIN/UNIT_ADMIN only; the Staff tab (TA
   // management) also opens to an owning instructor when the enrollment policy is
-  // on. Mirrors the TA endpoint and loader gates. The instructor branch stays
-  // restrictive until policies load so a disabled flag can't briefly flash the
-  // staff controls (admin/unit access is role-based and not gated on the fetch).
+  // on. Mirrors the TA endpoint and loader gates.
   const canAssignInstructor = canManageInstructors(access);
+  // §807: resolve each policy-gated tab to one of show-enabled / show-greyed /
+  // hide. `'always'` → the role qualifies regardless of any flag (admin/unit);
+  // `'never'` → the role can never access it (hide the tab); a PolicyKey → the
+  // role qualifies but the flag decides enabled vs greyed-with-tooltip.
+  const staffGate = manageEnrollmentsPolicyKey(access);
+  const showStaffTab = staffGate !== "never";
   const canManageStaff =
-    canAssignInstructor ||
-    (!policiesLoading &&
-      access === "instructor" &&
-      (policies["instructors.canManageEnrollments"] ?? true));
+    staffGate === "always" || (staffGate !== "never" && isEnabled(staffGate));
+  const chatGate = courseChatViewPolicyKey(access);
+  const showChatTab = chatGate !== "never";
+  const canViewChats =
+    chatGate === "always" || (chatGate !== "never" && isEnabled(chatGate));
   const canManageStudentEnrollments = canManageStudents(access);
   const canManageRagSettings = access === "admin" || access === "instructor";
 
@@ -241,11 +297,6 @@ export function CourseDetailManagerView({
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const enrolledStudentIds = new Set(studentEnrollments.map((e) => e.userId));
   const availableStudents = studentUsers.filter((u) => !enrolledStudentIds.has(u.id));
-
-  // §5d: the Chat history tab is visible only to roles whose course-chat-
-  // visibility flag is on. Uses the shared gate so the UI mirrors the backend
-  // chat routes exactly.
-  const canViewChats = canViewCourseChats(access, policies);
 
   // Check if current user can delete a material (either manage rank >= 2, or TA own-upload).
   // canManage covers ADMIN/UNIT_ADMIN/INSTRUCTOR.
@@ -441,6 +492,60 @@ export function CourseDetailManagerView({
     }
   };
 
+  // datetime-local <-> ISO helpers for the availability schedule. The input works
+  // in the browser's local zone; the API stores/returns ISO (UTC).
+  const isoToLocalInput = (iso: string | null | undefined): string => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const openVisibility = (m: CourseMaterial) => {
+    setVisibilityMaterialId(m.id);
+    setVisibilityVisible(m.visibleToStudents ?? true);
+    setVisibilityDate(isoToLocalInput(m.availableAt));
+    setVisibilityError(null);
+  };
+
+  const handleSaveVisibility = async () => {
+    if (!visibilityMaterialId || !courseId) return;
+    let availableAt: string | null = null;
+    if (visibilityDate) {
+      const parsed = new Date(visibilityDate);
+      if (Number.isNaN(parsed.getTime())) {
+        setVisibilityError("Invalid date");
+        return;
+      }
+      availableAt = parsed.toISOString();
+    }
+    setSavingVisibility(true);
+    setVisibilityError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseId}/materials/${visibilityMaterialId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visibleToStudents: visibilityVisible, availableAt }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Failed to update visibility");
+      }
+      setVisibilityMaterialId(null);
+      if (onRefreshMaterials) {
+        await onRefreshMaterials();
+      }
+    } catch (e) {
+      setVisibilityError(e instanceof Error ? e.message : "Failed to update visibility");
+    } finally {
+      setSavingVisibility(false);
+    }
+  };
+
   const saveRagSettings = async () => {
     if (!courseId) return;
     setRagSaving(true);
@@ -608,6 +713,95 @@ export function CourseDetailManagerView({
         </DialogContent>
       </Dialog>
 
+      {/* Student-visibility scheduling modal (#839) */}
+      <Dialog
+        open={!!visibilityMaterialId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVisibilityMaterialId(null);
+            setVisibilityError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-[var(--radius-xl)]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IconEye className="h-4 w-4" />
+              Student visibility
+            </DialogTitle>
+            <DialogDescription>
+              Control whether students can see this material, and optionally
+              schedule when it becomes available. Instructors and TAs always see
+              every material.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <Label htmlFor="material-visible">Visible to students</Label>
+                <p className="text-[12px] text-muted-foreground">
+                  Turn off to hide this material from students entirely.
+                </p>
+              </div>
+              <Switch
+                id="material-visible"
+                checked={visibilityVisible}
+                onCheckedChange={setVisibilityVisible}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="material-available-at">Available from (optional)</Label>
+              <p className="text-[12px] text-muted-foreground">
+                Students won't see this material until the selected date and time.
+                Leave blank to make it available as soon as it's visible.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="material-available-at"
+                  type="datetime-local"
+                  value={visibilityDate}
+                  onChange={(e) => setVisibilityDate(e.target.value)}
+                  disabled={!visibilityVisible}
+                />
+                {visibilityDate && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setVisibilityDate("")}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {!visibilityVisible && (
+                <p className="text-[12px] text-muted-foreground">
+                  The schedule is ignored while the material is hidden.
+                </p>
+              )}
+            </div>
+            {visibilityError && (
+              <p className="text-[13px] text-destructive">{visibilityError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setVisibilityMaterialId(null);
+                setVisibilityError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSaveVisibility} disabled={savingVisibility}>
+              {savingVisibility ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Canvas material sync */}
       {showCanvasMaterialSync && courseId && (
         <CanvasMaterialSyncDialog
@@ -624,14 +818,20 @@ export function CourseDetailManagerView({
           <PageTabsTrigger value="materials">Materials</PageTabsTrigger>
           <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
           <PageTabsTrigger value="enrollments">Enrollments</PageTabsTrigger>
-          {canManageStaff && (
-            <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+          {/* §807: a qualifying role keeps the tab visible but greyed when the
+              policy is off; non-qualifying roles don't see it at all. */}
+          {showStaffTab && (
+            <DisabledTooltip disabled={!canManageStaff}>
+              <PageTabsTrigger value="staff">Staff</PageTabsTrigger>
+            </DisabledTooltip>
           )}
           {canManageRagSettings && (
             <PageTabsTrigger value="settings">Settings</PageTabsTrigger>
           )}
-          {canViewChats && (
-            <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+          {showChatTab && (
+            <DisabledTooltip disabled={!canViewChats}>
+              <PageTabsTrigger value="chat-history">Chat history</PageTabsTrigger>
+            </DisabledTooltip>
           )}
         </PageTabsList>
 
@@ -648,6 +848,7 @@ export function CourseDetailManagerView({
             year={course.year}
             name={course.name}
             description={course.description}
+            accentColor={resolvePaletteAccent(course.id)}
             topRightBadges={topRightBadges}
             topics={topics.map((t) => t.name)}
           />
@@ -917,8 +1118,19 @@ export function CourseDetailManagerView({
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <MaterialVisibilityChip material={m} />
                     <MaterialStatusChip status={m.status} />
                     <MaterialStatusIcon status={m.status} />
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Student visibility"
+                        onClick={() => openVisibility(m)}
+                      >
+                        <IconEye className="w-4 h-4" />
+                      </Button>
+                    )}
                     {canRenameMaterial(m) && (
                       <Button
                         variant="ghost"
@@ -958,7 +1170,9 @@ export function CourseDetailManagerView({
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
           <div className="flex flex-col gap-4">
-            {canManage && (
+            {/* §807: keep the add-topic form visible, greyed when manage-topics
+                is policy-off (a TA without the grant). */}
+            {canManage ? (
               <form onSubmit={handleTopicCreate} className="flex gap-2">
                 <Input
                   value={newTopic}
@@ -970,6 +1184,16 @@ export function CourseDetailManagerView({
                   Add
                 </Button>
               </form>
+            ) : (
+              <PolicyTooltip flag="tas.canManageTopics">
+                <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
+                  <Input value="" readOnly disabled placeholder="New topic name" />
+                  <Button type="submit" disabled>
+                    <IconPlus className="w-4 h-4 mr-1" />
+                    Add
+                  </Button>
+                </form>
+              </PolicyTooltip>
             )}
             {topics.length === 0 ? (
               <Card>
@@ -983,7 +1207,7 @@ export function CourseDetailManagerView({
                   <Card key={t.id}>
                     <CardContent className="flex items-center justify-between py-3">
                       <span className="text-sm">{t.name}</span>
-                      {canManage && (
+                      {canManage ? (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -993,6 +1217,17 @@ export function CourseDetailManagerView({
                         >
                           <IconTrash className="w-4 h-4" />
                         </Button>
+                      ) : (
+                        <PolicyTooltip flag="tas.canManageTopics">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Delete topic"
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <IconTrash className="w-4 h-4" />
+                          </Button>
+                        </PolicyTooltip>
                       )}
                     </CardContent>
                   </Card>

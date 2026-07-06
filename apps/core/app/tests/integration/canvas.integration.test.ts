@@ -48,7 +48,7 @@ function makeArgs(method: string, subpath: string, body?: unknown) {
     request: new Request(`http://localhost/api/canvas/${subpath}`, init),
     params: {} as Record<string, string>,
     context: {} as never,
-  };
+  } as any;
   return args;
 }
 
@@ -301,7 +301,7 @@ describe("Canvas API — connect / integration / disconnect", () => {
       }),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ success: false, error: "Invalid JSON body" });
   });

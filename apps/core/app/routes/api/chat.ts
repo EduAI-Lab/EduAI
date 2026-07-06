@@ -362,7 +362,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    let session = apiKeySession ?? (await auth.api.getSession(request));
+    let session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
@@ -567,6 +567,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       courseAccess = access;
     }
+
+    // §839: students must not see materials that are hidden or scheduled for a
+    // future reveal — exclude them from RAG retrieval. Staff (and service/admin
+    // callers, whose level is never "student") retrieve everything.
+    const restrictRagToStudentVisible = courseAccess?.level === "student";
 
     // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
     // are stateless and have no real User row, so persisting a Chat would violate
@@ -893,6 +898,7 @@ export async function action({ request }: ActionFunctionArgs) {
           user: rbacUser,
           effectiveCourseId,
           effectiveCourseCode,
+          restrictToStudentVisible: restrictRagToStudentVisible,
         },
         chatMode,
       );
@@ -986,7 +992,11 @@ export async function action({ request }: ActionFunctionArgs) {
         messageChars,
       });
     } else {
-      const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
+      const tools = buildChatToolRegistry({
+        effectiveCourseId,
+        webToolsEnabled,
+        restrictToStudentVisible: restrictRagToStudentVisible,
+      });
       const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
       useToolCalling = supportsTools && !forceHybridRag;
@@ -1010,6 +1020,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
             userQuestion,
             effectiveCourseId,
             HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictRagToStudentVisible,
           );
           courseRagInject = shouldInjectCourseRag({
             hasCourse,
@@ -1127,6 +1139,11 @@ ${buildEmptyCourseRagBlock()}`;
     );
 
     const streamStartedAt = Date.now();
+    // True when course material reached the model this turn: either a tool
+    // (RAG / web) ran — set by onStepFinish below — or hybrid/preloaded RAG
+    // context was injected straight into the system prompt with no tool call.
+    // Either path means a Sources footer should be expected (citation compliance).
+    let adhdToolsUsed = Boolean(courseRagContextText);
     const needsOversight =
       chatMode !== "admin" &&
       effectiveAdhdAssist &&
@@ -1178,6 +1195,7 @@ ${buildEmptyCourseRagBlock()}`;
           oversightCompletionTokens: extras?.oversightCompletionTokens,
           responseProfile: adhdProfile,
           profileStructuralPass,
+          toolsUsed: adhdToolsUsed,
         },
       }).catch((err) => {
         console.error("[assistive-events] response_compliance log failed", err);
@@ -1200,7 +1218,6 @@ ${buildEmptyCourseRagBlock()}`;
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
-
     const streamTrace = {
       chatMode,
       model,
@@ -1213,9 +1230,17 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
+        onStepFinish: ({ toolCalls, toolResults }) => {
+          if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
+            adhdToolsUsed = true;
+          }
+        },
         onFinish: needsOversight
           ? undefined
           : async ({ text, usage, finishReason, response }) => {
+              // For streaming responses, persist here. Non-streaming path calls
+              // consumeStream() which also triggers onFinish, so we skip here to
+              // avoid saving the assistant message twice with different UUIDs.
               logResponseCompliance(text, {
                 finishReason,
                 promptTokens: usage?.promptTokens,

@@ -127,7 +127,7 @@ function makeArgs(id: string, authorization?: string) {
     }),
     params: { id },
     context: {} as never,
-  };
+  } as any;
 }
 
 describe("GET /api/courses/:id/enrollments (integration)", () => {
@@ -318,7 +318,7 @@ describe("enrollment management lifecycle (#305)", () => {
         }),
         params: { id: course.id },
         context: {} as never,
-      });
+      } as any);
       expect(added.status).toBe(201);
 
       const enrollmentA = await prisma.enrollment.findUnique({
@@ -337,7 +337,7 @@ describe("enrollment management lifecycle (#305)", () => {
         ),
         params: { id: course.id, enrollmentId: enrollmentA!.id },
         context: {} as never,
-      });
+      } as any);
       expect(removedA.status).toBe(204);
 
       // 4. ADMIN attempts to remove instructor B — 409, no override.
@@ -349,7 +349,7 @@ describe("enrollment management lifecycle (#305)", () => {
         ),
         params: { id: course.id, enrollmentId: enrollmentB!.id },
         context: {} as never,
-      });
+      } as any);
       expect(removedB.status).toBe(409);
       expect(await removedB.json()).toEqual({
         error: "INSTRUCTOR_FLOOR_VIOLATION",
