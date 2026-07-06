@@ -142,7 +142,7 @@ describe("enforceAdminIfApiKey", () => {
         vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
             valid: true,
             error: null,
-            key: { id: "k1", userId: "s1", createdAt: new Date(), updatedAt: new Date(), expiresAt: null },
+            key: { id: "k1", referenceId: "s1", createdAt: new Date(), updatedAt: new Date(), expiresAt: null },
         } as never);
         vi.mocked(prisma.user.findUnique).mockResolvedValue({
             id: "s1",
@@ -163,7 +163,7 @@ describe("enforceAdminIfApiKey", () => {
             error: null,
             key: {
                 id: "k-admin",
-                userId: "a1",
+                referenceId: "a1",
                 createdAt: new Date("2026-01-01"),
                 updatedAt: new Date("2026-01-01"),
                 expiresAt: null,
