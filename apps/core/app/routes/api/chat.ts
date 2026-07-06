@@ -54,6 +54,16 @@ import {
   resolveChatAutoRouting,
   type ChatRoutingTiming,
 } from "~/lib/ai/routing/resolve-chat-routing.server";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import {
+  buildFleetRouterFeatures,
+  parseWorkloadFeature,
+} from "~/lib/ai/routing/fleet/types";
+import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import {
   resolveCourseAccessWithCourse,
@@ -391,6 +401,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const body = await request.json();
+    const workloadFeature = parseWorkloadFeature(body.routingContext);
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     let model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
@@ -816,9 +827,39 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    let fleetPick: FleetPick | null = null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        fleetPick = await resolveFleetHost({
+          feature: workloadFeature,
+          resolvedModelId: model,
+        });
+      } catch (err) {
+        if (err instanceof FleetUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "No healthy vLLM fleet server available",
+              details: err.message,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+
+    routerContext = {
+      ...(routerContext ?? {}),
+      ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+    };
+
     const validatedApiKeys = mergeLocalInferenceFromEnv(
       toUserProviderSettings(apiKeysParsed.data),
       model,
+      fleetPick?.baseUrl,
     );
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
@@ -1201,6 +1242,7 @@ ${buildEmptyCourseRagBlock()}`;
         wasAuto,
         routerVersion: resolvedRouterVersion,
         routerRule,
+        fleetServerId: fleetPick?.serverId ?? null,
         timing: routingTiming,
         modelDecodeMs,
         durationMs: Date.now() - requestStartMs,

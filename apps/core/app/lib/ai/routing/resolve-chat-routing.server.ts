@@ -145,6 +145,7 @@ export function autoRoutingHeaders(params: {
   wasAuto: boolean;
   routerVersion?: string | null;
   routerRule?: string | null;
+  fleetServerId?: string | null;
   timing?: ChatRoutingTiming;
   modelDecodeMs?: number;
   durationMs?: number;
@@ -152,6 +153,9 @@ export function autoRoutingHeaders(params: {
   const headers: Record<string, string> = {
     "X-Routed-Model": params.resolvedModelId,
   };
+  if (params.fleetServerId) {
+    headers["X-Fleet-Server"] = params.fleetServerId;
+  }
   if (params.wasAuto) {
     if (params.routingTier != null) {
       headers["X-Routing-Tier"] = String(params.routingTier);

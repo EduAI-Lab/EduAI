@@ -24,6 +24,7 @@
     "eval:adhd": "tsx scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
+    "fleet:smoke": "node ./scripts/fleet-smoke.mjs",
     "research:validate-suite": "node ./scripts/research/validate-task-suite.mjs",
     "research:assign-splits": "node ./scripts/research/assign-splits.mjs",
     "research:run-both-tier": "node ./scripts/research/run-both-tier-baseline.mjs",
