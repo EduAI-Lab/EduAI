@@ -2,7 +2,8 @@
 /** Export human worksheet for 32B vs 72B judge disagreements (non-equivalent rows). */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { RUNS_DIR } from "./paths.mjs";
+import { RUNS_DIR, loadPromptsJsonl, PROMPTS_PATH } from "./paths.mjs";
+import { isResearchExcludedToolPrompt } from "./research-prompt-filters.mjs";
 
 const labelsPath =
   process.env.RESEARCH_32B72B_LABELS ??
@@ -23,10 +24,15 @@ function loadJsonl(path) {
   return raw.split("\n").map((l) => JSON.parse(l));
 }
 
+const promptsById = new Map(loadPromptsJsonl(PROMPTS_PATH).map((p) => [p.id, p]));
+
 const labels = loadJsonl(labelsPath);
-const disputed = labels.filter(
-  (l) => l.quality_delta !== "equivalent" || l.xl_necessary === true,
-);
+const disputed = labels.filter((l) => {
+  if (l.quality_delta === "equivalent" && l.xl_necessary !== true) return false;
+  const prompt = promptsById.get(l.prompt_id);
+  if (prompt && isResearchExcludedToolPrompt(prompt)) return false;
+  return true;
+});
 const map32 = new Map(loadJsonl(path32).map((r) => [r.prompt_id, r]));
 const map72 = new Map(loadJsonl(path72).map((r) => [r.prompt_id, r]));
 
@@ -35,7 +41,7 @@ const lines = [
   "",
   `Generated: ${new Date().toISOString()}`,
   "",
-  `Rows: ${disputed.length} (non-equivalent or xl_necessary)`,
+  `Rows: ${disputed.length} (research-active; web/fetch tool prompts excluded)`,
   "",
   "For each prompt: Is 32B adequate? Is 72B necessary? Your `min_adequate_tier` (2=32B, 4=72B)?",
   "",
