@@ -13,10 +13,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  DEFAULT_ENERGY_SIDECAR_URL,
   energyMeasureStart,
   energyMeasureStop,
   isEnergyMeasurementEnabled,
+  resolveSidecarUrl,
   sidecarFetchInit,
 } from "./energy-sidecar.mjs";
 
@@ -42,11 +42,6 @@ function loadEnvFile(filename) {
 
 loadEnvFile(".env");
 loadEnvFile(".env.research");
-
-function resolveSidecarUrl() {
-  const url = process.env.ENERGY_SIDECAR_URL?.trim();
-  return (url || DEFAULT_ENERGY_SIDECAR_URL).replace(/\/$/, "");
-}
 
 async function fetchHealth(base) {
   const res = await fetch(

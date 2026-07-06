@@ -41,7 +41,6 @@ export function numToRouterTier(n: number): RouterTier | null {
   if (n === 3) return "TIER_3";
   return null;
 }
-
 async function loadCloudImageTierRows(): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
     where: {

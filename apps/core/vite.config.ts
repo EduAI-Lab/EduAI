@@ -23,11 +23,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     ssr: {
-      // Server bundle is ESM (react-router default). Two packages need bundling:
+      // Server bundle is ESM (react-router default). Packages that need bundling:
       //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
       //                         to honour the alias during SSR tree-shaking.
       //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
-      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+      //   streamdown — CJS/ESM interop for markdown streaming in SSR.
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js", "streamdown"],
     },
     define: {
       __dirname: "import.meta.dirname",
@@ -50,9 +51,6 @@ export default defineConfig(({ mode }) => {
         "@streamdown/math",
         "style-to-js",
       ],
-    },
-    ssr: {
-      noExternal: ["streamdown"],
     },
     server: {
       port: 3000,

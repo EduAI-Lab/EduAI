@@ -44,7 +44,7 @@ export async function persistAiInteractionTelemetry(params: {
         })
       : null;
 
-    const { promptTokens, completionTokens } = normalizeTokenUsage(
+    const { promptTokens, completionTokens, totalTokens } = normalizeTokenUsage(
       params.usage as Record<string, unknown> | undefined,
     );
 
@@ -62,6 +62,7 @@ export async function persistAiInteractionTelemetry(params: {
         registryModelId: params.resolvedModelId,
         promptTokens,
         completionTokens,
+        totalTokens,
         durationMs: params.durationMs,
         estEnergyJoulesPerToken: modelRecord?.estEnergyJoulesPerToken ?? null,
         averageCarbonGramsPerToken: modelRecord?.averageCarbonGramsPerToken ?? null,
@@ -82,6 +83,7 @@ export async function persistAiInteractionTelemetry(params: {
         response: params.responseText,
         promptTokens,
         completionTokens,
+        totalTokens,
         durationMs: params.durationMs,
         finishReason: params.finishReason,
         routedByAuto: params.wasAuto,

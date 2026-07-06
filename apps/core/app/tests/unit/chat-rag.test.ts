@@ -7,6 +7,7 @@ import {
   capRagHitsForTool,
   capToolResultsInMessages,
   estimateMessageCharsForModel,
+  messageHasImageParts,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
   resolveSessionCharBudget,
@@ -25,6 +26,24 @@ import {
 function hit(content: string, title = "Lecture 1"): HybridRagHit {
   return { content, similarity: 0.9, materialTitle: title };
 }
+
+describe("messageHasImageParts", () => {
+  it("detects image parts in content and parts arrays", () => {
+    expect(messageHasImageParts({ role: "user", content: "hello" })).toBe(false);
+    expect(
+      messageHasImageParts({
+        role: "user",
+        parts: [{ type: "text", text: "see this" }, { type: "image", image: "data:..." }],
+      }),
+    ).toBe(true);
+    expect(
+      messageHasImageParts({
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: "https://example.com/x.png" } }],
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("buildRagAnswerInstructions", () => {
   it("includes general grounding rules without course-specific examples", () => {

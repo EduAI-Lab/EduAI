@@ -8,6 +8,7 @@ export type EnergyMeasurementInput = {
   registryModelId: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  totalTokens?: number | null;
   durationMs: number | null;
   /** Per-token constants from AIModel row */
   estEnergyJoulesPerToken: number | null;
@@ -20,7 +21,7 @@ export type EnergyMeasurementResult = {
   energySource: EnergyMeasurementSource | null;
 };
 
-const SIDECAR_URL = process.env.ENERGY_SIDECAR_URL?.trim();
+const SIDECAR_URL = () => process.env.ENERGY_SIDECAR_URL?.trim();
 
 type SidecarStopPayload = {
   energyJoules?: number;
@@ -29,7 +30,7 @@ type SidecarStopPayload = {
 };
 
 function sidecarBaseUrl(override?: string | null): string | null {
-  const raw = override?.trim() || SIDECAR_URL?.trim();
+  const raw = override?.trim() || SIDECAR_URL()?.trim();
   return raw ? raw.replace(/\/$/, "") : null;
 }
 
@@ -52,18 +53,22 @@ export async function startSidecarMeasurement(
 ): Promise<string | null> {
   const base = sidecarBaseUrl(options?.sidecarBaseUrl);
   if (!base) return null;
-  const res = await fetch(
-    `${base}/measure-start`,
-    sidecarFetchInit({
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tag }),
-      signal: AbortSignal.timeout(3000),
-    }),
-  );
-  if (!res.ok) return null;
-  const data = (await res.json()) as { tag?: string };
-  return data.tag ?? tag;
+  try {
+    const res = await fetch(
+      `${base}/measure-start`,
+      sidecarFetchInit({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag }),
+        signal: AbortSignal.timeout(3000),
+      }),
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { tag?: string };
+    return data.tag ?? tag;
+  } catch {
+    return null;
+  }
 }
 
 /** Stop sidecar measurement and return Joules / carbon if available. */
@@ -103,7 +108,7 @@ function tokenEstimate(input: EnergyMeasurementInput): EnergyMeasurementResult {
   const totalTokens =
     input.promptTokens != null && input.completionTokens != null
       ? input.promptTokens + input.completionTokens
-      : null;
+      : input.totalTokens ?? null;
 
   const energyJoules =
     input.estEnergyJoulesPerToken != null && totalTokens != null

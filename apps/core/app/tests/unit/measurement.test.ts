@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { measureTurnEnergy } from "~/lib/ai/energy/measurement.server";
+import {
+  measureTurnEnergy,
+  startSidecarMeasurement,
+} from "~/lib/ai/energy/measurement.server";
 
 const baseInput = {
   registryModelId: "vllm:qwen2.5-7b-instruct",
@@ -73,5 +76,22 @@ describe("measureTurnEnergy", () => {
       carbonGramsCO2: 0.3,
       energySource: "ESTIMATED_FROM_TOKENS",
     });
+  });
+});
+
+describe("startSidecarMeasurement", () => {
+  const originalSidecar = process.env.ENERGY_SIDECAR_URL;
+
+  afterEach(() => {
+    if (originalSidecar === undefined) delete process.env.ENERGY_SIDECAR_URL;
+    else process.env.ENERGY_SIDECAR_URL = originalSidecar;
+    vi.restoreAllMocks();
+  });
+
+  it("returns null when sidecar fetch fails instead of throwing", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
+
+    await expect(startSidecarMeasurement("turn-1")).resolves.toBeNull();
   });
 });
