@@ -68,12 +68,13 @@ describe('runReconciliation (integration)', () => {
     expect(offering2.coreOfferingId).toBe('core-cuid-1');
   });
 
-  // #315 §19: a soft-deleted Core record is invisible via Core's API, so the
-  // safe-fetch helpers see a 404 (→ null). Reconciliation must then drop the
-  // dead Core link from the local copy so the soft-deleted record can never be
-  // re-surfaced as a live Core reference. This asserts the cross-cutting
-  // transparency guarantee end-to-end on the AI Tutor side.
-  it('drops the Core link for a soft-deleted Core course so it cannot resurface (#315)', async () => {
+  // #315 §19 + #802: a soft-deleted Core record is invisible via Core's API, so
+  // the safe-fetch helpers see a 404 (→ null). Since #802 the reconcile safety
+  // net deletes the local mirror outright (was: unlink) — a stronger transparency
+  // guarantee, since a soft-deleted Core course leaves no local trace at all and
+  // therefore cannot resurface as a live Core reference. Asserts the cross-cutting
+  // guarantee end-to-end on the AI Tutor side.
+  it('removes the local mirror of a soft-deleted Core course so it cannot resurface (#315)', async () => {
     const offering = await prisma.courseOffering.create({
       data: { title: 'Soft-deleted Upstream', description: 'test', isPublished: true, coreOfferingId: 'core-soft-del-1' },
     });
@@ -86,14 +87,10 @@ describe('runReconciliation (integration)', () => {
 
     await runReconciliation();
 
-    const updated = await prisma.courseOffering.findUnique({ where: { id: offering.id } });
-    // Local copy survives, but holds NO live Core reference any more.
-    expect(updated).not.toBeNull();
-    expect(updated.coreOfferingId).toBeNull();
-    // Topic's Core link is left for the next run (its parent link is gone, so it
-    // is skipped this pass) — it is never re-pulled from the deleted Core course.
-    const topicAfter = await prisma.topic.findUnique({ where: { id: topic.id } });
-    expect(topicAfter).not.toBeNull();
+    // Local mirror is deleted outright, so no live Core reference survives.
+    expect(await prisma.courseOffering.findUnique({ where: { id: offering.id } })).toBeNull();
+    // The linked topic cascade-deletes with its parent — never re-pulled from the deleted Core course.
+    expect(await prisma.topic.findUnique({ where: { id: topic.id } })).toBeNull();
   });
 
   it('skips topic whose courseOffering has lost its coreOfferingId', async () => {
