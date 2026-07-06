@@ -613,7 +613,7 @@ describe("public registration — UBC backend gate (§567)", () => {
     const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Public User", email, password: "supersecret1" }),
+      body: JSON.stringify({ name: "Public User", email, password: INVITE_TEST_PASSWORD }),
     });
     return auth.handler(req);
   }
