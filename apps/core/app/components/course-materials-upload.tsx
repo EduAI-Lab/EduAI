@@ -20,6 +20,16 @@ export interface CourseMaterial {
   chunkCount?: number
   /** Owner FK — used to gate TA own-only delete (§7). */
   uploadedBy?: string | null
+  /**
+   * Student-visibility gate (staff-only field; omitted from student responses).
+   * false = hidden from students even in a published course.
+   */
+  visibleToStudents?: boolean
+  /**
+   * Scheduled reveal timestamp (ISO string) or null. When set in the future,
+   * students don't see the material until it passes. Staff-only field.
+   */
+  availableAt?: string | null
   chunks?: Array<{ id: string; content: string }>
 }
 

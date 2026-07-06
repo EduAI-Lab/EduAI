@@ -3,7 +3,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { generateEmbedding } from "~/lib/ai/embedding";
+import { generateEmbedding, generateEmbeddings } from "~/lib/ai/embedding";
 import { cosineSimilarity } from "./cosine";
 import { isLocalVllmRouting } from "./local-vllm";
 
@@ -37,6 +37,7 @@ type CachedExemplar = KnnExemplar & { embedding: number[] };
 
 let exemplarCache: CachedExemplar[] | null = null;
 let exemplarLoadPromise: Promise<CachedExemplar[]> | null = null;
+let warnedOnDemandEmbed = false;
 
 export function defaultExemplarsPath(): string {
   const fromEnv = process.env.ROUTING_KNN_EXEMPLARS_PATH?.trim();
@@ -80,10 +81,24 @@ export async function loadCachedKnnExemplars(
           .map((ex, i) => (ex.embedding?.length ? -1 : i))
           .filter((i) => i >= 0);
         if (missingIndexes.length > 0) {
-          throw new Error(
-            `kNN exemplars missing embeddings (${missingIndexes.length}/${trimmed.length}). ` +
-              "Run: npm run research:embed-knn-exemplars",
-          );
+          if (!warnedOnDemandEmbed) {
+            warnedOnDemandEmbed = true;
+            console.warn(
+              `kNN: embedding ${missingIndexes.length}/${trimmed.length} exemplars on demand — ` +
+                "run npm run research:embed-knn-exemplars to persist vectors offline",
+            );
+          }
+          const prompts = missingIndexes.map((i) => trimmed[i].prompt);
+          const embedded = await generateEmbeddings(prompts);
+          for (let j = 0; j < missingIndexes.length; j++) {
+            trimmed[missingIndexes[j]].embedding = embedded[j]?.embedding;
+          }
+          const stillMissing = trimmed.filter((ex) => !ex.embedding?.length).length;
+          if (stillMissing > 0) {
+            throw new Error(
+              `kNN exemplars missing embeddings after on-demand embed (${stillMissing}/${trimmed.length})`,
+            );
+          }
         }
         const cached: CachedExemplar[] = trimmed.map((ex) => ({
           ...ex,
