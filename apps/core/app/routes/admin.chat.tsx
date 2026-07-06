@@ -88,6 +88,18 @@ export default function AdminChatPage() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  // Mirror Focus mode onto <html data-assistive-focus-mode> so the shared CSS
+  // hides the sidebar/history rail, matching ChatScreen's behavior.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [focusMode]);
+
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
