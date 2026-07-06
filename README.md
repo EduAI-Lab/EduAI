@@ -20,7 +20,7 @@ EduAI/
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── infra/
-│   └── cron/                        # Server backup scripts (pg_dump, off-site sync, rotation) + cron.env config
+│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
