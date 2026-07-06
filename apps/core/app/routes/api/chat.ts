@@ -567,6 +567,11 @@ export async function action({ request }: ActionFunctionArgs) {
       courseAccess = access;
     }
 
+    // §839: students must not see materials that are hidden or scheduled for a
+    // future reveal — exclude them from RAG retrieval. Staff (and service/admin
+    // callers, whose level is never "student") retrieve everything.
+    const restrictRagToStudentVisible = courseAccess?.level === "student";
+
     // Service-key (server-to-server) callers — e.g. the Question Maker proxy —
     // are stateless and have no real User row, so persisting a Chat would violate
     // chats_userId_fkey (P2003). Skip all chat/message persistence for them and
@@ -892,6 +897,7 @@ export async function action({ request }: ActionFunctionArgs) {
           user: rbacUser,
           effectiveCourseId,
           effectiveCourseCode,
+          restrictToStudentVisible: restrictRagToStudentVisible,
         },
         chatMode,
       );
@@ -985,7 +991,11 @@ export async function action({ request }: ActionFunctionArgs) {
         messageChars,
       });
     } else {
-      const tools = buildChatToolRegistry({ effectiveCourseId, webToolsEnabled });
+      const tools = buildChatToolRegistry({
+        effectiveCourseId,
+        webToolsEnabled,
+        restrictToStudentVisible: restrictRagToStudentVisible,
+      });
       const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
       useToolCalling = supportsTools && !forceHybridRag;
@@ -1009,6 +1019,8 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
             userQuestion,
             effectiveCourseId,
             HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictRagToStudentVisible,
           );
           courseRagInject = shouldInjectCourseRag({
             hasCourse,

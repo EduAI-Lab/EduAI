@@ -27,7 +27,7 @@ describe('runReconciliation (integration)', () => {
     delete process.env.EDUAI_API_KEY;
   });
 
-  it('nullifies coreOfferingId when Core returns 404 and leaves the offering and its children intact', async () => {
+  it('deletes the CourseOffering (and cascades to its children) when Core returns 404 — §802 reconcile safety net', async () => {
     const offering = await prisma.courseOffering.create({
       data: { title: 'Test Course', description: 'test', isPublished: false, coreOfferingId: 'core-cuid-1' },
     });
@@ -42,12 +42,9 @@ describe('runReconciliation (integration)', () => {
 
     await runReconciliation();
 
-    const updated = await prisma.courseOffering.findUnique({ where: { id: offering.id } });
-    expect(updated).not.toBeNull();
-    expect(updated.coreOfferingId).toBeNull();
-
-    expect(await prisma.topic.findUnique({ where: { id: topic.id } })).not.toBeNull();
-    expect(await prisma.module.findUnique({ where: { id: mod.id } })).not.toBeNull();
+    expect(await prisma.courseOffering.findUnique({ where: { id: offering.id } })).toBeNull();
+    expect(await prisma.topic.findUnique({ where: { id: topic.id } })).toBeNull();
+    expect(await prisma.module.findUnique({ where: { id: mod.id } })).toBeNull();
   });
 
   it('nullifies coreTopicId when Core returns 404 for the topic, leaving the topic row intact', async () => {
