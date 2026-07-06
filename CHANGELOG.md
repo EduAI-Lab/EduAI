@@ -129,6 +129,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] security: Enforce UBC-only emails (`ubc.ca` and its subdomains) on public registration and admin/unit-admin invitations via a shared `isUbcEmail` gate applied at the signup schema, the Better Auth before-hook, and the invitation schema. (#567, #692, @abdullahmoh21, 2026-06-20)
 - [core] feat: Allow admins to invite students — STUDENT added to invitable roles with a "Student / TA" dropdown marker noting a TA is a student elevated per-course. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] tests: Cover admin student invites — schema accepts STUDENT and rejects TA, and the integration create→accept yields a STUDENT user with no authorized units. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] feat: Admin Chatbot at `/admin/chat` — ADMIN-only assistant with AI SDK tools for platform ops (list/get courses, enrollments, users, bug reports; confirmed writes for user CRUD, enrollment changes, and bug triage). Separate `ChatbotType` sessions (`LEARNING` | `ADMIN`), tool-capable model requirement, and token budgeting for vLLM context windows. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
