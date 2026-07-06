@@ -656,6 +656,8 @@ export async function findRelevantContent(
       JOIN material_chunks mc ON me."chunkId" = mc.id
       JOIN course_materials cm ON mc."materialId" = cm.id
       WHERE cm."courseId" = ${courseId}
+        AND cm."deletedAt" IS NULL
+        AND cm."unpublishedAt" IS NULL
         AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
       ORDER BY score DESC
       LIMIT ${Number(effectiveLimit)}
@@ -684,6 +686,7 @@ export async function findRelevantContent(
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
       AND cm."deletedAt" IS NULL
+      AND cm."unpublishedAt" IS NULL
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
     LIMIT ${Number(effectiveLimit)}

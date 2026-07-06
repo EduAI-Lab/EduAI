@@ -194,6 +194,13 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     const params = capturedParams();
     expect(params[params.length - 1]).toBe(2);
   });
+
+  it("excludes deleted and unpublished materials from the SQL filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain('cm."deletedAt" IS NULL');
+    expect(sql).toContain('cm."unpublishedAt" IS NULL');
+  });
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -226,5 +233,11 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
       similarity: 0.91,
       materialTitle: "Week 9 Lecture",
     });
+  });
+
+  it("excludes unpublished materials from the SQL filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain('cm."unpublishedAt" IS NULL');
   });
 });
