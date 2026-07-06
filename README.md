@@ -20,7 +20,7 @@ EduAI/
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── infra/
-│   └── cron/                        # Server backup scripts (pg_dump, off-site sync, rotation) + cron.env config
+│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── tools/
 │   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
 ├── scripts/                         # Repo-level setup and dev utilities
@@ -120,7 +120,7 @@ On first run (or after a database wipe), the Core and AI Tutor databases are see
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
 
-After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required.
+After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for a consolidated reference of every variable across the monorepo.
 
 **Service API key (`EDUAI_API_KEY`)**
 
