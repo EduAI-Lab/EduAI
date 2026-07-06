@@ -93,7 +93,7 @@ const ROLE_LABEL: Record<InviteRole | "STUDENT", string> = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user) return redirect("/auth/login");
   if (!["ADMIN", "UNIT_ADMIN"].includes(session.user.role ?? "")) return redirect("/dashboard");
   return {

@@ -46,7 +46,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     return { response: null, session: null };
   }
 
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user || session.user.role !== "ADMIN") {
     fireAndForget(
       logSecurityEvent({
@@ -85,7 +85,7 @@ type AdminGate =
  * otherwise `{ session }`.
  */
 export async function requireAdmin(request: Request): Promise<AdminGate> {
-  const resolved = await auth.api.getSession(request);
+  const resolved = await auth.api.getSession({ headers: request.headers });
   if (!resolved?.user || resolved.user.role !== "ADMIN") {
     fireAndForget(
       logSecurityEvent({
@@ -121,7 +121,7 @@ export async function requireInviter(
   request: Request,
   action: string,
 ): Promise<AdminGate> {
-  const resolved = await auth.api.getSession(request);
+  const resolved = await auth.api.getSession({ headers: request.headers });
   const role = resolved?.user?.role;
 
   if (!resolved?.user || (role !== "ADMIN" && role !== "UNIT_ADMIN")) {

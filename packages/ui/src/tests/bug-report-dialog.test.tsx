@@ -1,53 +1,88 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { BugReportDialog, type BugReportPayload } from "../bug-report-dialog";
+import { BugReportDialog } from "../bug-report-dialog";
 
 describe("BugReportDialog", () => {
-  const mockOnSubmit = vi.fn();
-
-  it("renders the trigger button with label", () => {
-    render(<BugReportDialog onSubmit={mockOnSubmit} />);
-    expect(screen.getByRole("button", { name: /report bug/i })).toBeInTheDocument();
+  it("does not render dialog content when closed", () => {
+    render(<BugReportDialog open={false} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.queryByText("Report a bug")).not.toBeInTheDocument();
   });
 
-  it("renders the trigger button with bug icon", () => {
-    render(<BugReportDialog onSubmit={mockOnSubmit} />);
-    const button = screen.getByRole("button", { name: /report bug/i });
-    // The icon is rendered as part of the button (SVG)
-    expect(button.querySelector("svg")).toBeInTheDocument();
+  it("renders the bug type select and description field when open", () => {
+    render(<BugReportDialog open={true} onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
+    expect(screen.getByText("Report a bug")).toBeInTheDocument();
+    expect(screen.getByTestId("bug-type")).toBeInTheDocument();
+    expect(screen.getByTestId("bug-description")).toBeInTheDocument();
   });
 
-  it("applies custom trigger className when provided", () => {
-    render(<BugReportDialog onSubmit={mockOnSubmit} triggerClassName="custom-btn" />);
-    const button = screen.getByRole("button", { name: /report bug/i });
-    expect(button).toHaveClass("custom-btn");
+  it("blocks submit and shows validation errors when required fields are missing", async () => {
+    const onSubmit = vi.fn();
+    render(<BugReportDialog open={true} onOpenChange={vi.fn()} onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Please select a bug type")).toBeInTheDocument();
+      expect(screen.getByText(/at least 10 characters/i)).toBeInTheDocument();
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("wires onSubmit as a prop", () => {
-    const { rerender } = render(<BugReportDialog onSubmit={mockOnSubmit} />);
-    expect(mockOnSubmit).toBeDefined();
-    // Verify that the component accepts and stores the callback
-    rerender(<BugReportDialog onSubmit={mockOnSubmit} />);
-    expect(mockOnSubmit).toBeDefined();
+  it("submits the description, bug type, and anonymity flag", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const onOpenChange = vi.fn();
+    render(<BugReportDialog open={true} onOpenChange={onOpenChange} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByTestId("bug-description"), {
+      target: { value: "Steps to reproduce the issue in detail." },
+    });
+    fireEvent.click(screen.getByTestId("bug-type"));
+    fireEvent.click(await screen.findByText("Performance issue"));
+
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Steps to reproduce the issue in detail.",
+          bugType: "PERFORMANCE",
+          isAnonymous: false,
+        }),
+      );
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("renders a button with type='button' to prevent form submission", () => {
-    render(<BugReportDialog onSubmit={mockOnSubmit} />);
-    const button = screen.getByRole("button", { name: /report bug/i });
-    expect(button).toHaveAttribute("type", "button");
-  });
+  it("attaches captured diagnostics when getCapturedData is provided", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const getCapturedData = vi.fn().mockReturnValue({
+      consoleLogs: "[]",
+      networkLogs: "[]",
+      screenshot: null,
+    });
+    render(
+      <BugReportDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        onSubmit={onSubmit}
+        getCapturedData={getCapturedData}
+      />,
+    );
 
-  it("renders button with outline variant styling", () => {
-    render(<BugReportDialog onSubmit={mockOnSubmit} />);
-    const button = screen.getByRole("button", { name: /report bug/i });
-    // The button has outline variant classes
-    expect(button.className).toMatch(/bg-transparent|text-primary-text|border/);
-  });
+    fireEvent.change(screen.getByTestId("bug-description"), {
+      target: { value: "Steps to reproduce the issue in detail." },
+    });
+    fireEvent.click(screen.getByTestId("bug-type"));
+    fireEvent.click(await screen.findByText("Other"));
 
-  // NOTE: Dialog content tests are skipped because Radix Dialog only renders
-  // content in the DOM when open=true, which is unreliable in happy-dom without
-  // proper dialog state management. The component structure is solid; testing
-  // form interaction would require a controlled Dialog wrapper or direct state mutation.
-  // Keep tests focused on the reliably testable trigger element.
+    fireEvent.click(screen.getByRole("button", { name: /submit report/i }));
+
+    await waitFor(() => {
+      expect(getCapturedData).toHaveBeenCalled();
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ consoleLogs: "[]", networkLogs: "[]", screenshot: null }),
+      );
+    });
+  });
 });

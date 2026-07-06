@@ -68,7 +68,7 @@ describe("createAdminChatTools read execute", () => {
     });
 
     const tools = createAdminChatTools(ctx);
-    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" }, { toolCallId: "test" });
+    const result = await tools.listCourseTopics.execute({ courseCode: "COSC 111" }, { toolCallId: "test", messages: [] });
     expect(resolveAdminCourseId).toHaveBeenCalled();
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
@@ -81,7 +81,7 @@ describe("createAdminChatTools read execute", () => {
         courseCode: "COSC 111",
         name: "New Topic",
       },
-      { toolCallId: "test" },
+      { toolCallId: "test", messages: [] },
     );
     expect(result).toMatchObject({
       writeSucceeded: false,
@@ -100,7 +100,7 @@ describe("createAdminChatTools write execute", () => {
         email: "test@example.com",
         role: "STUDENT",
       },
-      { toolCallId: "test" },
+      { toolCallId: "test", messages: [] },
     );
     expect(result).toMatchObject({
       writeSucceeded: false,
@@ -116,7 +116,7 @@ describe("createAdminChatTools write execute", () => {
         confirmed: true,
         name: "Updated",
       },
-      { toolCallId: "test" },
+      { toolCallId: "test", messages: [] },
     );
     expect(result).toMatchObject({
       writeSucceeded: false,

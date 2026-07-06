@@ -7,14 +7,12 @@ import { SuggestedPrompts } from "~/components/chat/suggested-prompts";
 // ---------------------------------------------------------------------------
 
 describe("SuggestedPrompts — rendering", () => {
-  it("renders all six prompt titles", () => {
+  it("renders four starter chip labels", () => {
     render(<SuggestedPrompts onSelectPrompt={vi.fn()} />);
     expect(screen.getByText("Build a study plan")).toBeInTheDocument();
     expect(screen.getByText("Explain a concept")).toBeInTheDocument();
-    expect(screen.getByText("Generate practice problems")).toBeInTheDocument();
-    expect(screen.getByText("Review my essay")).toBeInTheDocument();
-    expect(screen.getByText("Debug my code")).toBeInTheDocument();
-    expect(screen.getByText("Summarize key points")).toBeInTheDocument();
+    expect(screen.getByText("Practice problems")).toBeInTheDocument();
+    expect(screen.getByText("Summarize readings")).toBeInTheDocument();
   });
 });
 
@@ -24,20 +22,27 @@ describe("SuggestedPrompts — rendering", () => {
 
 describe("SuggestedPrompts — callbacks", () => {
   it("calls onSelectPrompt with the correct study plan prompt when 'Build a study plan' is clicked", () => {
+    vi.useFakeTimers();
     const onSelectPrompt = vi.fn();
     render(<SuggestedPrompts onSelectPrompt={onSelectPrompt} />);
     fireEvent.click(screen.getByText("Build a study plan"));
+    expect(onSelectPrompt).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(280);
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Help me create a personalized study plan for my upcoming exam, including key topics to review and a day-by-day schedule."
+      "Help me create a short study plan for my upcoming exam with the most important topics first.",
     );
+    vi.useRealTimers();
   });
 
-  it("calls onSelectPrompt with the correct debug prompt when 'Debug my code' is clicked", () => {
+  it("calls onSelectPrompt with the correct concept prompt when 'Explain a concept' is clicked", () => {
+    vi.useFakeTimers();
     const onSelectPrompt = vi.fn();
     render(<SuggestedPrompts onSelectPrompt={onSelectPrompt} />);
-    fireEvent.click(screen.getByText("Debug my code"));
+    fireEvent.click(screen.getByText("Explain a concept"));
+    vi.advanceTimersByTime(280);
     expect(onSelectPrompt).toHaveBeenCalledWith(
-      "Help me debug this code, explain what's going wrong, and suggest a clean fix with an explanation."
+      "Explain a challenging concept from my course in simple terms with one real-world example.",
     );
+    vi.useRealTimers();
   });
 });

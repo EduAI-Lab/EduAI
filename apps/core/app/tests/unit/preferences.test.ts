@@ -30,7 +30,7 @@ function makeArgs(method = "GET", body?: unknown) {
     }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 function mockUser(id = "u1") {
@@ -155,7 +155,7 @@ describe("PATCH /api/preferences", () => {
       }),
       params: {},
       context: {} as never,
-    });
+    } as any);
     expect(res.status).toBe(400);
   });
 });

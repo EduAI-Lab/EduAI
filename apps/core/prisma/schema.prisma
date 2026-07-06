@@ -2,8 +2,9 @@ generator client {
   provider      = "prisma-client-js"
   output        = "../node_modules/@prisma/client"
   // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
-  // when running on RHEL 8 hosts (e.g. dev.eduai.ok.ubc.ca / s378).
-  binaryTargets = ["native", "rhel-openssl-1.1.x"]
+  // for RHEL 8 hosts (dev.eduai.ok.ubc.ca / s378); "linux-musl-openssl-3.0.x"
+  // is required for node:*-alpine Docker images (musl libc, OpenSSL 3).
+  binaryTargets = ["native", "rhel-openssl-1.1.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -327,6 +328,15 @@ model CourseMaterial {
   externalSource  String?
   canvasUpdatedAt DateTime?
   uploadedBy      String?
+  /// Student-visibility gate, independent of the course-level publish flag. When
+  /// false, students never see this material even in a published course; staff
+  /// (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) always see it. Lets instructors stage all
+  /// material up-front and reveal it on the course timeline.
+  visibleToStudents Boolean       @default(true)
+  /// Optional scheduled reveal. When set and in the future, students do not see
+  /// this material until the timestamp passes (staff always see it). Null = no
+  /// schedule (governed only by `visibleToStudents` + course publish state).
+  availableAt     DateTime?
   /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
   /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
   /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
@@ -406,21 +416,22 @@ model QuestionSecondaryTopic {
 }
 
 model BugReport {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   source      BugReportSource
   userId      String?
-  isAnonymous Boolean         @default(false)
-  description String          @db.VarChar(2000)
-  status      BugReportStatus @default(UNHANDLED)
+  isAnonymous Boolean          @default(false)
+  description String           @db.VarChar(2000)
+  bugType     BugReportType?
+  status      BugReportStatus  @default(UNHANDLED)
   consoleLogs String?
   networkLogs String?
   screenshot  String?
   pageUrl     String?
   userAgent   String?
   context     Json?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([userId])
@@ -644,6 +655,15 @@ enum BugReportStatus {
   UNHANDLED
   IN_PROGRESS
   RESOLVED
+}
+
+enum BugReportType {
+  UI_DISPLAY
+  FEATURE_NOT_WORKING
+  PERFORMANCE
+  CONTENT_ERROR
+  ACCESS_PERMISSION
+  OTHER
 }
 
 enum AIModelType {

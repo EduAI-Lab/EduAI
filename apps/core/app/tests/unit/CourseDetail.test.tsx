@@ -18,6 +18,9 @@ vi.mock('~/components/course-materials-upload', () => ({
   CourseMaterialsUpload: () => <div data-testid="upload-widget">Upload widget</div>,
 }))
 
+// No PolicyProvider is rendered, so usePolicyGate falls back to the empty
+// context and every flag resolves to its code default — which is what these
+// assertions expect (e.g. tas.canManageTopics defaults off → greyed).
 
 const COURSE: CourseDetail = {
   id: 'c1',
@@ -270,7 +273,7 @@ describe('CourseDetailTaView', () => {
     expect(screen.getAllByRole('button', { name: /upload material/i }).length).toBeGreaterThan(0)
   })
 
-  it('does NOT show topic add form', () => {
+  it('shows the topic add form greyed-out (disabled, not hidden) when canManageTopics is off (#807)', () => {
     wrap(
       <CourseDetailTaView
         course={COURSE}
@@ -280,7 +283,10 @@ describe('CourseDetailTaView', () => {
         {...TA_PROPS}
       />
     )
-    expect(screen.queryByPlaceholderText(/new topic name/i)).not.toBeInTheDocument()
+    // §807: the form stays visible but inert so the TA sees the capability exists.
+    const input = screen.getByPlaceholderText(/new topic name/i)
+    expect(input).toBeInTheDocument()
+    expect(input).toBeDisabled()
   })
 
   it('shows topic names read-only', () => {
@@ -317,7 +323,7 @@ describe('CourseDetailStudentView', () => {
     expect(screen.getByText('Variables')).toBeInTheDocument()
   })
 
-  it('shows materials read-only with no action buttons', () => {
+  it('shows materials read-only with preview for ready files', () => {
     wrap(
       <CourseDetailStudentView
         course={COURSE}
@@ -325,7 +331,6 @@ describe('CourseDetailStudentView', () => {
         topics={[]}
       />
     )
-    expect(screen.getByText('Lecture 1')).toBeInTheDocument()
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Lecture 1' })).toBeInTheDocument()
   })
 })
