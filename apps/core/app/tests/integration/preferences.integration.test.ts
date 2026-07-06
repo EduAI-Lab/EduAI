@@ -13,6 +13,7 @@ vi.mock("~/lib/auth/server", () => ({
 
 import { loader, action } from "~/routes/api/preferences";
 import { loader as rootLoader } from "~/root";
+import { getPolicies } from "~/lib/policy.server";
 import { seedUser, mockSession, cleanupRbac } from "../helpers/rbac";
 
 const createdUserIds: string[] = [];
@@ -43,13 +44,14 @@ function patchArgs(body: unknown) {
   } as any;
 }
 
-function expectRootLoader(overrides: Record<string, unknown>) {
+async function expectRootLoader(overrides: Record<string, unknown>) {
   return {
     canInvite: false,
     assistive: false,
     motionReduced: false,
     density: "comfortable",
     theme: "system",
+    policies: await getPolicies(),
     ...overrides,
   };
 }
@@ -71,7 +73,7 @@ describe("Assistive preference round-trip", () => {
     });
 
     const root = await rootLoader(getArgs("/"));
-    expect(root).toEqual(expectRootLoader({}));
+    expect(root).toEqual(await expectRootLoader({}));
   });
 
   it("PATCH ON persists, survives re-read, and flips the root loader", async () => {
@@ -90,7 +92,7 @@ describe("Assistive preference round-trip", () => {
     // GET reads it back; root loader now reports ON
     const res = await loader(getArgs());
     expect((await res.json()).assistDefault).toBe(true);
-    expect(await rootLoader(getArgs("/"))).toEqual(expectRootLoader({ assistive: true }));
+    expect(await rootLoader(getArgs("/"))).toEqual(await expectRootLoader({ assistive: true }));
   });
 
   it("PATCH OFF returns the account to baseline", async () => {
@@ -103,7 +105,7 @@ describe("Assistive preference round-trip", () => {
 
     const row = await prisma.userPreference.findUnique({ where: { userId: user.id } });
     expect(row?.assistDefault).toBe(false);
-    expect(await rootLoader(getArgs("/"))).toEqual(expectRootLoader({}));
+    expect(await rootLoader(getArgs("/"))).toEqual(await expectRootLoader({}));
   });
 
   it("preference is per-account: one user's toggle does not leak to another", async () => {
@@ -117,12 +119,12 @@ describe("Assistive preference round-trip", () => {
     mockSession(userOff);
     const res = await loader(getArgs());
     expect((await res.json()).assistDefault).toBe(false);
-    expect(await rootLoader(getArgs("/"))).toEqual(expectRootLoader({}));
+    expect(await rootLoader(getArgs("/"))).toEqual(await expectRootLoader({}));
   });
 
   it("guests always get baseline from the root loader", async () => {
     mockSession(null);
-    expect(await rootLoader(getArgs("/"))).toEqual(expectRootLoader({}));
+    expect(await rootLoader(getArgs("/"))).toEqual(await expectRootLoader({}));
 
     const res = await loader(getArgs());
     expect(res.status).toBe(401);
@@ -162,7 +164,7 @@ describe("Assistive preference round-trip", () => {
     expect(row?.theme).toBe("dark");
 
     expect(await rootLoader(getArgs("/"))).toEqual(
-      expectRootLoader({ motionReduced: true, density: "compact", theme: "dark" }),
+      await expectRootLoader({ motionReduced: true, density: "compact", theme: "dark" }),
     );
   });
 });

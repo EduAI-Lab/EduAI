@@ -6,3 +6,7 @@ export function getEduAiAppUrl(): string {
 export function getAiTutorAppUrl(): string {
   return import.meta.env.VITE_AI_TUTOR_URL?.trim() || 'http://localhost:3001';
 }
+
+export function getQuestionMakerUrl(): string {
+  return import.meta.env.VITE_QUESTION_MAKER_URL?.trim() || 'http://localhost:5173';
+}
