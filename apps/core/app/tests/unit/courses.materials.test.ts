@@ -44,6 +44,7 @@ import { loader, action } from "~/routes/api/courses.materials.$";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
+import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import { processUploadedFile } from "~/lib/ai/file-processing";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 
@@ -133,6 +134,7 @@ function stubUploadArgs() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
   mockAccess({ level: "instructor", rank: 2 });
   // Reset to code defaults so per-test overrides don't leak across tests.
   vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
@@ -345,6 +347,31 @@ describe("POST /api/courses/:courseId/materials action", () => {
       context: {} as never,
     } as any);
     expect(res.status).toBe(400);
+  });
+
+  it("returns 500 with a sanitized message when embedding fails with a Prisma error (#54)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "prisma-fail",
+      title: "file.pdf",
+      mimeType: "application/pdf",
+      fileSize: 100,
+      content: "text",
+    } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-prisma" } as never);
+    vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-prisma" } as never);
+    vi.mocked(processMaterialEmbeddings).mockRejectedValue(
+      new Error("Invalid `prisma.$executeRaw()` invocation:\nRaw query failed."),
+    );
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe(
+      "Material indexing failed due to a database error. Please try again or contact support.",
+    );
+    expect(body.error).not.toMatch(/prisma/i);
   });
 
   it("persists uploadedBy as the session user on create (#294)", async () => {
@@ -584,6 +611,38 @@ describe("PATCH /api/courses/:courseId/materials/:materialId action", () => {
     } as never);
     const res = await action(makeRenameArgs("mat-1", { title: "New name" }));
     expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a TA changing student visibility on their OWN material (§7 rename-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+      title: "Old name",
+      visibleToStudents: true,
+      availableAt: null,
+    } as never);
+    const res = await action(makeRenameArgs("mat-1", { visibleToStudents: false }));
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for a TA scheduling availableAt on their OWN material (§7 rename-only)", async () => {
+    mockSession("STUDENT", "ta-user");
+    mockAccess({ level: "ta", rank: 1 });
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-1",
+      uploadedBy: "ta-user",
+      title: "Old name",
+      visibleToStudents: true,
+      availableAt: null,
+    } as never);
+    const res = await action(
+      makeRenameArgs("mat-1", { availableAt: "2099-01-01T00:00:00.000Z" }),
+    );
+    expect(res.status).toBe(403);
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
   });
 });
 
