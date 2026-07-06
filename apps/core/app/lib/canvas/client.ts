@@ -136,6 +136,32 @@ export async function syncCanvasMaterials(
   return body.data;
 }
 
+export async function excludeCanvasMaterial(courseId: string, canvasFileId: string): Promise<void> {
+  const response = await fetch(`/api/courses/${courseId}/canvas-materials/exclusions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canvasFileId }),
+  });
+  const body = (await response.json()) as { success: boolean; error?: string };
+  if (!response.ok || body.success === false) {
+    throw new Error(body.error ?? "Failed to exclude Canvas file");
+  }
+}
+
+export async function unexcludeCanvasMaterial(courseId: string, canvasFileId: string): Promise<void> {
+  const response = await fetch(`/api/courses/${courseId}/canvas-materials/exclusions`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canvasFileId }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Failed to un-exclude Canvas file");
+  }
+}
+
 export async function linkCanvasRoster(studentNumber: string): Promise<LinkRosterResponse> {
   const body = await canvasRequest<LinkRosterResponse>("link-roster", {
     method: "POST",
