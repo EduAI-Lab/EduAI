@@ -36,6 +36,13 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "backup-rotate.sh",
   },
   {
+    name: "cleanup-invitations",
+    description: "Delete revoked/expired invitations past a 30-day grace period",
+    schedule: "30 3 * * *",
+    scheduleLabel: "Daily at 03:30 UTC",
+    script: "cleanup-invitations.sh",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
