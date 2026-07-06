@@ -67,6 +67,8 @@ services:
       PORT: "3000"
       E2E_SEED_SECRET: e2e-seed-secret
       EDUAI_API_KEY: test-service-key-not-for-production
+      QM_BACKEND_URL: http://e2e-qm-server:8000
+      AI_TUTOR_SERVER_URL: http://e2e-ai-tutor-server:4000
     ports:
       - "3000:3000"
     depends_on:
@@ -146,6 +148,7 @@ services:
       # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
       CORE_PUBLIC_ORIGIN: http://localhost:3000
       CORS_ORIGINS: http://localhost:5173
+      EDUAI_API_KEY: test-service-key-not-for-production
     ports:
       - "8000:8000"
     depends_on:
