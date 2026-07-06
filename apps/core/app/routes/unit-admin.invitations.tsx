@@ -414,8 +414,11 @@ export default function UnitAdminInvitationsPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="person@university.edu"
+                  placeholder="person@student.ubc.ca"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Must be a UBC address (e.g. person@student.ubc.ca or person@ubc.ca).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-name">Name (optional)</Label>
