@@ -228,3 +228,60 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     });
   });
 });
+
+// ── Student-visibility gate (#839) ────────────────────────────────────────────
+
+/**
+ * Concatenate the SQL text of every Prisma.Sql fragment interpolated into the
+ * query. Duck-typed on `.strings` (a Prisma.Sql fragment) rather than
+ * `instanceof`, which isn't reliable across the generated client build.
+ */
+function capturedFragmentSql(callIndex = 0): string {
+  return capturedParams(callIndex)
+    .filter(
+      (p): p is { strings: string[] } =>
+        typeof p === "object" &&
+        p !== null &&
+        Array.isArray((p as { strings?: unknown }).strings),
+    )
+    .map((f) => f.strings.join(" "))
+    .join(" ");
+}
+
+describe("findRelevantContent — student-visibility gate (#839)", () => {
+  beforeEach(() => {
+    queryRawMock.mockResolvedValue([]);
+  });
+
+  it("excludes hidden/scheduled materials when restrictToStudentVisible=true (pure-vector)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"visibleToStudents"');
+    expect(frag).toContain('"availableAt"');
+    expect(frag).toContain("NOW()");
+  });
+
+  it("excludes hidden/scheduled materials when restrictToStudentVisible=true (hybrid)", async () => {
+    process.env.RAG_HYBRID_BM25 = "1";
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"visibleToStudents"');
+    expect(frag).toContain('"availableAt"');
+  });
+
+  it("does not restrict visibility for staff callers (default)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(capturedFragmentSql()).not.toContain("visibleToStudents");
+  });
+
+  it("always filters soft-deleted materials in BOTH paths", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
+
+    vi.clearAllMocks();
+    queryRawMock.mockResolvedValue([]);
+    process.env.RAG_HYBRID_BM25 = "1";
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(capturedSql()).toContain('cm."deletedAt" IS NULL');
+  });
+});
