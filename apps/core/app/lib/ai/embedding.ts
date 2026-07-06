@@ -658,6 +658,10 @@ export async function findRelevantContent(
       WHERE cm."courseId" = ${courseId}
         AND cm."deletedAt" IS NULL
         AND cm."unpublishedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM canvas_material_exclusions cme
+          WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+        )
         AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
       ORDER BY score DESC
       LIMIT ${Number(effectiveLimit)}
@@ -687,6 +691,10 @@ export async function findRelevantContent(
     WHERE cm."courseId" = ${courseId}
       AND cm."deletedAt" IS NULL
       AND cm."unpublishedAt" IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM canvas_material_exclusions cme
+        WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+      )
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
     LIMIT ${Number(effectiveLimit)}

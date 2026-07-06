@@ -13,6 +13,8 @@ vi.mock("~/lib/prisma.server", () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -264,22 +266,40 @@ describe("syncSelectedCanvasMaterials", () => {
 
 describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
   it("upserts an exclusion row scoped to the course", async () => {
-    vi.mocked(prisma.canvasMaterialExclusion.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
 
     await excludeCanvasMaterial("user-1", "core-course-1", "1001");
 
-    expect(prisma.canvasMaterialExclusion.create).toHaveBeenCalledWith({
-      data: { courseId: "core-course-1", canvasFileId: "1001", excludedByUserId: "user-1" },
+    expect(prisma.canvasMaterialExclusion.upsert).toHaveBeenCalledWith({
+      where: { courseId_canvasFileId: { courseId: "core-course-1", canvasFileId: "1001" } },
+      create: { courseId: "core-course-1", canvasFileId: "1001", excludedByUserId: "user-1" },
+      update: {},
     });
   });
 
+  it("is idempotent when excluding an already-excluded file", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
+
+    await expect(
+      excludeCanvasMaterial("user-1", "core-course-1", "1001"),
+    ).resolves.toBeUndefined();
+  });
+
   it("deletes the exclusion row on unexclude", async () => {
-    vi.mocked(prisma.canvasMaterialExclusion.delete).mockResolvedValue({} as never);
+    vi.mocked(prisma.canvasMaterialExclusion.deleteMany).mockResolvedValue({ count: 1 } as never);
 
     await unexcludeCanvasMaterial("user-1", "core-course-1", "1001");
 
-    expect(prisma.canvasMaterialExclusion.delete).toHaveBeenCalledWith({
-      where: { courseId_canvasFileId: { courseId: "core-course-1", canvasFileId: "1001" } },
+    expect(prisma.canvasMaterialExclusion.deleteMany).toHaveBeenCalledWith({
+      where: { courseId: "core-course-1", canvasFileId: "1001" },
     });
+  });
+
+  it("is idempotent when unexcluding an already-unexcluded file", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.deleteMany).mockResolvedValue({ count: 0 } as never);
+
+    await expect(
+      unexcludeCanvasMaterial("user-1", "core-course-1", "1001"),
+    ).resolves.toBeUndefined();
   });
 });

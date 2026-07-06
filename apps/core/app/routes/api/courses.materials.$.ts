@@ -393,13 +393,30 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  const excludedCanvasFileIds =
+    access.level === 'student'
+      ? (
+          await prisma.canvasMaterialExclusion.findMany({
+            where: { courseId },
+            select: { canvasFileId: true },
+          })
+        ).map((row) => row.canvasFileId)
+      : [];
+
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({
       where: {
         id: materialId,
         courseId,
         deletedAt: null,
-        ...(access.level === 'student' ? { unpublishedAt: null } : {}),
+        ...(access.level === 'student'
+          ? {
+              unpublishedAt: null,
+              ...(excludedCanvasFileIds.length > 0
+                ? { OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }] }
+                : {}),
+            }
+          : {}),
       },
       select: {
         id: true,
@@ -435,7 +452,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     where: {
       courseId,
       deletedAt: null,
-      ...(access.level === 'student' ? { unpublishedAt: null } : {}),
+      ...(access.level === 'student'
+        ? {
+            unpublishedAt: null,
+            ...(excludedCanvasFileIds.length > 0
+              ? { OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }] }
+              : {}),
+          }
+        : {}),
     },
     include: {
       _count: { select: { chunks: true } },
