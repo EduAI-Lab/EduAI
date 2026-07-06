@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ServiceStatus } from '@eduai/ui';
 import eduaiService from '../services/eduaiService';
-import { apiKeyStorage } from '../services/apiKeyStorage';
+import { apiKeyStorage, isCloudProvider } from '../services/apiKeyStorage';
 
 const POLL_MS = 60_000;
 
@@ -34,7 +34,7 @@ async function probeCloud(): Promise<ServiceStatus> {
 
   try {
     const res = await eduaiService.testApiKey(cloudKeys);
-    if (res?.success && res.provider === 'google') {
+    if (res?.success && isCloudProvider(res.provider)) {
       return { state: 'online', detail: 'Cloud AI · Online (your provider key).' };
     }
     return { state: 'offline', detail: res?.error || 'Cloud AI · Key could not be validated.' };

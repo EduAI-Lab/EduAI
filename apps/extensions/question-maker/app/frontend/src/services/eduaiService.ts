@@ -3,7 +3,7 @@
  * Passes through provider API keys as needed and returns typed results.
  */
 import api from './api';
-import { apiKeyStorage } from './apiKeyStorage';
+import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -127,8 +127,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
-    /** Which provider path was validated: 'google' (cloud) or 'ollama' (UBC-hosted). */
-    provider?: 'google' | 'ollama';
+    /** Which provider path was validated: a cloud provider (google/openai/deepseek/anthropic) or 'ollama' (UBC-hosted). */
+    provider?: AIProvider | 'ollama';
 }
 
 class EduAIService {

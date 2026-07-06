@@ -8,6 +8,14 @@ const ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
 
 export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic';
 
+/** Cloud (key-bearing) providers, as opposed to the UBC-hosted `ollama` path. */
+export const CLOUD_PROVIDERS: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
+
+/** True when a provider id names a cloud provider (any supported one — not just Google). */
+export function isCloudProvider(provider: string | null | undefined): provider is AIProvider {
+  return !!provider && (CLOUD_PROVIDERS as string[]).includes(provider);
+}
+
 /** Generates or retrieves a derived AES-GCM key for encrypting provider secrets in this browser. */
 async function getEncryptionKey(): Promise<CryptoKey> {
   // Try to get existing salt from localStorage
@@ -113,9 +121,8 @@ export const apiKeyStorage = {
   /** Returns all stored provider keys as a decrypted object. */
   async getAllApiKeys(): Promise<Record<string, string>> {
     const keys: Record<string, string> = {};
-    const providers: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
 
-    for (const provider of providers) {
+    for (const provider of CLOUD_PROVIDERS) {
       const key = await this.getApiKey(provider);
       if (key) {
         keys[provider] = key;
@@ -128,8 +135,8 @@ export const apiKeyStorage = {
   /** Derives provider name from a model ID prefix (e.g., google:gemini → google). */
   getProviderFromModel(modelId: string): AIProvider | null {
     const provider = modelId.split(':')[0].toLowerCase();
-    if (['google', 'openai', 'deepseek', 'anthropic'].includes(provider)) {
-      return provider as AIProvider;
+    if (isCloudProvider(provider)) {
+      return provider;
     }
     return null;
   },
