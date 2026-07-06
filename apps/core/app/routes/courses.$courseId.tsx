@@ -200,6 +200,8 @@ export default function CourseDetailPage() {
     createdAt: m.createdAt,
     chunkCount: m.chunkCount,
     uploadedBy: m.uploadedBy ?? null,
+    visibleToStudents: m.visibleToStudents,
+    availableAt: m.availableAt ?? null,
   }))
 
   const handleFileSelect = async (file: File) => {
