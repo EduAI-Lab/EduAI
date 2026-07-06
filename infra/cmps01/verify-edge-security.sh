@@ -13,6 +13,12 @@ if [ -f .env ]; then
   set +a
 fi
 
+if [ -z "${CMPS01_INTERNAL_KEY:-}" ]; then
+  echo "ERROR: CMPS01_INTERNAL_KEY not set."
+  echo "  cp .env.example .env && edit CMPS01_INTERNAL_KEY, then re-run ./deploy-edge-proxy.sh"
+  exit 1
+fi
+
 expect_code() {
   local label="$1"
   local url="$2"

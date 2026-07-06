@@ -1,6 +1,37 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cosineSimilarity } from "~/lib/ai/routing/cosine";
-import { voteTierFromNeighbors } from "~/lib/ai/routing/knn";
+import {
+  invalidateKnnExemplarCache,
+  loadCachedKnnExemplars,
+  voteTierFromNeighbors,
+} from "~/lib/ai/routing/knn";
+
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => true),
+  readFileSync: vi.fn(() =>
+    JSON.stringify({
+      version: 1,
+      exemplars: [
+        { prompt: "define bit", tier: 1 },
+        { prompt: "prove correctness", tier: 3, embedding: [1, 0] },
+      ],
+    }),
+  ),
+}));
+
+vi.mock("~/lib/ai/embedding", () => ({
+  generateEmbedding: vi.fn(),
+  generateEmbeddings: vi.fn(async (prompts: string[]) =>
+    prompts.map((_, i) => ({ embedding: [i, 1] })),
+  ),
+}));
+
+import { generateEmbeddings } from "~/lib/ai/embedding";
+
+beforeEach(() => {
+  invalidateKnnExemplarCache();
+  vi.clearAllMocks();
+});
 
 describe("cosineSimilarity", () => {
   it("returns 1 for identical vectors", () => {
@@ -26,5 +57,15 @@ describe("voteTierFromNeighbors", () => {
     const { tier, confidence } = voteTierFromNeighbors([]);
     expect(tier).toBe(2);
     expect(confidence).toBe(0);
+  });
+});
+
+describe("loadCachedKnnExemplars", () => {
+  it("embeds missing exemplar vectors on demand", async () => {
+    const exemplars = await loadCachedKnnExemplars("/tmp/fake-exemplars.json");
+    expect(generateEmbeddings).toHaveBeenCalledWith(["define bit"]);
+    expect(exemplars).toHaveLength(2);
+    expect(exemplars[0]?.embedding).toEqual([0, 1]);
+    expect(exemplars[1]?.embedding).toEqual([1, 0]);
   });
 });

@@ -13,6 +13,7 @@ import aiModelRoutes from './routes/ai-models.js';
 import adminRoutes from './routes/admin.js';
 import suggestedPromptRoutes from './routes/suggested-prompts.js';
 import bugReportRoutes from './routes/bug-reports.js';
+import internalRoutes from './routes/internal.js';
 import { prisma } from './config/database.js';
 
 function isAllowedAdminPath(path) {
@@ -23,6 +24,13 @@ function isAllowedAdminPath(path) {
     path === '/ai-models' ||
     path.startsWith('/ai-models/') ||
     path === '/bug-reports' ||
+    // Admins share the instructor Courses dashboard, so they need the course
+    // list itself plus topic endpoints (the lesson builder calls these). Course-
+    // nested resources under /courses/, /modules/, /lessons/, /activities/ are
+    // already covered below.
+    path === '/courses' ||
+    path === '/topics' ||
+    path.startsWith('/topics/') ||
     path.startsWith('/modules/') ||
     path.startsWith('/lessons/') ||
     path.startsWith('/courses/') ||
@@ -66,6 +74,8 @@ export async function createApp(options = {}) {
     app.use('/api', (req, res, next) => {
       if (req.path === '/health') return next();
       if (req.method === 'POST' && req.path === '/logout') return next();
+      // Server-to-server (Core → AI Tutor); authenticated by requireServiceKey instead.
+      if (req.path.startsWith('/internal/')) return next();
       return requireAuth(req, res, next);
     });
   }
@@ -100,6 +110,7 @@ export async function createApp(options = {}) {
   app.use('/api', adminRoutes);
   app.use('/api', suggestedPromptRoutes);
   app.use('/api', bugReportRoutes);
+  app.use('/api', internalRoutes);
 
   return app;
 }

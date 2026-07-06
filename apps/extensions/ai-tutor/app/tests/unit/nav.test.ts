@@ -37,6 +37,14 @@ describe('getNavForUser', () => {
     });
   });
 
+  it('gives admins the shared Courses dashboard plus Bug Reports (#781)', () => {
+    const nav = getNavForUser(u('ADMIN'));
+    expect(nav).toEqual([
+      { key: 'admin-courses', title: 'Courses', href: '/instructor' },
+      { key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin' },
+    ]);
+  });
+
   it('returns no nav items for a null user', () => {
     expect(getNavForUser(null)).toEqual([]);
     expect(getNavForUser(undefined)).toEqual([]);

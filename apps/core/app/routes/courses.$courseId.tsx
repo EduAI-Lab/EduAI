@@ -30,7 +30,7 @@ import { getPolicy } from '~/lib/policy.server'
 import type { RbacUser } from '~/lib/rbac'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
+  const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
   const courseId = params.courseId
@@ -200,6 +200,8 @@ export default function CourseDetailPage() {
     createdAt: m.createdAt,
     chunkCount: m.chunkCount,
     uploadedBy: m.uploadedBy ?? null,
+    visibleToStudents: m.visibleToStudents,
+    availableAt: m.availableAt ?? null,
   }))
 
   const handleFileSelect = async (file: File) => {

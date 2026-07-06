@@ -8,7 +8,7 @@ import type { ChatToolContext } from "./chat-mode";
 
 /** Learning assistant tools — original set: RAG + web search only. */
 export function createLearningChatTools(ctx: ChatToolContext) {
-  const { effectiveCourseId } = ctx;
+  const { effectiveCourseId, restrictToStudentVisible } = ctx;
 
   return {
     getInformation: tool({
@@ -27,6 +27,8 @@ export function createLearningChatTools(ctx: ChatToolContext) {
             question,
             effectiveCourseId,
             HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictToStudentVisible ?? false,
           );
           const capped = capRagHitsForTool(relevantContent);
           return {
