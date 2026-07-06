@@ -395,7 +395,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({
-      where: { id: materialId, courseId, deletedAt: null },
+      where: {
+        id: materialId,
+        courseId,
+        deletedAt: null,
+        ...(access.level === 'student' ? { unpublishedAt: null } : {}),
+      },
       select: {
         id: true,
         title: true,
@@ -427,7 +432,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const materials = await prisma.courseMaterial.findMany({
-    where: { courseId, deletedAt: null },
+    where: {
+      courseId,
+      deletedAt: null,
+      ...(access.level === 'student' ? { unpublishedAt: null } : {}),
+    },
     include: {
       _count: { select: { chunks: true } },
     },
