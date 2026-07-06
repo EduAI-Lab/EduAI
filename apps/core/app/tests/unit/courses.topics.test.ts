@@ -16,7 +16,8 @@ vi.mock("~/lib/auth/guards.server", () => ({
   requireServiceKey: vi.fn(),
 }));
 
-vi.mock("~/lib/auth/course-access.server", () => ({
+vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/auth/course-access.server")>()),
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 

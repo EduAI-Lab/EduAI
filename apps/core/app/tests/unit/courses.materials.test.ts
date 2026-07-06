@@ -6,7 +6,8 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/guards.server", () => ({}));
 
-vi.mock("~/lib/auth/course-access.server", () => ({
+vi.mock("~/lib/auth/course-access.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/auth/course-access.server")>()),
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
