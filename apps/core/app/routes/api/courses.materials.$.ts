@@ -17,6 +17,7 @@ import {
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
 import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
+import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
 
 function json(status: number, body: unknown) {
@@ -24,6 +25,27 @@ function json(status: number, body: unknown) {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * Staff (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) see every material so they can stage
+ * and schedule content; only students are subject to the per-material
+ * visibility gate. `access.level === 'student'` is the single student marker.
+ */
+function isStaffAccess(access: AccessLevel): boolean {
+  return access.level !== 'student';
+}
+
+/**
+ * Prisma `where` fragment that hides materials students shouldn't see yet:
+ * explicitly hidden (`visibleToStudents: false`) or scheduled for a future
+ * reveal (`availableAt` in the future). Staff callers must NOT apply this.
+ */
+function studentVisibilityWhere(now: Date) {
+  return {
+    visibleToStudents: true,
+    OR: [{ availableAt: null }, { availableAt: { lte: now } }],
+  };
 }
 
 /**
@@ -110,51 +132,127 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json(400, { error: 'MATERIAL_ID_REQUIRED' });
       }
 
-      let body: { title?: unknown };
+      let body: { title?: unknown; visibleToStudents?: unknown; availableAt?: unknown };
       try {
         body = await request.json();
       } catch {
         return json(400, { error: 'INVALID_BODY' });
       }
-      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
-      if (!rawTitle) {
-        return json(400, { error: 'TITLE_REQUIRED' });
+
+      const hasTitle = body.title !== undefined;
+      const hasVisibility = body.visibleToStudents !== undefined;
+      const hasAvailableAt = body.availableAt !== undefined;
+
+      const data: {
+        title?: string;
+        visibleToStudents?: boolean;
+        availableAt?: Date | null;
+      } = {};
+
+      if (hasTitle) {
+        const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+        if (!rawTitle) {
+          return json(400, { error: 'TITLE_REQUIRED' });
+        }
+        if (rawTitle.length > 255) {
+          return json(400, { error: 'TITLE_TOO_LONG' });
+        }
+        data.title = rawTitle;
       }
-      if (rawTitle.length > 255) {
-        return json(400, { error: 'TITLE_TOO_LONG' });
+
+      if (hasVisibility) {
+        if (typeof body.visibleToStudents !== 'boolean') {
+          return json(400, { error: 'INVALID_VISIBILITY' });
+        }
+        data.visibleToStudents = body.visibleToStudents;
+      }
+
+      if (hasAvailableAt) {
+        // null clears the schedule; a valid ISO string sets a future/past reveal.
+        if (body.availableAt === null) {
+          data.availableAt = null;
+        } else if (typeof body.availableAt === 'string') {
+          const parsed = new Date(body.availableAt);
+          if (Number.isNaN(parsed.getTime())) {
+            return json(400, { error: 'INVALID_AVAILABLE_AT' });
+          }
+          data.availableAt = parsed;
+        } else {
+          return json(400, { error: 'INVALID_AVAILABLE_AT' });
+        }
+      }
+
+      if (Object.keys(data).length === 0) {
+        return json(400, { error: 'NO_FIELDS' });
       }
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId, deletedAt: null },
-        select: { id: true, uploadedBy: true, title: true },
+        select: {
+          id: true,
+          uploadedBy: true,
+          title: true,
+          visibleToStudents: true,
+          availableAt: true,
+        },
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
       }
 
-      // §7: rename mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
+      // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
       // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
-      const isOwnTaRename = access.level === 'ta' && material.uploadedBy === user.id;
-      if (access.rank < 2 && !isOwnTaRename) {
+      // The TA carve-out covers renames only; student-visibility controls
+      // (visibleToStudents / availableAt) require instructor/admin/unit access,
+      // matching the UI that hides the visibility eye from TAs.
+      const changesVisibility = hasVisibility || hasAvailableAt;
+      const isOwnTaEdit =
+        access.level === 'ta' && material.uploadedBy === user.id && !changesVisibility;
+      if (access.rank < 2 && !isOwnTaEdit) {
         return json(403, { error: 'Forbidden' });
       }
 
       const updated = await prisma.courseMaterial.update({
         where: { id: materialId },
-        data: { title: rawTitle },
-        select: { id: true, title: true },
+        data,
+        select: {
+          id: true,
+          title: true,
+          visibleToStudents: true,
+          availableAt: true,
+        },
       });
+
+      // Distinguish a pure rename from a visibility change so the audit trail
+      // stays legible; a combined edit records under MATERIAL_UPDATED.
+      const visibilityChanged = hasVisibility || hasAvailableAt;
+      const actionCode = !visibilityChanged
+        ? 'MATERIAL_RENAMED'
+        : hasTitle
+          ? 'MATERIAL_UPDATED'
+          : 'MATERIAL_VISIBILITY_CHANGED';
 
       fireAndForget(
         logAuditAction({
           ...getActorContext(user ?? null),
           ...requestContext,
-          actionCode: 'MATERIAL_RENAMED',
+          actionCode,
           category: 'MATERIAL',
           entityType: 'CourseMaterial',
           entityId: materialId,
           entityLabel: updated.title,
-          details: { courseId, previousTitle: material.title, newTitle: updated.title },
+          details: {
+            courseId,
+            ...(hasTitle ? { previousTitle: material.title, newTitle: updated.title } : {}),
+            ...(visibilityChanged
+              ? {
+                  previousVisibleToStudents: material.visibleToStudents,
+                  newVisibleToStudents: updated.visibleToStudents,
+                  previousAvailableAt: material.availableAt,
+                  newAvailableAt: updated.availableAt,
+                }
+              : {}),
+          },
         }),
       );
 
@@ -358,7 +456,7 @@ async function uploadMaterial(
   } catch (error) {
     console.error('Error processing material upload:', error);
     return json(500, {
-      error: error instanceof Error ? error.message : 'Failed to process material',
+      error: toMaterialUploadUserMessage(error),
     });
   }
 }
@@ -429,9 +527,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  const studentGate =
+    access.level === 'student' ? studentVisibilityWhere(new Date()) : {};
+
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({
-      where: { id: materialId, courseId, deletedAt: null },
+      where: { id: materialId, courseId, deletedAt: null, ...studentGate },
       select: {
         id: true,
         title: true,
@@ -462,5 +563,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return materialsListResponse(courseId, false);
+  const materials = await prisma.courseMaterial.findMany({
+    where: { courseId, deletedAt: null, ...studentGate },
+    include: {
+      _count: { select: { chunks: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Staff receive the scheduling fields so the management UI can render and edit
+  // them; students never do (they only ever see already-visible materials).
+  const staff = isStaffAccess(access);
+  return json(200, {
+    materials: materials.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+      ...(staff ? { visibleToStudents, availableAt } : {}),
+    })),
+  });
 }

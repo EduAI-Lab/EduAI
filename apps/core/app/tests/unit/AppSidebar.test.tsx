@@ -5,14 +5,12 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
-
-vi.mock("~/hooks/api/use-policies", () => ({
-  usePolicies: vi.fn(() => ({ policies: {} })),
-}));
-import { usePolicies } from "~/hooks/api/use-policies";
+import {
+  PolicyProvider,
+  type PolicyValues,
+} from "~/components/policy/policy-gate";
 
 beforeEach(() => {
-  vi.mocked(usePolicies).mockReturnValue({ policies: {} } as never);
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -29,7 +27,7 @@ beforeEach(() => {
   });
 });
 
-function renderSidebar(role: string) {
+function renderSidebar(role: string, policies: PolicyValues = {}) {
   const user = {
     id: "user-1",
     name: "Test User",
@@ -42,14 +40,16 @@ function renderSidebar(role: string) {
 
   // A data router (not plain MemoryRouter) so AppSidebar's useRouteLoaderData
   // call resolves. No "root" route is defined, so it returns undefined and the
-  // component falls back to the mocked usePolicies for the canInvite flag.
+  // component falls back to the SSR-seeded policy gate for the canInvite flag.
   const router = createMemoryRouter([
     {
       path: "/",
       element: (
-        <SidebarProvider>
-          <AppSidebar user={user} />
-        </SidebarProvider>
+        <PolicyProvider policies={policies}>
+          <SidebarProvider>
+            <AppSidebar user={user} />
+          </SidebarProvider>
+        </PolicyProvider>
       ),
     },
   ]);
@@ -68,11 +68,15 @@ describe("AppSidebar — rendering", () => {
     expect(screen.getByRole("link", { name: "Courses" })).toBeInTheDocument();
   });
 
-  it("renders AI Tutor extension link", () => {
+  it("renders the app switcher (cross-app links moved into the switcher popover)", () => {
+    // AI Tutor / Question Maker are no longer sidebar nav links — they live in
+    // the header app switcher (BrandSwitcher). Its popover contents aren't
+    // rendered under happy-dom (Radix), so assert the trigger is present; the
+    // RBAC gate on the popover is covered in @eduai/ui's app-launcher.test.tsx.
     renderSidebar("STUDENT");
-    const link = screen.getByRole("link", { name: "AI Tutor" });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "http://localhost:3001");
+    expect(
+      screen.getByRole("button", { name: "Switch app" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -91,7 +95,6 @@ describe("AppSidebar — role-gated nav", () => {
     expect(screen.queryByText("AI Management")).not.toBeInTheDocument();
     expect(screen.queryByText("Bug Reports")).not.toBeInTheDocument();
     expect(screen.getByText("Courses")).toBeInTheDocument();
-    expect(screen.getByText("AI Tutor")).toBeInTheDocument();
   });
 
   it("hides admin links for INSTRUCTOR", () => {
@@ -109,14 +112,17 @@ describe("AppSidebar — role-gated nav", () => {
   });
 
   it("shows the Invitations link for UNIT_ADMIN when unitAdmins.canInvite is on", () => {
-    vi.mocked(usePolicies).mockReturnValue({ policies: { "unitAdmins.canInvite": true } } as never);
-    renderSidebar("UNIT_ADMIN");
+    renderSidebar("UNIT_ADMIN", { "unitAdmins.canInvite": true });
     const link = screen.getByRole("link", { name: "Invitations" });
     expect(link).toHaveAttribute("href", "/unit-admin/invitations");
   });
 
-  it("hides the Invitations link for UNIT_ADMIN when the flag is off", () => {
+  it("shows the Invitations item greyed-out (not a link) for UNIT_ADMIN when the flag is off (#807)", () => {
     renderSidebar("UNIT_ADMIN");
+    // §807: the item stays visible but is no longer a navigable link.
     expect(screen.queryByRole("link", { name: "Invitations" })).not.toBeInTheDocument();
+    const disabled = screen.getByText("Invitations");
+    expect(disabled).toBeInTheDocument();
+    expect(disabled.closest('[aria-disabled="true"]')).not.toBeNull();
   });
 });

@@ -13,6 +13,7 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
+import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -462,6 +463,12 @@ export async function deleteCourse(request: Request, courseId: string) {
     where: { id: courseId },
     data: { deletedAt: new Date() },
   });
+
+  // Best-effort cascade to extensions (§802) — fire-and-forget so it never blocks
+  // the delete response; failures are logged and self-heal via each extension's
+  // reconcile job. cascadeDeleteToExtensions never throws (each push is wrapped
+  // in try/catch + logSystemError), so there's no unhandled-rejection risk.
+  void cascadeDeleteToExtensions(courseId);
 
   return new Response(null, { status: 204 });
 }

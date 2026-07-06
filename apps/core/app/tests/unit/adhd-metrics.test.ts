@@ -2,6 +2,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computeAdhdResponseMetrics,
+  detectUrgencyTerms,
+  hasSourcesFooter,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -51,8 +53,96 @@ Next? Want to know more?`;
       nextLine: true,
       underCap: true,
       oneTopic: null,
+      noUrgency: true,
+      hasSources: false,
     });
     expect(metrics.structuralPass).toBe(true);
+  });
+
+  it("flags urgency language and a Sources footer on the full metrics object", () => {
+    const text = `**Top summary**
+- Read this quickly before the exam.
+
+**Sources** Lecture 4, slide 12
+
+**Next?** Want the next step?`;
+    const metrics = computeAdhdResponseMetrics(text);
+    expect(metrics.noUrgency).toBe(false);
+    expect(metrics.hasSources).toBe(true);
+  });
+
+  it("reports noUrgency true and hasSources false for a clean reply", () => {
+    const text = `**Top summary**
+- Take it one step at a time.
+
+**Next?** Ready to try step one?`;
+    const metrics = computeAdhdResponseMetrics(text);
+    expect(metrics.noUrgency).toBe(true);
+    expect(metrics.hasSources).toBe(false);
+  });
+});
+
+describe("detectUrgencyTerms", () => {
+  it("returns the urgency terms present, lower-cased", () => {
+    expect(detectUrgencyTerms("Do this Quickly, then hurry up")).toEqual([
+      "quickly",
+      "hurry",
+    ]);
+  });
+
+  it("matches multi-word pressure phrases", () => {
+    expect(detectUrgencyTerms("finish as soon as possible")).toContain(
+      "as soon as possible",
+    );
+  });
+
+  it("does not match unrelated words or empty input", () => {
+    expect(detectUrgencyTerms("a calm, steady walkthrough")).toEqual([]);
+    expect(detectUrgencyTerms("")).toEqual([]);
+  });
+
+  it("does not partial-match inside larger words (breakfast is not fast)", () => {
+    expect(detectUrgencyTerms("we ate breakfast")).toEqual([]);
+  });
+});
+
+describe("hasSourcesFooter", () => {
+  it("detects bold, heading, and colon source markers", () => {
+    expect(hasSourcesFooter("body\n\n**Sources** ch.3")).toBe(true);
+    expect(hasSourcesFooter("body\n\n### Sources\n- ch.3")).toBe(true);
+    expect(hasSourcesFooter("body\n\nSources: ch.3 p.40")).toBe(true);
+  });
+
+  it("returns false when no footer is present", () => {
+    expect(hasSourcesFooter("just a plain answer with no citations")).toBe(false);
+  });
+
+  it("still detects the footer when it precedes the template's Next? line", () => {
+    const text = `**Top summary**
+- Read this quickly before the exam.
+
+**Sources** Lecture 4, slide 12
+
+**Next?** Want the next step?`;
+    expect(hasSourcesFooter(text)).toBe(true);
+  });
+
+  it("does not treat a non-footer 'Sources:' aside as a footer", () => {
+    const text = `Sources: I don't have course materials loaded for this yet.
+
+Let me walk through the concept directly. Recursion is when a function calls itself with a smaller input until it reaches a base case.
+
+**Next?** Want an example?`;
+    expect(hasSourcesFooter(text)).toBe(false);
+  });
+
+  it("does not treat a mid-answer 'Sources' heading as a footer when content follows", () => {
+    const text = `## Sources of bias in datasets
+
+Datasets can be biased through sampling, labeling, or measurement choices.
+
+**Next?** Want an example of each?`;
+    expect(hasSourcesFooter(text)).toBe(false);
   });
 });
 
