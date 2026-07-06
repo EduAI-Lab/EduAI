@@ -70,6 +70,7 @@ const baseData: ChatBaseData = {
     email: "test@eduai.test",
     role: "INSTRUCTOR",
     emailVerified: true,
+    isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
