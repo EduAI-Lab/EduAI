@@ -329,6 +329,15 @@ model CourseMaterial {
   externalSource  String?
   canvasUpdatedAt DateTime?
   uploadedBy      String?
+  /// Student-visibility gate, independent of the course-level publish flag. When
+  /// false, students never see this material even in a published course; staff
+  /// (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) always see it. Lets instructors stage all
+  /// material up-front and reveal it on the course timeline.
+  visibleToStudents Boolean       @default(true)
+  /// Optional scheduled reveal. When set and in the future, students do not see
+  /// this material until the timestamp passes (staff always see it). Null = no
+  /// schedule (governed only by `visibleToStudents` + course publish state).
+  availableAt     DateTime?
   /// Soft-delete marker. Non-null = removed in EduAI; deletes are ONE-WAY (never
   /// propagated upstream to Canvas). Reads must filter `deletedAt: null`; Canvas
   /// re-sync skips rows with deletedAt set. Lets extensions detect removals.

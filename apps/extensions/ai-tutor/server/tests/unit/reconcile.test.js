@@ -7,14 +7,14 @@ const SERVICE_KEY = 'test-service-key';
 // Shared Prisma mock — overridden per test
 const mockFindManyOfferings = vi.fn();
 const mockFindManyTopics = vi.fn();
-const mockUpdateOffering = vi.fn();
+const mockDeleteOffering = vi.fn();
 const mockUpdateTopic = vi.fn();
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
     courseOffering: {
       findMany: (...args) => mockFindManyOfferings(...args),
-      update: (...args) => mockUpdateOffering(...args),
+      delete: (...args) => mockDeleteOffering(...args),
     },
     topic: {
       findMany: (...args) => mockFindManyTopics(...args),
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('runReconciliation — CourseOffering', () => {
-  it('nullifies coreOfferingId when Core returns 404', async () => {
+  it('deletes the CourseOffering (cascading to modules/lessons/activities) when Core returns 404', async () => {
     mockFindManyOfferings.mockResolvedValue([
       { id: 1, coreOfferingId: 'core-cuid-1' },
     ]);
@@ -51,13 +51,10 @@ describe('runReconciliation — CourseOffering', () => {
 
     await runReconciliation();
 
-    expect(mockUpdateOffering).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { coreOfferingId: null },
-    });
+    expect(mockDeleteOffering).toHaveBeenCalledWith({ where: { id: 1 } });
   });
 
-  it('does not update when Core returns the course (200)', async () => {
+  it('does not delete when Core returns the course (200)', async () => {
     mockFindManyOfferings.mockResolvedValue([
       { id: 1, coreOfferingId: 'core-cuid-1' },
     ]);
@@ -69,10 +66,10 @@ describe('runReconciliation — CourseOffering', () => {
 
     await runReconciliation();
 
-    expect(mockUpdateOffering).not.toHaveBeenCalled();
+    expect(mockDeleteOffering).not.toHaveBeenCalled();
   });
 
-  it('skips the row without updating when Core returns 5xx', async () => {
+  it('skips the row without deleting when Core returns 5xx', async () => {
     mockFindManyOfferings.mockResolvedValue([
       { id: 1, coreOfferingId: 'core-cuid-1' },
     ]);
@@ -84,7 +81,7 @@ describe('runReconciliation — CourseOffering', () => {
 
     await runReconciliation();
 
-    expect(mockUpdateOffering).not.toHaveBeenCalled();
+    expect(mockDeleteOffering).not.toHaveBeenCalled();
   });
 
   it('continues to the next row when one row throws', async () => {
@@ -101,8 +98,8 @@ describe('runReconciliation — CourseOffering', () => {
 
     await runReconciliation();
 
-    expect(mockUpdateOffering).toHaveBeenCalledOnce();
-    expect(mockUpdateOffering).toHaveBeenCalledWith({ where: { id: 2 }, data: { coreOfferingId: null } });
+    expect(mockDeleteOffering).toHaveBeenCalledOnce();
+    expect(mockDeleteOffering).toHaveBeenCalledWith({ where: { id: 2 } });
   });
 });
 
