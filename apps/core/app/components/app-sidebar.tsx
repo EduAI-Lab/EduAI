@@ -25,6 +25,7 @@ import {
 } from "@eduai/ui"
 import type { NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
+import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps"
 import {
   getNavForUser,
   getNavSecondaryForUser,
@@ -140,6 +141,11 @@ export function AppSidebar({
       navSecondary={navSecondary}
       currentPath={pathname}
       LinkComponent={Link}
+      launcher={{
+        apps: getLauncherApps(),
+        currentAppId: CURRENT_APP_ID,
+        role: user.role,
+      }}
       user={user}
       navUser={{
         items: [
