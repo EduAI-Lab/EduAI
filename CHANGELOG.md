@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — #PR
+- [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — [#929](https://github.com/EduAI-Lab/EduAI/pull/929)
 
 ## [Week 9 — June 29–July 5, 2026]
 
