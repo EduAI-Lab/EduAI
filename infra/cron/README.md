@@ -12,6 +12,7 @@ See `docs/implementations/EduAI_CronJob_DataLifecycle_Spec.md` for the full spec
 | `backup-nightly.sh` | `0 2 * * *` | pg_dump all three databases |
 | `backup-offsite.sh` | `45 2 * * *` | Push tonight's dumps to S3/SFTP |
 | `backup-rotate.sh` | `15 3 * * *` | Delete local dumps > `$BACKUP_RETAIN_DAYS` days old |
+| `cleanup-invitations.sh` | `30 3 * * *` | Hard-delete invitations revoked/expired for > 30 days |
 
 ## First-time deployment
 
@@ -21,7 +22,7 @@ sudo useradd -r -s /bin/false eduai-cron
 
 # 2. Copy scripts to production path
 sudo mkdir -p /opt/eduai/cron
-sudo cp infra/cron/lib.sh infra/cron/backup-*.sh /opt/eduai/cron/
+sudo cp infra/cron/lib.sh infra/cron/backup-*.sh infra/cron/cleanup-invitations.sh /opt/eduai/cron/
 sudo chown eduai-cron:eduai-cron /opt/eduai/cron/*.sh
 sudo chmod 750 /opt/eduai/cron/*.sh
 
