@@ -98,6 +98,8 @@ describe("agent-readiness integration (#672)", () => {
       }),
       params: {},
       context: {} as never,
+      url: new URL("http://localhost/api/invitations"),
+      pattern: "/api/invitations",
     });
 
     expect(res.status).toBe(201);

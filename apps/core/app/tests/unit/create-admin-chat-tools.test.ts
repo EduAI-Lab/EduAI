@@ -112,7 +112,7 @@ describe("createAdminChatTools read execute", () => {
         email: "invite@test.com",
         role: "INSTRUCTOR",
       },
-      { toolCallId: "test" },
+      { toolCallId: "test", messages: [] },
     );
     expect(result).toMatchObject({
       writeSucceeded: false,
