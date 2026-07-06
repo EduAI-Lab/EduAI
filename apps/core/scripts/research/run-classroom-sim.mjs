@@ -20,7 +20,7 @@ import { performance } from "node:perf_hooks";
 import {
   DEFAULT_CLASSROOM_OUT,
   DEFAULT_CLASSROOM_SUMMARY,
-  PROMPTS_PATH,
+  loadResearchActivePrompts,
 } from "./paths.mjs";
 import { ensureResearchEnergyReady } from "./energy-sidecar.mjs";
 import {
@@ -48,18 +48,6 @@ function loadApiKeysJson() {
   const file = readEnv("RESEARCH_RUN_API_KEYS_FILE", "CHAT_BENCH_API_KEYS_FILE");
   if (file) return readFileSync(file, "utf8").trim();
   return readEnv("RESEARCH_RUN_API_KEYS", "CHAT_BENCH_API_KEYS");
-}
-
-function loadPrompts() {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
-  if (!raw) return [];
-  return raw.split("\n").map((line, i) => {
-    try {
-      return JSON.parse(line);
-    } catch (e) {
-      throw new Error(`prompts.v1.jsonl line ${i + 1}: ${e.message}`);
-    }
-  });
 }
 
 function extractResponseText(json) {
@@ -234,10 +222,19 @@ async function main() {
     process.exit(1);
   }
 
-  let prompts = loadPrompts().filter((p) => p.split === splitFilter);
+  const { prompts: activePrompts, skipped, excludedToolIds } =
+    loadResearchActivePrompts();
+  let prompts = activePrompts.filter((p) => p.split === splitFilter);
   if (!prompts.length) {
     console.error(`No prompts for split=${splitFilter}.`);
     process.exit(1);
+  }
+  if (skipped > 0) {
+    console.log(
+      "excluded (inactive / web tools):",
+      skipped,
+      excludedToolIds.length ? `ids=${excludedToolIds.join(",")}` : "",
+    );
   }
 
   const apiKeys = JSON.parse(apiKeysJson);

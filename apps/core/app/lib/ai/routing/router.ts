@@ -92,6 +92,10 @@ export type RouterDecision = {
   modelId: string;
   tier: 1 | 2 | 3;
   features: Record<string, unknown>;
+  /** Wall time for resolveRoutedModel (rules/knn/hybrid/llm path). */
+  routeResolveMs?: number;
+  /** Extra 7B classifier call only (P3 / auto-llm); 0 for rules-only. */
+  routeClassifyMs?: number;
 };
 
 const FALLBACK_MODEL = "google:gemini-2.5-flash";
@@ -163,6 +167,7 @@ async function finalizePick(
     phaseCtx: Phase1RouterContext;
     context: RouterInputContext;
     pickSource: "rules" | "knn" | "hybrid" | "llm";
+    routeClassifyMs?: number;
   },
 ): Promise<RouterDecision> {
   const normalizedPick = normalizePickForLocalVllm(pick);
@@ -234,7 +239,16 @@ async function finalizePick(
       : {}),
   };
 
-  return { modelId, tier, features };
+  const decision: RouterDecision = { modelId, tier, features };
+  if (typeof meta.routeResolveMs === "number") {
+    decision.routeResolveMs = meta.routeResolveMs;
+    features.route_resolve_ms = meta.routeResolveMs;
+  }
+  if (typeof meta.routeClassifyMs === "number") {
+    decision.routeClassifyMs = meta.routeClassifyMs;
+    features.route_classify_ms = meta.routeClassifyMs;
+  }
+  return decision;
 }
 
 /** Phase 1 rule-based routing (unchanged behaviour). */
@@ -383,9 +397,11 @@ export async function resolveRoutedModelLlm(
   }
 
   let classification: LlmRouteClassification;
+  const classifyT0 = performance.now();
 
   try {
     classification = await classifyPromptForTier(prompt, context);
+    const routeClassifyMs = Math.round(performance.now() - classifyT0);
     const tier = tierFromLlmClassification(classification);
     const pick = pickSpecFromTier(tier, context);
 
@@ -398,8 +414,10 @@ export async function resolveRoutedModelLlm(
       phaseCtx,
       context,
       pickSource: "llm",
+      routeClassifyMs,
     });
   } catch (err) {
+    const routeClassifyMs = Math.round(performance.now() - classifyT0);
     const decision = await finalizePick(match.pick, {
       routerVersion: ROUTER_VERSION_LLM,
       rule: "llm_classifier_fallback_rules",
@@ -409,6 +427,7 @@ export async function resolveRoutedModelLlm(
       phaseCtx,
       context,
       pickSource: "rules",
+      routeClassifyMs: 0,
     });
     decision.features.classifierError =
       err instanceof Error ? err.message : String(err);
@@ -433,17 +452,26 @@ export async function resolveRoutedModel(
   context: RouterInputContext,
   options?: ResolveRouterOptions,
 ): Promise<RouterDecision> {
+  const t0 = performance.now();
   const mode = resolveMode(options);
+  let decision: RouterDecision;
   if (mode === "llm") {
-    return resolveRoutedModelLlm(prompt, context);
+    decision = await resolveRoutedModelLlm(prompt, context);
+  } else if (mode === "knn") {
+    decision = await resolveRoutedModelKnn(prompt, context);
+  } else if (mode === "hybrid") {
+    decision = await resolveRoutedModelHybrid(prompt, context);
+  } else {
+    decision = await resolveRoutedModelRules(prompt, context);
   }
-  if (mode === "knn") {
-    return resolveRoutedModelKnn(prompt, context);
+  const routeResolveMs = Math.round(performance.now() - t0);
+  decision.routeResolveMs = routeResolveMs;
+  decision.features.route_resolve_ms = routeResolveMs;
+  if (decision.routeClassifyMs == null) {
+    decision.routeClassifyMs = 0;
+    decision.features.route_classify_ms = 0;
   }
-  if (mode === "hybrid") {
-    return resolveRoutedModelHybrid(prompt, context);
-  }
-  return resolveRoutedModelRules(prompt, context);
+  return decision;
 }
 
 /** Version string stored on telemetry for the active mode. */

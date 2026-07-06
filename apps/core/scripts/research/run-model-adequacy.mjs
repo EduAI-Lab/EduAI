@@ -24,7 +24,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { PROMPTS_PATH, resolveRunsFile } from "./paths.mjs";
+import { loadResearchActivePrompts, PROMPTS_PATH, resolveRunsFile } from "./paths.mjs";
 import {
   ensureResearchEnergyReady,
   flattenEnergyFields,
@@ -65,15 +65,7 @@ function loadJsonl(path) {
 }
 
 function loadPrompts() {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
-  if (!raw) return [];
-  return raw.split("\n").map((line, i) => {
-    try {
-      return JSON.parse(line);
-    } catch (e) {
-      throw new Error(`prompts line ${i + 1}: ${e.message}`);
-    }
-  });
+  return loadResearchActivePrompts().prompts;
 }
 
 function parseModels(raw) {

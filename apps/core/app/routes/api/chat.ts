@@ -45,6 +45,17 @@ import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdRespons
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import {
+  resolveAutoRouting,
+  userMessageHasImages,
+} from "~/lib/chat-routing-request";
+import {
+  autoRoutingHeaders,
+  buildRoutingResponsePayload,
+  resolveChatAutoRouting,
+  type ChatRoutingTiming,
+} from "~/lib/ai/routing/resolve-chat-routing.server";
+import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
+import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
@@ -357,6 +368,7 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
  * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
+  const requestStartMs = Date.now();
   try {
     const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
@@ -380,7 +392,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
-    const model = typeof body.model === "string" ? body.model : undefined;
+    let model = typeof body.model === "string" ? body.model : undefined;
     const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
@@ -721,7 +733,52 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    const autoRouting = resolveAutoRouting(model);
+    const routeWithAuto = autoRouting.routeWithAuto;
+    const telemetryLastUser = [...trimmedMessages]
+      .reverse()
+      .find((message) => message.role === "user");
+    const lastUserMessageTextForRouting = extractMessageText(telemetryLastUser);
+    const hasAttachments = userMessageHasImages(
+      telemetryLastUser as GenericMessage | undefined,
+    );
+
+    let wasAuto = false;
+    let routingTier: 1 | 2 | 3 | null = null;
+    let routerContext: Record<string, unknown> | null = null;
+    let resolvedRouterVersion: string | null = null;
+    let routerRule: string | null = null;
+    let routingTiming: ChatRoutingTiming = {
+      rag_prefetch_ms: 0,
+      route_resolve_ms: 0,
+      route_classify_ms: 0,
+    };
+
+    if (routeWithAuto) {
+      const routed = await resolveChatAutoRouting({
+        prompt: lastUserMessageTextForRouting,
+        courseId: effectiveCourseId,
+        courseCode: courseCode ?? null,
+        imagesPresent: hasAttachments,
+        modeOverride: autoRouting.modeOverride,
+        requestedAuto: autoRouting.requestedAuto,
+      });
+      model = routed.modelId;
+      wasAuto = true;
+      routingTier = routed.tier;
+      routerContext = routed.routerFeatures;
+      resolvedRouterVersion = routed.routerVersion;
+      routerRule = routed.routerRule;
+      routingTiming = routed.timing;
+      chatApiTrace("auto routing resolved", {
+        model,
+        routingTier,
+        routerRule,
+        routingTiming,
+      });
+    }
+
+    if ((!routeWithAuto && !model) || typeof apiKeys !== "object" || apiKeys === null) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -750,7 +807,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error:
-            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct) or auto routing (auto, auto-llm, auto-hybrid). Check Admin → AI Models.',
         }),
         {
           status: 400,
@@ -1126,6 +1183,29 @@ ${buildEmptyCourseRagBlock()}`;
       }),
     );
 
+    const buildRoutingJson = (modelDecodeMs: number) =>
+      buildRoutingResponsePayload({
+        timing: routingTiming,
+        modelDecodeMs,
+        durationMs: Date.now() - requestStartMs,
+        routerRule,
+        routingTier,
+        routerVersion: resolvedRouterVersion,
+        routedModel: model ?? "",
+      });
+
+    const routingResponseHeaders = (modelDecodeMs: number) =>
+      autoRoutingHeaders({
+        resolvedModelId: model ?? "",
+        routingTier,
+        wasAuto,
+        routerVersion: resolvedRouterVersion,
+        routerRule,
+        timing: routingTiming,
+        modelDecodeMs,
+        durationMs: Date.now() - requestStartMs,
+      });
+
     const streamStartedAt = Date.now();
     const needsOversight =
       chatMode !== "admin" &&
@@ -1344,10 +1424,12 @@ ${buildEmptyCourseRagBlock()}`;
 
         await persistOverseenAssistantMessages(finalText);
 
+        const modelDecodeMs = Date.now() - streamStartedAt;
         return new Response(
           JSON.stringify({
             content: finalText,
             model,
+            routedModel: model,
             usage,
             finishReason,
             sources: sources || [],
@@ -1355,10 +1437,14 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            routing: buildRoutingJson(modelDecodeMs),
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...routingResponseHeaders(modelDecodeMs),
+            },
           },
         );
       } catch (error) {
@@ -1430,10 +1516,12 @@ ${buildEmptyCourseRagBlock()}`;
           }
         }
 
+        const modelDecodeMs = Date.now() - streamStartedAt;
         return new Response(
           JSON.stringify({
             content: text,
             model,
+            routedModel: model,
             usage,
             finishReason,
             sources: sources || [],
@@ -1441,10 +1529,14 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            routing: buildRoutingJson(modelDecodeMs),
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...routingResponseHeaders(modelDecodeMs),
+            },
           },
         );
       } catch (error) {

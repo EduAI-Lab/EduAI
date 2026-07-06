@@ -3,8 +3,9 @@
  * Validates docs/research/data/task-suite/prompts.v1.jsonl against schema.json
  * and checks split/stratum coverage.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { PROMPTS_PATH } from "./paths.mjs";
+import { isResearchExcludedToolPrompt } from "./research-prompt-filters.mjs";
 
 const STRATA = ["easy", "medium", "hard"];
 const STRATUM_TARGETS = { easy: [30, 40], medium: [50, 80], hard: [20, 40] };
@@ -88,6 +89,10 @@ function validateRow(row, index) {
 }
 
 const prompts = loadPrompts();
+const researchActive = prompts.filter(
+  (p) => p.active !== false && !isResearchExcludedToolPrompt(p),
+);
+const excludedWeb = prompts.filter(isResearchExcludedToolPrompt);
 const ids = new Set();
 const promptTexts = new Set();
 const allErrors = [];
@@ -116,6 +121,13 @@ for (const p of prompts) {
 }
 
 console.log(`Task suite: ${prompts.length} prompts`);
+console.log(`Research-active (excludes web/fetch tools): ${researchActive.length}`);
+if (excludedWeb.length) {
+  console.log(
+    "Excluded from research (web tools):",
+    excludedWeb.map((p) => p.id).join(", "),
+  );
+}
 console.log("By stratum:", byStratum);
 console.log("By split:", bySplit);
 console.log("By category:", byCategory);

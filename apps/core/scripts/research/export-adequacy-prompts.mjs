@@ -8,24 +8,13 @@
  *   RESEARCH_RUN_IDS         comma ts-### list
  *   RESEARCH_RUN_OUT         output path
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PROMPTS_PATH } from "./paths.mjs";
+import { loadResearchActivePrompts } from "./paths.mjs";
 
 function readEnv(name) {
   const v = process.env[name];
   return v !== undefined && v !== "" ? v : undefined;
-}
-
-function loadPrompts() {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
-  return raw.split("\n").map((line, i) => {
-    try {
-      return JSON.parse(line);
-    } catch (e) {
-      throw new Error(`prompts line ${i + 1}: ${e.message}`);
-    }
-  });
 }
 
 function main() {
@@ -34,7 +23,9 @@ function main() {
   const idsRaw = readEnv("RESEARCH_RUN_IDS");
   const out = readEnv("RESEARCH_RUN_OUT") ?? "adequacy-prompts.jsonl";
 
-  let prompts = loadPrompts();
+  const { prompts: activePrompts, skipped, excludedToolIds } =
+    loadResearchActivePrompts();
+  let prompts = activePrompts;
   if (split !== "all") prompts = prompts.filter((p) => p.split === split);
   if (stratumRaw) {
     const strata = new Set(stratumRaw.split(",").map((s) => s.trim()).filter(Boolean));

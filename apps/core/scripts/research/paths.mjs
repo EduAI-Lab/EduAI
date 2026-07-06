@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { filterResearchActivePrompts } from "./research-prompt-filters.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -91,3 +92,23 @@ export const DEFAULT_CLASSROOM_OUT = resolveRunsFile("classroom-sim.v1.jsonl");
 export const DEFAULT_CLASSROOM_SUMMARY = resolveRunsFile(
   "classroom-sim-summary.v1.txt",
 );
+
+export function loadPromptsJsonl(path = PROMPTS_PATH) {
+  if (!existsSync(path)) return [];
+  const raw = readFileSync(path, "utf8").trim();
+  if (!raw) return [];
+  return raw.split("\n").map((line, i) => {
+    try {
+      return JSON.parse(line);
+    } catch (e) {
+      throw new Error(`${path} line ${i + 1}: ${e.message}`);
+    }
+  });
+}
+
+/** Prompts eligible for policy / adequacy / classroom research (excludes web tools). */
+export function loadResearchActivePrompts(path = PROMPTS_PATH) {
+  const all = loadPromptsJsonl(path);
+  const { active, skipped, excludedToolIds } = filterResearchActivePrompts(all);
+  return { prompts: active, all, skipped, excludedToolIds };
+}

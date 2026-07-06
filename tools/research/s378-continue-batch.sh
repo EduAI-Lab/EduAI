@@ -4,7 +4,7 @@ set -euo pipefail
 
 CORE="${RESEARCH_CORE_DIR:-/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core}"
 LOG="${RESEARCH_CONTINUE_LOG:-/tmp/ura-research-continue.log}"
-UNDER_IDS="ts-028,ts-031,ts-037,ts-044,ts-083,ts-094,ts-101,ts-102,ts-113,ts-119"
+UNDER_IDS="ts-028,ts-037,ts-044,ts-083,ts-094,ts-113,ts-119"
 
 exec >>"$LOG" 2>&1
 echo "=== continue batch start $(date -Iseconds) ==="

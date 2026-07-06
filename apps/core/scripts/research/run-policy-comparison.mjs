@@ -16,7 +16,11 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
-import { DEFAULT_POLICY_OUT, PROMPTS_PATH } from "./paths.mjs";
+import { DEFAULT_POLICY_OUT, loadResearchActivePrompts } from "./paths.mjs";
+import {
+  extractRoutingMetrics,
+  flattenRoutingFields,
+} from "./research-routing-metrics.mjs";
 import {
   ensureResearchEnergyReady,
   flattenEnergyFields,
@@ -92,18 +96,6 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function loadPrompts() {
-  const raw = readFileSync(PROMPTS_PATH, "utf8").trim();
-  if (!raw) return [];
-  return raw.split("\n").map((line, i) => {
-    try {
-      return JSON.parse(line);
-    } catch (e) {
-      throw new Error(`prompts.v1.jsonl line ${i + 1}: ${e.message}`);
-    }
-  });
-}
-
 function extractResponseText(json) {
   if (!json || typeof json !== "object") return "";
   if (typeof json.content === "string") return json.content;
@@ -161,6 +153,7 @@ async function postChat({
     routedModel: null,
     routingTier: null,
     routerVersion: null,
+    routingMetrics: null,
   };
   }
 
@@ -187,6 +180,7 @@ async function postChat({
     res.headers.get("X-Router-Version") ??
     null;
 
+  const routingMetrics = extractRoutingMetrics(json, res.headers);
   const usage = json?.usage ?? null;
   const promptTokens =
     usage?.promptTokens ?? usage?.inputTokens ?? usage?.prompt_tokens ?? null;
@@ -199,9 +193,12 @@ async function postChat({
     responseText: extractResponseText(json),
     finishReason: json?.finishReason ?? null,
     error: json?.error ?? (res.status >= 400 ? text.slice(0, 200) : null),
-    routedModel,
-    routingTier: Number.isFinite(routingTier) ? routingTier : null,
-    routerVersion,
+    routedModel: routingMetrics.routed_model ?? routedModel,
+    routingTier: Number.isFinite(routingTier)
+      ? routingTier
+      : routingMetrics.routing_tier,
+    routerVersion: routingMetrics.router_version ?? routerVersion,
+    routingMetrics,
     promptTokens,
     completionTokens,
   };
@@ -251,7 +248,9 @@ async function main() {
     process.exit(1);
   }
 
-  let prompts = loadPrompts();
+  const { prompts: activePrompts, skipped, excludedToolIds } =
+    loadResearchActivePrompts();
+  let prompts = activePrompts;
   if (splitFilter !== "all") {
     prompts = prompts.filter((p) => p.split === splitFilter);
   }
@@ -276,6 +275,13 @@ async function main() {
   console.log("split:", splitFilter);
   console.log("policies:", policies.map((p) => p.policy).join(", "));
   console.log("prompts:", prompts.length);
+  if (skipped > 0) {
+    console.log(
+      "excluded (inactive / web tools):",
+      skipped,
+      excludedToolIds.length ? `ids=${excludedToolIds.join(",")}` : "",
+    );
+  }
   console.log("output:", outPath);
   const totalCalls = prompts.length * policies.length * replicateCount;
   console.log("replicates:", replicateCount);
@@ -371,6 +377,7 @@ async function main() {
             routed_model: result.routedModel,
             routing_tier: result.routingTier,
             router_version: result.routerVersion,
+            ...flattenRoutingFields(result.routingMetrics),
             duration_ms: result.durationMs,
             prompt_tokens: result.promptTokens,
             completion_tokens: result.completionTokens,

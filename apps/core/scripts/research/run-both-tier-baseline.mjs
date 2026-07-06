@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
-import { DEFAULT_BOTH_TIER_OUT, PROMPTS_PATH } from "./paths.mjs";
+import { DEFAULT_BOTH_TIER_OUT, loadResearchActivePrompts } from "./paths.mjs";
 import { ensureResearchEnergyReady } from "./energy-sidecar.mjs";
 import {
   resolveResearchChatFlags,
@@ -62,29 +62,6 @@ function loadApiKeysJson() {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function loadPrompts() {
-  let raw;
-  try {
-    raw = readFileSync(PROMPTS_PATH, "utf8").trim();
-  } catch (e) {
-    if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") {
-      console.error(`Task suite not found: ${PROMPTS_PATH}`);
-      console.error("Copy prompts.v1.jsonl to that path, or set RESEARCH_SUITE_DIR, e.g.:");
-      console.error("  RESEARCH_SUITE_DIR=./scripts/research/data/task-suite");
-      process.exit(1);
-    }
-    throw e;
-  }
-  if (!raw) return [];
-  return raw.split("\n").map((line, i) => {
-    try {
-      return JSON.parse(line);
-    } catch (e) {
-      throw new Error(`prompts.v1.jsonl line ${i + 1}: ${e.message}`);
-    }
-  });
 }
 
 function extractResponseText(json) {
@@ -220,7 +197,9 @@ async function main() {
     }
   }
 
-  let prompts = loadPrompts();
+  const { prompts: activePrompts, skipped, excludedToolIds } =
+    loadResearchActivePrompts();
+  let prompts = activePrompts;
   if (splitFilter !== "all") {
     prompts = prompts.filter((p) => p.split === splitFilter);
   }
@@ -253,6 +232,13 @@ async function main() {
   console.log("url:", url);
   console.log("split:", splitFilter);
   console.log("prompts:", prompts.length);
+  if (skipped > 0) {
+    console.log(
+      "excluded (inactive / web tools):",
+      skipped,
+      excludedToolIds.length ? `ids=${excludedToolIds.join(",")}` : "",
+    );
+  }
   console.log("tiers:", tierModels.map((t) => `${t.tier}=${t.model}`).join(", "));
   console.log("output:", outPath);
   console.log("total HTTP calls:", totalCalls);

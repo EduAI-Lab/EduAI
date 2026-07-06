@@ -12,10 +12,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import {
   DEFAULT_BOTH_TIER_IN,
+  loadPromptsJsonl,
   PROMPTS_PATH,
   RUNS_DIR,
   resolveRunsFile,
 } from "./paths.mjs";
+import { isResearchActivePrompt } from "./research-prompt-filters.mjs";
 import { loadRunRows } from "./both-tier-io.mjs";
 import { rowMatchesPolicy } from "./policy-ids.mjs";
 
@@ -153,7 +155,7 @@ function main() {
   const bothTierPath = readEnv("RESEARCH_BOTH_TIER_IN", DEFAULT_BOTH_TIER_IN);
   const policyIn = readEnv("RESEARCH_POLICY_IN");
 
-  const prompts = loadJsonl(PROMPTS_PATH);
+  const prompts = loadPromptsJsonl(PROMPTS_PATH).filter(isResearchActivePrompt);
   if (prompts.length === 0) {
     console.error(`No prompts at ${PROMPTS_PATH}`);
     process.exit(1);
@@ -204,6 +206,10 @@ function main() {
     "p1_routed_model",
     "p1_routing_tier",
     "p1_router_version",
+    "p1_router_rule",
+    "p1_route_classify_ms",
+    "p1_rag_prefetch_ms",
+    "p1_model_decode_ms",
     "p1_duration_ms",
     "p1_energy_joules",
     "p3_routed_model",
@@ -268,6 +274,10 @@ function main() {
       p1_routed_model: p1?.routed_model ?? "",
       p1_routing_tier: p1Tier ?? "",
       p1_router_version: p1?.router_version ?? "",
+      p1_router_rule: p1?.router_rule ?? "",
+      p1_route_classify_ms: p1?.route_classify_ms ?? "",
+      p1_rag_prefetch_ms: p1?.rag_prefetch_ms ?? "",
+      p1_model_decode_ms: p1?.model_decode_ms ?? "",
       p1_duration_ms: p1?.duration_ms ?? "",
       p1_energy_joules: p1?.energy_joules ?? "",
       p3_routed_model: p3?.routed_model ?? "",
