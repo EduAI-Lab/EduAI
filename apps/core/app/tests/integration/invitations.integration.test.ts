@@ -18,6 +18,7 @@ import { auth } from "~/lib/auth/server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
 
 import { loader as listLoader, action as createAction } from "~/routes/api/invitations";
@@ -40,7 +41,7 @@ let adminId = "";
 let unitAdminId = "";
 
 function uniqueEmail(): string {
-  const email = `invite-${randomUUID().slice(0, 8)}@test.local`;
+  const email = `invite-${randomUUID().slice(0, 8)}@ubc.ca`;
   emails.push(email);
   return email;
 }
@@ -149,6 +150,12 @@ describe("POST /api/invitations (create)", () => {
   it("rejects a UNIT_ADMIN invite without units (400)", async () => {
     asAdmin();
     const res = await createAction(createReq({ email: uniqueEmail(), role: "UNIT_ADMIN" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-UBC invite email (400, #567)", async () => {
+    asAdmin();
+    const res = await createAction(createReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
     expect(res.status).toBe(400);
   });
 
@@ -326,6 +333,13 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
     const res = await createAction(createReq({ email: uniqueEmail(), role: "ADMIN" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
+  });
+
+  it("rejects a non-UBC student invite from a unit admin (400, #567)", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+    asUnitAdmin();
+    const res = await createAction(createReq({ email: "stu@gmail.com", role: "STUDENT" }));
+    expect(res.status).toBe(400);
   });
 
   it("scopes the list to invitations the unit admin sent", async () => {
@@ -586,5 +600,50 @@ describe("accept flow", () => {
     // PENDING with a live link lingering until natural expiry.
     const invite = await prisma.invitation.findUnique({ where: { tokenHash: hashToken(token) } });
     expect(invite?.status).toBe("REVOKED");
+  });
+});
+
+describe("public registration — UBC backend gate (§567)", () => {
+  // Drives auth.handler directly with a public /sign-up/email request (NO invite
+  // marker) so the §567 check inside the before-hook runs — the backend layer
+  // that catches API calls bypassing register.tsx's signUpSchema. Both cases use
+  // a Date.now offset to land past Better Auth's per-IP sign-up rate window.
+  function publicSignup(email: string): Promise<Response> {
+    const base = new Request("http://localhost/auth/register");
+    const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Public User", email, password: INVITE_TEST_PASSWORD }),
+    });
+    return auth.handler(req);
+  }
+
+  it("rejects a non-UBC public signup and creates no account", async () => {
+    const email = `public-reject-${randomUUID().slice(0, 8)}@gmail.com`;
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
+    let res: Response;
+    try {
+      res = await publicSignup(email);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(400);
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+  });
+
+  it("allows a UBC public signup (proves the hook reads the email, not a blanket block)", async () => {
+    const email = uniqueEmail(); // @ubc.ca, tracked for cleanup
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 22_000);
+    let res: Response;
+    try {
+      res = await publicSignup(email);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.ok).toBe(true);
+    expect(await prisma.user.findUnique({ where: { email } })).not.toBeNull();
   });
 });
