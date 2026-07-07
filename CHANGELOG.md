@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] feat: Per-course AI response style tags — instructors configure chat tone via presets (Socratic, concise, step-by-step, etc.) on the course Settings tab; selected tags and optional additional instructions inject into the course chat system prompt at runtime; students see tag labels only, not raw prompt text; includes tag preview examples, `GET/PATCH /api/courses/:id/response-style`, Prisma `responseStyleTags` column, and unit tests. (#782, @ssaada08, 2026-07-06) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
