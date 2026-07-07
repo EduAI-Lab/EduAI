@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Chat stop / client abort — `POST /api/chat` forwards the request `AbortSignal` to `streamText` and returns HTTP 499 when the user hits stop, so the LLM stream is cancelled server-side instead of continuing in the background. (#852, #267, @superbolt08, 2026-07-02)
+- [core] tests: `chat-abort.route.test.ts` — verifies abort signal forwarding and 499 response on `AbortError`. (#852, #267, @superbolt08, 2026-07-02)
 - [infra] feat: Add `cleanup-invitations` cron job — hard-deletes `REVOKED` invitations and expired `PENDING` invitations past a 30-day grace period, following the existing infra shell-script pattern (`infra/cron/cleanup-invitations.sh`) registered in `KNOWN_CRON_JOBS` for admin-panel visibility, manual trigger, and schedule editing. (#580, @evanbones, 2026-07-02) — [#853](https://github.com/EduAI-Lab/EduAI/pull/853)
 - [monorepo] docs: Add `docs/ENVIRONMENT.md` — consolidated reference for every `.env.example` file in the repo (Core, AI Tutor server, Question Maker, root, `infra/cron`), what loads each one, and dev/test/prod scope per variable. (#841, @evanbones, 2026-07-01) — closes #817
 
