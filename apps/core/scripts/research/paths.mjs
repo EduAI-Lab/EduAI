@@ -5,8 +5,20 @@ import { filterResearchActivePrompts } from "./research-prompt-filters.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** URA research docs live beside the EduAICoreLearning repo. */
-const URA_RESEARCH = join(__dirname, "../../../../../docs/research");
+/** URA research docs live beside the EduAICoreLearning repo (main or worktree layout). */
+const URA_RESEARCH_CANDIDATES = [
+  join(__dirname, "../../../../../docs/research"),
+  join(__dirname, "../../../../../../docs/research"),
+];
+
+function resolveUraResearchDir() {
+  for (const dir of URA_RESEARCH_CANDIDATES) {
+    if (existsSync(join(dir, "data/task-suite/prompts.v1.jsonl"))) return dir;
+  }
+  return URA_RESEARCH_CANDIDATES[0];
+}
+
+const URA_RESEARCH = resolveUraResearchDir();
 const LOCAL_SUITE = join(__dirname, "data/task-suite");
 const LOCAL_RUNS = join(__dirname, "data/runs");
 
@@ -83,7 +95,20 @@ function inferRunsSubdir(filename) {
 export const SUITE_DIR = resolveSuiteDir();
 export const RUNS_DIR = resolveRunsDir();
 export const PROMPTS_PATH = join(SUITE_DIR, "prompts.v1.jsonl");
+export const PROMPTS_V2_PATH = join(SUITE_DIR, "prompts.v2.jsonl");
 export const SPLITS_PATH = join(SUITE_DIR, "splits.json");
+
+/** Resolve prompt corpus path (v1 default; set RESEARCH_SUITE_VERSION=v2). */
+export function resolvePromptsPath() {
+  const version = (process.env.RESEARCH_SUITE_VERSION || "v1").trim().toLowerCase();
+  if (version === "v2") {
+    if (!existsSync(PROMPTS_V2_PATH)) {
+      throw new Error(`Missing ${PROMPTS_V2_PATH} — run: npm run research:build-v2`);
+    }
+    return PROMPTS_V2_PATH;
+  }
+  return PROMPTS_PATH;
+}
 export const DEFAULT_BOTH_TIER_OUT = resolveRunsFile("both-tier.v1.jsonl");
 export const DEFAULT_BOTH_TIER_IN = DEFAULT_BOTH_TIER_OUT;
 export const DEFAULT_LABELS_OUT = resolveRunsFile("labels.v1.jsonl");

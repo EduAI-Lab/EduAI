@@ -3,9 +3,12 @@
  * Validates docs/research/data/task-suite/prompts.v1.jsonl against schema.json
  * and checks split/stratum coverage.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { PROMPTS_PATH } from "./paths.mjs";
+import { readFileSync } from "node:fs";
+import { resolvePromptsPath } from "./paths.mjs";
 import { isResearchExcludedToolPrompt } from "./research-prompt-filters.mjs";
+
+const PROMPTS_PATH = resolvePromptsPath();
+const SUITE_VERSION = process.env.RESEARCH_SUITE_VERSION?.trim().toLowerCase() === "v2" ? "v2" : "v1";
 
 const STRATA = ["easy", "medium", "hard"];
 const STRATUM_TARGETS = { easy: [30, 40], medium: [50, 80], hard: [20, 40] };
@@ -20,6 +23,21 @@ const CATEGORIES = new Set([
   "tool_requiring",
 ]);
 const SPLITS = new Set(["dev", "test"]);
+const COURSE_THEMES = new Set([
+  "intro_programming",
+  "data_structures",
+  "machine_arch",
+  "software_engineering",
+  "os",
+]);
+const STYLES = new Set(["mathy", "theory", "application"]);
+const V2_CS_THEME_MINS = {
+  intro_programming: 5,
+  data_structures: 5,
+  machine_arch: 3,
+  software_engineering: 3,
+  os: 5,
+};
 const COURSE_CODE_IN_PROMPT = /\b(COSC|MATH|STAT|DATA|PSYO|BIOL|PHYS|HIST|ENGL|PHIL)\s+\d{3}\b/i;
 const META_RAG_PHRASES = [
   /\bfrom\s+\w+\s+materials?\b/i,
@@ -84,6 +102,15 @@ function validateRow(row, index) {
       break;
     }
   }
+  if (row.course_theme != null && !COURSE_THEMES.has(row.course_theme)) {
+    errors.push(`L${line}: invalid course_theme`);
+  }
+  if (row.style != null && !STYLES.has(row.style)) {
+    errors.push(`L${line}: invalid style`);
+  }
+  if (row.replicate_of != null && !/^ts-\d{3}$/.test(row.replicate_of)) {
+    errors.push(`L${line}: invalid replicate_of`);
+  }
 
   return errors;
 }
@@ -120,7 +147,7 @@ for (const p of prompts) {
   byCategory[p.category] = (byCategory[p.category] ?? 0) + 1;
 }
 
-console.log(`Task suite: ${prompts.length} prompts`);
+console.log(`Task suite ${SUITE_VERSION}: ${prompts.length} prompts (${PROMPTS_PATH})`);
 console.log(`Research-active (excludes web/fetch tools): ${researchActive.length}`);
 if (excludedWeb.length) {
   console.log(
@@ -155,9 +182,30 @@ if (prompts.length >= 10 && (testPct < 15 || testPct > 25)) {
   warnings.push(`Test split is ${testPct.toFixed(1)}% (target ~20%)`);
 }
 
+if (SUITE_VERSION === "v2") {
+  const byTheme = {};
+  for (const p of prompts) {
+    if (!p.course_theme) continue;
+    byTheme[p.course_theme] = (byTheme[p.course_theme] ?? 0) + 1;
+  }
+  console.log("By course_theme (v2 seed rows):", byTheme);
+  for (const [theme, min] of Object.entries(V2_CS_THEME_MINS)) {
+    const n = byTheme[theme] ?? 0;
+    if (n < min) {
+      warnings.push(`course_theme ${theme}: ${n} below minimum ${min}`);
+    }
+  }
+  const sensitivityGroups = new Set(
+    prompts.filter((p) => p.sensitivity_group).map((p) => p.sensitivity_group),
+  );
+  if (sensitivityGroups.size < 2) {
+    warnings.push(`Only ${sensitivityGroups.size} sensitivity_group values (target >= 2)`);
+  }
+}
+
 if (warnings.length) {
   console.warn("\nWarnings:");
   for (const w of warnings) console.warn("  -", w);
 }
 
-console.log("OK — task suite v1 validates");
+console.log(`OK — task suite ${SUITE_VERSION} validates`);

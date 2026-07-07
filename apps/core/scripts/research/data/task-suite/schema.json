@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "eduai-research-task-suite-v1",
+  "title": "EduAI routing experiment prompt",
+  "type": "object",
+  "required": [
+    "id",
+    "prompt",
+    "stratum",
+    "category",
+    "rag_context",
+    "tools_expected",
+    "source",
+    "split"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ts-[0-9]{3}$"
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 4000
+    },
+    "stratum": {
+      "enum": ["easy", "medium", "hard"]
+    },
+    "category": {
+      "enum": [
+        "definition",
+        "explanation",
+        "problem_solving",
+        "code",
+        "debugging",
+        "rag_grounded",
+        "tool_requiring"
+      ]
+    },
+    "rag_context": {
+      "enum": ["none", "weak", "strong"]
+    },
+    "tools_expected": {
+      "enum": ["none", "webSearch", "fetchPage", "getInformation"]
+    },
+    "course_code": {
+      "type": ["string", "null"]
+    },
+    "source": {
+      "enum": ["course_seed", "benchmark_adapted", "synthetic"]
+    },
+    "split": {
+      "enum": ["dev", "test"]
+    },
+    "active": {
+      "type": "boolean",
+      "description": "false = excluded from direct-vLLM runs and adequacy ladder (e.g. requires live webSearch)"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "course_theme": {
+      "enum": [
+        "intro_programming",
+        "data_structures",
+        "machine_arch",
+        "software_engineering",
+        "os"
+      ]
+    },
+    "style": {
+      "enum": ["mathy", "theory", "application"]
+    },
+    "sensitivity_group": {
+      "type": "string",
+      "description": "Links perturbation variants for sensitivity analysis"
+    },
+    "replicate_of": {
+      "type": "string",
+      "pattern": "^ts-[0-9]{3}$",
+      "description": "Base prompt id when this row is a phrasing variant"
+    },
+    "inactive_reason": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,61 @@
+{
+  "$comment": "Lecture-style RAG corpus (repo-authored). See usb-course-materials.CURATION.md",
+  "curatedRoot": "curated-materials",
+  "courses": [
+    {
+      "courseCode": "COSC 121",
+      "materials": [
+        {
+          "curated": "cosc121/lecture-01-introduction-oop-java.md",
+          "title": "Lecture 1 — Introduction to OOP in Java"
+        },
+        {
+          "curated": "cosc121/lecture-02-data-structures-algorithms.md",
+          "title": "Lecture 2 — Data Structures and Algorithm Analysis"
+        }
+      ]
+    },
+    {
+      "courseCode": "COSC 310",
+      "materials": [
+        {
+          "curated": "cosc310/lecture-01-requirements-and-use-cases.md",
+          "title": "Lecture 1 — Requirements Engineering and UML Use Cases"
+        },
+        {
+          "curated": "cosc310/lecture-02-test-driven-development.md",
+          "title": "Lecture 2 — Test-Driven Development and Unit Testing"
+        },
+        {
+          "curated": "cosc310/lecture-03-uml-class-diagrams.md",
+          "title": "Lecture 3 — UML Class Diagrams and Structural Design"
+        }
+      ]
+    },
+    {
+      "courseCode": "COSC 315",
+      "materials": [
+        {
+          "curated": "cosc315/lecture-01-processes-and-shell.md",
+          "title": "Lecture 1 — Processes, the Shell, and Standard I/O"
+        },
+        {
+          "curated": "cosc315/lecture-02-threads-and-concurrency.md",
+          "title": "Lecture 2 — Threads and Concurrent Execution"
+        },
+        {
+          "curated": "cosc315/lecture-03-semaphores-synchronization.md",
+          "title": "Lecture 3 — Semaphores and Synchronization"
+        },
+        {
+          "curated": "cosc315/lecture-04-virtual-memory-and-tlb.md",
+          "title": "Lecture 4 — Virtual Memory, Paging, and the TLB"
+        },
+        {
+          "curated": "cosc315/lecture-05-inode-file-systems.md",
+          "title": "Lecture 5 — File Systems and Inodes"
+        }
+      ]
+    }
+  ]
+}
