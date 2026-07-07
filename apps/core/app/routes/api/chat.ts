@@ -570,8 +570,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       courseAccess = access;
       effectiveCourse = {
-        responseStyleTags: course.responseStyleTags,
-        aiInstructions: course.aiInstructions,
+        responseStyleTags: course.responseStyleTags ?? [],
+        aiInstructions: course.aiInstructions ?? null,
       };
     }
 
