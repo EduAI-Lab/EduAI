@@ -10,7 +10,7 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   listEduAiCourseTopics: vi.fn(),
   listEduAiModels: vi.fn(),
   getEduAiBaseUrl: vi.fn(() => 'http://localhost:5174/api'),
-  getEduAiChatUrl: vi.fn(() => 'http://localhost:5174/api/chat'),
+  getEduAiCompletionUrl: vi.fn(() => 'http://localhost:5174/api/completion'),
   postCoreBugReport: vi.fn(),
   listCoreAdminUsers: vi.fn().mockResolvedValue([]),
   listCourseTestableQuestions: vi.fn(),

@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'crypto';
 import { prisma } from '../config/database.js';
-import { getEduAiChatUrl } from './eduaiClient.js';
+import { getEduAiCompletionUrl } from './eduaiClient.js';
 
 const SUPERVISOR_ERROR_MESSAGE =
   'AI study buddy encountered an issue reviewing the response. Please try again.';
@@ -61,7 +61,7 @@ async function callEduAI({
   messageId = null,
   courseCode = null,
 }) {
-  const endpoint = getEduAiChatUrl();
+  const endpoint = getEduAiCompletionUrl();
   const model = modelId || process.env.EDUAI_MODEL || 'google:gemini-2.5-flash';
 
   if (!cookie) {

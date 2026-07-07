@@ -27,7 +27,7 @@ const eduaiService = (await import('../../src/services/eduaiService.js')).defaul
 function responseError({ status = 500, statusText = 'Internal Server Error', data = {} } = {}) {
   return Object.assign(new Error('Request failed'), {
     response: { status, statusText, data, headers: {} },
-    config: { url: 'http://eduai.test/api/chat' },
+    config: { url: 'http://eduai.test/api/completion' },
   });
 }
 
@@ -36,7 +36,7 @@ function requestError({ code, message = 'no response' } = {}) {
   return Object.assign(new Error(message), {
     request: {},
     code,
-    config: { url: 'http://eduai.test/api/chat', baseURL: 'http://eduai.test', timeout: 60000 },
+    config: { url: 'http://eduai.test/api/completion', baseURL: 'http://eduai.test', timeout: 60000 },
   });
 }
 
@@ -76,18 +76,23 @@ describe('chat', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('posts to /api/chat and returns the response body', async () => {
+  it('posts to /api/completion and returns the response body', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
 
     const out = await eduaiService.chat({
-      messages: [{ role: 'user', content: 'hi' }],
+      messages: [
+        { role: 'system', content: 'You generate questions.' },
+        { role: 'user', content: 'hi' },
+      ],
       courseCode: 'CS 101',
     });
 
     expect(out).toEqual({ content: 'hello' });
     const [url, payload, opts] = axios.post.mock.calls[0];
-    expect(url).toBe('http://eduai.test/api/chat');
-    expect(payload.courseCode).toBe('CS 101');
+    expect(url).toBe('http://eduai.test/api/completion');
+    expect(payload.systemPrompt).toBe('You generate questions.');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(payload.courseCode).toBeUndefined();
     // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
     expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
     expect(opts.headers['x-api-key']).toBeUndefined();
@@ -283,8 +288,8 @@ describe('generateQuestions', () => {
     });
     await eduaiService.generateQuestions({ ...baseParams, systemPromptOverride: 'sys', userPromptOverride: 'usr' });
     const payload = axios.post.mock.calls[0][1];
-    expect(payload.messages[0].content).toBe('sys');
-    expect(payload.messages[1].content).toBe('usr');
+    expect(payload.systemPrompt).toBe('sys');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'usr' }]);
   });
 });
 
