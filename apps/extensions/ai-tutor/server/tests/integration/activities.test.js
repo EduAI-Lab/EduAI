@@ -795,7 +795,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     // Question bank content appears in at least one EduAI chat call (supervisor hidden context)
     const chatCalls = fetchCalls.filter(
       ([url, opts]) =>
-        typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+        typeof url === 'string' && url.includes('/completion') && opts?.method === 'POST',
     );
     const bankInjected = chatCalls.some(([, opts]) => {
       const body = JSON.parse(opts.body);

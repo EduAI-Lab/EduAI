@@ -42,10 +42,10 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/chat. The service key is the primary
+   * Builds auth headers for Core /api/completion. The service key is the primary
    * credential for server-to-server proxying — Core's requireServiceKey guard
    * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
-   * chat route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
+   * completion route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
    * session cookie only when no service key is configured.
    */
   buildChatAuthHeaders(cookie) {
@@ -100,7 +100,26 @@ class EduAIService {
     return merged;
   }
 
-  /** Sends a chat payload to EduAI, handling logging, timeouts, and API error translation. */
+  /**
+   * Hoists a system prompt from params or the first system message so Core's
+   * stateless /api/completion endpoint receives an explicit systemPrompt field.
+   */
+  buildCompletionPayload(params) {
+    const rawMessages = Array.isArray(params.messages) ? params.messages : [];
+    const systemFromMessages = rawMessages.find((m) => m?.role === "system");
+    const systemPrompt =
+      typeof params.systemPrompt === "string" && params.systemPrompt.trim()
+        ? params.systemPrompt.trim()
+        : typeof systemFromMessages?.content === "string"
+          ? systemFromMessages.content.trim()
+          : null;
+    const messages = rawMessages.filter(
+      (m) => m?.role === "user" || m?.role === "assistant",
+    );
+    return { systemPrompt, messages };
+  }
+
+  /** Sends a completion payload to EduAI (#858 — no chat/RAG/tool overhead). */
   async chat(params) {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
@@ -112,29 +131,31 @@ class EduAIService {
     let chatStartMs;
     try {
       const model = params.model || "google:gemini-2.5-flash";
+      const { systemPrompt, messages } = this.buildCompletionPayload(params);
       const requestPayload = {
-        messages: params.messages || [],
+        systemPrompt,
+        messages,
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
-        courseCode: params.courseCode,
         streaming: params.streaming || false,
+        ...(params.temperature != null ? { temperature: params.temperature } : {}),
+        ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       };
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
       chatStartMs = Date.now();
-      console.log(`${DEBUG_PREFIX} chat request starting`, {
-        url: `${this.baseURL}/api/chat`,
+      console.log(`${DEBUG_PREFIX} completion request starting`, {
+        url: `${this.baseURL}/api/completion`,
         timeoutMs,
         model: requestPayload.model,
-        courseCode: requestPayload.courseCode,
         messageCount: (requestPayload.messages || []).length,
-        systemPromptLength: (requestPayload.messages || []).find((m) => m.role === "system")?.content?.length ?? 0,
+        systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
       const response = await axios.post(
-        `${this.baseURL}/api/chat`,
+        `${this.baseURL}/api/completion`,
         requestPayload,
         {
           headers: {
@@ -175,7 +196,7 @@ class EduAIService {
           status: statusCode,
           statusText: error.response.statusText,
           data: error.response.data,
-          url: `${this.baseURL}/api/chat`,
+          url: `${this.baseURL}/api/completion`,
           headers: error.response.headers,
         });
         throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
@@ -807,10 +828,10 @@ Please ensure the questions are appropriate for the course level and cover the k
     const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys);
     try {
       const response = await this.chat({
+        systemPrompt: "Reply briefly.",
         messages: [{ role: "user", content: "test" }],
         model,
         apiKeys,
-        courseCode: "COSC 121",
         streaming: false,
         cookie,
       });
