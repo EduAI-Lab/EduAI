@@ -72,7 +72,7 @@ function idReq(method: "DELETE" | "POST", id = "inv1") {
 
 const CREATED = {
   ok: true as const,
-  invitation: { id: "inv1", email: "x@test.local", role: "INSTRUCTOR" },
+  invitation: { id: "inv1", email: "x@ubc.ca", role: "INSTRUCTOR" },
   acceptUrl: "http://localhost/auth/accept-invitation?token=t",
   emailDelivered: false,
 };
@@ -111,21 +111,32 @@ describe("GET /api/invitations", () => {
 describe("POST /api/invitations", () => {
   it("ADMIN may invite an INSTRUCTOR (201)", async () => {
     asInviter("ADMIN", "a1");
-    const res = await action(postReq({ email: "prof@test.local", role: "INSTRUCTOR" }));
+    const res = await action(postReq({ email: "prof@ubc.ca", role: "INSTRUCTOR" }));
     expect(res.status).toBe(201);
     expect(createInvitation).toHaveBeenCalled();
   });
 
   it("ADMIN may invite a STUDENT (201 — superset of lower roles)", async () => {
     asInviter("ADMIN", "a1");
-    const res = await action(postReq({ email: "s@test.local", role: "STUDENT" }));
+    const res = await action(postReq({ email: "s@ubc.ca", role: "STUDENT" }));
     expect(res.status).toBe(201);
     expect(createInvitation).toHaveBeenCalled();
   });
 
+  it("rejects a non-UBC invite email at the schema (400, #567)", async () => {
+    asInviter("ADMIN", "a1");
+    const res = await action(postReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
+    expect(res.status).toBe(400);
+    expect(createInvitation).not.toHaveBeenCalled();
+    // The UBC reason must ride in details.fieldErrors.email so the form can show
+    // it instead of a generic message (#567 / PR 692 review).
+    const body = await res.json();
+    expect(body.details.fieldErrors.email[0]).toMatch(/UBC address/);
+  });
+
   it("UNIT_ADMIN may invite an INSTRUCTOR", async () => {
     asInviter("UNIT_ADMIN", "me");
-    const res = await action(postReq({ email: "prof@test.local", role: "INSTRUCTOR" }));
+    const res = await action(postReq({ email: "prof@ubc.ca", role: "INSTRUCTOR" }));
     expect(res.status).toBe(201);
     expect(createInvitation).toHaveBeenCalledWith(
       expect.objectContaining({ role: "INSTRUCTOR" }),
@@ -135,13 +146,13 @@ describe("POST /api/invitations", () => {
 
   it("UNIT_ADMIN may invite a STUDENT", async () => {
     asInviter("UNIT_ADMIN", "me");
-    const res = await action(postReq({ email: "s@test.local", role: "STUDENT" }));
+    const res = await action(postReq({ email: "s@ubc.ca", role: "STUDENT" }));
     expect(res.status).toBe(201);
   });
 
   it("UNIT_ADMIN may NOT invite an ADMIN (403 FORBIDDEN_ROLE)", async () => {
     asInviter("UNIT_ADMIN", "me");
-    const res = await action(postReq({ email: "boss@test.local", role: "ADMIN" }));
+    const res = await action(postReq({ email: "boss@ubc.ca", role: "ADMIN" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
     expect(createInvitation).not.toHaveBeenCalled();
@@ -149,7 +160,7 @@ describe("POST /api/invitations", () => {
 
   it("surfaces the guard's 403 before parsing the body or creating", async () => {
     forbiddenInviter();
-    const res = await action(postReq({ email: "prof@test.local", role: "INSTRUCTOR" }));
+    const res = await action(postReq({ email: "prof@ubc.ca", role: "INSTRUCTOR" }));
     expect(res.status).toBe(403);
     expect(createInvitation).not.toHaveBeenCalled();
   });

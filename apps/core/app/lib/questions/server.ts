@@ -138,15 +138,17 @@ export type ListQuestionsParams = {
   testable?: boolean;
   limit?: number;
   offset?: number;
+  // §19 forensics opt-in (#315): ADMIN-only, gated at the route layer.
+  includeDeleted?: boolean;
 };
 
 export async function listQuestions(params: ListQuestionsParams) {
-  const { courseId, topicId, testable, limit = 100, offset = 0 } = params;
+  const { courseId, topicId, testable, limit = 100, offset = 0, includeDeleted = false } = params;
   const clampedLimit = Math.min(limit, 500);
 
   const where: Prisma.QuestionWhereInput = {
     courseId,
-    deletedAt: null,
+    ...(includeDeleted ? {} : { deletedAt: null }),
     ...(topicId !== undefined && { topicId }),
     ...(testable !== undefined && { testable }),
   };
@@ -165,9 +167,9 @@ export async function listQuestions(params: ListQuestionsParams) {
   return { questions, total, limit: clampedLimit, offset };
 }
 
-export async function getQuestionById(id: string) {
+export async function getQuestionById(id: string, includeDeleted = false) {
   return prisma.question.findFirst({
-    where: { id, deletedAt: null },
+    where: { id, ...(includeDeleted ? {} : { deletedAt: null }) },
     include: { secondaryTopics: true },
   });
 }
