@@ -147,10 +147,10 @@ describe("POST /api/invitations (create)", () => {
     expect(sendEmailMock.mock.calls[0][0].text).toContain(body.acceptUrl);
   });
 
-  it("rejects a UNIT_ADMIN invite without units (400)", async () => {
+  it("rejects a UNIT_ADMIN invite without units (422)", async () => {
     asAdmin();
     const res = await createAction(createReq({ email: uniqueEmail(), role: "UNIT_ADMIN" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it("rejects a non-UBC invite email (400, #567)", async () => {

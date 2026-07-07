@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Prisma } from "@prisma/client";
 
 // --- Auth mock ---
 vi.mock("~/lib/auth/server", () => ({
@@ -20,6 +21,14 @@ vi.mock("~/lib/prisma.server", () => {
       update: vi.fn(),
     },
     questionSecondaryTopic: { createMany: vi.fn() },
+    idempotencyRecord: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     $transaction: vi.fn(),
   };
   return { default: mock };
@@ -29,6 +38,7 @@ import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { loader as listLoader, action as postAction } from "~/routes/api/questions";
 import { loader as getLoader, action as patchAction } from "~/routes/api/questions.$id";
+import { bodyForIdempotencyHash, hashRequestBody } from "~/lib/idempotency.server";
 
 const mockGetSession = auth.api.getSession as any;
 const db = prisma as unknown as {
@@ -44,6 +54,14 @@ const db = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
   };
   questionSecondaryTopic: { createMany: ReturnType<typeof vi.fn> };
+  idempotencyRecord: {
+    create: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
+  };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -349,12 +367,27 @@ describe("POST /api/questions", () => {
   it("returns same id on idempotency key replay", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
     mockCourseAccess("INSTRUCTOR");
-    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
-    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
-    db.question.findUnique.mockResolvedValue({ id: QUESTION_ID });
-    const res = await postAction(
-      makePostArgs({ ...validPostBody, idempotencyKey: "idem-replay-test" }, "session=abc")
+
+    const bodyWithKey = { ...validPostBody, idempotencyKey: "idem-replay-test" };
+    const requestHash = hashRequestBody(bodyForIdempotencyHash(bodyWithKey));
+
+    db.idempotencyRecord.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
     );
+    db.idempotencyRecord.findUnique.mockResolvedValue({
+      key: "idem-replay-test",
+      route: "POST /api/questions",
+      requestHash,
+      status: "COMPLETED",
+      statusCode: 201,
+      responseBody: { id: QUESTION_ID },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const res = await postAction(makePostArgs(bodyWithKey, "session=abc"));
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ id: QUESTION_ID });
     expect(db.$transaction).not.toHaveBeenCalled();
