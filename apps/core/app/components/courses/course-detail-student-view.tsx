@@ -108,8 +108,12 @@ export function CourseDetailStudentView({
   const accentColor = resolveCourseAccentColor(course.id, cardPreference)
   const displayName = getCourseDisplayName(course.name, cardPreference)
 
+  const hasAi =
+    course.hasAiConfig ??
+    courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions)
+
   // Top-right hero badges: enrollment + AI status
-  const topRightBadges: string[] = ['Enrolled', ...(courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) ? ['AI-enabled'] : [])]
+  const topRightBadges: string[] = ['Enrolled', ...(hasAi ? ['AI-enabled'] : [])]
 
   return (
     <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
@@ -179,7 +183,7 @@ export function CourseDetailStudentView({
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">AI assistance</p>
-                    {courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) ? (
+                    {hasAi ? (
                       (course.responseStyleTags ?? []).length > 0 ? (
                         <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
                       ) : (

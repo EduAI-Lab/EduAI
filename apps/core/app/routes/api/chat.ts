@@ -19,7 +19,7 @@ import {
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
-import { buildCourseResponseStylePrompt } from "~/lib/ai/response-style-tags";
+import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
   buildChatToolRegistry,
@@ -1026,17 +1026,19 @@ export async function action({ request }: ActionFunctionArgs) {
           )
         : "";
 
-      const defaultCourseSystemPrompt =
-        resolvedSystemPrompt ||
-        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-${courseStyleBlock ? `\n${courseStyleBlock}\n` : ""}
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
+
+      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
+        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+        courseStyleBlock,
+      );
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
@@ -1096,11 +1098,15 @@ ${buildEmptyCourseRagBlock()}`;
           };
         }
       } else {
-        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ??
+            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}${courseStyleBlock ? `\n\n${courseStyleBlock}` : ""}`;
+${LATEST_TURN_FOCUS_INSTRUCTION}`,
+          courseStyleBlock,
+        );
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,

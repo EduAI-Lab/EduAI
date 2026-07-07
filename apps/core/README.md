@@ -355,6 +355,25 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   }'
 ```
 
+### Course Response Style Endpoint
+
+Update per-course AI response style tags and optional additional instructions. Instructors and admins may always PATCH; TAs may PATCH only when the `tas.canSetAiInstructions` policy grant is on. There is no GET handler — the course detail page loader supplies initial values to the settings UI, and omitting GET prevents leaking private instructor prompts to students.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `PATCH` | `/api/courses/:id/response-style` | Update `responseStyleTags` and/or `aiInstructions` |
+
+**Body** (`PATCH /api/courses/:id/response-style`):
+
+```json
+{
+  "responseStyleTags": ["socratic", "concise"],
+  "aiInstructions": "Use course notation for proofs."
+}
+```
+
+Tag ids must be from the predefined catalog (`socratic`, `concise`, `step-by-step`, `encouraging`, `formal`, `example-driven`, `scaffolded`). At runtime, selected tags and instructions are injected into the chat system prompt; students see tag labels on the course overview only.
+
 ### User Preferences Endpoints
 
 Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie**. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.

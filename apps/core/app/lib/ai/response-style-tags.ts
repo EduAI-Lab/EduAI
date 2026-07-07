@@ -92,8 +92,18 @@ export const RESPONSE_STYLE_TAG_IDS = RESPONSE_STYLE_TAGS.map((t) => t.id);
 
 const tagById = new Map(RESPONSE_STYLE_TAGS.map((t) => [t.id, t]));
 
-export function getResponseStyleTag(id: string): ResponseStyleTag | undefined {
+function getResponseStyleTag(id: string): ResponseStyleTag | undefined {
   return tagById.get(id as ResponseStyleTagId);
+}
+
+/** Append instructor style block after any base system prompt (custom or default). */
+export function appendCourseStyleToSystemPrompt(
+  systemPrompt: string,
+  courseStyleBlock: string,
+): string {
+  const trimmed = courseStyleBlock.trim();
+  if (!trimmed) return systemPrompt;
+  return `${systemPrompt}\n\n${trimmed}`;
 }
 
 export function resolveResponseStyleTags(tagIds: string[] | null | undefined): ResponseStyleTag[] {

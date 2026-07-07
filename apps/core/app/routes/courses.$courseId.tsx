@@ -28,6 +28,7 @@ import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import { getPolicy } from '~/lib/policy.server'
 import type { RbacUser } from '~/lib/rbac'
+import { courseHasAiConfig } from '~/lib/ai/response-style-tags'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession({ headers: request.headers })
@@ -102,6 +103,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : Promise.resolve([]),
   ])
 
+  const isStudent = access === 'student'
+
   return {
     course: {
       id: course.id,
@@ -112,7 +115,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       year: course.year,
       isActive: course.isActive,
       isPublished: course.isPublished,
-      aiInstructions: course.aiInstructions,
+      ...(isStudent
+        ? {
+            hasAiConfig: courseHasAiConfig(
+              course.responseStyleTags ?? [],
+              course.aiInstructions,
+            ),
+          }
+        : { aiInstructions: course.aiInstructions }),
       responseStyleTags: course.responseStyleTags,
       ragTopK: course.ragTopK,
       ragSimilarityThreshold: course.ragSimilarityThreshold,
