@@ -2,7 +2,10 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
-import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import {
+  resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
+} from "~/lib/auth/course-access.server";
 import { getCourse, updateCourse, deleteCourse } from "~/lib/courses/server";
 import { UpdateCourseSchema } from "~/lib/courses/schemas";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
@@ -40,6 +43,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to read a
+  // soft-deleted course. The access resolver below filters `deletedAt: null`
+  // (→ 404), so ADMIN reads bypass it here. No-op for every non-ADMIN caller.
+  if (wantsIncludeDeleted(request, session.user)) {
+    const course = await getCourse(courseId, true);
+    if (!course) {
+      return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(course), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
