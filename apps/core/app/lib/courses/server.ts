@@ -320,8 +320,12 @@ export async function updateCourse(request: Request, courseId: string) {
   if (access && access.level === "ta") {
     const taCanSetAi = await getPolicy("tas.canSetAiInstructions");
     const keys = Object.keys(result.data);
-    const aiInstructionsOnly = keys.length > 0 && keys.every((key) => key === "aiInstructions");
-    if (!taCanSetAi || !aiInstructionsOnly) {
+    const aiConfigOnly =
+      keys.length > 0 &&
+      keys.every(
+        (key) => key === "aiInstructions" || key === "responseStyleTags",
+      );
+    if (!taCanSetAi || !aiConfigOnly) {
       return denyByPolicy({
         request,
         policyKey: "tas.canSetAiInstructions",
@@ -332,7 +336,14 @@ export async function updateCourse(request: Request, courseId: string) {
     }
     const updated = await prisma.course.update({
       where: { id: courseId },
-      data: { aiInstructions: result.data.aiInstructions },
+      data: {
+        ...(result.data.aiInstructions !== undefined
+          ? { aiInstructions: result.data.aiInstructions }
+          : {}),
+        ...(result.data.responseStyleTags !== undefined
+          ? { responseStyleTags: result.data.responseStyleTags }
+          : {}),
+      },
     });
     return new Response(JSON.stringify(updated), {
       status: 200,

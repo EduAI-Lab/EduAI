@@ -10,6 +10,7 @@ export interface Course {
   isActive: boolean
   isPublished: boolean
   aiInstructions: string
+  responseStyleTags?: string[]
   instructorId: string | null
   department: string | null
   createdAt: string
