@@ -2,10 +2,14 @@ import type { APIRequestContext, APIResponse } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
 
-/** Generate a collision-safe unique email address for each test invocation. */
+/**
+ * Generate a collision-safe unique email address for each test invocation.
+ * Uses a UBC subdomain because Core now enforces UBC-only addresses on sign-up
+ * (see apps/core/app/lib/auth/ubc-email.ts); a non-UBC domain would be rejected with 400.
+ */
 export function uniqueEmail(prefix = 'user'): string {
   const rand = Math.floor(Math.random() * 1e9);
-  return `e2e-${prefix}-${rand}-${Date.now()}@test.local`;
+  return `e2e-${prefix}-${rand}-${Date.now()}@student.ubc.ca`;
 }
 
 export const DEFAULT_PASSWORD = 'E2eTestPass1!';

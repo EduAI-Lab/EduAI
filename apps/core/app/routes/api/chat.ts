@@ -423,6 +423,16 @@ function logStreamError(error: unknown, trace: Record<string, unknown>): void {
   });
 }
 
+function isClientAbort(error: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted) return true;
+  return error instanceof Error && error.name === "AbortError";
+}
+
+/** Empty response when the client cancelled (e.g. stop button / fetch abort). */
+function clientAbortResponse(): Response {
+  return new Response(null, { status: 499 });
+}
+
 /**
  * POST /api/chat
  *
@@ -1467,6 +1477,7 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
+        abortSignal: request.signal,
         onStepFinish: ({ toolCalls, toolResults }) => {
           if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
             adhdToolsUsed = true;
@@ -1512,6 +1523,9 @@ ${buildEmptyCourseRagBlock()}`;
             : undefined,
       });
     } catch (error) {
+      if (isClientAbort(error, request.signal)) {
+        return clientAbortResponse();
+      }
       if (chatMode === "admin") {
         logStreamError(error, streamTrace);
         const hint =
@@ -1660,6 +1674,9 @@ ${buildEmptyCourseRagBlock()}`;
           },
         );
       } catch (error) {
+        if (isClientAbort(error, request.signal)) {
+          return clientAbortResponse();
+        }
         console.error("Error in ADHD oversight response:", error);
         return new Response(
           JSON.stringify({
@@ -1772,6 +1789,9 @@ ${buildEmptyCourseRagBlock()}`;
           },
         );
       } catch (error) {
+        if (isClientAbort(error, request.signal)) {
+          return clientAbortResponse();
+        }
         console.error("Error in non-streaming response:", error);
         return new Response(
           JSON.stringify({
@@ -1786,6 +1806,9 @@ ${buildEmptyCourseRagBlock()}`;
       }
     }
   } catch (error) {
+    if (isClientAbort(error, request.signal)) {
+      return clientAbortResponse();
+    }
     console.error("Chat API error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
