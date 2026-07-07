@@ -198,8 +198,25 @@ if (SUITE_VERSION === "v2") {
   const sensitivityGroups = new Set(
     prompts.filter((p) => p.sensitivity_group).map((p) => p.sensitivity_group),
   );
-  if (sensitivityGroups.size < 2) {
-    warnings.push(`Only ${sensitivityGroups.size} sensitivity_group values (target >= 2)`);
+  console.log(`Sensitivity groups: ${sensitivityGroups.size}`);
+  const byGroup = {};
+  for (const p of prompts) {
+    if (!p.sensitivity_group) continue;
+    (byGroup[p.sensitivity_group] ??= []).push(p.id);
+  }
+  for (const [group, ids] of Object.entries(byGroup)) {
+    if (ids.length < 2) {
+      warnings.push(`sensitivity_group ${group}: only ${ids.length} row(s) (target 2–3 variants)`);
+    }
+    for (const id of ids) {
+      const row = prompts.find((p) => p.id === id);
+      if (row?.replicate_of && !prompts.some((p) => p.id === row.replicate_of)) {
+        warnings.push(`${id}: replicate_of ${row.replicate_of} not found in suite`);
+      }
+    }
+  }
+  if (sensitivityGroups.size < 10) {
+    warnings.push(`Only ${sensitivityGroups.size} sensitivity groups (target >= 10 for v2 CS corpus)`);
   }
 }
 

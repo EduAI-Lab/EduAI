@@ -75,7 +75,7 @@
 
 ## Recommended curated set (10 lecture notes)
 
-All materials are **repo-authored lecture-style documents** in `curated-materials/`, synthesized from course lab handout themes (not personal assignment submissions or solution code).
+All materials are **repo-authored lecture-style documents** in `curated-materials/`, synthesized from course lab handout themes (not personal assignment submissions or solution code). Each file is written as a **textbook-style chapter**: learning objectives, narrative explanation, worked examples, common mistakes, and a summary — suitable for dense RAG retrieval (not thin bullet sheets).
 
 | Course | Lectures |
 |--------|----------|
@@ -91,10 +91,10 @@ All materials are **repo-authored lecture-style documents** in `curated-material
 
 | Prompt themes | Grounded by |
 |---------------|-------------|
-| COSC 121 OOP (`ts-127`–`132`, …) | P3/P4 briefs + OOP concept sheet |
-| COSC 121 DS (`ts-133`–`139`, …) | DS concept sheet |
-| COSC 310 SE (`ts-145`–`150`, …) | Lab 3 README + warmup + Lab 2 TDD |
-| COSC 315 OS (`ts-151`–`156`, …) | Labs 2, 4–8 READMEs |
+| COSC 121 OOP (`ts-127`–`132`, …) | `lecture-01-introduction-oop-java.md` |
+| COSC 121 DS (`ts-133`–`139`, …) | `lecture-02-data-structures-algorithms.md` |
+| COSC 310 SE (`ts-145`–`150`, …) | `lecture-01`–`03` (requirements, TDD, class diagrams) |
+| COSC 315 OS (`ts-151`–`156`, …) | `lecture-01`–`05` (shell through inodes) |
 | COSC 211 arch | Existing course seed or defer |
 
 ---
@@ -107,7 +107,7 @@ Place under e.g. `usb/COSC310/Lectures/` and `usb/COSC315/Lectures/`, then add 2
 
 ## Next step
 
-1. Review curated concept sheets in `curated-materials/cosc121/`.
+1. Review lecture notes in `curated-materials/` (all courses).
 2. Approve `usb-course-materials.manifest.json` (curated version).
 3. Run `npm run research:ingest-usb -- --dry-run` to confirm paths.
 4. Upload to dev EduAI after courses exist.

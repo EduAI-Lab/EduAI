@@ -32,6 +32,7 @@ import {
   resolveResearchTimeoutMs,
 } from "./research-chat-body.mjs";
 import { normalizePolicyKey } from "./policy-ids.mjs";
+import { buildRunProvenance } from "./research-provenance.mjs";
 
 const POLICIES = {
   P0: {
@@ -268,6 +269,7 @@ async function main() {
   mkdirSync(dirname(outPath), { recursive: true });
 
   const runStarted = new Date().toISOString();
+  const provenance = buildRunProvenance();
 
   console.log("=== policy comparison run ===");
   console.log("label:", runLabel);
@@ -359,6 +361,7 @@ async function main() {
             run_label: runLabel,
             run_started: runStarted,
             recorded_at: new Date().toISOString(),
+            ...provenance,
             replicate: rep,
             policy: policy.policy,
             policy_description: policy.description,

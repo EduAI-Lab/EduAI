@@ -1,0 +1,81 @@
+{
+  "$comment": "Frozen environment for confirmatory runs (Paper 1/2). Canonical copy also at URA/docs/research/data/REPRODUCIBILITY_MANIFEST.json",
+  "manifest_version": "2026-07-07",
+  "study_wave": "v2-confirmatory",
+  "git_branch": "feat/research-routing-vllm",
+  "git_sha_pin": null,
+  "task_suite": {
+    "file": "data/task-suite/prompts.v2.jsonl",
+    "build_command": "npm run research:build-v2",
+    "validate_command": "npm run research:validate-v2",
+    "confirmatory_split": "test",
+    "sensitivity_file": "data/task-suite/prompts.v2-sensitivity.jsonl",
+    "robustness_panel": "data/task-suite/robustness-panel.v1.json"
+  },
+  "rag_corpus": {
+    "manifest": "apps/core/scripts/research/usb-course-materials.manifest.json",
+    "ingest_command": "npm run research:ingest-usb",
+    "courses": ["COSC 121", "COSC 310", "COSC 315"]
+  },
+  "routing": {
+    "frozen_policy": "P1",
+    "router_version": "v1-rules",
+    "freeze_date": "2026-06-27",
+    "rule_stack_note": "rule2e distinct enumeration → tier 3; no further rule edits on confirmatory split"
+  },
+  "models": {
+    "production_routing": {
+      "host": "cmps01.ok.ubc.ca:8001",
+      "tier_small": "Qwen/Qwen2.5-7B-Instruct",
+      "tier_large": "Qwen/Qwen2.5-32B-Instruct-AWQ",
+      "catalog_ids": {
+        "tier_1": "vllm:qwen2.5-7b-instruct",
+        "tier_3": "vllm:qwen2.5-32b-instruct"
+      }
+    },
+    "adequacy_ladder": {
+      "host": "cmps02.ok.ubc.ca:8001",
+      "tier_medium": "Qwen/Qwen2.5-14B-Instruct",
+      "tier_xl": "Qwen/Qwen2.5-72B-Instruct-AWQ",
+      "max_model_len": 8192
+    },
+    "embeddings": {
+      "provider": "ollama",
+      "note": "Re-embed if vector dimension changes; document dim in run row when available"
+    }
+  },
+  "energy": {
+    "sidecar": "NVML via nginx :8001/energy",
+    "default_settle_ms": 5000,
+    "measure_env": "RESEARCH_MEASURE_ENERGY=1"
+  },
+  "quality_oracle": {
+    "method": "automated tier comparison (7B vs 32B) + strict relabel subset",
+    "strict_labels_file": "data/runs/labels/labels-strict.v1.jsonl",
+    "judge_temperature": 0.2,
+    "note": "Human adjudication on disagreement rows only"
+  },
+  "confirmatory_batches": {
+    "test_split_energy": {
+      "script": "run-v2-test-confirmatory.sh",
+      "policies": ["P0", "P1"],
+      "replicates": 2,
+      "split": "test"
+    },
+    "robustness_panel": {
+      "script": "run-robustness-panel.sh",
+      "policies": ["P0", "P1"],
+      "replicates": 3
+    },
+    "sensitivity": {
+      "script": "run-sensitivity-batch.sh",
+      "policy": "P1",
+      "pass_tier_agreement_pct": 90
+    }
+  },
+  "artifact_release": {
+    "canonical_runs_dir": "data/runs/",
+    "gitignored_jsonl": true,
+    "release_note": "Publish JSONL + this manifest + prompts sha256 with paper (Zenodo/OSF)"
+  }
+}

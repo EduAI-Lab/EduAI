@@ -26,10 +26,14 @@ const FILES = [
   "prompts.v1.jsonl",
   "prompts.v2-replacements.jsonl",
   "prompts.v2-seed.jsonl",
+  "prompts.v2-sensitivity.jsonl",
   "prompts.v2.jsonl",
+  "robustness-panel.v1.json",
   "schema.json",
   "splits.json",
 ];
+
+const DATA_FILES = ["../REPRODUCIBILITY_MANIFEST.json"];
 
 function syncTaskSuiteToUra() {
   const URA_SUITE = resolveUraSuiteDir();
@@ -42,6 +46,17 @@ function syncTaskSuiteToUra() {
     const dest = join(URA_SUITE, name);
     copyFileSync(src, dest);
     console.log(`copied ${name}`);
+  }
+  const uraData = join(URA_SUITE, "..");
+  for (const rel of DATA_FILES) {
+    const src = join(SUITE_DIR, rel);
+    if (!existsSync(src)) {
+      console.warn(`skip missing ${rel}`);
+      continue;
+    }
+    const dest = join(uraData, rel.replace(/^\.\.\//, ""));
+    copyFileSync(src, dest);
+    console.log(`copied ${rel} → data/`);
   }
 }
 

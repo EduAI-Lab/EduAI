@@ -19,6 +19,7 @@ const SOURCES = [
   "prompts.v1.jsonl",
   "prompts.v2-replacements.jsonl",
   "prompts.v2-seed.jsonl",
+  "prompts.v2-sensitivity.jsonl",
 ];
 
 function readJsonl(name) {
