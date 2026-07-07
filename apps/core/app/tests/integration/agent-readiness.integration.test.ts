@@ -85,7 +85,7 @@ describe("agent-readiness integration (#672)", () => {
     } as never);
     sendEmailMock.mockClear();
 
-    const email = `agent-ready-${randomUUID().slice(0, 8)}@test.local`;
+    const email = `agent-ready-${randomUUID().slice(0, 8)}@ubc.ca`;
     const res = await createInvitationAction({
       request: new Request("http://localhost/api/invitations", {
         method: "POST",

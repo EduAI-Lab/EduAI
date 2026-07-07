@@ -123,10 +123,10 @@ describe("POST /api/invitations", () => {
     expect(createInvitation).toHaveBeenCalled();
   });
 
-  it("rejects a non-UBC invite email at the schema (400, #567)", async () => {
+  it("rejects a non-UBC invite email at the schema (422, #567)", async () => {
     asInviter("ADMIN", "a1");
     const res = await action(postReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(createInvitation).not.toHaveBeenCalled();
     // The UBC reason must ride in details.fieldErrors.email so the form can show
     // it instead of a generic message (#567 / PR 692 review).
