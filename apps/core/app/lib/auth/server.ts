@@ -5,6 +5,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
   isStrongPassword,
@@ -152,6 +153,14 @@ export const auth = betterAuth({
         throw new APIError("FORBIDDEN", {
           message: "Public registration is disabled",
         });
+      }
+      // §567: backend chokepoint for the UBC-only rule on public self-signup.
+      // Invitation acceptance returned above (its email was UBC-validated at
+      // invite creation), so this only guards public registration. Catches
+      // direct POSTs to /sign-up/email that bypass register.tsx's zod check.
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+      if (!isUbcEmail(email)) {
+        throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
     }),
   },
