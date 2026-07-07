@@ -79,25 +79,42 @@ export function paletteNavItems(user: User): NavItem[] {
   ].filter((item) => !item.disabled);
 }
 
+/**
+ * Lazily fetch the palette's course list the first time it opens. The
+ * `loadedRef` guard makes it fire at most once — but a failed attempt (HTTP
+ * error OR network/parse error) must reset the guard so the next open retries.
+ * A 4xx/5xx that left the guard set would permanently blank the "Switch course"
+ * group. Exported for unit tests.
+ */
+export async function loadPaletteCourses(
+  loadedRef: { current: boolean },
+  setCourses: (courses: PaletteCourse[]) => void,
+  open: boolean,
+): Promise<void> {
+  if (!open || loadedRef.current) return;
+  loadedRef.current = true;
+  try {
+    const res = await fetch("/api/courses");
+    if (!res.ok) {
+      loadedRef.current = false; // allow a retry after an HTTP error
+      return;
+    }
+    const data = (await res.json()) as { courses?: PaletteCourse[] };
+    setCourses(data.courses ?? []);
+  } catch {
+    loadedRef.current = false; // allow a retry on a network/parse error
+  }
+}
+
 export function CommandPalette({ user }: { user: User }) {
   const navigate = useNavigate();
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
   const coursesLoaded = React.useRef(false);
 
-  const loadCoursesOnOpen = React.useCallback((open: boolean) => {
-    if (!open || coursesLoaded.current) return;
-    coursesLoaded.current = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/courses");
-        if (!res.ok) return;
-        const data = (await res.json()) as { courses?: PaletteCourse[] };
-        setCourses(data.courses ?? []);
-      } catch {
-        coursesLoaded.current = false; // allow a retry on the next open
-      }
-    })();
-  }, []);
+  const loadCoursesOnOpen = React.useCallback(
+    (open: boolean) => void loadPaletteCourses(coursesLoaded, setCourses, open),
+    [],
+  );
 
   const groups: CommandPaletteGroup[] = [
     {

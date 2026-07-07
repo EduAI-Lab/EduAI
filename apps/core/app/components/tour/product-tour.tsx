@@ -32,6 +32,43 @@ function readRect(el: Element): Rect {
   return { top: r.top, left: r.left, width: r.width, height: r.height };
 }
 
+/**
+ * Resolve a step's target to a *visible* element, or null. `querySelector` alone
+ * matches `display:none`/responsive-`hidden` elements (e.g. the AI-status chip's
+ * `hidden sm:inline-flex`), which would anchor the spotlight to a 0×0 box in the
+ * corner. An element with no client rects (or no offsetParent) is laid out but
+ * invisible — treat it as absent so the step is skipped, not mis-anchored.
+ */
+export function findVisibleTarget(selector: string): HTMLElement | null {
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) return null;
+  if (el.getClientRects().length === 0 || el.offsetParent === null) return null;
+  return el;
+}
+
+/** Keep Tab focus cycling within `container` (focus containment for the modal). */
+function trapTab(e: KeyboardEvent, container: HTMLElement | null): void {
+  if (!container) return;
+  const focusable = container.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  );
+  if (focusable.length === 0) {
+    e.preventDefault();
+    container.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const activeEl = document.activeElement;
+  if (e.shiftKey && (activeEl === first || activeEl === container)) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && activeEl === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 export function ProductTour({
   steps,
   storageKey,
@@ -49,6 +86,11 @@ export function ProductTour({
   // Ensures the tour starts at most once per mount — without this, dropping the
   // ?tour=1 param re-runs the start effect and would re-open the tour.
   const startedRef = React.useRef(false);
+  // The dialog container (focus target) and the element focused before the tour
+  // opened (restored on close) — the modal claims aria-modal, so it must own and
+  // return focus rather than leaving it behind the overlay.
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const restoreFocusRef = React.useRef<HTMLElement | null>(null);
 
   const finish = React.useCallback(() => {
     setActive(false);
@@ -94,7 +136,7 @@ export function ProductTour({
       let i = from;
       while (i >= 0 && i < steps.length) {
         const step = steps[i];
-        if (!step.target || document.querySelector(step.target)) return i;
+        if (!step.target || findVisibleTarget(step.target)) return i;
         i += dir;
       }
       return null;
@@ -121,7 +163,7 @@ export function ProductTour({
       setRect(null);
       return;
     }
-    const el = document.querySelector(step.target);
+    const el = findVisibleTarget(step.target);
     if (!el) {
       setRect(null);
       return;
@@ -136,7 +178,7 @@ export function ProductTour({
     const onMove = () => {
       const step = steps[index];
       if (step?.target) {
-        const el = document.querySelector(step.target);
+        const el = findVisibleTarget(step.target);
         if (el) setRect(readRect(el));
       }
       setTick((t) => t + 1);
@@ -167,10 +209,26 @@ export function ProductTour({
       if (e.key === "Escape") finish();
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goBack();
+      else if (e.key === "Tab") trapTab(e, dialogRef.current);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [active, finish, goNext, goBack]);
+
+  // Move focus into the dialog on open and restore it on close, so a keyboard
+  // user can't Tab into the page behind an aria-modal overlay (Tab is contained
+  // by trapTab above). Depends only on `active` — re-focusing on every step
+  // change would steal focus from within the card while the user reads.
+  React.useEffect(() => {
+    if (!active) return;
+    restoreFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => {
+      restoreFocusRef.current?.focus?.();
+      restoreFocusRef.current = null;
+    };
+  }, [active]);
 
   if (!active) return null;
 
@@ -201,7 +259,14 @@ export function ProductTour({
       };
 
   return (
-    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Product tour">
+    <div
+      ref={dialogRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-[100] outline-none"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Product tour"
+    >
       {/* Dimmer + spotlight. A single highlight box with a huge box-shadow cuts a
           hole in the dim layer around the target; centered steps dim everything. */}
       {anchored ? (

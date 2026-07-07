@@ -31,7 +31,6 @@ class EduAIService {
         baseURL: this.baseURL,
         hasApiKey: !!this.apiKey,
         apiKeyLength: this.apiKey ? this.apiKey.length : 0,
-        apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + "..." : "none",
       },
       "EduAI Service initialized"
     );

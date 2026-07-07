@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { ProductTour, type TourStep } from "~/components/tour/product-tour";
+import { ProductTour, findVisibleTarget, type TourStep } from "~/components/tour/product-tour";
 
 const STORAGE_KEY = "eduai:test:tour";
 
@@ -55,5 +55,57 @@ describe("ProductTour", () => {
     // Give the 600ms auto-start timer room to (not) fire.
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText("Welcome")).not.toBeInTheDocument();
+  });
+
+  it("moves focus into the dialog on open and restores it on close", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "opener";
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    renderTour("/?tour=1");
+    const dialog = await screen.findByRole("dialog", { name: "Product tour" });
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+
+    // Skipping closes the tour; focus returns to where it started.
+    fireEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    trigger.remove();
+  });
+});
+
+describe("findVisibleTarget", () => {
+  // happy-dom does not compute layout, so stub the layout signals the helper
+  // reads to simulate a hidden-but-present element (e.g. `hidden sm:inline-flex`).
+  function makeEl(visible: boolean): HTMLElement {
+    const el = document.createElement("div");
+    el.setAttribute("data-tour", "probe");
+    document.body.appendChild(el);
+    el.getClientRects = (() =>
+      (visible ? [{}] : []) as unknown as DOMRectList) as HTMLElement["getClientRects"];
+    Object.defineProperty(el, "offsetParent", {
+      configurable: true,
+      get: () => (visible ? document.body : null),
+    });
+    return el;
+  }
+
+  afterEach(() => {
+    document.querySelectorAll('[data-tour="probe"]').forEach((n) => n.remove());
+  });
+
+  it("returns a visible target", () => {
+    const el = makeEl(true);
+    expect(findVisibleTarget('[data-tour="probe"]')).toBe(el);
+  });
+
+  it("treats a laid-out-but-hidden element as absent", () => {
+    makeEl(false);
+    expect(findVisibleTarget('[data-tour="probe"]')).toBeNull();
+  });
+
+  it("returns null when the selector matches nothing", () => {
+    expect(findVisibleTarget('[data-tour="nope"]')).toBeNull();
   });
 });

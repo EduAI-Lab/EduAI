@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   IconMessageCircle,
   IconChevronRight,
@@ -102,6 +102,7 @@ function CourseListPanel({
   loading: boolean;
   title: string;
 }) {
+  const navigate = useNavigate();
   if (loading) {
     return (
       <div className="rounded-[var(--radius-xl)] border border-border overflow-hidden shadow-[var(--shadow-2xs)] bg-card">
@@ -149,14 +150,20 @@ function CourseListPanel({
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
-          <Link
-            to={`/chat?courseCode=${encodeURIComponent(course.code)}`}
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            onClick={(e) => {
+              // Nested inside the row's <Link>; a nested <a> is invalid markup
+              // and hydration-mismatches, so navigate imperatively instead.
+              e.preventDefault();
+              e.stopPropagation();
+              navigate(`/chat?courseCode=${encodeURIComponent(course.code)}`);
+            }}
             className="flex-shrink-0 px-3 py-1.5 text-xs font-medium text-white rounded-[var(--radius-md)] whitespace-nowrap"
             style={{ background: "var(--primary)" }}
           >
             Chat
-          </Link>
+          </button>
         </Link>
       ))}
     </div>
