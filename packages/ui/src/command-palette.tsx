@@ -83,17 +83,24 @@ export function CommandPalette({
   openEventName,
   onOpenChange,
 }: CommandPaletteProps) {
-  const [open, setOpenState] = React.useState(false)
-  const setOpen = React.useCallback(
-    (next: boolean | ((o: boolean) => boolean)) => {
-      setOpenState((prev) => {
-        const resolved = typeof next === "function" ? next(prev) : next
-        if (resolved !== prev) onOpenChange?.(resolved)
-        return resolved
-      })
-    },
-    [onOpenChange],
-  )
+  const [open, setOpen] = React.useState(false)
+
+  // Fire onOpenChange from an effect keyed on `open`, not from inside the state
+  // updater — an impure updater double-fires under React 18 StrictMode. Skip the
+  // initial mount so it only signals real open/close transitions. The latest
+  // callback is held in a ref so the effect stays keyed purely on `open`.
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  React.useEffect(() => {
+    onOpenChangeRef.current = onOpenChange
+  })
+  const firstRender = React.useRef(true)
+  React.useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    onOpenChangeRef.current?.(open)
+  }, [open])
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -112,7 +119,7 @@ export function CommandPalette({
       document.removeEventListener("keydown", onKey)
       if (openEventName && onOpen) window.removeEventListener(openEventName, onOpen)
     }
-  }, [openEventName, setOpen])
+  }, [openEventName])
 
   const run = (fn: () => void) => {
     setOpen(false)

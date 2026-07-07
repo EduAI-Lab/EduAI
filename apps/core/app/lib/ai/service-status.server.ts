@@ -92,21 +92,33 @@ async function probeUbcStatus(): Promise<ServiceStatus> {
 // Short in-memory cache so a burst of header polls triggers at most one probe.
 const CACHE_TTL_MS = 30_000;
 let cache: { at: number; value: AiServiceStatus } | null = null;
+// Holds the probe promise while it's running so concurrent callers on a cold
+// cache share the single in-flight probe instead of each firing their own.
+let inFlight: Promise<AiServiceStatus> | null = null;
 
 export async function getAiServiceStatus(): Promise<AiServiceStatus> {
   const now = Date.now();
   if (cache && now - cache.at < CACHE_TTL_MS) {
     return cache.value;
   }
+  if (inFlight) return inFlight;
 
-  const cloud = classifyCloudStatus({
-    openai: process.env.OPENAI_API_KEY,
-    google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    openrouter: process.env.OPENROUTER_API_KEY,
-  });
-  const ubc = await probeUbcStatus();
+  inFlight = (async () => {
+    try {
+      const cloud = classifyCloudStatus({
+        openai: process.env.OPENAI_API_KEY,
+        google: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+        openrouter: process.env.OPENROUTER_API_KEY,
+      });
+      const ubc = await probeUbcStatus();
 
-  const value: AiServiceStatus = { cloud, ubc };
-  cache = { at: now, value };
-  return value;
+      const value: AiServiceStatus = { cloud, ubc };
+      cache = { at: Date.now(), value };
+      return value;
+    } finally {
+      inFlight = null;
+    }
+  })();
+
+  return inFlight;
 }

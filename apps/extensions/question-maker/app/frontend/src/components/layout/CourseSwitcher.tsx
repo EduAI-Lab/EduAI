@@ -28,6 +28,13 @@ export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
     sublabel: c.code ? c.name : undefined,
   }));
 
+  // Seed the current course when the loaded list doesn't contain it (still
+  // loading, or filtered out) so the active course never drops out of the
+  // dropdown — mirrors the AI-Tutor switcher's seed for real parity.
+  if (!options.some((o) => o.id === courseId)) {
+    options.unshift({ id: courseId, label: `Course ${courseId}` });
+  }
+
   return (
     <SharedCourseSwitcher
       courses={options}

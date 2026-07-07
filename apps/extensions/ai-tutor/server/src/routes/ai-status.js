@@ -16,6 +16,9 @@ router.get('/ai-status', async (req, res) => {
   try {
     const upstream = await fetch(`${CORE_URL}/api/ai-status`, {
       headers: { cookie: req.headers.cookie ?? '' },
+      // Mirror Core's own ~1.5s probe bound so a slow/hung Core can't pile up
+      // open sockets on the header poll interval; abort falls to UNKNOWN below.
+      signal: AbortSignal.timeout(2000),
     });
     if (!upstream.ok) {
       return res.json({ cloud: UNKNOWN, ubc: UNKNOWN });
