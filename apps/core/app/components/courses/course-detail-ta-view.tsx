@@ -14,7 +14,6 @@ import {
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
 import { Input } from '@eduai/ui'
-import { Textarea } from '@eduai/ui'
 import {
   Dialog,
   DialogContent,
@@ -41,6 +40,8 @@ import { Avatar } from '@eduai/ui'
 import { CourseMaterialsUpload } from '~/components/course-materials-upload'
 import { CourseEmbeddingSettings } from '~/components/course-embedding-settings'
 import type { CourseMaterial } from '~/components/course-materials-upload'
+import { CourseResponseStyleSettings, CourseResponseStyleSummary } from '~/components/courses/course-response-style-settings'
+import { courseHasAiConfig } from '~/lib/ai/response-style-tags'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
@@ -64,7 +65,6 @@ interface Props {
   tas?: CourseTA[]
   onCreateTopic: (name: string) => Promise<void>
   onDeleteTopic: (id: string) => Promise<void>
-  onUpdateAiInstructions: (aiInstructions: string) => Promise<void>
 }
 
 function fileTypeColor(mime: string): string {
@@ -117,7 +117,6 @@ export function CourseDetailTaView({
   tas = [],
   onCreateTopic,
   onDeleteTopic,
-  onUpdateAiInstructions,
 }: Props) {
   const { isEnabled } = usePolicyGate()
   // §2 / issue #807: controls an admin turned off stay visible but greyed-out
@@ -138,9 +137,6 @@ export function CourseDetailTaView({
   const [renamingMaterial, setRenamingMaterial] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const [newTopic, setNewTopic] = useState('')
-  const [aiInstructions, setAiInstructions] = useState(course.aiInstructions ?? '')
-  const [aiSaving, setAiSaving] = useState(false)
-  const [aiSaveMsg, setAiSaveMsg] = useState<string | null>(null)
 
   const handleRenameMaterial = async () => {
     if (!renameMaterialId || !courseId) return
@@ -199,19 +195,6 @@ export function CourseDetailTaView({
     setNewTopic('')
   }
 
-  const handleAiSave = async () => {
-    setAiSaving(true)
-    setAiSaveMsg(null)
-    try {
-      await onUpdateAiInstructions(aiInstructions)
-      setAiSaveMsg('Saved.')
-    } catch (err) {
-      setAiSaveMsg(err instanceof Error ? err.message : 'Save failed.')
-    } finally {
-      setAiSaving(false)
-    }
-  }
-
   // Close upload modal when success arrives (not on file select — upload may fail)
   const prevSuccessRef = useRef(materialsSuccess)
   useEffect(() => {
@@ -222,7 +205,10 @@ export function CourseDetailTaView({
   }, [materialsSuccess])
 
   // B2: top-right hero badges
-  const topRightBadges: string[] = [...(course.isActive ? ['Active'] : []), 'AI-enabled']
+  const topRightBadges: string[] = [
+    ...(course.isActive ? ['Active'] : []),
+    ...(courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) ? ['AI-enabled'] : []),
+  ]
 
   return (
     <div className="flex flex-col gap-6">
@@ -412,29 +398,19 @@ export function CourseDetailTaView({
                 {/* tas.canSetAiInstructions: editable field when granted, else
                     the redesigned read-only display (mirrors backend). */}
                 {canSetAiInstructions ? (
-                  <div className="pt-3 border-t border-border grid gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">AI instructions</p>
-                    <Textarea
-                      value={aiInstructions}
-                      onChange={(e) => setAiInstructions(e.target.value)}
-                      rows={4}
-                      placeholder="Guidance applied to the AI tutor for this course."
+                  <div className="pt-3 border-t border-border">
+                    <CourseResponseStyleSettings
+                      courseId={course.id}
+                      initialTags={course.responseStyleTags ?? []}
+                      initialAiInstructions={course.aiInstructions ?? ''}
+                      embedded
                     />
-                    <div className="flex items-center gap-3">
-                      <Button onClick={handleAiSave} disabled={aiSaving} size="sm" className="self-start">
-                        {aiSaving ? 'Saving…' : 'Save instructions'}
-                      </Button>
-                      {aiSaveMsg && (
-                        <span className="text-sm text-muted-foreground">{aiSaveMsg}</span>
-                      )}
-                    </div>
                   </div>
                 ) : (
-                  course.aiInstructions && (
+                  courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) && (
                     <div className="pt-3 border-t border-border">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI instructions</p>
-                      <p className="text-[13px] text-muted-foreground leading-relaxed">{course.aiInstructions}</p>
-                      {/* §807: explain why this is read-only rather than just showing static text. */}
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">AI response style</p>
+                      <CourseResponseStyleSummary tagIds={course.responseStyleTags ?? []} />
                       <p className="text-[11px] italic text-muted-foreground/80 mt-1.5">Editing turned off by your administrator.</p>
                     </div>
                   )

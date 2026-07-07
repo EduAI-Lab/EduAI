@@ -685,6 +685,23 @@ describe("updateCourse", () => {
     });
   });
 
+  it("TA responseStyleTags-only PATCH succeeds when tas.canSetAiInstructions is on (200)", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
+    prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "TA", isActive: true });
+    prismaMock.course.update.mockResolvedValue({ id: "c1", responseStyleTags: ["concise"] });
+    vi.mocked(getPolicy).mockResolvedValue(true);
+    const res = await updateCourse(
+      makePatchRequest({ responseStyleTags: ["concise"] }),
+      "c1",
+    );
+    expect(res.status).toBe(200);
+    expect(prismaMock.course.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { responseStyleTags: ["concise"] },
+    });
+  });
+
   it("TA PATCH of a non-aiInstructions field is still 403 even when the grant is on", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "ta-1", role: "STUDENT" } } as any);
     prismaMock.course.findFirst.mockResolvedValue({ id: "c1", department: null });

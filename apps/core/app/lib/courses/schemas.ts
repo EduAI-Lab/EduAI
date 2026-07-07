@@ -1,9 +1,23 @@
 import { z } from "zod";
+import { RESPONSE_STYLE_TAG_IDS } from "~/lib/ai/response-style-tags";
 
 /**
  * Schema for creating a new course
  * - Used in POST /api/courses
  */
+
+export const ResponseStyleTagIdSchema = z.enum(
+  RESPONSE_STYLE_TAG_IDS as [string, ...string[]],
+);
+
+export const UpdateCourseResponseStyleSchema = z.object({
+  responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7),
+  aiInstructions: z.string().max(4000).optional(),
+});
+
+export type UpdateCourseResponseStyleInput = z.infer<
+  typeof UpdateCourseResponseStyleSchema
+>;
 
 export const CreateCourseSchema = z.object({
   name: z.string().min(1),
@@ -35,6 +49,7 @@ export const UpdateCourseSchema = z.object({
   isPublished: z.coerce.boolean().optional(),
   isActive: z.coerce.boolean().optional(),
   aiInstructions: z.string().optional(),
+  responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7).optional(),
   instructorId: z.string().min(1).optional(),
 });
 
