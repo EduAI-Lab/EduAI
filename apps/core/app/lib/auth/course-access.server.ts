@@ -115,8 +115,13 @@ export async function resolveCourseAccess(
  * role — a UserRole=STUDENT grad TA sees unpublished courses where they hold
  * EnrollmentRole=TA but only published ones where they are a STUDENT (§1).
  */
-export async function buildCourseListFilter(user: RbacUser): Promise<Prisma.CourseWhereInput> {
-  if (user.role === "ADMIN") return { deletedAt: null };
+export async function buildCourseListFilter(
+  user: RbacUser,
+  // §19 forensics opt-in (#315): ADMIN-only. Honored solely for ADMIN; every
+  // other role always filters `deletedAt: null` regardless of the flag.
+  includeDeleted = false,
+): Promise<Prisma.CourseWhereInput> {
+  if (user.role === "ADMIN") return includeDeleted ? {} : { deletedAt: null };
 
   if (user.role === "UNIT_ADMIN") {
     const units = await getAuthorizedUnits(user);
@@ -145,6 +150,23 @@ function enrollmentBranches(userId: string): Prisma.CourseWhereInput[] {
       enrollments: { some: { userId, isActive: true, role: "STUDENT" } },
     },
   ];
+}
+
+/**
+ * §19 forensics opt-in (#315): does this request ask to surface soft-deleted
+ * records, AND is the caller allowed to? ADMIN-only — returns false for every
+ * other role, so it is a no-op for normal traffic. Centralizes the check that
+ * was previously duplicated (with subtly different shapes) across every
+ * course/question read route, giving one place to fix or extend it.
+ */
+export function wantsIncludeDeleted(
+  request: Request,
+  user: { role?: string | null } | null | undefined,
+): boolean {
+  return (
+    user?.role === "ADMIN" &&
+    new URL(request.url).searchParams.get("includeDeleted") === "true"
+  );
 }
 
 /**

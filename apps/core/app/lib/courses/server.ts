@@ -7,6 +7,7 @@ import {
   buildCourseListFilter,
   getAuthorizedUnits,
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
 } from "~/lib/auth/course-access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { assertValidDepartment } from "~/lib/disciplines/guards.server";
@@ -159,8 +160,12 @@ export async function getCourses(request: Request) {
     });
   }
 
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted courses. The flag is a no-op for every non-ADMIN caller.
+  const includeDeleted = wantsIncludeDeleted(request, session.user);
+
   const courses = await prisma.course.findMany({
-    where: await buildCourseListFilter(session.user),
+    where: await buildCourseListFilter(session.user, includeDeleted),
   });
 
   const enrollmentRows = await prisma.enrollment.findMany({
@@ -547,9 +552,9 @@ export async function setPublishState(request: Request, courseId: string, publis
   });
 }
 
-export async function getCourse(courseId: string) {
+export async function getCourse(courseId: string, includeDeleted = false) {
   return prisma.course.findFirst({
-    where: { id: courseId, deletedAt: null },
+    where: { id: courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
 }
 
@@ -605,16 +610,20 @@ export async function getCourseRagSettings(
   return value;
 }
 
-export async function getCourseTopics(courseId: string) {
+export async function getCourseTopics(courseId: string, includeDeleted = false) {
   return prisma.courseTopic.findMany({
-    where: { courseId, deletedAt: null },
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     orderBy: { name: "asc" },
   });
 }
 
-export async function getCourseTopic(courseId: string, topicId: string) {
+export async function getCourseTopic(
+  courseId: string,
+  topicId: string,
+  includeDeleted = false,
+) {
   return prisma.courseTopic.findFirst({
-    where: { id: topicId, courseId, deletedAt: null },
+    where: { id: topicId, courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
   });
 }
 
