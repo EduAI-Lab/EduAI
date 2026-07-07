@@ -273,18 +273,14 @@ export function CourseDetailStudentView({
                 an enrolled student; the POST endpoint applies the matching gate. Off
                 by default → read-only list only. The redesigned read-only list below
                 still renders so an uploading student also sees existing materials. */}
-            {onFileSelect && (
+            {canUploadMaterials && onFileSelect && (
               <div className="mb-4">
-                {/* §807: when upload is policy-off, grey the dropzone with a
-                    tooltip instead of removing it. */}
-                <PolicyTooltip flag="students.canUploadMaterials">
-                  <CourseMaterialsUpload
-                    isUploading={isUploading}
-                    error={materialsError}
-                    success={materialsSuccess}
-                    onFileSelect={onFileSelect}
-                  />
-                </PolicyTooltip>
+                <CourseMaterialsUpload
+                  isUploading={isUploading}
+                  error={materialsError}
+                  success={materialsSuccess}
+                  onFileSelect={onFileSelect}
+                />
               </div>
             )}
             {materials.length === 0 ? (
