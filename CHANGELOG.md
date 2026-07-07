@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [infra] feat: Add Redis (`redis:7-alpine`) to `docker-compose.dev.yml` plus `bullmq`/`ioredis` and a hot-reload-safe connection module (`app/lib/queue/connection.server.ts`) for the async AI-job queue. (#913, @abdullahmoh21, 2026-07-07)
+- [infra] feat: Add Redis (`redis:7-alpine`) to `docker-compose.dev.yml` plus `bullmq`/`ioredis` and a hot-reload-safe connection module (`app/lib/queue/connection.server.ts`) for the async AI-job queue. (#913, @abdullahmoh21, 2026-07-07) — [#934](https://github.com/EduAI-Lab/EduAI/pull/934)
 
 ## [Week 9 — June 29–July 5, 2026]
 
