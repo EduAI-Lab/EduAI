@@ -5,6 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
+import { firstFieldError } from "~/lib/form-errors";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
   Button,
@@ -181,7 +182,7 @@ export default function InvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, role));
+        setFormError(errorMessage(data?.error, res.status, role, data?.details));
         return;
       }
       setDialogOpen(false);
@@ -402,8 +403,11 @@ export default function InvitationsPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="person@university.edu"
+                  placeholder="person@student.ubc.ca"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Must be a UBC address (e.g. person@student.ubc.ca or person@ubc.ca).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-name">Name (optional)</Label>
@@ -490,14 +494,24 @@ export default function InvitationsPage() {
   );
 }
 
-function errorMessage(code: unknown, status: number, role?: string): string {
+function errorMessage(
+  code: unknown,
+  status: number,
+  role?: string,
+  details?: unknown,
+): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
-    case "Invalid input":
+    case "Invalid input": {
+      // Surface the specific field reason (e.g. the UBC-email gate) when the
+      // API returns one, instead of a generic "check the fields" message.
+      const fieldMessage = firstFieldError(details);
+      if (fieldMessage) return fieldMessage;
       return role === "UNIT_ADMIN"
         ? "Please check the fields and try again — a unit admin invitation must include at least one unit."
         : "Please check the fields and try again.";
+    }
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":

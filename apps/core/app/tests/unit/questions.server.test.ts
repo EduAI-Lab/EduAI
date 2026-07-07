@@ -291,6 +291,26 @@ describe("listQuestions", () => {
     expect(result.offset).toBe(20);
     expect(db.question.findMany.mock.calls[0][0].skip).toBe(20);
   });
+
+  // #315: ADMIN forensics opt-in. Gating to ADMIN happens at the route layer;
+  // the service honours the flag once passed.
+  it("excludes soft-deleted questions by default (deletedAt: null)", async () => {
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    await listQuestions({ courseId: COURSE_ID });
+
+    expect(db.question.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+  });
+
+  it("includes soft-deleted questions when includeDeleted is true (deletedAt omitted)", async () => {
+    db.question.findMany.mockResolvedValue([]);
+    db.question.count.mockResolvedValue(0);
+
+    await listQuestions({ courseId: COURSE_ID, includeDeleted: true });
+
+    expect("deletedAt" in db.question.findMany.mock.calls[0][0].where).toBe(false);
+  });
 });
 
 // ─── getQuestionById ─────────────────────────────────────────────────────────
@@ -314,6 +334,13 @@ describe("getQuestionById", () => {
       id: QUESTION_ID,
       deletedAt: null,
     });
+  });
+
+  // #315: ADMIN forensics opt-in surfaces a soft-deleted question by id.
+  it("omits deletedAt from the where clause when includeDeleted is true", async () => {
+    db.question.findFirst.mockResolvedValue(null);
+    await getQuestionById(QUESTION_ID, true);
+    expect(db.question.findFirst.mock.calls[0][0].where).toEqual({ id: QUESTION_ID });
   });
 });
 
