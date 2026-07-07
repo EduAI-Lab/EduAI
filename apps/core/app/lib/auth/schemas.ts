@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from "~/lib/auth/password-policy";
 
 /** A password field that must satisfy the UBC strength policy (#339). */
@@ -20,6 +21,9 @@ export const signUpSchema = z.object({
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).refine((data) => isUbcEmail(data.email), {
+  message: UBC_EMAIL_MESSAGE,
+  path: ["email"],
 });
 
 export const forgotPasswordSchema = z.object({
