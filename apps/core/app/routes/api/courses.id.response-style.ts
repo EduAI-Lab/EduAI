@@ -1,69 +1,17 @@
 /**
- * GET  /api/courses/:id/response-style  — read per-course AI response style tags.
  * PATCH /api/courses/:id/response-style — update responseStyleTags and/or aiInstructions.
  *
- * Auth:
- *   GET  — any authenticated user with course access (via loader; endpoint is open to session).
- *   PATCH — ADMIN or INSTRUCTOR, or TA when tas.canSetAiInstructions is on.
+ * Auth: ADMIN or INSTRUCTOR, or TA when tas.canSetAiInstructions is on.
+ * No GET handler — the course detail loader supplies initial values to the UI;
+ * exposing aiInstructions over GET would leak private instructor prompts (#782).
  */
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
-import { RESPONSE_STYLE_TAGS } from "~/lib/ai/response-style-tags";
 import { UpdateCourseResponseStyleSchema } from "~/lib/courses/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
-
-export async function loader({ request, params }: LoaderFunctionArgs) {
-  const courseId = params.id;
-  if (!courseId) {
-    return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const course = await prisma.course.findFirst({
-    where: { id: courseId, deletedAt: null },
-    select: {
-      id: true,
-      responseStyleTags: true,
-      aiInstructions: true,
-    },
-  });
-  if (!course) {
-    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  return new Response(
-    JSON.stringify({
-      responseStyleTags: course.responseStyleTags,
-      aiInstructions: course.aiInstructions,
-      availableTags: RESPONSE_STYLE_TAGS.map(({ id, label, description, exampleResponse }) => ({
-        id,
-        label,
-        description,
-        exampleResponse,
-      })),
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-}
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "PATCH") {

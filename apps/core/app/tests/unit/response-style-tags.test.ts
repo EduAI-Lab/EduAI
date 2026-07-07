@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  appendCourseStyleToSystemPrompt,
   buildCourseResponseStylePrompt,
   courseHasAiConfig,
   resolveResponseStyleTags,
@@ -40,6 +41,21 @@ describe("buildCourseResponseStylePrompt", () => {
     expect(prompt).toContain("**Socratic**");
     expect(prompt).toContain("## Additional course instructions");
     expect(prompt).toContain("Use course notation.");
+  });
+});
+
+describe("appendCourseStyleToSystemPrompt", () => {
+  it("appends the style block after a custom stored prompt", () => {
+    const customPrompt = "You are a course-specific tutor.";
+    const styleBlock = buildCourseResponseStylePrompt(["concise"], null);
+    const result = appendCourseStyleToSystemPrompt(customPrompt, styleBlock);
+    expect(result.startsWith(customPrompt)).toBe(true);
+    expect(result).toContain("## Course response style");
+    expect(result).toContain("**Concise**");
+  });
+
+  it("returns the base prompt unchanged when the style block is empty", () => {
+    expect(appendCourseStyleToSystemPrompt("Base prompt", "")).toBe("Base prompt");
   });
 });
 
