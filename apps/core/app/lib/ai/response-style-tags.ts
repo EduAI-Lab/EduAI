@@ -96,10 +96,10 @@ export function getResponseStyleTag(id: string): ResponseStyleTag | undefined {
   return tagById.get(id as ResponseStyleTagId);
 }
 
-export function resolveResponseStyleTags(tagIds: string[]): ResponseStyleTag[] {
+export function resolveResponseStyleTags(tagIds: string[] | null | undefined): ResponseStyleTag[] {
   const seen = new Set<string>();
   const resolved: ResponseStyleTag[] = [];
-  for (const id of tagIds) {
+  for (const id of tagIds ?? []) {
     if (seen.has(id)) continue;
     const tag = getResponseStyleTag(id);
     if (tag) {
