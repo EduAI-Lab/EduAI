@@ -39,7 +39,7 @@ export const RESPONSE_STYLE_TAGS: readonly ResponseStyleTag[] = [
     promptSnippet:
       "Keep responses brief and focused. Prefer short paragraphs or bullet points. Omit filler and avoid repeating the question.",
     exampleResponse:
-      "The time complexity is O(n log n) because each split halves the array and merging takes O(n) per level.",
+      "Three things to remember: the core idea, why it matters, and how to apply it.",
   },
   {
     id: "step-by-step",
