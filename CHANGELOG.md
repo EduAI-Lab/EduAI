@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] docs: Add `docs/implementations/async-ai-job-queue-contract.md` — frozen contract (`JobType`, job payload Zod schema, `AiJob` model, BullMQ topology, enqueue/dequeue interface) for the async AI-job queue, unblocking Saad's dispatch worker. (#912, @abdullahmoh21)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
