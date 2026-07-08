@@ -87,10 +87,10 @@ export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
 
       <SidebarContent>
         <AiTutorNavMain items={toNavMainItems(user)} />
-        <TourButton />
       </SidebarContent>
 
       <SidebarFooter>
+        <TourButton />
         <AiTutorSidebarUser user={user} />
       </SidebarFooter>
     </Sidebar>
