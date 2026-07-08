@@ -69,6 +69,10 @@ vi.mock("~/lib/policy.server", () => ({
   invalidatePolicyCache: vi.fn(),
 }));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
