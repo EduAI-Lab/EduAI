@@ -14,7 +14,7 @@ export const APPS = {
   aiTutor: {
     baseUrl: 'http://localhost:3001',
     pages: [
-      { name: 'home', path: '/home', requiresAuth: true },
+      { name: 'home', path: '/', requiresAuth: true },
       { name: 'student-list', path: '/student', requiresAuth: true },
       { name: 'instructor-list', path: '/instructor', requiresAuth: true },
       { name: 'settings', path: '/settings', requiresAuth: true },
@@ -23,9 +23,9 @@ export const APPS = {
   questionMaker: {
     baseUrl: 'http://localhost:5173',
     pages: [
-      { name: 'course-selection', path: '/', requiresAuth: true },
+      { name: 'course-selection', path: '/courses', requiresAuth: true },
       { name: 'dashboard', path: '/dashboard', requiresAuth: true },
-      { name: 'question-bank', path: '/question-bank', requiresAuth: true },
+      { name: 'question-bank', path: '/library', requiresAuth: true },
       { name: 'settings', path: '/settings', requiresAuth: true },
     ],
   },
