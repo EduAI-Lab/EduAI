@@ -18,7 +18,7 @@
  */
 import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ConfirmDialog, PageHeading } from '@eduai/ui';
+import { ConfirmDialog } from '@eduai/ui';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
