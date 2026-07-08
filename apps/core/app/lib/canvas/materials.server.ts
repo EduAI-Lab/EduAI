@@ -208,7 +208,7 @@ async function importSingleCanvasFile(
 
   const bytes = await downloadCanvasFile(credentials, file, fetchImpl);
   const uploadFile = new File(
-    [bytes],
+    [bytes as Uint8Array<ArrayBuffer>],
     file.filename || file.display_name,
     { type: mimeType },
   );
