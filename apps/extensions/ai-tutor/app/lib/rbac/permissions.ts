@@ -83,6 +83,10 @@ export function canViewCourseSubmissions(user: AtUser | null | undefined): boole
   return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
 }
 
+export function canViewCourseFeedback(user: AtUser | null | undefined): boolean {
+  return canViewCourseSubmissions(user);
+}
+
 export function canViewCourseAnalytics(user: AtUser | null | undefined): boolean {
   const access = resolvePlatformCourseAccess(user);
   return access === 'admin' || access === 'unit' || access === 'instructor';
