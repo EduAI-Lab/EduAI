@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. (#784, @Ayyhab, 2026-07-08)
+- [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. (#784, @Ayyhab, 2026-07-08) — [#959](https://github.com/EduAI-Lab/EduAI/pull/959)
 
 ## [Week 9 — June 29–July 5, 2026]
 
