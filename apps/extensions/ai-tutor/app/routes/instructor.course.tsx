@@ -32,6 +32,7 @@ import { useAtPermissions } from '../hooks/useAtPermissions';
 import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
 import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
 import { CourseStudentMetricsPanel } from '../components/courses/CourseStudentMetricsPanel';
+import { CourseFeedbackPanel } from '../components/courses/CourseFeedbackPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
@@ -260,6 +261,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
         {activeTab === 'submissions' && numericCourseId ? (
           <CourseSubmissionsPanel courseId={numericCourseId} />
+        ) : null}
+
+        {activeTab === 'feedback' && numericCourseId ? (
+          <CourseFeedbackPanel courseId={numericCourseId} />
         ) : null}
 
         {activeTab === 'analytics' && numericCourseId ? (
