@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Add stateless `POST /api/completion` for extension AI-assist flows — prompt-faithful LLM calls without chat persistence, RAG, tools, or ADHD-assist overhead; QM and AI Tutor cut over from `/api/chat`. (#858, @superbolt08, 2026-07-08) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: Add stateless `POST /api/completion` for extension AI-assist flows — prompt-faithful LLM calls without chat persistence, RAG, tools, or ADHD-assist overhead; QM and AI Tutor cut over from `/api/chat`. (#858, @superbolt08, 2026-07-08) — [#958](https://github.com/EduAI-Lab/EduAI/pull/958)
 
 ## [Week 9 — June 29–July 5, 2026]
 
