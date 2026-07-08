@@ -36,10 +36,12 @@ async function main() {
       }
     }
   } finally {
-    fs.mkdirSync(OUT_ROOT, { recursive: true });
-    fs.writeFileSync(path.join(OUT_ROOT, 'results.json'), JSON.stringify(results, null, 2));
-
-    await browser.close();
+    try {
+      fs.mkdirSync(OUT_ROOT, { recursive: true });
+      fs.writeFileSync(path.join(OUT_ROOT, 'results.json'), JSON.stringify(results, null, 2));
+    } finally {
+      await browser.close();
+    }
   }
 }
 
