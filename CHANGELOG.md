@@ -5,6 +5,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] feat: API key expiry notification cron — a daily cron job (`POST /api/cron/notify-api-key-expiry`, `infra/cron/notify-api-key-expiry.sh`) queries for all enabled `UserProviderSettings` rows whose key expires exactly 7 days out and sends one styled HTML/text email per key via the existing mailer; `buildApiKeyExpiryEmail` builds the message with HTML-escaped fields to prevent injection. (#747, @evanbones, 2026-07-07) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] feat: Migrate provider API key storage from `localStorage` to server-side encrypted DB — adds `apiKeyExpiresAt` to `UserProviderSettings` (migration `20260706000000_add_api_key_expires_at`), a new `user-provider-settings.server.ts` CRUD layer (encrypt/decrypt via the canvas encryption module), and `GET|POST|DELETE /api/user-provider-settings`; the chat route now loads keys server-side instead of accepting them from the request body (service-key callers retain a backwards-compatible body fallback); `useApiKeys` migrates legacy localStorage keys to the server on first load and clears them afterward. (#935, @evanbones, 2026-07-07) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] tests: Add `api-key-expiry.email.test.ts`, `cron-notify-api-key-expiry.test.ts`, `cron.notify-api-key-expiry.route.test.ts`, `user-provider-settings.server.test.ts`, and `user-provider-settings.route.test.ts`; update `use-api-keys.test.ts` and existing chat route tests for the DB-backed key loading path. (#747, #935, @evanbones, 2026-07-07) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
