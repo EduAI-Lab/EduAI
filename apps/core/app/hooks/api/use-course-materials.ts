@@ -18,6 +18,10 @@ export interface CourseMaterial {
   chunkCount?: number
   // uploadedBy will be available after #300 schema update
   uploadedBy?: string
+  /** Student-visibility gate (staff-only field). See #839. */
+  visibleToStudents?: boolean
+  /** Scheduled reveal timestamp (ISO) or null. Staff-only. See #839. */
+  availableAt?: string | null
 }
 
 export function useCourseMaterials(courseId: string) {

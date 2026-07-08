@@ -56,10 +56,11 @@ The frontend expects the API at `http://localhost:4000`. Override with the `VITE
 
 ### Design system
 
-AiTutor shares the EduAI design system via the monorepo `@eduai/ui` package and tokens in `app/app.css` (UBC Blue, Outfit typography, dark mode). See `eduai-design-system/project/SKILL.md` for brand rules. Cross-app navigation:
+AiTutor shares the EduAI design system via the monorepo `@eduai/ui` package and tokens in `app/app.css` (UBC Blue, Outfit typography, dark mode). See `eduai-design-system/project/SKILL.md` for brand rules. Cross-app navigation is handled by the shared sidebar-header app switcher (`BrandSwitcher`), which lists every EduAI app the current role may access:
 
-- **AiTutor → EduAI Core:** Nav bar “EduAI Core” link (`VITE_EDUAI_URL`, default `http://localhost:3000`)
-- **EduAI Core → AiTutor:** Sidebar “AI Tutor” link (`VITE_AI_TUTOR_URL` on Core, default `http://localhost:3001`)
+- **AiTutor → EduAI Core:** app switcher (`VITE_EDUAI_URL`, default `http://localhost:3000`)
+- **AiTutor → Question Maker:** app switcher, shown only to instructors/admins (`VITE_QUESTION_MAKER_URL`, default `http://localhost:5173`)
+- **EduAI Core → AiTutor:** app switcher (`VITE_AI_TUTOR_URL` on Core, default `http://localhost:3001`)
 
 ## Project Structure
 
@@ -133,10 +134,8 @@ Copy `server/.env.example` to `server/.env` and configure:
 | Variable                | Required | Description                                        |
 | ----------------------- | -------- | -------------------------------------------------- |
 | `DATABASE_URL`          | Yes      | PostgreSQL connection string                       |
-| `BETTER_AUTH_SECRET`    | Yes      | Session signing secret                             |
-| `BETTER_AUTH_URL`       | Yes      | Auth endpoint base URL                             |
+| `CORE_URL`              | Yes      | Core base URL — session validation is proxied here, not handled locally |
 | `PORT`                  | No       | API port (default: `4000`)                         |
-| `COOKIE_DOMAIN`         | No       | Cookie domain (default: `localhost`)               |
 | `EDUAI_API_KEY`         | For AI   | EduAI API key                                      |
 | `EDUAI_BASE_URL`        | For AI   | EduAI API base URL                                 |
 | `EDUAI_MODEL`           | For AI   | Model identifier (e.g., `google:gemini-2.5-flash`) |
@@ -146,7 +145,8 @@ Frontend env vars:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `VITE_API_URL` | `http://localhost:4000` | AiTutor API server URL |
-| `VITE_EDUAI_URL` | `http://localhost:3000` | EduAI Core app URL (cross-nav link in Nav) |
+| `VITE_EDUAI_URL` | `http://localhost:3000` | EduAI Core app URL (app switcher) |
+| `VITE_QUESTION_MAKER_URL` | `http://localhost:5173` | Question Maker app URL (app switcher; instructors/admins only) |
 
 ## Scripts
 
