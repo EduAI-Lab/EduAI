@@ -1,4 +1,4 @@
-import { Form } from "react-router";
+import { Form, useFetcher } from "react-router";
 import { useState } from "react";
 
 import { CanvasIntegrationSettings } from "~/components/canvas/canvas-integration-settings";
@@ -39,12 +39,16 @@ interface SettingsViewProps {
   role?: string;
   studentNumber?: string | null;
   passwordExpired?: boolean;
+  providerExpiries?: Record<string, string>;
 }
 
-export function SettingsView({ role, studentNumber = null, passwordExpired = false }: SettingsViewProps) {
+export function SettingsView({
+  role,
+  studentNumber = null,
+  passwordExpired = false,
+  providerExpiries = {},
+}: SettingsViewProps) {
   const { isEnabled } = usePolicyGate();
-  // §807: instructors keep the Canvas tab visible but greyed when the policy is
-  // off (admins are never gated); other roles don't see the tab at all.
   const roleHasCanvas = CANVAS_SETTINGS_ROLES.has(role ?? "");
   const canvasEnabled =
     role === "ADMIN" || isEnabled("instructors.canManageCanvasIntegration");
@@ -56,6 +60,34 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
     isProviderConfigured,
   } = useApiKeys();
   const [activeTab, setActiveTab] = useState("account");
+
+  // Local state for expiry date inputs, seeded from loader data.
+  const [localExpiries, setLocalExpiries] = useState<Record<string, string>>(providerExpiries);
+
+  const expiryFetcher = useFetcher();
+
+  function handleExpiryChange(providerName: string, value: string) {
+    setLocalExpiries((prev) => ({ ...prev, [providerName]: value }));
+    expiryFetcher.submit(
+      { _action: "setExpiry", providerName, apiKeyExpiresAt: value },
+      { method: "post", action: "/settings" },
+    );
+  }
+
+  function handleRemoveProvider(providerName: string) {
+    removeProviderSettings(providerName);
+    expiryFetcher.submit(
+      { _action: "setExpiry", providerName, apiKeyExpiresAt: "" },
+      { method: "post", action: "/settings" },
+    );
+    setLocalExpiries((prev) => {
+      const next = { ...prev };
+      delete next[providerName];
+      return next;
+    });
+  }
+
+  const today = new Date().toISOString().split("T")[0];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -140,16 +172,41 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                     <div className="space-y-2">
                       <Label className="mb-1">OpenAI</Label>
                       {isProviderConfigured("openai") ? (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">Configured</Badge>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => removeProviderSettings("openai")}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            Remove
-                          </Button>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">Configured</Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRemoveProvider("openai")}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-sm text-muted-foreground shrink-0 w-16">
+                              Expires
+                            </Label>
+                            <Input
+                              type="date"
+                              className="w-44"
+                              min={today}
+                              value={localExpiries["openai"] ?? ""}
+                              onChange={(e) => handleExpiryChange("openai", e.target.value)}
+                              aria-label="OpenAI key expiry date"
+                            />
+                            {localExpiries["openai"] && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleExpiryChange("openai", "")}
+                                className="text-muted-foreground"
+                              >
+                                Clear
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <Input
@@ -167,16 +224,41 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                     <div className="space-y-2">
                       <Label className="mb-1">Google AI (Gemini)</Label>
                       {isProviderConfigured("google") ? (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary">Configured</Badge>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => removeProviderSettings("google")}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            Remove
-                          </Button>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">Configured</Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRemoveProvider("google")}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-sm text-muted-foreground shrink-0 w-16">
+                              Expires
+                            </Label>
+                            <Input
+                              type="date"
+                              className="w-44"
+                              min={today}
+                              value={localExpiries["google"] ?? ""}
+                              onChange={(e) => handleExpiryChange("google", e.target.value)}
+                              aria-label="Google AI key expiry date"
+                            />
+                            {localExpiries["google"] && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleExpiryChange("google", "")}
+                                className="text-muted-foreground"
+                              >
+                                Clear
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <Input
