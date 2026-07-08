@@ -11,10 +11,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. (#784, @Ayyhab, 2026-07-08)
 
-### Fixed
-
-- [ai-tutor] fix: Guide-tour nav button visibility — the sidebar "Take Tour" control was a bare ghost `Button` dropped in a loose `<div>` below the nav, so it read as stray text and was easy to miss. It now renders as a proper `SidebarMenuButton` in the sidebar footer (just above the user profile), with an always-visible label (previously hidden on narrow widths). Also shown for TAs on the instructor shell, since they can use student flows too; instructors/admins still do not see it. Behaviour otherwise unchanged: starts/stops the suggested tour on the matching route. (#740, @Ayyhab, 2026-07-08) — [#952](https://github.com/EduAI-Lab/EduAI/pull/952)
-
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
