@@ -1,3 +1,5 @@
+import { getAiTutorAppUrl } from '~/lib/extension-urls'
+import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
 import type { NavItem, NavUser } from '~/lib/rbac/types'
 
 const CORE_NAV: NavItem[] = [
