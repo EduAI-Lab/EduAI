@@ -71,6 +71,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `CORE_DB_PORT` | optional (default 54320) | Host port for the Core Postgres container |
 | `TUTOR_DB_PORT` | optional (default 54321) | Host port for the AI Tutor Postgres container |
 | `QM_DB_PORT` | optional (default 55432) | Host port for the Question Maker Postgres container |
+| `CORE_REDIS_PORT` | optional (default 63790) | Host port for the Core Redis container (async AI-job queue) |
 
 ## `apps/core/.env.example`
 
@@ -80,6 +81,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `DATABASE_URL` | required | dev | Postgres connection string |
 | `BETTER_AUTH_SECRET` | required | dev | Auth session signing secret — generate with `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | required | dev | Base URL of the Core app |
+| `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
 | `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
