@@ -87,9 +87,7 @@ export function AiTutorSidebar({ user, ...props }: AiTutorSidebarProps) {
 
       <SidebarContent>
         <AiTutorNavMain items={toNavMainItems(user)} />
-        <div className="px-2 py-2">
-          <TourButton />
-        </div>
+        <TourButton />
       </SidebarContent>
 
       <SidebarFooter>
