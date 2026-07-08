@@ -6,6 +6,7 @@ import {
   canManageEnrollments,
   canSubmitBugReport,
   canViewCourseAnalytics,
+  canViewCourseFeedback,
   canViewCourseSubmissions,
   resolvePlatformCourseAccess,
 } from '~/lib/rbac';
@@ -28,7 +29,12 @@ describe('rbac permissions', () => {
 
   it('allows TA to view submissions but not analytics', () => {
     expect(canViewCourseSubmissions({ id: '1', role: 'TA' })).toBe(true);
+    expect(canViewCourseFeedback({ id: '1', role: 'TA' })).toBe(true);
     expect(canViewCourseAnalytics({ id: '1', role: 'TA' })).toBe(false);
+  });
+
+  it('hides course feedback from students (#784)', () => {
+    expect(canViewCourseFeedback({ id: '1', role: 'STUDENT' })).toBe(false);
   });
 
   it('allows enrollment management for instructor and unit admin', () => {
