@@ -12,6 +12,7 @@ import {
 import { NavMain, type NavGroupItem, type NavMainItem } from "./nav-main"
 import { NavSecondary, type NavSecondaryItem } from "./nav-secondary"
 import { NavUser, type NavUserProps } from "./nav-user"
+import { BrandSwitcher, type BrandSwitcherProps } from "./app-launcher"
 
 export interface AppSidebarProps
   extends React.ComponentProps<typeof Sidebar> {
@@ -24,6 +25,12 @@ export interface AppSidebarProps
   LinkComponent?: React.ElementType
   user: NavUserProps["user"]
   navUser?: Omit<NavUserProps, "user">
+  /**
+   * When provided, the header brand becomes an app switcher (BrandSwitcher):
+   * clicking the logo opens a menu of the EduAI apps the current role can
+   * access. Omit to keep the brand a plain home link.
+   */
+  launcher?: Pick<BrandSwitcherProps, "apps" | "currentAppId" | "role">
 }
 
 export function AppSidebar({
@@ -35,24 +42,35 @@ export function AppSidebar({
   LinkComponent = "a",
   user,
   navUser,
+  launcher,
   ...props
 }: AppSidebarProps) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-1">
-          <SidebarMenu className="flex-1 min-w-0">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                className="data-[slot=sidebar-menu-button]:!p-1.5"
-              >
-                <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
-                  {logo}
-                </LinkComponent>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          {launcher ? (
+            <BrandSwitcher
+              logo={logo}
+              logoHref={logoHref}
+              LinkComponent={LinkComponent}
+              className="flex-1 min-w-0"
+              {...launcher}
+            />
+          ) : (
+            <SidebarMenu className="flex-1 min-w-0">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  className="data-[slot=sidebar-menu-button]:!p-1.5"
+                >
+                  <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
+                    {logo}
+                  </LinkComponent>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          )}
           {/* Collapse toggle, visible while the sidebar is expanded (desktop).
               When collapsed/mobile the SiteHeader shows the expand trigger instead. */}
           <SidebarTrigger className="hidden shrink-0 md:inline-flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />

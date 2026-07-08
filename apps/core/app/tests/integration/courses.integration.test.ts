@@ -122,6 +122,56 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(401);
   });
 
+  // #315 §19: soft-deleted courses are invisible by default; an ADMIN may opt in
+  // with ?includeDeleted=true. The flag is ignored for non-ADMIN callers.
+  it("hides soft-deleted courses by default and surfaces them for ADMIN with ?includeDeleted=true", async () => {
+    const admin = await seedUser({ role: "ADMIN" });
+    const deleted = await seedCourse({ isPublished: true });
+    await prisma.course.update({
+      where: { id: deleted.id },
+      data: { deletedAt: new Date() },
+    });
+
+    try {
+      mockSession(admin);
+
+      // Default read: soft-deleted course is invisible even to ADMIN.
+      const defaultRes = await getCourses(makeGetRequest());
+      const defaultIds = (await defaultRes.json()).courses.map((c: { id: string }) => c.id);
+      expect(defaultIds).not.toContain(deleted.id);
+
+      // ADMIN forensics opt-in: soft-deleted course appears.
+      const inclRes = await getCourses(
+        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+      );
+      const inclIds = (await inclRes.json()).courses.map((c: { id: string }) => c.id);
+      expect(inclIds).toContain(deleted.id);
+    } finally {
+      await cleanupRbac({ userIds: [admin.id], courseIds: [deleted.id] });
+    }
+  });
+
+  it("ignores ?includeDeleted=true for a non-ADMIN caller", async () => {
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const deleted = await seedCourse({ isPublished: true });
+    await enroll(deleted.id, instructor.id, "INSTRUCTOR");
+    await prisma.course.update({
+      where: { id: deleted.id },
+      data: { deletedAt: new Date() },
+    });
+
+    try {
+      mockSession(instructor);
+      const res = await getCourses(
+        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+      );
+      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      expect(ids).not.toContain(deleted.id);
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: [deleted.id] });
+    }
+  });
+
   it("returns 200 scoped to enrollments for an INSTRUCTOR (#298)", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(INSTRUCTOR_SESSION as any);
     const res = await getCourses(makeGetRequest());
