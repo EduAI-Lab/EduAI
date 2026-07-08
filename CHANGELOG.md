@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–10, 2026]
+
+### Fixed
+
+- [ai-tutor] fix: Guide-tour nav button visibility — the sidebar "Take Tour" control was a bare ghost `Button` dropped in a loose `<div>` below the nav, so it read as stray text and was easy to miss. It now renders as a proper `SidebarMenuButton` item consistent with the other nav entries, with an always-visible label (previously hidden on narrow widths). Behaviour is unchanged: it still shows only on student routes and starts/stops the suggested tour. (#740, @Ayyhab, 2026-07-08) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
