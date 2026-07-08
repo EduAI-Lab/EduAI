@@ -37,6 +37,17 @@ describe("RegisterForm — rendering", () => {
     const link = screen.getByRole("link", { name: /login/i });
     expect(link).toHaveAttribute("href", "/auth/login");
   });
+
+  it("shows the UBC-address hint under the email field when there is no error", () => {
+    render(<RegisterForm />);
+    expect(screen.getByText(/must be a ubc address/i)).toBeInTheDocument();
+  });
+
+  it("replaces the UBC hint with the email error when one is present", () => {
+    render(<RegisterForm fieldErrors={{ email: "Invalid email" }} />);
+    expect(screen.queryByText(/must be a ubc address/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Invalid email")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
