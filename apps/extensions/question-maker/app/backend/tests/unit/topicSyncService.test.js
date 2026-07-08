@@ -81,6 +81,32 @@ describe('syncTopicsFromCoreForCourse', () => {
     expect(topicsCreate).not.toHaveBeenCalled();
   });
 
+  // #315 §19: Core's API filters `deletedAt: null`, so a soft-deleted Core topic
+  // never appears in the topic-pull response. QM only upserts what Core returns,
+  // so the soft-deleted topic is never synced into the local table — proving
+  // Core soft-deletes stay invisible to QM.
+  it('never syncs a soft-deleted Core topic (absent from the Core response)', async () => {
+    // Core has soft-deleted "ct-deleted"; its filtered response omits it.
+    getCourseTopicsFromCore.mockResolvedValue({
+      topics: [{ id: 'ct-live', name: 'Live Topic' }],
+    });
+    topicsFindAll.mockResolvedValue([]);
+
+    const synced = await syncTopicsFromCoreForCourse(course, 'session=abc');
+
+    expect(synced).toBe(1);
+    // Only the surviving topic is created…
+    expect(topicsCreate).toHaveBeenCalledTimes(1);
+    expect(topicsCreate).toHaveBeenCalledWith({
+      name: 'Live Topic',
+      courseId: 10,
+      coreTopicId: 'ct-live',
+    });
+    // …and the soft-deleted topic is never written locally.
+    const createdCoreIds = topicsCreate.mock.calls.map(([data]) => data.coreTopicId);
+    expect(createdCoreIds).not.toContain('ct-deleted');
+  });
+
   it('rethrows Core errors when failOnCoreError is set', async () => {
     const err = Object.assign(new Error('Forbidden'), { status: 403 });
     getCourseTopicsFromCore.mockRejectedValue(err);
