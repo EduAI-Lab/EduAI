@@ -68,11 +68,15 @@ describe("AppSidebar — rendering", () => {
     expect(screen.getByRole("link", { name: "Courses" })).toBeInTheDocument();
   });
 
-  it("renders AI Tutor extension link", () => {
+  it("renders the app switcher (cross-app links moved into the switcher popover)", () => {
+    // AI Tutor / Question Maker are no longer sidebar nav links — they live in
+    // the header app switcher (BrandSwitcher). Its popover contents aren't
+    // rendered under happy-dom (Radix), so assert the trigger is present; the
+    // RBAC gate on the popover is covered in @eduai/ui's app-launcher.test.tsx.
     renderSidebar("STUDENT");
-    const link = screen.getByRole("link", { name: "AI Tutor" });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "http://localhost:3001");
+    expect(
+      screen.getByRole("button", { name: "Switch app" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -91,7 +95,6 @@ describe("AppSidebar — role-gated nav", () => {
     expect(screen.queryByText("AI Management")).not.toBeInTheDocument();
     expect(screen.queryByText("Bug Reports")).not.toBeInTheDocument();
     expect(screen.getByText("Courses")).toBeInTheDocument();
-    expect(screen.getByText("AI Tutor")).toBeInTheDocument();
   });
 
   it("hides admin links for INSTRUCTOR", () => {

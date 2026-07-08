@@ -1,6 +1,4 @@
 import type { NavItem, NavUser } from '~/lib/rbac/types'
-import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
-import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
@@ -86,7 +84,10 @@ export function usesGlobalChat(user: NavUser): boolean {
   return role === 'ADMIN' || role === 'UNIT_ADMIN'
 }
 
-/** Secondary sidebar links (bottom of sidebar). */
+/**
+ * Secondary sidebar links (bottom of sidebar). Cross-app links (Question Maker,
+ * AI Tutor) moved to the footer AppLauncher, which enforces the same role gate.
+ */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
   const items: NavItem[] = [CHATBOT_NAV_ITEM]
@@ -94,12 +95,6 @@ export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   if (role === 'ADMIN') {
     items.push(...ADMIN_SECONDARY_NAV)
   }
-
-  if (QM_NAV_ROLES.has(role)) {
-    items.push(QM_NAV_ITEM)
-  }
-
-  items.push(AI_TUTOR_NAV_ITEM)
 
   return items
 }
