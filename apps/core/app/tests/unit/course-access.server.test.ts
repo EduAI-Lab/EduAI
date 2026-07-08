@@ -154,6 +154,18 @@ describe("buildCourseListFilter", () => {
     expect(where).toEqual({ deletedAt: null });
   });
 
+  // #315: ADMIN forensics opt-in drops the deletedAt filter entirely.
+  it("ADMIN with includeDeleted sees soft-deleted courses too (no deletedAt filter)", async () => {
+    const where = await buildCourseListFilter({ id: "u1", role: "ADMIN" }, true);
+    expect(where).toEqual({});
+  });
+
+  // #315: the flag is ADMIN-only — a non-ADMIN caller still filters deletedAt.
+  it("ignores includeDeleted for non-ADMIN callers", async () => {
+    const where = await buildCourseListFilter({ id: "u1", role: "INSTRUCTOR" }, true);
+    expect(where.deletedAt).toBeNull();
+  });
+
   it("UNIT_ADMIN sees authorized units plus own enrollments", async () => {
     const where = await buildCourseListFilter({
       id: "u1",
