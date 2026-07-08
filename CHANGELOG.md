@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Fixed
+
+- [core] fix: Resolve TypeScript typecheck failures — cast `Uint8Array<ArrayBufferLike>` to `Uint8Array<ArrayBuffer>` in `materials.server.ts` so the `File` constructor's `BlobPart[]` parameter is satisfied under TS 5.7+'s stricter generic `ArrayBufferView` constraint; add `as any` to `registerFormArgs` in `auth.registration.route.test.ts` to match the existing `args()` helper and satisfy the updated `ActionFunctionArgs` shape that now requires `url` and `pattern`. (#857, @evanbones, 2026-07-08)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
