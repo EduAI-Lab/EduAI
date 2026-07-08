@@ -60,6 +60,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
@@ -391,7 +392,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
-    const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
@@ -736,7 +736,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    if (!model) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -746,20 +746,6 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
-    if (!apiKeysParsed.success) {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid apiKeys",
-          details: apiKeysParsed.error.flatten(),
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
       return new Response(
@@ -774,10 +760,21 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeys = mergeLocalInferenceFromEnv(
-      toUserProviderSettings(apiKeysParsed.data),
-      model,
-    );
+    // Service key callers (AI Tutor, QM) may still pass apiKeys in the body for
+    // backward compatibility. Regular users' keys are loaded from the DB.
+    let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
+    if (isServiceKeyCaller && body.apiKeys != null) {
+      const parsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        parsed.success ? toUserProviderSettings(parsed.data) : {},
+        model,
+      );
+    } else {
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        await getUserProviderSettings(actingUser.id),
+        model,
+      );
+    }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
       const envHint =

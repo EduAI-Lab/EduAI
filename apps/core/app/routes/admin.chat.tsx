@@ -18,7 +18,6 @@ import {
   SidebarProvider,
 } from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
-import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
@@ -97,12 +96,9 @@ export default function AdminChatPage() {
     [setAssistive],
   );
 
-  const { getValidApiKeys } = useApiKeys();
-
   const requestMetadata = {
     chatMode: "admin" as const,
     model: selectedModel,
-    apiKeys: getValidApiKeys(),
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
@@ -142,7 +138,6 @@ export default function AdminChatPage() {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
           adhdAssist,
           streaming: false,
         }),
