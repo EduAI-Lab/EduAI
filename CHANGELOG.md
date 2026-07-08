@@ -9,6 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Chat stop / client abort — `POST /api/chat` forwards the request `AbortSignal` to `streamText` and returns HTTP 499 when the user hits stop, so the LLM stream is cancelled server-side instead of continuing in the background. (#852, #267, @superbolt08, 2026-07-02)
+- [core] tests: `chat-abort.route.test.ts` — verifies abort signal forwarding and 499 response on `AbortError`. (#852, #267, @superbolt08, 2026-07-02)
 - [infra] feat: Add `cleanup-invitations` cron job — hard-deletes `REVOKED` invitations and expired `PENDING` invitations past a 30-day grace period, following the existing infra shell-script pattern (`infra/cron/cleanup-invitations.sh`) registered in `KNOWN_CRON_JOBS` for admin-panel visibility, manual trigger, and schedule editing. (#580, @evanbones, 2026-07-02) — [#853](https://github.com/EduAI-Lab/EduAI/pull/853)
 - [monorepo] docs: Add `docs/ENVIRONMENT.md` — consolidated reference for every `.env.example` file in the repo (Core, AI Tutor server, Question Maker, root, `infra/cron`), what loads each one, and dev/test/prod scope per variable. (#841, @evanbones, 2026-07-01) — closes #817
 
@@ -35,6 +37,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Soft-delete transparency audit — ADMIN-only `?includeDeleted=true` forensics opt-in on course/question/material/topic reads, surfacing soft-deleted records that every API response otherwise filters out (§19). (#315, @abdullahmoh21, 2026-06-28)
+- [core,ai-tutor,question-maker] tests: Soft-delete coverage — Core unit/integration assert audited reads exclude soft-deleted fixtures by default and include them only for ADMIN with `?includeDeleted=true`; AI Tutor reconcile and QM topic-sync verify soft-deleted Core records never resurface downstream. (#315, @abdullahmoh21, 2026-06-28)
 - [core, ai-tutor, question-maker] feat: Bug report type dropdown and unified submit dialog — users can categorize their report as UI/Display, Feature Not Working, Performance, Content Error, Access/Permission, or Other; stored as `BugReportType` enum in Core's DB and surfaced in all three admin triage views. The submit dialog is now the canonical implementation in `@eduai/ui` shared across all three apps; duplicate `BugReportDialog` components in AI Tutor and QM removed; `isStubbed` dead code stripped. (#503, @evanbones, 2026-06-24) — [#770](https://github.com/EduAI-Lab/EduAI/pull/770)
 - [question-maker] feat: Full course-centric QM redesign — reworked the frontend into a workspace IA (`/dashboard`, `/courses`, `/courses/:id` with Overview/Questions/Assessments/Topics/Canvas tabs, nested assessment routes; course context via URL only), a full-page question composer, a unified question modal, a global question library with a filter toolbar + preview drawer, a reworked assessments surface with inline AI-variant review, a role-aware dashboard, a ⌘K command palette, and an inline course switcher. (#762, #763, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
 - [core] feat: Extract shared shell, settings, question, and dependency-free analytics-chart components into `@eduai/ui` (AppSidebar/SiteHeader/Nav*/ThemeToggle/BugReportDialog, QuestionCard/QuestionStatusBadge/VariantBadge, settings/{AccessibilitySettings,ProvidersTable,ProviderFormDialog}, charts/*); Core consumes them via thin wrappers, and `MultiSelect` moves onto a Radix popover with a body-pointer-events restore fix for dialogs opened from menus. (#765, @yta3216, 2026-06-26) — [#791](https://github.com/EduAI-Lab/EduAI/pull/791)
@@ -57,6 +61,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Filter `deletedAt IS NULL` in the hybrid BM25 RAG query so soft-deleted course materials no longer leak into chat retrieval context (§19). (#315, @abdullahmoh21, 2026-06-28)
 - [ci] fix: Force the report-branch checkout in the Backend Coverage Report commit step so the tracked `.env.test` files rewritten during setup no longer abort it and fail the job. (@abdullahmoh21, 2026-06-29) — [#821](https://github.com/EduAI-Lab/EduAI/pull/821)
 - [core] fix: Theme hydration mismatch on html color-scheme (#142, @superbolt08, 2026-06-23)
 - [ai-tutor] feat: Add `GET /courses/:courseId/feedback` endpoint — returns all `ActivityFeedback` rows for activities in a course; access-gated to ADMIN (global), UNIT_ADMIN (department-scoped), INSTRUCTOR (enrolled), and TA (enrolled); supports `activityId`, `studentId`, `take` (max 200, default 50), and `skip` query params. (#554, @evanbones, 2026-06-24)
@@ -130,6 +135,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] security: Enforce UBC-only emails (`ubc.ca` and its subdomains) on public registration and admin/unit-admin invitations via a shared `isUbcEmail` gate applied at the signup schema, the Better Auth before-hook, and the invitation schema. (#567, #692, @abdullahmoh21, 2026-06-20)
 - [core] feat: Allow admins to invite students — STUDENT added to invitable roles with a "Student / TA" dropdown marker noting a TA is a student elevated per-course. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] tests: Cover admin student invites — schema accepts STUDENT and rejects TA, and the integration create→accept yields a STUDENT user with no authorized units. (#687, #691, @abdullahmoh21, 2026-06-20)
 - [core] feat: Admin Chatbot at `/admin/chat` — ADMIN-only assistant with AI SDK tools for platform ops (list/get courses, enrollments, users, bug reports; confirmed writes for user CRUD, enrollment changes, and bug triage). Separate `ChatbotType` sessions (`LEARNING` | `ADMIN`), tool-capable model requirement, and token budgeting for vLLM context windows. ([#651](https://github.com/EduAI-Lab/EduAI/pull/651), @superbolt08, 2026-06-16)
