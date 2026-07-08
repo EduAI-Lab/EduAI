@@ -11,6 +11,7 @@ import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
 import {
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
@@ -24,6 +25,48 @@ function json(status: number, body: unknown) {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+/**
+ * Staff (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) see every material so they can stage
+ * and schedule content; only students are subject to the per-material
+ * visibility gate. `access.level === 'student'` is the single student marker.
+ */
+function isStaffAccess(access: AccessLevel): boolean {
+  return access.level !== 'student';
+}
+
+/**
+ * Prisma `where` fragment that hides materials students shouldn't see yet:
+ * Canvas-unpublished (`unpublishedAt`), selectively excluded Canvas files,
+ * explicitly hidden (`visibleToStudents: false`), or scheduled for a future
+ * reveal (`availableAt` in the future). Staff callers must NOT apply this.
+ *
+ * When `excludedCanvasFileIds` is empty the availableAt clause stays a top-level
+ * `OR` so scheduling tests remain readable; with exclusions an `AND` wraps both
+ * OR groups so Prisma doesn't overwrite one with the other.
+ */
+function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = []) {
+  const availableAtGate = {
+    OR: [{ availableAt: null }, { availableAt: { lte: now } }],
+  };
+  const exclusionGate =
+    excludedCanvasFileIds.length > 0
+      ? {
+          OR: [
+            { externalId: null },
+            { externalId: { notIn: excludedCanvasFileIds } },
+          ],
+        }
+      : null;
+
+  return {
+    unpublishedAt: null,
+    visibleToStudents: true,
+    ...(exclusionGate
+      ? { AND: [availableAtGate, exclusionGate] }
+      : availableAtGate),
+  };
 }
 
 /**
@@ -110,51 +153,127 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json(400, { error: 'MATERIAL_ID_REQUIRED' });
       }
 
-      let body: { title?: unknown };
+      let body: { title?: unknown; visibleToStudents?: unknown; availableAt?: unknown };
       try {
         body = await request.json();
       } catch {
         return json(400, { error: 'INVALID_BODY' });
       }
-      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
-      if (!rawTitle) {
-        return json(400, { error: 'TITLE_REQUIRED' });
+
+      const hasTitle = body.title !== undefined;
+      const hasVisibility = body.visibleToStudents !== undefined;
+      const hasAvailableAt = body.availableAt !== undefined;
+
+      const data: {
+        title?: string;
+        visibleToStudents?: boolean;
+        availableAt?: Date | null;
+      } = {};
+
+      if (hasTitle) {
+        const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+        if (!rawTitle) {
+          return json(400, { error: 'TITLE_REQUIRED' });
+        }
+        if (rawTitle.length > 255) {
+          return json(400, { error: 'TITLE_TOO_LONG' });
+        }
+        data.title = rawTitle;
       }
-      if (rawTitle.length > 255) {
-        return json(400, { error: 'TITLE_TOO_LONG' });
+
+      if (hasVisibility) {
+        if (typeof body.visibleToStudents !== 'boolean') {
+          return json(400, { error: 'INVALID_VISIBILITY' });
+        }
+        data.visibleToStudents = body.visibleToStudents;
+      }
+
+      if (hasAvailableAt) {
+        // null clears the schedule; a valid ISO string sets a future/past reveal.
+        if (body.availableAt === null) {
+          data.availableAt = null;
+        } else if (typeof body.availableAt === 'string') {
+          const parsed = new Date(body.availableAt);
+          if (Number.isNaN(parsed.getTime())) {
+            return json(400, { error: 'INVALID_AVAILABLE_AT' });
+          }
+          data.availableAt = parsed;
+        } else {
+          return json(400, { error: 'INVALID_AVAILABLE_AT' });
+        }
+      }
+
+      if (Object.keys(data).length === 0) {
+        return json(400, { error: 'NO_FIELDS' });
       }
 
       const material = await prisma.courseMaterial.findFirst({
         where: { id: materialId, courseId, deletedAt: null },
-        select: { id: true, uploadedBy: true, title: true },
+        select: {
+          id: true,
+          uploadedBy: true,
+          title: true,
+          visibleToStudents: true,
+          availableAt: true,
+        },
       });
       if (!material) {
         return json(404, { error: 'MATERIAL_NOT_FOUND' });
       }
 
-      // §7: rename mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
+      // §7: edit mirrors delete — ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C), plus
       // the TA own-only carve-out via uploadedBy. Null uploadedBy = no owner, TA denied.
-      const isOwnTaRename = access.level === 'ta' && material.uploadedBy === user.id;
-      if (access.rank < 2 && !isOwnTaRename) {
+      // The TA carve-out covers renames only; student-visibility controls
+      // (visibleToStudents / availableAt) require instructor/admin/unit access,
+      // matching the UI that hides the visibility eye from TAs.
+      const changesVisibility = hasVisibility || hasAvailableAt;
+      const isOwnTaEdit =
+        access.level === 'ta' && material.uploadedBy === user.id && !changesVisibility;
+      if (access.rank < 2 && !isOwnTaEdit) {
         return json(403, { error: 'Forbidden' });
       }
 
       const updated = await prisma.courseMaterial.update({
         where: { id: materialId },
-        data: { title: rawTitle },
-        select: { id: true, title: true },
+        data,
+        select: {
+          id: true,
+          title: true,
+          visibleToStudents: true,
+          availableAt: true,
+        },
       });
+
+      // Distinguish a pure rename from a visibility change so the audit trail
+      // stays legible; a combined edit records under MATERIAL_UPDATED.
+      const visibilityChanged = hasVisibility || hasAvailableAt;
+      const actionCode = !visibilityChanged
+        ? 'MATERIAL_RENAMED'
+        : hasTitle
+          ? 'MATERIAL_UPDATED'
+          : 'MATERIAL_VISIBILITY_CHANGED';
 
       fireAndForget(
         logAuditAction({
           ...getActorContext(user ?? null),
           ...requestContext,
-          actionCode: 'MATERIAL_RENAMED',
+          actionCode,
           category: 'MATERIAL',
           entityType: 'CourseMaterial',
           entityId: materialId,
           entityLabel: updated.title,
-          details: { courseId, previousTitle: material.title, newTitle: updated.title },
+          details: {
+            courseId,
+            ...(hasTitle ? { previousTitle: material.title, newTitle: updated.title } : {}),
+            ...(visibilityChanged
+              ? {
+                  previousVisibleToStudents: material.visibleToStudents,
+                  newVisibleToStudents: updated.visibleToStudents,
+                  previousAvailableAt: material.availableAt,
+                  newAvailableAt: updated.availableAt,
+                }
+              : {}),
+          },
         }),
       );
 
@@ -365,11 +484,47 @@ async function uploadMaterial(
 
 const PREVIEW_EXCERPT_MAX = 4000;
 
+async function materialsListResponse(courseId: string, includeDeleted: boolean) {
+  const materials = await prisma.courseMaterial.findMany({
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    include: {
+      _count: { select: { chunks: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return json(200, {
+    materials: materials.map(({ _count, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    })),
+  });
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
   const materialId = params.materialId;
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
+  }
+
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted materials — including those in a soft-deleted course. The access
+  // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
+  // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
+  const session = await auth.api.getSession(request);
+  if (wantsIncludeDeleted(request, session?.user)) {
+    // The access resolver (skipped here) is what 404s a nonexistent course, so
+    // check existence explicitly — otherwise an unknown id returns 200 {[]},
+    // indistinguishable from "course exists, no materials". Mirrors courses.id.ts.
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+    if (!course) {
+      return json(404, { error: 'COURSE_NOT_FOUND' });
+    }
+    return materialsListResponse(courseId, true);
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -403,21 +558,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         ).map((row) => row.canvasFileId)
       : [];
 
+  const studentGate =
+    access.level === 'student'
+      ? studentVisibilityWhere(new Date(), excludedCanvasFileIds)
+      : {};
+
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({
-      where: {
-        id: materialId,
-        courseId,
-        deletedAt: null,
-        ...(access.level === 'student'
-          ? {
-              unpublishedAt: null,
-              ...(excludedCanvasFileIds.length > 0
-                ? { OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }] }
-                : {}),
-            }
-          : {}),
-      },
+      where: { id: materialId, courseId, deletedAt: null, ...studentGate },
       select: {
         id: true,
         title: true,
@@ -449,28 +597,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const materials = await prisma.courseMaterial.findMany({
-    where: {
-      courseId,
-      deletedAt: null,
-      ...(access.level === 'student'
-        ? {
-            unpublishedAt: null,
-            ...(excludedCanvasFileIds.length > 0
-              ? { OR: [{ externalId: null }, { externalId: { notIn: excludedCanvasFileIds } }] }
-              : {}),
-          }
-        : {}),
-    },
+    where: { courseId, deletedAt: null, ...studentGate },
     include: {
       _count: { select: { chunks: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
 
+  // Staff receive the scheduling fields so the management UI can render and edit
+  // them; students never do (they only ever see already-visible materials).
+  const staff = isStaffAccess(access);
   return json(200, {
-    materials: materials.map(({ _count, ...material }) => ({
+    materials: materials.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
       ...material,
       chunkCount: _count?.chunks ?? 0,
+      ...(staff ? { visibleToStudents, availableAt } : {}),
     })),
   });
 }

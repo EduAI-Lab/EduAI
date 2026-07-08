@@ -1,4 +1,5 @@
 import { embed, embedMany, type EmbeddingModel } from "ai";
+import { Prisma } from "@prisma/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
@@ -616,12 +617,18 @@ export async function generateEmbedding(query: string, courseId?: string): Promi
  *   3. Global env default (`RAG_SIMILARITY_THRESHOLD`, falls back to 0.5).
  *
  * This lets individual courses be tuned independently without touching global config.
+ *
+ * `restrictToStudentVisible` (#839): when true (student callers), materials that
+ * are hidden from students or scheduled for a future reveal are excluded from
+ * retrieval, so chat can't surface content the student isn't meant to see yet.
+ * Staff callers pass false and get everything.
  */
 export async function findRelevantContent(
   userQuery: string,
   courseId: string,
   limit: number = 6,
   similarityThreshold?: number,
+  restrictToStudentVisible: boolean = false,
 ): Promise<Array<{ content: string; similarity: number; materialTitle: string }>> {
   // Fetch per-course RAG overrides; both fields are nullable — null means "use default".
   const courseSettings = await getCourseRagSettings(courseId);
@@ -630,6 +637,22 @@ export async function findRelevantContent(
     courseSettings?.ragSimilarityThreshold ?? similarityThreshold ?? getDefaultRagSimilarityThreshold();
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
+
+  // Canvas publish-aware gate (#777): always hide unpublished / selectively
+  // excluded Canvas materials from RAG for every caller.
+  const canvasPublishFilter = Prisma.sql`
+    AND cm."unpublishedAt" IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM canvas_material_exclusions cme
+      WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+    )
+  `;
+
+  // §839 student-visibility gate, injected into both retrieval paths. Empty for
+  // staff callers so their retrieval is unchanged.
+  const visibilityFilter = restrictToStudentVisible
+    ? Prisma.sql`AND cm."visibleToStudents" = true AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())`
+    : Prisma.empty;
 
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
@@ -657,11 +680,8 @@ export async function findRelevantContent(
       JOIN course_materials cm ON mc."materialId" = cm.id
       WHERE cm."courseId" = ${courseId}
         AND cm."deletedAt" IS NULL
-        AND cm."unpublishedAt" IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM canvas_material_exclusions cme
-          WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
-        )
+        ${canvasPublishFilter}
+        ${visibilityFilter}
         AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
       ORDER BY score DESC
       LIMIT ${Number(effectiveLimit)}
@@ -690,11 +710,8 @@ export async function findRelevantContent(
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
       AND cm."deletedAt" IS NULL
-      AND cm."unpublishedAt" IS NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM canvas_material_exclusions cme
-        WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
-      )
+      ${canvasPublishFilter}
+      ${visibilityFilter}
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC
     LIMIT ${Number(effectiveLimit)}
