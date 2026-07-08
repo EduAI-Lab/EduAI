@@ -8,6 +8,8 @@ const envPairs = [
   ['apps/core/.env.example', 'apps/core/.env'],
   ['apps/extensions/question-maker/.env.example', 'apps/extensions/question-maker/.env'],
   ['apps/extensions/ai-tutor/server/.env.example', 'apps/extensions/ai-tutor/server/.env'],
+  ['apps/core/.env.test.example', 'apps/core/.env.test'],
+  ['apps/extensions/ai-tutor/server/.env.test.example', 'apps/extensions/ai-tutor/server/.env.test'],
 ];
 
 /**
