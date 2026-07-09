@@ -33,6 +33,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [infra] fix: Bump `@mrleebo/prisma-ast` to `^0.16.0` (chevrotain 10.5→12) within the same `@better-auth/cli` nested override — `@better-auth/cli`'s own declared range (`^0.13.0`) was stuck on a chevrotain series carrying the high-severity lodash code-injection/prototype-pollution advisories (GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg). Verified `npx @better-auth/cli generate` still parses/merges the real `apps/core` Prisma schema correctly against a scratch output file before landing this. npm audit dropped from 17 to 10 vulnerabilities (0 critical/high remaining); the two left (`@ai-sdk/provider-utils` resource consumption, `better-auth` OAuth-state) both require a breaking major-version bump of the `ai` SDK or break `@better-auth/cli` respectively, so they're left as accepted, documented risk rather than forced. (#804, @evanbones, 2026-06-30)
 - [infra] fix: Explicitly copy `apps/core`'s nested `node_modules` from the `deps` stage into the `test` and `build` stages in `docker/tests/Dockerfile.eduai` — `apps/core` requires `ai@^4.3.17` while AI Tutor requires `ai@^5.0.97`, a genuine major-version conflict, so npm hoists one to root and nests the other under its own workspace; which one wins the root slot isn't stable across lockfile regenerations (it flipped during the vulnerability cleanup above) and the Docker stages only ever propagated root `node_modules`, so a re-hoist silently broke the `@ai-sdk/openai`/`@ai-sdk/react`/`ollama-ai-provider` imports in CI. Also added a root `.dockerignore` excluding `node_modules` so a locally-present `node_modules` can never mask this by leaking into the build context again. Verified both stages build and the full `eduai` vitest suite (157 files / 1625 tests) passes inside the actual `node:24-alpine` container. (#804, @evanbones, 2026-07-01)
 
+### Changed
+
+- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#837, @GlowyBlack, 2026-07-03) — [#898](https://github.com/EduAI-Lab/EduAI/pull/898)
+
+
 ## [Week 8 — June 22–28, 2026]
 
 ### Added
