@@ -3,7 +3,7 @@ export const APPS = {
     baseUrl: 'http://localhost:3000',
     pages: [
       { name: 'sign-in', path: '/auth/login', requiresAuth: false },
-      { name: 'home', path: '/home', requiresAuth: true },
+      { name: 'home', path: '/', requiresAuth: true },
       { name: 'dashboard', path: '/dashboard', requiresAuth: true },
       { name: 'courses', path: '/courses', requiresAuth: true },
       { name: 'chat', path: '/chat', requiresAuth: true },
@@ -21,7 +21,7 @@ export const APPS = {
     ],
   },
   questionMaker: {
-    baseUrl: 'http://localhost:5173',
+    baseUrl: 'http://localhost:5180',
     pages: [
       { name: 'course-selection', path: '/courses', requiresAuth: true },
       { name: 'dashboard', path: '/dashboard', requiresAuth: true },
