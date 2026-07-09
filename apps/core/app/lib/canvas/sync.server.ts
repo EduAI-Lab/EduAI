@@ -3,6 +3,7 @@ import type { CanvasCourseApi } from "~/lib/canvas/client.server";
 import {
   CANVAS_EXTERNAL_SOURCE,
   getCanvasCourseWithTerm,
+  listTeacherCanvasCourses,
 } from "~/lib/canvas/client.server";
 import {
   ensureInstructorEnrollment,
