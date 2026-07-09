@@ -23,6 +23,7 @@
     "eval:adhd": "tsx scripts/eval-adhd-assist.mjs",
     "bench:chat": "node ./scripts/chat-latency-bench.mjs",
     "vllm:smoke": "node ./scripts/vllm-smoke.mjs",
+    "fleet:smoke": "node ./scripts/fleet-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
