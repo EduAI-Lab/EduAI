@@ -101,7 +101,7 @@ describe("AppSidebar — role-gated nav", () => {
   it("hides admin links for INSTRUCTOR", () => {
     renderSidebar("INSTRUCTOR");
     expect(screen.queryByText("User Management")).not.toBeInTheDocument();
-    expect(screen.getByText("Chatbot")).toBeInTheDocument();
+    expect(screen.getByText("Course Chat")).toBeInTheDocument();
   });
 
   it("hides admin links for UNIT_ADMIN", () => {

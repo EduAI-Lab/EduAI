@@ -364,6 +364,8 @@ describe("POST /api/courses", () => {
     }));
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
     expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
     const row = await prisma.course.findFirst({ where: { code: "NI 001" } });
     expect(row).toBeNull();
   });
