@@ -2,9 +2,9 @@
 
 **Date:** July 2026
 **Status:** Design — frozen for handoff (v1)
-**Covers:** EduAICore #912 (design). Unblocks Saad's dequeue/dispatch worker (Deployment epic #168) and the producer track (#914 enqueue, #915 backpressure, #916 tests, #917 ETA).
+**Covers:** EduAICore #912 (design). Unblocks the dequeue/dispatch worker (Deployment epic #168) and the producer track (#914 enqueue, #915 backpressure, #916 tests, #917 ETA).
 
-> **Ownership split (epic #63).** **Abdullah** owns the queue + producer/enqueue side (`enqueue()`, the `AiJob` model, status read model). **Saad** (epic #168) owns dequeue + routing/dispatch into the GPU fleet. This doc is the **shared, frozen contract** between the two — the job schema and the queue interface. Neither side may change a field or a status transition without updating this doc.
+> **This doc is the frozen contract** between the two sides — the producer/enqueue side (`enqueue()`, the `AiJob` model, status read model) and the dequeue/dispatch side (routing into the GPU fleet, epic #168). It fixes the job schema and the queue interface. Neither side may change a field or a status transition without updating this doc.
 
 ---
 
@@ -15,8 +15,8 @@
 3. [Job payload schema](#3-job-payload-schema)
 4. [BullMQ topology](#4-bullmq-topology)
 5. [`AiJob` Prisma model](#5-aijob-prisma-model)
-6. [Enqueue contract — producer (Abdullah, #914)](#6-enqueue-contract--producer-abdullah-914)
-7. [Dequeue / dispatch contract — worker (Saad, #168)](#7-dequeue--dispatch-contract--worker-saad-168)
+6. [Enqueue contract — producer (#914)](#6-enqueue-contract--producer-914)
+7. [Dequeue / dispatch contract — worker (#168)](#7-dequeue--dispatch-contract--worker-168)
 8. [Status / ETA read model (#917)](#8-status--eta-read-model-917)
 9. [Environment](#9-environment)
 10. [Non-goals & open seams](#10-non-goals--open-seams)
@@ -25,10 +25,18 @@
 
 ## 1. Overview + data flow
 
-The queue lets AI work that a user does not need to *watch stream* (Question Maker generation
-today) be accepted quickly, run off the request path, and be polled for a result. Interactive
-chat is **not** queued — it streams live over `POST /api/chat`. The queue is the durable seam
-between EduAI's producers and the GPU fleet Saad routes into.
+GPU throughput is finite — each fleet pool serves a fixed number of concurrent requests (say ~20).
+When demand exceeds that, work must **wait somewhere** instead of `POST /api/chat` (or a producer)
+blocking on a saturated server. The queue is that buffer: it absorbs the overflow, drains as the
+pool frees slots, and lets clients poll for position/result. It is the durable seam between
+EduAI's producers and the GPU fleet.
+
+**Both `JobType`s are queued.** `interactive` (chat, tutor) and `background` (Question Maker) both
+pass through the queue — the difference is *priority*, not *whether* they queue. Interactive work
+drains first; background yields. Streaming chat still streams over `POST /api/chat`, but the
+send now flows through the queue so a full pool parks the request instead of erroring. The queue
+boundary is the **fleet pool** (throughput budget), and **priority** orders jobs contending for
+that budget — see [§4](#4-bullmq-topology).
 
 Two systems of record:
 - **Redis / BullMQ** — the transport. Holds the live work queue and BullMQ's own job state.
@@ -42,14 +50,14 @@ sequenceDiagram
     participant EQ as enqueue() (#914)
     participant DB as Postgres AiJob
     participant Q as BullMQ (Redis)
-    participant W as Dispatch worker (Saad, #168)
+    participant W as Dispatch worker (#168)
     participant FL as Fleet router (JobType → pool)
 
     CS->>EQ: enqueue(job)
     EQ->>DB: create AiJob (PENDING)
     EQ->>Q: queue.add(kind, payload)
     EQ->>DB: store bullJobId
-    EQ-->>CS: { jobId, queuePosition }
+    EQ-->>CS: { jobId }
     W->>Q: dequeue (per-pool)
     W->>DB: PENDING → RUNNING (startedAt)
     W->>FL: resolveFleetHost(type)
@@ -73,25 +81,34 @@ authority in [`docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.m
 
 ```typescript
 type JobType = "interactive" | "background";
-type WorkloadFeature = "chat" | "tutor" | "question-maker";
 ```
 
-`JobType` describes **how long the user can wait**, not which app sent the request. It is derived
-from the extension's `routingContext.feature`:
+`JobType` describes **how long the user can wait**, not which app sent the request. It maps to both
+a **fleet pool** (which servers) and a **queue priority** (who drains first):
 
-| `routingContext.feature` | → `JobType` | Server pool |
-|--------------------------|-------------|-------------|
-| `chat` (default)         | `interactive` | `VLLM_FLEET_CHAT_URLS` |
-| `tutor`                  | `interactive` | `VLLM_FLEET_CHAT_URLS` |
-| `question-maker`         | `background`  | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool) |
+| `JobType` | Meaning | Fleet pool | Priority |
+|-----------|---------|------------|----------|
+| `interactive` | user waiting on screen (chat, tutor) | chat pool — `VLLM_FLEET_CHAT_URLS` | high |
+| `background`  | minutes OK (Question Maker generation) | heavy pool — `VLLM_FLEET_HEAVY_URL` (falls back to chat pool if unset) | low |
 
-**v1 reality:** everything that actually gets *queued* is `background` (Question Maker). The
-`interactive` value exists in the contract because the type is shared with the fleet and because
-the epic #168 overload path ("interactive admission queue → Bedrock overflow") will queue
-`interactive` work later. v1 producers enqueue `background` only — see [§10](#10-non-goals--open-seams).
+**`JobType` is the only classification the queue stores.** It is resolved at the call site from the
+fleet's `WorkloadFeature` (the extension's `routingContext.feature`, mapped via `featureToJobType()`
+in `fleet/types.ts`). `WorkloadFeature` is a **fleet-routing input**, not a queue concept — the queue
+persists the *resolved* `type`, never the feature. Where the job *came from* is tracked separately
+by the free-form `source` string on `AiJob` (§3/§5) — a new extension adds a `source` value, it does
+**not** touch any enum in this contract.
 
-**The contract references the fleet doc; it never redefines these types.** If the fleet changes
-`JobType`/`WorkloadFeature`, this doc follows — a single source prevents drift.
+**v1 reality — the pools overlap.** cmps03 (the heavy pool) is *planned, not yet running* (fleet
+doc, § *Current fleet*), so `VLLM_FLEET_HEAVY_URL` is unset and **`background` resolves to the chat
+pool too**. In v1 both types contend for the *same* servers — which is exactly why interactive must
+outrank background in the queue, and why the queue is keyed by the **resolved pool**, not the
+nominal `JobType` (see [§4](#4-bullmq-topology)). When cmps03 lands, `background` re-resolves to the
+heavy pool and the contention disappears — no schema change. The epic #168 overload path
+(admission queue → Bedrock overflow) bolts onto the same priority mechanism later — see
+[§10](#10-non-goals--open-seams).
+
+**The contract references the fleet doc; it never redefines `JobType`.** If the fleet changes it,
+this doc follows — a single source prevents drift.
 
 ---
 
@@ -109,7 +126,6 @@ export const JobKindSchema = z.enum(["question-generation"]);
 
 // Reused from the fleet — see §2. Not redefined here at runtime; import from fleet/types.
 const JobTypeSchema = z.enum(["interactive", "background"]);
-const WorkloadFeatureSchema = z.enum(["chat", "tutor", "question-maker"]);
 
 // Kind-specific inputs (discriminated on `kind`).
 const QuestionGenerationInputSchema = z.object({
@@ -117,7 +133,7 @@ const QuestionGenerationInputSchema = z.object({
   courseId: z.string().min(1),
   prompt: z.string().min(1),
   count: z.number().int().min(1).max(100),
-  // …QM-specific fields; owned by the QM producer (#914), extend as needed.
+  // …QM-specific fields; extend as needed (#914).
 });
 
 export const JobInputSchema = z.discriminatedUnion("kind", [
@@ -127,8 +143,8 @@ export const JobInputSchema = z.discriminatedUnion("kind", [
 
 export const JobPayloadSchema = z.object({
   kind: JobKindSchema,                       // concrete work kind; also the BullMQ job name
-  type: JobTypeSchema,                        // fleet pool selector (§2)
-  feature: WorkloadFeatureSchema,             // telemetry / debugging origin tag
+  type: JobTypeSchema,                        // fleet pool selector + priority (§2)
+  source: z.string().min(1),                  // origin app ("core", "ai-tutor", "question-maker") — telemetry only, free-form
   userId: z.string().min(1),                  // owner; RBAC + result routing
   courseId: z.string().min(1).optional(),     // course scope where applicable
   input: JobInputSchema,                      // kind-specific payload
@@ -140,8 +156,13 @@ export type JobPayload = z.infer<typeof JobPayloadSchema>;
 ```
 
 **Rules the producer enforces:**
-- `type` MUST be consistent with `feature` per the [§2](#2-jobtype--reused-from-the-fleet) mapping.
-  Reuse the fleet's `featureToJobType()` helper (`fleet/types.ts`) rather than hand-mapping.
+- `type` is resolved at the call site from the fleet's `WorkloadFeature` via `featureToJobType()`
+  (`fleet/types.ts`) — the queue receives the resolved `type`, never the feature. See [§2](#2-jobtype--reused-from-the-fleet).
+- `source` is a **free-form** origin tag (telemetry / debugging only). It is never used for routing
+  or priority, so a new extension just picks a new string — no enum edit anywhere in this contract.
+- **Priority is derived from `type`, not carried as a field** — `interactive → high`, `background →
+  low`. Keeping `JobType` the single source avoids a priority that can drift out of sync with the
+  pool selector. The enqueue maps it to BullMQ's `priority` option (§6).
 - `input.kind` MUST equal the top-level `kind` (enforced by validation).
 - Payload is JSON-serializable — it round-trips through Redis and the `AiJob.result` column.
 - `idempotencyKey`, when present, is passed to BullMQ as the job id so a re-enqueue is a no-op.
@@ -150,22 +171,39 @@ export type JobPayload = z.infer<typeof JobPayloadSchema>;
 
 ## 4. BullMQ topology
 
-**One queue per fleet pool**, keyed by `JobType`:
+**One queue per fleet pool** — the queue boundary is the *throughput budget*, and priority orders
+jobs contending for it:
 
-| Queue name          | Holds            | Worker concurrency owner |
-|---------------------|------------------|--------------------------|
-| `ai-jobs:background`  | `background` jobs  | Saad — sized to cmps03 / heavy pool |
-| `ai-jobs:interactive` | `interactive` jobs (empty in v1) | Saad — reserved for the #168 admission queue |
+| Queue name       | Holds                                              | Worker concurrency |
+|------------------|----------------------------------------------------|--------------------|
+| `ai-jobs:chat`   | interactive (high prio) **+** background when the heavy pool is unset (low prio) | sized to chat pool (cmps01 + cmps02) |
+| `ai-jobs:heavy`  | background (low prio), once cmps03 / `VLLM_FLEET_HEAVY_URL` is configured | sized to heavy pool (cmps03) |
 
+- **Queue = resolved pool, not nominal `JobType`.** The producer resolves
+  `feature → JobType → pool` (reusing the fleet's `resolveFleetHost()` pool logic) and enqueues to
+  *that* pool's queue. v1 (heavy pool unset): interactive **and** background both land on
+  `ai-jobs:chat`; background carries low priority so interactive always drains first. When cmps03
+  lands, background re-resolves to `ai-jobs:heavy` and stops contending — no schema or contract
+  change.
+- **Priority** is BullMQ's per-job `priority` (lower number = drained first): `interactive` jobs
+  enqueue at high priority, `background` at low. Priority only *matters* while a single pool serves
+  both classes (the v1 fallback); once pools are physically separate it is a no-op.
 - **BullMQ job `name` = `kind`** (e.g. `"question-generation"`), so the worker can branch on work
   kind and metrics group by kind.
-- Producers select the queue from `job.type`; v1 only ever writes to `ai-jobs:background`.
 
-**Why per-pool, not a single queue with `JobType` as the job name:** epic #168's hard requirement
-is *"background jobs must not block interactive traffic."* Separate queues let Saad set
-concurrency, rate limits, and priority **independently per pool** and point each queue's worker at
-its own GPU pool. A single shared queue would couple the two and force in-worker filtering to
-protect interactive latency. Per-pool is the cheaper, clearer contract.
+**Why per-pool + priority, not either extreme:**
+- *Not one global priority queue.* One queue = one worker set = one concurrency budget. But the
+  pools are distinct GPU fleets with independent throughput; a single queue can't point subsets of
+  jobs at different pools without in-worker filtering — the exact coupling epic #168 forbids
+  (*"background jobs must not block interactive traffic"*). Priority is the wrong axis for
+  *cross-pool* separation.
+- *Not two queues keyed by nominal `JobType`.* That mis-models the v1 fallback: with the heavy pool
+  unset, background runs on the chat pool, so a separate `background` queue would need its own
+  worker *also* pointed at the chat pool → two workers racing on one pool, and BullMQ priority
+  cannot order across independent queues. Interactive latency would not be protected.
+- Keying the queue on the **resolved pool** and using **priority within a shared pool** gives
+  independent per-pool concurrency/rate-limits *and* correct interactive-first ordering in every
+  fleet state.
 
 Both queues share the single hot-reload-safe ioredis connection exported from
 `apps/core/app/lib/queue/connection.server.ts` (`maxRetriesPerRequest: null`, required by BullMQ).
@@ -196,9 +234,8 @@ model AiJob {
   id            String       @id @default(cuid())
   kind          String                       // JobKind (§3); string for forward-compat
   type          AiJobType
-  feature       String                       // WorkloadFeature — telemetry
+  source        String                       // origin app — telemetry, free-form (§3)
   status        AiJobStatus  @default(PENDING)
-  queuePosition Int?                          // snapshot at enqueue; refined by #917
   payload       Json                         // validated JobPayload
   result        Json?                         // worker-written result (see §7)
   errorMessage  String?
@@ -217,28 +254,37 @@ model AiJob {
 }
 ```
 
+**No `queuePosition` column.** Position is not a stored fact — a snapshot taken at enqueue is stale
+the instant a job ahead drains. It is **computed live at read time** (count of `PENDING` jobs ahead
+in the same queue) and returned only by `serializeAiJob()`; nothing persists it. See [§8](#8-status--eta-read-model-917).
+
 A `serializeAiJob()` helper returns the client-facing shape with ISO timestamps, exactly like
 `serializeReEmbedJob` in `re-embed-job.server.ts` — see [§8](#8-status--eta-read-model-917).
 
 ---
 
-## 6. Enqueue contract — producer (Abdullah, #914)
+## 6. Enqueue contract — producer (#914)
 
 Single entry point used by `app/lib/ai/` call sites:
 
 ```typescript
-async function enqueue(job: JobPayload): Promise<{ jobId: string; queuePosition: number }>;
+async function enqueue(job: JobPayload): Promise<{ jobId: string }>;
 ```
 
 Steps (all-or-nothing on the DB row):
 1. **Validate** `job` with `JobPayloadSchema`; reject on failure (throws / 400 at the route).
-2. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queuePosition` = current waiting
-   count of the target queue).
-3. **Add** to the pool queue: `queue.add(job.kind, job, { jobId: job.idempotencyKey })`.
-4. **Persist** the returned BullMQ id into `AiJob.bullJobId`.
-5. **Return** `{ jobId: aiJob.id, queuePosition }`.
+2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs:heavy` when the heavy
+   pool is configured for a `background` job, else `ai-jobs:chat`) and the **priority** from
+   `job.type` (`interactive → high`, `background → low`).
+3. **Create** the `AiJob` row as `PENDING` (`payload = job`). Position is not stored (§5).
+4. **Add** to that queue with priority:
+   `queue.add(job.kind, job, { jobId: job.idempotencyKey, priority })`.
+5. **Persist** the returned BullMQ id into `AiJob.bullJobId`.
+6. **Return** `{ jobId: aiJob.id }` — the durable handle only. Queue position / ETA are **not**
+   returned here; the client reads them from the status endpoint (§8), which is the single source
+   of position (computed live per poll). `enqueue` accepts work; it does not report on the queue.
 
-Failure between steps 2 and 3 (Redis down) leaves a `PENDING` row with no `bullJobId` — a reaper
+Failure between steps 3 and 4 (Redis down) leaves a `PENDING` row with no `bullJobId` — a reaper
 (#915) marks such rows `FAILED`. Backpressure / queue-full rejection is specified in **#915**;
 this contract only guarantees the signature and the row lifecycle above.
 
@@ -246,12 +292,14 @@ this contract only guarantees the signature and the row lifecycle above.
 
 ---
 
-## 7. Dequeue / dispatch contract — worker (Saad, #168)
+## 7. Dequeue / dispatch contract — worker (#168)
 
 The worker consumes each pool queue and is the **only** writer of terminal state. It MUST:
 
-1. **Consume** from `ai-jobs:<type>` with a BullMQ `Worker` bound to the shared ioredis
-   connection.
+1. **Consume** from each pool queue (`ai-jobs:chat`, `ai-jobs:heavy`) with a BullMQ `Worker` bound
+   to the shared ioredis connection, one worker per pool sized to that pool's capacity. BullMQ
+   drains higher-priority jobs first, so interactive work is served ahead of background whenever a
+   queue holds both.
 2. **Transition** the `AiJob` (looked up by `bullJobId`) `PENDING → RUNNING`, set `startedAt`,
    increment `attempts`.
 3. **Route:** map `job.type → fleet pool` via `resolveFleetHost()` (fleet layer). Resolve the
@@ -295,13 +343,15 @@ The `output` sub-shape is owned by each `kind` and versioned with the kind, not 
 
 ## 8. Status / ETA read model (#917)
 
-Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps), matching
-`serializeReEmbedJob`:
+This read model is the **single source of queue position and ETA** — `enqueue` returns neither
+(§6). Position is computed live on every poll, so it decreases as the worker drains the pool and is
+never stale. Producers and clients read status via a `serializeAiJob()` snapshot (ISO timestamps),
+matching `serializeReEmbedJob`:
 
 ```typescript
 {
-  id, kind, type, feature, status,
-  queuePosition,          // live position among PENDING jobs in the same pool
+  id, kind, type, source, status,
+  queuePosition,          // computed at read: PENDING jobs ahead in the same queue (not a column)
   result,                 // null until COMPLETED
   errorMessage,           // null unless FAILED
   attempts,
@@ -327,9 +377,10 @@ contract only guarantees the `queuePosition` field and the timestamps ETA is com
 
 ## 10. Non-goals & open seams
 
-- **Interactive admission queue + Bedrock overflow** (epic #168 overload path) — out of scope for
-  v1. The contract reserves the `ai-jobs:interactive` queue and the `interactive` `JobType` value
-  so this bolts on without a schema change.
+- **Bedrock overflow** (epic #168 overload path) — out of scope for v1. When even the high-priority
+  interactive backlog on a pool exceeds a threshold, #168 spills overflow to Bedrock. It bolts onto
+  the same priority mechanism (act on the interactive backlog depth already visible in the queue) —
+  no schema change. v1 buffers and prioritizes; it does not spill.
 - **Producer implementation** (#914), **backpressure / queue-full** (#915), **enqueue tests +
   worker integration-verify** (#916), **ETA exposure** (#917) — separate issues; this ships the
   contract only.
