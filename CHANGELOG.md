@@ -9,11 +9,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [monorepo] chore: Add a standalone Playwright mobile-responsiveness audit tool (`scripts/mobile-audit/`) — logs into Core once, walks a declarative page list across Core/AI Tutor/Question Maker at 375×667 and 700×900, and captures screenshots plus objective overflow/ARIA checks into a written report. (#805, @GlowyBlack, 2026-07-09) — #PR
+- [monorepo] chore: Add a standalone Playwright mobile-responsiveness audit tool (`scripts/mobile-audit/`) — logs into Core once, walks a declarative page list across Core/AI Tutor/Question Maker at 375×667 and 700×900, and captures screenshots plus objective overflow/ARIA checks into a written report. (#805, @GlowyBlack, 2026-07-09) — [#963](https://github.com/EduAI-Lab/EduAI/pull/963)
 
 ### Fixed
 
-- [core, ui] fix: Mobile responsiveness fixes from the #805 audit — sidebar toggle now exposes `aria-expanded`/`aria-controls` (`packages/ui`); Settings account tabs scroll within their own strip instead of forcing page-wide horizontal scroll at 375px (`PageTabsList`); Question Maker's header actions row gets the same overflow safety net and its "Report a bug" button collapses to icon-only below `sm`, matching the existing search-button pattern; Core's chat welcome screen replaces `justify-center` with a `my-auto` safe-centering wrapper so the suggestion chips no longer clip behind the fixed input bar on short viewports. All four fixes re-verified via a live re-run of the audit tool against dev servers (30/30 page/viewport combinations pass). (#805, @GlowyBlack, 2026-07-09) — #PR
+- [core, ui] fix: Mobile responsiveness fixes from the #805 audit — sidebar toggle now exposes `aria-expanded`/`aria-controls` (`packages/ui`); Settings account tabs scroll within their own strip instead of forcing page-wide horizontal scroll at 375px (`PageTabsList`); Question Maker's header actions row gets the same overflow safety net and its "Report a bug" button collapses to icon-only below `sm`, matching the existing search-button pattern; Core's chat welcome screen replaces `justify-center` with a `my-auto` safe-centering wrapper so the suggestion chips no longer clip behind the fixed input bar on short viewports. All four fixes re-verified via a live re-run of the audit tool against dev servers (30/30 page/viewport combinations pass). (#805, @GlowyBlack, 2026-07-09) — [#963](https://github.com/EduAI-Lab/EduAI/pull/963)
 
 
 ## [Week 9 — June 29–July 5, 2026]
