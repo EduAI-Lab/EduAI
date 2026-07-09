@@ -6,11 +6,16 @@ import {
   validateRedirectUrl,
 } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
 vi.mock("~/lib/auth/server", () => ({
     auth: { api: { getSession: vi.fn(), verifyApiKey: vi.fn() } },
+}));
+
+vi.mock("~/lib/api-keys/access.server", () => ({
+    isActiveAdminUser: vi.fn(),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -106,6 +111,8 @@ describe("enforceAdminIfApiKey", () => {
         vi.mocked(auth.api.getSession).mockReset();
         vi.mocked(auth.api.verifyApiKey).mockReset();
         vi.mocked(prisma.user.findUnique).mockReset();
+        vi.mocked(isActiveAdminUser).mockReset();
+        vi.mocked(isActiveAdminUser).mockResolvedValue(false);
     });
 
     it("passes through when x-api-key is absent", async () => {
@@ -115,17 +122,59 @@ describe("enforceAdminIfApiKey", () => {
         expect(auth.api.verifyApiKey).not.toHaveBeenCalled();
     });
 
-    it("admits an ADMIN cookie session when x-api-key is present", async () => {
+    it("admits an active ADMIN cookie session when x-api-key is present", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue({
             user: { id: "a1", role: "ADMIN", email: "admin@test.com" },
         } as never);
+        vi.mocked(isActiveAdminUser).mockResolvedValue(true);
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"));
         expect(gate.response).toBeNull();
         expect(gate.session?.user.role).toBe("ADMIN");
         expect(auth.api.verifyApiKey).not.toHaveBeenCalled();
     });
 
-    it("returns 401 when x-api-key is invalid", async () => {
+    it("does not fast-path an inactive ADMIN cookie session", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({
+            user: { id: "a1", role: "ADMIN", email: "admin@test.com", isActive: false },
+        } as never);
+        vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: {
+                id: "k-admin",
+                referenceId: "a1",
+                createdAt: new Date("2026-01-01"),
+                updatedAt: new Date("2026-01-01"),
+                expiresAt: null,
+            },
+        } as never);
+        vi.mocked(prisma.user.findUnique).mockResolvedValue({
+            id: "a1",
+            email: "admin@test.com",
+            role: "ADMIN",
+            isActive: false,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"));
+        expect(gate.response?.status).toBe(403);
+        expect(auth.api.verifyApiKey).toHaveBeenCalled();
+    });
+
+    it("falls through to cookie auth when x-api-key is invalid but a cookie session exists", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({
+            user: { id: "s1", role: "STUDENT", email: "student@test.com" },
+        } as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: false,
+            error: { message: "invalid", code: "KEY_NOT_FOUND" },
+            key: null,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "bad-key"));
+        expect(gate.response).toBeNull();
+        expect(gate.session).toBeNull();
+    });
+
+    it("returns 401 when x-api-key is invalid and no cookie session exists", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
         vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
             valid: false,
@@ -135,6 +184,28 @@ describe("enforceAdminIfApiKey", () => {
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "bad-key"));
         expect(gate.response?.status).toBe(401);
         expect(await parseBody(gate.response!)).toEqual({ error: "Unauthorized" });
+    });
+
+    it("returns 401 when x-api-key is expired and no cookie session exists", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: false,
+            error: { message: "expired", code: "KEY_EXPIRED" },
+            key: null,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "expired-key"));
+        expect(gate.response?.status).toBe(401);
+    });
+
+    it("returns 401 when x-api-key is disabled and no cookie session exists", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: false,
+            error: { message: "disabled", code: "KEY_DISABLED" },
+            key: null,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "disabled-key"));
+        expect(gate.response?.status).toBe(401);
     });
 
     it("returns 403 when x-api-key belongs to a non-admin user", async () => {
@@ -148,6 +219,7 @@ describe("enforceAdminIfApiKey", () => {
             id: "s1",
             email: "student1@eduai.local",
             role: "STUDENT",
+            isActive: true,
         } as never);
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"));
         expect(gate.response?.status).toBe(403);
@@ -156,7 +228,48 @@ describe("enforceAdminIfApiKey", () => {
         });
     });
 
-    it("admits a verified ADMIN-owned x-api-key", async () => {
+    it("returns 403 when x-api-key belongs to an inactive admin", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: {
+                id: "k-admin",
+                referenceId: "a1",
+                createdAt: new Date("2026-01-01"),
+                updatedAt: new Date("2026-01-01"),
+                expiresAt: null,
+            },
+        } as never);
+        vi.mocked(prisma.user.findUnique).mockResolvedValue({
+            id: "a1",
+            email: "admin@test.com",
+            role: "ADMIN",
+            isActive: false,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"));
+        expect(gate.response?.status).toBe(403);
+    });
+
+    it("returns 403 when x-api-key has an orphan referenceId", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: {
+                id: "k-orphan",
+                referenceId: "missing-user",
+                createdAt: new Date("2026-01-01"),
+                updatedAt: new Date("2026-01-01"),
+                expiresAt: null,
+            },
+        } as never);
+        vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-orphan-key"));
+        expect(gate.response?.status).toBe(403);
+    });
+
+    it("admits a verified active ADMIN-owned x-api-key", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
         vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
             valid: true,

@@ -18,6 +18,8 @@ import {
   recordPasswordHistory,
 } from "./password-history.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
+import { isActiveAdminUser } from "../api-keys/access.server";
+import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -52,6 +54,9 @@ export const auth = betterAuth({
       // Default: enableSessionForAPIKeys is false — x-api-key does not auto-mock
       // a session on /api/* routes. Admin automation uses enforceAdminIfApiKey.
       enableSessionForAPIKeys: false,
+      keyExpiration: {
+        maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
+      },
     }),
   ],
   hooks: {
@@ -68,9 +73,18 @@ export const auth = betterAuth({
     before: createAuthMiddleware(async (ctx) => {
       if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
         const session = await getSessionFromCtx(ctx);
-        if (!session?.user || session.user.role !== "ADMIN") {
+        if (!(await isActiveAdminUser(session?.user?.id))) {
           throw new APIError("FORBIDDEN", {
             message: "API key management restricted to admin users",
+          });
+        }
+      }
+
+      if (ctx.path === "/api-key/create") {
+        const expiresIn = (ctx.body as Record<string, unknown> | undefined)?.expiresIn;
+        if (expiresIn === undefined || expiresIn === null) {
+          throw new APIError("BAD_REQUEST", {
+            message: "API keys must have an expiration date",
           });
         }
       }
