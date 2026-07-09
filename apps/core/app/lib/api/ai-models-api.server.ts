@@ -1,6 +1,6 @@
 import prisma from "~/lib/prisma.server";
 import { auth } from "~/lib/auth/server";
-import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
@@ -28,12 +28,16 @@ export async function handleAiModelsApiRequest(request: Request) {
     case "GET": {
       const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
       if (!session?.user) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (session.user.role !== "ADMIN") {
+        if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+          const serviceKeyGuard = await requireServiceKey(request);
+          if (serviceKeyGuard) return serviceKeyGuard;
+        } else {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      } else if (session.user.role !== "ADMIN") {
         logAdminDenied(session.user ?? null);
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
