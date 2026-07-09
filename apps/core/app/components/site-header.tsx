@@ -8,7 +8,7 @@ import { IconSun, IconMoon } from "@tabler/icons-react";
 const ROUTE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/courses": "Courses",
-  "/chat": "Chat",
+  "/chat": "Course Chat",
   "/settings": "Settings",
   "/admin/users": "Users",
   "/admin/ai-models": "AI Models",

@@ -303,6 +303,19 @@ export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, ro
   });
 }
 
+/** Removes an enrollment in Core, forwarding the acting user's session cookie. */
+export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie required to remove enrollment in Core');
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
+    method: 'DELETE',
+    cookie,
+  });
+}
+
 /**
  * Fetches a single Core course by id using the service key.
  * Returns the course object on 200, null on 404 (soft-deleted or missing).
