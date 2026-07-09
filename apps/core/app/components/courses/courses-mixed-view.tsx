@@ -10,7 +10,7 @@ interface Props {
   enrolledCourseIds: string[]
 }
 
-function CourseGrid({ courses }: { courses: Course[] }) {
+function CourseGrid({ courses, extraBadges }: { courses: Course[]; extraBadges?: string[] }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {courses.map((course, index) => (
@@ -24,6 +24,7 @@ function CourseGrid({ courses }: { courses: Course[] }) {
           year={course.year}
           isPublished={course.isPublished}
           department={course.department}
+          extraBadges={extraBadges}
           colorIndex={index}
           href={`/courses/${course.id}`}
           LinkComponent={Link}
@@ -33,21 +34,27 @@ function CourseGrid({ courses }: { courses: Course[] }) {
   )
 }
 
-function DateGroupedGrid({ courses }: { courses: Course[] }) {
+function DateGroupedGrid({
+  courses,
+  extraBadges,
+}: {
+  courses: Course[]
+  extraBadges?: string[]
+}) {
   const { previous, current, upcoming } = groupCoursesByDate(courses)
   return (
     <div className="flex flex-col gap-4">
-      <CourseGrid courses={current} />
+      <CourseGrid courses={current} extraBadges={extraBadges} />
       {upcoming.length > 0 && (
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground">Upcoming Terms</h3>
-          <CourseGrid courses={upcoming} />
+          <CourseGrid courses={upcoming} extraBadges={extraBadges} />
         </div>
       )}
       {previous.length > 0 && (
         <div className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground">Previous Terms</h3>
-          <CourseGrid courses={previous} />
+          <CourseGrid courses={previous} extraBadges={extraBadges} />
         </div>
       )}
     </div>
@@ -79,13 +86,13 @@ export function CoursesMixedView({ courses, taCourseIds, enrolledCourseIds }: Pr
       {assisting.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Assisting In" subheading="Courses where you are a TA" />
-          <DateGroupedGrid courses={assisting} />
+          <DateGroupedGrid courses={assisting} extraBadges={['TA']} />
         </div>
       )}
       {enrolled.length > 0 && (
         <div className="flex flex-col gap-4">
           <PageHeading heading="Courses You Are Enrolled In" subheading="Courses you are taking as a student" />
-          <DateGroupedGrid courses={enrolled} />
+          <DateGroupedGrid courses={enrolled} extraBadges={['Enrolled']} />
         </div>
       )}
     </div>
