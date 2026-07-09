@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { AppSidebar } from "~/components/app-sidebar";
@@ -81,8 +81,9 @@ describe("AppSidebar — rendering", () => {
 });
 
 describe("AppSidebar — role-gated nav", () => {
-  it("shows admin links for ADMIN", () => {
+  it("shows admin links for ADMIN after expanding Administration", () => {
     renderSidebar("ADMIN");
+    fireEvent.click(screen.getByRole("button", { name: /administration/i }));
     expect(screen.getByText("User Management")).toBeInTheDocument();
     expect(screen.getByText("AI Management")).toBeInTheDocument();
     expect(screen.getByText("Bug Reports")).toBeInTheDocument();
