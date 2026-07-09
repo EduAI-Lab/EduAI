@@ -57,7 +57,7 @@ export function ChangePasswordSettings() {
         <CardDescription>
           Must be at least 8 characters with upper and lower case letters, numbers,
           and symbols — or a passphrase of at least 16 characters. Passwords expire
-          annually and cannot be reused within the last 10.
+          annually and cannot be reused.
         </CardDescription>
       </CardHeader>
       <CardContent>
