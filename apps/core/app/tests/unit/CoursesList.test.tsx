@@ -340,6 +340,7 @@ describe('CoursesMixedView', () => {
     )
     expect(screen.getByText(/assisting/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
     expect(screen.queryByText(/enrolled/i)).not.toBeInTheDocument()
   })
 
@@ -351,9 +352,10 @@ describe('CoursesMixedView', () => {
         enrolledCourseIds={['stu1']}
       />
     )
-    expect(screen.getByText(/enrolled/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /courses you are enrolled in/i })).toBeInTheDocument()
     expect(screen.getByText('COSC 401')).toBeInTheDocument()
-    expect(screen.queryByText(/assisting/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Enrolled')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /courses you are assisting in/i })).not.toBeInTheDocument()
   })
 
   it('shows both sections when the user has both TA and student courses', () => {
@@ -364,10 +366,12 @@ describe('CoursesMixedView', () => {
         enrolledCourseIds={['stu1']}
       />
     )
-    expect(screen.getByText(/assisting/i)).toBeInTheDocument()
-    expect(screen.getByText(/enrolled/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /courses you are assisting in/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /courses you are enrolled in/i })).toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
     expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
+    expect(screen.getByText('Enrolled')).toBeInTheDocument()
   })
 
   it('hides draft (unpublished) courses from the enrolled section', () => {
