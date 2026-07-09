@@ -60,7 +60,7 @@ export function SiteHeader({
             {leadingActions}
           </div>
         ) : null}
-        <div className="ml-auto flex h-full items-center gap-3 sm:gap-4">
+        <div className="ml-auto flex h-full items-center gap-3 overflow-x-auto sm:gap-4">
           {actions}
         </div>
       </div>
