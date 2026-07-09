@@ -25,7 +25,7 @@ export function ChatWelcome({
     <div className="flex w-full flex-col items-center justify-center px-4 py-10 text-center md:py-16">
       <ScrollReveal index={0} parallax={false}>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-[1.75rem]">
-          Where should we begin?
+          Course Chat
         </h1>
       </ScrollReveal>
 
@@ -33,7 +33,7 @@ export function ChatWelcome({
         <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
           {courseHint
             ? `Ask about ${courseHint} — grounded in your course materials.`
-            : "Pick a course below, then type a question or try a starter."}
+            : "Pick a course, then ask a question about its materials."}
         </p>
 
         {selectedModelInfo && (
