@@ -30,7 +30,7 @@ const baseProps = {
   onSelectPrompt: vi.fn(),
   isStudentWithCourseChat: false,
   disabledReason: undefined,
-} as const;
+};
 
 describe("ChatConversationLayout — empty state layout", () => {
   it("does not clip overflowing welcome content behind the input bar", () => {
