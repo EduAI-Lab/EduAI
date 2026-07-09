@@ -37,6 +37,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [core] refactor: Rename Canvas sync dialog to "Fetch from Canvas" — dashboard CTA updated from "Sync to Canvas" to "Fetch from Canvas"; all Canvas teacher courses now appear in the fetch dialog: already-fetched courses render as clickable links to `/courses/{id}`, unsynced courses render as checkboxes so instructors can select and fetch them; already-synced IDs are preserved in the sync payload to prevent inadvertent unsyncs; `CanvasCourseSyncDialog` replaced by `CanvasFetchDialog`. (#811, @GlowyBlack, 2026-06-29) — [#811](https://github.com/EduAI-Lab/EduAI/pull/811)
+- [core] ux: Rename learning chat from "Chatbot" to "Course Chat" in the sidebar and header, and frame the welcome screen as course-grounded Q&A. (#837, @GlowyBlack, 2026-07-03) — [#898](https://github.com/EduAI-Lab/EduAI/pull/898)
+
 
 ## [Week 8 — June 22–28, 2026]
 
