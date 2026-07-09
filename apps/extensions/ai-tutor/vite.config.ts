@@ -4,7 +4,10 @@ import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  server: { port: 3001 },
+  server: {
+    port: 3001,
+    allowedHosts: true,
+  },
   plugins: [tsconfigPaths(), tailwindcss(), reactRouter()],
   resolve: {
     dedupe: ['react-router', 'react', 'react-dom'],
