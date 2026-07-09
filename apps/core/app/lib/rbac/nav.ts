@@ -5,6 +5,7 @@ import type { NavItem, NavUser } from '~/lib/rbac/types'
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
+  { key: 'chat', title: 'Course Chat', url: '/chat' },
 ]
 
 const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Chatbot', url: '/chat' }
