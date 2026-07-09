@@ -15,8 +15,10 @@ describe('tour access helpers', () => {
     expect(canAccessStudentTour('TA', '/student')).toBe(true);
   });
 
-  it('denies instructors on the instructor shell', () => {
+  it('denies instructors and admins on the instructor shell', () => {
     expect(canAccessStudentTour('INSTRUCTOR', '/instructor')).toBe(false);
+    expect(canAccessStudentTour('ADMIN', '/instructor')).toBe(false);
+    expect(canAccessStudentTour('UNIT_ADMIN', '/instructor')).toBe(false);
   });
 
   it('suggests student-journey for TAs on instructor routes', () => {
