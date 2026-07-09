@@ -169,7 +169,9 @@ describe("Canvas materials — publish-state re-sync and exclusion (real DB)", (
 
     // Canvas file becomes hidden (unpublished).
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([mockFile({ id: 500001, hidden: true })]);
-    await discoverCanvasMaterialsForCourse(instructorId, courseId);
+    await discoverCanvasMaterialsForCourse(instructorId, courseId, undefined, {
+      recheckPublishState: true,
+    });
 
     const afterUnpublish = await prisma.courseMaterial.findFirst({
       where: { id: importedMaterial!.id },
@@ -178,7 +180,9 @@ describe("Canvas materials — publish-state re-sync and exclusion (real DB)", (
 
     // Canvas file is republished.
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([mockFile({ id: 500001 })]);
-    await discoverCanvasMaterialsForCourse(instructorId, courseId);
+    await discoverCanvasMaterialsForCourse(instructorId, courseId, undefined, {
+      recheckPublishState: true,
+    });
 
     const afterRepublish = await prisma.courseMaterial.findFirst({
       where: { id: importedMaterial!.id },

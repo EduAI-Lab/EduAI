@@ -95,8 +95,10 @@ export async function syncCanvasCourses(input: SyncCanvasCoursesInput): Promise<
 async function courseCanvasMaterialsRequest<T>(
   courseId: string,
   init?: RequestInit,
+  queryParams?: Record<string, string>,
 ): Promise<{ success: boolean; data?: T; error?: string }> {
-  const response = await fetch(`/api/courses/${courseId}/canvas-materials`, {
+  const query = queryParams ? `?${new URLSearchParams(queryParams).toString()}` : "";
+  const response = await fetch(`/api/courses/${courseId}/canvas-materials${query}`, {
     ...init,
     credentials: "include",
     headers: {
@@ -116,8 +118,13 @@ async function courseCanvasMaterialsRequest<T>(
 export async function discoverCanvasMaterials(
   courseId: string,
 ): Promise<CanvasMaterialDiscoverItem[]> {
+  // `recheck=true` opts into the server re-checking already-imported materials'
+  // publish state (a write) — the dialog's Discover action is the deliberate
+  // trigger for that; see the loader's GET-safety note in materials.server.ts.
   const body = await courseCanvasMaterialsRequest<{ files: CanvasMaterialDiscoverItem[] }>(
     courseId,
+    { method: "GET" },
+    { recheck: "true" },
   );
   return body.data?.files ?? [];
 }

@@ -8,6 +8,7 @@ vi.mock("~/lib/prisma.server", () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
@@ -166,7 +167,7 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]).toMatchObject({ isExcluded: true });
   });
 
-  it("sets unpublishedAt on a previously-imported material that becomes unpublished", async () => {
+  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([
       { ...CANVAS_FILE, hidden: true },
     ]);
@@ -176,13 +177,29 @@ describe("discoverCanvasMaterialsForCourse", () => {
 
     await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
 
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
-      where: { id: "mat-existing" },
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("sets unpublishedAt on a previously-imported material that becomes unpublished when recheckPublishState is opted into", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-existing"] } },
       data: { unpublishedAt: expect.any(Date) },
     });
   });
 
-  it("clears unpublishedAt on a material that becomes published again", async () => {
+  it("clears unpublishedAt on a material that becomes published again when recheckPublishState is opted into", async () => {
     vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
       {
         id: "mat-existing",
@@ -192,11 +209,34 @@ describe("discoverCanvasMaterialsForCourse", () => {
       },
     ] as never);
 
-    await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
 
-    expect(prisma.courseMaterial.update).toHaveBeenCalledWith({
-      where: { id: "mat-existing" },
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-existing"] } },
       data: { unpublishedAt: null },
+    });
+  });
+
+  it("batches multiple changed materials into a single updateMany per direction", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, id: 1001, hidden: true },
+      { ...CANVAS_FILE, id: 1002, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-1", externalId: "1001", canvasUpdatedAt: new Date(), unpublishedAt: null },
+      { id: "mat-2", externalId: "1002", canvasUpdatedAt: new Date(), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-1", "mat-2"] } },
+      data: { unpublishedAt: expect.any(Date) },
     });
   });
 });

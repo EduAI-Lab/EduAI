@@ -115,6 +115,7 @@ export async function discoverCanvasMaterialsForCourse(
   userId: string,
   courseId: string,
   fetchImpl: typeof fetch = fetch,
+  options: { recheckPublishState?: boolean } = {},
 ): Promise<CanvasMaterialDiscoverItem[]> {
   const course = await assertCanvasLinkedCourse(courseId, userId);
   const credentials = await requireCanvasCredentials(userId);
@@ -153,7 +154,13 @@ export async function discoverCanvasMaterialsForCourse(
   );
   const excludedIds = new Set(exclusions.map((row) => row.canvasFileId));
 
-  await syncUnpublishedState(canvasFiles, importedByExternalId);
+  // Discovery is fetched via GET and must stay safe/idempotent by default —
+  // the re-check writes `unpublishedAt` on already-imported materials, so it
+  // only runs when the caller explicitly opts in (the sync dialog's Discover
+  // action does; see `?recheck=true` in the loader).
+  if (options.recheckPublishState) {
+    await syncUnpublishedState(canvasFiles, importedByExternalId);
+  }
 
   return canvasFiles.map((file) => {
     const canvasFileId = String(file.id);
@@ -188,6 +195,9 @@ async function syncUnpublishedState(
 ): Promise<void> {
   const canvasFileById = new Map(canvasFiles.map((file) => [String(file.id), file]));
 
+  const toUnpublishIds: string[] = [];
+  const toRepublishIds: string[] = [];
+
   for (const [canvasFileId, material] of importedByExternalId) {
     const file = canvasFileById.get(canvasFileId);
     if (!file) {
@@ -197,17 +207,26 @@ async function syncUnpublishedState(
     const { isPublished } = computeCanvasFilePublishState(file);
 
     if (!isPublished && !material.unpublishedAt) {
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { unpublishedAt: new Date() },
-      });
+      toUnpublishIds.push(material.id);
     } else if (isPublished && material.unpublishedAt) {
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { unpublishedAt: null },
-      });
+      toRepublishIds.push(material.id);
     }
   }
+
+  await Promise.all([
+    toUnpublishIds.length
+      ? prisma.courseMaterial.updateMany({
+          where: { id: { in: toUnpublishIds } },
+          data: { unpublishedAt: new Date() },
+        })
+      : Promise.resolve(),
+    toRepublishIds.length
+      ? prisma.courseMaterial.updateMany({
+          where: { id: { in: toRepublishIds } },
+          data: { unpublishedAt: null },
+        })
+      : Promise.resolve(),
+  ]);
 }
 
 const MAX_CANVAS_FILE_SIZE = 50 * 1024 * 1024; // 50 MB — matches file-processing.ts cap
