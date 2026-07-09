@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { auth } from "./server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -51,7 +52,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   }
 
   const cookieSession = await auth.api.getSession({ headers: request.headers });
-  if (cookieSession?.user?.role === "ADMIN") {
+  if (cookieSession?.user?.role === "ADMIN" && (await isActiveAdminUser(cookieSession.user.id))) {
     return { response: null, session: cookieSession };
   }
 
@@ -60,6 +61,9 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
   });
 
   if (!verification?.valid || !verification.key?.referenceId) {
+    if (cookieSession?.user) {
+      return { response: null, session: null };
+    }
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(cookieSession?.user ?? null),
@@ -96,7 +100,7 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
     },
   });
 
-  if (!user || user.role !== "ADMIN") {
+  if (!user || user.role !== "ADMIN" || !user.isActive) {
     fireAndForget(
       logSecurityEvent({
         ...getActorContext(user ?? cookieSession?.user ?? null),

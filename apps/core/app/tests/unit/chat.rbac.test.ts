@@ -32,7 +32,7 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
-import { requireServiceKey } from "~/lib/auth/guards.server";
+import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
@@ -141,5 +141,24 @@ describe("POST /api/chat — admin chatMode gate", () => {
     } as never);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/chat — proxyUser delegation", () => {
+  it("returns 403 when proxyUser is sent without a verified admin API key session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "a1", role: "ADMIN" },
+    } as never);
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
+    mockAccess({ level: "admin", rank: 3 });
+    const res = await action(
+      makeArgs({
+        messages: [],
+        courseId: "c1",
+        proxyUser: { id: "student-1", provider: "aitutor" },
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "proxyUser requires admin API key access" });
   });
 });

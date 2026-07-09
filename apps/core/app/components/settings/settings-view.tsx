@@ -46,6 +46,7 @@ import {
 import { authClient } from "~/lib/auth/client";
 import {
   API_KEY_EXPIRATION_OPTIONS,
+  API_KEY_SUPPORTED_ROUTES,
   DEFAULT_API_KEY_EXPIRATION_CHOICE,
   expirationChoiceToSeconds,
   formatExpirationLabel,
@@ -356,9 +357,15 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                     <CardHeader>
                       <CardTitle>How to use API Keys</CardTitle>
                       <CardDescription>
-                        Send your key in the <span className="font-mono">x-api-key</span> header when calling{" "}
-                        <span className="font-mono">/api/*</span> endpoints. Note: x-api-key usage is restricted
-                        to ADMIN users across /api/*; students should use the web UI.
+                        Send your key in the <span className="font-mono">x-api-key</span> header when calling
+                        supported API endpoints (
+                        {API_KEY_SUPPORTED_ROUTES.map((route, index) => (
+                          <span key={route}>
+                            {index > 0 ? ", " : ""}
+                            <span className="font-mono">{route}</span>
+                          </span>
+                        ))}
+                        ). Note: x-api-key usage is restricted to active ADMIN users; students should use the web UI.
                       </CardDescription>
                     </CardHeader>
                     <CardContent>

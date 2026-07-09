@@ -1,9 +1,18 @@
+export const MAX_API_KEY_EXPIRATION_DAYS = 365;
+
+export const API_KEY_SUPPORTED_ROUTES = [
+  "/api/chat",
+  "/api/me",
+  "/api/users",
+  "/api/ai-providers",
+  "/api/ai-models",
+] as const;
+
 export const API_KEY_EXPIRATION_OPTIONS = [
   { value: "30", label: "30 days", seconds: 60 * 60 * 24 * 30 },
   { value: "90", label: "90 days", seconds: 60 * 60 * 24 * 90 },
   { value: "180", label: "180 days", seconds: 60 * 60 * 24 * 180 },
   { value: "365", label: "1 year", seconds: 60 * 60 * 24 * 365 },
-  { value: "never", label: "No expiration", seconds: null },
 ] as const;
 
 export type ApiKeyExpirationChoice = (typeof API_KEY_EXPIRATION_OPTIONS)[number]["value"];

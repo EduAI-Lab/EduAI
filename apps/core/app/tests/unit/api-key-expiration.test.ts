@@ -11,7 +11,7 @@ describe("api-key expiration helpers", () => {
 
   it("maps expiration choices to seconds", () => {
     expect(expirationChoiceToSeconds("90")).toBe(60 * 60 * 24 * 90);
-    expect(expirationChoiceToSeconds("never")).toBeUndefined();
+    expect(expirationChoiceToSeconds("365")).toBe(60 * 60 * 24 * 365);
   });
 
   it("classifies expiration status", () => {
