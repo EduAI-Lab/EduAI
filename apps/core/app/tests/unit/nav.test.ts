@@ -14,7 +14,7 @@ describe('nav — chatbot placement (#835)', () => {
 
   it('includes chat as the first secondary nav item for STUDENT', () => {
     const secondary = getNavSecondaryForUser({ role: 'STUDENT' } as never)
-    expect(secondary[0]).toEqual({ key: 'chat', title: 'Chatbot', url: '/chat' })
+    expect(secondary[0]).toEqual({ key: 'chat', title: 'Course Chat', url: '/chat' })
   })
 
   it('includes chat as the first secondary nav item for ADMIN, ahead of Admin Chatbot', () => {
