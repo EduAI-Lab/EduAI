@@ -34,6 +34,7 @@ import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
+  deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   patchCoreEnrollmentRole,
@@ -265,6 +266,17 @@ router.delete(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
+      // Write through to Core first, so a later sync doesn't re-import the student (#812).
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await deleteCoreEnrollment(course.externalId, coreEnrollment.id, cookie);
+      }
+
       await prisma.courseEnrollment.deleteMany({
         where: {
           courseOfferingId: courseId,
@@ -274,7 +286,8 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
     }
   },
 );

@@ -15,9 +15,11 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   listCoreAdminUsers: vi.fn().mockResolvedValue([]),
   listCourseTestableQuestions: vi.fn(),
   patchCoreEnrollmentRole: vi.fn(),
+  deleteCoreEnrollment: vi.fn(),
 }));
 
 import {
+  deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   patchCoreEnrollmentRole,
@@ -654,6 +656,95 @@ describe('Admin routes', () => {
         .patch(`/api/admin/courses/${mathCourse.id}/enrollments/${student.id}/role`)
         .send({ role: 'TA' });
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ── DELETE …/enrollments/:userId on EduAI-linked courses (#812) ───
+
+  describe('DELETE …/enrollments/:userId on EduAI-linked course', () => {
+    let externalCourse;
+    let student;
+
+    const CORE_ENROLLMENT_ID = 'core-enrollment-cuid-1';
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
+      student = makeStudent();
+      externalCourse = await prisma.courseOffering.create({
+        data: {
+          title: 'EduAI Course',
+          description: 'imported',
+          isPublished: true,
+          externalId: 'core-cuid-ext-1',
+          externalSource: 'EDUAI',
+        },
+      });
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: externalCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          id: CORE_ENROLLMENT_ID,
+          studentId: student.id,
+          studentEmail: 'student@test.com',
+          studentName: 'Student',
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+      deleteCoreEnrollment.mockResolvedValue(null);
+    });
+
+    it('calls Core DELETE and removes the local mirror row on success', async () => {
+      const res = await request(adminApp).delete(
+        `/api/admin/courses/${externalCourse.id}/enrollments/${student.id}`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+      expect(deleteCoreEnrollment).toHaveBeenCalledWith(
+        'core-cuid-ext-1',
+        CORE_ENROLLMENT_ID,
+        expect.any(String),
+      );
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row).toBeNull();
+    });
+
+    it('returns Core error and leaves local row in place when Core DELETE fails', async () => {
+      const err = Object.assign(new Error('Forbidden'), { status: 403 });
+      deleteCoreEnrollment.mockRejectedValue(err);
+
+      const res = await request(adminApp).delete(
+        `/api/admin/courses/${externalCourse.id}/enrollments/${student.id}`,
+      );
+
+      expect(res.status).toBe(403);
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row).not.toBeNull();
+    });
+
+    it('returns 404 when user has no enrollment in Core, without touching local rows', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+
+      const res = await request(adminApp).delete(
+        `/api/admin/courses/${externalCourse.id}/enrollments/${student.id}`,
+      );
+
+      expect(res.status).toBe(404);
+      expect(deleteCoreEnrollment).not.toHaveBeenCalled();
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
+      });
+      expect(row).not.toBeNull();
     });
   });
 

@@ -3,7 +3,7 @@ import type { NavItem, NavUser } from '~/lib/rbac/types'
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
-  { key: 'chat', title: 'Chatbot', url: '/chat' },
+  { key: 'chat', title: 'Course Chat', url: '/chat' },
 ]
 
 const ADMIN_NAV: NavItem[] = [
