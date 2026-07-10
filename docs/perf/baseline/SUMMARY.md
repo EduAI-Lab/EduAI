@@ -82,28 +82,35 @@ Likely-dead exports (excluding `used in module`; still includes RR loader/defaul
 
 ## 4. Endpoint response times  → `response-times.json`
 
-Captured against a local stack (CORE :3000 / AITUTOR :4000 / QM :8000), concurrency=1, warmup 3 +
-30 measured samples per endpoint. **51 endpoints measured** (47 reads + 4 mutations) across the three
-apps (core 24 · ai-tutor 12 · qm 15). Percentiles (p50/p95/p99) computed over 2xx/3xx samples only;
-errors are surfaced via `error_sample` and excluded from latency.
+**Coverage target: 100% of the in-scope DB API surface — every read AND every mutation
+(create / update / delete) that touches only our own databases.** External/AI/Canvas endpoints
+(~65 across the three apps) are out of scope: their latency reflects an LLM / embedding provider /
+Canvas LMS, not our code (#961 explicitly excludes AI-chat latency; concurrency is #918). The exact
+in-scope vs skip classification per app is in `core-measurement-spec.md`,
+`aitutor-measurement-spec.md`, and `qm-measurement-spec.md` (SKIP lists with reasons).
 
-**Mutations (always run; `PERF_SKIP_MUTATIONS=1` for reads only).** Only safe, **self-replenishing**
-create→delete pairs — each iteration creates then deletes its own row, so the DB is identical before/after and
-**`db:seed:perf` needs to run only once; the perf script is re-runnable indefinitely with no re-seed.**
-Two pairs, all 2xx in this run:
+In-scope surface: **~157 endpoints** — Core 68 · ai-tutor 43 · QM 46. Concurrency=1, warmup 3 +
+30 samples per read; mutations run `PERF_MUT_SAMPLES` (default 15) iterations each. Percentiles
+computed over 2xx/3xx samples only; errors surfaced via `error_sample`, excluded from latency.
 
-| App | Method | Path | Status |
-|-----|--------|------|--------|
-| qm | POST | `/api/questions` | 201 |
-| qm | DELETE | `/api/questions/:id` | 200 |
-| core | POST | `/api/invitations` | 201 |
-| core | DELETE | `/api/invitations/:id` | 200 |
+**Seed-once-per-run, refill between runs.** Mutations need disposable rows to create/update/delete.
+`npm run db:seed:perf` (root) seeds all three DBs *and* writes a per-app manifest to
+`.perf-pool/{core,aitutor,qm}.json` listing the pooled ids (courses, topics, materials, questions,
+variants, assessments, sections, enrollments, providers, models, users, invitations, …). The perf
+script reads those manifests, so no ids are hardcoded. A run **consumes** the delete pools →
+**re-run `npm run db:seed:perf` between perf runs** (a preflight check verifies the manifests exist
+and warns when a pool is below `PERF_MUT_SAMPLES`). Design notes:
+- ai-tutor publish/unpublish and QM per-course endpoints run against a dedicated **native / unlinked**
+  perf course so they stay purely local (a Core-linked course would fan out to Core).
+- me / preferences / bug-reports run as a dedicated password-backed **perf actor** user, so the known
+  seed users are never mutated. Core invitations use non-routable `*@perf.local` addresses.
 
-The Core invitation uses a non-routable `*@noreply.perf.ubc.ca` address (passes `isUbcEmail`) and is revoked
-immediately, so no real mail is sent. bug-report POST / Core chat are excluded (no id returned / no REST create).
-`PERF_MUT_SAMPLES` (default 15) iterations per pair.
+> **`response-times.json` currently in this folder is a PRIOR partial capture** (51 endpoints, the
+> earlier self-replenishing design) taken before the full-coverage rebuild. Re-run
+> `npm run db:seed:perf && npm run perf:endpoints` against the seeded stack to regenerate it at full
+> coverage.
 
-**Two real app bugs surfaced by this run (both fixed this session):**
+**Two real app bugs surfaced by an earlier run (both fixed this session):**
 - `core GET /api/courses/:id/materials` → 500 `Headers is required` — loader passed a raw `Request` to
   `auth.api.getSession`; fixed to `getSession({ headers: request.headers })`
   (`apps/core/app/routes/api/courses.materials.$.ts`).

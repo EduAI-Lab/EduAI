@@ -674,7 +674,7 @@ export const getQuestionStats = async (userId) => {
     const typeStats = await Question_Metadata.findAll({
       attributes: [
         'type',
-        [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('id')), 'count']
+        [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('Question_Metadata.id')), 'count']
       ],
       include: [
         {
