@@ -17,6 +17,8 @@ import { DashboardStudentView } from "~/components/dashboard/dashboard-student-v
 import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
 import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
 import { SiteHeader } from "~/components/site-header";
+import { ProductTour } from "~/components/tour/product-tour";
+import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/tour/tour-steps";
 import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
@@ -77,7 +79,7 @@ function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
   });
 
   return (
-    <div className="px-4 lg:px-6 pt-6 pb-4">
+    <div className="px-4 lg:px-6 pt-6 pb-4" data-tour="dashboard-hero">
       <PageHeading
         heading={heroTitle}
         subheading={`${dateStr} · ${heroSub}`}
@@ -155,6 +157,7 @@ export default function Page() {
         />
         <DashboardContent user={user} isTA={isTA} />
       </SidebarInset>
+      <ProductTour steps={DASHBOARD_TOUR_STEPS} storageKey={DASHBOARD_TOUR_STORAGE_KEY} />
     </SidebarProvider>
   );
 }

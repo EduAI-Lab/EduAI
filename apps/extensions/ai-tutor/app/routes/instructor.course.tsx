@@ -37,6 +37,7 @@ import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -234,7 +235,17 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <ShellBreadcrumbs
           items={[
             { label: 'Teaching', href: '/instructor' },
-            { label: course?.title || 'Course' },
+            {
+              label: course?.title || 'Course',
+              node:
+                numericCourseId != null ? (
+                  <CourseSwitcher
+                    courseId={numericCourseId}
+                    basePath="/instructor"
+                    currentTitle={course?.title || 'Course'}
+                  />
+                ) : undefined,
+            },
           ]}
         />
       }
