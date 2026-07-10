@@ -76,8 +76,22 @@ class EduAIService {
    * Google key — so the badge reflects cloud availability for ANY supported cloud
    * provider, not just Google, even when the UBC-hosted (Ollama) provider is
    * offline. Falls back to Ollama only when no cloud key exists at all.
+   *
+   * `forceProvider` overrides the auto-selection so a caller can probe a specific
+   * path regardless of what keys exist. The status chips rely on this: the UBC
+   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
+   * configured — otherwise the auto-selection would test Google and the UBC chip
+   * would report Google's state, never its own.
    */
-  getConnectivityTestParams(clientApiKeys = {}) {
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
+    if (forceProvider === "ollama") {
+      return {
+        provider: "ollama",
+        model: "ollama:gpt-oss:120b",
+        apiKeys: { ollama: { isEnabled: true } },
+      };
+    }
+
     for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
       const clientKey = clientApiKeys?.[provider]?.apiKey?.trim?.();
       if (clientKey) {
@@ -808,9 +822,10 @@ Please ensure the questions are appropriate for the course level and cover the k
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
    * the (possibly offline) UBC-hosted provider. `provider` is echoed back so the
-   * UI can tell the user which path is live.
+   * UI can tell the user which path is live. `forceProvider` pins the probe to a
+   * specific path (e.g. `'ollama'` for the independent UBC status chip).
    */
-  async testApiKey({ cookie, apiKeys: clientApiKeys = {} } = {}) {
+  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -825,7 +840,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys);
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
     try {
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],

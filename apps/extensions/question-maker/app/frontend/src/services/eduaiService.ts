@@ -149,11 +149,18 @@ class EduAIService {
      * Google) so the backend can validate the cloud provider — which works with the
      * user's own key even when the UBC-hosted provider is offline.
      *
-     * Pass `overrideApiKeys` to force which path is probed — `{}` forces the
-     * UBC-hosted provider (no cloud key), a populated map forces the cloud
-     * provider. Used to probe cloud and UBC independently for the status chips.
+     * Pass `overrideApiKeys` to force which path is probed — a populated map
+     * forces the cloud provider. Pass `opts.forceProvider` to pin the probe to a
+     * specific path (e.g. `'ollama'` for the UBC-hosted provider) so the backend
+     * probes it regardless of any server-side cloud key — sending `{}` alone is
+     * not enough, since the server would fall back to its own Google key and the
+     * UBC chip would never be checked. Used to probe cloud and UBC independently
+     * for the status chips.
      */
-    async testApiKey(overrideApiKeys?: Record<string, any>): Promise<EduAITestResponse> {
+    async testApiKey(
+        overrideApiKeys?: Record<string, any>,
+        opts?: { forceProvider?: string },
+    ): Promise<EduAITestResponse> {
         // Build the apiKeys payload the backend expects from any locally-stored keys,
         // unless the caller supplied an explicit override.
         let apiKeys: Record<string, any> = {};
@@ -170,8 +177,11 @@ class EduAIService {
             }
         }
 
+        const body: Record<string, any> = { apiKeys };
+        if (opts?.forceProvider) body.provider = opts.forceProvider;
+
         try {
-            const response = await api.post('/api/eduai/test-api-key', { apiKeys });
+            const response = await api.post('/api/eduai/test-api-key', body);
             return { ...response.data, configured: response.data.configured ?? true };
         } catch (err: any) {
             if (err.response?.status === 400 && err.response?.data) {
