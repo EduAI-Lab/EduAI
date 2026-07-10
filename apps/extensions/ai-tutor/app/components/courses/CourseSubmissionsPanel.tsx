@@ -37,26 +37,37 @@ type CourseSubmissionsPanelProps = {
   courseId: number;
 };
 
-/**
- * `SubmissionRow` (from `~/lib/types`) mirrors the API response and does not
- * yet expose the Prisma `Submission.score` column. Widen it locally so the
- * grade-override dialog can read/write score without inventing a `feedback`
- * field the API doesn't return (Submission has no plain-text feedback
- * column, only an internal `aiFeedback` JSON blob).
- */
-type GradableSubmissionRow = SubmissionRow & { score?: number | null };
-
 type GradeChoice = 'ungraded' | 'correct' | 'incorrect';
+
+/**
+ * The actual submitted answer lives in `Submission.response` (a JSON blob shaped
+ * `{ answerText, answerOption }`) — short-text answers use `answerText`, MCQ
+ * answers store the zero-based `answerOption` index. Reviewers need to see this,
+ * so surface it in both the table and the grade dialog. The activity's option
+ * labels aren't part of this endpoint's payload, so an MCQ pick renders as
+ * "Option N" (1-based) rather than the choice text.
+ */
+function formatAnswer(row: SubmissionRow): string | null {
+  const response = row.response;
+  if (!response) return null;
+  if (typeof response.answerText === 'string' && response.answerText.trim() !== '') {
+    return response.answerText;
+  }
+  if (typeof response.answerOption === 'number') {
+    return `Option ${response.answerOption + 1}`;
+  }
+  return null;
+}
 
 export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps) {
   const { user, access } = useAtPermissions();
   const canGrade = canGradeSubmissions(user, access);
 
-  const [rows, setRows] = useState<GradableSubmissionRow[]>([]);
+  const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [gradingRow, setGradingRow] = useState<GradableSubmissionRow | null>(null);
+  const [gradingRow, setGradingRow] = useState<SubmissionRow | null>(null);
   const [gradeChoice, setGradeChoice] = useState<GradeChoice>('ungraded');
   const [gradeScore, setGradeScore] = useState('');
   const [saving, setSaving] = useState(false);
@@ -87,7 +98,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
     return { correct, incorrect };
   }, [rows]);
 
-  const openGradeDialog = (row: GradableSubmissionRow) => {
+  const openGradeDialog = (row: SubmissionRow) => {
     setGradeChoice(row.isCorrect == null ? 'ungraded' : row.isCorrect ? 'correct' : 'incorrect');
     setGradeScore(row.score != null ? String(row.score) : '');
     setSaveError(null);
@@ -151,6 +162,9 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
     );
   }
 
+  const gradingAnswer = gradingRow ? formatAnswer(gradingRow) : null;
+  const gradingFeedback = gradingRow?.aiFeedback?.message ?? null;
+
   return (
     <div className="space-y-4" data-testid="course-submissions-panel">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -173,6 +187,7 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                 <TableRow>
                   <TableHead>Student</TableHead>
                   <TableHead>Activity</TableHead>
+                  <TableHead>Answer</TableHead>
                   <TableHead>Attempt</TableHead>
                   <TableHead>Result</TableHead>
                   <TableHead>When</TableHead>
@@ -180,45 +195,58 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-mono text-xs">{row.userId}</TableCell>
-                    <TableCell>{row.activityId}</TableCell>
-                    <TableCell>{row.attemptNumber}</TableCell>
-                    <TableCell>
-                      {row.isCorrect == null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <Badge variant={row.isCorrect ? 'success' : 'destructive'}>
-                          {row.isCorrect ? 'Correct' : 'Incorrect'}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(row.createdAt).toLocaleString()}
-                    </TableCell>
-                    {canGrade ? (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {row.score != null ? (
-                            <span className="text-xs text-muted-foreground">
-                              Score {row.score}
-                            </span>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openGradeDialog(row)}
+                {rows.map((row) => {
+                  const answer = formatAnswer(row);
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-xs">{row.userId}</TableCell>
+                      <TableCell>{row.activityId}</TableCell>
+                      <TableCell className="max-w-[22rem]">
+                        {answer ? (
+                          <span
+                            className="line-clamp-2 whitespace-pre-wrap break-words text-foreground"
+                            title={answer}
                           >
-                            <IconPencil className="size-3.5" />
-                            Grade
-                          </Button>
-                        </div>
+                            {answer}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
-                    ) : null}
-                  </TableRow>
-                ))}
+                      <TableCell>{row.attemptNumber}</TableCell>
+                      <TableCell>
+                        {row.isCorrect == null ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <Badge variant={row.isCorrect ? 'success' : 'destructive'}>
+                            {row.isCorrect ? 'Correct' : 'Incorrect'}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(row.createdAt).toLocaleString()}
+                      </TableCell>
+                      {canGrade ? (
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {row.score != null ? (
+                              <span className="text-xs text-muted-foreground">Score {row.score}</span>
+                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openGradeDialog(row)}
+                            >
+                              <IconPencil className="size-3.5" />
+                              Grade
+                            </Button>
+                          </div>
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -251,6 +279,20 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
             </DialogHeader>
 
             <div className="space-y-4">
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium text-foreground">Submitted answer</span>
+                <div className="max-h-40 overflow-y-auto rounded-[var(--radius-md)] border bg-muted/40 p-3 text-sm">
+                  {gradingAnswer ? (
+                    <p className="whitespace-pre-wrap break-words text-foreground">{gradingAnswer}</p>
+                  ) : (
+                    <p className="text-muted-foreground">No answer recorded.</p>
+                  )}
+                  {gradingFeedback ? (
+                    <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">{gradingFeedback}</p>
+                  ) : null}
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground" htmlFor="grade-result">
                   Result
