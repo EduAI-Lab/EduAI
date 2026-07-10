@@ -31,12 +31,16 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SyncCanvasCoursesResult | null>(null);
   const [syncErrors, setSyncErrors] = useState<SyncCanvasCoursesResult["errors"]>([]);
 
-  const loadCourses = useCallback(async () => {
+  const loadCourses = useCallback(async (options?: { preserveResult?: boolean }) => {
     setLoading(true);
     setError(null);
-    setSyncErrors([]);
+    if (!options?.preserveResult) {
+      setResult(null);
+      setSyncErrors([]);
+    }
     try {
       setCourses(await listCanvasCourses());
       setSelectedIds(new Set());
@@ -66,20 +70,37 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
   const handleFetch = async () => {
     setSyncing(true);
     setError(null);
+    setResult(null);
     setSyncErrors([]);
     try {
       const alreadySyncedIds = courses
         .filter((c) => c.isSynced && c.coreCourseId != null)
         .map((c) => c.canvasId);
-      const result = await syncCanvasCourses({ canvasCourseIds: [...alreadySyncedIds, ...selectedIds] });
-      await loadCourses();
-      setSyncErrors(result.errors);
+      const syncResult = await syncCanvasCourses({
+        canvasCourseIds: [...alreadySyncedIds, ...selectedIds],
+      });
+      setResult(syncResult);
+      setSyncErrors(syncResult.errors);
+      await loadCourses({ preserveResult: true });
+      if (syncResult.synced.length > 0 || syncResult.unsynced.length > 0) {
+        window.dispatchEvent(new CustomEvent("eduai:courses-changed"));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch Canvas courses");
     } finally {
       setSyncing(false);
     }
   };
+
+  const resultSummary = result
+    ? [
+        result.synced.length > 0 ? `${result.synced.length} synced` : null,
+        result.unsynced.length > 0 ? `${result.unsynced.length} unsynced` : null,
+        result.errors.length > 0 ? `${result.errors.length} failed` : null,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,12 +157,25 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
                     <p className="text-sm text-muted-foreground">{course.courseCode}</p>
                   </div>
                 </div>
-              )
+              ),
             )}
           </div>
         )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {resultSummary && (
+          <p className="text-sm text-green-700 dark:text-green-400">Fetch complete: {resultSummary}.</p>
+        )}
+        {result?.synced.map((entry) => (
+          <p key={entry.canvasId} className="text-sm text-muted-foreground">
+            Course {entry.canvasId}: {entry.rosterMembersSynced} roster member
+            {entry.rosterMembersSynced === 1 ? "" : "s"} staged
+            {entry.enrollmentsLinked > 0
+              ? `, ${entry.enrollmentsLinked} enrollment${entry.enrollmentsLinked === 1 ? "" : "s"} linked`
+              : ""}
+            .
+          </p>
+        ))}
         {syncErrors.map((entry) => (
           <p key={entry.canvasId} className="text-sm text-destructive">
             Course {entry.canvasId}: {entry.message}
