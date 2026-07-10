@@ -1,0 +1,1521 @@
+{
+  "env": {
+    "captured_at": "2026-07-10T19:22:11.156Z",
+    "target_label": "unspecified",
+    "targets": {
+      "CORE_URL": "http://localhost:3000",
+      "AITUTOR_URL": "http://localhost:4000",
+      "QM_URL": "http://localhost:8000"
+    },
+    "git_sha": "249dd311",
+    "git_branch": "feat/961-baseline-perf-codequality",
+    "node": "v23.11.0",
+    "platform": "darwin-arm64",
+    "warmup": 3,
+    "samples": 30,
+    "concurrency": 1,
+    "include_mutations": true,
+    "validate_governor": {
+      "limit": 300,
+      "window_ms": 60000,
+      "applies_to": [
+        "ai-tutor",
+        "qm"
+      ]
+    },
+    "seed_note": "Run apps/core seed + apps/core/scripts/seed-rag-ingestion-fixtures.ts for realistic RAG volume before measuring."
+  },
+  "discovered_ids": {
+    "coreCourseId": "seed_course_cosc211",
+    "coreChatId": "seed_chat_general_s1",
+    "qmCourseId": 12
+  },
+  "results": [
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/health",
+      "role": "student",
+      "cold_start_ms": 4.02,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 1.57,
+        "p95": 5.27,
+        "p99": 11.92,
+        "mean": 2.24,
+        "min": 0.73,
+        "max": 11.92
+      },
+      "payload_bytes": {
+        "avg": 15,
+        "p95": 15,
+        "max": 15
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/me",
+      "role": "student",
+      "cold_start_ms": 7.92,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.58,
+        "p95": 4.78,
+        "p99": 5.09,
+        "mean": 3.82,
+        "min": 3.19,
+        "max": 5.09
+      },
+      "payload_bytes": {
+        "avg": 246,
+        "p95": 246,
+        "max": 246
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses",
+      "role": "instructor",
+      "cold_start_ms": 7.26,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 5.33,
+        "p95": 7.77,
+        "p99": 7.91,
+        "mean": 5.8,
+        "min": 4.95,
+        "max": 7.91
+      },
+      "payload_bytes": {
+        "avg": 820,
+        "p95": 820,
+        "max": 820
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/disciplines",
+      "role": "student",
+      "cold_start_ms": 4.22,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 4.79,
+        "p95": 6.05,
+        "p99": 8.5,
+        "mean": 4.74,
+        "min": 3.52,
+        "max": 8.5
+      },
+      "payload_bytes": {
+        "avg": 4507,
+        "p95": 4507,
+        "max": 4507
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats",
+      "role": "student",
+      "cold_start_ms": 18.43,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 7.53,
+        "p95": 10.49,
+        "p99": 11.15,
+        "mean": 7.9,
+        "min": 6.55,
+        "max": 11.15
+      },
+      "payload_bytes": {
+        "avg": 1219,
+        "p95": 1219,
+        "max": 1219
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/preferences",
+      "role": "student",
+      "cold_start_ms": 4.64,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.11,
+        "p95": 5.11,
+        "p99": 5.93,
+        "mean": 3.37,
+        "min": 2.56,
+        "max": 5.93
+      },
+      "payload_bytes": {
+        "avg": 108,
+        "p95": 108,
+        "max": 108
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/policies",
+      "role": "admin",
+      "cold_start_ms": 3.9,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.18,
+        "p95": 4.15,
+        "p99": 5.15,
+        "mean": 3.28,
+        "min": 2.74,
+        "max": 5.15
+      },
+      "payload_bytes": {
+        "avg": 4149,
+        "p95": 4149,
+        "max": 4149
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/dashboard/stats",
+      "role": "instructor",
+      "cold_start_ms": 30.97,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 7.64,
+        "p95": 10.62,
+        "p99": 11.59,
+        "mean": 7.84,
+        "min": 5.35,
+        "max": 11.59
+      },
+      "payload_bytes": {
+        "avg": 125,
+        "p95": 125,
+        "max": 125
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/invitations",
+      "role": "admin",
+      "cold_start_ms": 12.37,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 8.01,
+        "p95": 9.95,
+        "p99": 10.17,
+        "mean": 8.01,
+        "min": 5.82,
+        "max": 10.17
+      },
+      "payload_bytes": {
+        "avg": 6217,
+        "p95": 6217,
+        "max": 6217
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/users/list",
+      "role": "admin",
+      "cold_start_ms": 101.74,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 33.27,
+        "p95": 39.28,
+        "p99": 43.39,
+        "mean": 34.18,
+        "min": 31.5,
+        "max": 43.39
+      },
+      "payload_bytes": {
+        "avg": 690965,
+        "p95": 690965,
+        "max": 690965
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/ai-models/list",
+      "role": "admin",
+      "cold_start_ms": 4.94,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.26,
+        "p95": 4.29,
+        "p99": 4.62,
+        "mean": 3.39,
+        "min": 3.08,
+        "max": 4.62
+      },
+      "payload_bytes": {
+        "avg": 5533,
+        "p95": 5533,
+        "max": 5533
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/bug-reports?mine",
+      "role": "student",
+      "cold_start_ms": 3.41,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 2.62,
+        "p95": 3.22,
+        "p99": 3.3,
+        "mean": 2.67,
+        "min": 2.48,
+        "max": 3.3
+      },
+      "payload_bytes": {
+        "avg": 278,
+        "p95": 278,
+        "max": 278
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/admin/bug-reports",
+      "role": "admin",
+      "cold_start_ms": 4.51,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.21,
+        "p95": 4.38,
+        "p99": 5.35,
+        "mean": 3.41,
+        "min": 3.01,
+        "max": 5.35
+      },
+      "payload_bytes": {
+        "avg": 5557,
+        "p95": 5557,
+        "max": 5557
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id",
+      "role": "instructor",
+      "cold_start_ms": 4.29,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.72,
+        "p95": 4.36,
+        "p99": 4.59,
+        "mean": 3.66,
+        "min": 3.03,
+        "max": 4.59
+      },
+      "payload_bytes": {
+        "avg": 770,
+        "p95": 770,
+        "max": 770
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/materials",
+      "role": "instructor",
+      "cold_start_ms": 62.47,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 17.75,
+        "p95": 26.63,
+        "p99": 27.19,
+        "mean": 19.65,
+        "min": 16.2,
+        "max": 27.19
+      },
+      "payload_bytes": {
+        "avg": 1515,
+        "p95": 1515,
+        "max": 1515
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/topics",
+      "role": "instructor",
+      "cold_start_ms": 13.8,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 6.04,
+        "p95": 8.26,
+        "p99": 8.7,
+        "mean": 5.96,
+        "min": 4.09,
+        "max": 8.7
+      },
+      "payload_bytes": {
+        "avg": 926,
+        "p95": 926,
+        "max": 926
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/tas",
+      "role": "instructor",
+      "cold_start_ms": 8.38,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 11.64,
+        "p95": 15.66,
+        "p99": 18.34,
+        "mean": 11.28,
+        "min": 7.24,
+        "max": 18.34
+      },
+      "payload_bytes": {
+        "avg": 10,
+        "p95": 10,
+        "max": 10
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/enrollments",
+      "role": "instructor",
+      "cold_start_ms": 92.01,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 54.05,
+        "p95": 55.45,
+        "p99": 55.62,
+        "mean": 54.08,
+        "min": 52.39,
+        "max": 55.62
+      },
+      "payload_bytes": {
+        "avg": 736,
+        "p95": 736,
+        "max": 736
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/rag-settings",
+      "role": "instructor",
+      "cold_start_ms": 4.16,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 2.52,
+        "p95": 6.14,
+        "p99": 6.49,
+        "mean": 2.88,
+        "min": 2.22,
+        "max": 6.49
+      },
+      "payload_bytes": {
+        "avg": 46,
+        "p95": 46,
+        "max": 46
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/questions?courseId",
+      "role": "instructor",
+      "cold_start_ms": 9.23,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 6.21,
+        "p95": 8.64,
+        "p99": 8.92,
+        "mean": 6.41,
+        "min": 5.28,
+        "max": 8.92
+      },
+      "payload_bytes": {
+        "avg": 2778,
+        "p95": 2778,
+        "max": 2778
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats/:chatId",
+      "role": "student",
+      "cold_start_ms": 6.31,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 5.27,
+        "p95": 6.93,
+        "p99": 7.52,
+        "mean": 5.56,
+        "min": 4.61,
+        "max": 7.52
+      },
+      "payload_bytes": {
+        "avg": 175,
+        "p95": 175,
+        "max": 175
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats/:chatId/messages",
+      "role": "student",
+      "cold_start_ms": 11.2,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 9.27,
+        "p95": 14.12,
+        "p99": 14.63,
+        "mean": 9.45,
+        "min": 6.88,
+        "max": 14.63
+      },
+      "payload_bytes": {
+        "avg": 990,
+        "p95": 990,
+        "max": 990
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/health",
+      "role": "student",
+      "cold_start_ms": 45.98,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 1.3,
+        "p95": 3.72,
+        "p99": 4.02,
+        "mean": 1.46,
+        "min": 1.05,
+        "max": 4.02
+      },
+      "payload_bytes": {
+        "avg": 11,
+        "p95": 11,
+        "max": 11
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me",
+      "role": "student",
+      "cold_start_ms": 69.81,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 46.2,
+        "p95": 53.29,
+        "p99": 61.95,
+        "mean": 44.98,
+        "min": 17.51,
+        "max": 61.95
+      },
+      "payload_bytes": {
+        "avg": 140,
+        "p95": 140,
+        "max": 140
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses",
+      "role": "student",
+      "cold_start_ms": 114.01,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 53.53,
+        "p95": 71.31,
+        "p99": 78.19,
+        "mean": 52.43,
+        "min": 38.73,
+        "max": 78.19
+      },
+      "payload_bytes": {
+        "avg": 4485,
+        "p95": 4485,
+        "max": 4485
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/eduai/courses",
+      "role": "instructor",
+      "cold_start_ms": 28.94,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 19.05,
+        "p95": 23.44,
+        "p99": 24.14,
+        "mean": 18.97,
+        "min": 13.85,
+        "max": 24.14
+      },
+      "payload_bytes": {
+        "avg": 808,
+        "p95": 808,
+        "max": 808
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/suggested-prompts",
+      "role": "student",
+      "cold_start_ms": 12.65,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 7.93,
+        "p95": 11.17,
+        "p99": 11.53,
+        "mean": 8.15,
+        "min": 4.94,
+        "max": 11.53
+      },
+      "payload_bytes": {
+        "avg": 626,
+        "p95": 626,
+        "max": 626
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/ai-models",
+      "role": "student",
+      "cold_start_ms": 11.1,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 4.99,
+        "p95": 6.51,
+        "p99": 6.83,
+        "mean": 5.32,
+        "min": 4.3,
+        "max": 6.83
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/prompts",
+      "role": "instructor",
+      "cold_start_ms": 4.63,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 4.1,
+        "p95": 5.44,
+        "p99": 5.48,
+        "mean": 4.24,
+        "min": 3.55,
+        "max": 5.48
+      },
+      "payload_bytes": {
+        "avg": 2452,
+        "p95": 2452,
+        "max": 2452
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me/submissions",
+      "role": "student",
+      "cold_start_ms": 5.61,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 5.68,
+        "p95": 6.54,
+        "p99": 6.71,
+        "mean": 5.34,
+        "min": 4.08,
+        "max": 6.71
+      },
+      "payload_bytes": {
+        "avg": 1071,
+        "p95": 1071,
+        "max": 1071
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me/feedback",
+      "role": "student",
+      "cold_start_ms": 8.13,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 8.9,
+        "p95": 20.85,
+        "p99": 31.03,
+        "mean": 10.14,
+        "min": 5.67,
+        "max": 31.03
+      },
+      "payload_bytes": {
+        "avg": 473,
+        "p95": 473,
+        "max": 473
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "role": "admin",
+      "cold_start_ms": 90.89,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 38.52,
+        "p95": 54.47,
+        "p99": 73.48,
+        "mean": 40.62,
+        "min": 36.64,
+        "max": 73.48
+      },
+      "payload_bytes": {
+        "avg": 291967,
+        "p95": 291967,
+        "max": 291967
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/courses",
+      "role": "admin",
+      "cold_start_ms": 4.68,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 7.96,
+        "p95": 21.99,
+        "p99": 23.73,
+        "mean": 11.5,
+        "min": 3.09,
+        "max": 23.73
+      },
+      "payload_bytes": {
+        "avg": 4844,
+        "p95": 4844,
+        "max": 4844
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/bug-reports",
+      "role": "admin",
+      "cold_start_ms": 41.15,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 17.92,
+        "p95": 34.95,
+        "p99": 36.63,
+        "mean": 22.41,
+        "min": 9.03,
+        "max": 36.63
+      },
+      "payload_bytes": {
+        "avg": 2815,
+        "p95": 2815,
+        "max": 2815
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/healthz",
+      "role": "student",
+      "cold_start_ms": 4.44,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 2.07,
+        "p95": 4.01,
+        "p99": 4.93,
+        "mean": 2.26,
+        "min": 1.13,
+        "max": 4.93
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/",
+      "role": "student",
+      "cold_start_ms": 1.4,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 1.82,
+        "p95": 3.56,
+        "p99": 3.63,
+        "mean": 1.91,
+        "min": 1.03,
+        "max": 3.63
+      },
+      "payload_bytes": {
+        "avg": 72,
+        "p95": 72,
+        "max": 72
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "role": "instructor",
+      "cold_start_ms": 36.46,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 10.09,
+        "p95": 12.07,
+        "p99": 13.31,
+        "mean": 9.77,
+        "min": 5.17,
+        "max": 13.31
+      },
+      "payload_bytes": {
+        "avg": 182,
+        "p95": 182,
+        "max": 182
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course",
+      "role": "instructor",
+      "cold_start_ms": 189.66,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 107.02,
+        "p95": 117.63,
+        "p99": 138.57,
+        "mean": 108.13,
+        "min": 98.44,
+        "max": 138.57
+      },
+      "payload_bytes": {
+        "avg": 910,
+        "p95": 910,
+        "max": 910
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions",
+      "role": "instructor",
+      "cold_start_ms": 22.41,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 7.96,
+        "p95": 26.41,
+        "p99": 47.99,
+        "mean": 11.8,
+        "min": 6.44,
+        "max": 47.99
+      },
+      "payload_bytes": {
+        "avg": 8120,
+        "p95": 8120,
+        "max": 8120
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions/stats",
+      "role": "instructor",
+      "cold_start_ms": 22.69,
+      "cold_status": 500,
+      "count": 30,
+      "ok_count": 0,
+      "error_count": 30,
+      "latency_ms": {
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "mean": null,
+        "min": null,
+        "max": null
+      },
+      "payload_bytes": {
+        "avg": null,
+        "p95": null,
+        "max": null
+      },
+      "status_codes": {
+        "500": 30
+      },
+      "error_rate": 1,
+      "error_sample": {
+        "status": 500,
+        "message": "{\"success\":false,\"error\":\"column \\\"course.id\\\" must appear in the GROUP BY clause or be used in an aggregate function\",\"stack\":\"Error\\n at Query.run (/Users/Abd"
+      }
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments",
+      "role": "instructor",
+      "cold_start_ms": 13.95,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 9,
+        "p95": 14.47,
+        "p99": 14.48,
+        "mean": 10.36,
+        "min": 7.81,
+        "max": 14.48
+      },
+      "payload_bytes": {
+        "avg": 5857,
+        "p95": 5857,
+        "max": 5857
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/canvas/integration",
+      "role": "instructor",
+      "cold_start_ms": 8.24,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 13.15,
+        "p95": 23.47,
+        "p99": 26.34,
+        "mean": 14.73,
+        "min": 7.85,
+        "max": 26.34
+      },
+      "payload_bytes": {
+        "avg": 74,
+        "p95": 74,
+        "max": 74
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/admin/bug-reports",
+      "role": "admin",
+      "cold_start_ms": 18.35,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 11.1,
+        "p95": 17.62,
+        "p99": 18.77,
+        "mean": 12.26,
+        "min": 8.72,
+        "max": 18.77
+      },
+      "payload_bytes": {
+        "avg": 5581,
+        "p95": 5581,
+        "max": 5581
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id",
+      "role": "instructor",
+      "cold_start_ms": 57.85,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.07,
+        "p95": 67.67,
+        "p99": 67.74,
+        "mean": 60.43,
+        "min": 56.2,
+        "max": 67.74
+      },
+      "payload_bytes": {
+        "avg": 231,
+        "p95": 231,
+        "max": 231
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id/topics",
+      "role": "instructor",
+      "cold_start_ms": 68.65,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.71,
+        "p95": 69.64,
+        "p99": 95.97,
+        "mean": 66.52,
+        "min": 62.68,
+        "max": 95.97
+      },
+      "payload_bytes": {
+        "avg": 823,
+        "p95": 823,
+        "max": 823
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id/enrollments",
+      "role": "instructor",
+      "cold_start_ms": 110.79,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 108.06,
+        "p95": 112.67,
+        "p99": 114.71,
+        "mean": 108.49,
+        "min": 106.7,
+        "max": 114.71
+      },
+      "payload_bytes": {
+        "avg": 349,
+        "p95": 349,
+        "max": 349
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions?courseId",
+      "role": "instructor",
+      "cold_start_ms": 63.89,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.54,
+        "p95": 64.65,
+        "p99": 68.26,
+        "mean": 59.18,
+        "min": 57.63,
+        "max": 68.26
+      },
+      "payload_bytes": {
+        "avg": 26,
+        "p95": 26,
+        "max": 26
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "/api/questions",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 74.17,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.48,
+        "p95": 152.29,
+        "p99": 152.29,
+        "mean": 71.15,
+        "min": 60.99,
+        "max": 152.29
+      },
+      "payload_bytes": {
+        "avg": 309,
+        "p95": 310,
+        "max": 310
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "/api/questions/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 62.04,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.43,
+        "p95": 85.36,
+        "p99": 85.36,
+        "mean": 66.37,
+        "min": 61.52,
+        "max": 85.36
+      },
+      "payload_bytes": {
+        "avg": 58,
+        "p95": 58,
+        "max": 58
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "/api/invitations",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 13.98,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 4.05,
+        "p95": 13.98,
+        "p99": 13.98,
+        "mean": 5.25,
+        "min": 3.74,
+        "max": 13.98
+      },
+      "payload_bytes": {
+        "avg": 507,
+        "p95": 508,
+        "max": 508
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "/api/invitations/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 10.53,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 3.43,
+        "p95": 10.53,
+        "p99": 10.53,
+        "mean": 4.06,
+        "min": 2.87,
+        "max": 10.53
+      },
+      "payload_bytes": {
+        "avg": 375,
+        "p95": 376,
+        "max": 376
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    }
+  ]
+}
