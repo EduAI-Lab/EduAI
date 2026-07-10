@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { AppSidebar } from "~/components/app-sidebar";
-import { SidebarProvider } from "@eduai/ui";
+import { useCoreSidebarProps } from "~/components/app-sidebar";
+import { AppSidebar as SharedAppSidebar, SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 import {
   PolicyProvider,
@@ -27,6 +27,17 @@ beforeEach(() => {
   });
 });
 
+/**
+ * `~/components/app-sidebar` is a props-builder hook now (issue #764 core-shell
+ * parity) — `CoreAppShell` calls it and feeds the result straight into the
+ * shared `AppSidebar`. This harness reproduces exactly that composition so the
+ * test still exercises the real RBAC-nav-building logic end to end.
+ */
+function TestSidebar({ user }: { user: User }) {
+  const sidebarProps = useCoreSidebarProps({ user });
+  return <SharedAppSidebar {...sidebarProps} />;
+}
+
 function renderSidebar(role: string, policies: PolicyValues = {}) {
   const user = {
     id: "user-1",
@@ -38,16 +49,17 @@ function renderSidebar(role: string, policies: PolicyValues = {}) {
     updatedAt: new Date(),
   } as User;
 
-  // A data router (not plain MemoryRouter) so AppSidebar's useRouteLoaderData
-  // call resolves. No "root" route is defined, so it returns undefined and the
-  // component falls back to the SSR-seeded policy gate for the canInvite flag.
+  // A data router (not plain MemoryRouter) so useCoreSidebarProps'
+  // useRouteLoaderData call resolves. No "root" route is defined, so it
+  // returns undefined and the hook falls back to the SSR-seeded policy gate
+  // for the canInvite flag.
   const router = createMemoryRouter([
     {
       path: "/",
       element: (
         <PolicyProvider policies={policies}>
           <SidebarProvider>
-            <AppSidebar user={user} />
+            <TestSidebar user={user} />
           </SidebarProvider>
         </PolicyProvider>
       ),
