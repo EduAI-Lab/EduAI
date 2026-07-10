@@ -1,27 +1,20 @@
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
-import { IconBooks, IconChevronRight } from '@tabler/icons-react';
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  MeterBar,
-} from '@eduai/ui';
-import { ProgressBarFromData } from '../components/ProgressBar';
-import type { Course, Progress } from '../lib/types';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
+import { IconBooks, IconSearch } from '@tabler/icons-react';
+import { Card, CardContent, CourseCard, Input, PageHeading } from '@eduai/ui';
+import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
-import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import {
+  accentForCourse,
+  courseCode,
+  courseTerm,
+  courseYear,
+  groupCoursesByTerm,
+} from '../lib/course-display';
 import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
-import { buildDashboardStats } from '~/lib/dashboard-stats';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
@@ -46,152 +39,42 @@ function firstNameOf(name: string | undefined): string | null {
   return parts.length === 3 && parts[0]!.endsWith('.') ? parts[1]! : parts[0]!;
 }
 
-/**
- * The most useful "pick this back up" candidate: the enrolled course with the
- * highest completion percentage that isn't finished yet. We only have
- * course-level progress from `api.listCourses()` — no last-viewed timestamp —
- * so this is a progress-based heuristic, not a recency one. Copy is worded
- * to match ("Continue learning" / "In progress", never "recently viewed").
- */
-function findResumeCourse(courses: Course[]): Course | null {
-  const inProgress = courses.filter((course) => {
-    const progress = course.progress;
-    return Boolean(progress) && progress!.completed > 0 && progress!.completed < progress!.total;
-  });
-  if (inProgress.length === 0) return null;
-  return [...inProgress].sort(
-    (a, b) => (b.progress?.percentage ?? 0) - (a.progress?.percentage ?? 0),
-  )[0]!;
-}
-
-type ResumeCourseCardProps = {
-  title: string;
-  progress: Progress;
-  onContinue: () => void;
-};
-
-/** Prominent "continue where you left off" callout — the single highlighted
- *  affordance on the page, so it reuses `StatCard`'s subtle primary-tinted
- *  gradient (the DS's own documented "this card matters most" signature)
- *  instead of a one-off accent treatment. */
-function ResumeCourseCard({ title, progress, onContinue }: ResumeCourseCardProps) {
-  return (
-    <Card
-      style={{
-        background: 'linear-gradient(to bottom, oklch(from var(--primary) l c h / 0.05), var(--card))',
-      }}
-    >
-      <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <Badge variant="secondary" size="sm">
-            In progress
-          </Badge>
-          <h3 className="truncate text-lg font-semibold text-foreground">{title}</h3>
-          <div className="max-w-xs">
-            <MeterBar label="Your progress" value={progress.completed} total={progress.total} showCount />
-          </div>
-        </div>
-        <Button type="button" variant="primary" className="shrink-0" onClick={onContinue}>
-          Continue learning
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-type StudentCourseCardProps = {
-  course: Course;
-  onOpen: () => void;
-  tourId?: string;
-  tourRoute?: string;
-};
-
-/** One tile in the course grid — the whole card is the click target (a real
- *  button role + keyboard handling, not just an `onClick` div) so mouse,
- *  keyboard, and screen-reader users all get the same affordance the old
- *  `<button>`-wrapped card gave them. */
-function StudentCourseCard({ course, onOpen, tourId, tourRoute }: StudentCourseCardProps) {
-  return (
-    <Card
-      hoverable
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-      className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      data-tour={tourId}
-      data-tour-route={tourRoute}
-    >
-      <CardHeader>
-        <CardTitle className="line-clamp-2 transition-colors group-hover:text-primary">
-          {course.title}
-        </CardTitle>
-        {course.description ? (
-          <CardDescription className="line-clamp-2">{course.description}</CardDescription>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        {course.progress && course.progress.total > 0 ? (
-          <ProgressBarFromData progress={course.progress} size="sm" showLabel />
-        ) : (
-          <p className="text-sm text-muted-foreground">Not started yet</p>
-        )}
-      </CardContent>
-      <CardFooter>
-        <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-text">
-          View course
-          <IconChevronRight size={15} aria-hidden="true" />
-        </span>
-      </CardFooter>
-    </Card>
-  );
+/** Progress surfaced as a single accent badge on the shared card, rather than a
+ *  bespoke body/footer the platform's other course cards don't have. */
+function progressBadges(course: Course): string[] {
+  const p = course.progress;
+  if (!p || p.total <= 0 || p.completed <= 0) return [];
+  if (p.completed >= p.total) return ['Completed'];
+  return [`${Math.round(p.percentage)}% complete`];
 }
 
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
-  const navigate = useNavigate();
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
-  // Always the student stat shape here: TA is allowed on this route to preview
-  // the student experience, but courseList is the enrolled/progress list, not
-  // taught courses, so it must not be scored with instructor-shell stats.
-  const stats = useMemo(
-    () => buildDashboardStats('STUDENT', { courses: courseList }),
-    [courseList],
-  );
-  const resumeCourse = useMemo(() => findResumeCourse(courseList), [courseList]);
+  const [search, setSearch] = useState('');
+
+  const filteredCourses = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return courseList;
+    return courseList.filter((course) => {
+      const haystack = `${course.title} ${courseCode(course)}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [courseList, search]);
+  const termGroups = useMemo(() => groupCoursesByTerm(filteredCourses), [filteredCourses]);
+  const multipleTerms = termGroups.length > 1;
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
 
   const firstName = firstNameOf(user?.name);
-  const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : 'Courses';
-  const dateStr = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const subheading = `${dateStr} · Continue where you left off or explore new learning materials.`;
+  const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : 'My courses';
+  const subheading = 'Continue where you left off or explore your courses.';
 
   return (
-    <RoleDashboard
-      banner={user ? <AtRoleBanner role={user.role} variant="student" /> : null}
-      heading={heading}
-      subheading={subheading}
-      headingTourId="student-dashboard-header"
-      stats={stats}
-    >
-      {resumeCourse?.progress ? (
-        <ResumeCourseCard
-          title={resumeCourse.title}
-          progress={resumeCourse.progress}
-          onContinue={() => navigate(`/student/courses/${resumeCourse.id}`)}
-        />
-      ) : null}
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <div data-tour="student-dashboard-header">
+        <PageHeading heading={heading} subheading={subheading} />
+      </div>
 
       {courseList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
@@ -209,20 +92,86 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {courseList.map((course) => (
-            <StudentCourseCard
-              key={course.id}
-              course={course}
-              onOpen={() => navigate(`/student/courses/${course.id}`)}
-              tourId={course.id === courseList[0]?.id ? 'student-course-card-first' : undefined}
-              tourRoute={
-                course.id === courseList[0]?.id ? `/student/courses/${course.id}` : undefined
-              }
+        <div className="space-y-6">
+          <div className="relative max-w-sm">
+            <IconSearch
+              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
             />
-          ))}
+            <Input
+              type="search"
+              placeholder="Search courses by title or code"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              aria-label="Search courses"
+            />
+          </div>
+
+          {filteredCourses.length === 0 ? (
+            <Card className="mx-auto max-w-lg">
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <IconSearch size={22} aria-hidden="true" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-semibold text-foreground">No courses match</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Try a different title or course code.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-8">
+              {termGroups.map((group) => (
+                <section key={group.label}>
+                  {multipleTerms ? (
+                    <div className="mb-3 flex items-center gap-3">
+                      <h3 className="text-sm font-semibold text-foreground">{group.labelLong}</h3>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        {group.items.length}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {group.items.map((course) => {
+                      const card = (
+                        <CourseCard
+                          id={String(course.id)}
+                          code={courseCode(course)}
+                          name={course.title}
+                          description={course.description}
+                          term={courseTerm(course)}
+                          year={courseYear(course)}
+                          isPublished={course.isPublished}
+                          accentColor={accentForCourse(course)}
+                          extraBadges={progressBadges(course)}
+                          href={`/student/courses/${course.id}`}
+                          LinkComponent={Link}
+                        />
+                      );
+                      // Preserve the guided-tour target the old first-card carried.
+                      return course.id === filteredCourses[0]?.id ? (
+                        <div
+                          key={course.id}
+                          data-tour="student-course-card-first"
+                          data-tour-route={`/student/courses/${course.id}`}
+                        >
+                          {card}
+                        </div>
+                      ) : (
+                        <div key={course.id}>{card}</div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </div>
       )}
-    </RoleDashboard>
+    </div>
   );
 }
