@@ -2,10 +2,15 @@
  * @file ModuleCard — the module tile used in both the student and instructor
  * course views (course-detail "content" grid).
  *
- * Anatomy: a course-accent-tinted order chip + title/description, an optional
- * lesson-count meta row, either a student progress bar or an instructor
- * publish StatusBadge, and a footer "View module" link. The whole card is a
- * single click/keyboard target that navigates to the module.
+ * Anatomy: a course-accent-tinted order chip + title (with a top-right
+ * Published/Draft badge) + description, an optional lesson-count/updated meta
+ * row, an optional student progress bar, and a divider footer whose "View
+ * module" affordance nudges its chevron on hover. The whole card is a single
+ * click/keyboard target that navigates to the module.
+ *
+ * The body is intentionally lightweight: the AI Tutor `Module` type carries no
+ * lesson count for instructors, so the card is designed to still read as
+ * balanced with just a title + description + footer.
  *
  * Data honesty: `lessonCount` and `updatedLabel` are optional and simply omit
  * their row when not supplied — the AI Tutor `Module` type doesn't currently
@@ -96,12 +101,13 @@ export function ModuleCard({
       data-tour={dataTour}
       data-tour-route={dataTourRoute}
     >
-      <CardHeader className="flex-row items-start gap-3">
+      <CardHeader className="flex-row items-start gap-3 pb-3">
         <span
-          className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums"
+          className="flex size-9 shrink-0 items-center justify-center rounded-[10px] text-sm font-bold tabular-nums"
           style={{
-            background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
+            background: 'color-mix(in oklch, var(--course-accent) 12%, transparent)',
             color: 'var(--course-accent)',
+            boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 22%, transparent)',
           }}
         >
           {String(index + 1).padStart(2, '0')}
@@ -121,15 +127,17 @@ export function ModuleCard({
             )}
           </div>
           {description ? (
-            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
           ) : null}
         </div>
       </CardHeader>
 
       {(hasMeta || showProgress) && (
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-0">
           {hasMeta && (
-            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
               {lessonCount !== undefined && (
                 <span className="inline-flex items-center gap-1.5">
                   <IconBooks size={14} aria-hidden="true" />
@@ -150,9 +158,13 @@ export function ModuleCard({
       )}
 
       <CardFooter className="justify-between">
-        <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-text">
+        <span className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors group-hover:text-primary">
           View module
-          <IconChevronRight size={15} aria-hidden="true" />
+          <IconChevronRight
+            size={15}
+            aria-hidden="true"
+            className="transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+          />
         </span>
         {actions && (
           <div
