@@ -8,43 +8,44 @@
  * Owns: lesson CRUD entry points, cross-course lesson import (course →
  *       module → lesson selection), and per-lesson publish toggle.
  * Gotchas:
- *   - File name is misleading: this lives at `instructor.topic.tsx` but the
- *     route path is `/instructor/module/:moduleId` (legacy naming from when
- *     "module" was called "topic"). See app/routes.ts for the actual mapping.
+ *   - Hierarchy: Course › Module › Lesson. "Module" here is the mid level — it
+ *     is NOT the activity-tagging "Course topics" taxonomy, a separate concept.
  *   - Publish cascade goes one level deeper than instructor.course.tsx: a
  *     lesson can publish only if BOTH the parent course and parent module
  *     are published. The tooltip names whichever ancestor is blocking.
  *   - Two request-id refs (sourceModulesRequestIdRef and
  *     sourceLessonsRequestIdRef) guard each leg of the import drill-down
  *     against out-of-order responses.
- * Related: routes/instructor.course.tsx (parent), routes/instructor.list.tsx (child)
+ * Related: routes/instructor.course.tsx (parent), routes/instructor.lesson.tsx (child)
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { IconListDetails } from '@tabler/icons-react';
+import { Link, useNavigate, useParams } from 'react-router';
+import { IconChevronLeft, IconNotebook, IconUpload } from '@tabler/icons-react';
 import {
   Button,
   Card,
   CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
   Input,
   Label,
   PageHeading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@eduai/ui';
+import { LessonCard } from '../components/lessons/LessonCard';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/instructor.topic';
+import type { Route } from './+types/instructor.module';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-
-const SELECT_CLASSES =
-  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { splitTitle } from '~/lib/course-title';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -275,37 +276,57 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
-  const breadcrumbItems = [
-    { label: 'Teaching', href: '/instructor' },
-    ...(course && module
-      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
-      : [{ label: 'Course' }]),
-    { label: module?.title || 'Module' },
-  ];
-
-  useShellBreadcrumbs(breadcrumbItems);
+  useShellBreadcrumbs([
+    { label: 'Courses', href: '/instructor' },
+    {
+      label: course?.title || 'Course',
+      node:
+        module?.courseOfferingId != null ? (
+          <CourseSwitcher
+            courseId={module.courseOfferingId}
+            basePath="/instructor"
+            currentTitle={course?.title || 'Course'}
+          />
+        ) : undefined,
+    },
+    module?.title
+      ? { label: splitTitle(module.title).label, title: module.title }
+      : { label: 'Module' },
+  ]);
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
-        <PermissionGate allow={perms.canManageContent}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (!showImport) {
-                ensureSourceCoursesLoaded();
-              } else {
-                void handleSourceCourseSelection(null);
-              }
-              setShowImport((prev) => !prev);
-            }}
+      <div className="flex flex-col gap-4">
+        {module?.courseOfferingId != null && (
+          <Link
+            to={`/instructor/courses/${module.courseOfferingId}`}
+            className="inline-flex w-fit items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            {showImport ? 'Close' : 'Import lessons'}
-          </Button>
-        </PermissionGate>
+            <IconChevronLeft size={15} aria-hidden="true" />
+            Back to course
+          </Link>
+        )}
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
+          <PermissionGate allow={perms.canManageContent}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!showImport) {
+                  ensureSourceCoursesLoaded();
+                } else {
+                  void handleSourceCourseSelection(null);
+                }
+                setShowImport((prev) => !prev);
+              }}
+            >
+              <IconUpload size={15} aria-hidden="true" />
+              {showImport ? 'Close import' : 'Import lessons'}
+            </Button>
+          </PermissionGate>
+        </div>
       </div>
 
       <PermissionGate allow={perms.canManageContent}>
@@ -314,22 +335,26 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <CardContent className="space-y-4 pt-5">
               <div className="space-y-1.5">
                 <Label htmlFor="import-lesson-course">Choose course</Label>
-                <select
-                  id="import-lesson-course"
-                  value={selectedSourceCourseId ?? ''}
-                  onChange={(e) => {
-                    const nextValue = e.target.value ? Number(e.target.value) : null;
+                <Select
+                  value={
+                    selectedSourceCourseId != null ? String(selectedSourceCourseId) : undefined
+                  }
+                  onValueChange={(value) => {
+                    const nextValue = value ? Number(value) : null;
                     void handleSourceCourseSelection(nextValue);
                   }}
-                  className={SELECT_CLASSES}
                 >
-                  <option value="">Select course…</option>
-                  {availableCourses.map((course) => (
-                    <option key={course.id} value={course.id}>
-                      {course.title}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="import-lesson-course" className="w-full">
+                    <SelectValue placeholder="Select course…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCourses.map((course) => (
+                      <SelectItem key={course.id} value={String(course.id)}>
+                        {course.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {loadingSourceCourses && (
                   <p className="text-xs text-muted-foreground">Loading courses…</p>
                 )}
@@ -343,22 +368,26 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               {selectedSourceCourseId != null && (
                 <div className="space-y-1.5">
                   <Label htmlFor="import-lesson-module">Choose module</Label>
-                  <select
-                    id="import-lesson-module"
-                    value={selectedSourceModuleId ?? ''}
-                    onChange={(e) => {
-                      const nextValue = e.target.value ? Number(e.target.value) : null;
+                  <Select
+                    value={
+                      selectedSourceModuleId != null ? String(selectedSourceModuleId) : undefined
+                    }
+                    onValueChange={(value) => {
+                      const nextValue = value ? Number(value) : null;
                       void handleSourceModuleSelection(nextValue);
                     }}
-                    className={SELECT_CLASSES}
                   >
-                    <option value="">Select module…</option>
-                    {sourceModules.map((sourceModule) => (
-                      <option key={sourceModule.id} value={sourceModule.id}>
-                        {sourceModule.title}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="import-lesson-module" className="w-full">
+                      <SelectValue placeholder="Select module…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sourceModules.map((sourceModule) => (
+                        <SelectItem key={sourceModule.id} value={String(sourceModule.id)}>
+                          {sourceModule.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {loadingSourceModules && (
                     <p className="text-xs text-muted-foreground">Loading modules…</p>
                   )}
@@ -416,26 +445,38 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       </PermissionGate>
 
       <PermissionGate allow={perms.canManageContent}>
-        <form onSubmit={onCreateLesson} className="flex gap-3">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="New lesson title…"
-            className="flex-1"
-          />
-          <Button type="submit" disabled={creating || !title.trim()}>
-            {creating ? 'Adding…' : 'Add lesson'}
-          </Button>
-        </form>
+        <Card>
+          <CardContent className="py-5">
+            <form onSubmit={onCreateLesson} className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+              <div className="flex-1 space-y-1.5">
+                <Label htmlFor="new-lesson-title">Lesson title</Label>
+                <Input
+                  id="new-lesson-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="New lesson title…"
+                />
+              </div>
+              <Button type="submit" disabled={creating || !title.trim()}>
+                {creating ? 'Adding…' : 'Add lesson'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </PermissionGate>
 
       {oLessons.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconListDetails size={22} aria-hidden="true" />
+              <IconNotebook size={22} aria-hidden="true" />
             </div>
-            <p className="text-sm text-muted-foreground">No lessons yet.</p>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-semibold text-foreground">No lessons yet</h3>
+              <p className="text-sm text-muted-foreground">
+                Add a lesson above, or import one from another course to get started.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -454,46 +495,27 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 : null;
             const busy = publishingId === lesson.id;
             return (
-              <Card
+              <LessonCard
                 key={lesson.id}
-                hoverable
-                role="button"
-                tabIndex={0}
+                index={idx + 1}
+                title={lesson.title}
+                actionLabel="View lesson"
                 onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    navigate(`/instructor/lesson/${lesson.id}`);
-                  }
-                }}
-                className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <CardHeader>
-                  <div className="flex items-start gap-3">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                      {idx + 1}
-                    </span>
-                    <CardTitle className="text-base transition-colors group-hover:text-primary">
-                      {lesson.title}
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardFooter className="justify-end">
-                  <PermissionGate allow={perms.canPublishContent}>
-                    <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                      <PublishStatusButton
-                        isPublished={lesson.isPublished}
-                        pending={busy}
-                        blockedReason={tooltipMessage}
-                        onClick={() => {
-                          if (busy || blocked) return;
-                          togglePublish(lesson.id, lesson.isPublished);
-                        }}
-                      />
-                    </div>
-                  </PermissionGate>
-                </CardFooter>
-              </Card>
+                isPublished={lesson.isPublished}
+                statusSlot={
+                  perms.canPublishContent ? (
+                    <PublishStatusButton
+                      isPublished={lesson.isPublished}
+                      pending={busy}
+                      blockedReason={tooltipMessage}
+                      onClick={() => {
+                        if (busy || blocked) return;
+                        togglePublish(lesson.id, lesson.isPublished);
+                      }}
+                    />
+                  ) : undefined
+                }
+              />
             );
           })}
         </div>

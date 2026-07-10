@@ -9,6 +9,12 @@
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
  *       through a forward-ref handle (sendGuidePrompt / pushGuideMessage).
+ * Layout: a resizable split (desktop) gives the AI study buddy equal billing
+ *         with the question — it is a flagship feature, not a sidebar. Below
+ *         the `useIsMobile` breakpoint the split collapses to a single
+ *         stacked column so nothing is squeezed. Exactly one of the two
+ *         layouts is mounted at a time (never both), so StudentAiChat is
+ *         never double-instantiated.
  * Gotchas:
  *   - Bug-report context is pushed via setBugReportContext on every relevant
  *     state change so submitted reports include {course, module, lesson,
@@ -18,46 +24,41 @@
  *     (currentKnowledgeLevel gates the button).
  *   - The chat is keyed by activity.id so it remounts per activity, ensuring
  *     no cross-activity message leakage.
- * Related: components/StudentAiChat, components/StudentActivityFeedbackCard,
- *          components/bug-report/useBugReport
+ * Related: components/StudentAiChat, components/lessons/LessonActivityView,
+ *          components/StudentActivityFeedbackCard, components/bug-report/useBugReport
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  IconChevronLeft,
-  IconChevronRight,
-  IconCircleCheck,
-  IconInfoCircle,
-  IconListCheck,
-  IconLoader2,
-  IconSparkles,
-} from '@tabler/icons-react';
+import { IconListCheck, IconSparkles } from '@tabler/icons-react';
 import {
   Badge,
   Button,
   Card,
   CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Input,
   PageHeading,
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+  useIsMobile,
 } from '@eduai/ui';
 import { ProgressBar } from '../components/ProgressBar';
-import StudentActivityFeedbackCard from '../components/StudentActivityFeedbackCard';
+import { LessonActivityView } from '../components/lessons/LessonActivityView';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
 import api from '../lib/api';
 import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
-import type { Route } from './+types/student.list';
+import type { Route } from './+types/student.lesson';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { splitTitle } from '~/lib/course-title';
+import { KNOWLEDGE_LEVELS } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
 
 type StudentFeedbackState = {
@@ -92,14 +93,6 @@ function createFeedbackState(): StudentFeedbackState {
     error: null,
   };
 }
-
-/** Options for the pre-chat knowledge-level picker. Module-scoped (rather than
- * declared inline in JSX) since the array is static across every render. */
-const KNOWLEDGE_LEVELS = [
-  { value: 'beginner', label: 'Beginner', desc: "I'm new to this" },
-  { value: 'intermediate', label: 'Intermediate', desc: 'Some experience' },
-  { value: 'advanced', label: 'Advanced', desc: 'Quite experienced' },
-];
 
 /**
  * Resolves the lesson, its activities, and the parent module/course needed
@@ -139,6 +132,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
+  const isMobile = useIsMobile();
   const { course, module, lesson, activities } = loaderData;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
   const [idx, setIdx] = useState(0);
@@ -266,10 +260,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     setTempKnowledgeLevel('');
   }, []);
 
-  const handleRequestKnowledgeLevel = useCallback(() => {
-    setTempKnowledgeLevel('');
-    setShowKnowledgeModal(true);
-  }, []);
+  // Direct set from the chat's inline chips — no dialog, no wall.
+  const handleSelectKnowledgeLevel = useCallback(
+    (level: string) => {
+      if (!activity) return;
+      setKnowledgeLevels((prev) => ({ ...prev, [activity.id]: level }));
+    },
+    [activity],
+  );
 
   const handleAdjustKnowledgeLevel = useCallback(() => {
     setTempKnowledgeLevel(currentKnowledgeLevel ?? '');
@@ -417,258 +415,141 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     : [];
 
   const breadcrumbItems = [
-    { label: 'My courses', href: '/student' },
-    ...(course && module
-      ? [{ label: course.title, href: `/student/courses/${module.courseOfferingId}` }]
-      : [{ label: 'Course' }]),
+    { label: 'Courses', href: '/student' },
+    {
+      label: course?.title || 'Course',
+      node:
+        course?.id != null ? (
+          <CourseSwitcher
+            courseId={course.id}
+            basePath="/student"
+            currentTitle={course?.title || 'Course'}
+          />
+        ) : undefined,
+    },
     ...(module && lesson
-      ? [{ label: module.title, href: `/student/module/${lesson.moduleId}` }]
+      ? [
+          {
+            label: splitTitle(module.title).label,
+            title: module.title,
+            href: `/student/module/${lesson.moduleId}`,
+          },
+        ]
       : [{ label: 'Module' }]),
-    { label: lesson?.title || 'Lesson' },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: 'Lesson' },
   ];
 
   useShellBreadcrumbs(breadcrumbItems);
 
+  const goPrev = useCallback(() => {
+    setIdx((i) => Math.max(0, i - 1));
+    resetForNavigation();
+  }, [resetForNavigation]);
+
+  const goNext = useCallback(() => {
+    setIdx((i) => Math.min(orderedActivities.length - 1, i + 1));
+    resetForNavigation();
+  }, [orderedActivities.length, resetForNavigation]);
+
+  const activityView = (
+    <LessonActivityView
+      activity={activity}
+      questionChunks={questionChunks}
+      questionNumber={idx + 1}
+      questionCount={orderedActivities.length}
+      mcq={mcq}
+      onSelectMcq={setMcq}
+      text={text}
+      onTextChange={setText}
+      submitting={submitting}
+      onSubmit={submit}
+      result={result}
+      wasCorrect={wasCorrect}
+      isUserReady={isUserReady}
+      onGuideMe={handleGuideMe}
+      canPrev={canPrev}
+      canNext={canNext}
+      onPrev={goPrev}
+      onNext={goNext}
+      feedback={currentFeedback}
+      onFeedbackRating={handleFeedbackRating}
+      onFeedbackNote={handleFeedbackNote}
+      onFeedbackSubmit={handleSubmitFeedback}
+      onFeedbackDismiss={handleDismissFeedback}
+    />
+  );
+
+  const aiTutorPanel = (
+    <StudentAiChat
+      key={activity?.id ?? 'none'}
+      ref={chatRef}
+      activity={activity}
+      isUserReady={isUserReady}
+      knowledgeLevel={currentKnowledgeLevel}
+      onSelectKnowledgeLevel={handleSelectKnowledgeLevel}
+      onAdjustKnowledgeLevel={handleAdjustKnowledgeLevel}
+      topicOptions={topicOptions}
+      currentTopicId={currentTopicId}
+      onSelectTopic={handleTopicSelect}
+      studentAnswer={studentAnswer}
+      className="h-full"
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <PageHeading
-        heading={lesson?.title || 'Lesson'}
-        subheading={
-          orderedActivities.length > 0
-            ? `Question ${idx + 1} of ${orderedActivities.length}`
-            : undefined
-        }
-      />
+    <div className="flex h-[calc(100vh-var(--header-height)-2.5rem)] min-h-[640px] flex-col gap-4 px-4 pt-6 pb-6 lg:px-6">
+      <div className="flex shrink-0 flex-col gap-4">
+        <PageHeading heading={lesson?.title || 'Lesson'} subheading={module?.title || undefined} />
 
-      {orderedActivities.length > 0 && (
-        <Card data-tour="student-lesson-progress">
-          <CardContent className="flex items-center gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <IconListCheck size={20} aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <ProgressBar
-                completed={orderedActivities.filter((a) => a.completionStatus === 'correct').length}
-                total={orderedActivities.length}
-                size="md"
-                showLabel
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
-        {/* Main content area */}
-        <div className="space-y-6">
-          {/* Question card */}
-          <Card data-tour="student-question-card">
-            <CardHeader>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" size="sm">
-                  Question
-                </Badge>
-                {activity?.mainTopic && (
-                  <Badge variant="outline" size="sm">
-                    {activity.mainTopic.name}
-                  </Badge>
-                )}
+        {orderedActivities.length > 0 && (
+          <Card data-tour="student-lesson-progress">
+            <CardContent className="flex items-center gap-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <IconListCheck size={18} aria-hidden="true" />
               </div>
-            </CardHeader>
-            <CardContent className="reading-surface space-y-3">
-              {questionChunks.map((line, index) => (
-                <p key={index} className="text-lg leading-relaxed text-foreground">
-                  {line}
-                </p>
-              ))}
-            </CardContent>
-            {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
-              <CardFooter className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">Also covers:</span>
-                {activity.secondaryTopics.map((topic) => (
-                  <span key={topic.id} className="text-xs text-muted-foreground">
-                    {topic.name}
-                  </span>
-                ))}
-              </CardFooter>
-            )}
-          </Card>
-
-          {/* Answer card */}
-          <Card data-tour="student-answer-card">
-            <CardHeader>
-              <CardTitle>Your answer</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {activity?.type === 'MCQ' ? (
-                Array.isArray(activity?.options?.choices) ? (
-                  <div className="space-y-3">
-                    {activity.options.choices.map((choice, i) => (
-                      <label
-                        key={i}
-                        className={cn(
-                          'flex cursor-pointer items-start gap-4 rounded-[var(--radius-lg)] border-2 p-4 transition-colors',
-                          mcq === i
-                            ? 'border-primary bg-primary/5 shadow-[var(--shadow-2xs)]'
-                            : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          className="sr-only"
-                          name="mcq"
-                          checked={mcq === i}
-                          onChange={() => setMcq(i)}
-                        />
-                        <div
-                          className={cn(
-                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-sm font-bold',
-                            mcq === i
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-secondary text-muted-foreground',
-                          )}
-                        >
-                          {String.fromCharCode(65 + i)}
-                        </div>
-                        <span className="pt-1 text-foreground">{choice}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-[var(--radius-lg)] bg-destructive/10 p-4 text-sm text-destructive">
-                    This question's options are misconfigured.
-                  </div>
-                )
-              ) : (
-                <Input
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="Type your answer..."
-                  className="text-lg"
-                />
-              )}
-
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-3 pt-2">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  onClick={submit}
-                  disabled={
-                    submitting || (activity?.type === 'MCQ' ? mcq === null : text.trim() === '')
+              <div className="min-w-0 flex-1">
+                <ProgressBar
+                  completed={
+                    orderedActivities.filter((a) => a.completionStatus === 'correct').length
                   }
-                >
-                  {submitting ? (
-                    <>
-                      <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
-                      Submit answer
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  onClick={handleGuideMe}
-                  disabled={wasCorrect || !currentKnowledgeLevel || !isUserReady}
-                  data-tour="student-guide-button"
-                >
-                  <IconSparkles className="mr-1 h-4 w-4" aria-hidden="true" />
-                  Guide me
-                </Button>
-
-                <div className="flex-1" />
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!canPrev}
-                    onClick={() => {
-                      setIdx((i) => Math.max(0, i - 1));
-                      resetForNavigation();
-                    }}
-                  >
-                    <IconChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-                    Prev
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!canNext}
-                    onClick={() => {
-                      setIdx((i) => Math.min(orderedActivities.length - 1, i + 1));
-                      resetForNavigation();
-                    }}
-                  >
-                    Next
-                    <IconChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
+                  total={orderedActivities.length}
+                  size="sm"
+                  showLabel
+                />
               </div>
-
-              {/* Result feedback */}
-              {result && (
-                <div
-                  className={cn(
-                    'flex items-center gap-3 rounded-[var(--radius-lg)] p-4',
-                    wasCorrect
-                      ? 'border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]'
-                      : 'border border-border bg-secondary text-foreground',
-                  )}
-                >
-                  {wasCorrect ? (
-                    <IconCircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <IconInfoCircle
-                      className="h-5 w-5 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="font-medium">{result}</span>
-                </div>
-              )}
-
-              {activity &&
-                currentFeedback.promptShown &&
-                !currentFeedback.dismissed &&
-                (currentFeedback.promptVisible || currentFeedback.submitted) && (
-                  <StudentActivityFeedbackCard
-                    rating={currentFeedback.rating}
-                    note={currentFeedback.note}
-                    saving={currentFeedback.saving}
-                    submitted={currentFeedback.submitted}
-                    error={currentFeedback.error}
-                    onSelectRating={handleFeedbackRating}
-                    onNoteChange={handleFeedbackNote}
-                    onSubmit={handleSubmitFeedback}
-                    onDismiss={handleDismissFeedback}
-                  />
-                )}
+              <Badge variant="secondary" size="sm" className="shrink-0">
+                Question {idx + 1} of {orderedActivities.length}
+              </Badge>
             </CardContent>
           </Card>
-        </div>
-
-        {/* AI Chat sidebar */}
-        <StudentAiChat
-          key={activity?.id ?? 'none'}
-          ref={chatRef}
-          activity={activity}
-          isUserReady={isUserReady}
-          knowledgeLevel={currentKnowledgeLevel}
-          onRequestKnowledgeLevel={handleRequestKnowledgeLevel}
-          onAdjustKnowledgeLevel={handleAdjustKnowledgeLevel}
-          topicOptions={topicOptions}
-          currentTopicId={currentTopicId}
-          onSelectTopic={handleTopicSelect}
-          studentAnswer={studentAnswer}
-        />
+        )}
       </div>
+
+      {/* The AI study buddy gets equal billing with the question, not a
+          cramped sidebar — a resizable 55/45 split on desktop, both panels
+          filling the available height. Below the mobile breakpoint the split
+          collapses to a single stacked column instead of squeezing two panes
+          side by side. */}
+      {isMobile ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-2">
+          {activityView}
+          <div className="flex h-[600px] shrink-0 flex-col">{aiTutorPanel}</div>
+        </div>
+      ) : (
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1 gap-3">
+          <ResizablePanel defaultSize={55} minSize={35} className="min-w-0">
+            <div className="h-full overflow-y-auto pr-1 pb-2">
+              <div className="mx-auto max-w-2xl">{activityView}</div>
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={45} minSize={30} className="min-w-0">
+            {aiTutorPanel}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
 
       {/* Pre-Chat Modal */}
       <Dialog

@@ -8,6 +8,9 @@
  * Owns:
  *   - Activity CRUD: create (AddActivityPanel), inline edit
  *     (EditActivityPanel), delete with confirm.
+ *   - Content reuse: per-activity Duplicate (clones within this lesson) and
+ *     a page-level Import activity dialog that clones an activity from one
+ *     of the instructor's other lessons/courses into this one.
  *   - Per-activity topic assignment: a single main topic plus any number of
  *     secondary topics, both autosaved.
  *   - Per-activity AI mode toggles (teach / guide / custom) plus the custom
@@ -42,9 +45,16 @@ import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
 import api from '../lib/api';
-import type { Activity, Course, Lesson, ModuleDetail, Topic } from '../lib/types';
+import type { ImportableActivity } from '../lib/api';
+import type {
+  Activity,
+  Course,
+  Lesson,
+  ModuleDetail,
+  Topic,
+} from '../lib/types';
 import { CourseTopicsProvider, useCourseTopics } from '../hooks/useCourseTopics';
-import type { Route } from './+types/instructor.list';
+import type { Route } from './+types/instructor.lesson';
 import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
@@ -56,24 +66,35 @@ import {
   CardHeader,
   CardTitle,
   Checkbox,
+  Combobox,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
   PageHeading,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@eduai/ui';
+import { splitTitle } from '~/lib/course-title';
 import { cn } from '~/lib/utils';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-
-const SELECT_CLASSES =
-  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 
 /**
  * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
@@ -164,6 +185,17 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [savingActivityId, setSavingActivityId] = useState<number | null>(null);
   const [deletingActivityId, setDeletingActivityId] = useState<number | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+
+  const [duplicatingActivityId, setDuplicatingActivityId] = useState<number | null>(null);
+
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importableActivities, setImportableActivities] = useState<ImportableActivity[] | null>(
+    null,
+  );
+  const [loadingImportable, setLoadingImportable] = useState(false);
+  const [importableError, setImportableError] = useState<string | null>(null);
+  const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const courseOfferingId = lesson?.courseOfferingId ?? null;
   const courseTopics = useCourseTopics(courseOfferingId);
@@ -327,6 +359,67 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       alert('Failed to remove activity. Please try again.');
     } finally {
       setDeletingActivityId((current) => (current === activityId ? null : current));
+    }
+  };
+
+  const handleDuplicateActivity = async (activityId: number) => {
+    setDuplicatingActivityId(activityId);
+    try {
+      const duplicated = await api.duplicateActivity(activityId);
+      setActivities((prev) => [...prev, duplicated]);
+    } catch (error) {
+      console.error('Failed to duplicate activity', error);
+      alert('Failed to duplicate activity. Please try again.');
+    } finally {
+      setDuplicatingActivityId((current) => (current === activityId ? null : current));
+    }
+  };
+
+  const openImportDialog = async () => {
+    setShowImportDialog(true);
+    setSelectedImportId(null);
+    setImportableError(null);
+    setLoadingImportable(true);
+    try {
+      const results = await api.listImportableActivities(courseOfferingId ?? undefined);
+      // Importing an activity that already lives in this lesson is a no-op —
+      // the per-activity "Duplicate" action covers that case instead.
+      setImportableActivities(results.filter((item) => item.lessonId !== numericLessonId));
+    } catch (error) {
+      console.error('Failed to load importable activities', error);
+      setImportableError('Could not load activities to import. Please try again.');
+      setImportableActivities(null);
+    } finally {
+      setLoadingImportable(false);
+    }
+  };
+
+  const closeImportDialog = () => {
+    if (importing) return;
+    setShowImportDialog(false);
+    setImportableActivities(null);
+    setSelectedImportId(null);
+    setImportableError(null);
+  };
+
+  const handleConfirmImport = async () => {
+    if (!numericLessonId || !selectedImportId) return;
+    const sourceActivityId = Number(selectedImportId);
+    if (!Number.isFinite(sourceActivityId)) return;
+
+    setImporting(true);
+    setImportableError(null);
+    try {
+      await api.importActivity(numericLessonId, sourceActivityId);
+      await refreshActivities();
+      setShowImportDialog(false);
+      setImportableActivities(null);
+      setSelectedImportId(null);
+    } catch (error) {
+      console.error('Failed to import activity', error);
+      setImportableError('Could not import this activity. Please try again.');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -534,14 +627,30 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   };
 
   const breadcrumbItems = [
-    { label: 'Teaching', href: '/instructor' },
-    ...(course && module
-      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
-      : [{ label: 'Course' }]),
+    { label: 'Courses', href: '/instructor' },
+    {
+      label: course?.title || 'Course',
+      node:
+        course?.id != null ? (
+          <CourseSwitcher
+            courseId={course.id}
+            basePath="/instructor"
+            currentTitle={course?.title || 'Course'}
+          />
+        ) : undefined,
+    },
     ...(module && lesson
-      ? [{ label: module.title, href: `/instructor/module/${lesson.moduleId}` }]
+      ? [
+          {
+            label: splitTitle(module.title).label,
+            title: module.title,
+            href: `/instructor/module/${lesson.moduleId}`,
+          },
+        ]
       : [{ label: 'Module' }]),
-    { label: lesson?.title || 'Lesson' },
+    lesson?.title
+      ? { label: splitTitle(lesson.title).label, title: lesson.title }
+      : { label: 'Lesson' },
   ];
 
   useShellBreadcrumbs(breadcrumbItems);
@@ -574,6 +683,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   const isEditing = editingActivityId === activity.id;
                   const isSaving = savingActivityId === activity.id;
                   const isDeleting = deletingActivityId === activity.id;
+                  const isDuplicating = duplicatingActivityId === activity.id;
                   const isCustomEnabled = activity.enableCustomMode;
                   const promptDraft = promptDrafts[activity.id] ?? activity.customPrompt ?? '';
                   const isSavingPrompt = savingPromptId === activity.id;
@@ -597,9 +707,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 <div className="whitespace-pre-wrap font-medium text-foreground">
                                   {activity.question}
                                 </div>
-                                {(isSaving || isDeleting) && (
+                                {(isSaving || isDeleting || isDuplicating) && (
                                   <div className="text-[0.7rem] text-muted-foreground">
-                                    {isSaving ? 'Saving…' : 'Removing…'}
+                                    {isSaving
+                                      ? 'Saving…'
+                                      : isDeleting
+                                        ? 'Removing…'
+                                        : 'Duplicating…'}
                                   </div>
                                 )}
                               </div>
@@ -617,7 +731,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => beginEditingActivity(activity)}
-                                      disabled={isDeleting}
+                                      disabled={isDeleting || isDuplicating}
                                     >
                                       Edit
                                     </Button>
@@ -625,9 +739,18 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                       type="button"
                                       variant="ghost"
                                       size="sm"
+                                      onClick={() => handleDuplicateActivity(activity.id)}
+                                      disabled={isDeleting || isDuplicating}
+                                    >
+                                      {isDuplicating ? 'Duplicating…' : 'Duplicate'}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
                                       className="text-destructive hover:text-destructive"
                                       onClick={() => handleDeleteActivity(activity.id)}
-                                      disabled={isDeleting}
+                                      disabled={isDeleting || isDuplicating}
                                     >
                                       {isDeleting ? 'Removing…' : 'Remove'}
                                     </Button>
@@ -665,22 +788,27 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   >
                                     Main topic
                                   </Label>
-                                  <select
-                                    id={`activity-${activity.id}-main-topic`}
-                                    value={mainTopicId}
-                                    onChange={(event) =>
-                                      handleActivityMainTopicChange(activity.id, event.target.value)
+                                  <Select
+                                    value={mainTopicId !== '' ? String(mainTopicId) : undefined}
+                                    onValueChange={(value) =>
+                                      handleActivityMainTopicChange(activity.id, value)
                                     }
                                     disabled={loadingTopics || isUpdatingTopics}
-                                    className={SELECT_CLASSES}
                                   >
-                                    <option value="">Select a topic…</option>
-                                    {topics.map((topic) => (
-                                      <option key={topic.id} value={topic.id}>
-                                        {topic.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    <SelectTrigger
+                                      id={`activity-${activity.id}-main-topic`}
+                                      className="w-full"
+                                    >
+                                      <SelectValue placeholder="Select a topic…" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {topics.map((topic) => (
+                                        <SelectItem key={topic.id} value={String(topic.id)}>
+                                          {topic.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                                 <div>
                                   <span className="mb-1 block text-xs font-semibold text-muted-foreground">
@@ -730,7 +858,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
                           <div className="space-y-2 rounded-[var(--radius-lg)] border border-primary/20 bg-primary/5 p-3">
                             <div className="text-xs font-semibold text-foreground">
-                              AI Study Buddy modes
+                              AI study buddy modes
                             </div>
                             <div className="space-y-2">
                               <label className="flex cursor-pointer items-center gap-2">
@@ -874,9 +1002,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             )}
 
             <PermissionGate allow={perms.canManageContent}>
-              <div className="flex justify-center">
+              <div className="flex justify-center gap-3">
                 <Button type="button" onClick={() => setShowAddPanel((open) => !open)}>
                   {showAddPanel ? 'Hide add activities' : 'Add activities'}
+                </Button>
+                <Button type="button" variant="outline" onClick={openImportDialog}>
+                  Import activity
                 </Button>
               </div>
 
@@ -894,9 +1025,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Course topics</CardTitle>
-                  {lesson?.courseOfferingId && (
-                    <span className="text-xs text-muted-foreground">
-                      Course #{lesson.courseOfferingId}
+                  {course?.title && (
+                    <span className="max-w-[55%] truncate text-xs text-muted-foreground">
+                      {course.title}
                     </span>
                   )}
                 </div>
@@ -973,6 +1104,79 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           await Promise.all([courseTopics.refresh(), refreshActivities()]);
         }}
       />
+      <Dialog
+        open={showImportDialog}
+        onOpenChange={(next) => {
+          if (!next) closeImportDialog();
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-xl"
+          onInteractOutside={(event) => {
+            if (importing) event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (importing) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Import activity</DialogTitle>
+            <DialogDescription>
+              Copy an activity from one of your other lessons into this lesson.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingImportable ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading activities…</p>
+          ) : importableError ? (
+            <div className="space-y-3 py-4 text-center">
+              <p className="text-sm text-destructive">{importableError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={openImportDialog}>
+                Try again
+              </Button>
+            </div>
+          ) : !importableActivities || importableActivities.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No activities available to import from your other lessons.
+            </p>
+          ) : (
+            <div className="space-y-2 py-2">
+              <Label htmlFor="import-activity-combobox" className="text-xs font-semibold">
+                Activity to import
+              </Label>
+              <Combobox
+                options={importableActivities.map((item) => ({
+                  value: String(item.id),
+                  label: item.title || item.type || 'Untitled activity',
+                  description: [item.moduleTitle, item.lessonTitle].filter(Boolean).join(' · '),
+                }))}
+                value={selectedImportId}
+                onValueChange={setSelectedImportId}
+                placeholder="Select an activity…"
+                searchPlaceholder="Search activities…"
+                emptyText="No matching activities."
+                disabled={importing}
+                className="w-full"
+              />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeImportDialog} disabled={importing}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmImport}
+              disabled={
+                importing || loadingImportable || !selectedImportId || !!importableError
+              }
+            >
+              {importing ? 'Importing…' : 'Import'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CourseTopicsProvider>
   );
 }
