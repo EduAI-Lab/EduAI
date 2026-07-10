@@ -16,29 +16,32 @@
  *   - The import flow uses a request-id ref (modulesRequestIdRef) to ignore
  *     stale source-module fetches when the user changes the source course
  *     mid-load.
- * Related: routes/instructor.tsx (parent), routes/instructor.topic.tsx (child)
+ * Related: routes/instructor.tsx (parent), routes/instructor.module.tsx (child)
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { IconLayoutGrid } from '@tabler/icons-react';
 import {
-  Badge,
   Button,
   Card,
   CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
+  CourseHeroCard,
   Input,
   Label,
-  PageHeading,
   PageTabs,
   PageTabsContent,
   PageTabsList,
   PageTabsTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
+import { ModuleCard } from '../components/courses/ModuleCard';
+import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
@@ -53,9 +56,6 @@ import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-
-const SELECT_CLASSES =
-  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -90,6 +90,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
   const { course, modules: initialModules } = loaderData;
+  const accentColor = accentForCourse(course);
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
@@ -243,7 +244,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   };
 
   useShellBreadcrumbs([
-    { label: 'Teaching', href: '/instructor' },
+    { label: 'Courses', href: '/instructor' },
     {
       label: course?.title || 'Course',
       node:
@@ -259,9 +260,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <PageHeading heading={course?.title || 'Course'} subheading="Course content and analytics" />
-      </div>
+      <CourseHeroCard
+        code={courseCode(course)}
+        term={courseTerm(course)}
+        year={courseYear(course)}
+        name={course.title}
+        description={course.description}
+        accentColor={accentForCourse(course)}
+        topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
+      />
 
       <PageTabs
         value={activeTab}
@@ -303,22 +310,26 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                 <CardContent className="space-y-4 pt-5">
                   <div className="space-y-1.5">
                     <Label htmlFor="import-source-course">Choose course to copy</Label>
-                    <select
-                      id="import-source-course"
-                      value={selectedSourceCourseId ?? ''}
-                      onChange={(e) => {
-                        const nextValue = e.target.value ? Number(e.target.value) : null;
+                    <Select
+                      value={
+                        selectedSourceCourseId != null ? String(selectedSourceCourseId) : undefined
+                      }
+                      onValueChange={(value) => {
+                        const nextValue = value ? Number(value) : null;
                         void handleSourceCourseSelection(nextValue);
                       }}
-                      className={SELECT_CLASSES}
                     >
-                      <option value="">Select course…</option>
-                      {availableCourses.map((course) => (
-                        <option key={course.id} value={course.id}>
-                          {course.title}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="import-source-course" className="w-full">
+                        <SelectValue placeholder="Select course…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableCourses.map((course) => (
+                          <SelectItem key={course.id} value={String(course.id)}>
+                            {course.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {loadingSourceCourses && (
                       <p className="text-xs text-muted-foreground">Loading courses…</p>
                     )}
@@ -416,54 +427,28 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   : null;
                 const busy = publishingId === m.id;
                 return (
-                  <Card
+                  <ModuleCard
                     key={m.id}
-                    hoverable
-                    role="button"
-                    tabIndex={0}
+                    index={idx}
+                    title={m.title}
+                    description={m.description}
+                    accentColor={accentColor}
+                    isPublished={m.isPublished}
                     onClick={() => navigate(`/instructor/module/${m.id}`)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        navigate(`/instructor/module/${m.id}`);
-                      }
-                    }}
-                    className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <CardHeader>
-                      <div className="flex items-start gap-3">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                          {idx + 1}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <CardTitle className="text-base transition-colors group-hover:text-primary">
-                            {m.title}
-                          </CardTitle>
-                          {m.description && (
-                            <p className="mt-1 text-sm text-muted-foreground">{m.description}</p>
-                          )}
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardFooter className="justify-end">
+                    actions={
                       <PermissionGate allow={perms.canPublishContent}>
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
-                          <PublishStatusButton
-                            isPublished={m.isPublished}
-                            pending={busy}
-                            blockedReason={tooltipMessage}
-                            onClick={() => {
-                              if (busy || blocked) return;
-                              togglePublish(m.id, m.isPublished);
-                            }}
-                          />
-                        </div>
+                        <PublishStatusButton
+                          isPublished={m.isPublished}
+                          pending={busy}
+                          blockedReason={tooltipMessage}
+                          onClick={() => {
+                            if (busy || blocked) return;
+                            togglePublish(m.id, m.isPublished);
+                          }}
+                        />
                       </PermissionGate>
-                    </CardFooter>
-                  </Card>
+                    }
+                  />
                 );
               })}
             </div>
