@@ -1,30 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
-import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from '~/components/ai-elements/conversation';
-import {
-  PromptInput,
-  PromptInputBody,
-  PromptInputFooter,
-  PromptInputModelSelect,
-  PromptInputModelSelectContent,
-  PromptInputModelSelectItem,
-  PromptInputModelSelectTrigger,
-  PromptInputModelSelectValue,
-  PromptInputSubmit,
-  PromptInputTextarea,
-  PromptInputTools,
-  type PromptInputMessage,
-} from '~/components/ai-elements/prompt-input';
-import { Message, MessageContent, MessageResponse } from '~/components/ai-elements/message';
+import { Link } from 'react-router';
 import {
   Badge,
   Button,
-  Card,
+  ChatContainerContent,
+  ChatContainerRoot,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -32,7 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Loader,
+  Message,
+  MessageContent,
+  PromptInput,
+  PromptInputTextarea,
   PromptSuggestion,
+  ScrollButton,
   SegmentedControl,
   Select,
   SelectContent,
@@ -46,20 +32,20 @@ import {
 } from '@eduai/ui';
 import {
   IconAlertCircle,
-  IconCheck,
   IconHistory,
   IconKey,
   IconLoader2,
   IconMessageCircle,
   IconPencilPlus,
-  IconRefresh,
+  IconSend,
   IconSparkles,
 } from '@tabler/icons-react';
 import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
-import {
-  loadSessionMessages,
-  type ApiChatSession,
-} from '~/lib/student-chat-history';
+import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
+import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
+import { useApiKeys } from '~/hooks/use-api-keys';
+import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
+import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
 import api from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
@@ -93,11 +79,12 @@ type StudentSelectableModel = AiModel & {
 
 /**
  * Imperative API exposed to parent routes via `forwardRef`.
- * - `sendGuidePrompt`: switch to Guide tab and submit either the typed input
- *   or a generic fallback. Used after a student answers a question to nudge
- *   the AI toward giving guidance on what they tried.
+ * - `sendGuidePrompt`: switch to Guide and submit either the typed input or a
+ *   generic fallback. Used after a student answers to nudge the AI toward
+ *   guidance. If no provider key is set, it still switches to Guide so the
+ *   inline "add a key" notice is visible instead of silently doing nothing.
  * - `pushGuideMessage`: append an assistant message into Guide history without
- *   round-tripping the server (e.g., system-style nudges authored client-side).
+ *   round-tripping the server (client-authored nudges).
  */
 export type StudentAiChatHandle = {
   sendGuidePrompt: () => void;
@@ -108,20 +95,22 @@ type StudentAiChatProps = {
   activity: Activity | undefined;
   isUserReady: boolean;
   knowledgeLevel: string | null;
-  onRequestKnowledgeLevel: () => void;
+  /** Set the level directly (from the inline chips) — no dialog. */
+  onSelectKnowledgeLevel: (level: string) => void;
+  /** Open the parent's fuller level picker to change it. */
   onAdjustKnowledgeLevel: () => void;
   topicOptions: TopicOption[];
   currentTopicId: number | null;
   onSelectTopic: (topicId: number) => void;
   studentAnswer: number | string | null;
+  /** Extra classes on the root panel — e.g. `h-full` when docked in a
+   * resizable split rather than the standalone fixed-height default. */
+  className?: string;
 };
 
 const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
-const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
-const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'OpenAI' };
 
 // Detects whether the API has decorated this model with any student-policy field.
-// Presence of ANY policy field on ANY model flips the whole list into filtered mode.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
   return (
     typeof model.studentSelectable === 'boolean' ||
@@ -132,7 +121,6 @@ function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
   );
 }
 
-// Multiple legacy field names mean the same thing; check them in priority order.
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   if (typeof model.studentSelectable === 'boolean') return model.studentSelectable;
@@ -141,40 +129,6 @@ function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   if (typeof model.isAllowed === 'boolean') return model.isAllowed;
   if (typeof model.availability === 'string') return model.availability === 'allowed';
   return true;
-}
-
-function getProviderFromModelId(modelId: string): string {
-  return modelId.split(':')[0] || 'google';
-}
-
-function getProviderLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] || provider;
-}
-
-function maskApiKey(key: string): string {
-  if (key.length <= 8) return '••••••••';
-  return `••••••${key.slice(-4)}`;
-}
-
-// localStorage is the only persistence for provider API keys; the server never sees them at rest.
-// Read/write are wrapped to survive SSR-like envs and quota errors silently.
-function loadApiKeysFromStorage(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveApiKeysToStorage(keys: Record<string, string>) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 function getInitialChatState(): ChatState {
@@ -190,16 +144,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     activity,
     isUserReady,
     knowledgeLevel,
-    onRequestKnowledgeLevel,
+    onSelectKnowledgeLevel,
     onAdjustKnowledgeLevel,
     topicOptions,
     currentTopicId,
     onSelectTopic,
     studentAnswer,
+    className,
   },
   ref,
 ) {
-  const [activeTab, setActiveTab] = useState<ChatTab>('teach');
+  const [activeTab, setActiveTab] = useState<ChatTab>('guide');
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
@@ -207,16 +162,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [modelLoadError, setModelLoadError] = useState(false);
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
 
-  // API key state
-  const [providerApiKeys, setProviderApiKeys] = useState<Record<string, string>>({});
-  const [apiKeysLoaded, setApiKeysLoaded] = useState(false);
+  // BYOK provider keys are owned by the shared hook (also drives Settings → Providers).
+  const { loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const [tempApiKey, setTempApiKey] = useState('');
-  const [setupApiKeyInput, setSetupApiKeyInput] = useState('');
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
-  // Suggested prompts state
   const [suggestedPrompts, setSuggestedPrompts] = useState<SuggestedPrompt[]>([]);
   const [promptsDismissed, setPromptsDismissed] = useState<Record<ChatTab, boolean>>({
     teach: false,
@@ -226,14 +178,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
-  // Load API keys from localStorage after hydration
-  useEffect(() => {
-    const stored = loadApiKeysFromStorage();
-    setProviderApiKeys(stored);
-    setApiKeysLoaded(true);
-  }, []);
-
-  // Load suggested prompts
   useEffect(() => {
     let isMounted = true;
     api
@@ -250,9 +194,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   }, []);
 
   const currentProvider = getProviderFromModelId(selectedModelId);
-  const currentApiKey = providerApiKeys[currentProvider] || '';
+  const currentApiKey = getKey(currentProvider);
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
-  const setupComplete = hasApiKey && Boolean(knowledgeLevel);
 
   const clearActiveTabChat = useCallback(() => {
     setActiveChatId(null);
@@ -267,26 +210,23 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     clearActiveTabChat();
   }, [clearActiveTabChat]);
 
-  const handleRefreshChat = useCallback(() => {
-    clearActiveTabChat();
-  }, [clearActiveTabChat]);
+  const handleRestoreSession = useCallback(
+    async (session: ApiChatSession) => {
+      setActiveTab(session.mode);
+      setActiveChatId(session.chatId);
+      setChatState((prev) => ({
+        ...prev,
+        [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
+      }));
+      const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+      setChatState((prev) => ({
+        ...prev,
+        [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
+      }));
+    },
+    [activity?.id],
+  );
 
-  const handleRestoreSession = useCallback(async (session: ApiChatSession) => {
-    setActiveTab(session.mode);
-    setActiveChatId(session.chatId);
-    setChatState((prev) => ({
-      ...prev,
-      [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
-    }));
-    const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
-    setChatState((prev) => ({
-      ...prev,
-      [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
-    }));
-  }, [activity?.id]);
-
-  // Track the active chatId from the current tab's state so the history panel
-  // can highlight the active session.
   useEffect(() => {
     const chatId = chatState[activeTab].chatId;
     if (chatId) setActiveChatId(chatId);
@@ -329,14 +269,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     (activeTab === 'guide' && isGuideEnabled) ||
     (activeTab === 'custom' && isCustomEnabled);
 
-  // Auto-correct the active tab during render when the activity's enabled modes change
-  // (e.g., instructor disables guide mode while a student is on it). React tolerates
-  // these setState calls during render because they converge in one extra pass.
+  // Auto-correct the active tab during render when enabled modes change. Prefer
+  // Guide (hints) as the pedagogical default, then Teach, then Custom.
   if (!currentTabEnabled) {
-    if (isTeachEnabled) setActiveTab('teach');
-    else if (isGuideEnabled) setActiveTab('guide');
+    if (isGuideEnabled) setActiveTab('guide');
+    else if (isTeachEnabled) setActiveTab('teach');
     else if (isCustomEnabled) setActiveTab('custom');
-    else if (activeTab !== 'teach') setActiveTab('teach');
+    else if (activeTab !== 'guide') setActiveTab('guide');
   }
 
   useEffect(() => {
@@ -345,7 +284,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       try {
         const models = (await api.listAiModels()) as StudentSelectableModel[];
         if (!isMounted) return;
-        // Filter only when at least one model declares a policy; otherwise show everything (back-compat).
         const policyActive = models.some(modelHasStudentPolicy);
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
         setAvailableModels(selectableModels);
@@ -371,13 +309,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       isMounted = false;
     };
   }, []);
-
-  const ensureKnowledgeLevel = useCallback(() => {
-    if (!activity) return false;
-    if (knowledgeLevel) return true;
-    onRequestKnowledgeLevel();
-    return false;
-  }, [activity, knowledgeLevel, onRequestKnowledgeLevel]);
 
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage['role'], content: string, id?: string) => {
@@ -407,18 +338,18 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       const message = (overrideMessage ?? chatState[tab].input).trim();
       if (!message) return;
-      if (!ensureKnowledgeLevel()) return;
 
-      const level = knowledgeLevel;
-      if (!level) return;
-
-      // The provider id is encoded as the prefix of the modelId ("google:gemini-..."); look up its key.
+      // Provider key is the only hard requirement; a missing knowledge level
+      // is filled with a sensible default (and remembered) rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
-      const apiKey = providerApiKeys[provider];
+      const apiKey = getKey(provider);
       if (!apiKey) {
-        console.warn('No API key for provider:', provider);
+        setActiveTab(tab);
         return;
       }
+
+      const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
+      if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
       const topicId = typeof currentTopicId === 'number' ? currentTopicId : undefined;
       const normalizedStudentAnswer =
@@ -434,10 +365,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         ...prev,
         [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : '', loading: true },
       }));
-
-      // Dismiss suggested prompts for this tab after first message
       setPromptsDismissed((prev) => ({ ...prev, [tab]: true }));
-
       appendMessage(tab, 'user', message, messageId);
 
       try {
@@ -475,7 +403,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           });
         }
 
-        // Persist the chatId from the first response so subsequent turns thread into the same AiChatSession.
         const nextChatId = response.chatId ?? chatState[tab].chatId ?? null;
         if (nextChatId) {
           setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], chatId: nextChatId } }));
@@ -497,10 +424,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       appendMessage,
       chatState,
       currentTopicId,
-      ensureKnowledgeLevel,
+      getKey,
       isUserReady,
       knowledgeLevel,
-      providerApiKeys,
+      onSelectKnowledgeLevel,
       selectedModelId,
       studentAnswer,
     ],
@@ -513,10 +440,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     () => ({
       sendGuidePrompt: () => {
         if (!activity || !activity.enableGuideMode) return;
-        const provider = getProviderFromModelId(selectedModelId);
-        if (!providerApiKeys[provider]) return;
-        const fallback = guideInput.trim() || 'I would like guidance on this question.';
         setActiveTab('guide');
+        const provider = getProviderFromModelId(selectedModelId);
+        if (!getKey(provider)) return; // notice is already visible in the Guide view
+        const fallback = guideInput.trim() || 'I would like guidance on this question.';
         void sendChat('guide', fallback);
       },
       pushGuideMessage: (content: string) => {
@@ -524,53 +451,37 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         appendMessage('guide', 'assistant', content);
       },
     }),
-    [activity, appendMessage, guideInput, providerApiKeys, selectedModelId, sendChat],
+    [activity, appendMessage, getKey, guideInput, selectedModelId, sendChat],
   );
 
-  const chatDisabled = !activity || !knowledgeLevel || !hasApiKey || !isUserReady;
+  const chatDisabled = !activity || !hasApiKey || !isUserReady;
   const activeChat = chatState[activeTab];
-  const canSend =
-    !!activeChat && !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
+  const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
-  // Filter suggested prompts for current tab (only teach/guide, not custom)
   const currentSuggestedPrompts = useMemo(() => {
     if (activeTab === 'custom') return [];
     return suggestedPrompts.filter((p) => p.mode === activeTab);
   }, [activeTab, suggestedPrompts]);
 
   const showSuggestedPrompts =
-    setupComplete &&
+    knowledgeLevel != null &&
     currentSuggestedPrompts.length > 0 &&
     chatState[activeTab].messages.length === 0 &&
     !promptsDismissed[activeTab];
 
-  const handlePromptInputChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
+  const handleValueChange = useCallback(
+    (value: string) => {
       setChatState((prev) => ({
         ...prev,
-        [activeTab]: { ...prev[activeTab], input: event.target.value },
+        [activeTab]: { ...prev[activeTab], input: value },
       }));
     },
     [activeTab],
   );
 
-  const handlePromptSubmit = useCallback(
-    (message: PromptInputMessage, event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (canSend && message?.text?.trim()) void sendChat(activeTab);
-    },
-    [activeTab, canSend, sendChat],
-  );
-
-  const handleTextareaKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === 'Enter' && !event.metaKey && !event.shiftKey) {
-        event.preventDefault();
-        if (canSend) void sendChat(activeTab);
-      }
-    },
-    [activeTab, canSend, sendChat],
-  );
+  const submitInput = useCallback(() => {
+    if (canSend) void sendChat(activeTab);
+  }, [activeTab, canSend, sendChat]);
 
   const handleSuggestedPromptClick = useCallback(
     (text: string) => {
@@ -582,29 +493,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     [activeTab],
   );
 
-  const handleSetupSaveApiKey = useCallback(async () => {
-    if (!setupApiKeyInput.trim()) return;
-
-    setApiKeyValidating(true);
-    setApiKeyError(null);
-
-    try {
-      const result = await api.validateApiKey(currentProvider, setupApiKeyInput.trim());
-      if (!result.valid) {
-        setApiKeyError(result.error || 'Invalid API key');
-        return;
-      }
-      const newKeys = { ...providerApiKeys, [currentProvider]: setupApiKeyInput.trim() };
-      setProviderApiKeys(newKeys);
-      saveApiKeysToStorage(newKeys);
-      setSetupApiKeyInput('');
-    } catch (err) {
-      setApiKeyError('Could not validate API key');
-    } finally {
-      setApiKeyValidating(false);
-    }
-  }, [currentProvider, providerApiKeys, setupApiKeyInput]);
-
   const handleOpenApiKeyDialog = useCallback(() => {
     setTempApiKey(currentApiKey);
     setApiKeyError(null);
@@ -613,165 +501,68 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
   const handleSaveApiKeyDialog = useCallback(async () => {
     if (!tempApiKey.trim()) return;
-
     setApiKeyValidating(true);
     setApiKeyError(null);
-
     try {
-      const result = await api.validateApiKey(currentProvider, tempApiKey.trim());
+      const result = await validateKey(currentProvider, tempApiKey.trim());
       if (!result.valid) {
         setApiKeyError(result.error || 'Invalid API key');
         return;
       }
-      const newKeys = { ...providerApiKeys, [currentProvider]: tempApiKey.trim() };
-      setProviderApiKeys(newKeys);
-      saveApiKeysToStorage(newKeys);
+      setKey(currentProvider, tempApiKey.trim());
       setShowApiKeyDialog(false);
       setTempApiKey('');
-    } catch (err) {
+    } catch {
       setApiKeyError('Could not validate API key');
     } finally {
       setApiKeyValidating(false);
     }
-  }, [currentProvider, providerApiKeys, tempApiKey]);
+  }, [currentProvider, setKey, tempApiKey, validateKey]);
 
-  const renderMessages = (tab: ChatTab) => (
-    <div className="flex flex-col gap-4">
-      {chatState[tab].messages.map((msg) => (
-        <Message from={msg.role} key={msg.id}>
-          {/* `reading-surface` only applies its relaxed typography under
-              Assistive Mode (`[data-assistive]`), and only to the assistant's
-              response — that's the primary reading content students consume. */}
-          <MessageContent className={msg.role === 'assistant' ? 'reading-surface' : undefined}>
-            <MessageResponse>{msg.content}</MessageResponse>
+  const showTopicSelect =
+    (activeTab === 'teach' ||
+      (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
+    topicOptions.length > 1;
+
+  const renderMessages = (tab: ChatTab) =>
+    chatState[tab].messages.map((msg) =>
+      msg.role === 'user' ? (
+        <Message key={msg.id} className="justify-end">
+          <MessageContent className="max-w-[80%] bg-primary text-primary-foreground">
+            {msg.content}
           </MessageContent>
         </Message>
-      ))}
-    </div>
-  );
-
-  const renderSetupCard = () => (
-    <Card className="mx-auto w-full max-w-sm space-y-5 p-6 animate-scale-in">
-      <div className="text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <IconSparkles className="h-7 w-7" aria-hidden />
-        </div>
-        <h3 className="text-lg font-bold text-foreground">Set up your AI Study Buddy</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Complete these steps to start chatting</p>
-      </div>
-
-      {/* Step 1: Knowledge level */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
-              knowledgeLevel
-                ? 'bg-accent text-accent-foreground'
-                : 'bg-secondary text-muted-foreground',
-            )}
-          >
-            {knowledgeLevel ? <IconCheck className="h-3.5 w-3.5" /> : '1'}
-          </span>
-          <span className="text-sm font-semibold text-foreground">Knowledge level</span>
-        </div>
-        {knowledgeLevel ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onAdjustKnowledgeLevel}
-            className="w-full justify-between"
-          >
-            <span className="font-medium">{titleCase(knowledgeLevel)}</span>
-            <span className="text-xs text-muted-foreground">Change</span>
-          </Button>
-        ) : (
-          <Button type="button" onClick={onRequestKnowledgeLevel} className="w-full">
-            Select your level
-          </Button>
-        )}
-      </div>
-
-      {/* Step 2: API key */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
-              hasApiKey ? 'bg-accent text-accent-foreground' : 'bg-secondary text-muted-foreground',
-            )}
-          >
-            {hasApiKey ? <IconCheck className="h-3.5 w-3.5" /> : '2'}
-          </span>
-          <span className="text-sm font-semibold text-foreground">
-            {getProviderLabel(currentProvider)} API key
-          </span>
-        </div>
-        {hasApiKey ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleOpenApiKeyDialog}
-            className="w-full justify-between font-mono"
-          >
-            <span>{maskApiKey(currentApiKey)}</span>
-            <span className="font-sans text-xs text-muted-foreground">Change</span>
-          </Button>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={setupApiKeyInput}
-                onChange={(e) => {
-                  setSetupApiKeyInput(e.target.value);
-                  setApiKeyError(null);
-                }}
-                placeholder="Enter API key"
-                className="flex-1 font-mono text-sm"
-                aria-invalid={!!apiKeyError}
-                disabled={apiKeyValidating}
-              />
-              <Button
-                type="button"
-                onClick={handleSetupSaveApiKey}
-                disabled={!setupApiKeyInput.trim() || apiKeyValidating}
-              >
-                {apiKeyValidating ? (
-                  <>
-                    <IconLoader2 className="h-4 w-4 animate-spin" />
-                    <span className="sr-only">Saving…</span>
-                  </>
-                ) : (
-                  'Save'
-                )}
-              </Button>
-            </div>
-            {apiKeyError && <p className="pl-1 text-xs text-destructive">{apiKeyError}</p>}
-          </div>
-        )}
-      </div>
-    </Card>
-  );
+      ) : (
+        <Message key={msg.id}>
+          {/* `reading-surface` applies relaxed typography under Assistive Mode. */}
+          <MessageContent markdown className="reading-surface max-w-[88%]">
+            {msg.content}
+          </MessageContent>
+        </Message>
+      ),
+    );
 
   const activeTabInfo = availableTabs.find((tab) => tab.value === activeTab);
 
   return (
     <aside
-      className="flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]"
+      className={cn(
+        'flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]',
+        className,
+      )}
       data-tour="student-ai-chat"
     >
       {/* Header */}
       <div className="border-b border-border">
-        <div className={cn('flex items-center gap-3 px-5', setupComplete ? 'pb-3 pt-5' : 'py-5')}>
+        <div className="flex items-center gap-3 px-5 py-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <IconSparkles className="h-5 w-5" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold text-foreground">AI Study Buddy</div>
+            <div className="font-semibold text-foreground">AI study buddy</div>
             <div className="text-xs text-muted-foreground">Hints, not answers</div>
           </div>
-          {setupComplete && (
+          {activity && hasApiKey && (
             <TooltipProvider delayDuration={300}>
               <div className="flex shrink-0 items-center gap-1">
                 <Tooltip>
@@ -792,20 +583,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleRefreshChat}
-                      aria-label="Refresh chat"
-                    >
-                      <IconRefresh className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Refresh chat</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
                       variant="outline"
                       size="icon"
                       onClick={() => setHistoryOpen((prev) => !prev)}
@@ -821,178 +598,182 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           )}
         </div>
 
-        {setupComplete && (
-          <div className="flex flex-wrap items-center gap-2 px-5 pb-5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              onClick={onAdjustKnowledgeLevel}
-              aria-label="Change knowledge level"
+        {/* Compact control row: mode + knowledge level (progressive disclosure) */}
+        {activity && hasApiKey && (availableTabs.length > 0 || knowledgeLevel) && (
+          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+            {showTabToggle ? (
+              <SegmentedControl
+                ariaLabel="Chat mode"
+                value={activeTab}
+                onValueChange={(value) => setActiveTab(value as ChatTab)}
+                size="sm"
+                options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+              />
+            ) : availableTabs.length === 1 ? (
+              <Badge variant="outline" size="lg">
+                {availableTabs[0].label}
+              </Badge>
+            ) : null}
+
+            {knowledgeLevel && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ml-auto rounded-full"
+                onClick={onAdjustKnowledgeLevel}
+                aria-label="Change knowledge level"
+              >
+                {knowledgeLevelLabel(knowledgeLevel)}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {activeTabInfo && activity && hasApiKey && (
+          <p className="px-5 pb-3 text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
+        )}
+
+        {/* Topic focus (teach / topic-templated custom) */}
+        {activity && hasApiKey && showTopicSelect && (
+          <div className="space-y-1.5 px-5 pb-4">
+            <label className="block text-xs font-semibold text-muted-foreground" htmlFor="ai-chat-topic">
+              Focus topic
+            </label>
+            <Select
+              value={currentTopicId === null ? '' : String(currentTopicId)}
+              onValueChange={(value) => {
+                const numericValue = Number(value);
+                if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
+              }}
             >
-              {titleCase(knowledgeLevel!)}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full font-mono"
-              onClick={handleOpenApiKeyDialog}
-              aria-label={`Edit ${getProviderLabel(currentProvider)} API key`}
-            >
-              <IconKey className="h-3.5 w-3.5" />
-              {maskApiKey(currentApiKey)}
-            </Button>
+              <SelectTrigger id="ai-chat-topic" className="w-full">
+                <SelectValue placeholder="Select a topic" />
+              </SelectTrigger>
+              <SelectContent>
+                {topicOptions.map((topic) => (
+                  <SelectItem key={topic.value} value={String(topic.value)}>
+                    {topic.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>
+
       <StudentChatHistoryPanel
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         activityId={activity?.id}
         activeChatId={activeChatId}
-        onSelect={(session) => { void handleRestoreSession(session); }}
+        onSelect={(session) => {
+          void handleRestoreSession(session);
+        }}
         onNewChat={handleNewChat}
       />
 
-      {/* Mode switcher + topic selector */}
-      {setupComplete && (availableTabs.length > 0 || topicOptions.length > 1) && (
-        <div className="space-y-4 px-5 pt-5">
-          {availableTabs.length > 0 && (
-            <div className="space-y-1.5">
-              {showTabToggle ? (
-                <SegmentedControl
-                  ariaLabel="Chat mode"
-                  value={activeTab}
-                  onValueChange={setActiveTab}
-                  size="sm"
-                  options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
-                />
-              ) : (
-                <Badge variant="outline" size="lg">
-                  {availableTabs[0].label}
-                </Badge>
-              )}
-              {activeTabInfo && (
-                <p className="text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
-              )}
-            </div>
-          )}
-
-          {/* Topic selector for teach mode and custom mode (when prompt uses topic placeholder) */}
-          {(activeTab === 'teach' ||
-            (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
-            topicOptions.length > 1 && (
-              <div className="space-y-1.5">
-                <label
-                  className="block text-xs font-semibold text-muted-foreground"
-                  htmlFor="ai-chat-topic"
-                >
-                  Focus topic
-                </label>
-                <Select
-                  value={currentTopicId === null ? '' : String(currentTopicId)}
-                  onValueChange={(value) => {
-                    const numericValue = Number(value);
-                    if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
-                  }}
-                >
-                  <SelectTrigger id="ai-chat-topic" className="w-full">
-                    <SelectValue placeholder="Select a topic" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {topicOptions.map((topic) => (
-                      <SelectItem key={topic.value} value={String(topic.value)}>
-                        {topic.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-        </div>
-      )}
-
-      {/* Conversation area */}
-      <Conversation className="min-h-0 flex-1">
-        <ConversationContent className="mx-auto w-full max-w-[var(--chat-max-width)] px-5 py-4">
+      {/* Conversation */}
+      <ChatContainerRoot className="relative min-h-0 flex-1">
+        <ChatContainerContent className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-4">
           {!activity ? (
-            <ConversationEmptyState
-              icon={
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
-                  <IconMessageCircle className="h-6 w-6" />
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
+                <IconMessageCircle className="h-6 w-6" />
+              </div>
+              <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
+            </div>
+          ) : !hasApiKey ? (
+            apiKeysLoaded ? (
+              <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <IconKey className="h-7 w-7" aria-hidden />
                 </div>
-              }
-              title="No activity selected"
-              description="Select an activity to begin."
-            />
-          ) : !setupComplete ? (
-            renderSetupCard()
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold text-foreground">
+                    Connect an AI provider to start
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Add your {getProviderLabel(currentProvider)} API key to chat with your study
+                    buddy. It stays on this device.
+                  </p>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Button type="button" onClick={handleOpenApiKeyDialog}>
+                    <IconKey className="mr-1 h-4 w-4" /> Add API key
+                  </Button>
+                  <Link
+                    to="/settings"
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Manage in Settings → Providers
+                  </Link>
+                </div>
+              </div>
+            ) : null
           ) : (
             <>
               {renderMessages(activeTab)}
               {chatState[activeTab].loading && (
-                <Message from="assistant" className="mt-4">
-                  <MessageContent className="flex-row items-center gap-2 py-3.5">
-                    <span className="flex gap-1" aria-hidden>
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-                    </span>
-                    <span className="text-xs text-muted-foreground">Thinking…</span>
-                  </MessageContent>
+                <Message>
+                  <div className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-3.5 text-foreground">
+                    <Loader variant="loading-dots" text="Thinking" size="sm" />
+                  </div>
                 </Message>
               )}
               {chatState[activeTab].messages.length === 0 && (
-                <ConversationEmptyState>
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/50 text-accent-foreground">
                     <IconSparkles className="h-6 w-6" />
                   </div>
-                  <p className="max-w-[220px] text-sm text-muted-foreground">
-                    Ask your study buddy anything about this topic.
-                  </p>
-
-                  {/* Suggested prompts */}
-                  {showSuggestedPrompts && (
-                    <div className="w-full max-w-sm space-y-2">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">Try asking</p>
-                      <div className="flex flex-wrap justify-center gap-2">
-                        {currentSuggestedPrompts.map((prompt) => (
-                          <PromptSuggestion
-                            key={prompt.id}
-                            type="button"
-                            size="sm"
-                            onClick={() => handleSuggestedPromptClick(prompt.text)}
-                          >
-                            {prompt.text}
-                          </PromptSuggestion>
-                        ))}
-                      </div>
-                    </div>
+                  {knowledgeLevel == null ? (
+                    <KnowledgeLevelChips value={knowledgeLevel} onSelect={onSelectKnowledgeLevel} />
+                  ) : (
+                    <>
+                      <p className="max-w-[220px] text-sm text-muted-foreground">
+                        Ask your study buddy anything about this topic.
+                      </p>
+                      {showSuggestedPrompts && (
+                        <div className="w-full max-w-sm space-y-2">
+                          <p className="mb-1 text-xs font-medium text-muted-foreground">Try asking</p>
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {currentSuggestedPrompts.map((prompt) => (
+                              <PromptSuggestion
+                                key={prompt.id}
+                                type="button"
+                                size="sm"
+                                onClick={() => handleSuggestedPromptClick(prompt.text)}
+                              >
+                                {prompt.text}
+                              </PromptSuggestion>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
-                </ConversationEmptyState>
+                </div>
               )}
             </>
           )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+        </ChatContainerContent>
+        <ScrollButton className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-[var(--shadow-sm)]" />
+      </ChatContainerRoot>
 
-      {/* Input area */}
-      <div className="space-y-3 border-t border-border p-4">
-        <PromptInput
-          onSubmit={handlePromptSubmit}
-          className="[&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-card"
-        >
-          <PromptInputBody>
+      {/* Composer */}
+      <div className="space-y-2 border-t border-border p-4">
+        <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
+          <PromptInput
+            value={chatState[activeTab].input}
+            onValueChange={handleValueChange}
+            onSubmit={submitInput}
+            isLoading={activeChat.loading}
+            className="border-none bg-transparent p-0 shadow-none"
+          >
             <PromptInputTextarea
-              value={chatState[activeTab].input}
-              onChange={handlePromptInputChange}
-              onKeyDown={handleTextareaKeyDown}
               placeholder={
                 chatDisabled
-                  ? 'Complete setup above to start chatting'
+                  ? 'Connect a provider to start chatting'
                   : activeTab === 'teach'
                     ? 'Ask about the topic…'
                     : activeTab === 'guide'
@@ -1000,34 +781,41 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                       : 'Ask a question…'
               }
               disabled={chatDisabled}
-              className="px-4 pb-3 pt-4 text-sm"
+              className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
             />
-          </PromptInputBody>
-          <PromptInputFooter className="border-t border-border px-4 pb-3 pt-3">
-            <PromptInputTools className="flex items-center gap-2">
-              <PromptInputModelSelect
-                value={selectedModelId}
-                onValueChange={setSelectedModelId}
-                disabled={!availableModels.length}
-              >
-                <PromptInputModelSelectTrigger size="sm" className="min-w-[140px] text-xs">
-                  <PromptInputModelSelectValue placeholder="Select model" />
-                </PromptInputModelSelectTrigger>
-                <PromptInputModelSelectContent>
-                  {availableModels.map((model) => (
-                    <PromptInputModelSelectItem key={model.id} value={model.modelId}>
-                      {model.modelName}
-                    </PromptInputModelSelectItem>
-                  ))}
-                </PromptInputModelSelectContent>
-              </PromptInputModelSelect>
-            </PromptInputTools>
-            <PromptInputSubmit
+          </PromptInput>
+
+          <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
+            <Select
+              value={selectedModelId}
+              onValueChange={setSelectedModelId}
+              disabled={!availableModels.length}
+            >
+              <SelectTrigger className="h-8 w-auto gap-1 border-border/60 text-xs" aria-label="Model">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableModels.map((model) => (
+                  <SelectItem key={model.id} value={model.modelId}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex-1" />
+
+            <Button
+              type="button"
+              size="icon"
+              onClick={submitInput}
               disabled={!canSend}
-              status={activeChat.loading ? 'streaming' : 'ready'}
-            />
-          </PromptInputFooter>
-        </PromptInput>
+              aria-label="Send message"
+            >
+              <IconSend className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
         {modelsFetched && modelLoadError && (
           <div className="flex items-center gap-1.5 text-xs text-destructive">
@@ -1048,13 +836,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           )}
       </div>
 
-      {/* API key edit dialog */}
+      {/* Add / change provider key */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Update your API key for {getProviderLabel(currentProvider)} models.
+              Stored only on this device and sent directly to {getProviderLabel(currentProvider)}.
+              You can also manage keys in Settings → Providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1071,6 +860,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               autoFocus
               disabled={apiKeyValidating}
             />
+            {currentApiKey && (
+              <p className="text-xs text-muted-foreground">Current: {maskApiKey(currentApiKey)}</p>
+            )}
             {apiKeyError && <p className="text-xs text-destructive">{apiKeyError}</p>}
           </div>
           <DialogFooter>
@@ -1087,7 +879,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             </Button>
             <Button
               type="button"
-              onClick={handleSaveApiKeyDialog}
+              onClick={() => void handleSaveApiKeyDialog()}
               disabled={!tempApiKey.trim() || apiKeyValidating}
             >
               {apiKeyValidating ? (
@@ -1113,8 +905,4 @@ function generateMessageId() {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function titleCase(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
