@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CourseCard } from '@eduai/ui';
+import { CourseCard, groupCoursesByTerm } from '@eduai/ui';
 import { IconBooks } from '@tabler/icons-react';
 import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
@@ -18,25 +18,6 @@ function syncedLabel(updatedAt?: string): string | undefined {
   if (diffMs < 2 * day) return 'Synced yesterday';
   if (diffMs < 7 * day) return `Synced ${Math.floor(diffMs / day)}d ago`;
   return `Synced ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
-}
-
-/** Human label for a term+year grouping, e.g. "Winter 2024" or "2024W1 · 2024". */
-function termLabel(course: Course): string {
-  const term = course.term?.trim();
-  const year = course.year ?? undefined;
-  if (term && year && !term.includes(String(year))) return `${term} ${year}`;
-  if (term) return term;
-  if (year) return String(year);
-  return 'No term scheduled';
-}
-
-/** Sort key so newer terms sort first; undated courses sink to the bottom. */
-function termSortKey(course: Course): number {
-  const year = course.year ?? 0;
-  const t = (course.term ?? '').toLowerCase();
-  // Rough intra-year ordering: fall/winter terms after spring/summer.
-  const seasonRank = t.includes('w') || t.includes('winter') || t.includes('fall') ? 2 : t ? 1 : 0;
-  return year * 10 + seasonRank;
 }
 
 export type CoursesGridProps = {
@@ -61,18 +42,10 @@ export function CoursesGrid({
 }: CoursesGridProps) {
   const highlightId = tourHighlightCourseId ?? (courses.length > 0 ? courses[0].id : null);
 
-  // Group courses by term, ordered newest-term first. A single group renders without
-  // a heading so small lists stay clean; multiple terms get separator headings.
-  const groups = useMemo(() => {
-    const byLabel = new Map<string, { label: string; sort: number; items: Course[] }>();
-    for (const course of courses) {
-      const label = termLabel(course);
-      const existing = byLabel.get(label);
-      if (existing) existing.items.push(course);
-      else byLabel.set(label, { label, sort: termSortKey(course), items: [course] });
-    }
-    return Array.from(byLabel.values()).sort((a, b) => b.sort - a.sort);
-  }, [courses]);
+  // Group courses by canonical term (shared @eduai/ui model), ordered newest-term
+  // first. A single group renders without a heading so small lists stay clean;
+  // multiple terms get separator headings.
+  const groups = useMemo(() => groupCoursesByTerm(courses), [courses]);
 
   if (isLoading) {
     return <CardGridSkeleton count={6} columns={3} />;
@@ -142,7 +115,7 @@ export function CoursesGrid({
         <section key={group.label}>
           {multipleTerms && (
             <div className="mb-3 flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-foreground">{group.label}</h3>
+              <h3 className="text-sm font-semibold text-foreground">{group.labelLong}</h3>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {group.items.length}
               </span>
