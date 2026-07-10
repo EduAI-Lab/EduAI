@@ -304,16 +304,12 @@ describe('CoursesStudentView', () => {
     expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
   })
 
-  it('filters courses by term bucket', () => {
+  it('filters courses via the shared search box', () => {
     wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE, SPRING_COURSE]} />)
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Term 1' }))
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.queryByText('COSC 301')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Term 2' }))
+    fireEvent.change(screen.getByLabelText('Search courses'), { target: { value: '301' } })
     expect(screen.queryByText('COSC 101')).not.toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
   })

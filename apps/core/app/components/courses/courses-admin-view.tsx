@@ -5,6 +5,7 @@ import {
   Button,
   Card, CardContent,
   CourseCard,
+  CourseListView,
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
   Input,
   Label,
@@ -191,47 +192,58 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
         </Dialog>
       </div>
 
-      {courses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No courses yet.</p>
-            <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-              <IconPlus className="w-4 h-4 mr-2" />
-              Create your first course
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course, index) => (
-            <CourseCard
-              key={course.id}
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-              colorIndex={index}
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-              actions={{
-                showPublish: true,
-                isPublished: course.isPublished,
-                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-                showEdit: true,
-                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                showDelete: true,
-                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <CourseListView<Course>
+        courses={courses}
+        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        getKey={(course) => course.id}
+        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getSearchText={(course) => `${course.name} ${course.code}`}
+        emptyState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses yet.</p>
+              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                <IconPlus className="w-4 h-4 mr-2" />
+                Create your first course
+              </Button>
+            </CardContent>
+          </Card>
+        }
+        noResultsState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses match your search.</p>
+            </CardContent>
+          </Card>
+        }
+        renderCard={(course, index) => (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
+            colorIndex={index}
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+            actions={{
+              showPublish: true,
+              isPublished: course.isPublished,
+              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+              showEdit: true,
+              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+              showDelete: true,
+              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+            }}
+          />
+        )}
+      />
 
       {/* Delete confirmation */}
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
