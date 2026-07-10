@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   CourseCard,
+  CourseListView,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -198,62 +199,74 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
         )}
       </div>
 
-      {courses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">You have no courses assigned yet.</p>
-            {canCreate ? (
-              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-                <IconPlus className="w-4 h-4 mr-2" />
-                Create first course
-              </Button>
-            ) : (
-              <PolicyTooltip flag="instructors.canCreateCourses">
-                <Button className="mt-4">
+      <CourseListView<Course>
+        courses={courses}
+        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        getKey={(course) => course.id}
+        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getSearchText={(course) => `${course.name} ${course.code}`}
+        emptyState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">You have no courses assigned yet.</p>
+              {canCreate ? (
+                <Button className="mt-4" onClick={() => setCreateOpen(true)}>
                   <IconPlus className="w-4 h-4 mr-2" />
                   Create first course
                 </Button>
-              </PolicyTooltip>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course, index) => (
-            <CourseCard
-              key={course.id}
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              colorIndex={index}
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-              actions={{
-                // §2 / issue #807: keep publish & delete visible but greyed-out
-                // when the instructor's policy flag is off, so the missing action
-                // reads as "admin turned this off", not a bug.
-                showPublish: true,
-                isPublished: course.isPublished,
-                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-                publishDisabled: !canPublish,
-                publishDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-                showEdit: true,
-                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                showDelete: true,
-                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-                deleteDisabled: !canDelete,
-                deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-              }}
-            />
-          ))}
-        </div>
-      )}
+              ) : (
+                <PolicyTooltip flag="instructors.canCreateCourses">
+                  <Button className="mt-4">
+                    <IconPlus className="w-4 h-4 mr-2" />
+                    Create first course
+                  </Button>
+                </PolicyTooltip>
+              )}
+            </CardContent>
+          </Card>
+        }
+        noResultsState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses match your search.</p>
+            </CardContent>
+          </Card>
+        }
+        renderCard={(course, index) => (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            colorIndex={index}
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+            actions={{
+              // §2 / issue #807: keep publish & delete visible but greyed-out
+              // when the instructor's policy flag is off, so the missing action
+              // reads as "admin turned this off", not a bug.
+              showPublish: true,
+              isPublished: course.isPublished,
+              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+              publishDisabled: !canPublish,
+              publishDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
+              showEdit: true,
+              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+              showDelete: true,
+              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+              deleteDisabled: !canDelete,
+              deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
+            }}
+          />
+        )}
+      />
+
 
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
         <DialogContent>
