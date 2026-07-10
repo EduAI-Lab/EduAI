@@ -1,33 +1,32 @@
 import { PageHeading } from '@eduai/ui';
 
-import { AdminSettingsPanel } from '~/components/admin/AdminSettingsPanel';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { SettingsView } from '~/components/settings/settings-view';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { requireClientUser } from '~/lib/client-auth';
-import { getApiKeySourceTag, loadAdminSettingsData } from '~/lib/admin-settings';
+import { canAccessAdminConsole } from '~/lib/rbac/permissions';
+import { loadAdminSettingsData, type AdminSettingsLoaderData } from '~/lib/admin-settings';
 import type { Route } from './+types/settings';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('ADMIN');
-  return loadAdminSettingsData();
+  // Any authenticated user may reach Settings now (Appearance + Accessibility
+  // are per-user); the Admin tab and its data stay gated to admins only.
+  const user = await requireClientUser();
+  const isAdmin = canAccessAdminConsole(user);
+  const adminData: AdminSettingsLoaderData | null = isAdmin ? await loadAdminSettingsData() : null;
+  return { isAdmin, adminData };
 }
 
 export default function SettingsPage({ loaderData }: Route.ComponentProps) {
-  const sourceTag = getApiKeySourceTag(loaderData.status);
+  useShellBreadcrumbs([{ label: 'Settings' }]);
 
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Settings' }]} />}>
-      <div className="space-y-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <PageHeading
-            heading="Settings"
-            subheading="Configure AI Tutor loop policy and EduAI API integration."
-          />
-          <div className={sourceTag.className}>{sourceTag.label}</div>
-        </div>
+    <div className="space-y-8">
+      <PageHeading
+        heading="Settings"
+        subheading="Manage your appearance and accessibility preferences."
+      />
 
-        <AdminSettingsPanel loaderData={loaderData} />
-      </div>
-    </AppShell>
+      <SettingsView isAdmin={loaderData.isAdmin} adminData={loaderData.adminData} />
+    </div>
   );
 }
