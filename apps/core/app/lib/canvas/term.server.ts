@@ -27,3 +27,51 @@ export function ubcTermFromDate(date: Date): string {
 
   return "W1";
 }
+
+const UBC_TERM_START_MONTH: Record<string, number> = {
+  W1: 9,
+  W2: 1,
+  S1: 5,
+  S2: 7,
+};
+
+function ubcTermStartDate(year: number, code: string): Date {
+  const month = UBC_TERM_START_MONTH[code] ?? 9;
+  return new Date(Date.UTC(year, month - 1, 1, 7, 0, 0));
+}
+
+/** Infers a UBC term start from patterns like "2026 Winter" or "2026 W1". */
+export function inferStartDateFromTermName(termName: string | null | undefined): Date | null {
+  if (!termName?.trim()) {
+    return null;
+  }
+
+  const yearMatch = termName.match(/\b(20\d{2})\b/);
+  if (!yearMatch) {
+    return null;
+  }
+
+  const year = Number(yearMatch[1]);
+  const lower = termName.toLowerCase();
+
+  if (/\bw1\b/.test(lower) || lower.includes("winter")) {
+    return ubcTermStartDate(year, "W1");
+  }
+  if (/\bw2\b/.test(lower)) {
+    return ubcTermStartDate(year, "W2");
+  }
+  if (/\bs1\b/.test(lower)) {
+    return ubcTermStartDate(year, "S1");
+  }
+  if (/\bs2\b/.test(lower)) {
+    return ubcTermStartDate(year, "S2");
+  }
+
+  return null;
+}
+
+/** Infers UBC term start from a term end date when Canvas omits `start_at`. */
+export function inferUbcTermStartFromEndDate(endDate: Date): Date {
+  const code = ubcTermFromDate(endDate);
+  return ubcTermStartDate(endDate.getUTCFullYear(), code);
+}
