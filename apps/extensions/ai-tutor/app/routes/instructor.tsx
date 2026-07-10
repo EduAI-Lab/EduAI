@@ -1,38 +1,37 @@
 /**
- * @file Instructor dashboard — the entry point for everything teaching-side.
+ * @file Instructor home — the entry point for everything teaching-side.
  *
  * Route: /instructor
  * Auth: INSTRUCTOR (the role string used for instructor accounts)
  * Loads: api.listCourses() — the backend already filters to courses this
  *        instructor has been assigned to, so no additional client filter.
- * Owns: course-card grid and the publish/unpublish toggle for each course.
+ * Owns: the shared-`CourseCard` grid and the publish/unpublish action per course.
  * Gotchas:
- *   - Publish toggle uses React 19's useOptimistic so the badge flips
- *     instantly; on server error the base state is restored, which causes
- *     the optimistic value to drop on the next render.
+ *   - Publish toggle uses React 19's useOptimistic so the card flips instantly;
+ *     on server error the base state is restored, which drops the optimistic
+ *     value on the next render.
  *   - Courses are created and synced from EduAI Core (source of truth); there
  *     is no in-app import — they appear here automatically.
- *   - Shares the role-scoped RoleDashboard shell with student/admin so all
- *     three dashboards render the same layout.
- * Related: routes/instructor.course.tsx (drilldown), components/PublishStatusButton
+ * Related: routes/instructor.course.tsx (drilldown)
  */
 import { useMemo, useOptimistic, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { IconBook2, IconChevronRight, IconSchool } from '@tabler/icons-react';
-import { Badge, Card, CardContent, CardFooter, CardHeader, CardTitle } from '@eduai/ui';
-import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
-import { PermissionGate } from '../components/rbac/PermissionGate';
-import { PublishStatusButton } from '../components/PublishStatusButton';
+import { Link } from 'react-router';
+import { IconSchool, IconSearch } from '@tabler/icons-react';
+import { Card, CardContent, CourseCard, Input, PageHeading, SegmentedControl } from '@eduai/ui';
+import {
+  accentForCourse,
+  courseCode,
+  courseTerm,
+  courseYear,
+  groupCoursesByTerm,
+} from '../lib/course-display';
 import { useAtPermissions } from '../hooks/useAtPermissions';
-import { useLocalUser } from '../hooks/useLocalUser';
 import api from '../lib/api';
 import { getEduAiAppUrl } from '../lib/extension-urls';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
-import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -44,101 +43,47 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   return { courses };
 }
 
-type InstructorCourseCardProps = {
-  course: Course;
-  onOpen: () => void;
-  canPublish: boolean;
-  pending: boolean;
-  onTogglePublish: () => void;
-};
-
-/** One tile in the teaching course grid — mirrors `StudentCourseCard`'s
- *  whole-card-clickable pattern so the two dashboards read as one product.
- *  The publish toggle is a real click target nested in the card, so its
- *  wrapper stops propagation rather than letting the card's own onClick
- *  fire a navigation underneath it. */
-function InstructorCourseCard({
-  course,
-  onOpen,
-  canPublish,
-  pending,
-  onTogglePublish,
-}: InstructorCourseCardProps) {
-  return (
-    <Card
-      hoverable
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onOpen();
-        }
-      }}
-      className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-    >
-      <CardHeader>
-        <div className="mb-1 flex items-start justify-between gap-3">
-          <div className="flex size-11 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-            <IconBook2 size={20} aria-hidden="true" />
-          </div>
-          {course.externalSource === 'EDUAI' && (
-            <Badge variant="secondary" size="sm">
-              EduAI
-            </Badge>
-          )}
-        </div>
-        <CardTitle className="line-clamp-2 transition-colors group-hover:text-primary">
-          {course.title}
-        </CardTitle>
-        {course.description ? (
-          <p className="line-clamp-2 text-sm text-muted-foreground">{course.description}</p>
-        ) : null}
-      </CardHeader>
-      <CardFooter className="justify-between">
-        <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-text">
-          View course
-          <IconChevronRight size={15} aria-hidden="true" />
-        </span>
-        <PermissionGate allow={canPublish}>
-          <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-            <PublishStatusButton
-              isPublished={course.isPublished}
-              pending={pending}
-              onClick={onTogglePublish}
-            />
-          </div>
-        </PermissionGate>
-      </CardFooter>
-    </Card>
-  );
-}
-
 /**
- * Instructor home. Shows owned courses and the publish toggle for each course.
- * Clicking a card navigates to the course drilldown route. Courses are created
- * and synced from EduAI Core, so there is no in-app import flow.
+ * Instructor home. Shows taught courses as shared `CourseCard`s with a publish
+ * action in each card's menu. Clicking a card navigates to the course drilldown.
+ * Courses are created and synced from EduAI Core, so there is no in-app import.
  */
+type StatusFilter = 'all' | 'published' | 'draft';
+
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'published', label: 'Published' },
+  { value: 'draft', label: 'Draft' },
+];
+
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
-  const navigate = useNavigate();
-  const { user } = useLocalUser();
   const perms = useAtPermissions();
   const [courses, setCourses] = useState<Course[]>(loaderData.courses ?? []);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const [oCourses, addCourseOpt] = useOptimistic(
     courses,
     (state, patch: (items: Course[]) => Course[]) => patch(state),
   );
-  // The teaching dashboard always shows course-scoped stats (Your courses /
-  // Published / Draft), including for admins who share this shell — the admin
-  // platform stats (Users / bug reports) live on the /admin Bug Reports page.
-  const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
+
+  const filteredCourses = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return oCourses.filter((course) => {
+      if (statusFilter === 'published' && !course.isPublished) return false;
+      if (statusFilter === 'draft' && course.isPublished) return false;
+      if (!query) return true;
+      const haystack = `${course.title} ${courseCode(course)}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [oCourses, search, statusFilter]);
+  const termGroups = useMemo(() => groupCoursesByTerm(filteredCourses), [filteredCourses]);
+  const multipleTerms = termGroups.length > 1;
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
 
-  // Optimistic publish toggle: addCourseOpt flips the badge instantly via
+  // Optimistic publish toggle: addCourseOpt flips the card instantly via
   // useOptimistic, then the server response confirms or the catch branch
   // restores the prior published state. Reverting the base state is what
   // causes useOptimistic to drop the now-stale optimistic value.
@@ -168,14 +113,9 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   };
 
   return (
-    <RoleDashboard
-      banner={
-        user ? <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} /> : null
-      }
-      heading="Courses"
-      subheading="Manage courses and publish content."
-      stats={stats}
-    >
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <PageHeading heading="Courses" subheading="Manage your courses and publish content." />
+
       {oCourses.length === 0 ? (
         <Card className="mx-auto max-w-lg">
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -198,22 +138,96 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {oCourses.map((c) => (
-            <InstructorCourseCard
-              key={c.id}
-              course={c}
-              onOpen={() => navigate(`/instructor/courses/${c.id}`)}
-              canPublish={perms.canPublishContent}
-              pending={publishingId === c.id}
-              onTogglePublish={() => {
-                if (publishingId === c.id) return;
-                togglePublish(c.id, c.isPublished);
-              }}
+        <div className="space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative max-w-sm sm:flex-1">
+              <IconSearch
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                type="search"
+                placeholder="Search courses by title or code"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                aria-label="Search courses"
+              />
+            </div>
+            <SegmentedControl
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              options={STATUS_OPTIONS}
+              ariaLabel="Filter by status"
+              size="sm"
             />
-          ))}
+          </div>
+
+          {filteredCourses.length === 0 ? (
+            <Card className="mx-auto max-w-lg">
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <IconSearch size={22} aria-hidden="true" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-semibold text-foreground">No courses match</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Try a different search term or status filter.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-8">
+              {termGroups.map((group) => (
+                <section key={group.label}>
+                  {multipleTerms ? (
+                    <div className="mb-3 flex items-center gap-3">
+                      <h3 className="text-sm font-semibold text-foreground">{group.labelLong}</h3>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                        {group.items.length}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {group.items.map((c) => (
+                      <CourseCard
+                        key={c.id}
+                        id={String(c.id)}
+                        code={courseCode(c)}
+                        name={c.title}
+                        description={c.description}
+                        term={courseTerm(c)}
+                        year={courseYear(c)}
+                        isPublished={c.isPublished}
+                        accentColor={accentForCourse(c)}
+                        extraBadges={c.externalSource === 'EDUAI' ? ['EduAI'] : []}
+                        href={`/instructor/courses/${c.id}`}
+                        LinkComponent={Link}
+                        actions={
+                          perms.canPublishContent
+                            ? {
+                                showPublish: true,
+                                isPublished: c.isPublished,
+                                onPublishToggle: () => {
+                                  if (publishingId !== c.id) togglePublish(c.id, c.isPublished);
+                                },
+                                publishDisabled: publishingId === c.id,
+                                publishDisabledReason:
+                                  publishingId === c.id ? 'Updating…' : undefined,
+                              }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </div>
       )}
-    </RoleDashboard>
+    </div>
   );
 }
