@@ -84,5 +84,8 @@ export function getNavSecondaryForUser(user: NavUser): NavItem[] {
     items.push(...ADMIN_SECONDARY_NAV)
   }
 
+  // In-app user guide — available to everyone (issue #764).
+  items.push({ key: 'help', title: 'Help & guide', url: '/help' })
+
   return items
 }
