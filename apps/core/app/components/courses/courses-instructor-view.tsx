@@ -23,6 +23,7 @@ import {
   SelectValue,
   Textarea,
 } from '@eduai/ui'
+import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -45,7 +46,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [selectedDept, setSelectedDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
   const { options: departmentOptions, loading: deptLoading } = useDisciplines()
 
   const { isEnabled } = usePolicyGate()
@@ -84,7 +85,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
       instructorUserIds: [],
     })
     setSelectedDept('')
-    setSelectedTerm('Fall')
+    setSelectedTerm(termFromMonth(new Date().getMonth()))
     setCreateOpen(false)
   }
 
@@ -172,10 +173,9 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                     <Select value={selectedTerm} onValueChange={setSelectedTerm}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Fall">Fall</SelectItem>
-                        <SelectItem value="Spring">Spring</SelectItem>
-                        <SelectItem value="Summer">Summer</SelectItem>
-                        <SelectItem value="Winter">Winter</SelectItem>
+                        {TERM_CODES.map((code) => (
+                          <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

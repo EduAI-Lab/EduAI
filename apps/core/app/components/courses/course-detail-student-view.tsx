@@ -18,6 +18,7 @@ import {
   Avatar,
   courseThemeVars,
 } from '@eduai/ui'
+import { termLabel } from '@eduai/ui'
 import {
   CourseMaterialsUpload,
   type CourseMaterial,
@@ -159,7 +160,7 @@ export function CourseDetailStudentView({
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Term</p>
-                    <p className="text-sm text-foreground">{course.term} {course.year}</p>
+                    <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
                   </div>
                   {course.department && (
                     <div>
