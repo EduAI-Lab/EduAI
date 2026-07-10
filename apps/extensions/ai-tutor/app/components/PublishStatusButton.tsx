@@ -1,6 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Button } from '@eduai/ui';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
+import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 
 type PublishStatusButtonProps = {
@@ -11,6 +10,12 @@ type PublishStatusButtonProps = {
   className?: string;
 };
 
+/**
+ * DS `Button` recolored with the same success/muted tokens `StatusBadge`
+ * uses, so "Published" reads consistently with the rest of the app instead
+ * of one-off emerald/gray hex values. Stays a real `Button` (not a badge)
+ * because it's a click target that toggles publish state.
+ */
 export function PublishStatusButton({
   isPublished,
   pending = false,
@@ -32,14 +37,15 @@ export function PublishStatusButton({
   const button = (
     <Button
       type="button"
+      variant="outline"
       size="sm"
       aria-disabled={blocked}
       className={cn(
-        'px-3 py-1.5 text-xs font-semibold transition',
+        'font-semibold',
         isPublished
-          ? 'bg-emerald-400 text-emerald-900 hover:bg-emerald-500 dark:bg-emerald-500/80 dark:text-white dark:hover:bg-emerald-500/70'
-          : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700',
-        blocked && 'cursor-not-allowed opacity-60 hover:bg-gray-300/80 dark:hover:bg-gray-700/80',
+          ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)] hover:brightness-95'
+          : 'bg-muted text-muted-foreground hover:bg-muted/70',
+        blocked && 'cursor-not-allowed opacity-60 hover:brightness-100',
         className,
       )}
       onClick={handleClick}

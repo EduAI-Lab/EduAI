@@ -31,8 +31,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Button, Input } from '@eduai/ui';
-import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
+import { Alert, AlertDescription, Badge, Button, Input, RoleBadge, SegmentedControl } from '@eduai/ui';
+import { IconAlertCircle, IconFilter, IconSearch, IconX } from '@tabler/icons-react';
 import {
   Card,
   CardContent,
@@ -98,6 +98,14 @@ const STATUS_LABELS: Record<BugReportStatus, string> = {
   'in progress': 'In progress',
   resolved: 'Resolved',
 };
+// Traffic-light triage semantics: unhandled needs attention (red), in progress
+// is underway (amber), resolved is done (green). Drives the Badge rendered
+// inside the status Select's trigger.
+const STATUS_BADGE_VARIANT: Record<BugReportStatus, 'destructive' | 'warning' | 'success'> = {
+  unhandled: 'destructive',
+  'in progress': 'warning',
+  resolved: 'success',
+};
 
 const BUG_TYPE_LABELS: Record<BugReportType, string> = {
   UI_DISPLAY: 'UI / display',
@@ -109,6 +117,13 @@ const BUG_TYPE_LABELS: Record<BugReportType, string> = {
 };
 const CONSOLE_LEVELS = ['all', 'log', 'warn', 'error'] as const;
 const NETWORK_TABS = ['meta', 'request', 'response', 'headers'] as const;
+const CONSOLE_LEVEL_OPTIONS = CONSOLE_LEVELS.map((level) => ({ value: level, label: level }));
+const NETWORK_TAB_OPTIONS = NETWORK_TABS.map((tab) => ({ value: tab, label: tab }));
+const CONSOLE_LEVEL_BADGE_VARIANT: Record<string, 'destructive' | 'warning' | 'muted'> = {
+  error: 'destructive',
+  warn: 'warning',
+  log: 'muted',
+};
 const COPY_FEEDBACK_DURATION_MS = 2_000;
 
 function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
@@ -186,7 +201,11 @@ function StatusSelect({
       disabled={disabled}
     >
       <SelectTrigger className="h-9 w-[140px]" aria-label={`Update status for report ${reportId}`}>
-        <SelectValue>{STATUS_LABELS[status]}</SelectValue>
+        <SelectValue>
+          <Badge variant={STATUS_BADGE_VARIANT[status]} size="sm">
+            {STATUS_LABELS[status]}
+          </Badge>
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {STATUS_OPTIONS.map((option) => (
@@ -422,22 +441,13 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {CONSOLE_LEVELS.map((level) => (
-          <button
-            key={level}
-            type="button"
-            onClick={() => setLevelFilter(level)}
-            className={`rounded-md border px-2 py-1 text-xs ${
-              levelFilter === level
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border bg-background text-muted-foreground'
-            }`}
-          >
-            {level}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        size="sm"
+        ariaLabel="Filter console logs by level"
+        value={levelFilter}
+        onValueChange={setLevelFilter}
+        options={CONSOLE_LEVEL_OPTIONS}
+      />
       <div className="max-h-[55vh] space-y-3 overflow-auto">
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-border/70 bg-background/60 p-4 text-sm text-muted-foreground">
@@ -447,15 +457,16 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
           filtered.map((entry, index) => {
             const hasStack = typeof entry.stack === 'string' && entry.stack.length > 0;
             const expanded = expandedStacks[index] ?? false;
+            const level = (entry.level ?? 'log').toLowerCase();
             return (
               <div
                 key={`${entry.timestamp ?? 'ts'}-${index}`}
                 className="rounded-xl border border-border/70 bg-background/60 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium uppercase text-xs text-muted-foreground">
+                  <Badge variant={CONSOLE_LEVEL_BADGE_VARIANT[level] ?? 'muted'} size="sm" className="uppercase">
                     {entry.level ?? 'log'}
-                  </span>
+                  </Badge>
                   <span className="text-xs text-muted-foreground">{entry.timestamp ?? '-'}</span>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap wrap-break-word text-foreground">
@@ -463,18 +474,20 @@ function ConsoleViewer({ report }: { report: AdminBugReportRow }) {
                 </p>
                 {hasStack ? (
                   <div className="mt-3 space-y-2">
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-xs"
                       onClick={() =>
                         setExpandedStacks((current) => ({
                           ...current,
                           [index]: !expanded,
                         }))
                       }
-                      className="text-xs text-primary underline underline-offset-2"
                     >
                       {expanded ? 'Hide stack trace' : 'Show stack trace'}
-                    </button>
+                    </Button>
                     {expanded ? (
                       <pre className="overflow-auto rounded-md border border-border bg-black/5 p-3 text-xs whitespace-pre-wrap wrap-break-word">
                         {entry.stack}
@@ -511,36 +524,31 @@ function NetworkViewer({ report }: { report: AdminBugReportRow }) {
           <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Request
           </label>
-          <select
-            className="input-field text-sm"
-            value={selectedIndex}
-            onChange={(event) => {
-              setSelectedIndex(Number(event.target.value) || 0);
+          <Select
+            value={String(selectedIndex)}
+            onValueChange={(value) => {
+              setSelectedIndex(Number(value) || 0);
               setTab('meta');
             }}
           >
-            {entries.map((item, index) => (
-              <option key={`${item.method ?? 'GET'}-${index}`} value={index}>
-                {(item.method ?? 'GET').toUpperCase()} {item.url ?? 'Unknown URL'}
-              </option>
-            ))}
-          </select>
-          <div className="flex flex-wrap items-center gap-2">
-            {NETWORK_TABS.map((itemTab) => (
-              <button
-                key={itemTab}
-                type="button"
-                onClick={() => setTab(itemTab)}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  tab === itemTab
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border bg-background text-muted-foreground'
-                }`}
-              >
-                {itemTab}
-              </button>
-            ))}
-          </div>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {entries.map((item, index) => (
+                <SelectItem key={`${item.method ?? 'GET'}-${index}`} value={String(index)}>
+                  {(item.method ?? 'GET').toUpperCase()} {item.url ?? 'Unknown URL'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Network detail view"
+            value={tab}
+            onValueChange={setTab}
+            options={NETWORK_TAB_OPTIONS}
+          />
         </div>
       ) : null}
 
@@ -728,9 +736,10 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       </CardHeader>
       <CardContent className="space-y-4">
       {error ? (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <IconAlertCircle />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
 
       {/* Filter bar */}
@@ -815,18 +824,18 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/80">
+      <div className="overflow-x-auto">
         <Table className="min-w-[1160px] table-fixed border-collapse">
           <colgroup>
             <col className="w-[150px]" />
             <col className="w-[130px]" />
             <col className="w-[24%]" />
             <col className="w-[14%]" />
-            <col className="w-[80px]" />
+            <col className="w-[100px]" />
             <col className="w-[140px]" />
             <col className="w-[14%]" />
             <col className="w-[10%]" />
-            <col className="w-[200px]" />
+            <col className="w-[180px]" />
           </colgroup>
           <TableHeader className="bg-muted/30">
             <TableRow>
@@ -941,8 +950,12 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
-                    <span className="block truncate">{getReporterRole(report) ?? '-'}</span>
+                  <TableCell className="overflow-hidden px-3 py-3">
+                    {getReporterRole(report) ? (
+                      <RoleBadge role={getReporterRole(report)!} />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="overflow-hidden px-3 py-3 text-sm text-muted-foreground">
                     <span className="block truncate">{formatDateTime(report.createdAt)}</span>

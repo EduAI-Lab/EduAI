@@ -22,7 +22,7 @@ import {
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from '~/components/ui/input-group';
+} from '@eduai/ui';
 import {
   Select,
   SelectContent,
@@ -34,15 +34,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import type { ChatStatus, FileUIPart } from 'ai';
 import {
-  ImageIcon,
-  Loader2Icon,
-  MicIcon,
-  PaperclipIcon,
-  PlusIcon,
-  SendIcon,
-  SquareIcon,
-  XIcon,
-} from 'lucide-react';
+  IconLoader2,
+  IconMicrophone,
+  IconPaperclip,
+  IconPhoto,
+  IconPlus,
+  IconSend,
+  IconSquare,
+  IconX,
+} from '@tabler/icons-react';
 import { nanoid } from 'nanoid';
 import {
   type ChangeEvent,
@@ -269,7 +269,7 @@ export function PromptInputAttachment({ data, className, ...props }: PromptInput
         />
       ) : (
         <div className="flex size-full max-w-full cursor-pointer items-center justify-start gap-2 overflow-hidden px-2 text-muted-foreground">
-          <PaperclipIcon className="size-4 shrink-0" />
+          <IconPaperclip className="size-4 shrink-0" />
           <Tooltip delayDuration={400}>
             <TooltipTrigger className="min-w-0 flex-1">
               <h4 className="w-full truncate text-left font-medium text-sm">
@@ -295,7 +295,7 @@ export function PromptInputAttachment({ data, className, ...props }: PromptInput
         type="button"
         variant="outline"
       >
-        <XIcon className="h-3 w-3" />
+        <IconX className="h-3 w-3" />
       </Button>
     </div>
   );
@@ -386,7 +386,7 @@ export const PromptInputActionAddAttachments = ({
         attachments.openFileDialog();
       }}
     >
-      <ImageIcon className="mr-2 size-4" /> {label}
+      <IconPhoto className="mr-2 size-4" /> {label}
     </DropdownMenuItem>
   );
 };
@@ -879,7 +879,7 @@ export const PromptInputActionMenuTrigger = ({
 }: PromptInputActionMenuTriggerProps) => (
   <DropdownMenuTrigger asChild>
     <PromptInputButton className={className} {...props}>
-      {children ?? <PlusIcon className="size-4" />}
+      {children ?? <IconPlus className="size-4" />}
     </PromptInputButton>
   </DropdownMenuTrigger>
 );
@@ -913,14 +913,14 @@ export const PromptInputSubmit = ({
   children,
   ...props
 }: PromptInputSubmitProps) => {
-  let Icon = <SendIcon className="size-4" />;
+  let Icon = <IconSend className="size-4" />;
 
   if (status === 'submitted') {
-    Icon = <Loader2Icon className="size-4 animate-spin" />;
+    Icon = <IconLoader2 className="size-4 animate-spin" />;
   } else if (status === 'streaming') {
-    Icon = <SquareIcon className="size-4" />;
+    Icon = <IconSquare className="size-4" />;
   } else if (status === 'error') {
-    Icon = <XIcon className="size-4" />;
+    Icon = <IconX className="size-4" />;
   }
 
   return (
@@ -1082,7 +1082,7 @@ export const PromptInputSpeechButton = ({
       onClick={toggleListening}
       {...props}
     >
-      <MicIcon className="size-4" />
+      <IconMicrophone className="size-4" />
     </PromptInputButton>
   );
 };

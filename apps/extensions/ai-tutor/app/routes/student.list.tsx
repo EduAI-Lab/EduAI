@@ -22,6 +22,32 @@
  *          components/bug-report/useBugReport
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconCircleCheck,
+  IconInfoCircle,
+  IconListCheck,
+  IconLoader2,
+  IconSparkles,
+} from '@tabler/icons-react';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  PageHeading,
+} from '@eduai/ui';
 import { ProgressBar } from '../components/ProgressBar';
 import StudentActivityFeedbackCard from '../components/StudentActivityFeedbackCard';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
@@ -31,8 +57,8 @@ import type { Route } from './+types/student.list';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { useBugReport } from '~/components/bug-report/useBugReport';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { cn } from '~/lib/utils';
 
 type StudentFeedbackState = {
   rating: number | null;
@@ -66,6 +92,14 @@ function createFeedbackState(): StudentFeedbackState {
     error: null,
   };
 }
+
+/** Options for the pre-chat knowledge-level picker. Module-scoped (rather than
+ * declared inline in JSX) since the array is static across every render. */
+const KNOWLEDGE_LEVELS = [
+  { value: 'beginner', label: 'Beginner', desc: "I'm new to this" },
+  { value: 'intermediate', label: 'Intermediate', desc: 'Some experience' },
+  { value: 'advanced', label: 'Advanced', desc: 'Quite experienced' },
+];
 
 /**
  * Resolves the lesson, its activities, and the parent module/course needed
@@ -393,92 +427,91 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
     { label: lesson?.title || 'Lesson' },
   ];
 
+  useShellBreadcrumbs(breadcrumbItems);
+
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
-      <div className="space-y-6">
-        {orderedActivities.length > 0 && (
-          <div className="mb-8 animate-fade-up">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5" data-tour="student-lesson-progress">
-              <div className="flex items-center gap-4 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"
-                    />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h1 className="text-xl font-bold text-foreground">
-                    {lesson?.title || 'Lesson'}
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    Question {idx + 1} of {orderedActivities.length}
-                  </p>
-                </div>
-              </div>
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <PageHeading
+        heading={lesson?.title || 'Lesson'}
+        subheading={
+          orderedActivities.length > 0
+            ? `Question ${idx + 1} of ${orderedActivities.length}`
+            : undefined
+        }
+      />
+
+      {orderedActivities.length > 0 && (
+        <Card data-tour="student-lesson-progress">
+          <CardContent className="flex items-center gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <IconListCheck size={20} aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
               <ProgressBar
                 completed={orderedActivities.filter((a) => a.completionStatus === 'correct').length}
                 total={orderedActivities.length}
                 size="md"
-                showLabel={false}
+                showLabel
               />
             </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      )}
 
-        <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
-          {/* Main content area */}
-          <div className="space-y-6 animate-fade-up delay-150">
-            {/* Question card */}
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6" data-tour="student-question-card">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="tag tag-primary">Question</span>
+      <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
+        {/* Main content area */}
+        <div className="space-y-6">
+          {/* Question card */}
+          <Card data-tour="student-question-card">
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" size="sm">
+                  Question
+                </Badge>
                 {activity?.mainTopic && (
-                  <span className="tag tag-accent">{activity.mainTopic.name}</span>
+                  <Badge variant="outline" size="sm">
+                    {activity.mainTopic.name}
+                  </Badge>
                 )}
               </div>
-              <div className="space-y-3">
-                {questionChunks.map((line, index) => (
-                  <p key={index} className="text-lg text-foreground leading-relaxed">
-                    {line}
-                  </p>
+            </CardHeader>
+            <CardContent className="reading-surface space-y-3">
+              {questionChunks.map((line, index) => (
+                <p key={index} className="text-lg leading-relaxed text-foreground">
+                  {line}
+                </p>
+              ))}
+            </CardContent>
+            {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
+              <CardFooter className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Also covers:</span>
+                {activity.secondaryTopics.map((topic) => (
+                  <span key={topic.id} className="text-xs text-muted-foreground">
+                    {topic.name}
+                  </span>
                 ))}
-              </div>
-              {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-border flex flex-wrap gap-2">
-                  <span className="text-xs text-muted-foreground">Also covers:</span>
-                  {activity.secondaryTopics.map((topic) => (
-                    <span key={topic.id} className="text-xs text-muted-foreground">
-                      {topic.name}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+              </CardFooter>
+            )}
+          </Card>
 
-            {/* Answer card */}
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5" data-tour="student-answer-card">
-              <h2 className="text-lg font-bold text-foreground">Your Answer</h2>
-
+          {/* Answer card */}
+          <Card data-tour="student-answer-card">
+            <CardHeader>
+              <CardTitle>Your answer</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
               {activity?.type === 'MCQ' ? (
                 Array.isArray(activity?.options?.choices) ? (
                   <div className="space-y-3">
                     {activity.options.choices.map((choice, i) => (
                       <label
                         key={i}
-                        className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                        className={cn(
+                          'flex cursor-pointer items-start gap-4 rounded-[var(--radius-lg)] border-2 p-4 transition-colors',
                           mcq === i
-                            ? 'border-primary bg-primary/5 shadow-sm'
-                            : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30'
-                        }`}
+                            ? 'border-primary bg-primary/5 shadow-[var(--shadow-2xs)]'
+                            : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
+                        )}
                       >
                         <input
                           type="radio"
@@ -488,191 +521,114 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                           onChange={() => setMcq(i)}
                         />
                         <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                          className={cn(
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-sm font-bold',
                             mcq === i
                               ? 'bg-primary text-primary-foreground'
-                              : 'bg-secondary text-muted-foreground'
-                          }`}
+                              : 'bg-secondary text-muted-foreground',
+                          )}
                         >
                           {String.fromCharCode(65 + i)}
                         </div>
-                        <span className="text-foreground pt-1">{choice}</span>
+                        <span className="pt-1 text-foreground">{choice}</span>
                       </label>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-sm text-destructive bg-destructive/10 rounded-xl p-4">
+                  <div className="rounded-[var(--radius-lg)] bg-destructive/10 p-4 text-sm text-destructive">
                     This question's options are misconfigured.
                   </div>
                 )
               ) : (
-                <input
+                <Input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Type your answer..."
-                  className="input-field text-lg"
+                  className="text-lg"
                 />
               )}
 
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2">
-                <button
+                <Button
+                  variant="primary"
+                  size="lg"
                   onClick={submit}
                   disabled={
                     submitting || (activity?.type === 'MCQ' ? mcq === null : text.trim() === '')
                   }
-                  className="btn-primary"
                 >
                   {submitting ? (
                     <>
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
+                      <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
                       Submitting...
                     </>
                   ) : (
                     <>
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                      Submit Answer
+                      <IconCircleCheck className="mr-1 h-4 w-4" aria-hidden="true" />
+                      Submit answer
                     </>
                   )}
-                </button>
+                </Button>
 
-                <button
+                <Button
+                  variant="secondary"
+                  size="lg"
                   onClick={handleGuideMe}
                   disabled={wasCorrect || !currentKnowledgeLevel || !isUserReady}
-                  className="btn-secondary"
                   data-tour="student-guide-button"
                 >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-                    />
-                  </svg>
+                  <IconSparkles className="mr-1 h-4 w-4" aria-hidden="true" />
                   Guide me
-                </button>
+                </Button>
 
                 <div className="flex-1" />
 
                 <div className="flex items-center gap-2">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={!canPrev}
                     onClick={() => {
                       setIdx((i) => Math.max(0, i - 1));
                       resetForNavigation();
                     }}
-                    className="btn-ghost"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
-                      />
-                    </svg>
+                    <IconChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
                     Prev
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={!canNext}
                     onClick={() => {
                       setIdx((i) => Math.min(orderedActivities.length - 1, i + 1));
                       resetForNavigation();
                     }}
-                    className="btn-ghost"
                   >
                     Next
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                      />
-                    </svg>
-                  </button>
+                    <IconChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
+                  </Button>
                 </div>
               </div>
 
               {/* Result feedback */}
               {result && (
                 <div
-                  className={`rounded-xl p-4 flex items-center gap-3 animate-scale-in ${
+                  className={cn(
+                    'flex items-center gap-3 rounded-[var(--radius-lg)] p-4',
                     wasCorrect
-                      ? 'bg-accent/20 border border-accent text-accent-foreground'
-                      : 'bg-secondary border border-border text-foreground'
-                  }`}
+                      ? 'border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]'
+                      : 'border border-border bg-secondary text-foreground',
+                  )}
                 >
                   {wasCorrect ? (
-                    <svg
-                      className="w-5 h-5 text-accent-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
+                    <IconCircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
                   ) : (
-                    <svg
-                      className="w-5 h-5 text-muted-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-                      />
-                    </svg>
+                    <IconInfoCircle
+                      className="h-5 w-5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
                   )}
                   <span className="font-medium">{result}</span>
                 </div>
@@ -694,100 +650,77 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                     onDismiss={handleDismissFeedback}
                   />
                 )}
-            </div>
-          </div>
-
-          {/* AI Chat sidebar */}
-          <div className="animate-slide-in-right">
-            <StudentAiChat
-              key={activity?.id ?? 'none'}
-              ref={chatRef}
-              activity={activity}
-              isUserReady={isUserReady}
-              knowledgeLevel={currentKnowledgeLevel}
-              onRequestKnowledgeLevel={handleRequestKnowledgeLevel}
-              onAdjustKnowledgeLevel={handleAdjustKnowledgeLevel}
-              topicOptions={topicOptions}
-              currentTopicId={currentTopicId}
-              onSelectTopic={handleTopicSelect}
-              studentAnswer={studentAnswer}
-            />
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Pre-Chat Modal */}
-        {showKnowledgeModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="max-w-lg w-full rounded-lg border bg-card text-card-foreground shadow-sm p-8 space-y-6 animate-scale-in">
-              <div>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-4">
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-                    />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-bold text-foreground">
-                  Before we start...
-                </h2>
-                <p className="text-muted-foreground mt-1">
-                  Help me personalize your learning experience!
-                </p>
-              </div>
+        {/* AI Chat sidebar */}
+        <StudentAiChat
+          key={activity?.id ?? 'none'}
+          ref={chatRef}
+          activity={activity}
+          isUserReady={isUserReady}
+          knowledgeLevel={currentKnowledgeLevel}
+          onRequestKnowledgeLevel={handleRequestKnowledgeLevel}
+          onAdjustKnowledgeLevel={handleAdjustKnowledgeLevel}
+          topicOptions={topicOptions}
+          currentTopicId={currentTopicId}
+          onSelectTopic={handleTopicSelect}
+          studentAnswer={studentAnswer}
+        />
+      </div>
 
-              {/* Knowledge Level */}
-              <div className="space-y-3">
-                <label className="block text-sm font-semibold text-foreground">
-                  What's your knowledge level on this topic?
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { value: 'beginner', label: 'Beginner', desc: "I'm new to this" },
-                    { value: 'intermediate', label: 'Intermediate', desc: 'Some experience' },
-                    { value: 'advanced', label: 'Advanced', desc: 'Quite experienced' },
-                  ].map((level) => (
-                    <button
-                      key={level.value}
-                      type="button"
-                      onClick={() => setTempKnowledgeLevel(level.value)}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
-                        tempKnowledgeLevel === level.value
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-muted-foreground/30'
-                      }`}
-                    >
-                      <div className="font-semibold text-foreground text-sm">{level.label}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{level.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {/* Pre-Chat Modal */}
+      <Dialog
+        open={showKnowledgeModal}
+        onOpenChange={(open) => {
+          if (!open) handleCancelKnowledge();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <IconSparkles size={24} aria-hidden="true" />
+            </div>
+            <DialogTitle>Before we start</DialogTitle>
+            <DialogDescription>Help me personalize your learning experience.</DialogDescription>
+          </DialogHeader>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
-                <button onClick={handleCancelKnowledge} className="btn-secondary flex-1">
-                  Cancel
-                </button>
+          {/* Knowledge Level */}
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-foreground">
+              What&apos;s your knowledge level on this topic?
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {KNOWLEDGE_LEVELS.map((level) => (
                 <button
-                  onClick={handleConfirmKnowledge}
-                  disabled={!tempKnowledgeLevel}
-                  className="btn-primary flex-1"
+                  key={level.value}
+                  type="button"
+                  onClick={() => setTempKnowledgeLevel(level.value)}
+                  className={cn(
+                    'rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors',
+                    tempKnowledgeLevel === level.value
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-muted-foreground/30',
+                  )}
                 >
-                  Start Guidance
+                  <div className="text-sm font-semibold text-foreground">{level.label}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{level.desc}</div>
                 </button>
-              </div>
+              ))}
             </div>
           </div>
-        )}
-      </div>
-    </AppShell>
+
+          <DialogFooter>
+            <Button variant="secondary" onClick={handleCancelKnowledge}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleConfirmKnowledge} disabled={!tempKnowledgeLevel}>
+              Start guidance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

@@ -1,4 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  MeterBar,
+  StatCard,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@eduai/ui';
 import api from '~/lib/api';
 import type { StudentMetricRow } from '~/lib/types';
 
@@ -30,54 +45,93 @@ export function CourseStudentMetricsPanel({ courseId }: CourseStudentMetricsPane
     };
   }, [courseId]);
 
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, row) => ({
+          submissions: acc.submissions + row.submissionCount,
+          correct: acc.correct + row.correctSubmissionCount,
+          incorrect: acc.incorrect + row.incorrectSubmissionCount,
+          helpRequests: acc.helpRequests + row.helpRequestCount,
+        }),
+        { submissions: 0, correct: 0, incorrect: 0, helpRequests: 0 },
+      ),
+    [rows],
+  );
+
   if (loading) {
     return (
-      <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-        Loading student metrics…
-      </div>
+      <Card data-testid="course-metrics-panel">
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Loading student metrics…
+        </CardContent>
+      </Card>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border bg-card p-6 text-sm text-destructive">{error}</div>
+      <Card data-testid="course-metrics-panel">
+        <CardContent className="py-10 text-center text-sm text-destructive">{error}</CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-4 rounded-lg border bg-card p-6" data-testid="course-metrics-panel">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">Student metrics</h2>
-        <p className="text-sm text-muted-foreground">Per-student activity performance.</p>
+    <div className="space-y-4" data-testid="course-metrics-panel">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Students" value={rows.length} />
+        <StatCard label="Submissions" value={totals.submissions} />
+        <StatCard label="Correct" value={totals.correct} />
+        <StatCard label="Help requests" value={totals.helpRequests} />
       </div>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No metrics recorded yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="px-2 py-2 font-medium">Student</th>
-                <th className="px-2 py-2 font-medium">Submissions</th>
-                <th className="px-2 py-2 font-medium">Correct</th>
-                <th className="px-2 py-2 font-medium">Incorrect</th>
-                <th className="px-2 py-2 font-medium">Help requests</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.userId} className="border-b border-border/60">
-                  <td className="px-2 py-2 font-mono text-xs">{row.userId}</td>
-                  <td className="px-2 py-2">{row.submissionCount}</td>
-                  <td className="px-2 py-2">{row.correctSubmissionCount}</td>
-                  <td className="px-2 py-2">{row.incorrectSubmissionCount}</td>
-                  <td className="px-2 py-2">{row.helpRequestCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Student metrics</CardTitle>
+          <CardDescription>Per-student activity performance.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No metrics recorded yet.</p>
+          ) : (
+            <>
+              {totals.correct + totals.incorrect > 0 && (
+                <div className="max-w-sm">
+                  <MeterBar
+                    label="Overall accuracy"
+                    value={totals.correct}
+                    total={totals.correct + totals.incorrect}
+                    color="var(--color-success-500)"
+                  />
+                </div>
+              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Submissions</TableHead>
+                    <TableHead>Correct</TableHead>
+                    <TableHead>Incorrect</TableHead>
+                    <TableHead>Help requests</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.userId}>
+                      <TableCell className="font-mono text-xs">{row.userId}</TableCell>
+                      <TableCell>{row.submissionCount}</TableCell>
+                      <TableCell>{row.correctSubmissionCount}</TableCell>
+                      <TableCell>{row.incorrectSubmissionCount}</TableCell>
+                      <TableCell>{row.helpRequestCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

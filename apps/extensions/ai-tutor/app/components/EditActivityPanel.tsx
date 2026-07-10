@@ -1,5 +1,7 @@
 import type { FormEvent } from 'react';
 import { useMemo, useState } from 'react';
+import { Button, Input, Label, SegmentedControl, Textarea } from '@eduai/ui';
+import { cn } from '~/lib/utils';
 import type { Activity } from '../lib/types';
 import {
   activityToFormValues,
@@ -7,6 +9,11 @@ import {
   ensureChoiceSlots,
   type ActivityFormValues,
 } from '../lib/activityForm';
+
+const TYPE_OPTIONS = [
+  { value: 'MCQ' as const, label: 'MCQ' },
+  { value: 'SHORT_TEXT' as const, label: 'Short answer' },
+];
 
 type EditActivityPanelProps = {
   activity: Activity;
@@ -61,76 +68,49 @@ export default function EditActivityPanel({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-3"
+      className="space-y-4 rounded-[var(--radius-lg)] border border-primary/30 bg-primary/5 p-4"
     >
       <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">
-          Internal title (optional)
-        </label>
-        <input
+        <Label htmlFor={`activity-${activity.id}-title`}>Internal title (optional)</Label>
+        <Input
+          id={`activity-${activity.id}-title`}
           value={values.title}
           onChange={(event) => setValues((prev) => ({ ...prev, title: event.target.value }))}
           placeholder="Optional internal label"
-          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">Question prompt</label>
-        <textarea
+        <Label htmlFor={`activity-${activity.id}-question`}>Question prompt</Label>
+        <Textarea
+          id={`activity-${activity.id}-question`}
           value={values.question}
           onChange={(event) => setValues((prev) => ({ ...prev, question: event.target.value }))}
           rows={4}
-          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
-      <div className="flex gap-2 text-sm">
-        <label
-          className={`px-3 py-1 rounded-full cursor-pointer transition ${
-            values.type === 'MCQ'
-              ? 'bg-primary/20 text-primary font-medium'
-              : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-          }`}
-        >
-          <input
-            type="radio"
-            name="edit-type"
-            className="sr-only"
-            checked={values.type === 'MCQ'}
-            onChange={() =>
-              setValues((prev) => ({
-                ...prev,
-                type: 'MCQ',
-                choices: ensureChoiceSlots(prev.choices),
-                correctIndex: 0,
-              }))
-            }
-          />
-          MCQ
-        </label>
-        <label
-          className={`px-3 py-1 rounded-full cursor-pointer transition ${
-            values.type === 'SHORT_TEXT'
-              ? 'bg-primary/20 text-primary font-medium'
-              : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-          }`}
-        >
-          <input
-            type="radio"
-            name="edit-type"
-            className="sr-only"
-            checked={values.type === 'SHORT_TEXT'}
-            onChange={() =>
-              setValues((prev) => ({
-                ...prev,
-                type: 'SHORT_TEXT',
-              }))
-            }
-          />
-          Short answer
-        </label>
-      </div>
+      <SegmentedControl
+        value={values.type}
+        onValueChange={(nextType) => {
+          // Guard against redundant transitions: the previous native-radio
+          // markup never re-fired onChange for the already-selected option,
+          // and the MCQ branch has side effects (choice-slot padding +
+          // resetting correctIndex) that must not run on a no-op reselect.
+          if (nextType === values.type) return;
+          if (nextType === 'MCQ') {
+            setValues((prev) => ({
+              ...prev,
+              type: 'MCQ',
+              choices: ensureChoiceSlots(prev.choices),
+              correctIndex: 0,
+            }));
+          } else {
+            setValues((prev) => ({ ...prev, type: 'SHORT_TEXT' }));
+          }
+        }}
+        options={TYPE_OPTIONS}
+      />
 
       {values.type === 'MCQ' ? (
         <div className="space-y-3">
@@ -141,15 +121,16 @@ export default function EditActivityPanel({
               return (
                 <label
                   key={index}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition focus-within:outline-none bg-background ${
+                  className={cn(
+                    'flex items-center gap-3 rounded-[var(--radius-lg)] border bg-background px-3 py-2 transition cursor-pointer focus-within:outline-none',
                     isSelected
-                      ? 'border-accent-foreground/50 bg-accent/30'
-                      : 'border-border hover:border-primary/30'
-                  }`}
+                      ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]/40'
+                      : 'border-border hover:border-primary/30',
+                  )}
                 >
                   <input
                     type="radio"
-                    name="correct-choice"
+                    name={`activity-${activity.id}-correct-choice`}
                     className="sr-only"
                     checked={isSelected}
                     onChange={() =>
@@ -159,7 +140,7 @@ export default function EditActivityPanel({
                       }))
                     }
                   />
-                  <span className="text-xs font-semibold text-muted-foreground w-6">
+                  <span className="w-6 text-xs font-semibold text-muted-foreground">
                     {choiceLabels[index] ?? String.fromCharCode(65 + index)}.
                   </span>
                   <input
@@ -172,11 +153,14 @@ export default function EditActivityPanel({
                       })
                     }
                     placeholder="Option text"
-                    className="flex-1 min-w-0 border-none bg-transparent text-foreground focus:outline-none"
+                    className="min-w-0 flex-1 border-none bg-transparent text-foreground focus:outline-none"
                   />
                   {paddedChoices.length > 2 && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto px-2 py-1 text-[0.7rem] text-destructive hover:text-destructive"
                       onClick={() =>
                         setValues((prev) => {
                           if (prev.choices.length <= 2) return prev;
@@ -197,70 +181,69 @@ export default function EditActivityPanel({
                           };
                         })
                       }
-                      className="text-[0.7rem] text-destructive hover:text-destructive/80"
                     >
                       Remove
-                    </button>
+                    </Button>
                   )}
                 </label>
               );
             })}
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-1 text-xs font-medium text-primary hover:text-primary"
             onClick={() =>
               setValues((prev) => ({
                 ...prev,
                 choices: [...ensureChoiceSlots(prev.choices), ''],
               }))
             }
-            className="text-xs font-medium text-primary hover:text-primary/80"
           >
             Add choice
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="text-xs font-semibold text-muted-foreground">Expected answer</label>
-          <input
+          <Label htmlFor={`activity-${activity.id}-answer`}>Expected answer</Label>
+          <Input
+            id={`activity-${activity.id}-answer`}
             value={values.textAnswer}
             onChange={(event) => setValues((prev) => ({ ...prev, textAnswer: event.target.value }))}
             placeholder="Ideal short response"
-            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
       )}
 
       <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">
-          Instructions (optional)
-        </label>
-        <textarea
+        <Label htmlFor={`activity-${activity.id}-instructions`}>Instructions (optional)</Label>
+        <Textarea
+          id={`activity-${activity.id}-instructions`}
           value={values.instructionsMd}
           onChange={(event) =>
             setValues((prev) => ({ ...prev, instructionsMd: event.target.value }))
           }
           rows={3}
-          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">Hints (one per line)</label>
-        <textarea
+        <Label htmlFor={`activity-${activity.id}-hints`}>Hints (one per line)</Label>
+        <Textarea
+          id={`activity-${activity.id}-hints`}
           value={values.hintsText}
           onChange={(event) => setValues((prev) => ({ ...prev, hintsText: event.target.value }))}
           rows={3}
-          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
       {(formError || error) && <p className="text-xs text-destructive">{formError || error}</p>}
 
       <div className="flex justify-end gap-2">
-        <button
+        <Button
           type="button"
-          className="px-3 py-2 rounded-lg border border-border text-foreground text-sm hover:bg-secondary transition"
+          variant="outline"
           onClick={() => {
             setValues(activityToFormValues(activity));
             setFormError(null);
@@ -269,14 +252,10 @@ export default function EditActivityPanel({
           disabled={busy}
         >
           Cancel
-        </button>
-        <button
-          type="submit"
-          className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60 hover:bg-primary/90 transition"
-          disabled={busy}
-        >
-          {busy ? 'Saving...' : 'Save changes'}
-        </button>
+        </Button>
+        <Button type="submit" disabled={busy}>
+          {busy ? 'Saving…' : 'Save changes'}
+        </Button>
       </div>
     </form>
   );

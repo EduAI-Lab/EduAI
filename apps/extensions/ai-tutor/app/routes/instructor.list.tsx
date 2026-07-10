@@ -36,6 +36,7 @@
  */
 import { useEffect, useOptimistic, useRef, useState } from 'react';
 import { useParams } from 'react-router';
+import { IconListCheck } from '@tabler/icons-react';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
@@ -48,18 +49,31 @@ import { requireClientUser } from '~/lib/client-auth';
 
 import type { ActivityUpdatePayload } from '../lib/activityForm';
 import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Input,
+  Label,
   PageHeading,
+  Textarea,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@eduai/ui';
+import { cn } from '~/lib/utils';
 import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+
+const SELECT_CLASSES =
+  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
 
 /**
  * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
@@ -80,17 +94,19 @@ function SyncTopicsButton({
     <TooltipProvider delayDuration={150}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full"
             aria-label="Sync topics now"
             onClick={() => {
               if (!syncing) onSync();
             }}
             disabled={syncing}
-            className="w-full btn-secondary text-sm"
           >
             {label}
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent>Topics are synced from EduAI for this course.</TooltipContent>
       </Tooltip>
@@ -528,86 +544,96 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     { label: lesson?.title || 'Lesson' },
   ];
 
+  useShellBreadcrumbs(breadcrumbItems);
+
   return (
     <CourseTopicsProvider value={courseTopics}>
-      <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
-        <div className="space-y-6">
-          <PageHeading heading={lesson?.title || 'Lesson'} subheading="Activity editor" />
+      <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+        <PageHeading heading={lesson?.title || 'Lesson'} subheading="Activity editor" />
 
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2 space-y-4">
-              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5">
-                <div className="font-semibold mb-3 text-foreground">Activities</div>
-                {oActivities.length === 0 ? (
-                  <div className="text-muted-foreground">No activities yet.</div>
-                ) : (
-                  <ul className="space-y-3">
-                    {oActivities.map((activity, i) => {
-                      const isUpdatingTopics = updatingTopicsFor === activity.id;
-                      const isUpdatingModes = updatingModesFor === activity.id;
-                      const mainTopicId = activity.mainTopic?.id ?? '';
-                      const secondaryIds = new Set(activity.secondaryTopics.map((item) => item.id));
-                      const isEditing = editingActivityId === activity.id;
-                      const isSaving = savingActivityId === activity.id;
-                      const isDeleting = deletingActivityId === activity.id;
-                      const isCustomEnabled = activity.enableCustomMode;
-                      const promptDraft = promptDrafts[activity.id] ?? activity.customPrompt ?? '';
-                      const isSavingPrompt = savingPromptId === activity.id;
-                      const isPromptSaved =
-                        promptSaved[activity.id] ??
-                        Boolean(activity.enableCustomMode && activity.customPrompt);
-                      const promptError = promptErrors[activity.id];
-                      return (
-                        <li
-                          key={activity.id}
-                          className="p-4 rounded-xl border border-border bg-card space-y-3"
-                        >
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <h2 className="text-lg font-semibold text-foreground">Activities</h2>
+
+            {oActivities.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <IconListCheck size={22} aria-hidden="true" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">No activities yet.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <ul className="space-y-4">
+                {oActivities.map((activity, i) => {
+                  const isUpdatingTopics = updatingTopicsFor === activity.id;
+                  const isUpdatingModes = updatingModesFor === activity.id;
+                  const mainTopicId = activity.mainTopic?.id ?? '';
+                  const secondaryIds = new Set(activity.secondaryTopics.map((item) => item.id));
+                  const isEditing = editingActivityId === activity.id;
+                  const isSaving = savingActivityId === activity.id;
+                  const isDeleting = deletingActivityId === activity.id;
+                  const isCustomEnabled = activity.enableCustomMode;
+                  const promptDraft = promptDrafts[activity.id] ?? activity.customPrompt ?? '';
+                  const isSavingPrompt = savingPromptId === activity.id;
+                  const isPromptSaved =
+                    promptSaved[activity.id] ??
+                    Boolean(activity.enableCustomMode && activity.customPrompt);
+                  const promptError = promptErrors[activity.id];
+                  return (
+                    <li key={activity.id}>
+                      <Card>
+                        <CardContent className="space-y-3 pt-5">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">
+                              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                                 {i + 1}
                               </span>
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-0.5">
+                              <div className="space-y-1">
+                                <Badge variant="outline" size="sm">
                                   {activity.type}
-                                </div>
-                                <div className="font-medium whitespace-pre-wrap text-foreground">
+                                </Badge>
+                                <div className="whitespace-pre-wrap font-medium text-foreground">
                                   {activity.question}
                                 </div>
                                 {(isSaving || isDeleting) && (
-                                  <div className="text-[0.7rem] text-muted-foreground mt-1">
+                                  <div className="text-[0.7rem] text-muted-foreground">
                                     {isSaving ? 'Saving…' : 'Removing…'}
                                   </div>
                                 )}
                               </div>
                             </div>
                             <PermissionGate allow={perms.canManageContent}>
-                            <div className="flex gap-2">
-                              {isEditing ? (
-                                <span className="tag bg-accent text-accent-foreground">
-                                  Editing…
-                                </span>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => beginEditingActivity(activity)}
-                                    className="btn-ghost text-xs px-2.5 py-1"
-                                    disabled={isDeleting}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteActivity(activity.id)}
-                                    className="px-2.5 py-1 rounded-lg bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition"
-                                    disabled={isDeleting}
-                                  >
-                                    {isDeleting ? 'Removing…' : 'Remove'}
-                                  </button>
-                                </>
-                              )}
-                            </div>
+                              <div className="flex shrink-0 gap-2">
+                                {isEditing ? (
+                                  <Badge variant="secondary" size="sm">
+                                    Editing…
+                                  </Badge>
+                                ) : (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => beginEditingActivity(activity)}
+                                      disabled={isDeleting}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-destructive hover:text-destructive"
+                                      onClick={() => handleDeleteActivity(activity.id)}
+                                      disabled={isDeleting}
+                                    >
+                                      {isDeleting ? 'Removing…' : 'Remove'}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </PermissionGate>
                           </div>
 
@@ -624,29 +650,29 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             <ActivityDetailsCard activity={activity} />
                           )}
 
-                          <div className="rounded-xl border border-dashed border-accent/50 bg-accent/10 p-3 space-y-3">
-                            <div className="text-xs font-semibold text-accent-foreground">
-                              Topics
-                            </div>
+                          <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/30 p-3">
+                            <div className="text-xs font-semibold text-foreground">Topics</div>
                             {topics.length === 0 ? (
                               <p className="text-xs text-muted-foreground">
                                 Define course topics to tag this activity.
                               </p>
                             ) : (
                               <div className="space-y-3">
-                                <div>
-                                  <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                                <div className="space-y-1.5">
+                                  <Label
+                                    htmlFor={`activity-${activity.id}-main-topic`}
+                                    className="text-xs font-semibold text-muted-foreground"
+                                  >
                                     Main topic
-                                  </label>
+                                  </Label>
                                   <select
+                                    id={`activity-${activity.id}-main-topic`}
                                     value={mainTopicId}
                                     onChange={(event) =>
                                       handleActivityMainTopicChange(activity.id, event.target.value)
                                     }
                                     disabled={loadingTopics || isUpdatingTopics}
-                                    className={`input-field text-sm ${
-                                      showTopicSaving ? 'disabled:opacity-60' : ''
-                                    }`}
+                                    className={SELECT_CLASSES}
                                   >
                                     <option value="">Select a topic…</option>
                                     {topics.map((topic) => (
@@ -657,7 +683,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   </select>
                                 </div>
                                 <div>
-                                  <span className="text-xs font-semibold text-muted-foreground block mb-1">
+                                  <span className="mb-1 block text-xs font-semibold text-muted-foreground">
                                     Secondary topics
                                   </span>
                                   <div className="flex flex-wrap gap-2">
@@ -668,15 +694,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         return (
                                           <label
                                             key={topic.id}
-                                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition ${
+                                            className={cn(
+                                              'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition',
                                               checked
-                                                ? 'border-transparent bg-accent text-accent-foreground shadow-sm'
-                                                : 'border-border bg-secondary hover:border-accent/50'
-                                            } ${
-                                              showTopicSaving && isUpdatingTopics
-                                                ? 'opacity-60'
-                                                : ''
-                                            }`}
+                                                ? 'border-transparent bg-accent text-accent-foreground shadow-xs'
+                                                : 'border-border bg-secondary hover:border-accent/50',
+                                              showTopicSaving && isUpdatingTopics && 'opacity-60',
+                                            )}
                                           >
                                             <input
                                               type="checkbox"
@@ -700,52 +724,42 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               </div>
                             )}
                             {showTopicSaving && isUpdatingTopics && (
-                              <span className="text-[0.7rem] text-accent-foreground">Saving…</span>
+                              <span className="text-[0.7rem] text-muted-foreground">Saving…</span>
                             )}
                           </div>
 
-                          <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 space-y-2">
-                            <div className="text-xs font-semibold text-primary">
-                              AI Study Buddy Modes
+                          <div className="space-y-2 rounded-[var(--radius-lg)] border border-primary/20 bg-primary/5 p-3">
+                            <div className="text-xs font-semibold text-foreground">
+                              AI Study Buddy modes
                             </div>
                             <div className="space-y-2">
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
+                              <label className="flex cursor-pointer items-center gap-2">
+                                <Checkbox
                                   checked={activity.enableTeachMode}
-                                  onChange={(e) =>
-                                    handleActivityModeChange(activity.id, 'teach', e.target.checked)
+                                  onCheckedChange={(checked) =>
+                                    handleActivityModeChange(activity.id, 'teach', Boolean(checked))
                                   }
                                   disabled={isUpdatingModes}
-                                  className="rounded border-primary/50 text-primary focus:ring-primary"
                                 />
                                 <span className="text-sm text-foreground">Teach me</span>
                               </label>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
+                              <label className="flex cursor-pointer items-center gap-2">
+                                <Checkbox
                                   checked={activity.enableGuideMode}
-                                  onChange={(e) =>
-                                    handleActivityModeChange(activity.id, 'guide', e.target.checked)
+                                  onCheckedChange={(checked) =>
+                                    handleActivityModeChange(activity.id, 'guide', Boolean(checked))
                                   }
                                   disabled={isUpdatingModes}
-                                  className="rounded border-primary/50 text-primary focus:ring-primary"
                                 />
                                 <span className="text-sm text-foreground">Guide me</span>
                               </label>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
+                              <label className="flex cursor-pointer items-center gap-2">
+                                <Checkbox
                                   checked={activity.enableCustomMode}
-                                  onChange={(e) =>
-                                    handleActivityModeChange(
-                                      activity.id,
-                                      'custom',
-                                      e.target.checked,
-                                    )
+                                  onCheckedChange={(checked) =>
+                                    handleActivityModeChange(activity.id, 'custom', Boolean(checked))
                                   }
                                   disabled={isUpdatingModes}
-                                  className="rounded border-primary/50 text-primary focus:ring-primary"
                                 />
                                 <span className="text-sm text-foreground">Custom prompt</span>
                               </label>
@@ -755,15 +769,17 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             )}
                             {isCustomEnabled && (
                               <div className="mt-3 space-y-3">
-                                <div>
-                                  <label className="text-xs font-semibold text-primary block mb-1">
+                                <div className="space-y-1.5">
+                                  <Label
+                                    htmlFor={`activity-${activity.id}-custom-title`}
+                                    className="text-xs font-semibold text-foreground"
+                                  >
                                     Button title (shown to students, max 20 chars)
-                                  </label>
-                                  <input
+                                  </Label>
+                                  <Input
+                                    id={`activity-${activity.id}-custom-title`}
                                     type="text"
-                                    value={
-                                      titleDrafts[activity.id] ?? activity.customPromptTitle ?? ''
-                                    }
+                                    value={titleDrafts[activity.id] ?? activity.customPromptTitle ?? ''}
                                     onChange={(event) => {
                                       const value = event.target.value.slice(0, 20);
                                       setTitleDrafts((prev) => ({ ...prev, [activity.id]: value }));
@@ -774,10 +790,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     }}
                                     placeholder="e.g., Explain simply"
                                     maxLength={20}
-                                    className="input-field text-sm"
                                     disabled={isSavingPrompt}
                                   />
-                                  <div className="text-[0.65rem] text-muted-foreground mt-1">
+                                  <div className="text-[0.65rem] text-muted-foreground">
                                     {
                                       (titleDrafts[activity.id] ?? activity.customPromptTitle ?? '')
                                         .length
@@ -785,11 +800,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     /20 characters
                                   </div>
                                 </div>
-                                <div>
-                                  <label className="text-xs font-semibold text-primary block mb-1">
+                                <div className="space-y-1.5">
+                                  <Label
+                                    htmlFor={`activity-${activity.id}-custom-prompt`}
+                                    className="text-xs font-semibold text-foreground"
+                                  >
                                     Custom AI prompt
-                                  </label>
-                                  <textarea
+                                  </Label>
+                                  <Textarea
+                                    id={`activity-${activity.id}-custom-prompt`}
                                     value={promptDraft}
                                     onChange={(event) =>
                                       setPromptDrafts((prev) => {
@@ -805,34 +824,33 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     }
                                     placeholder="Write a custom prompt the AI should follow for this activity…"
                                     rows={3}
-                                    className="input-field text-sm"
                                     disabled={isSavingPrompt}
                                   />
-                                  <div className="text-[0.65rem] text-muted-foreground mt-1">
+                                  <div className="text-[0.65rem] text-muted-foreground">
                                     Tip: Use{' '}
-                                    <code className="bg-secondary px-1 rounded">
+                                    <code className="rounded bg-secondary px-1">
                                       [INSERT TOPIC HERE]
                                     </code>{' '}
                                     and{' '}
-                                    <code className="bg-secondary px-1 rounded">
+                                    <code className="rounded bg-secondary px-1">
                                       [ENTER KNOWLEDGE LEVEL]
                                     </code>{' '}
                                     as placeholders.
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <button
+                                  <Button
                                     type="button"
+                                    size="sm"
                                     onClick={() => handleCustomPromptSave(activity)}
                                     disabled={isSavingPrompt}
-                                    className="btn-primary text-xs py-2"
                                   >
                                     {isSavingPrompt
                                       ? 'Saving…'
                                       : isPromptSaved
                                         ? 'Saved'
                                         : 'Save prompt'}
-                                  </button>
+                                  </Button>
                                   {promptError && (
                                     <span className="text-[0.75rem] text-destructive">
                                       {promptError}
@@ -847,22 +865,19 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               </div>
                             )}
                           </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
+                        </CardContent>
+                      </Card>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
 
-              <PermissionGate allow={perms.canManageContent}>
+            <PermissionGate allow={perms.canManageContent}>
               <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setShowAddPanel((open) => !open)}
-                  className="btn-primary"
-                >
+                <Button type="button" onClick={() => setShowAddPanel((open) => !open)}>
                   {showAddPanel ? 'Hide add activities' : 'Add activities'}
-                </button>
+                </Button>
               </div>
 
               {showAddPanel && numericLessonId !== null && (
@@ -871,76 +886,81 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   onActivityCreated={refreshActivities}
                 />
               )}
-              </PermissionGate>
-            </div>
+            </PermissionGate>
+          </div>
 
-            <aside className="space-y-4">
-              <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-3">
+          <aside className="space-y-4">
+            <Card>
+              <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-foreground">Course Topics</div>
+                  <CardTitle>Course topics</CardTitle>
                   {lesson?.courseOfferingId && (
                     <span className="text-xs text-muted-foreground">
                       Course #{lesson.courseOfferingId}
                     </span>
                   )}
                 </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
                 {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
                 <PermissionGate allow={perms.canManageTopics}>
-                <div className="flex items-center gap-2">
-                  {!!course?.externalId || course?.externalSource === 'EDUAI' ? (
-                    // EduAI course: Show only sync button
-                    lesson?.courseOfferingId && (
-                      <SyncTopicsButton
-                        courseId={lesson.courseOfferingId}
-                        syncing={syncingTopics}
-                        onSync={async () => {
-                          if (!lesson?.courseOfferingId) return;
-                          setSyncingTopics(true);
-                          try {
-                            const result = await api.syncCourseTopics(lesson.courseOfferingId);
-                            // Refresh topics first so the dialog options reflect latest topics
-                            await courseTopics.refresh();
-                            if (
-                              result &&
-                              Array.isArray(result.missingTopics) &&
-                              result.missingTopics.length > 0
-                            ) {
-                              setMissingTopics(
-                                result.missingTopics.map((t: any) => ({ id: t.id, name: t.name })),
-                              );
-                              setShowMapping(true);
+                  <div className="flex items-center gap-2">
+                    {!!course?.externalId || course?.externalSource === 'EDUAI' ? (
+                      // EduAI course: Show only sync button
+                      lesson?.courseOfferingId && (
+                        <SyncTopicsButton
+                          courseId={lesson.courseOfferingId}
+                          syncing={syncingTopics}
+                          onSync={async () => {
+                            if (!lesson?.courseOfferingId) return;
+                            setSyncingTopics(true);
+                            try {
+                              const result = await api.syncCourseTopics(lesson.courseOfferingId);
+                              // Refresh topics first so the dialog options reflect latest topics
+                              await courseTopics.refresh();
+                              if (
+                                result &&
+                                Array.isArray(result.missingTopics) &&
+                                result.missingTopics.length > 0
+                              ) {
+                                setMissingTopics(
+                                  result.missingTopics.map((t: any) => ({ id: t.id, name: t.name })),
+                                );
+                                setShowMapping(true);
+                              }
+                            } catch (e) {
+                              console.error('Failed to sync topics', e);
+                              alert('Failed to sync topics from EduAI. Please try again.');
+                            } finally {
+                              setSyncingTopics(false);
                             }
-                          } catch (e) {
-                            console.error('Failed to sync topics', e);
-                            alert('Failed to sync topics from EduAI. Please try again.');
-                          } finally {
-                            setSyncingTopics(false);
-                          }
-                        }}
-                      />
-                    )
-                  ) : (
-                    // Regular course: Show add topics button
-                    <AddCourseTopicsButton disabled={!lesson?.courseOfferingId} />
-                  )}
-                </div>
+                          }}
+                        />
+                      )
+                    ) : (
+                      // Regular course: Show add topics button
+                      <AddCourseTopicsButton disabled={!lesson?.courseOfferingId} />
+                    )}
+                  </div>
                 </PermissionGate>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto text-sm">
+                <div className="max-h-48 overflow-y-auto">
                   {topics.length === 0 ? (
-                    <div className="text-muted-foreground text-xs">No topics yet.</div>
+                    <div className="text-xs text-muted-foreground">No topics yet.</div>
                   ) : (
-                    topics.map((topic) => (
-                      <div key={topic.id} className="tag">
-                        {topic.name}
-                      </div>
-                    ))
+                    <div className="flex flex-wrap gap-1.5">
+                      {topics.map((topic) => (
+                        <Badge key={topic.id} variant="outline" size="sm">
+                          {topic.name}
+                        </Badge>
+                      ))}
+                    </div>
                   )}
                 </div>
-              </div>
-            </aside>
-          </div>
+              </CardContent>
+            </Card>
+          </aside>
         </div>
-      </AppShell>
+      </div>
       <TopicSyncMappingDialog
         open={showMapping}
         onClose={() => setShowMapping(false)}
