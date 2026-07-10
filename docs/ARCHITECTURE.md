@@ -433,6 +433,8 @@ QM maintains a thin local `users` table (CUID string PK, no password) solely for
 
 For the full migration plan and rationale see [`docs/implementations/auth-pipeline-centralization-plan.md`](implementations/auth-pipeline-centralization-plan.md).
 
+**Onboarding a new extension?** See [`docs/EXTENSION_ONBOARDING.md`](EXTENSION_ONBOARDING.md) for the step-by-step guide covering middleware setup, login redirect, role enforcement, and API connectivity.
+
 ---
 
 ## 10. Saving as PDF
