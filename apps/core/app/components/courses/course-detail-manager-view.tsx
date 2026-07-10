@@ -21,6 +21,7 @@ import {
 import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import {
   Dialog,
@@ -880,7 +881,7 @@ export function CourseDetailManagerView({
                       Term
                     </p>
                     <p className="text-sm text-foreground">
-                      {course.term} {course.year}
+                      {termLabel(course.term, course.year)}
                     </p>
                   </div>
                   {course.department && (
