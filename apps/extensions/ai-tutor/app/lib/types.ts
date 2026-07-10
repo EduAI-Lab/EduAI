@@ -11,13 +11,22 @@ export type User = {
   authorizedUnits?: string[];
 };
 
+/** The student's submitted answer, stored as the Prisma `Submission.response` JSON. */
+export type SubmissionResponse = {
+  answerText?: string | null;
+  answerOption?: number | null;
+};
+
 export type SubmissionRow = {
   id: number;
   userId: string;
   activityId: number;
   attemptNumber: number;
-  answerText?: string | null;
-  answerOption?: number | null;
+  /** Actual submitted answer (text or selected MCQ option index). */
+  response?: SubmissionResponse | null;
+  /** AI grader note, e.g. `{ message: string }`. */
+  aiFeedback?: { message?: string | null } | null;
+  score?: number | null;
   isCorrect?: boolean | null;
   createdAt: string;
 };
