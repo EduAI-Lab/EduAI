@@ -2,6 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
+vi.mock("~/lib/apps", () => ({
+  CURRENT_APP_ID: "core",
+  getLauncherApps: () => [
+    { id: "core", name: "EduAI Core", url: "http://localhost:3000" },
+    { id: "ai-tutor", name: "AI Tutor", url: "http://localhost:4100" },
+  ],
+  parseExtraExtensions: () => [],
+}));
+
 import { AppSidebar } from "~/components/app-sidebar";
 import { SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
