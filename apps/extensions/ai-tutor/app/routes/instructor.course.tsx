@@ -4,8 +4,8 @@
  * Route: /instructor/courses/:courseId
  * Auth: INSTRUCTOR
  * Loads: course detail and its module list, in parallel.
- * Owns: module CRUD entry points (create form), cross-course module import
- *       flow, and the per-module publish toggle.
+ * Owns: module CRUD entry points (add-module dialog), the cross-course module
+ *       import dialog, and the per-module publish toggle.
  * Gotchas:
  *   - Publish cascade: a module can only be published while its parent
  *     course is published. The server enforces this; the UI reflects it via
@@ -21,12 +21,18 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { IconLayoutGrid } from '@tabler/icons-react';
+import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
   Button,
   Card,
   CardContent,
   CourseHeroCard,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
   PageTabs,
@@ -50,7 +56,6 @@ import { useLocalUser } from '../hooks/useLocalUser';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
 import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
-import { CourseStudentMetricsPanel } from '../components/courses/CourseStudentMetricsPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
@@ -94,6 +99,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedSourceCourseId, setSelectedSourceCourseId] = useState<number | null>(null);
@@ -184,12 +190,25 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     try {
       await api.createModule(numericCourseId, { title: title.trim() });
       setTitle('');
+      setCreateOpen(false);
       await refreshModules();
     } catch (error) {
       console.error('Failed to create module', error);
     } finally {
       setCreating(false);
     }
+  };
+
+  // The import dialog lazy-loads the copy-from course list the first time it
+  // opens, and clears any in-flight source selection when it closes so a
+  // reopened dialog starts clean.
+  const handleImportOpenChange = (open: boolean) => {
+    if (open) {
+      ensureSourceCoursesLoaded();
+    } else {
+      void handleSourceCourseSelection(null);
+    }
+    setShowImport(open);
   };
 
   const toggleModuleSelection = (moduleId: number) => {
@@ -283,31 +302,84 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         </PageTabsList>
 
         <PageTabsContent value="content" className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Modules</h2>
             <PermissionGate allow={perms.canManageContent}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (!showImport) {
-                    ensureSourceCoursesLoaded();
-                  } else {
-                    void handleSourceCourseSelection(null);
-                  }
-                  setShowImport((prev) => !prev);
-                }}
-              >
-                {showImport ? 'Close' : 'Import'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleImportOpenChange(true)}
+                >
+                  <IconDownload className="size-4" aria-hidden="true" />
+                  Import
+                </Button>
+                <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                  <IconPlus className="size-4" aria-hidden="true" />
+                  Add module
+                </Button>
+              </div>
             </PermissionGate>
           </div>
 
           <PermissionGate allow={perms.canManageContent}>
-            {showImport && (
-              <Card>
-                <CardContent className="space-y-4 pt-5">
+            <Dialog
+              open={createOpen}
+              onOpenChange={(open) => {
+                if (!creating) setCreateOpen(open);
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add module</DialogTitle>
+                  <DialogDescription>
+                    Create a new module in {course.title}. Add lessons and activities to it once
+                    it exists.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={onCreateModule} className="grid gap-4 py-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-module-title">Module title</Label>
+                    <Input
+                      id="new-module-title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Getting started"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setCreateOpen(false)}
+                      disabled={creating}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={creating || !title.trim()}>
+                      {creating ? 'Adding…' : 'Add module'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </PermissionGate>
+
+          <PermissionGate allow={perms.canManageContent}>
+            <Dialog open={showImport} onOpenChange={handleImportOpenChange}>
+              <DialogContent className="sm:max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Import modules</DialogTitle>
+                  <DialogDescription>
+                    Copy modules — along with their lessons and activities — from another course
+                    into {course.title}.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="import-source-course">Choose course to copy</Label>
                     <Select
@@ -323,9 +395,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                         <SelectValue placeholder="Select course…" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableCourses.map((course) => (
-                          <SelectItem key={course.id} value={String(course.id)}>
-                            {course.title}
+                        {availableCourses.map((sourceCourse) => (
+                          <SelectItem key={sourceCourse.id} value={String(sourceCourse.id)}>
+                            {sourceCourse.title}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -347,13 +419,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   ) : loadingSourceModules ? (
                     <p className="text-sm text-muted-foreground">Loading modules…</p>
                   ) : sourceModules.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Selected course has no modules yet.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Selected course has no modules yet.
+                    </p>
                   ) : (
                     <div className="space-y-3">
                       <p className="text-sm text-muted-foreground">
                         Select modules to import (lessons and activities included).
                       </p>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid max-h-[320px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
                         {sourceModules.map((module) => (
                           <label
                             key={module.id}
@@ -378,34 +452,35 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                           </label>
                         ))}
                       </div>
-                      <Button
-                        type="button"
-                        onClick={onImport}
-                        disabled={
-                          importing || selectedSourceCourseId == null || selectedModuleIds.size === 0
-                        }
-                      >
-                        {importing ? 'Importing…' : 'Import modules'}
-                      </Button>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )}
-          </PermissionGate>
+                </div>
 
-          <PermissionGate allow={perms.canManageContent}>
-            <form onSubmit={onCreateModule} className="flex gap-3">
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="New module title…"
-                className="flex-1"
-              />
-              <Button type="submit" disabled={creating || !title.trim()}>
-                {creating ? 'Adding…' : 'Add module'}
-              </Button>
-            </form>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleImportOpenChange(false)}
+                    disabled={importing}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={onImport}
+                    disabled={
+                      importing || selectedSourceCourseId == null || selectedModuleIds.size === 0
+                    }
+                  >
+                    {importing
+                      ? 'Importing…'
+                      : selectedModuleIds.size > 0
+                        ? `Import ${selectedModuleIds.size} module${selectedModuleIds.size === 1 ? '' : 's'}`
+                        : 'Import modules'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </PermissionGate>
 
           {oModules.length === 0 ? (
@@ -475,12 +550,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
         {tabs.some((tab) => tab.id === 'analytics') && (
           <PageTabsContent value="analytics" className="space-y-6">
-            {numericCourseId ? (
-              <>
-                <CourseStudentMetricsPanel courseId={numericCourseId} />
-                <CourseAnalyticsPanel courseId={numericCourseId} />
-              </>
-            ) : null}
+            {numericCourseId ? <CourseAnalyticsPanel courseId={numericCourseId} /> : null}
           </PageTabsContent>
         )}
       </PageTabs>
