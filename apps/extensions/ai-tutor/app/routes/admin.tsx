@@ -1,50 +1,55 @@
 /**
- * @file Admin console for platform stats and bug-report triage.
+ * @file Admin console — bug-report triage, AI tutoring configuration, and AI oversight.
  *
  * Route: /admin
- * Auth: ADMIN
- * Loads: EduAI API key status, admin users, courses, and bug reports.
- * Owns: read-only platform stat grid + bug-report review.
- * Gotchas:
- *   - User and enrollment management are owned by EduAI Core (synced from
- *     Canvas as source of truth); AI Tutor no longer exposes them here. The
- *     loader still reads user/course counts purely to populate the stat grid.
- *   - `?tab=settings` is preserved as a redirect to /settings; any other
- *     `?tab=` value is ignored (the console now has a single view).
- *   - Shares the role-scoped RoleDashboard shell with student/instructor so all
- *     three dashboards render the same layout.
- * Related: `docs/ARCHITECTURE.md`, `server/src/routes/admin.js`, `app/lib/api.ts`
+ * Auth: ADMIN and UNIT_ADMIN. Bug reports + AI settings stay ADMIN-only (they
+ *       touch platform-wide config/PII); AI oversight is visible to both, since
+ *       unit admins need to audit AI tutoring within their own unit too.
+ * Loads: bug reports to triage + admin AI settings (loop policy, model policy,
+ *        EduAI API key status) for ADMIN; recent AI interaction traces for both
+ *        roles.
+ * Owns: the single admin surface. User/enrollment management is owned by EduAI
+ *       Core (synced from Canvas); it is intentionally not exposed here. AI
+ *       configuration used to live in Settings → Admin — it now lives here so
+ *       there is one admin home, not two.
+ * Related: server/src/routes/admin.js, app/lib/admin-settings.ts,
+ *   app/components/admin/AiOversightPanel.tsx
  */
-
-import { useMemo } from 'react';
-import { Navigate, useSearchParams } from 'react-router';
-import { Badge } from '@eduai/ui';
+import { useState } from 'react';
+import {
+  Badge,
+  PageHeading,
+  PageTabs,
+  PageTabsContent,
+  PageTabsList,
+  PageTabsTrigger,
+} from '@eduai/ui';
+import { IconBrain, IconBug, IconSettings } from '@tabler/icons-react';
 import BugReportsTab from '~/components/admin/BugReportsTab';
-import api from '~/lib/api';
-import type {
-  AdminBugReportRow,
-  AdminUser,
-  Course,
-  EduAiApiKeyStatus,
-} from '~/lib/types';
+import { AdminSettingsPanel } from '~/components/admin/AdminSettingsPanel';
+import { AiOversightPanel } from '~/components/admin/AiOversightPanel';
+import api, { type AiTraceRow } from '~/lib/api';
+import type { AdminBugReportRow, EduAiApiKeyStatus, Role } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
-import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
-import { buildDashboardStats } from '~/lib/dashboard-stats';
-import { getApiKeySourceTag, loadAdminSettingsData } from '~/lib/admin-settings';
+import {
+  getApiKeySourceTag,
+  loadAdminSettingsData,
+  type AdminSettingsLoaderData,
+} from '~/lib/admin-settings';
+
+const ADMIN_ROLES: Role[] = ['ADMIN', 'UNIT_ADMIN'];
 
 type AdminLoaderData = {
-  status: EduAiApiKeyStatus;
-  users: AdminUser[];
-  courses: Course[];
-  bugReports: AdminBugReportRow[];
+  role: Role;
+  adminSettings: AdminSettingsLoaderData | null;
+  bugReports: AdminBugReportRow[] | null;
+  aiTraces: AiTraceRow[];
 };
 
-// `getApiKeySourceTag` (shared with the Settings redesign) still returns a
-// legacy `.tag` className for its label; here we only borrow the label text
-// and pick a DS Badge variant so the accessory next to the heading matches
-// the rest of the console instead of the old CSS-class pill.
+// Borrow only the source-tag label and render it as a DS Badge (the shared
+// helper still returns a legacy `.tag` className we don't use here).
 function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondary' | 'outline' {
   if (!status.configured) return 'outline';
   if (status.source === 'ADMIN') return 'default';
@@ -52,66 +57,84 @@ function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondar
   return 'outline';
 }
 
-/**
- * Load the admin console data: API key status (for the source tag), user and
- * course counts (stat grid only), and the bug reports to triage.
- */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
-  await requireClientUser('ADMIN');
+  const user = await requireClientUser(ADMIN_ROLES);
 
-  const [settingsData, users, courses, bugReports] = await Promise.all([
-    loadAdminSettingsData(),
-    api.listAdminUsers(),
-    api.listAdminCourses(),
-    api.listAdminBugReports(),
+  // Bug reports + AI settings hit ADMIN-only server routes (403 for
+  // UNIT_ADMIN) — only fetch them for ADMIN so a unit admin's Promise.all
+  // doesn't fail wholesale and lock them out of the AI oversight tab.
+  const isAdmin = user.role === 'ADMIN';
+
+  const [adminSettings, bugReports, aiTraces] = await Promise.all([
+    isAdmin ? loadAdminSettingsData() : Promise.resolve(null),
+    isAdmin ? api.listAdminBugReports() : Promise.resolve(null),
+    api.adminAiTraces({ limit: 50 }),
   ]);
 
-  return {
-    status: settingsData.status,
-    users,
-    courses,
-    bugReports,
-  } satisfies AdminLoaderData;
+  return { role: user.role, adminSettings, bugReports, aiTraces } satisfies AdminLoaderData;
 }
 
-/**
- * Render the admin control surface: platform stats and bug-report triage.
- *
- * Why: Admins are intentionally isolated from student/instructor workflows.
- * User identity, roles, and enrollments are managed in EduAI Core, so the only
- * system-level task surfaced here is bug-report review.
- */
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
-  const [searchParams] = useSearchParams();
-
-  const adminStats = useMemo(
-    () =>
-      buildDashboardStats('ADMIN', {
-        users: loaderData.users,
-        courses: loaderData.courses,
-        bugReports: loaderData.bugReports,
-      }),
-    [loaderData.users, loaderData.courses, loaderData.bugReports],
-  );
-
-  const sourceTag = getApiKeySourceTag(loaderData.status);
+  const { role, adminSettings, bugReports, aiTraces } = loaderData;
+  const isAdmin = role === 'ADMIN';
+  const [activeTab, setActiveTab] = useState(isAdmin ? 'bug-reports' : 'ai-oversight');
+  const sourceTag = adminSettings ? getApiKeySourceTag(adminSettings.status) : null;
 
   useShellBreadcrumbs([{ label: 'Admin' }]);
 
-  if (searchParams.get('tab') === 'settings') {
-    return <Navigate to="/settings" replace />;
-  }
-
   return (
-    <RoleDashboard
-      heading="Admin console"
-      subheading="Review platform stats and triage bug reports."
-      headingAccessory={
-        <Badge variant={sourceTagBadgeVariant(loaderData.status)}>{sourceTag.label}</Badge>
-      }
-      stats={adminStats}
-    >
-      <BugReportsTab initialReports={loaderData.bugReports} />
-    </RoleDashboard>
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <PageHeading
+        heading="Admin console"
+        subheading={
+          isAdmin
+            ? 'Triage bug reports, configure AI tutoring, and review AI oversight.'
+            : 'Review AI tutoring activity in your unit.'
+        }
+      />
+
+      <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <PageTabsList>
+          {isAdmin ? (
+            <PageTabsTrigger value="bug-reports">
+              <IconBug className="h-4 w-4" /> Bug reports
+            </PageTabsTrigger>
+          ) : null}
+          {isAdmin ? (
+            <PageTabsTrigger value="ai-settings">
+              <IconSettings className="h-4 w-4" /> AI settings
+            </PageTabsTrigger>
+          ) : null}
+          <PageTabsTrigger value="ai-oversight">
+            <IconBrain className="h-4 w-4" /> AI oversight
+          </PageTabsTrigger>
+        </PageTabsList>
+
+        {isAdmin && bugReports ? (
+          <PageTabsContent value="bug-reports" className="space-y-6">
+            <BugReportsTab initialReports={bugReports} />
+          </PageTabsContent>
+        ) : null}
+
+        {isAdmin && adminSettings && sourceTag ? (
+          <PageTabsContent value="ai-settings" className="space-y-6">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">AI configuration</h2>
+                <p className="text-sm text-muted-foreground">
+                  Configure the AI loop policy and EduAI API integration.
+                </p>
+              </div>
+              <Badge variant={sourceTagBadgeVariant(adminSettings.status)}>{sourceTag.label}</Badge>
+            </div>
+            <AdminSettingsPanel loaderData={adminSettings} />
+          </PageTabsContent>
+        ) : null}
+
+        <PageTabsContent value="ai-oversight" className="space-y-6">
+          <AiOversightPanel initialTraces={aiTraces} />
+        </PageTabsContent>
+      </PageTabs>
+    </div>
   );
 }

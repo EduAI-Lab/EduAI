@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Input, Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
+import {
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@eduai/ui';
 import { toast } from 'sonner';
 
 import api from '~/lib/api';
@@ -18,11 +30,6 @@ import {
   type AdminSettingsLoaderData,
   type CostTier,
 } from '~/lib/admin-settings';
-
-// Native <select> styling shared with AddActivityPanel.tsx / instructor.*.tsx
-// so admin dropdowns match the rest of the app's DS-token look.
-const SELECT_CLASSES =
-  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
 
 // `costTierClassName` (shared with admin-settings) still returns a legacy
 // `.tag` className; here we only borrow the label text via `formatCostTier`
@@ -298,56 +305,64 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                 <label className="block text-sm font-medium text-foreground">
                   Default tutor model
                 </label>
-                <select
-                  value={aiPolicy.defaultTutorModelId ?? ''}
-                  onChange={(e) =>
+                <Select
+                  value={aiPolicy.defaultTutorModelId ?? undefined}
+                  onValueChange={(value) =>
                     setAiPolicy((current) => ({
                       ...current,
-                      defaultTutorModelId: e.target.value || null,
+                      defaultTutorModelId: value || null,
                     }))
                   }
-                  className={SELECT_CLASSES}
                   disabled={!hasAllowedTutorModels}
                 >
-                  {!hasAllowedTutorModels ? (
-                    <option value="">Choose allowed tutor models first</option>
-                  ) : (
-                    aiModels
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        hasAllowedTutorModels
+                          ? 'Select a model'
+                          : 'Choose allowed tutor models first'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aiModels
                       .filter((model) => aiPolicy.allowedTutorModelIds.includes(model.modelId))
                       .map((model) => (
-                        <option key={model.id} value={model.modelId}>
+                        <SelectItem key={model.id} value={model.modelId}>
                           {model.modelName}
-                        </option>
-                      ))
-                  )}
-                </select>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-foreground">
                   Default supervisor model
                 </label>
-                <select
-                  value={aiPolicy.defaultSupervisorModelId ?? ''}
-                  onChange={(e) =>
+                <Select
+                  value={aiPolicy.defaultSupervisorModelId ?? undefined}
+                  onValueChange={(value) =>
                     setAiPolicy((current) => ({
                       ...current,
-                      defaultSupervisorModelId: e.target.value || null,
+                      defaultSupervisorModelId: value || null,
                     }))
                   }
-                  className={SELECT_CLASSES}
                   disabled={!aiModels.length}
                 >
-                  {!aiModels.length ? (
-                    <option value="">No models available</option>
-                  ) : (
-                    aiModels.map((model) => (
-                      <option key={model.id} value={model.modelId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={aiModels.length ? 'Select a model' : 'No models available'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aiModels.map((model) => (
+                      <SelectItem key={model.id} value={model.modelId}>
                         {model.modelName}
-                      </option>
-                    ))
-                  )}
-                </select>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">
                   Pick the more careful model here, even if it is slower or more expensive.
                 </p>
