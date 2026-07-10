@@ -17,7 +17,7 @@ export const CURRENT_APP_ID = 'core'
  *
  * Malformed JSON is silently ignored so a bad value never breaks the sidebar.
  */
-function parseExtraExtensions(): LauncherApp[] {
+export function parseExtraExtensions(): LauncherApp[] {
   const raw = import.meta.env.VITE_EXTRA_EXTENSIONS?.trim()
   if (!raw) return []
   try {
