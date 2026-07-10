@@ -93,8 +93,8 @@ Goal: make wayfinding obvious and the nav role-appropriate, using shared `NavMai
 
 ### Phase 4 — Per-screen DS redesign (the bulk)
 Bring every screen to DS spec (Cards border-defined, `Button` variants, `Badge`/`RoleBadge` sentence-case, `StatCard`, `PageHeading`, `PageTabs`/`SegmentedControl`, type scale, spacing tokens, 44px targets, motion rules, no emoji, verb-led copy). Screens (one Sonnet agent per cluster):
-- **Student:** `routes/student.tsx` (dashboard), `student.course.tsx`, `student.topic.tsx`, `student.list.tsx` (lesson + `StudentAiChat` + feedback + progress).
-- **Instructor:** `routes/instructor.tsx`, `instructor.course.tsx` (Content/Enrollments/Submissions/Analytics tabs + panels under `app/components/courses/`), `instructor.topic.tsx`, `instructor.list.tsx` (activity editor + topic sync).
+- **Student:** `routes/student.tsx` (dashboard), `student.course.tsx`, `student.module.tsx`, `student.lesson.tsx` (lesson + `StudentAiChat` + feedback + progress).
+- **Instructor:** `routes/instructor.tsx`, `instructor.course.tsx` (Content/Enrollments/Submissions/Analytics tabs + panels under `app/components/courses/`), `instructor.module.tsx`, `instructor.lesson.tsx` (activity editor + topic sync).
 - **Admin/shared:** `routes/admin.tsx` (+ `BugReportsTab`), `routes/home.tsx` redirector, `routes/unsupported-role.tsx` (give it minimal branded chrome instead of bare).
 - **Chat surface:** `StudentAiChat.tsx` + `ai-elements/*` reskinned to DS (respect `--chat-max-width: 48rem`; Assistive Mode reading surfaces untouched).
 
