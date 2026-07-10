@@ -15,6 +15,7 @@
     "lint": "eslint . --max-warnings=0",
     "populate": "node scripts/populateDatabase.js",
     "seed": "node scripts/seedUnified.js",
+    "seed:perf": "node scripts/seed-perf.js",
     "seed:production": "node scripts/seedProductionQuestions.js",
     "test:ocr": "node scripts/testOcrExtraction.js"
   },
