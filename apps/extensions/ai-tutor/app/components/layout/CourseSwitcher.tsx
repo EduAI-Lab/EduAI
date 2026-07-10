@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router';
 import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from '@eduai/ui';
 
 import api from '~/lib/api';
+import { splitTitle } from '~/lib/course-title';
 import type { Course } from '~/lib/types';
 
 export function CourseSwitcher({
@@ -42,8 +43,8 @@ export function CourseSwitcher({
   // resolves; the fetched list replaces it once available.
   const options: CourseSwitcherOption[] =
     courses.length > 0
-      ? courses.map((c) => ({ id: c.id, label: c.title }))
-      : [{ id: courseId, label: currentTitle }];
+      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title) }))
+      : [{ id: courseId, ...splitTitle(currentTitle) }];
 
   return (
     <SharedCourseSwitcher
