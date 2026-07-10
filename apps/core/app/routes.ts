@@ -35,6 +35,10 @@ export default [
     { id: "routes/api/courses.materials.$:materialId" },
   ),
   route("/api/courses/:courseId/canvas-materials", "routes/api/courses.canvas-materials.$.ts"),
+  route(
+    "/api/courses/:courseId/canvas-materials/exclusions",
+    "routes/api/courses.canvas-materials.exclusions.$.ts",
+  ),
   route("/api/courses/:courseId/re-embed", "routes/api/courses.re-embed.$.ts"),
   route("/api/courses/:courseId/re-embed/:jobId", "routes/api/courses.re-embed.$jobId.ts"),
   route("/api/courses/:courseId/embedding-settings", "routes/api/courses.embedding-settings.$.ts"),

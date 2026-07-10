@@ -33,11 +33,16 @@ export type CanvasMaterialDiscoverItem = {
   canvasUpdatedAt: string
   importStatus: CanvasMaterialImportStatus
   coreMaterialId: string | null
+  isPublished: boolean
+  isExcluded: boolean
 }
+
+export type CanvasMaterialSkipReason = 'unpublished' | 'excluded' | 'not-modified'
 
 export type SyncCanvasMaterialsResult = {
   imported: number
   updated: number
   skipped: number
+  skippedItems: Array<{ canvasFileId: string; reason: CanvasMaterialSkipReason }>
   failed: Array<{ canvasFileId: string; message: string }>
 }

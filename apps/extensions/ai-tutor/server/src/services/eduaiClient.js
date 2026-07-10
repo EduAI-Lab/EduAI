@@ -1,4 +1,5 @@
 import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
+import { getEffectiveEduAiApiKey } from './systemSettings.js';
 const DEFAULT_BASE_URL = 'http://localhost:5174/api';
 
 function normalizeBaseUrl(rawUrl) {
@@ -278,7 +279,16 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
 }
 
 export async function listEduAiModels() {
-  const data = await requestEduAi('/ai-models');
+  const serviceKey = await getEffectiveEduAiApiKey();
+  if (!serviceKey) {
+    const error = new Error('EDUAI_API_KEY not configured');
+    error.status = 503;
+    throw error;
+  }
+
+  const data = await requestEduAi('/ai-models', {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
   if (!Array.isArray(data)) {
     throw new Error('Invalid response from EduAI models endpoint');
   }
@@ -300,6 +310,19 @@ export async function patchCoreEnrollmentRole(externalCourseId, enrollmentId, ro
     method: 'PATCH',
     cookie,
     body: { role },
+  });
+}
+
+/** Removes an enrollment in Core, forwarding the acting user's session cookie. */
+export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cookie) {
+  if (!cookie) {
+    const error = new Error('Session cookie required to remove enrollment in Core');
+    error.status = 401;
+    throw error;
+  }
+  return requestEduAi(`/courses/${externalCourseId}/enrollments/${enrollmentId}`, {
+    method: 'DELETE',
+    cookie,
   });
 }
 
