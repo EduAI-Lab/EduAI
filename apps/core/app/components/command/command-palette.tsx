@@ -37,7 +37,7 @@ import {
 } from "@eduai/ui";
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps";
 import type { User } from "~/lib/auth/types";
-import type { NavItem, NavItemKey } from "~/lib/rbac/types";
+import type { NavItem, NavGroupItem, NavItemKey } from "~/lib/rbac/types";
 import { getNavForUser, getNavSecondaryForUser } from "~/lib/rbac/nav";
 
 /** Window event that opens the palette — dispatched by the header search button. */
@@ -48,6 +48,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   courses: IconBooks,
   chat: IconRobot,
   "question-maker": IconBooks,
+  "admin-group": IconShieldLock,
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
@@ -67,16 +68,20 @@ type PaletteCourse = { id: string; code: string; name: string };
 /**
  * The nav destinations the palette offers, filtered by the same RBAC matrix the
  * sidebar uses. Policy-disabled links (e.g. a gated UNIT_ADMIN invite) are
- * dropped so the palette never routes somewhere the user can't go. Exported for
- * unit tests.
+ * dropped so the palette never routes somewhere the user can't go. Grouped nav
+ * entries (e.g. the collapsible admin section) are flattened to their leaf links
+ * so the palette offers real destinations, not the non-navigating parent.
+ * Exported for unit tests.
  */
 export function paletteNavItems(user: User): NavItem[] {
   const settingsItem: NavItem = { key: "settings", title: "Settings", url: "/settings" };
-  return [
+  const flatten = (items: (NavItem | NavGroupItem)[]): NavItem[] =>
+    items.flatMap((item) => ("children" in item ? item.children : [item]));
+  return flatten([
     ...getNavForUser(user),
     ...getNavSecondaryForUser(user),
     settingsItem,
-  ].filter((item) => !item.disabled);
+  ]).filter((item) => !item.disabled);
 }
 
 /**

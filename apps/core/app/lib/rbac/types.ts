@@ -21,6 +21,7 @@ export type NavItemKey =
   | 'courses'
   | 'chat'
   | 'question-maker'
+  | 'admin-group'
   | 'admin-users'
   | 'admin-ai'
   | 'admin-bugs'
@@ -44,6 +45,12 @@ export type NavItem = {
   disabled?: boolean
   /** Tooltip explaining why a disabled item is greyed out. */
   disabledReason?: string
+}
+
+export type NavGroupItem = {
+  key: NavItemKey
+  title: string
+  children: NavItem[]
 }
 
 export type NavUser = {
