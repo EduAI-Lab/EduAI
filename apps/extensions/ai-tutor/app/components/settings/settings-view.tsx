@@ -1,177 +1,163 @@
 /**
- * Per-user Settings page: Appearance + Accessibility for everyone, plus an
- * Admin tab gated to `canAccessAdminConsole` (mirrors Core's tabbed
- * `settings-view.tsx`, scaled to what AI Tutor actually has today).
+ * Per-user Settings — Account + Accessibility + Providers (BYOK), matching
+ * the dense, tabbed pattern used by Core's `settings-view.tsx` and Question
+ * Maker's `SettingsPage.tsx`. Admin-only AI configuration is NOT here; it
+ * lives on the `/admin` console alongside bug-report triage.
  *
- * Deliberately does NOT reuse the shared `AccessibilitySettings` component
- * (`@eduai/ui`) wholesale: that component bundles Theme + Density + Reduce
- * motion + Assistive Mode into one card, but AI Tutor only has working CSS
- * for Theme (Tailwind `dark:` via next-themes) and the Assistive Mode
- * attribute contract. Density (`[data-density]`) and Reduce motion
- * (`[data-reduce-motion]`) are Core-app-local CSS with no AI Tutor
- * equivalent, so wiring those switches here would ship controls that visibly
- * do nothing. Appearance/Accessibility below are small local compositions of
- * the same shared primitives instead, matching Core's copy and layout for
- * the pieces that *do* work.
+ * Accessibility now composes the shared `AccessibilitySettings` component
+ * (`@eduai/ui`) directly, same as Core and Question Maker. Density and
+ * reduce-motion have no dedicated CSS in AI Tutor yet (only Core's
+ * `app.css` wires `[data-density]` / `[data-reduce-motion]` today) — this
+ * mirrors Question Maker's own settings page, which ships the same two
+ * toggles as session-only attribute state ahead of shared CSS landing.
+ * Assistive Mode is passed through unchanged: it is BREB-approved and its
+ * `[data-assistive] .reading-surface` contract (see
+ * `~/components/settings/assistive-mode.tsx`) must not be touched.
  */
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
-  Badge,
+  AccessibilitySettings,
+  Avatar,
+  Button,
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Label,
+  PageHeading,
   PageTabs,
   PageTabsContent,
   PageTabsList,
   PageTabsTrigger,
-  RadioGroup,
-  RadioGroupItem,
-  Switch,
+  RoleBadge,
   useTheme,
+  type AccessibilityUiDensity,
   type AccessibilityUiTheme,
 } from '@eduai/ui';
-import { IconAccessible, IconPalette, IconShieldLock } from '@tabler/icons-react';
+import { IconAccessible, IconLogout, IconUser, IconWorld } from '@tabler/icons-react';
 
-import { AdminSettingsPanel } from '~/components/admin/AdminSettingsPanel';
 import { useAssistiveMode } from '~/components/settings/assistive-mode';
-import { getApiKeySourceTag, type AdminSettingsLoaderData } from '~/lib/admin-settings';
-import type { EduAiApiKeyStatus } from '~/lib/types';
+import { ProvidersSettings } from '~/components/settings/providers-settings';
+import { useLocalUser } from '~/hooks/useLocalUser';
 
-const THEME_CHOICE_CLASS =
-  'cursor-pointer flex items-center gap-2 rounded-md border border-border p-3 transition-colors has-[[data-state=checked]]:bg-accent has-[[data-state=checked]]:ring-1 has-[[data-state=checked]]:ring-accent';
-
-interface SettingsViewProps {
-  isAdmin: boolean;
-  adminData: AdminSettingsLoaderData | null;
+function readInitialDensity(): AccessibilityUiDensity {
+  if (typeof document === 'undefined') return 'comfortable';
+  return document.documentElement.getAttribute('data-density') === 'compact'
+    ? 'compact'
+    : 'comfortable';
 }
 
-// `getApiKeySourceTag` (shared with admin.tsx) still returns a legacy `.tag`
-// className alongside its label; here we only borrow the label text and pick
-// a DS Badge variant so this accessory matches the one admin.tsx renders
-// instead of the old CSS-class pill.
-function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondary' | 'outline' {
-  if (!status.configured) return 'outline';
-  if (status.source === 'ADMIN') return 'default';
-  if (status.source === 'ENV') return 'secondary';
-  return 'outline';
+function readInitialMotionReduced(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.hasAttribute('data-reduce-motion');
 }
 
-export function SettingsView({ isAdmin, adminData }: SettingsViewProps) {
-  const [activeTab, setActiveTab] = useState('appearance');
+export function SettingsView() {
+  const [activeTab, setActiveTab] = useState('account');
+  const { user, logout } = useLocalUser();
+  const navigate = useNavigate();
   const { theme: nextTheme, setTheme } = useTheme();
   const { assistive, setAssistive } = useAssistiveMode();
+  const [density, setDensity] = useState<AccessibilityUiDensity>(readInitialDensity);
+  const [motionReduced, setMotionReduced] = useState<boolean>(readInitialMotionReduced);
 
   const theme = (nextTheme as AccessibilityUiTheme | undefined) ?? 'system';
-  const sourceTag = adminData ? getApiKeySourceTag(adminData.status) : null;
-  const showAdminTab = isAdmin && adminData != null;
+
+  const handleDensityChange = (value: AccessibilityUiDensity) => {
+    setDensity(value);
+    if (value === 'compact') {
+      document.documentElement.setAttribute('data-density', 'compact');
+    } else {
+      document.documentElement.removeAttribute('data-density');
+    }
+  };
+
+  const handleMotionReducedChange = (value: boolean) => {
+    setMotionReduced(value);
+    if (value) {
+      document.documentElement.setAttribute('data-reduce-motion', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-reduce-motion');
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
 
   return (
-    <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-      <PageTabsList>
-        <PageTabsTrigger value="appearance">
-          <IconPalette className="h-4 w-4" /> Appearance
-        </PageTabsTrigger>
-        <PageTabsTrigger value="accessibility">
-          <IconAccessible className="h-4 w-4" /> Accessibility
-        </PageTabsTrigger>
-        {showAdminTab && (
-          <PageTabsTrigger value="admin">
-            <IconShieldLock className="h-4 w-4" /> Admin
+    <div className="@container/main flex flex-1 flex-col gap-8 px-4 pt-6 pb-8 lg:px-6">
+      <PageHeading
+        heading="Settings"
+        subheading="Manage your account, accessibility preferences, and AI provider keys."
+      />
+
+      <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <PageTabsList>
+          <PageTabsTrigger value="account">
+            <IconUser className="h-4 w-4" /> Account
           </PageTabsTrigger>
-        )}
-      </PageTabsList>
+          <PageTabsTrigger value="accessibility">
+            <IconAccessible className="h-4 w-4" /> Accessibility
+          </PageTabsTrigger>
+          <PageTabsTrigger value="providers">
+            <IconWorld className="h-4 w-4" /> Providers
+          </PageTabsTrigger>
+        </PageTabsList>
 
-      <PageTabsContent value="appearance" className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Appearance</CardTitle>
-            <CardDescription>Choose how AI Tutor looks on this device.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-base">Theme</Label>
-              <p className="text-sm text-muted-foreground">
-                Match your device or choose light or dark.
-              </p>
-            </div>
-            <RadioGroup
-              value={theme}
-              onValueChange={(value) => setTheme(value)}
-              className="grid gap-2 sm:grid-cols-3"
-            >
-              <Label htmlFor="theme-system" className={THEME_CHOICE_CLASS}>
-                <RadioGroupItem value="system" id="theme-system" />
-                <span className="font-normal">System</span>
-              </Label>
-              <Label htmlFor="theme-light" className={THEME_CHOICE_CLASS}>
-                <RadioGroupItem value="light" id="theme-light" />
-                <span className="font-normal">Light</span>
-              </Label>
-              <Label htmlFor="theme-dark" className={THEME_CHOICE_CLASS}>
-                <RadioGroupItem value="dark" id="theme-dark" />
-                <span className="font-normal">Dark</span>
-              </Label>
-            </RadioGroup>
-          </CardContent>
-        </Card>
-      </PageTabsContent>
-
-      <PageTabsContent value="accessibility" className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Accessibility</CardTitle>
-            <CardDescription>
-              Personalize how AI Tutor looks and feels. These settings are optional for everyone.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-8">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="assistive-mode" className="text-base">
-                  Assistive Mode
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Optional reading and focus enhancements across EduAI.
-                </p>
+        <PageTabsContent value="account" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile</CardTitle>
+              <CardDescription>Your account details for this AI Tutor session.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4">
+                <Avatar name={user?.name ?? 'You'} size={48} radius={12} />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="truncate text-sm font-medium">{user?.name ?? 'Signed in'}</p>
+                  {user?.email && (
+                    <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                  )}
+                </div>
+                {user?.role && <RoleBadge role={user.role} className="shrink-0" />}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Switch
-                  id="assistive-mode"
-                  checked={assistive}
-                  onCheckedChange={(checked) => setAssistive(Boolean(checked))}
-                  aria-label="Assistive Mode"
-                />
-                <Label
-                  htmlFor="assistive-mode"
-                  className="text-sm font-normal text-muted-foreground whitespace-nowrap cursor-pointer"
-                >
-                  {assistive ? 'On' : 'Off'}
-                </Label>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </PageTabsContent>
-
-      {showAdminTab && (
-        <PageTabsContent value="admin" className="space-y-6">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">AI Tutor admin configuration</h2>
-              <p className="text-sm text-muted-foreground">
-                Configure AI Tutor loop policy and EduAI API integration.
-              </p>
-            </div>
-            {sourceTag && adminData && (
-              <Badge variant={sourceTagBadgeVariant(adminData.status)}>{sourceTag.label}</Badge>
-            )}
-          </div>
-          <AdminSettingsPanel loaderData={adminData} />
+            </CardContent>
+          </Card>
         </PageTabsContent>
-      )}
-    </PageTabs>
+
+        <PageTabsContent value="accessibility" className="space-y-6">
+          <AccessibilitySettings
+            theme={theme}
+            density={density}
+            motionReduced={motionReduced}
+            assistive={assistive}
+            onThemeChange={(value) => setTheme(value)}
+            onDensityChange={handleDensityChange}
+            onMotionReducedChange={handleMotionReducedChange}
+            onAssistiveChange={setAssistive}
+            description="Personalize how AI Tutor looks and feels. These settings are optional for everyone."
+          />
+        </PageTabsContent>
+
+        <PageTabsContent value="providers" className="space-y-6">
+          <ProvidersSettings />
+        </PageTabsContent>
+      </PageTabs>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sign out</CardTitle>
+          <CardDescription>End your session on this browser.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" variant="outline" onClick={() => void handleLogout()}>
+            <IconLogout className="h-4 w-4" /> Log out
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
