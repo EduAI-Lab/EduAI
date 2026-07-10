@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } from "./course-theme"
+import { termLabel } from "./lib/term"
 
 export interface CourseHeroCardProps {
   code: string
@@ -45,7 +46,7 @@ export function CourseHeroCard({
       {/* Top row: code/term left, role badges right */}
       <div className="flex items-start justify-between gap-4 mb-1 pr-8">
         <div className="text-[11px] opacity-80 font-semibold uppercase tracking-widest">
-          {code} · {term} {year ?? ""}
+          {code} · {termLabel(term, year)}
         </div>
         {topRightBadges.length > 0 && (
           <div className="flex gap-2 flex-shrink-0">

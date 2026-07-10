@@ -17,7 +17,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />
     );
-    expect(screen.getByText(/CPSC 110 · Winter 2024/)).toBeInTheDocument();
+    expect(screen.getByText(/CPSC 110 · 2024W2/)).toBeInTheDocument();
     expect(screen.getByText("CPSC 110: Computation, Programs, and Programming")).toBeInTheDocument();
   });
 
@@ -99,7 +99,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />
     );
-    expect(screen.getByText(/Winter 2024/)).toBeInTheDocument();
+    expect(screen.getByText(/2024W2/)).toBeInTheDocument();
 
     rerender(
       <CourseHeroCard
@@ -110,7 +110,7 @@ describe("CourseHeroCard", () => {
         accentColor={ACCENT}
       />
     );
-    expect(screen.getByText(/Winter 2024/)).toBeInTheDocument();
+    expect(screen.getByText(/2024W2/)).toBeInTheDocument();
   });
 
   it("applies custom className to the container", () => {
