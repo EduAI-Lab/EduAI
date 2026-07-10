@@ -1,19 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   AppShell,
   AIServiceIndicators,
+  Badge,
   BugReportDialog,
   Button,
   CommandSearchButton,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   ThemeToggle,
   useAiServiceStatus,
   type BugReportSubmitData,
 } from '@eduai/ui';
-import { IconBooks, IconBug, IconHelpCircle, IconReport, IconSettings } from '@tabler/icons-react';
+import {
+  IconBell,
+  IconBooks,
+  IconBug,
+  IconDashboard,
+  IconHelpCircle,
+  IconMessageChatbot,
+  IconSettings,
+  IconShieldLock,
+} from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 
-import api from '~/lib/api';
+import api, { type NotificationCounts } from '~/lib/api';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { getNavForUser } from '~/lib/rbac/nav';
 import type { AtNavItemKey } from '~/lib/rbac/types';
@@ -29,42 +45,95 @@ import {
 import TourButton from '~/components/TourButton';
 
 const NAV_ICONS: Record<AtNavItemKey, Icon> = {
+  dashboard: IconDashboard,
   'my-courses': IconBooks,
   teaching: IconBooks,
   'admin-courses': IconBooks,
-  'admin-bug-reports': IconReport,
+  'admin-bug-reports': IconShieldLock,
   enrollments: IconBooks,
   analytics: IconBooks,
 };
 
-/** AI Tutor brand mark, unchanged from the old sidebar — mirrors QM's `qmLogo` block. */
+// Matches the 60s interval `useAiServiceStatus` (packages/ui) already polls
+// AI-service status on in this same header — kept in step rather than
+// introducing a second cadence.
+const NOTIFICATION_POLL_MS = 60_000;
+
+interface NotificationRow {
+  key: string;
+  value: number;
+  label: string;
+  href: string;
+}
+
+/**
+ * Label + destination for the notification-count fields the backend is
+ * known to send today. `NotificationCounts` fields are role-dependent and
+ * possibly absent — anything not listed here still renders (see
+ * `humanizeCountKey`) so a future field never gets silently dropped.
+ */
+const NOTIFICATION_COUNT_META: Record<string, (n: number) => { label: string; href: string }> = {
+  ungradedSubmissions: (n) => ({
+    label: `${n} submission${n === 1 ? '' : 's'} to review`,
+    // No single course is implied by the aggregate count — the dashboard
+    // is the one place that already surfaces pending submissions per role.
+    href: '/dashboard',
+  }),
+  unhandledBugReports: (n) => ({
+    label: `${n} open bug report${n === 1 ? '' : 's'}`,
+    href: '/admin',
+  }),
+  unread: (n) => ({
+    label: `${n} unread notification${n === 1 ? '' : 's'}`,
+    href: '/dashboard',
+  }),
+};
+
+/** camelCase → "camel case" fallback for any count field with no entry above. */
+function humanizeCountKey(key: string): string {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+}
+
+/** True once the payload has at least one role-relevant count field (`total`
+ * doesn't count) — used to hide the bell entirely when nothing applies. */
+function hasApplicableCounts(counts: NotificationCounts | null): boolean {
+  if (!counts) return false;
+  return Object.keys(counts).some((key) => key !== 'total' && typeof counts[key] === 'number');
+}
+
+/** Non-zero rows to list in the popover, sorted largest-first. */
+function buildNotificationRows(counts: NotificationCounts): NotificationRow[] {
+  return Object.entries(counts)
+    .filter(
+      (entry): entry is [string, number] =>
+        entry[0] !== 'total' && typeof entry[1] === 'number' && entry[1] > 0,
+    )
+    .map(([key, value]) => {
+      const meta = NOTIFICATION_COUNT_META[key]?.(value);
+      return meta
+        ? { key, value, ...meta }
+        : { key, value, label: `${value} ${humanizeCountKey(key)}`, href: '/dashboard' };
+    })
+    .sort((a, b) => b.value - a.value);
+}
+
+/**
+ * AI Tutor brand mark — canonical shape shared with Core (`app-sidebar.tsx`)
+ * and QM (`qmLogo`): a 28×28 inline-sized `--primary` tile holding the app's
+ * launcher-registry icon, plus a single `text-base font-bold` wordmark. No
+ * stacked subtitle — that two-line variant was unique to AI Tutor.
+ */
 const AI_TUTOR_LOGO = (
   <>
     <div
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-      style={{ background: 'var(--primary)' }}
+      className="flex shrink-0 items-center justify-center"
+      style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--primary)' }}
     >
-      <svg
-        width="15"
-        height="15"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="white"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        aria-hidden
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 3a9 9 0 0 1 0 18" />
-        <path d="M3 12h18" />
-      </svg>
+      <IconMessageChatbot className="size-4 text-white" strokeWidth={1.75} aria-hidden />
     </div>
-    <div className="flex flex-col leading-none">
-      <span className="text-sm font-bold tracking-tight">AI Tutor</span>
-      <span className="text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
-        EduAI
-      </span>
-    </div>
+    <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>
+      AI Tutor
+    </span>
   </>
 );
 
@@ -82,6 +151,28 @@ function AppLayoutInner() {
   const aiStatus = useAiServiceStatus({ fetcher: () => api.aiStatus() });
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [capturingScreenshot, setCapturingScreenshot] = useState(false);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts | null>(null);
+
+  // Polls `api.notificationCounts()` the same way `useAiServiceStatus` above
+  // polls AI status: fetch on mount, then on an interval, swallowing errors
+  // so a flaky endpoint hides the bell instead of crashing the shell.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const result = await api.notificationCounts();
+        if (!cancelled) setNotificationCounts(result);
+      } catch {
+        if (!cancelled) setNotificationCounts(null);
+      }
+    };
+    void load();
+    const timer = setInterval(load, NOTIFICATION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // All hooks above run unconditionally (rules of hooks) — everything below
   // may branch. Bare `<Outlet />` while `!user` matches the old per-route
@@ -121,6 +212,13 @@ function AppLayoutInner() {
     navigate('/');
   };
 
+  const showNotificationsBell = hasApplicableCounts(notificationCounts);
+  const notificationRows = notificationCounts ? buildNotificationRows(notificationCounts) : [];
+  const notificationTotal =
+    typeof notificationCounts?.total === 'number'
+      ? notificationCounts.total
+      : notificationRows.reduce((sum, row) => sum + row.value, 0);
+
   const navMain = getNavForUser(user).map((item) => ({
     title: item.title,
     url: item.href,
@@ -156,6 +254,49 @@ function AppLayoutInner() {
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
           <AIServiceIndicators cloud={aiStatus.cloud} ubc={aiStatus.ubc} onRefresh={aiStatus.refresh} />
           <TourButton />
+          {showNotificationsBell && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="relative size-9 min-h-9 min-w-9"
+                  aria-label={
+                    notificationTotal > 0
+                      ? `Notifications, ${notificationTotal} unread`
+                      : 'Notifications'
+                  }
+                >
+                  <IconBell className="h-4 w-4" aria-hidden="true" />
+                  {notificationTotal > 0 && (
+                    <Badge
+                      variant="destructive"
+                      size="sm"
+                      className="pointer-events-none absolute -right-1 -top-1 h-[18px] min-w-[18px] justify-center px-1"
+                    >
+                      {notificationTotal > 9 ? '9+' : notificationTotal}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {notificationRows.length === 0 ? (
+                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                    You&rsquo;re all caught up
+                  </div>
+                ) : (
+                  notificationRows.map((row) => (
+                    <DropdownMenuItem key={row.key} asChild>
+                      <Link to={row.href}>{row.label}</Link>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button
             type="button"
