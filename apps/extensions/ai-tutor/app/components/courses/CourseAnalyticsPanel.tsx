@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
   DonutChart,
+  MeterBar,
   PanelCard,
   StatCard,
   Table,
@@ -18,7 +19,7 @@ import {
   type DonutSegment,
 } from '@eduai/ui';
 import api from '~/lib/api';
-import type { ActivityAnalyticsRow } from '~/lib/types';
+import type { ActivityAnalyticsRow, StudentMetricRow } from '~/lib/types';
 
 type CourseAnalyticsPanelProps = {
   courseId: number;
@@ -37,16 +38,19 @@ const DIFFICULTY_PALETTE = [
 
 export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
   const [rows, setRows] = useState<ActivityAnalyticsRow[]>([]);
+  const [metrics, setMetrics] = useState<StudentMetricRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api
-      .courseAnalytics(courseId)
-      .then((data) => {
-        if (!cancelled) setRows(data);
+    setError(null);
+    Promise.all([api.courseAnalytics(courseId), api.courseStudentMetrics(courseId)])
+      .then(([analytics, studentMetrics]) => {
+        if (cancelled) return;
+        setRows(analytics);
+        setMetrics(studentMetrics);
       })
       .catch(() => {
         if (!cancelled) setError('Could not load analytics.');
@@ -82,6 +86,23 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
     }));
   }, [rows]);
 
+  const totals = useMemo(
+    () =>
+      metrics.reduce(
+        (acc, row) => ({
+          submissions: acc.submissions + row.submissionCount,
+          correct: acc.correct + row.correctSubmissionCount,
+          incorrect: acc.incorrect + row.incorrectSubmissionCount,
+          helpRequests: acc.helpRequests + row.helpRequestCount,
+        }),
+        { submissions: 0, correct: 0, incorrect: 0, helpRequests: 0 },
+      ),
+    [metrics],
+  );
+
+  const graded = totals.correct + totals.incorrect;
+  const accuracy = graded > 0 ? Math.round((totals.correct / graded) * 100) : null;
+
   if (loading) {
     return (
       <Card data-testid="course-analytics-panel">
@@ -102,17 +123,51 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
 
   return (
     <div className="space-y-4" data-testid="course-analytics-panel">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Activities tracked" value={rows.length} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+        <StatCard label="Students" value={metrics.length} />
+        <StatCard label="Submissions" value={totals.submissions} />
+        <StatCard label="Accuracy" value={accuracy != null ? `${accuracy}%` : '—'} />
         <StatCard label="Avg rating" value={stats.avgRating != null ? stats.avgRating.toFixed(1) : '—'} />
         <StatCard label="Total feedback" value={stats.totalFeedback} />
+        <StatCard label="Help requests" value={totals.helpRequests} />
       </div>
 
-      {difficultyMix.length > 0 && (
-        <PanelCard title="Difficulty mix">
-          <DonutChart data={difficultyMix} centerValue={rows.length} centerLabel="Activities" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {difficultyMix.length > 0 && (
+          <PanelCard title="Difficulty mix">
+            <DonutChart data={difficultyMix} centerValue={rows.length} centerLabel="Activities" />
+          </PanelCard>
+        )}
+
+        <PanelCard title="Overall accuracy">
+          {graded > 0 ? (
+            <div className="space-y-4">
+              <MeterBar
+                label="Correct submissions"
+                value={totals.correct}
+                total={graded}
+                color="var(--color-success-500)"
+              />
+              <dl className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">Correct</dt>
+                  <dd className="font-medium text-foreground">{totals.correct}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Incorrect</dt>
+                  <dd className="font-medium text-foreground">{totals.incorrect}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Activities</dt>
+                  <dd className="font-medium text-foreground">{rows.length}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No graded submissions yet.</p>
+          )}
         </PanelCard>
-      )}
+      </div>
 
       <Card>
         <CardHeader>
@@ -147,6 +202,41 @@ export function CourseAnalyticsPanel({ courseId }: CourseAnalyticsPanelProps) {
                     </TableCell>
                     <TableCell>{row.averageRating?.toFixed(1) ?? '—'}</TableCell>
                     <TableCell>{row.feedbackCount ?? 0}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Student metrics</CardTitle>
+          <CardDescription>Per-student activity performance.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {metrics.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No metrics recorded yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Submissions</TableHead>
+                  <TableHead>Correct</TableHead>
+                  <TableHead>Incorrect</TableHead>
+                  <TableHead>Help requests</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {metrics.map((row) => (
+                  <TableRow key={row.userId}>
+                    <TableCell className="font-mono text-xs">{row.userId}</TableCell>
+                    <TableCell>{row.submissionCount}</TableCell>
+                    <TableCell>{row.correctSubmissionCount}</TableCell>
+                    <TableCell>{row.incorrectSubmissionCount}</TableCell>
+                    <TableCell>{row.helpRequestCount}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
