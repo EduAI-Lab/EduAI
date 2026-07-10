@@ -176,14 +176,14 @@ describe('Course analytics routes (#310)', () => {
       });
     });
 
-    it('TA cannot access student-metrics', async () => {
+    it('TA can access student-metrics (read parity, #938)', async () => {
       const ta = makeTA();
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
       });
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/student-metrics`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
 
     it('ADMIN can access student-metrics', async () => {
@@ -216,14 +216,14 @@ describe('Course analytics routes (#310)', () => {
       });
     });
 
-    it('TA cannot access analytics', async () => {
+    it('TA can access analytics (read parity, #938)', async () => {
       const ta = makeTA();
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: seed.course.id, userId: ta.id, role: 'TA' },
       });
       const taApp = await createApp({ mockUser: ta });
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/analytics`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
 
     it('ADMIN can access analytics', async () => {

@@ -306,33 +306,3 @@ body {
   background: transparent;
 }
 
-/* Legacy AiTutor class aliases mapped to EduAI design tokens (visual parity only) */
-@layer components {
-  .input-field {
-    @apply flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .tag {
-    @apply inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground;
-  }
-
-  .tag-primary {
-    @apply bg-primary/10 text-primary;
-  }
-
-  .tag-accent {
-    @apply bg-accent/15 text-accent-foreground;
-  }
-}

@@ -23,14 +23,13 @@ function renderStudentHome(role: 'STUDENT' | 'TA', courses: Course[]) {
 describe('StudentHome (#746 review: TA preview must stay student-shaped)', () => {
   const courses = [{ id: 1, title: 'Course 1', isPublished: true }];
 
-  it('renders student stats for a STUDENT', () => {
+  it('renders the student course grid for a STUDENT', () => {
     renderStudentHome('STUDENT', courses);
-    expect(screen.getByText('Enrolled courses')).toBeInTheDocument();
+    expect(screen.getByText('Course 1')).toBeInTheDocument();
   });
 
-  it('still renders student stats (not instructor stats) for a TA previewing /student', () => {
+  it('renders the same student course grid for a TA previewing /student', () => {
     renderStudentHome('TA', courses);
-    expect(screen.getByText('Enrolled courses')).toBeInTheDocument();
-    expect(screen.queryByText('Your courses')).not.toBeInTheDocument();
+    expect(screen.getByText('Course 1')).toBeInTheDocument();
   });
 });
