@@ -32,6 +32,7 @@ export type NavItemKey =
   | 'unitadmin-invites'
   | 'admin-cron'
   | 'settings'
+  | 'help'
   | 'ai-tutor'
 
 export type NavItem = {

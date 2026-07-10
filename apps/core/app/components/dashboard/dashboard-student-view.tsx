@@ -2,6 +2,7 @@ import { useCourses } from "~/hooks/api/use-courses";
 import { useRecentChats } from "~/hooks/api/use-recent-chats";
 import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardStudentView() {
@@ -28,6 +29,7 @@ export function DashboardStudentView() {
       leftPanelTitle="Your courses"
       recentChats={chats}
       recentChatsLoading={chatsLoading}
+      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
     />
   );
 }
