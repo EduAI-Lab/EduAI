@@ -91,6 +91,21 @@ export type { ProvidersTableProps, AIProviderRow } from "./settings/providers-ta
 export { ProviderFormDialog } from "./settings/provider-form-dialog"
 export type { ProviderFormDialogProps, ProviderFormData, AIProviderRecord } from "./settings/provider-form-dialog"
 
+// ── Canonical academic-term model ──────────────────────────────────────────
+export {
+  TERM_CODES,
+  isTermCode,
+  termFromMonth,
+  normalizeTerm,
+  termName,
+  termLabel,
+  termLabelLong,
+  termSortKey,
+  compareByTerm,
+  groupCoursesByTerm,
+} from "./lib/term"
+export type { TermCode, TermInfo, CourseTermGroup } from "./lib/term"
+
 // ── Analytics charts ───────────────────────────────────────────────────────
 export { DonutChart } from "./charts/donut-chart"
 export type { DonutChartProps, DonutSegment } from "./charts/donut-chart"
