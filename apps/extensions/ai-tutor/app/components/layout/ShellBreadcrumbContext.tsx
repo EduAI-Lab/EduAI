@@ -5,6 +5,8 @@ export type ShellBreadcrumbItem = {
   href?: string;
   /** Custom content in place of the label (e.g. a course switcher). */
   node?: ReactNode;
+  /** Full-text tooltip when `label` is a shortened form (e.g. "Module 1"). */
+  title?: string;
 };
 
 type SetShellBreadcrumbItems = (items: ShellBreadcrumbItem[]) => void;
