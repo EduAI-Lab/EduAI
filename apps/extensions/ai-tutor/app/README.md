@@ -155,7 +155,7 @@ Custom "Neo-Academic" theme defined in `app.css`:
 | `@tanstack/react-table` | Table rendering (admin bug reports) |
 | `ai` (Vercel AI SDK) | AI chat message type definitions |
 | `cmdk` | Command palette (shadcn Command component) |
-| `lucide-react` | Icon library |
+| `@tabler/icons-react` | Icon library |
 
 ## Guided Tours
 
