@@ -59,7 +59,7 @@ export type { ThemeToggleProps } from "./theme-toggle"
 export { NavUser } from "./nav-user"
 export type { NavUserProps, NavUserItem } from "./nav-user"
 export { NavMain } from "./nav-main"
-export type { NavMainProps, NavMainItem } from "./nav-main"
+export type { NavMainProps, NavMainItem, NavGroupItem } from "./nav-main"
 export { NavSecondary } from "./nav-secondary"
 export type { NavSecondaryProps, NavSecondaryItem } from "./nav-secondary"
 export { AppSidebar } from "./app-sidebar"
@@ -68,6 +68,17 @@ export { BrandSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher"
 export type { BrandSwitcherProps, LauncherApp } from "./app-launcher"
 export { SiteHeader } from "./site-header"
 export type { SiteHeaderProps } from "./site-header"
+export { CommandPalette, CommandSearchButton, buildAppSwitcherGroup } from "./command-palette"
+export type {
+  CommandPaletteProps,
+  CommandPaletteGroup,
+  CommandPaletteItem,
+  CommandSearchButtonProps,
+} from "./command-palette"
+export { CourseSwitcher } from "./course-switcher"
+export type { CourseSwitcherProps, CourseSwitcherOption, CourseSwitcherId } from "./course-switcher"
+export { AIServiceIndicators } from "./ai-service-indicators"
+export type { AIServiceIndicatorsProps, ServiceStatus, ServiceState } from "./ai-service-indicators"
 export { AccessibilitySettings } from "./settings/accessibility-settings"
 export type { AccessibilitySettingsProps, UiDensity as AccessibilityUiDensity, UiTheme as AccessibilityUiTheme } from "./settings/accessibility-settings"
 export { ProvidersTable } from "./settings/providers-table"

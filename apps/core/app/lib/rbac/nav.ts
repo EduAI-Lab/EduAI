@@ -1,4 +1,6 @@
-import type { NavItem, NavUser } from '~/lib/rbac/types'
+import type { NavItem, NavGroupItem, NavUser } from '~/lib/rbac/types'
+import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
+import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
@@ -36,12 +38,15 @@ export type NavOptions = {
 }
 
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
-export function getNavForUser(user: NavUser, opts: NavOptions = {}): NavItem[] {
+export function getNavForUser(user: NavUser, opts: NavOptions = {}): (NavItem | NavGroupItem)[] {
   const role = user.role ?? 'STUDENT'
   const nav = [...CORE_NAV]
 
   if (role === 'ADMIN') {
-    return [...nav, ...ADMIN_NAV]
+    return [
+      ...nav,
+      { key: 'admin-group' as const, title: 'Administration', children: ADMIN_NAV },
+    ]
   }
 
   if (role === 'UNIT_ADMIN') {
@@ -78,6 +83,9 @@ export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   if (role === 'ADMIN') {
     items.push(...ADMIN_SECONDARY_NAV)
   }
+
+  // In-app user guide — available to everyone (issue #764).
+  items.push({ key: 'help', title: 'Help & guide', url: '/help' })
 
   return items
 }

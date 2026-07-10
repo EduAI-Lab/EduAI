@@ -1,13 +1,55 @@
 import type { LoaderFunctionArgs } from "react-router";
+import type { Prisma } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { buildCourseListFilter } from "~/lib/auth/course-access.server";
-import type { DashboardStats } from "~/types/dashboard";
+import type {
+  DashboardStats,
+  MaterialStatusBreakdown,
+  UserRoleBreakdown,
+} from "~/types/dashboard";
 
 function weekAgo(): Date {
   const d = new Date();
   d.setDate(d.getDate() - 7);
   return d;
+}
+
+/**
+ * Split live (non-deleted) materials by processing status for the analytics
+ * donut. Pass a where filter to scope to a role's courses; deletedAt: null is
+ * always applied so soft-deleted rows never inflate the chart.
+ */
+async function materialsByStatus(
+  where: Prisma.CourseMaterialWhereInput,
+): Promise<MaterialStatusBreakdown> {
+  const rows = await prisma.courseMaterial.groupBy({
+    by: ["status"],
+    where: { ...where, deletedAt: null },
+    _count: { _all: true },
+  });
+  const out: MaterialStatusBreakdown = { ready: 0, processing: 0, failed: 0 };
+  for (const r of rows) {
+    const n = r._count._all;
+    if (r.status === "READY") out.ready = n;
+    else if (r.status === "PROCESSING") out.processing = n;
+    else if (r.status === "FAILED") out.failed = n;
+  }
+  return out;
+}
+
+/** Platform-wide user distribution by role for the ADMIN analytics donut. */
+async function usersByRole(): Promise<UserRoleBreakdown> {
+  const rows = await prisma.user.groupBy({ by: ["role"], _count: { _all: true } });
+  const out: UserRoleBreakdown = { students: 0, instructors: 0, admins: 0, other: 0 };
+  for (const r of rows) {
+    const n = r._count._all;
+    if (r.role === "STUDENT") out.students += n;
+    else if (r.role === "INSTRUCTOR") out.instructors += n;
+    else if (r.role === "ADMIN") out.admins += n;
+    else out.other += n;
+  }
+  return out;
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -36,7 +78,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
         prisma.user.count(),
         prisma.course.count({ where: { isActive: true, deletedAt: null } }),
       ]);
-    stats = { chatCount, chatCountWeek, materialCount, studentCount, instructorCount, totalUsers, activeCourseCount };
+    const [materialStatus, roleBreakdown] = await Promise.all([
+      materialsByStatus({}),
+      usersByRole(),
+    ]);
+    stats = {
+      chatCount,
+      chatCountWeek,
+      materialCount,
+      studentCount,
+      instructorCount,
+      totalUsers,
+      activeCourseCount,
+      materialsByStatus: materialStatus,
+      usersByRole: roleBreakdown,
+    };
 
   } else if (role === "UNIT_ADMIN") {
     const rbacUser = { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits ?? undefined };
@@ -57,6 +113,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       courses.filter((c) => c.isActive).length,
     ]);
 
+    const materialStatus = courseIds.length
+      ? await materialsByStatus({ courseId: { in: courseIds } })
+      : { ready: 0, processing: 0, failed: 0 };
+
     stats = {
       chatCount,
       chatCountWeek,
@@ -65,6 +125,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       instructorCount: uniqueInstructorIds.length,
       totalUsers: 0,
       activeCourseCount,
+      materialsByStatus: materialStatus,
     };
 
   } else if (role === "INSTRUCTOR") {
@@ -85,7 +146,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         : Promise.resolve(0),
     ]);
 
-    stats = { chatCount, chatCountWeek, materialCount, studentCount, instructorCount: 0, totalUsers: 0, activeCourseCount: 0 };
+    const materialStatus = courseIds.length
+      ? await materialsByStatus({ courseId: { in: courseIds } })
+      : { ready: 0, processing: 0, failed: 0 };
+
+    stats = {
+      chatCount,
+      chatCountWeek,
+      materialCount,
+      studentCount,
+      instructorCount: 0,
+      totalUsers: 0,
+      activeCourseCount: 0,
+      materialsByStatus: materialStatus,
+    };
 
   } else {
     // STUDENT platform role — covers both students and TAs (a TA is a STUDENT

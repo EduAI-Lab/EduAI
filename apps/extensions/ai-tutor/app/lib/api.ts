@@ -103,6 +103,11 @@ async function http(path: string, init?: RequestInit) {
 
 export const api = {
   me: () => http('/api/me') as Promise<{ user: User | null }>,
+  aiStatus: () =>
+    http('/api/ai-status') as Promise<{
+      cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+      ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+    }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   updateCourse: (
