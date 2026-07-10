@@ -1,21 +1,20 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import StudentHome from '~/routes/student';
 import type { Route } from '../../routes/+types/student';
 import { AuthProvider } from '~/hooks/useLocalUser';
+import { ShellBreadcrumbProvider } from '~/components/layout/ShellBreadcrumbContext';
 import type { Course } from '~/lib/types';
-
-vi.mock('~/components/layout/AppShell', () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
 
 function renderStudentHome(role: 'STUDENT' | 'TA', courses: Course[]) {
   const props = { loaderData: { courses } } as Route.ComponentProps;
   return render(
     <AuthProvider initialUser={{ id: 'u1', name: 'User', role }}>
       <MemoryRouter initialEntries={['/student']}>
-        <StudentHome {...props} />
+        <ShellBreadcrumbProvider>
+          <StudentHome {...props} />
+        </ShellBreadcrumbProvider>
       </MemoryRouter>
     </AuthProvider>,
   );
