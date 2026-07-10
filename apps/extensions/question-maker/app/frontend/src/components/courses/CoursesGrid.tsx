@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { CourseCard, groupCoursesByTerm } from '@eduai/ui';
-import { IconBooks } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
+import { CourseCard, CourseListView } from '@eduai/ui';
+import { IconBooks, IconSearch } from '@tabler/icons-react';
 import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
 import { getDepartmentLabel } from '@/lib/units';
@@ -30,8 +30,17 @@ export type CoursesGridProps = {
   currentUserId?: string;
   /** Course card to highlight for guided tour step 1 */
   tourHighlightCourseId?: number | null;
+  /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
+  filters?: ReactNode;
+  /** Optional role-specific predicate applied before the search box. */
+  matchesFilter?: (course: Course) => boolean;
 };
 
+/**
+ * QM's course list. Thin wrapper over the shared `CourseListView` so search,
+ * term grouping, and layout read identically to Core and AI Tutor; QM only
+ * supplies its click-to-select card and any role-specific filter.
+ */
 export function CoursesGrid({
   courses,
   isLoading,
@@ -39,27 +48,10 @@ export function CoursesGrid({
   emptyHint,
   showDepartment = false,
   tourHighlightCourseId = null,
+  filters,
+  matchesFilter,
 }: CoursesGridProps) {
   const highlightId = tourHighlightCourseId ?? (courses.length > 0 ? courses[0].id : null);
-
-  // Group courses by canonical term (shared @eduai/ui model), ordered newest-term
-  // first. A single group renders without a heading so small lists stay clean;
-  // multiple terms get separator headings.
-  const groups = useMemo(() => groupCoursesByTerm(courses), [courses]);
-
-  if (isLoading) {
-    return <CardGridSkeleton count={6} columns={3} />;
-  }
-
-  if (courses.length === 0) {
-    return (
-      <EmptyState
-        icon={<IconBooks className="size-6" />}
-        title="No courses yet"
-        description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
-      />
-    );
-  }
 
   const renderCard = (course: Course) => {
     const colorIndex = course.id % 5;
@@ -70,7 +62,6 @@ export function CoursesGrid({
 
     return (
       <div
-        key={course.id}
         onClick={(e) => {
           e.preventDefault();
           onSelectCourse(course);
@@ -107,26 +98,32 @@ export function CoursesGrid({
     );
   };
 
-  const multipleTerms = groups.length > 1;
-
   return (
-    <div className="space-y-8">
-      {groups.map((group) => (
-        <section key={group.label}>
-          {multipleTerms && (
-            <div className="mb-3 flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-foreground">{group.labelLong}</h3>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {group.items.length}
-              </span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-          )}
-          <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {group.items.map(renderCard)}
-          </div>
-        </section>
-      ))}
-    </div>
+    <CourseListView<Course>
+      courses={courses}
+      isLoading={isLoading}
+      loadingSlot={<CardGridSkeleton count={6} columns={3} />}
+      getKey={(course) => course.id}
+      getTermInfo={(course) => ({ term: course.term, year: course.year })}
+      getSearchText={(course) => `${course.name ?? ''} ${course.code ?? ''}`}
+      matchesFilter={matchesFilter}
+      filters={filters}
+      gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      emptyState={
+        <EmptyState
+          icon={<IconBooks className="size-6" />}
+          title="No courses yet"
+          description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
+        />
+      }
+      noResultsState={
+        <EmptyState
+          icon={<IconSearch className="size-6" />}
+          title="No courses match"
+          description="Try a different search or filter."
+        />
+      }
+      renderCard={renderCard}
+    />
   );
 }
