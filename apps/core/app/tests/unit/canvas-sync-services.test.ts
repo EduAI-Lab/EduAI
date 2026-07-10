@@ -112,6 +112,61 @@ describe("mapCanvasCourseToCoreFields", () => {
     expect(startDate).toEqual(new Date("2026-09-01T06:00:00Z"));
     expect(endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
   });
+
+  it("uses Default Term dates when course participation dates are null", () => {
+    const { startDate, endDate } = resolveCanvasCourseDates({
+      id: 21,
+      name: "Software Engineering",
+      course_code: "COSC 301",
+      start_at: null,
+      end_at: null,
+      term: {
+        id: 1,
+        name: "Default Term",
+        start_at: "2026-05-01T06:00:00Z",
+        end_at: "2026-08-31T06:00:00Z",
+      },
+    });
+
+    expect(startDate).toEqual(new Date("2026-05-01T06:00:00Z"));
+    expect(endDate).toEqual(new Date("2026-08-31T06:00:00Z"));
+  });
+
+  it("infers start from term name when only term end_at is set (prof token shape)", () => {
+    const course13 = resolveCanvasCourseDates({
+      id: 13,
+      name: "Linear Algebra",
+      course_code: "MATH 221",
+      term: {
+        id: 39,
+        name: "2026 Winter",
+        start_at: null,
+        end_at: "2026-12-31T07:00:00Z",
+      },
+    });
+
+    expect(course13.startDate).toEqual(new Date(Date.UTC(2026, 8, 1, 7, 0, 0)));
+    expect(course13.endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
+    expect(ubcTermFromDate(course13.startDate)).toBe("W1");
+  });
+
+  it("infers start from term end_at when term name has no year or season", () => {
+    const course21 = resolveCanvasCourseDates({
+      id: 21,
+      name: "Software Engineering",
+      course_code: "COSC 301",
+      term: {
+        id: 1,
+        name: "Default Term",
+        start_at: null,
+        end_at: "2026-08-31T06:00:00Z",
+      },
+    });
+
+    expect(course21.startDate).toEqual(new Date(Date.UTC(2026, 6, 1, 7, 0, 0)));
+    expect(course21.endDate).toEqual(new Date("2026-08-31T06:00:00Z"));
+    expect(ubcTermFromDate(course21.startDate)).toBe("S2");
+  });
 });
 
 describe("SyncCanvasCoursesSchema", () => {

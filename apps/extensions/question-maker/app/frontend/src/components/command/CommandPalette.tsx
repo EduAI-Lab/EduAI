@@ -1,20 +1,15 @@
 /**
- * Global ⌘K command palette: jump to any page, switch courses, hop between the
- * current course's tabs, and fire common actions (new question, import). Opens on
- * ⌘K / Ctrl+K, or via a `qm:open-command` window event (the header search button
- * dispatches it). Course-aware: surfaces "This course" actions when inside one.
+ * QuestionMaker's command palette — a thin adapter over the shared `@eduai/ui`
+ * CommandPalette (issue #764). Builds navigation, course-tab, and switch-course
+ * groups, then hands them to the shared component so the ⌘K palette looks and
+ * behaves identically across Core, QuestionMaker, and AI Tutor. Opens on ⌘K or
+ * the `qm:open-command` window event (dispatched by the header search button).
  */
-import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import {
-  CommandDialog,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandSeparator,
-  CommandShortcut,
+  CommandPalette as SharedCommandPalette,
+  buildAppSwitcherGroup,
+  type CommandPaletteGroup,
 } from '@eduai/ui';
 import {
   IconDashboard,
@@ -23,129 +18,74 @@ import {
   IconSettings,
   IconHelpCircle,
   IconPlus,
-  IconDownload,
   IconClipboardList,
   IconStack2,
   IconFolderOpen,
   IconLayoutGrid,
   IconSchool,
+  IconLayoutDashboard,
 } from '@tabler/icons-react';
 import { useDisplayCourses } from '@/hooks/useDisplayCourses';
+import { useAuth } from '@/contexts/AuthContext';
+import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
+
+const iconClass = 'size-4';
 
 export function CommandPalette() {
-  const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { displayCourses } = useDisplayCourses();
+  const { user } = useAuth();
 
   const courseMatch = pathname.match(/^\/courses\/(\d+)/);
   const courseId = courseMatch ? Number(courseMatch[1]) : null;
   const currentCourse = courseId ? displayCourses.find((c) => c.id === courseId) ?? null : null;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setOpen((o) => !o);
-      }
-    };
-    const onOpenEvent = () => setOpen(true);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('qm:open-command', onOpenEvent);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('qm:open-command', onOpenEvent);
-    };
-  }, []);
+  const groups: CommandPaletteGroup[] = [
+    {
+      heading: 'Go to',
+      items: [
+        { label: 'Dashboard', icon: <IconDashboard className={iconClass} />, onSelect: () => navigate('/dashboard') },
+        { label: 'Courses', icon: <IconBooks className={iconClass} />, onSelect: () => navigate('/courses') },
+        { label: 'Question Library', icon: <IconLibrary className={iconClass} />, onSelect: () => navigate('/library') },
+        { label: 'Settings', icon: <IconSettings className={iconClass} />, onSelect: () => navigate('/settings') },
+        { label: 'Help', icon: <IconHelpCircle className={iconClass} />, onSelect: () => navigate('/help') },
+      ],
+    },
+    {
+      heading: currentCourse ? currentCourse.code || currentCourse.name : 'This course',
+      items: courseId
+        ? [
+            {
+              label: 'New question',
+              shortcut: 'C',
+              icon: <IconPlus className={iconClass} />,
+              onSelect: () => navigate(`/courses/${courseId}/questions/new`),
+            },
+            { label: 'Questions', icon: <IconStack2 className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=questions`) },
+            { label: 'Assessments', icon: <IconClipboardList className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=assessments`) },
+            { label: 'Topics', icon: <IconFolderOpen className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=topics`) },
+            { label: 'Canvas', icon: <IconSchool className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=canvas`) },
+            { label: 'Overview', icon: <IconLayoutDashboard className={iconClass} />, onSelect: () => navigate(`/courses/${courseId}?tab=overview`) },
+          ]
+        : [],
+    },
+    {
+      heading: 'Switch course',
+      items: displayCourses.slice(0, 8).map((c) => ({
+        label: c.code || c.name,
+        sublabel: c.code && c.name ? c.name : undefined,
+        value: `course ${c.code ?? ''} ${c.name}`,
+        icon: <IconLayoutGrid className={iconClass} />,
+        onSelect: () => navigate(`/courses/${c.id}`),
+      })),
+    },
+    buildAppSwitcherGroup({
+      apps: getLauncherApps(),
+      currentAppId: CURRENT_APP_ID,
+      role: user?.role,
+    }),
+  ];
 
-  const run = (fn: () => void) => {
-    setOpen(false);
-    fn();
-  };
-
-  const go = (to: string) => run(() => navigate(to));
-
-  return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search or jump to…" />
-      <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-
-        <CommandGroup heading="Go to">
-          <CommandItem onSelect={() => go('/dashboard')}>
-            <IconDashboard className="size-4" />
-            Dashboard
-          </CommandItem>
-          <CommandItem onSelect={() => go('/courses')}>
-            <IconBooks className="size-4" />
-            Courses
-          </CommandItem>
-          <CommandItem onSelect={() => go('/library')}>
-            <IconLibrary className="size-4" />
-            Question Library
-          </CommandItem>
-          <CommandItem onSelect={() => go('/settings')}>
-            <IconSettings className="size-4" />
-            Settings
-          </CommandItem>
-          <CommandItem onSelect={() => go('/help')}>
-            <IconHelpCircle className="size-4" />
-            Help
-          </CommandItem>
-        </CommandGroup>
-
-        {courseId && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading={currentCourse ? `${currentCourse.code || currentCourse.name}` : 'This course'}>
-              <CommandItem onSelect={() => go(`/courses/${courseId}/questions/new`)}>
-                <IconPlus className="size-4" />
-                New question
-                <CommandShortcut>C</CommandShortcut>
-              </CommandItem>
-              <CommandItem onSelect={() => go(`/courses/${courseId}?tab=questions`)}>
-                <IconStack2 className="size-4" />
-                Questions
-              </CommandItem>
-              <CommandItem onSelect={() => go(`/courses/${courseId}?tab=assessments`)}>
-                <IconClipboardList className="size-4" />
-                Assessments
-              </CommandItem>
-              <CommandItem onSelect={() => go(`/courses/${courseId}?tab=topics`)}>
-                <IconFolderOpen className="size-4" />
-                Topics
-              </CommandItem>
-              <CommandItem onSelect={() => go(`/courses/${courseId}?tab=canvas`)}>
-                <IconSchool className="size-4" />
-                Canvas
-              </CommandItem>
-              <CommandItem onSelect={() => go(`/courses/${courseId}?tab=overview`)}>
-                <IconDownload className="size-4 opacity-0" />
-                Overview
-              </CommandItem>
-            </CommandGroup>
-          </>
-        )}
-
-        {displayCourses.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Switch course">
-              {displayCourses.slice(0, 8).map((c) => (
-                <CommandItem
-                  key={c.id}
-                  value={`course ${c.code ?? ''} ${c.name}`}
-                  onSelect={() => go(`/courses/${c.id}`)}
-                >
-                  <IconLayoutGrid className="size-4" />
-                  <span className="font-medium">{c.code || c.name}</span>
-                  {c.code && c.name && <span className="truncate text-muted-foreground">— {c.name}</span>}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
-      </CommandList>
-    </CommandDialog>
-  );
+  return <SharedCommandPalette groups={groups} openEventName="qm:open-command" />;
 }
