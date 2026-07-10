@@ -18,6 +18,7 @@
 
 import { useMemo } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
+import { Badge } from '@eduai/ui';
 import BugReportsTab from '~/components/admin/BugReportsTab';
 import api from '~/lib/api';
 import type {
@@ -28,8 +29,7 @@ import type {
 } from '~/lib/types';
 import type { Route } from './+types/admin';
 import { requireClientUser } from '~/lib/client-auth';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
 import { buildDashboardStats } from '~/lib/dashboard-stats';
 import { getApiKeySourceTag, loadAdminSettingsData } from '~/lib/admin-settings';
@@ -40,6 +40,17 @@ type AdminLoaderData = {
   courses: Course[];
   bugReports: AdminBugReportRow[];
 };
+
+// `getApiKeySourceTag` (shared with the Settings redesign) still returns a
+// legacy `.tag` className for its label; here we only borrow the label text
+// and pick a DS Badge variant so the accessory next to the heading matches
+// the rest of the console instead of the old CSS-class pill.
+function sourceTagBadgeVariant(status: EduAiApiKeyStatus): 'default' | 'secondary' | 'outline' {
+  if (!status.configured) return 'outline';
+  if (status.source === 'ADMIN') return 'default';
+  if (status.source === 'ENV') return 'secondary';
+  return 'outline';
+}
 
 /**
  * Load the admin console data: API key status (for the source tag), user and
@@ -85,20 +96,22 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
 
   const sourceTag = getApiKeySourceTag(loaderData.status);
 
+  useShellBreadcrumbs([{ label: 'Admin' }]);
+
   if (searchParams.get('tab') === 'settings') {
     return <Navigate to="/settings" replace />;
   }
 
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Admin' }]} />}>
-      <RoleDashboard
-        heading="Admin console"
-        subheading="Review platform stats and triage bug reports."
-        headingAccessory={<div className={sourceTag.className}>{sourceTag.label}</div>}
-        stats={adminStats}
-      >
-        <BugReportsTab initialReports={loaderData.bugReports} />
-      </RoleDashboard>
-    </AppShell>
+    <RoleDashboard
+      heading="Admin console"
+      subheading="Review platform stats and triage bug reports."
+      headingAccessory={
+        <Badge variant={sourceTagBadgeVariant(loaderData.status)}>{sourceTag.label}</Badge>
+      }
+      stats={adminStats}
+    >
+      <BugReportsTab initialReports={loaderData.bugReports} />
+    </RoleDashboard>
   );
 }

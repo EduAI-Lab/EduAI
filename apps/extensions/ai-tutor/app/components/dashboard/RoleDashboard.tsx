@@ -8,6 +8,12 @@ import { DashboardStatGrid, type DashboardStat } from '~/components/dashboard/Da
  * (optional role banner, heading, stat grid) with role-scoped stats and body.
  * Role differences live in `stats` (via `buildDashboardStats`) and `children`,
  * not in divergent per-role layouts.
+ *
+ * Owns the page-level padding: `AppShell`'s `<main>` is intentionally
+ * padding-free (some routes want edge-to-edge canvas), so every route that
+ * renders through this shell gets its `px-4 lg:px-6` / vertical rhythm from
+ * here — matches EduAI Core's `DashboardView` (`apps/core`) so the two apps'
+ * dashboards share one page-padding convention.
  */
 export type RoleDashboardProps = {
   heading: string;
@@ -33,7 +39,7 @@ export function RoleDashboard({
   children,
 }: RoleDashboardProps) {
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
       {banner}
 
       <div

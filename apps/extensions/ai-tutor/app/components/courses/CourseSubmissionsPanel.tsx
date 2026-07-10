@@ -1,4 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  StatCard,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@eduai/ui';
 import api from '~/lib/api';
 import type { SubmissionRow } from '~/lib/types';
 
@@ -30,58 +45,82 @@ export function CourseSubmissionsPanel({ courseId }: CourseSubmissionsPanelProps
     };
   }, [courseId]);
 
+  const stats = useMemo(() => {
+    const correct = rows.filter((row) => row.isCorrect === true).length;
+    const incorrect = rows.filter((row) => row.isCorrect === false).length;
+    return { correct, incorrect };
+  }, [rows]);
+
   if (loading) {
     return (
-      <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
-        Loading submissions…
-      </div>
+      <Card data-testid="course-submissions-panel">
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Loading submissions…
+        </CardContent>
+      </Card>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border bg-card p-6 text-sm text-destructive">{error}</div>
+      <Card data-testid="course-submissions-panel">
+        <CardContent className="py-10 text-center text-sm text-destructive">{error}</CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-4 rounded-lg border bg-card p-6" data-testid="course-submissions-panel">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">Submissions</h2>
-        <p className="text-sm text-muted-foreground">
-          Recent student answer attempts in this course.
-        </p>
+    <div className="space-y-4" data-testid="course-submissions-panel">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Submissions" value={rows.length} />
+        <StatCard label="Correct" value={stats.correct} />
+        <StatCard label="Incorrect" value={stats.incorrect} />
       </div>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No submissions yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="px-2 py-2 font-medium">Student</th>
-                <th className="px-2 py-2 font-medium">Activity</th>
-                <th className="px-2 py-2 font-medium">Attempt</th>
-                <th className="px-2 py-2 font-medium">Result</th>
-                <th className="px-2 py-2 font-medium">When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-border/60">
-                  <td className="px-2 py-2 font-mono text-xs">{row.userId}</td>
-                  <td className="px-2 py-2">{row.activityId}</td>
-                  <td className="px-2 py-2">{row.attemptNumber}</td>
-                  <td className="px-2 py-2">
-                    {row.isCorrect == null ? '—' : row.isCorrect ? 'Correct' : 'Incorrect'}
-                  </td>
-                  <td className="px-2 py-2">{new Date(row.createdAt).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Submissions</CardTitle>
+          <CardDescription>Recent student answer attempts in this course.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No submissions yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Activity</TableHead>
+                  <TableHead>Attempt</TableHead>
+                  <TableHead>Result</TableHead>
+                  <TableHead>When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-mono text-xs">{row.userId}</TableCell>
+                    <TableCell>{row.activityId}</TableCell>
+                    <TableCell>{row.attemptNumber}</TableCell>
+                    <TableCell>
+                      {row.isCorrect == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant={row.isCorrect ? 'success' : 'destructive'}>
+                          {row.isCorrect ? 'Correct' : 'Incorrect'}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Date(row.createdAt).toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

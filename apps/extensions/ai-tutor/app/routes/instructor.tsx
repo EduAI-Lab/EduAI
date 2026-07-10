@@ -18,6 +18,8 @@
  */
 import { useMemo, useOptimistic, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { IconBook2, IconChevronRight, IconSchool } from '@tabler/icons-react';
+import { Badge, Card, CardContent, CardFooter, CardHeader, CardTitle } from '@eduai/ui';
 import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { PublishStatusButton } from '../components/PublishStatusButton';
@@ -28,8 +30,7 @@ import { getEduAiAppUrl } from '../lib/extension-urls';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
 import { buildInstructorDashboardStats } from '~/lib/dashboard-stats';
 
@@ -41,6 +42,77 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const courses = (await api.listCourses()) as Course[];
   return { courses };
+}
+
+type InstructorCourseCardProps = {
+  course: Course;
+  onOpen: () => void;
+  canPublish: boolean;
+  pending: boolean;
+  onTogglePublish: () => void;
+};
+
+/** One tile in the teaching course grid — mirrors `StudentCourseCard`'s
+ *  whole-card-clickable pattern so the two dashboards read as one product.
+ *  The publish toggle is a real click target nested in the card, so its
+ *  wrapper stops propagation rather than letting the card's own onClick
+ *  fire a navigation underneath it. */
+function InstructorCourseCard({
+  course,
+  onOpen,
+  canPublish,
+  pending,
+  onTogglePublish,
+}: InstructorCourseCardProps) {
+  return (
+    <Card
+      hoverable
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <CardHeader>
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <div className="flex size-11 items-center justify-center rounded-[var(--radius-lg)] bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+            <IconBook2 size={20} aria-hidden="true" />
+          </div>
+          {course.externalSource === 'EDUAI' && (
+            <Badge variant="secondary" size="sm">
+              EduAI
+            </Badge>
+          )}
+        </div>
+        <CardTitle className="line-clamp-2 transition-colors group-hover:text-primary">
+          {course.title}
+        </CardTitle>
+        {course.description ? (
+          <p className="line-clamp-2 text-sm text-muted-foreground">{course.description}</p>
+        ) : null}
+      </CardHeader>
+      <CardFooter className="justify-between">
+        <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-text">
+          View course
+          <IconChevronRight size={15} aria-hidden="true" />
+        </span>
+        <PermissionGate allow={canPublish}>
+          <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+            <PublishStatusButton
+              isPublished={course.isPublished}
+              pending={pending}
+              onClick={onTogglePublish}
+            />
+          </div>
+        </PermissionGate>
+      </CardFooter>
+    </Card>
+  );
 }
 
 /**
@@ -63,6 +135,8 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   // Published / Draft), including for admins who share this shell — the admin
   // platform stats (Users / bug reports) live on the /admin Bug Reports page.
   const stats = useMemo(() => buildInstructorDashboardStats(oCourses), [oCourses]);
+
+  useShellBreadcrumbs([{ label: 'Courses' }]);
 
   // Optimistic publish toggle: addCourseOpt flips the badge instantly via
   // useOptimistic, then the server response confirms or the catch branch
@@ -94,35 +168,23 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   };
 
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
-      <RoleDashboard
-        banner={
-          user ? <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} /> : null
-        }
-        heading="Courses"
-        subheading="Manage courses and publish content."
-        stats={stats}
-      >
-        {oCourses.length === 0 ? (
-          <div className="animate-fade-up delay-150">
-            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-12 text-center max-w-lg mx-auto">
-              <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-secondary flex items-center justify-center">
-                <svg
-                  className="w-8 h-8 text-muted-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                  />
-                </svg>
-              </div>
-              <h2 className="text-xl font-bold text-foreground mb-2">No courses yet</h2>
-              <p className="text-muted-foreground text-sm">
+    <RoleDashboard
+      banner={
+        user ? <AtRoleBanner role={user.role} authorizedUnits={user.authorizedUnits} /> : null
+      }
+      heading="Courses"
+      subheading="Manage courses and publish content."
+      stats={stats}
+    >
+      {oCourses.length === 0 ? (
+        <Card className="mx-auto max-w-lg">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <IconSchool size={22} aria-hidden="true" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-semibold text-foreground">No courses yet</h3>
+              <p className="text-sm text-muted-foreground">
                 Courses are created in{' '}
                 <a
                   href={`${getEduAiAppUrl()}/courses`}
@@ -133,97 +195,25 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
                 . They sync here automatically once enabled.
               </p>
             </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {oCourses.map((c, index) => (
-              <div
-                key={c.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/instructor/courses/${c.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    navigate(`/instructor/courses/${c.id}`);
-                  }
-                }}
-                className="group rounded-lg border bg-card text-card-foreground shadow-sm p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 glow flex flex-col animate-fade-up focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                style={{ animationDelay: `${150 + index * 50}ms` }}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                    <svg
-                      className="w-6 h-6"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-                      />
-                    </svg>
-                  </div>
-
-                  {c.externalSource === 'EDUAI' && <span className="tag tag-primary">EduAI</span>}
-                </div>
-
-                {/* Course info */}
-                <div className="flex-1 mb-4">
-                  <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-2">
-                    {c.title}
-                  </h3>
-                  {c.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div className="pt-4 border-t border-border flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                      />
-                    </svg>
-                    <span className="group-hover:text-foreground transition-colors">
-                      View course
-                    </span>
-                  </div>
-
-                  <PermissionGate allow={perms.canPublishContent}>
-                    <div
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                    >
-                      <PublishStatusButton
-                        isPublished={c.isPublished}
-                        pending={publishingId === c.id}
-                        onClick={() => {
-                          if (publishingId === c.id) return;
-                          togglePublish(c.id, c.isPublished);
-                        }}
-                      />
-                    </div>
-                  </PermissionGate>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </RoleDashboard>
-    </AppShell>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {oCourses.map((c) => (
+            <InstructorCourseCard
+              key={c.id}
+              course={c}
+              onOpen={() => navigate(`/instructor/courses/${c.id}`)}
+              canPublish={perms.canPublishContent}
+              pending={publishingId === c.id}
+              onTogglePublish={() => {
+                if (publishingId === c.id) return;
+                togglePublish(c.id, c.isPublished);
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </RoleDashboard>
   );
 }

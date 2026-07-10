@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import {
   Conversation,
   ConversationContent,
+  ConversationEmptyState,
   ConversationScrollButton,
 } from '~/components/ai-elements/conversation';
 import {
@@ -21,21 +22,45 @@ import {
 } from '~/components/ai-elements/prompt-input';
 import { Message, MessageContent, MessageResponse } from '~/components/ai-elements/message';
 import {
+  Badge,
+  Button,
+  Card,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Button,
+  Input,
+  PromptSuggestion,
+  SegmentedControl,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from '@eduai/ui';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
-import { IconHistory, IconPencilPlus, IconRefresh } from '@tabler/icons-react';
+import {
+  IconAlertCircle,
+  IconCheck,
+  IconHistory,
+  IconKey,
+  IconLoader2,
+  IconMessageCircle,
+  IconPencilPlus,
+  IconRefresh,
+  IconSparkles,
+} from '@tabler/icons-react';
 import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
 import {
   loadSessionMessages,
   type ApiChatSession,
 } from '~/lib/student-chat-history';
+import { cn } from '~/lib/utils';
 import api from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
 
@@ -611,16 +636,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   }, [currentProvider, providerApiKeys, tempApiKey]);
 
   const renderMessages = (tab: ChatTab) => (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {chatState[tab].messages.map((msg) => (
         <Message from={msg.role} key={msg.id}>
-          <MessageContent
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              msg.role === 'user'
-                ? 'ml-auto bg-primary text-primary-foreground shadow-sm'
-                : 'bg-secondary text-secondary-foreground border border-border'
-            }`}
-          >
+          {/* `reading-surface` only applies its relaxed typography under
+              Assistive Mode (`[data-assistive]`), and only to the assistant's
+              response — that's the primary reading content students consume. */}
+          <MessageContent className={msg.role === 'assistant' ? 'reading-surface' : undefined}>
             <MessageResponse>{msg.content}</MessageResponse>
           </MessageContent>
         </Message>
@@ -629,114 +651,76 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   );
 
   const renderSetupCard = () => (
-    <div className="mx-auto max-w-sm rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
+    <Card className="mx-auto w-full max-w-sm space-y-5 p-6 animate-scale-in">
       <div className="text-center">
-        <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-          <svg
-            className="w-7 h-7"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-            />
-          </svg>
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <IconSparkles className="h-7 w-7" aria-hidden />
         </div>
-        <h3 className="text-lg font-bold text-foreground">
-          Set up your AI Study Buddy
-        </h3>
-        <p className="text-xs text-muted-foreground mt-1">Complete these steps to start chatting</p>
+        <h3 className="text-lg font-bold text-foreground">Set up your AI Study Buddy</h3>
+        <p className="mt-1 text-xs text-muted-foreground">Complete these steps to start chatting</p>
       </div>
 
-      {/* Step 1: Knowledge Level */}
+      {/* Step 1: Knowledge level */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span
-            className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
               knowledgeLevel
                 ? 'bg-accent text-accent-foreground'
-                : 'bg-secondary text-muted-foreground'
-            }`}
-          >
-            {knowledgeLevel ? (
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              '1'
+                : 'bg-secondary text-muted-foreground',
             )}
+          >
+            {knowledgeLevel ? <IconCheck className="h-3.5 w-3.5" /> : '1'}
           </span>
-          <span className="text-sm font-semibold text-foreground">Knowledge Level</span>
+          <span className="text-sm font-semibold text-foreground">Knowledge level</span>
         </div>
         {knowledgeLevel ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={onAdjustKnowledgeLevel}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-border bg-card text-sm text-left hover:border-primary/30 transition group"
+            className="w-full justify-between"
           >
-            <span className="font-medium text-foreground">{titleCase(knowledgeLevel)}</span>
-            <span className="text-xs text-muted-foreground group-hover:text-foreground transition">
-              Change
-            </span>
-          </button>
+            <span className="font-medium">{titleCase(knowledgeLevel)}</span>
+            <span className="text-xs text-muted-foreground">Change</span>
+          </Button>
         ) : (
-          <button type="button" onClick={onRequestKnowledgeLevel} className="btn-primary w-full">
+          <Button type="button" onClick={onRequestKnowledgeLevel} className="w-full">
             Select your level
-          </button>
+          </Button>
         )}
       </div>
 
-      {/* Step 2: API Key */}
+      {/* Step 2: API key */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span
-            className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-              hasApiKey ? 'bg-accent text-accent-foreground' : 'bg-secondary text-muted-foreground'
-            }`}
-          >
-            {hasApiKey ? (
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              '2'
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold',
+              hasApiKey ? 'bg-accent text-accent-foreground' : 'bg-secondary text-muted-foreground',
             )}
+          >
+            {hasApiKey ? <IconCheck className="h-3.5 w-3.5" /> : '2'}
           </span>
           <span className="text-sm font-semibold text-foreground">
-            {getProviderLabel(currentProvider)} API Key
+            {getProviderLabel(currentProvider)} API key
           </span>
         </div>
         {hasApiKey ? (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={handleOpenApiKeyDialog}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-border bg-card text-sm text-left hover:border-primary/30 transition group"
+            className="w-full justify-between font-mono"
           >
-            <span className="font-mono text-foreground">{maskApiKey(currentApiKey)}</span>
-            <span className="text-xs text-muted-foreground group-hover:text-foreground transition">
-              Change
-            </span>
-          </button>
+            <span>{maskApiKey(currentApiKey)}</span>
+            <span className="font-sans text-xs text-muted-foreground">Change</span>
+          </Button>
         ) : (
           <div className="space-y-2">
             <div className="flex gap-2">
-              <input
+              <Input
                 type="password"
                 value={setupApiKeyInput}
                 onChange={(e) => {
@@ -744,119 +728,122 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                   setApiKeyError(null);
                 }}
                 placeholder="Enter API key"
-                className={`input-field flex-1 font-mono text-sm ${
-                  apiKeyError ? 'border-destructive' : ''
-                }`}
+                className="flex-1 font-mono text-sm"
+                aria-invalid={!!apiKeyError}
                 disabled={apiKeyValidating}
               />
-              <button
+              <Button
                 type="button"
                 onClick={handleSetupSaveApiKey}
                 disabled={!setupApiKeyInput.trim() || apiKeyValidating}
-                className="btn-primary px-4"
               >
                 {apiKeyValidating ? (
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
+                  <>
+                    <IconLoader2 className="h-4 w-4 animate-spin" />
+                    <span className="sr-only">Saving…</span>
+                  </>
                 ) : (
                   'Save'
                 )}
-              </button>
+              </Button>
             </div>
-            {apiKeyError && <p className="text-xs text-destructive pl-1">{apiKeyError}</p>}
+            {apiKeyError && <p className="pl-1 text-xs text-destructive">{apiKeyError}</p>}
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 
+  const activeTabInfo = availableTabs.find((tab) => tab.value === activeTab);
+
   return (
-    <aside className="flex h-[700px] flex-col rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden" data-tour="student-ai-chat">
+    <aside
+      className="flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]"
+      data-tour="student-ai-chat"
+    >
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border p-5">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <svg
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            aria-hidden
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-            />
-          </svg>
+      <div className="border-b border-border">
+        <div className={cn('flex items-center gap-3 px-5', setupComplete ? 'pb-3 pt-5' : 'py-5')}>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <IconSparkles className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-foreground">AI Study Buddy</div>
+            <div className="text-xs text-muted-foreground">Hints, not answers</div>
+          </div>
+          {setupComplete && (
+            <TooltipProvider delayDuration={300}>
+              <div className="flex shrink-0 items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleNewChat}
+                      aria-label="New chat"
+                    >
+                      <IconPencilPlus className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">New chat</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleRefreshChat}
+                      aria-label="Refresh chat"
+                    >
+                      <IconRefresh className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Refresh chat</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setHistoryOpen((prev) => !prev)}
+                      aria-label="Chat history"
+                    >
+                      <IconHistory className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Chat history</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          )}
         </div>
-        {setupComplete ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleNewChat}
-            aria-label="Clear and start new chat"
-            className="min-w-[44px] shrink-0"
-          >
-            <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-            <span className="hidden sm:inline">New chat</span>
-          </Button>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-foreground">AI Study Buddy</div>
-          <div className="text-xs text-muted-foreground">Hints, not answers</div>
-        </div>
+
         {setupComplete && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefreshChat}
-                aria-label="Refresh chat"
-                className="min-w-[44px]"
-              >
-                <IconRefresh className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setHistoryOpen((prev) => !prev)}
-                aria-label="Open chat history"
-                className="min-w-[44px]"
-              >
-                <IconHistory className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">History</span>
-              </Button>
-            </div>
-            <button
+          <div className="flex flex-wrap items-center gap-2 px-5 pb-5">
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
               onClick={onAdjustKnowledgeLevel}
-              className="tag hover:bg-muted transition"
+              aria-label="Change knowledge level"
             >
               {titleCase(knowledgeLevel!)}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full font-mono"
               onClick={handleOpenApiKeyDialog}
-              className="tag font-mono hover:bg-muted transition"
+              aria-label={`Edit ${getProviderLabel(currentProvider)} API key`}
             >
+              <IconKey className="h-3.5 w-3.5" />
               {maskApiKey(currentApiKey)}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -869,162 +856,122 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         onNewChat={handleNewChat}
       />
 
-      {/* Tab toggle + topic selector */}
-      {setupComplete && (
-        <div className="px-5 pt-4 space-y-3">
-          <div className="flex items-center gap-3">
-            {showTabToggle ? (
-              <TooltipProvider delayDuration={300}>
-                <div className="flex rounded-xl bg-secondary p-1">
-                  {availableTabs.map((tab) => (
-                    <Tooltip key={tab.value}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => setActiveTab(tab.value)}
-                          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                            activeTab === tab.value
-                              ? 'bg-card text-foreground shadow-sm'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-[250px]">
-                        <p>{tab.tooltip}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </div>
-              </TooltipProvider>
-            ) : availableTabs.length === 1 ? (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="tag cursor-default">{availableTabs[0].label}</div>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[250px]">
-                    <p>{availableTabs[0].tooltip}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-          </div>
+      {/* Mode switcher + topic selector */}
+      {setupComplete && (availableTabs.length > 0 || topicOptions.length > 1) && (
+        <div className="space-y-4 px-5 pt-5">
+          {availableTabs.length > 0 && (
+            <div className="space-y-1.5">
+              {showTabToggle ? (
+                <SegmentedControl
+                  ariaLabel="Chat mode"
+                  value={activeTab}
+                  onValueChange={setActiveTab}
+                  size="sm"
+                  options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+                />
+              ) : (
+                <Badge variant="outline" size="lg">
+                  {availableTabs[0].label}
+                </Badge>
+              )}
+              {activeTabInfo && (
+                <p className="text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
+              )}
+            </div>
+          )}
 
           {/* Topic selector for teach mode and custom mode (when prompt uses topic placeholder) */}
           {(activeTab === 'teach' ||
             (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
             topicOptions.length > 1 && (
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              <div className="space-y-1.5">
+                <label
+                  className="block text-xs font-semibold text-muted-foreground"
+                  htmlFor="ai-chat-topic"
+                >
                   Focus topic
                 </label>
-                <select
-                  value={currentTopicId ?? ''}
-                  onChange={(e) => {
-                    const value = Number(e.target.value);
-                    if (Number.isFinite(value)) onSelectTopic(value);
+                <Select
+                  value={currentTopicId === null ? '' : String(currentTopicId)}
+                  onValueChange={(value) => {
+                    const numericValue = Number(value);
+                    if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
                   }}
-                  disabled={topicOptions.length <= 1}
-                  className="input-field py-2 text-sm"
                 >
-                  {topicOptions.map((topic) => (
-                    <option key={topic.value} value={topic.value}>
-                      {topic.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="ai-chat-topic" className="w-full">
+                    <SelectValue placeholder="Select a topic" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {topicOptions.map((topic) => (
+                      <SelectItem key={topic.value} value={String(topic.value)}>
+                        {topic.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
         </div>
       )}
 
       {/* Conversation area */}
-      <Conversation className="flex-1 min-h-0">
-        <ConversationContent className="px-5 py-4">
+      <Conversation className="min-h-0 flex-1">
+        <ConversationContent className="mx-auto w-full max-w-[var(--chat-max-width)] px-5 py-4">
           {!activity ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-12">
-              <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center mb-4">
-                <svg
-                  className="w-6 h-6 text-muted-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-                  />
-                </svg>
-              </div>
-              <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
-            </div>
+            <ConversationEmptyState
+              icon={
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
+                  <IconMessageCircle className="h-6 w-6" />
+                </div>
+              }
+              title="No activity selected"
+              description="Select an activity to begin."
+            />
           ) : !setupComplete ? (
             renderSetupCard()
           ) : (
             <>
               {renderMessages(activeTab)}
               {chatState[activeTab].loading && (
-                <div className="flex items-center gap-2 mt-4 text-muted-foreground animate-pulse-soft">
-                  <div className="flex gap-1">
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '0ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '150ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '300ms' }}
-                    />
-                  </div>
-                  <span className="text-xs">Thinking...</span>
-                </div>
+                <Message from="assistant" className="mt-4">
+                  <MessageContent className="flex-row items-center gap-2 py-3.5">
+                    <span className="flex gap-1" aria-hidden>
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
+                    </span>
+                    <span className="text-xs text-muted-foreground">Thinking…</span>
+                  </MessageContent>
+                </Message>
               )}
               {chatState[activeTab].messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <div className="w-12 h-12 rounded-xl bg-accent/50 flex items-center justify-center mb-4">
-                    <svg
-                      className="w-6 h-6 text-accent-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-                      />
-                    </svg>
+                <ConversationEmptyState>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/50 text-accent-foreground">
+                    <IconSparkles className="h-6 w-6" />
                   </div>
-                  <p className="text-sm text-muted-foreground max-w-[200px] mb-4">
-                    Ask your study buddy anything about this topic!
+                  <p className="max-w-[220px] text-sm text-muted-foreground">
+                    Ask your study buddy anything about this topic.
                   </p>
 
                   {/* Suggested prompts */}
                   {showSuggestedPrompts && (
                     <div className="w-full max-w-sm space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground mb-2">Try asking:</p>
-                      <div className="flex flex-wrap gap-2 justify-center">
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">Try asking</p>
+                      <div className="flex flex-wrap justify-center gap-2">
                         {currentSuggestedPrompts.map((prompt) => (
-                          <button
+                          <PromptSuggestion
                             key={prompt.id}
                             type="button"
+                            size="sm"
                             onClick={() => handleSuggestedPromptClick(prompt.text)}
-                            className="px-4 py-2.5 text-sm rounded-xl border border-border bg-card hover:bg-secondary hover:border-primary/30 transition-colors text-left"
                           >
                             {prompt.text}
-                          </button>
+                          </PromptSuggestion>
                         ))}
                       </div>
                     </div>
                   )}
-                </div>
+                </ConversationEmptyState>
               )}
             </>
           )}
@@ -1033,10 +980,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       </Conversation>
 
       {/* Input area */}
-      <div className="border-t border-border p-4 space-y-3">
+      <div className="space-y-3 border-t border-border p-4">
         <PromptInput
           onSubmit={handlePromptSubmit}
-          className="shadow-none [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-2 [&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:px-0 [&_[data-slot=input-group]]:py-0"
+          className="[&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-card"
         >
           <PromptInputBody>
             <PromptInputTextarea
@@ -1047,23 +994,23 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 chatDisabled
                   ? 'Complete setup above to start chatting'
                   : activeTab === 'teach'
-                    ? 'Ask about the topic...'
+                    ? 'Ask about the topic…'
                     : activeTab === 'guide'
-                      ? 'Describe where you need guidance...'
-                      : 'Ask a question...'
+                      ? 'Describe where you need guidance…'
+                      : 'Ask a question…'
               }
               disabled={chatDisabled}
               className="px-4 pb-3 pt-4 text-sm"
             />
           </PromptInputBody>
-          <PromptInputFooter className="flex-col gap-3 border-t border-border px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <PromptInputFooter className="border-t border-border px-4 pb-3 pt-3">
             <PromptInputTools className="flex items-center gap-2">
               <PromptInputModelSelect
                 value={selectedModelId}
                 onValueChange={setSelectedModelId}
                 disabled={!availableModels.length}
               >
-                <PromptInputModelSelectTrigger className="min-w-[140px] h-8 text-xs">
+                <PromptInputModelSelectTrigger size="sm" className="min-w-[140px] text-xs">
                   <PromptInputModelSelectValue placeholder="Select model" />
                 </PromptInputModelSelectTrigger>
                 <PromptInputModelSelectContent>
@@ -1083,20 +1030,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         </PromptInput>
 
         {modelsFetched && modelLoadError && (
-          <div className="flex items-center gap-2 text-xs text-destructive">
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-              />
-            </svg>
+          <div className="flex items-center gap-1.5 text-xs text-destructive">
+            <IconAlertCircle className="h-3.5 w-3.5" />
             Unable to load AI models.
           </div>
         )}
@@ -1113,19 +1048,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           )}
       </div>
 
-      {/* API Key Edit Dialog */}
+      {/* API key edit dialog */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
-        <DialogContent className="sm:max-w-md rounded-lg border bg-card text-card-foreground shadow-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display">
-              {getProviderLabel(currentProvider)} API Key
-            </DialogTitle>
+            <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
               Update your API key for {getProviderLabel(currentProvider)} models.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <input
+          <div className="space-y-2">
+            <Input
               type="password"
               value={tempApiKey}
               onChange={(e) => {
@@ -1133,53 +1066,39 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 setApiKeyError(null);
               }}
               placeholder={`Enter your ${getProviderLabel(currentProvider)} API key`}
-              className={`input-field font-mono text-sm ${apiKeyError ? 'border-destructive' : ''}`}
+              className="font-mono text-sm"
+              aria-invalid={!!apiKeyError}
               autoFocus
               disabled={apiKeyValidating}
             />
             {apiKeyError && <p className="text-xs text-destructive">{apiKeyError}</p>}
           </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <button
+          <DialogFooter>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 setShowApiKeyDialog(false);
                 setApiKeyError(null);
               }}
               disabled={apiKeyValidating}
-              className="btn-secondary"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={handleSaveApiKeyDialog}
               disabled={!tempApiKey.trim() || apiKeyValidating}
-              className="btn-primary"
             >
               {apiKeyValidating ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Validating...
+                  <IconLoader2 className="h-4 w-4 animate-spin" />
+                  Validating…
                 </>
               ) : (
                 'Save'
               )}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,11 +1,11 @@
 'use client';
 
 import { Button } from '@eduai/ui';
-import { ButtonGroup, ButtonGroupText } from '~/components/ui/button-group';
+import { ButtonGroup, ButtonGroupText } from '@eduai/ui';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import type { FileUIPart, UIMessage } from 'ai';
-import { ChevronLeftIcon, ChevronRightIcon, PaperclipIcon, XIcon } from 'lucide-react';
+import { IconChevronLeft, IconChevronRight, IconPaperclip, IconX } from '@tabler/icons-react';
 import type { ComponentProps, HTMLAttributes, ReactElement } from 'react';
 import { createContext, memo, useContext, useEffect, useState } from 'react';
 import { Streamdown } from 'streamdown';
@@ -27,12 +27,16 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
 
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
 
+// Bubble shell shared by every message: rounded, border-defined surface with a
+// shadow-2xs lift, per the DS "border-defined surfaces" rule. Role-specific
+// color/alignment reacts to the parent `Message`'s `.is-user`/`.is-assistant`
+// class via CSS group-selectors, so callers only ever set `from` once.
 export const MessageContent = ({ children, className, ...props }: MessageContentProps) => (
   <div
     className={cn(
-      'is-user:dark flex w-fit flex-col gap-2 overflow-hidden text-sm',
-      'group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground',
-      'group-[.is-assistant]:text-foreground',
+      'flex w-fit flex-col gap-2 overflow-hidden rounded-2xl px-4 py-3 text-sm shadow-[var(--shadow-2xs)]',
+      'group-[.is-user]:ml-auto group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
+      'group-[.is-assistant]:border group-[.is-assistant]:border-border group-[.is-assistant]:bg-card group-[.is-assistant]:text-card-foreground',
       className,
     )}
     {...props}
@@ -218,7 +222,7 @@ export const MessageBranchPrevious = ({ children, ...props }: MessageBranchPrevi
       variant="ghost"
       {...props}
     >
-      {children ?? <ChevronLeftIcon size={14} />}
+      {children ?? <IconChevronLeft size={14} />}
     </Button>
   );
 };
@@ -238,7 +242,7 @@ export const MessageBranchNext = ({ children, className, ...props }: MessageBran
       variant="ghost"
       {...props}
     >
-      {children ?? <ChevronRightIcon size={14} />}
+      {children ?? <IconChevronRight size={14} />}
     </Button>
   );
 };
@@ -263,7 +267,14 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
-      className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
+      // `streamdown-content` is a hook class (no styles of its own outside
+      // `[data-assistive] .reading-surface .streamdown-content`); safe to
+      // always include so Assistive Mode's typography can target it whenever
+      // an ancestor carries `reading-surface`.
+      className={cn(
+        'streamdown-content size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+        className,
+      )}
       {...props}
     />
   ),
@@ -306,7 +317,7 @@ export function MessageAttachment({ data, className, onRemove, ...props }: Messa
               type="button"
               variant="ghost"
             >
-              <XIcon />
+              <IconX />
               <span className="sr-only">Remove</span>
             </Button>
           )}
@@ -316,7 +327,7 @@ export function MessageAttachment({ data, className, onRemove, ...props }: Messa
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex size-full shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <PaperclipIcon className="size-4" />
+                <IconPaperclip className="size-4" />
               </div>
             </TooltipTrigger>
             <TooltipContent>
@@ -334,7 +345,7 @@ export function MessageAttachment({ data, className, onRemove, ...props }: Messa
               type="button"
               variant="ghost"
             >
-              <XIcon />
+              <IconX />
               <span className="sr-only">Remove</span>
             </Button>
           )}

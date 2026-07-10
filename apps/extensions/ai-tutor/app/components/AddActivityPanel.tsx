@@ -25,8 +25,30 @@
 
 import type { FormEvent } from 'react';
 import { useMemo, useState } from 'react';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Input,
+  Label,
+  SegmentedControl,
+  Textarea,
+} from '@eduai/ui';
+import { cn } from '~/lib/utils';
 import api from '../lib/api';
 import { useCourseTopicsContext } from '../hooks/useCourseTopics';
+
+const SELECT_CLASSES =
+  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
+
+const TYPE_OPTIONS = [
+  { value: 'MCQ' as const, label: 'MCQ' },
+  { value: 'SHORT_TEXT' as const, label: 'Short answer' },
+];
+
 interface AddActivityPanelProps {
   lessonId: number;
   onActivityCreated: () => void;
@@ -149,226 +171,197 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
   };
 
   return (
-    <form onSubmit={handleAddActivity} className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
-      <div className="font-semibold text-foreground">Add Activity</div>
-      <div className="flex gap-2 text-sm">
-        <label
-          className={`px-3 py-1.5 rounded-full cursor-pointer transition ${
-            type === 'MCQ'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground hover:bg-muted'
-          }`}
-        >
-          <input
-            type="radio"
-            name="type"
-            className="sr-only"
-            checked={type === 'MCQ'}
-            onChange={() => setType('MCQ')}
-          />
-          MCQ
-        </label>
-        <label
-          className={`px-3 py-1.5 rounded-full cursor-pointer transition ${
-            type === 'SHORT_TEXT'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground hover:bg-muted'
-          }`}
-        >
-          <input
-            type="radio"
-            name="type"
-            className="sr-only"
-            checked={type === 'SHORT_TEXT'}
-            onChange={() => setType('SHORT_TEXT')}
-          />
-          Short answer
-        </label>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Add activity</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleAddActivity} className="space-y-4">
+          <SegmentedControl value={type} onValueChange={setType} options={TYPE_OPTIONS} />
 
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">Question prompt</label>
-        <textarea
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Write the question learners should answer…"
-          rows={4}
-          className="input-field"
-        />
-      </div>
-
-      {type === 'MCQ' ? (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold text-muted-foreground">Choices</div>
           <div className="space-y-2">
-            {choices.map((choice, index) => {
-              const isSelected = correct === index && hasSelectedCorrect;
-              return (
-                <label
-                  key={index}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition focus-within:outline-none bg-card ${
-                    isSelected
-                      ? 'border-primary ring-2 ring-primary/20'
-                      : 'border-border hover:border-primary/50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="correct"
-                    className="sr-only"
-                    checked={correct === index}
-                    onChange={() => {
-                      setCorrect(index);
-                      setHasSelectedCorrect(true);
-                    }}
-                  />
-                  <span className="text-xs font-semibold text-muted-foreground w-6">
-                    {String.fromCharCode(65 + index)}.
-                  </span>
-                  <input
-                    value={choice}
-                    onChange={(event) =>
-                      setChoices((prev) => {
-                        const next = [...prev];
-                        next[index] = event.target.value;
-                        return next;
-                      })
-                    }
-                    placeholder="Option text"
-                    className="flex-1 min-w-0 border-none bg-transparent focus:outline-none text-foreground placeholder:text-muted-foreground"
-                  />
-                </label>
-              );
-            })}
+            <Label htmlFor="new-activity-question">Question prompt</Label>
+            <Textarea
+              id="new-activity-question"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Write the question learners should answer…"
+              rows={4}
+            />
           </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <label className="text-xs font-semibold text-muted-foreground">Expected answer</label>
-          <input
-            value={textAnswer}
-            onChange={(event) => setTextAnswer(event.target.value)}
-            placeholder="Ideal short response…"
-            className="input-field"
-          />
-        </div>
-      )}
 
-      <div className="space-y-2">
-        <label className="text-xs font-semibold text-muted-foreground">Main topic</label>
-        <select
-          value={selectedMainTopicId === '' ? '' : selectedMainTopicId}
-          onChange={(event) => {
-            const newMainTopicId = event.target.value ? Number(event.target.value) : '';
-            setSelectedMainTopicId(newMainTopicId);
-            // Remove new main topic from secondary topics if it was selected there
-            if (typeof newMainTopicId === 'number') {
-              setSelectedSecondaryTopicIds((prev) => prev.filter((id) => id !== newMainTopicId));
-            }
-          }}
-          disabled={loadingTopics || topics.length === 0}
-          className="input-field text-sm"
-        >
-          <option value="">Select a topic…</option>
-          {topics.map((topic) => (
-            <option key={topic.id} value={topic.id}>
-              {topic.name}
-            </option>
-          ))}
-        </select>
-        {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
-      </div>
-
-      <div className="space-y-2">
-        <span className="text-xs font-semibold text-muted-foreground block">
-          Secondary topics (optional)
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {availableSecondaryTopics.length === 0 ? (
-            <span className="text-xs text-muted-foreground">No other topics available.</span>
+          {type === 'MCQ' ? (
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-muted-foreground">Choices</div>
+              <div className="space-y-2">
+                {choices.map((choice, index) => {
+                  const isSelected = correct === index && hasSelectedCorrect;
+                  return (
+                    <label
+                      key={index}
+                      className={cn(
+                        'flex items-center gap-3 rounded-[var(--radius-lg)] border bg-card px-3 py-2.5 transition cursor-pointer focus-within:outline-none',
+                        isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50',
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="correct"
+                        className="sr-only"
+                        checked={correct === index}
+                        onChange={() => {
+                          setCorrect(index);
+                          setHasSelectedCorrect(true);
+                        }}
+                      />
+                      <span className="w-6 text-xs font-semibold text-muted-foreground">
+                        {String.fromCharCode(65 + index)}.
+                      </span>
+                      <input
+                        value={choice}
+                        onChange={(event) =>
+                          setChoices((prev) => {
+                            const next = [...prev];
+                            next[index] = event.target.value;
+                            return next;
+                          })
+                        }
+                        placeholder="Option text"
+                        className="min-w-0 flex-1 border-none bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
-            availableSecondaryTopics.map((topic) => {
-              const checked = selectedSecondaryTopicIds.includes(topic.id);
-              return (
-                <label
-                  key={topic.id}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition ${
-                    checked
-                      ? 'border-transparent bg-accent text-accent-foreground shadow-sm'
-                      : 'border-border bg-secondary hover:border-accent/50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => toggleSecondaryForNew(topic.id)}
-                  />
-                  {topic.name}
-                </label>
-              );
-            })
+            <div className="space-y-2">
+              <Label htmlFor="new-activity-answer">Expected answer</Label>
+              <Input
+                id="new-activity-answer"
+                value={textAnswer}
+                onChange={(event) => setTextAnswer(event.target.value)}
+                placeholder="Ideal short response…"
+              />
+            </div>
           )}
-        </div>
-      </div>
 
-      <div className="space-y-2 pt-1">
-        <span className="text-xs font-semibold text-muted-foreground block">
-          AI Study Buddy Modes
-        </span>
-        <p className="text-xs text-muted-foreground">
-          Choose which AI assistance modes students can use for this activity.
-        </p>
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={enableTeachMode}
-              onChange={(e) => {
-                if (!e.target.checked && !enableGuideMode) {
-                  alert('At least one AI mode must be enabled');
-                  return;
+          <div className="space-y-2">
+            <Label htmlFor="new-activity-main-topic">Main topic</Label>
+            <select
+              id="new-activity-main-topic"
+              value={selectedMainTopicId === '' ? '' : selectedMainTopicId}
+              onChange={(event) => {
+                const newMainTopicId = event.target.value ? Number(event.target.value) : '';
+                setSelectedMainTopicId(newMainTopicId);
+                // Remove new main topic from secondary topics if it was selected there
+                if (typeof newMainTopicId === 'number') {
+                  setSelectedSecondaryTopicIds((prev) => prev.filter((id) => id !== newMainTopicId));
                 }
-                setEnableTeachMode(e.target.checked);
               }}
-              className="rounded border-primary/50 text-primary focus:ring-primary"
-            />
-            <span className="text-sm text-foreground">
-              Teach me - Conceptual learning about topics
+              disabled={loadingTopics || topics.length === 0}
+              className={SELECT_CLASSES}
+            >
+              <option value="">Select a topic…</option>
+              {topics.map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.name}
+                </option>
+              ))}
+            </select>
+            {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <span className="block text-xs font-semibold text-muted-foreground">
+              Secondary topics (optional)
             </span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={enableGuideMode}
-              onChange={(e) => {
-                if (!e.target.checked && !enableTeachMode) {
-                  alert('At least one AI mode must be enabled');
-                  return;
-                }
-                setEnableGuideMode(e.target.checked);
-              }}
-              className="rounded border-primary/50 text-primary focus:ring-primary"
+            <div className="flex flex-wrap gap-2">
+              {availableSecondaryTopics.length === 0 ? (
+                <span className="text-xs text-muted-foreground">No other topics available.</span>
+              ) : (
+                availableSecondaryTopics.map((topic) => {
+                  const checked = selectedSecondaryTopicIds.includes(topic.id);
+                  return (
+                    <label
+                      key={topic.id}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition',
+                        checked
+                          ? 'border-transparent bg-accent text-accent-foreground shadow-xs'
+                          : 'border-border bg-secondary hover:border-accent/50',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={checked}
+                        onChange={() => toggleSecondaryForNew(topic.id)}
+                      />
+                      {topic.name}
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-muted/30 p-3">
+            <span className="block text-xs font-semibold text-foreground">AI Study Buddy modes</span>
+            <p className="text-xs text-muted-foreground">
+              Choose which AI assistance modes students can use for this activity.
+            </p>
+            <div className="space-y-2 pt-1">
+              <label className="flex cursor-pointer items-center gap-2">
+                <Checkbox
+                  checked={enableTeachMode}
+                  onCheckedChange={(checked) => {
+                    if (!checked && !enableGuideMode) {
+                      alert('At least one AI mode must be enabled');
+                      return;
+                    }
+                    setEnableTeachMode(Boolean(checked));
+                  }}
+                />
+                <span className="text-sm text-foreground">
+                  Teach me — conceptual learning about topics
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <Checkbox
+                  checked={enableGuideMode}
+                  onCheckedChange={(checked) => {
+                    if (!checked && !enableTeachMode) {
+                      alert('At least one AI mode must be enabled');
+                      return;
+                    }
+                    setEnableGuideMode(Boolean(checked));
+                  }}
+                />
+                <span className="text-sm text-foreground">
+                  Guide me — step-by-step guidance on this question
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-activity-hint">Hint (optional)</Label>
+            <Input
+              id="new-activity-hint"
+              value={hint}
+              onChange={(event) => setHint(event.target.value)}
+              placeholder="Optional hint…"
             />
-            <span className="text-sm text-foreground">
-              Guide me - Step-by-step guidance on this question
-            </span>
-          </label>
-        </div>
-      </div>
+          </div>
 
-      <input
-        value={hint}
-        onChange={(event) => setHint(event.target.value)}
-        placeholder="Optional hint…"
-        className="input-field"
-      />
+          <Button type="submit" className="w-full" disabled={busy || !question.trim()}>
+            {busy ? 'Adding…' : 'Add activity'}
+          </Button>
 
-      <button type="submit" disabled={busy || !question.trim()} className="w-full btn-primary">
-        {busy ? 'Adding…' : 'Add Activity'}
-      </button>
-
-      {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
-    </form>
+          {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
+        </form>
+      </CardContent>
+    </Card>
   );
 }

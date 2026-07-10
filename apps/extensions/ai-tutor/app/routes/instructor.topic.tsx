@@ -22,7 +22,18 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { PageHeading } from '@eduai/ui';
+import { IconListDetails } from '@tabler/icons-react';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+  PageHeading,
+} from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
@@ -30,8 +41,10 @@ import type { Route } from './+types/instructor.topic';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+
+const SELECT_CLASSES =
+  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -270,13 +283,17 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     { label: module?.title || 'Module' },
   ];
 
+  useShellBreadcrumbs(breadcrumbItems);
+
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
-          <PermissionGate allow={perms.canManageContent}>
-          <button
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
+        <PermissionGate allow={perms.canManageContent}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => {
               if (!showImport) {
                 ensureSourceCoursesLoaded();
@@ -285,187 +302,185 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               }
               setShowImport((prev) => !prev);
             }}
-            className="btn-secondary"
           >
-            {showImport ? 'Close' : 'Import Lessons'}
-          </button>
-          </PermissionGate>
-        </div>
+            {showImport ? 'Close' : 'Import lessons'}
+          </Button>
+        </PermissionGate>
+      </div>
 
-        <PermissionGate allow={perms.canManageContent}>
+      <PermissionGate allow={perms.canManageContent}>
         {showImport && (
-          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
-            <div>
-              <label className="block text-sm font-semibold mb-1 text-foreground">
-                Choose course
-              </label>
-              <select
-                value={selectedSourceCourseId ?? ''}
-                onChange={(e) => {
-                  const nextValue = e.target.value ? Number(e.target.value) : null;
-                  void handleSourceCourseSelection(nextValue);
-                }}
-                className="input-field"
-              >
-                <option value="">Select course…</option>
-                {availableCourses.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.title}
-                  </option>
-                ))}
-              </select>
-              {loadingSourceCourses && (
-                <p className="mt-2 text-xs text-muted-foreground">Loading courses…</p>
-              )}
-              {!loadingSourceCourses && availableCourses.length === 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  You don't have another course to copy from yet.
-                </p>
-              )}
-            </div>
-
-            {selectedSourceCourseId != null && (
-              <div>
-                <label className="block text-sm font-semibold mb-1 text-foreground">
-                  Choose module
-                </label>
+          <Card>
+            <CardContent className="space-y-4 pt-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="import-lesson-course">Choose course</Label>
                 <select
-                  value={selectedSourceModuleId ?? ''}
+                  id="import-lesson-course"
+                  value={selectedSourceCourseId ?? ''}
                   onChange={(e) => {
                     const nextValue = e.target.value ? Number(e.target.value) : null;
-                    void handleSourceModuleSelection(nextValue);
+                    void handleSourceCourseSelection(nextValue);
                   }}
-                  className="input-field"
+                  className={SELECT_CLASSES}
                 >
-                  <option value="">Select module…</option>
-                  {sourceModules.map((sourceModule) => (
-                    <option key={sourceModule.id} value={sourceModule.id}>
-                      {sourceModule.title}
+                  <option value="">Select course…</option>
+                  {availableCourses.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.title}
                     </option>
                   ))}
                 </select>
-                {loadingSourceModules && (
-                  <p className="mt-2 text-xs text-muted-foreground">Loading modules…</p>
+                {loadingSourceCourses && (
+                  <p className="text-xs text-muted-foreground">Loading courses…</p>
                 )}
-                {!loadingSourceModules && sourceModules.length === 0 && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Selected course has no modules yet.
+                {!loadingSourceCourses && availableCourses.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    You don't have another course to copy from yet.
                   </p>
                 )}
               </div>
-            )}
 
-            {selectedSourceCourseId == null ? (
-              <p className="text-sm text-muted-foreground">Select a course to begin.</p>
-            ) : selectedSourceModuleId == null ? (
-              <p className="text-sm text-muted-foreground">Select a module to preview lessons.</p>
-            ) : loadingSourceLessons ? (
-              <p className="text-sm text-muted-foreground">Loading lessons…</p>
-            ) : sourceLessons.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Selected module has no lessons yet.</p>
-            ) : (
-              <div className="space-y-3">
-                <div className="border border-border rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 text-sm font-semibold bg-secondary text-secondary-foreground">
-                    Lessons
-                  </div>
-                  <div className="p-3 space-y-2 bg-card">
-                    {sourceLessons.map((lesson) => (
-                      <label
-                        key={lesson.id}
-                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                          selectedLessonIds.has(lesson.id)
-                            ? 'border-primary ring-2 ring-primary/30 bg-primary/5'
-                            : 'border-border hover:border-primary/50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={selectedLessonIds.has(lesson.id)}
-                          onChange={() => toggleLesson(lesson.id)}
-                        />
-                        <span className="text-sm text-foreground">{lesson.title}</span>
-                      </label>
+              {selectedSourceCourseId != null && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="import-lesson-module">Choose module</Label>
+                  <select
+                    id="import-lesson-module"
+                    value={selectedSourceModuleId ?? ''}
+                    onChange={(e) => {
+                      const nextValue = e.target.value ? Number(e.target.value) : null;
+                      void handleSourceModuleSelection(nextValue);
+                    }}
+                    className={SELECT_CLASSES}
+                  >
+                    <option value="">Select module…</option>
+                    {sourceModules.map((sourceModule) => (
+                      <option key={sourceModule.id} value={sourceModule.id}>
+                        {sourceModule.title}
+                      </option>
                     ))}
-                  </div>
+                  </select>
+                  {loadingSourceModules && (
+                    <p className="text-xs text-muted-foreground">Loading modules…</p>
+                  )}
+                  {!loadingSourceModules && sourceModules.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Selected course has no modules yet.
+                    </p>
+                  )}
                 </div>
-                <button
-                  onClick={onImportLessons}
-                  disabled={importing || selectedLessonIds.size === 0}
-                  className="btn-primary"
-                >
-                  {importing ? 'Importing…' : 'Import selected lessons'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        </PermissionGate>
+              )}
 
-        <PermissionGate allow={perms.canManageContent}>
+              {selectedSourceCourseId == null ? (
+                <p className="text-sm text-muted-foreground">Select a course to begin.</p>
+              ) : selectedSourceModuleId == null ? (
+                <p className="text-sm text-muted-foreground">Select a module to preview lessons.</p>
+              ) : loadingSourceLessons ? (
+                <p className="text-sm text-muted-foreground">Loading lessons…</p>
+              ) : sourceLessons.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Selected module has no lessons yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-[var(--radius-lg)] border border-border">
+                    <div className="bg-muted px-4 py-2.5 text-sm font-semibold text-foreground">
+                      Lessons
+                    </div>
+                    <div className="space-y-2 bg-card p-3">
+                      {sourceLessons.map((lesson) => (
+                        <label
+                          key={lesson.id}
+                          className={`flex items-center gap-3 rounded-[var(--radius-md)] border p-3 cursor-pointer transition ${
+                            selectedLessonIds.has(lesson.id)
+                              ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={selectedLessonIds.has(lesson.id)}
+                            onChange={() => toggleLesson(lesson.id)}
+                          />
+                          <span className="text-sm text-foreground">{lesson.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <Button type="button" onClick={onImportLessons} disabled={importing || selectedLessonIds.size === 0}>
+                    {importing ? 'Importing…' : 'Import selected lessons'}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </PermissionGate>
+
+      <PermissionGate allow={perms.canManageContent}>
         <form onSubmit={onCreateLesson} className="flex gap-3">
-          <input
+          <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="New lesson title…"
-            className="input-field flex-1"
+            className="flex-1"
           />
-          <button disabled={creating || !title.trim()} className="btn-primary">
-            {creating ? 'Adding…' : 'Add Lesson'}
-          </button>
+          <Button type="submit" disabled={creating || !title.trim()}>
+            {creating ? 'Adding…' : 'Add lesson'}
+          </Button>
         </form>
-        </PermissionGate>
+      </PermissionGate>
 
-        {oLessons.length === 0 ? (
-          <div className="text-muted-foreground">No lessons yet.</div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {oLessons.map((lesson, idx) => {
-              const canPublish = course?.isPublished && module?.isPublished;
-              const blocked = !lesson.isPublished && !canPublish;
-              const parentName = !course?.isPublished
-                ? course?.title || 'the parent course'
-                : !module?.isPublished
-                  ? module?.title || 'the parent module'
-                  : null;
-              const tooltipMessage =
-                blocked && parentName
-                  ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
-                  : null;
-              const busy = publishingId === lesson.id;
-              return (
-                <div
-                  key={lesson.id}
-                  className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
-                  style={{ animationDelay: `${idx * 50}ms` }}
-                  onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      navigate(`/instructor/lesson/${lesson.id}`);
-                    }
-                  }}
-                >
+      {oLessons.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <IconListDetails size={22} aria-hidden="true" />
+            </div>
+            <p className="text-sm text-muted-foreground">No lessons yet.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {oLessons.map((lesson, idx) => {
+            const canPublish = course?.isPublished && module?.isPublished;
+            const blocked = !lesson.isPublished && !canPublish;
+            const parentName = !course?.isPublished
+              ? course?.title || 'the parent course'
+              : !module?.isPublished
+                ? module?.title || 'the parent module'
+                : null;
+            const tooltipMessage =
+              blocked && parentName
+                ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
+                : null;
+            const busy = publishingId === lesson.id;
+            return (
+              <Card
+                key={lesson.id}
+                hoverable
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigate(`/instructor/lesson/${lesson.id}`);
+                  }
+                }}
+                className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <CardHeader>
                   <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-semibold text-sm">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
                       {idx + 1}
                     </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {lesson.title}
-                      </div>
-                    </div>
+                    <CardTitle className="text-base transition-colors group-hover:text-primary">
+                      {lesson.title}
+                    </CardTitle>
                   </div>
-                  <div className="flex-grow"></div>
-                  <div className="mt-4 flex justify-end">
-                    <PermissionGate allow={perms.canPublishContent}>
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+                </CardHeader>
+                <CardFooter className="justify-end">
+                  <PermissionGate allow={perms.canPublishContent}>
+                    <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <PublishStatusButton
                         isPublished={lesson.isPublished}
                         pending={busy}
@@ -476,14 +491,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         }}
                       />
                     </div>
-                    </PermissionGate>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </AppShell>
+                  </PermissionGate>
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

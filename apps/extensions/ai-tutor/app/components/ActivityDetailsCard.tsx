@@ -1,4 +1,6 @@
 import { memo, useMemo, useState } from 'react';
+import { IconChevronDown } from '@tabler/icons-react';
+import { cn } from '~/lib/utils';
 import type { Activity } from '../lib/types';
 
 type ActivityDetailsCardProps = {
@@ -36,32 +38,24 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
   }, [activity]);
 
   return (
-    <div className="rounded-xl border border-dashed border-accent/50 bg-accent/10">
+    <div className="rounded-[var(--radius-lg)] border border-border bg-muted/30">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-controls={`activity-${activity.id}-details`}
-        className="w-full px-3 py-2 flex items-center justify-between gap-3 text-sm font-semibold text-accent-foreground hover:text-accent-foreground/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background transition"
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-foreground transition hover:text-foreground/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span>Question details</span>
-        <svg
-          className={`h-4 w-4 text-accent-foreground/70 transition-transform ${open ? 'rotate-180' : ''}`}
-          viewBox="0 0 20 20"
-          fill="currentColor"
+        <IconChevronDown
+          className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')}
           aria-hidden="true"
-        >
-          <path
-            fillRule="evenodd"
-            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.25a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
-            clipRule="evenodd"
-          />
-        </svg>
+        />
       </button>
       {open && (
         <div
           id={`activity-${activity.id}-details`}
-          className="px-3 pb-3 space-y-3 text-sm text-foreground"
+          className="space-y-3 px-3 pb-3 text-sm text-foreground"
         >
           {activity.title && (
             <div>

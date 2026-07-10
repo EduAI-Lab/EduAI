@@ -16,10 +16,22 @@
  *     mapping for the provided missing list.
  *   - The dialog is the user-facing half of the sync flow; the server-side
  *     remap logic lives in `server/src/routes/topics.js`.
+ *   - Dismissal (Escape / backdrop / the DS close button) is blocked while a
+ *     request is in flight (`submitting || busy`), matching the old
+ *     hand-rolled modal's disabled-Cancel-while-busy guard.
  * Related: `server/src/routes/topics.js`, `app/lib/api.ts` (syncTopics, remapTopics)
  */
 
 import { useMemo, useState } from 'react';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@eduai/ui';
 import type { Topic } from '~/lib/types';
 
 type MissingTopic = { id: number; name: string };
@@ -92,27 +104,45 @@ export default function TopicSyncMappingDialog({
     }
   };
 
-  if (!open) return null;
+  const busyNow = submitting || busy;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[min(720px,95vw)] rounded-2xl bg-white dark:bg-gray-950 p-6 shadow-xl border border-gray-200 dark:border-gray-800">
-        <div className="text-lg font-semibold">Review topic changes</div>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-          Some topics in this course are no longer present in EduAI. Please map them to existing
-          topics so activities remain correctly tagged.
-        </p>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          if (busyNow) return;
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-xl"
+        onInteractOutside={(event) => {
+          if (busyNow) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busyNow) event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Review topic changes</DialogTitle>
+          <DialogDescription>
+            Some topics in this course are no longer present in EduAI. Please map them to existing
+            topics so activities remain correctly tagged.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-4 space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+        <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
           {missing.map((m) => (
-            <div key={m.id} className="rounded-xl border border-gray-200 dark:border-gray-800 p-3">
-              <div className="text-sm">
+            <div key={m.id} className="rounded-[var(--radius-lg)] border border-border p-3">
+              <div className="text-sm text-foreground">
                 <span className="font-semibold">{m.name}</span> no longer exists. Choose a
                 replacement topic:
               </div>
               <div className="mt-2">
                 <select
-                  className="w-full sm:w-80 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent"
+                  className="flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] sm:w-80"
                   value={mappingByFrom.get(m.id) ?? ''}
                   onChange={(e) => handleChange(m.id, e.target.value)}
                 >
@@ -130,25 +160,15 @@ export default function TopicSyncMappingDialog({
           ))}
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 text-sm"
-            disabled={submitting || busy}
-          >
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={busyNow}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={!allSelected || submitting || busy}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
-          >
+          </Button>
+          <Button type="button" onClick={onSubmit} disabled={!allSelected || busyNow}>
             {submitting ? 'Applying…' : 'Apply mappings'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
