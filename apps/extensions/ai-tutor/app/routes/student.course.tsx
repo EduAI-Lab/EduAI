@@ -1,17 +1,9 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { IconChevronRight, IconFolders } from '@tabler/icons-react';
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  PageHeading,
-} from '@eduai/ui';
-import { ProgressBarFromData } from '../components/ProgressBar';
+import { IconFolders } from '@tabler/icons-react';
+import { Card, CardContent, CourseHeroCard } from '@eduai/ui';
+import { ModuleCard } from '../components/courses/ModuleCard';
+import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/student.course';
 import api from '~/lib/api';
@@ -38,9 +30,10 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const navigate = useNavigate();
   const { course, modules } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
+  const accentColor = accentForCourse(course);
 
   useShellBreadcrumbs([
-    { label: 'My courses', href: '/student' },
+    { label: 'Courses', href: '/student' },
     {
       label: course?.title || 'Course',
       node: course?.id != null ? (
@@ -55,15 +48,15 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <PageHeading
-          heading={course?.title || 'Course'}
-          subheading={course?.description ?? undefined}
-        />
-        <Badge variant="secondary" size="sm">
-          {moduleList.length} {moduleList.length === 1 ? 'module' : 'modules'}
-        </Badge>
-      </div>
+      <CourseHeroCard
+        code={courseCode(course)}
+        term={courseTerm(course)}
+        year={courseYear(course)}
+        name={course.title}
+        description={course.description}
+        accentColor={accentForCourse(course)}
+        topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
+      />
 
       {moduleList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
@@ -82,52 +75,18 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {moduleList.map((module, index) => (
-            <Card
+            <ModuleCard
               key={module.id}
-              hoverable
-              role="button"
-              tabIndex={0}
+              index={index}
+              title={module.title}
+              description={module.description}
+              accentColor={accentColor}
+              showProgress
+              progress={module.progress}
               onClick={() => navigate(`/student/module/${module.id}`)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  navigate(`/student/module/${module.id}`);
-                }
-              }}
-              className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              data-tour={index === 0 ? 'student-module-card-first' : undefined}
-              data-tour-route={index === 0 ? `/student/module/${module.id}` : undefined}
-            >
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-bold tabular-nums text-muted-foreground">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <Badge variant="secondary" size="sm">
-                    Module
-                  </Badge>
-                </div>
-                <CardTitle className="line-clamp-2 pt-1 transition-colors group-hover:text-primary">
-                  {module.title}
-                </CardTitle>
-                {module.description ? (
-                  <CardDescription className="line-clamp-2">{module.description}</CardDescription>
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                {module.progress && module.progress.total > 0 ? (
-                  <ProgressBarFromData progress={module.progress} size="sm" showLabel />
-                ) : (
-                  <p className="text-sm text-muted-foreground">Not started yet</p>
-                )}
-              </CardContent>
-              <CardFooter>
-                <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-text">
-                  View module
-                  <IconChevronRight size={15} aria-hidden="true" />
-                </span>
-              </CardFooter>
-            </Card>
+              dataTour={index === 0 ? 'student-module-card-first' : undefined}
+              dataTourRoute={index === 0 ? `/student/module/${module.id}` : undefined}
+            />
           ))}
         </div>
       )}

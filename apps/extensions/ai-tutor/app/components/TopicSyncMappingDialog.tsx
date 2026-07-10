@@ -9,7 +9,7 @@
  *   the sync endpoint returns.
  * Gotchas:
  *   - `toTopicId` is held as a string in local state (`Mapping`) because the
- *     native <select> emits strings; it's coerced to number only when the
+ *     Select emits string values; it's coerced to number only when the
  *     payload is built for `onApply`.
  *   - Apply is disabled until every missing row has a replacement, mirroring
  *     the server-side requirement that `/topics/remap` receive a complete
@@ -31,6 +31,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@eduai/ui';
 import type { Topic } from '~/lib/types';
 
@@ -141,20 +146,23 @@ export default function TopicSyncMappingDialog({
                 replacement topic:
               </div>
               <div className="mt-2">
-                <select
-                  className="flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] sm:w-80"
-                  value={mappingByFrom.get(m.id) ?? ''}
-                  onChange={(e) => handleChange(m.id, e.target.value)}
+                <Select
+                  value={mappingByFrom.get(m.id) || undefined}
+                  onValueChange={(value) => handleChange(m.id, value)}
                 >
-                  <option value="">Select replacement…</option>
-                  {options
-                    .filter((t) => t.id !== m.id)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                </select>
+                  <SelectTrigger className="w-full sm:w-80">
+                    <SelectValue placeholder="Select replacement…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {options
+                      .filter((t) => t.id !== m.id)
+                      .map((t) => (
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           ))}

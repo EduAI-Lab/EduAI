@@ -4,7 +4,7 @@
  * Responsibility: Captures a question, choices/answer, hints, topic tagging
  *   (one main + N secondary), and the AI assistance modes the student is
  *   allowed to use. POSTs to `api.createActivity` and notifies the parent.
- * Used by: `app/routes/instructor.topic.tsx` (the lesson editor view).
+ * Used by: `app/routes/instructor.module.tsx` (the lesson editor view).
  * Gotchas:
  *   - The `topics !== prevTopics` block (around line 30) uses the React
  *     "derived state during render" pattern to reset/repair the selected
@@ -35,14 +35,16 @@ import {
   Input,
   Label,
   SegmentedControl,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
 } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import api from '../lib/api';
 import { useCourseTopicsContext } from '../hooks/useCourseTopics';
-
-const SELECT_CLASSES =
-  'flex h-9 w-full rounded-[var(--radius-md)] border border-border bg-input px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-in-out focus-visible:border-ring focus-visible:shadow-[var(--shadow-focus)] disabled:cursor-not-allowed disabled:opacity-50';
 
 const TYPE_OPTIONS = [
   { value: 'MCQ' as const, label: 'MCQ' },
@@ -74,7 +76,7 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
 
   // Derived-state-during-render pattern (intentional): when the topics prop
   // identity changes we either clear or repair the current selection in the
-  // same render so the <select> never momentarily shows a stale id.
+  // same render so the Select never momentarily shows a stale id.
   const [prevTopics, setPrevTopics] = useState(topics);
   if (topics !== prevTopics) {
     setPrevTopics(topics);
@@ -248,11 +250,10 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
 
           <div className="space-y-2">
             <Label htmlFor="new-activity-main-topic">Main topic</Label>
-            <select
-              id="new-activity-main-topic"
-              value={selectedMainTopicId === '' ? '' : selectedMainTopicId}
-              onChange={(event) => {
-                const newMainTopicId = event.target.value ? Number(event.target.value) : '';
+            <Select
+              value={selectedMainTopicId !== '' ? String(selectedMainTopicId) : undefined}
+              onValueChange={(value) => {
+                const newMainTopicId = value ? Number(value) : '';
                 setSelectedMainTopicId(newMainTopicId);
                 // Remove new main topic from secondary topics if it was selected there
                 if (typeof newMainTopicId === 'number') {
@@ -260,15 +261,18 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
                 }
               }}
               disabled={loadingTopics || topics.length === 0}
-              className={SELECT_CLASSES}
             >
-              <option value="">Select a topic…</option>
-              {topics.map((topic) => (
-                <option key={topic.id} value={topic.id}>
-                  {topic.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="new-activity-main-topic" className="w-full">
+                <SelectValue placeholder="Select a topic…" />
+              </SelectTrigger>
+              <SelectContent>
+                {topics.map((topic) => (
+                  <SelectItem key={topic.id} value={String(topic.id)}>
+                    {topic.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
           </div>
 
