@@ -5,6 +5,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core, monorepo] feat: Extension onboarding guide and dynamic sidebar registration — new `docs/EXTENSION_ONBOARDING.md` covers session validation, `requireAuth`/`requireRole` middleware, login redirect, RBAC, Core API calls, sidebar registration, and a local dev verification checklist. `VITE_EXTRA_EXTENSIONS` env var lets new extensions appear in Core's sidebar without code changes (JSON array of `id`/`name`/`url` entries, env-var-gated so demo extensions don't appear in prod). AI Tutor and Question Maker sidebar entries are now conditionally rendered — omitting their `VITE_*_URL` env var hides them entirely (fixes dead localhost links in prod). `apps/extensions/example-extension/` is a minimal Express extension demonstrating all auth patterns as a working reference. Port 9000 added to `scripts/kill-ports.js`. (#636, @evanbones, 2026-07-10) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
