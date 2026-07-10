@@ -29,7 +29,6 @@ import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import type { CourseTopic } from '~/hooks/api/use-course-topics'
 import type { CourseTA } from '~/hooks/api/use-course-tas'
 import {
-  PolicyTooltip,
   DisabledTooltip,
   usePolicyGate,
 } from '~/components/policy/policy-gate'
