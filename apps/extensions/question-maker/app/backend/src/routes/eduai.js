@@ -226,13 +226,16 @@ router.get('/courses/:courseId/topics', async (req, res) => {
  * POST /api/eduai/test-api-key – validates AI connectivity. Accepts an optional
  * `apiKeys` body carrying the caller's browser-stored provider keys (e.g. Google)
  * so the check validates the cloud provider rather than the (possibly offline)
- * UBC-hosted provider. Echoes back `provider` so the UI can report which path is live.
+ * UBC-hosted provider. An optional `provider` pins the probe to a specific path
+ * (e.g. `'ollama'` for the independent UBC status chip). Echoes back `provider`
+ * so the UI can report which path is live.
  */
 router.post('/test-api-key', async (req, res) => {
   try {
     const result = await eduaiService.testApiKey({
       cookie: req.headers.cookie ?? '',
       apiKeys: req.body?.apiKeys ?? {},
+      forceProvider: req.body?.provider,
     });
 
     if (result.success) {

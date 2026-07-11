@@ -645,6 +645,16 @@ export async function findRelevantContent(
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
+  // Canvas publish-aware gate (#777): always hide unpublished / selectively
+  // excluded Canvas materials from RAG for every caller.
+  const canvasPublishFilter = Prisma.sql`
+    AND cm."unpublishedAt" IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM canvas_material_exclusions cme
+      WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+    )
+  `;
+
   // §839 student-visibility gate, injected into both retrieval paths. Empty for
   // staff callers so their retrieval is unchanged.
   const visibilityFilter = restrictToStudentVisible
@@ -677,6 +687,7 @@ export async function findRelevantContent(
       JOIN course_materials cm ON mc."materialId" = cm.id
       WHERE cm."courseId" = ${courseId}
         AND cm."deletedAt" IS NULL
+        ${canvasPublishFilter}
         ${visibilityFilter}
         AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
       ORDER BY score DESC
@@ -706,6 +717,7 @@ export async function findRelevantContent(
     JOIN course_materials cm ON mc."materialId" = cm.id
     WHERE cm."courseId" = ${courseId}
       AND cm."deletedAt" IS NULL
+      ${canvasPublishFilter}
       ${visibilityFilter}
       AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
     ORDER BY similarity DESC

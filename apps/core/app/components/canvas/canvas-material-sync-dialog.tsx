@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { discoverCanvasMaterials, syncCanvasMaterials } from "~/lib/canvas/client";
+import {
+  discoverCanvasMaterials,
+  excludeCanvasMaterial,
+  syncCanvasMaterials,
+  unexcludeCanvasMaterial,
+} from "~/lib/canvas/client";
 import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
 import { Button } from "@eduai/ui";
 import { Checkbox } from "@eduai/ui";
@@ -74,6 +79,7 @@ export function CanvasMaterialSyncDialog({
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SyncCanvasMaterialsResult | null>(null);
+  const [excludingId, setExcludingId] = useState<string | null>(null);
 
   const loadFiles = useCallback(
     async (options?: { clearResult?: boolean; silent?: boolean }) => {
@@ -92,7 +98,12 @@ export function CanvasMaterialSyncDialog({
         setSelectedIds(
           new Set(
             items
-              .filter((file) => file.importStatus === "not_imported")
+              .filter(
+                (file) =>
+                  file.importStatus === "not_imported" &&
+                  file.isPublished &&
+                  !file.isExcluded,
+              )
               .map((f) => f.canvasFileId),
           ),
         );
@@ -126,6 +137,30 @@ export function CanvasMaterialSyncDialog({
       else next.delete(canvasFileId);
       return next;
     });
+  };
+
+  const handleToggleExclude = async (file: CanvasMaterialDiscoverItem) => {
+    setExcludingId(file.canvasFileId);
+    try {
+      if (file.isExcluded) {
+        await unexcludeCanvasMaterial(courseId, file.canvasFileId);
+      } else {
+        await excludeCanvasMaterial(courseId, file.canvasFileId);
+        setSelectedIds((current) => {
+          const next = new Set(current);
+          next.delete(file.canvasFileId);
+          return next;
+        });
+      }
+      await loadFiles({ clearResult: false, silent: true });
+    } catch (e) {
+      toast.error(
+        file.isExcluded ? "Failed to un-exclude file" : "Failed to exclude file",
+        { description: e instanceof Error ? e.message : undefined },
+      );
+    } finally {
+      setExcludingId(null);
+    }
   };
 
   const handleSync = async () => {
@@ -187,31 +222,50 @@ export function CanvasMaterialSyncDialog({
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             )}
-            {files.map((file) => (
-              <label
-                key={file.canvasFileId}
-                className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50"
-              >
-                <Checkbox
-                  checked={selectedIds.has(file.canvasFileId)}
-                  onCheckedChange={(checked) =>
-                    toggleFile(file.canvasFileId, checked === true)
-                  }
-                  className="mt-0.5"
-                />
-                <div className="flex flex-col gap-1 min-w-0 flex-1">
-                  <span className="text-sm font-medium truncate">
-                    {file.displayName}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>{formatFileSize(file.sizeBytes)}</span>
-                    <Badge variant="outline">
-                      {statusLabel(file.importStatus)}
-                    </Badge>
+            {files.map((file) => {
+              const isSelectable = file.isPublished && !file.isExcluded;
+              return (
+                <div
+                  key={file.canvasFileId}
+                  className="flex items-start gap-3 px-3 py-2.5 hover:bg-muted/50"
+                >
+                  <Checkbox
+                    checked={selectedIds.has(file.canvasFileId)}
+                    disabled={!isSelectable}
+                    onCheckedChange={(checked) =>
+                      toggleFile(file.canvasFileId, checked === true)
+                    }
+                    className="mt-0.5"
+                  />
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <span className="text-sm font-medium truncate">
+                      {file.displayName}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatFileSize(file.sizeBytes)}</span>
+                      <Badge variant="outline">
+                        {statusLabel(file.importStatus)}
+                      </Badge>
+                      {!file.isPublished && (
+                        <Badge variant="outline">Not published</Badge>
+                      )}
+                      {file.isExcluded && (
+                        <Badge variant="outline">Excluded</Badge>
+                      )}
+                    </div>
                   </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={excludingId === file.canvasFileId}
+                    onClick={() => void handleToggleExclude(file)}
+                  >
+                    {file.isExcluded ? "Un-exclude" : "Exclude"}
+                  </Button>
                 </div>
-              </label>
-            ))}
+              );
+            })}
           </div>
         )}
 
