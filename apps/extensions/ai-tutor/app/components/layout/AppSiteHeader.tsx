@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTheme } from '@eduai/ui';
+import { useTheme, CommandSearchButton } from '@eduai/ui';
 import { IconBug, IconMoon, IconSun } from '@tabler/icons-react';
 import { Button, BugReportDialog, Separator, SidebarTrigger } from '@eduai/ui';
 import type { BugReportSubmitData } from '@eduai/ui';
@@ -7,6 +7,8 @@ import type { BugReportSubmitData } from '@eduai/ui';
 import api from '~/lib/api';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { useBugReport } from '../bug-report/useBugReport';
+import { AiServiceIndicators } from '~/components/ai/AiServiceIndicators';
+import { AITUTOR_COMMAND_EVENT } from '~/components/command/CommandPalette';
 
 export type AppSiteHeaderProps = {
   breadcrumbs?: React.ReactNode;
@@ -73,6 +75,8 @@ export function AppSiteHeader({ breadcrumbs, actions }: AppSiteHeaderProps) {
           )}
           <div className="ml-auto flex h-full shrink-0 items-center gap-3 sm:gap-4">
             {actions}
+            <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
+            <AiServiceIndicators />
             <button
               type="button"
               onClick={toggleTheme}

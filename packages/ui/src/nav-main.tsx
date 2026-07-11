@@ -1,5 +1,6 @@
 import * as React from "react"
-import { type Icon } from "@tabler/icons-react"
+import { useEffect, useState } from "react"
+import { type Icon, IconChevronDown } from "@tabler/icons-react"
 
 import {
   SidebarGroup,
@@ -13,6 +14,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip"
+
+const SIDEBAR_ACTIVE_BG = "oklch(0.248 0.055 259)"
+const SIDEBAR_HOVER_BG = "oklch(0.218 0.050 259)"
+const SIDEBAR_TEXT_MUTED = "rgba(255,255,255,0.82)"
 
 export interface NavMainItem {
   title: string
@@ -28,10 +33,28 @@ export interface NavMainItem {
   disabledReason?: string
 }
 
+export interface NavGroupItem {
+  title: string
+  icon?: Icon
+  children: NavMainItem[]
+}
+
 export interface NavMainProps {
-  items: NavMainItem[]
+  items: (NavMainItem | NavGroupItem)[]
   currentPath: string
   LinkComponent?: React.ElementType
+}
+
+function isGroup(item: NavMainItem | NavGroupItem): item is NavGroupItem {
+  return "children" in item
+}
+
+function isActive(pathname: string, url: string) {
+  return pathname === url || pathname.startsWith(url + "/")
+}
+
+function shouldAutoExpandGroup(item: NavGroupItem, pathname: string) {
+  return item.children.some((child) => isActive(pathname, child.url))
 }
 
 export function NavMain({
@@ -39,20 +62,155 @@ export function NavMain({
   currentPath,
   LinkComponent = "a",
 }: NavMainProps) {
+  // Manual expand/collapse overrides. Cleared on navigation so route-based
+  // auto-expand can take over without fighting stale toggle state.
+  const [toggleOverrides, setToggleOverrides] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setToggleOverrides({})
+  }, [currentPath])
+
+  function isGroupExpanded(item: NavGroupItem) {
+    if (item.title in toggleOverrides) return toggleOverrides[item.title]
+    return shouldAutoExpandGroup(item, currentPath)
+  }
+
+  function toggleGroup(item: NavGroupItem) {
+    const nextExpanded = !isGroupExpanded(item)
+    setToggleOverrides((prev) => ({ ...prev, [item.title]: nextExpanded }))
+  }
+
+  const linkClassName =
+    "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-0.5">
         <SidebarMenu>
           {items.map((item) => {
-            const isActive =
-              !item.external &&
-              (currentPath === item.url || currentPath.startsWith(item.url + "/"))
-            const linkClassName =
-              "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
+            if (isGroup(item)) {
+              const groupExpanded = isGroupExpanded(item)
+
+              return (
+                <SidebarMenuItem key={item.title}>
+                  <button
+                    type="button"
+                    aria-expanded={groupExpanded}
+                    onClick={() => toggleGroup(item)}
+                    className={linkClassName}
+                    style={{
+                      background: "transparent",
+                      color: SIDEBAR_TEXT_MUTED,
+                      fontWeight: 400,
+                      transition: "background 120ms",
+                      paddingLeft: "16px",
+                      cursor: "pointer",
+                      border: "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      ;(e.currentTarget as HTMLButtonElement).style.background =
+                        SIDEBAR_HOVER_BG
+                    }}
+                    onMouseLeave={(e) => {
+                      ;(e.currentTarget as HTMLButtonElement).style.background = "transparent"
+                    }}
+                  >
+                    {item.icon && <item.icon size={16} strokeWidth={1.75} />}
+                    <span className="flex-1 text-left">{item.title}</span>
+                    <IconChevronDown
+                      size={14}
+                      strokeWidth={1.75}
+                      style={{
+                        transition: "transform 150ms",
+                        transform: groupExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                        opacity: 0.6,
+                        flexShrink: 0,
+                      }}
+                    />
+                  </button>
+                  {groupExpanded && (
+                    <SidebarMenu>
+                      {item.children.map((child) => {
+                        const childActive = isActive(currentPath, child.url)
+                        const badgeBg =
+                          child.badge === "green"
+                            ? "#22c55e"
+                            : child.badge === "orange"
+                              ? "#f97316"
+                              : child.badge === "red"
+                                ? "#ef4444"
+                                : undefined
+
+                        return (
+                          <SidebarMenuItem key={child.title}>
+                            <LinkComponent
+                              to={child.url}
+                              href={child.url}
+                              aria-current={childActive ? "page" : undefined}
+                              className={linkClassName}
+                              style={{
+                                background: childActive ? SIDEBAR_ACTIVE_BG : "transparent",
+                                color: childActive ? "#fff" : SIDEBAR_TEXT_MUTED,
+                                fontWeight: childActive ? 500 : 400,
+                                transition: "background 120ms",
+                                paddingLeft: "28px",
+                              }}
+                              onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
+                                if (!childActive) {
+                                  ;(e.currentTarget as HTMLElement).style.background =
+                                    SIDEBAR_HOVER_BG
+                                }
+                              }}
+                              onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
+                                if (!childActive) {
+                                  ;(e.currentTarget as HTMLElement).style.background =
+                                    "transparent"
+                                }
+                              }}
+                            >
+                              {childActive && (
+                                <span
+                                  aria-hidden
+                                  className="absolute left-0 rounded-[0_2px_2px_0] pointer-events-none"
+                                  style={{
+                                    top: "8px",
+                                    bottom: "8px",
+                                    width: "3px",
+                                    background: "var(--gold)",
+                                  }}
+                                />
+                              )}
+                              {child.icon && <child.icon size={16} strokeWidth={1.75} />}
+                              <span className="flex-1">{child.title}</span>
+                              {badgeBg && (
+                                <span
+                                  aria-label={`Status: ${child.badge}`}
+                                  className={child.badge === "orange" ? "animate-pulse" : undefined}
+                                  style={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: "50%",
+                                    flexShrink: 0,
+                                    background: badgeBg,
+                                  }}
+                                />
+                              )}
+                            </LinkComponent>
+                          </SidebarMenuItem>
+                        )
+                      })}
+                    </SidebarMenu>
+                  )}
+                </SidebarMenuItem>
+              )
+            }
+
+            const itemActive =
+              !item.external && isActive(currentPath, item.url)
             const linkStyle = {
-              background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
-              color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
-              fontWeight: isActive ? 500 : 400,
+              background: itemActive ? SIDEBAR_ACTIVE_BG : "transparent",
+              color: itemActive ? "#fff" : SIDEBAR_TEXT_MUTED,
+              fontWeight: itemActive ? 500 : 400,
               transition: "background 120ms",
               paddingLeft: "16px",
             } as const
@@ -68,7 +226,7 @@ export function NavMain({
 
             const linkBody = (
               <>
-                {isActive && (
+                {itemActive && (
                   <span
                     aria-hidden
                     className="absolute left-0 rounded-[0_2px_2px_0] pointer-events-none"
@@ -132,15 +290,14 @@ export function NavMain({
                     style={linkStyle}
                     rel="noopener noreferrer"
                     onMouseEnter={(e) => {
-                      if (!isActive) {
+                      if (!itemActive) {
                         ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          SIDEBAR_HOVER_BG
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive) {
-                        ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "transparent"
+                      if (!itemActive) {
+                        ;(e.currentTarget as HTMLAnchorElement).style.background = "transparent"
                       }
                     }}
                   >
@@ -150,17 +307,17 @@ export function NavMain({
                   <LinkComponent
                     to={item.url}
                     href={item.url}
-                    aria-current={isActive ? "page" : undefined}
+                    aria-current={itemActive ? "page" : undefined}
                     className={linkClassName}
                     style={linkStyle}
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
-                      if (!isActive) {
+                      if (!itemActive) {
                         ;(e.currentTarget as HTMLElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          SIDEBAR_HOVER_BG
                       }
                     }}
                     onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {
-                      if (!isActive) {
+                      if (!itemActive) {
                         ;(e.currentTarget as HTMLElement).style.background =
                           "transparent"
                       }

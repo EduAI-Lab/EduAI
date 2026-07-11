@@ -4,7 +4,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import eduaiService from '../services/eduaiService';
-import { apiKeyStorage } from '../services/apiKeyStorage';
+import { apiKeyStorage, isCloudProvider } from '../services/apiKeyStorage';
 
 type Status = 'loading' | 'ok' | 'error';
 
@@ -82,10 +82,9 @@ const fetchStatus = async () => {
             setState({
                 status: 'ok',
                 provider,
-                message:
-                    provider === 'google'
-                        ? 'AI online via your cloud provider key (Google).'
-                        : 'AI online via the UBC-hosted model.',
+                message: isCloudProvider(provider)
+                    ? 'AI online via your cloud provider key.'
+                    : 'AI online via the UBC-hosted model.',
             });
             clearHeartbeat();
         } else if (result?.configured === false) {
