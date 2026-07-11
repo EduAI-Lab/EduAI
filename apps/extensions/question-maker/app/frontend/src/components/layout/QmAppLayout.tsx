@@ -14,6 +14,8 @@ import {
   BreadcrumbLink,
   BreadcrumbSeparator,
   Button,
+  CommandSearchButton,
+  AIServiceIndicators,
 } from '@eduai/ui';
 import {
   IconBooks,
@@ -22,7 +24,6 @@ import {
   IconLibrary,
   IconSettings,
   IconHelpCircle,
-  IconSearch,
   IconRoute,
   type Icon,
 } from '@tabler/icons-react';
@@ -30,8 +31,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useQmLayout, QmLayoutProvider } from '@/components/layout/QmLayoutContext';
 import { ProfileCoursesDialog } from '@/components/profile/ProfileCoursesDialog';
 import { useCourses } from '@/hooks/useCourses';
-import { AIServiceIndicators } from '@/components/eduai/AIServiceIndicators';
-import { useEduAIStatus } from '@/hooks/useEduAIStatus';
+import { useAiServicesStatus } from '@/hooks/useAiServicesStatus';
 import { useGuidedTour } from '@/contexts/GuidedTourContext';
 import { useBugReport } from '@/contexts/BugReportContext';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -151,7 +151,7 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
 function QmSiteHeader() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const eduaiStatus = useEduAIStatus();
+  const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
   const { courses, isLoading: isCoursesLoading } = useCourses();
   const { guidedTourHandler } = useQmLayout();
@@ -173,22 +173,12 @@ function QmSiteHeader() {
       breadcrumbs={breadcrumbs}
       actions={
         <>
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('qm:open-command'))}
-            className="flex h-9 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
-            aria-label="Open command palette"
-          >
-            <IconSearch className="size-3.5" />
-            <span className="hidden sm:inline">Search</span>
-            <kbd className="hidden rounded border border-border bg-muted px-1 font-sans text-[10px] font-medium sm:inline">⌘K</kbd>
-          </button>
+          <CommandSearchButton eventName="qm:open-command" />
           <div data-tour-id="eduai-status">
             <AIServiceIndicators
-              status={eduaiStatus.status}
-              message={eduaiStatus.message}
-              provider={eduaiStatus.provider}
-              onRefresh={eduaiStatus.refresh}
+              cloud={aiStatus.cloud}
+              ubc={aiStatus.ubc}
+              onRefresh={() => void aiStatus.refresh()}
             />
           </div>
           <div className="relative">

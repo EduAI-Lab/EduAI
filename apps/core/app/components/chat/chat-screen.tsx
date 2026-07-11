@@ -414,7 +414,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       <AppSidebar user={user} />
       <SidebarInset className="flex flex-col min-h-0">
         <SiteHeader
-          title="Chat"
+          title="Course Chat"
           actions={
             <TooltipProvider delayDuration={300}>
               <Tooltip>
