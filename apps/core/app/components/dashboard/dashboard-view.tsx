@@ -11,6 +11,8 @@ import {
 import {
   StatCard,
   COURSE_COLORS,
+  QuickActionsPanel,
+  type QuickAction,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -32,14 +34,8 @@ export type DashboardStatDef = {
   trendLabel?: string;
 };
 
-export type DashboardQuickAction = {
-  label: string;
-  description: string;
-  href: string;
-  /** Color used for the icon background swatch (CSS value) */
-  color: string;
-  icon: React.ReactNode;
-};
+/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing role-view imports. */
+export type DashboardQuickAction = QuickAction;
 
 export type DashboardCourse = {
   id: string;
@@ -171,30 +167,6 @@ function CourseListPanel({
   );
 }
 
-function QuickActionsPanel({ actions }: { actions: DashboardQuickAction[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {actions.map((action) => (
-        <Link
-          key={action.href + action.label}
-          to={action.href}
-          className="flex items-start gap-3 p-4 bg-card border border-border rounded-[var(--radius-xl)] shadow-[var(--shadow-2xs)] hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-left"
-        >
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: action.color + "22" }}
-          >
-            <span style={{ color: action.color }}>{action.icon}</span>
-          </div>
-          <div>
-            <div className="text-[13px] font-semibold text-foreground">{action.label}</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5 leading-snug">{action.description}</div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
 
 function RecentChatsPanel({
   chats,
@@ -375,7 +347,7 @@ export function DashboardView({
             )}
           </div>
           {showQuickActions ? (
-            <QuickActionsPanel actions={quickActions!} />
+            <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
           ) : (
             <CourseListPanel
               courses={courses ?? []}
