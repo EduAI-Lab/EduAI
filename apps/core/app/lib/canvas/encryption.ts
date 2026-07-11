@@ -75,9 +75,8 @@ export function encrypt(plaintext: string): string {
 
 /**
  * Decrypts values from `encrypt`. Legacy plaintext (not matching our blob format) is
- * returned as-is. Values that DO match our format but fail to decrypt or authenticate
- * (wrong/rotated ENCRYPTION_KEY, tampered/corrupted ciphertext) throw rather than
- * returning the raw ciphertext as a credential.
+ * returned as-is; a format match that fails to decrypt throws instead of leaking
+ * ciphertext back out as a credential.
  */
 export function decrypt(encryptedData: string): string {
   if (!encryptedData) {
