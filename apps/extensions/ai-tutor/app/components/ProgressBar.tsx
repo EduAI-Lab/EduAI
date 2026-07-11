@@ -46,7 +46,7 @@ export function ProgressBar({
       )}
       <div className={`w-full overflow-hidden rounded-full bg-muted ${TRACK_HEIGHTS[size]}`}>
         <div
-          className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+          className="h-full rounded-full bg-primary-text transition-[width] duration-500 ease-out"
           style={{ width: `${percentage}%` }}
         />
       </div>
