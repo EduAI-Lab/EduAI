@@ -13,6 +13,7 @@ import {
   IconRobot,
   IconSettings,
   IconShieldLock,
+  IconHelp,
   IconMail,
   IconUser,
   IconUsers,
@@ -23,7 +24,7 @@ import {
   AppSidebar as SharedAppSidebar,
   Sidebar,
 } from "@eduai/ui"
-import type { NavMainItem, NavSecondaryItem } from "@eduai/ui"
+import type { NavGroupItem as NavMainGroupItem, NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps"
 import {
@@ -32,13 +33,15 @@ import {
   type NavItemKey,
 } from "~/lib/rbac"
 import { usePolicyGate } from "~/components/policy/policy-gate"
-import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
+import { useCronJobStatus, type CronStatusColor } from "~/hooks/api/use-cron-job-status"
+import { CommandPalette } from "~/components/command/command-palette"
 
 const NAV_ICONS: Record<NavItemKey, Icon> = {
   dashboard: IconDashboard,
   courses: IconBooks,
   chat: IconRobot,
   "question-maker": IconListCheck,
+  "admin-group": IconShieldLock,
   "admin-users": IconUsers,
   "admin-ai": IconBrain,
   "admin-bugs": IconReport,
@@ -49,18 +52,40 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "unitadmin-invites": IconMail,
   "admin-cron": IconClockCog,
   settings: IconSettings,
+  help: IconHelp,
   "ai-tutor": IconMessageChatbot,
 }
 
-function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] {
-  return items.map((item) => ({
-    title: item.title,
-    url: item.url,
-    icon: NAV_ICONS[item.key],
-    external: item.external,
-    disabled: item.disabled,
-    disabledReason: item.disabledReason,
-  }))
+function toNavMainItems(
+  items: ReturnType<typeof getNavForUser>,
+  cronStatusColor?: CronStatusColor | null,
+): (NavMainItem | NavMainGroupItem)[] {
+  return items.map((item) => {
+    if ("children" in item) {
+      return {
+        title: item.title,
+        icon: NAV_ICONS[item.key],
+        children: item.children.map((child) => ({
+          title: child.title,
+          url: child.url,
+          icon: NAV_ICONS[child.key],
+          external: child.external,
+          disabled: child.disabled,
+          disabledReason: child.disabledReason,
+          badge:
+            child.url === "/admin/cron-jobs" && cronStatusColor ? cronStatusColor : undefined,
+        })),
+      } satisfies NavMainGroupItem
+    }
+    return {
+      title: item.title,
+      url: item.url,
+      icon: NAV_ICONS[item.key],
+      external: item.external,
+      disabled: item.disabled,
+      disabledReason: item.disabledReason,
+    } satisfies NavMainItem
+  })
 }
 
 function toNavSecondaryItems(
@@ -76,7 +101,7 @@ function toNavSecondaryItems(
 
 export type AppSidebarProps = {
   user: User
-  navMain?: NavMainItem[]
+  navMain?: (NavMainItem | NavMainGroupItem)[]
   navSecondary?: NavSecondaryItem[]
 } & React.ComponentProps<typeof Sidebar>
 
@@ -101,11 +126,7 @@ export function AppSidebar({
   const navItems = getNavForUser(user, {
     canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
   })
-  const autoNav = toNavMainItems(navItems).map((item) =>
-    item.url === "/admin/cron-jobs" && cronStatusColor
-      ? { ...item, badge: cronStatusColor }
-      : item,
-  )
+  const autoNav = toNavMainItems(navItems, cronStatusColor)
   const navMain = navMainOverride ?? autoNav
   const navSecondary =
     navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
@@ -134,9 +155,11 @@ export function AppSidebar({
   )
 
   return (
-    <SharedAppSidebar
-      logo={logo}
-      logoHref="/dashboard"
+    <>
+      <CommandPalette user={user} />
+      <SharedAppSidebar
+        logo={logo}
+        logoHref="/dashboard"
       navMain={navMain}
       navSecondary={navSecondary}
       currentPath={pathname}
@@ -174,8 +197,9 @@ export function AppSidebar({
           </Form>
         ),
       }}
-      variant={variant}
-      {...props}
-    />
+        variant={variant}
+        {...props}
+      />
+    </>
   )
 }
