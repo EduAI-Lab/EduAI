@@ -142,6 +142,18 @@ describe("POST /api/chat — admin chatMode gate", () => {
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
   });
+
+  it("admits a verified ADMIN API key for admin chatMode without course context", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: null,
+      session: { user: { id: "a1", role: "ADMIN" } } as never,
+    });
+    const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
+    expect(res.status).toBe(200);
+    expect(requireServiceKey).not.toHaveBeenCalled();
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/chat — proxyUser delegation", () => {

@@ -372,7 +372,7 @@ export function SettingsView({ role, studentNumber = null, passwordExpired = fal
                       <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: YOUR_API_KEY" \\
-  -d '{"messages":[{"role":"user","content":"hello"}],"model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
+  -d '{"messages":[{"role":"user","content":"hello"}],"chatMode":"admin","model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
                     </CardContent>
                   </Card>
                 </PageTabsContent>
