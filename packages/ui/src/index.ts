@@ -38,8 +38,17 @@ export { CourseHeroCard } from "./course-hero-card"
 export type { CourseHeroCardProps } from "./course-hero-card"
 export { CourseCard } from "./course-card"
 export type { CourseCardProps, CourseCardAction } from "./course-card"
-export { CourseListView } from "./course-list-view"
-export type { CourseListViewProps } from "./course-list-view"
+export {
+  CourseListView,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+} from "./course-list-view"
+export type {
+  CourseListViewProps,
+  CourseFilterGroup,
+  CourseFilterOption,
+} from "./course-list-view"
 export { QuestionCard } from "./question-card"
 export type {
   QuestionCardProps,
