@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import { CourseCard, CourseListView } from '@eduai/ui';
+import {
+  CourseCard,
+  CourseListView,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+  type CourseFilterGroup,
+} from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
 import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
@@ -52,6 +58,17 @@ export function CoursesGrid({
   matchesFilter,
 }: CoursesGridProps) {
   const highlightId = tourHighlightCourseId ?? (courses.length > 0 ? courses[0].id : null);
+
+  const filterGroups: CourseFilterGroup<Course>[] = [
+    buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+    ...(showDepartment
+      ? [
+          buildDepartmentFilterGroup<Course>((c) => c.department, {
+            optionLabel: getDepartmentLabel,
+          }),
+        ]
+      : []),
+  ];
 
   const renderCard = (course: Course) => {
     const colorIndex = course.id % 5;
@@ -106,6 +123,7 @@ export function CoursesGrid({
       getKey={(course) => course.id}
       getTermInfo={(course) => ({ term: course.term, year: course.year })}
       getSearchText={(course) => `${course.name ?? ''} ${course.code ?? ''}`}
+      filterGroups={filterGroups}
       matchesFilter={matchesFilter}
       filters={filters}
       gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
