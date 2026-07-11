@@ -179,20 +179,25 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
+      // input: false — these are only ever set server-side (admin/invitation
+      // flows), never accepted from the client on sign-up/update-user.
       role: {
         type: "string",
         defaultValue: "STUDENT",
         required: false,
+        input: false,
       },
       isActive: {
         type: "boolean",
         defaultValue: true,
         required: false,
+        input: false,
       },
       authorizedUnits: {
         type: "string[]",
         defaultValue: [],
         required: false,
+        input: false,
       },
     },
   },
