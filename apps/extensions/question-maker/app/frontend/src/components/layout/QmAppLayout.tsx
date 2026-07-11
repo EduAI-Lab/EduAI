@@ -139,7 +139,7 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
   // Settings lives in the navUser dropdown (like Core).
   // Bug reports is in the site-header top actions (like Core).
   // Cross-app navigation (EduAI Core + other extensions) lives in the
-  // header BrandSwitcher. Secondary nav only has Help.
+  // footer AppSwitcher. Secondary nav only has Help.
   return [
     { key: 'help', title: 'Help', href: '/help' },
   ];
@@ -195,8 +195,18 @@ function QmAppLayoutInner() {
     external: item.external,
   }));
 
+  // The question composer relies on a page-level sticky action bar. AppShell's
+  // default `<main>` is `overflow-auto`, which makes it the sticky containing
+  // block — but it never actually scrolls (the document does), so any sticky
+  // child is trapped and scrolls away instead of pinning below the header.
+  // Drop `overflow-auto` on the composer routes so the bar sticks to the
+  // viewport; main clips nothing here anyway.
+  const isComposerRoute =
+    pathname.endsWith('/questions/new') || /\/questions\/[^/]+\/edit$/.test(pathname);
+
   return (
     <AppShell
+      mainClassName={isComposerRoute ? 'min-w-0 flex-1' : undefined}
       sidebar={{
         logo: qmLogo,
         logoHref: '/dashboard',
