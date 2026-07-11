@@ -112,6 +112,25 @@ export function CourseDetailStudentView({
 
   return (
     <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
+      {/* B2: Topics folded into hero; badges moved to top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={displayName}
+        description={course.description}
+        accentColor={accentColor}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+        headerAction={
+          <CourseCardCustomizePopover
+            courseName={course.name}
+            courseCode={course.code}
+            preference={cardPreference}
+            onApply={(update) => setCoursePreference(course.id, update)}
+          />
+        }
+      />
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -125,28 +144,6 @@ export function CourseDetailStudentView({
 
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* B2: Topics folded into hero; badges moved to top-right */}
-          <ScrollReveal index={0}>
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={displayName}
-            description={course.description}
-            accentColor={accentColor}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-            headerAction={
-              <CourseCardCustomizePopover
-                courseName={course.name}
-                courseCode={course.code}
-                preference={cardPreference}
-                onApply={(update) => setCoursePreference(course.id, update)}
-              />
-            }
-          />
-          </ScrollReveal>
-
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             <ScrollReveal index={1}>

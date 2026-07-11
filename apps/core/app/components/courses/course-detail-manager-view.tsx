@@ -813,6 +813,18 @@ export function CourseDetailManagerView({
         />
       )}
 
+      {/* B2: Topics folded into hero, badges top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={course.name}
+        description={course.description}
+        accentColor={resolvePaletteAccent(course.id)}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+      />
+
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -842,17 +854,6 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          {/* B2: Topics folded into hero, badges top-right */}
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={course.name}
-            description={course.description}
-            accentColor={resolvePaletteAccent(course.id)}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-          />
 
           {/* Stat row */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
