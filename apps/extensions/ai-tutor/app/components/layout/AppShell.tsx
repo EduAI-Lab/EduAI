@@ -3,6 +3,7 @@ import { SidebarInset, SidebarProvider } from '@eduai/ui';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { AiTutorSidebar } from './AiTutorSidebar';
 import { AppSiteHeader } from './AppSiteHeader';
+import { CommandPalette } from '~/components/command/CommandPalette';
 
 export type AppShellProps = {
   children: React.ReactNode;
@@ -35,6 +36,7 @@ export function AppShell({ children, breadcrumbs, actions }: AppShellProps) {
         <AppSiteHeader breadcrumbs={breadcrumbs} actions={actions} />
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:gap-6 md:p-6">{children}</div>
       </SidebarInset>
+      <CommandPalette />
     </SidebarProvider>
   );
 }

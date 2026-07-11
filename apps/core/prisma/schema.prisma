@@ -151,6 +151,7 @@ model Course {
   enrollments            Enrollment[]
   canvasRosterMembers    CanvasRosterMember[]
   materials              CourseMaterial[]
+  canvasMaterialExclusions CanvasMaterialExclusion[]
   reEmbedJobs            CourseReEmbedJob[]
   topics                 CourseTopic[]
   questions              Question[]
@@ -343,6 +344,12 @@ model CourseMaterial {
   /// re-sync skips rows with deletedAt set. Lets extensions detect removals.
   deletedAt       DateTime?
   deletedBy       String?
+  /// Set automatically when Canvas re-check finds the source file unpublished/
+  /// locked/hidden; cleared automatically if it becomes published again. This is
+  /// distinct from `deletedAt` (manual, one-way instructor delete) — the two must
+  /// never be set/cleared by the same code path. Student-facing reads filter
+  /// `unpublishedAt: null` alongside `deletedAt: null`.
+  unpublishedAt   DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   processedAt     DateTime?
@@ -355,6 +362,18 @@ model CourseMaterial {
   @@index([uploadedBy])
   @@index([courseId, deletedAt])
   @@map("course_materials")
+}
+
+model CanvasMaterialExclusion {
+  id               String   @id @default(cuid())
+  courseId         String
+  canvasFileId     String
+  excludedByUserId String?
+  createdAt        DateTime @default(now())
+  course           Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, canvasFileId])
+  @@map("canvas_material_exclusions")
 }
 
 model CourseTopic {
