@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CanvasApiError,
   CanvasVerificationError,
+  computeCanvasFilePublishState,
   downloadCanvasFile,
+  getCanvasCourseWithTerm,
   listCanvasCourseStudents,
   parseAndValidateCanvasUrl,
   resolveCanvasFileDownloadUrl,
@@ -188,5 +190,96 @@ describe("CanvasApiError", () => {
   it("carries statusCode", () => {
     const error = new CanvasApiError("Canvas API error: 500", 500);
     expect(error.statusCode).toBe(500);
+  });
+});
+
+describe("computeCanvasFilePublishState", () => {
+  const now = new Date("2026-07-05T12:00:00.000Z");
+
+  it("treats a plain file with no lock fields as published", () => {
+    expect(computeCanvasFilePublishState({}, now)).toEqual({ isPublished: true });
+  });
+
+  it("treats hidden as unpublished", () => {
+    expect(computeCanvasFilePublishState({ hidden: true }, now)).toEqual({ isPublished: false });
+  });
+
+  it("treats locked as unpublished", () => {
+    expect(computeCanvasFilePublishState({ locked: true }, now)).toEqual({ isPublished: false });
+  });
+
+  it("treats a future unlock_at as unpublished", () => {
+    expect(
+      computeCanvasFilePublishState({ unlock_at: "2026-07-06T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: false });
+  });
+
+  it("treats a past unlock_at as published", () => {
+    expect(
+      computeCanvasFilePublishState({ unlock_at: "2026-07-01T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: true });
+  });
+
+  it("treats a past lock_at as unpublished", () => {
+    expect(
+      computeCanvasFilePublishState({ lock_at: "2026-07-01T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: false });
+  });
+
+  it("treats a future lock_at as still published", () => {
+    expect(
+      computeCanvasFilePublishState({ lock_at: "2026-07-06T00:00:00.000Z" }, now),
+    ).toEqual({ isPublished: true });
+  });
+});
+
+describe("getCanvasCourseWithTerm", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests the single-course endpoint with include[]=term", async () => {
+    const payload = {
+      id: 21,
+      name: "Software Engineering",
+      course_code: "COSC 301",
+      start_at: null,
+      end_at: null,
+      term: {
+        id: 1,
+        name: "Default Term",
+        start_at: "2026-05-01T06:00:00Z",
+        end_at: "2026-08-31T06:00:00Z",
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })),
+    );
+
+    const course = await getCanvasCourseWithTerm(
+      { canvasUrl: "http://localhost:8080", apiKey: "token", isTestMode: false },
+      "21",
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/courses/21?include[]=term",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer token" },
+      }),
+    );
+    expect(course?.term?.start_at).toBe("2026-05-01T06:00:00Z");
+  });
+
+  it("returns null when Canvas responds 404", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+
+    await expect(
+      getCanvasCourseWithTerm(
+        { canvasUrl: "http://localhost:8080", apiKey: "token", isTestMode: false },
+        "999",
+      ),
+    ).resolves.toBeNull();
   });
 });

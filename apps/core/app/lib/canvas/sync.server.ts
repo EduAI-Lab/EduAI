@@ -2,6 +2,7 @@ import { EnrollmentRole } from "@prisma/client";
 import type { CanvasCourseApi } from "~/lib/canvas/client.server";
 import {
   CANVAS_EXTERNAL_SOURCE,
+  getCanvasCourseWithTerm,
   listTeacherCanvasCourses,
 } from "~/lib/canvas/client.server";
 import {
@@ -31,8 +32,7 @@ async function findCanvasCourseByExternalId(
   userId: string,
 ): Promise<CanvasCourseApi | null> {
   const credentials = await requireCanvasCredentials(userId);
-  const courses = await listTeacherCanvasCourses(credentials, fetchImpl);
-  return courses.find((course) => String(course.id) === canvasCourseId) ?? null;
+  return getCanvasCourseWithTerm(credentials, canvasCourseId, fetchImpl);
 }
 
 async function syncSingleCanvasCourse(
@@ -134,30 +134,47 @@ async function unsyncSingleCanvasCourse(
   return { coreCourseId: course.id };
 }
 
-/** Pure delta between currently synced Canvas ids and the instructor's new selection. */
+/**
+ * Pure delta between currently synced Canvas ids and the instructor's new selection.
+ *
+ * `liveCanvasIds` restricts unsyncing to courses still visible in the instructor's live
+ * Canvas course list. A synced course that has dropped out of that list (term ended, access
+ * revoked, etc.) is left untouched rather than unsynced, since the instructor never had a
+ * chance to see it in the picker and choose to omit it.
+ */
 export function computeCanvasSyncDelta(
   currentlySynced: Iterable<string>,
   canvasCourseIds: string[],
+  liveCanvasIds: Iterable<string>,
 ): { toSync: string[]; toUnsync: string[] } {
   const syncedSet = new Set(currentlySynced);
   const requested = new Set(canvasCourseIds);
+  const liveSet = new Set(liveCanvasIds);
 
   return {
     toSync: canvasCourseIds,
-    toUnsync: [...syncedSet].filter((canvasId) => !requested.has(canvasId)),
+    toUnsync: [...syncedSet].filter(
+      (canvasId) => !requested.has(canvasId) && liveSet.has(canvasId),
+    ),
   };
 }
 
 /**
- * Syncs checked Canvas courses and unsyncs any the instructor previously synced but omitted.
+ * Syncs checked Canvas courses and unsyncs any the instructor previously synced but omitted,
+ * excluding courses that have dropped out of the instructor's live Canvas course list.
  */
 export async function syncCanvasCourses(
   userId: string,
   canvasCourseIds: string[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<SyncCanvasCoursesResult> {
-  const currentlySynced = await getInstructorSyncedCanvasExternalIds(userId);
-  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds);
+  const credentials = await requireCanvasCredentials(userId);
+  const [currentlySynced, liveCourses] = await Promise.all([
+    getInstructorSyncedCanvasExternalIds(userId),
+    listTeacherCanvasCourses(credentials, fetchImpl),
+  ]);
+  const liveCanvasIds = liveCourses.map((course) => String(course.id));
+  const { toSync, toUnsync } = computeCanvasSyncDelta(currentlySynced, canvasCourseIds, liveCanvasIds);
 
   const result: SyncCanvasCoursesResult = {
     synced: [],

@@ -34,7 +34,7 @@ function registerFormArgs(fields: Record<string, string>) {
     request: new Request("http://localhost/auth/register", { method: "POST", body }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {

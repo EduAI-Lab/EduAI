@@ -46,6 +46,19 @@ import type {
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
+ * Thrown when the request never reached the server (e.g. connection refused
+ * because the API is still booting on a fresh dev-stack start). Distinct from
+ * an authenticated-but-rejected response so callers can retry instead of
+ * treating it as "logged out".
+ */
+export class ApiNetworkError extends Error {
+  constructor(message = 'Network request failed') {
+    super(message);
+    this.name = 'ApiNetworkError';
+  }
+}
+
+/**
  * Single fetch wrapper for the entire API surface. Every caller goes through
  * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
@@ -56,14 +69,19 @@ async function http(path: string, init?: RequestInit) {
     'Content-Type': 'application/json',
   };
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...headers,
-      ...init?.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...headers,
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new ApiNetworkError();
+  }
 
   if (!res.ok) {
     // 401 = unauthenticated → bounce to Core login so a session can be
@@ -85,6 +103,11 @@ async function http(path: string, init?: RequestInit) {
 
 export const api = {
   me: () => http('/api/me') as Promise<{ user: User | null }>,
+  aiStatus: () =>
+    http('/api/ai-status') as Promise<{
+      cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+      ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+    }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   updateCourse: (

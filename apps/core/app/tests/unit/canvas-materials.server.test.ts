@@ -8,6 +8,14 @@ vi.mock("~/lib/prisma.server", () => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    canvasMaterialExclusion: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -22,6 +30,21 @@ vi.mock("~/lib/canvas/client.server", () => ({
   CANVAS_EXTERNAL_SOURCE: "canvas",
   listCanvasCourseFiles: vi.fn(),
   downloadCanvasFile: vi.fn(),
+  computeCanvasFilePublishState: (
+    file: { hidden?: boolean; locked?: boolean; lock_at?: string | null; unlock_at?: string | null },
+    now: Date = new Date(),
+  ) => {
+    if (file.hidden || file.locked) {
+      return { isPublished: false };
+    }
+    if (file.unlock_at && new Date(file.unlock_at) > now) {
+      return { isPublished: false };
+    }
+    if (file.lock_at && new Date(file.lock_at) <= now) {
+      return { isPublished: false };
+    }
+    return { isPublished: true };
+  },
 }));
 
 vi.mock("~/lib/ai/file-processing", () => ({
@@ -43,6 +66,8 @@ import { processMaterialEmbeddings } from "~/lib/ai/embedding";
 import {
   discoverCanvasMaterialsForCourse,
   syncSelectedCanvasMaterials,
+  excludeCanvasMaterial,
+  unexcludeCanvasMaterial,
 } from "~/lib/canvas/materials.server";
 
 const CREDENTIALS = {
@@ -83,6 +108,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
+  vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
 });
 
 describe("discoverCanvasMaterialsForCourse", () => {
@@ -120,6 +146,99 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]?.importStatus).toBe("imported");
     expect(files[0]?.coreMaterialId).toBe("mat-existing");
   });
+
+  it("flags an unpublished Canvas file as not importable", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]).toMatchObject({ isPublished: false, isExcluded: false });
+  });
+
+  it("flags an excluded Canvas file and omits it from import eligibility", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
+      { canvasFileId: "1001" },
+    ] as never);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files[0]).toMatchObject({ isExcluded: true });
+  });
+
+  it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(prisma.courseMaterial.update).not.toHaveBeenCalled();
+    expect(prisma.courseMaterial.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("sets unpublishedAt on a previously-imported material that becomes unpublished when recheckPublishState is opted into", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-existing", externalId: "1001", canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-existing"] } },
+      data: { unpublishedAt: expect.any(Date) },
+    });
+  });
+
+  it("clears unpublishedAt on a material that becomes published again when recheckPublishState is opted into", async () => {
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      {
+        id: "mat-existing",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: new Date("2025-02-01T00:00:00.000Z"),
+      },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-existing"] } },
+      data: { unpublishedAt: null },
+    });
+  });
+
+  it("batches multiple changed materials into a single updateMany per direction", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, id: 1001, hidden: true },
+      { ...CANVAS_FILE, id: 1002, hidden: true },
+    ]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      { id: "mat-1", externalId: "1001", canvasUpdatedAt: new Date(), unpublishedAt: null },
+      { id: "mat-2", externalId: "1002", canvasUpdatedAt: new Date(), unpublishedAt: null },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-1", "mat-2"] } },
+      data: { unpublishedAt: expect.any(Date) },
+    });
+  });
 });
 
 describe("syncSelectedCanvasMaterials", () => {
@@ -156,5 +275,71 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toEqual([
       { canvasFileId: "9999", message: "File not found or not importable for this course" },
     ]);
+  });
+
+  it("skips and reports an unpublished file without importing it", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, hidden: true },
+    ]);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "unpublished" }]);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("skips and reports an excluded file without importing it", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([
+      { canvasFileId: "1001" },
+    ] as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "excluded" }]);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+});
+
+describe("excludeCanvasMaterial / unexcludeCanvasMaterial", () => {
+  it("upserts an exclusion row scoped to the course", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
+
+    await excludeCanvasMaterial("user-1", "core-course-1", "1001");
+
+    expect(prisma.canvasMaterialExclusion.upsert).toHaveBeenCalledWith({
+      where: { courseId_canvasFileId: { courseId: "core-course-1", canvasFileId: "1001" } },
+      create: { courseId: "core-course-1", canvasFileId: "1001", excludedByUserId: "user-1" },
+      update: {},
+    });
+  });
+
+  it("is idempotent when excluding an already-excluded file", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.upsert).mockResolvedValue({} as never);
+
+    await expect(
+      excludeCanvasMaterial("user-1", "core-course-1", "1001"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("deletes the exclusion row on unexclude", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+    await unexcludeCanvasMaterial("user-1", "core-course-1", "1001");
+
+    expect(prisma.canvasMaterialExclusion.deleteMany).toHaveBeenCalledWith({
+      where: { courseId: "core-course-1", canvasFileId: "1001" },
+    });
+  });
+
+  it("is idempotent when unexcluding an already-unexcluded file", async () => {
+    vi.mocked(prisma.canvasMaterialExclusion.deleteMany).mockResolvedValue({ count: 0 } as never);
+
+    await expect(
+      unexcludeCanvasMaterial("user-1", "core-course-1", "1001"),
+    ).resolves.toBeUndefined();
   });
 });
