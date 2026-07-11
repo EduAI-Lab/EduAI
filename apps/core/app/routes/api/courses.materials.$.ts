@@ -11,6 +11,7 @@ import prisma from '~/lib/prisma.server';
 import { auth } from '~/lib/auth/server';
 import {
   resolveCourseAccessWithCourse,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from '~/lib/auth/course-access.server';
 import { getPolicy, denyByPolicy } from '~/lib/policy.server';
@@ -37,13 +38,34 @@ function isStaffAccess(access: AccessLevel): boolean {
 
 /**
  * Prisma `where` fragment that hides materials students shouldn't see yet:
- * explicitly hidden (`visibleToStudents: false`) or scheduled for a future
+ * Canvas-unpublished (`unpublishedAt`), selectively excluded Canvas files,
+ * explicitly hidden (`visibleToStudents: false`), or scheduled for a future
  * reveal (`availableAt` in the future). Staff callers must NOT apply this.
+ *
+ * When `excludedCanvasFileIds` is empty the availableAt clause stays a top-level
+ * `OR` so scheduling tests remain readable; with exclusions an `AND` wraps both
+ * OR groups so Prisma doesn't overwrite one with the other.
  */
-function studentVisibilityWhere(now: Date) {
-  return {
-    visibleToStudents: true,
+function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = []) {
+  const availableAtGate = {
     OR: [{ availableAt: null }, { availableAt: { lte: now } }],
+  };
+  const exclusionGate =
+    excludedCanvasFileIds.length > 0
+      ? {
+          OR: [
+            { externalId: null },
+            { externalId: { notIn: excludedCanvasFileIds } },
+          ],
+        }
+      : null;
+
+  return {
+    unpublishedAt: null,
+    visibleToStudents: true,
+    ...(exclusionGate
+      ? { AND: [availableAtGate, exclusionGate] }
+      : availableAtGate),
   };
 }
 
@@ -462,11 +484,47 @@ async function uploadMaterial(
 
 const PREVIEW_EXCERPT_MAX = 4000;
 
+async function materialsListResponse(courseId: string, includeDeleted: boolean) {
+  const materials = await prisma.courseMaterial.findMany({
+    where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
+    include: {
+      _count: { select: { chunks: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return json(200, {
+    materials: materials.map(({ _count, ...material }) => ({
+      ...material,
+      chunkCount: _count?.chunks ?? 0,
+    })),
+  });
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
   const materialId = params.materialId;
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
+  }
+
+  // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
+  // soft-deleted materials — including those in a soft-deleted course. The access
+  // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
+  // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
+  const session = await auth.api.getSession(request);
+  if (wantsIncludeDeleted(request, session?.user)) {
+    // The access resolver (skipped here) is what 404s a nonexistent course, so
+    // check existence explicitly — otherwise an unknown id returns 200 {[]},
+    // indistinguishable from "course exists, no materials". Mirrors courses.id.ts.
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+    if (!course) {
+      return json(404, { error: 'COURSE_NOT_FOUND' });
+    }
+    return materialsListResponse(courseId, true);
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -490,8 +548,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  const excludedCanvasFileIds =
+    access.level === 'student'
+      ? (
+          await prisma.canvasMaterialExclusion.findMany({
+            where: { courseId },
+            select: { canvasFileId: true },
+          })
+        ).map((row) => row.canvasFileId)
+      : [];
+
   const studentGate =
-    access.level === 'student' ? studentVisibilityWhere(new Date()) : {};
+    access.level === 'student'
+      ? studentVisibilityWhere(new Date(), excludedCanvasFileIds)
+      : {};
 
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({

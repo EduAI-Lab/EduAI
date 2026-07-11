@@ -26,7 +26,7 @@ describe("SiteHeader — rendering", () => {
   it("renders optional actions on the right side of the header", () => {
     renderWithSidebar(
       <SiteHeader
-        title="Chat"
+        title="Course Chat"
         actions={<button type="button">Test Action</button>}
       />,
     );
@@ -36,6 +36,11 @@ describe("SiteHeader — rendering", () => {
   it("derives title from route and renders as h1 when no title prop is passed", () => {
     renderWithSidebar(<SiteHeader />, { path: "/dashboard" });
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it('derives "Course Chat" from the /chat route when no title prop is passed', () => {
+    renderWithSidebar(<SiteHeader />, { path: "/chat" });
+    expect(screen.getByRole("heading", { level: 1, name: "Course Chat" })).toBeInTheDocument();
   });
 
   it("renders breadcrumbs when breadcrumbs prop provided", () => {

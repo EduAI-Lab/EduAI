@@ -9,7 +9,7 @@ import {
   SidebarMenuItem,
   SidebarTrigger,
 } from "./ui/sidebar"
-import { NavMain, type NavMainItem } from "./nav-main"
+import { NavMain, type NavGroupItem, type NavMainItem } from "./nav-main"
 import { NavSecondary, type NavSecondaryItem } from "./nav-secondary"
 import { NavUser, type NavUserProps } from "./nav-user"
 import { BrandSwitcher, type BrandSwitcherProps } from "./app-launcher"
@@ -19,7 +19,7 @@ export interface AppSidebarProps
   logo: React.ReactNode
   /** Destination the logo links to (default "/dashboard"). */
   logoHref?: string
-  navMain: NavMainItem[]
+  navMain: (NavMainItem | NavGroupItem)[]
   navSecondary?: NavSecondaryItem[]
   currentPath: string
   LinkComponent?: React.ElementType
