@@ -9,7 +9,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { IconChevronRight } from '@tabler/icons-react';
-import { StatCard, termLabel } from '@eduai/ui';
+import { StatCard, termLabel, QuickActionsPanel, type QuickAction } from '@eduai/ui';
 
 export type DashboardStatDef = {
   label: string;
@@ -27,12 +27,8 @@ export type DashboardCourseRow = {
   progressLabel?: string | null;
 };
 
-export type DashboardQuickAction = {
-  label: string;
-  description: string;
-  href: string;
-  icon: ReactNode;
-};
+/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing role-view imports. */
+export type DashboardQuickAction = QuickAction;
 
 export type DashboardViewProps = {
   stats: DashboardStatDef[];
@@ -127,31 +123,6 @@ function CourseListPanel({
   );
 }
 
-function QuickActionsPanel({ actions }: { actions: DashboardQuickAction[] }) {
-  if (actions.length === 0) return null;
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {actions.map((action) => (
-        <Link
-          key={action.href + action.label}
-          to={action.href}
-          className="flex items-start gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 text-left shadow-[var(--shadow-2xs)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        >
-          <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            {action.icon}
-          </div>
-          <div>
-            <div className="text-[13px] font-semibold text-foreground">{action.label}</div>
-            <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-              {action.description}
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 export function DashboardView({
   stats,
   analytics,
@@ -194,7 +165,7 @@ export function DashboardView({
 
           <div>
             <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
-            <QuickActionsPanel actions={quickActions} />
+            <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
           </div>
         </div>
 
