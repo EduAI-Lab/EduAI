@@ -8,6 +8,7 @@ import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
@@ -35,7 +36,16 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
         <ShellBreadcrumbs
           items={[
             { label: 'My courses', href: '/student' },
-            { label: course?.title || 'Course' },
+            {
+              label: course?.title || 'Course',
+              node: course?.id != null ? (
+                <CourseSwitcher
+                  courseId={course.id}
+                  basePath="/student"
+                  currentTitle={course?.title || 'Course'}
+                />
+              ) : undefined,
+            },
           ]}
         />
       }
