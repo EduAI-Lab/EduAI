@@ -2,15 +2,18 @@
  * @file ModuleCard — the module tile used in both the student and instructor
  * course views (course-detail "content" grid).
  *
- * Anatomy: a course-accent-tinted order chip + title (with a top-right
- * Published/Draft badge) + description, an optional lesson-count/updated meta
- * row, an optional student progress bar, and a divider footer whose "View
- * module" affordance nudges its chevron on hover. The whole card is a single
- * click/keyboard target that navigates to the module.
+ * Anatomy: a course-accent gradient rail + a faint order-number motif tucked
+ * into the bottom-right corner; a `CardHeader` holding an eyebrow row (ringed
+ * order chip + "MODULE" kicker on the left; a read-only Published/Draft
+ * `StatusBadge` and an optional publish kebab menu on the right), a bold
+ * title, and a description; then an optional
+ * `CardContent` with a lesson-count/updated meta row or a student progress bar.
+ * The whole card is a single click/keyboard target that navigates to the
+ * module — no separate "view" affordance, which would be redundant.
  *
- * The body is intentionally lightweight: the AI Tutor `Module` type carries no
- * lesson count for instructors, so the card is designed to still read as
- * balanced with just a title + description + footer.
+ * Publish state and its action are separated: `isPublished` drives the
+ * glanceable badge; `actions` (a `PublishMenu`) carries the toggle, shown only
+ * to users who can publish.
  *
  * Data honesty: `lessonCount` and `updatedLabel` are optional and simply omit
  * their row when not supplied — the AI Tutor `Module` type doesn't currently
@@ -19,11 +22,10 @@
  * appear automatically.
  */
 import type { KeyboardEvent, ReactNode } from 'react';
-import { IconBooks, IconChevronRight } from '@tabler/icons-react';
+import { IconBooks } from '@tabler/icons-react';
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   StatusBadge,
   courseThemeVars,
@@ -31,6 +33,7 @@ import {
 } from '@eduai/ui';
 import { ProgressBarFromData } from '../ProgressBar';
 import { cn } from '~/lib/utils';
+import { titleName } from '~/lib/course-title';
 import type { Progress } from '~/lib/types';
 
 export interface ModuleCardProps {
@@ -49,11 +52,11 @@ export interface ModuleCardProps {
    */
   showProgress?: boolean;
   progress?: Progress;
-  /** When provided, renders an instructor Published/Draft StatusBadge. */
+  /** Drives the read-only Published/Draft status badge. */
   isPublished?: boolean;
   /** Optional trailing meta label, e.g. "Updated 2 days ago". */
   updatedLabel?: string;
-  /** Footer-right slot for instructor-only controls (e.g. PublishStatusButton). Clicks inside are kept from bubbling to the card's navigation handler. */
+  /** Eyebrow-right action slot (e.g. the publish `PublishMenu`). Clicks inside are kept from bubbling to the card's navigation handler. */
   actions?: ReactNode;
   onClick: () => void;
   className?: string;
@@ -85,6 +88,8 @@ export function ModuleCard({
   };
 
   const hasMeta = lessonCount !== undefined || updatedLabel;
+  const orderLabel = String(index + 1).padStart(2, '0');
+  const hasStatus = isPublished !== undefined || Boolean(actions);
 
   return (
     <Card
@@ -94,48 +99,78 @@ export function ModuleCard({
       onClick={onClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'group relative cursor-pointer border-l-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         className,
       )}
-      style={{ borderLeftColor: accentColor, ...courseThemeVars(accentColor) }}
+      style={courseThemeVars(accentColor)}
       data-tour={dataTour}
       data-tour-route={dataTourRoute}
     >
-      <CardHeader className="flex-row items-start gap-3 pb-3">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-[10px] text-sm font-bold tabular-nums"
-          style={{
-            background: 'color-mix(in oklch, var(--course-accent) 12%, transparent)',
-            color: 'var(--course-accent)',
-            boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 22%, transparent)',
-          }}
-        >
-          {String(index + 1).padStart(2, '0')}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-2 text-base font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">
-              {title}
-            </h3>
-            {isPublished !== undefined && (
-              <StatusBadge
-                active={isPublished}
-                activeLabel="Published"
-                inactiveLabel="Draft"
-                className="mt-0.5 shrink-0"
-              />
-            )}
-          </div>
-          {description ? (
-            <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
+      {/* Accent gradient rail — brightens on hover. */}
+      <div
+        className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
+        style={{
+          background:
+            'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+        }}
+        aria-hidden="true"
+      />
+
+      {/* Ghosted order-number — a watermark pinned to the vertical center of the
+          right edge, clear of the title and the bottom progress bar. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-2 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black leading-none tabular-nums"
+        style={{ color: 'color-mix(in oklch, var(--course-accent) 10%, transparent)' }}
+      >
+        {orderLabel}
+      </span>
+
+      <CardHeader className="relative gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <span className="inline-flex items-center gap-2.5">
+            <span
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
+              style={{
+                background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
+                color: 'var(--course-accent)',
+                boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+              }}
+            >
+              {orderLabel}
+            </span>
+            <span
+              className="text-[11px] font-bold uppercase tracking-[0.16em]"
+              style={{ color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))' }}
+            >
+              Module
+            </span>
+          </span>
+
+          {hasStatus && (
+            <div
+              className="flex shrink-0 items-center gap-1"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              {isPublished !== undefined && (
+                <StatusBadge active={isPublished} activeLabel="Published" inactiveLabel="Draft" />
+              )}
+              {actions}
+            </div>
+          )}
         </div>
+
+        <h3 className="line-clamp-2 text-[17px] font-bold leading-snug text-foreground transition-colors group-hover:text-primary-text">
+          {titleName(title)}
+        </h3>
+        {description ? (
+          <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+        ) : null}
       </CardHeader>
 
       {(hasMeta || showProgress) && (
-        <CardContent className="space-y-3 pt-0">
+        <CardContent className="relative flex flex-col gap-3 pt-0">
           {hasMeta && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-muted-foreground">
               {lessonCount !== undefined && (
@@ -152,30 +187,13 @@ export function ModuleCard({
             (progress && progress.total > 0 ? (
               <ProgressBarFromData progress={progress} size="sm" showLabel />
             ) : (
-              <p className="text-sm text-muted-foreground">Not started yet</p>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+                Not started yet
+              </span>
             ))}
         </CardContent>
       )}
-
-      <CardFooter className="justify-between">
-        <span className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors group-hover:text-primary">
-          View module
-          <IconChevronRight
-            size={15}
-            aria-hidden="true"
-            className="transition-transform duration-150 ease-out group-hover:translate-x-0.5"
-          />
-        </span>
-        {actions && (
-          <div
-            className="relative z-10"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            {actions}
-          </div>
-        )}
-      </CardFooter>
     </Card>
   );
 }
