@@ -47,6 +47,8 @@ export type {
   QuestionCardStatus,
   QuestionDifficulty,
 } from "./question-card"
+export { AnswerOption } from "./answer-option"
+export type { AnswerOptionProps, AnswerOptionState } from "./answer-option"
 export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
 export { QuestionStatusBadge, questionStatus } from "./question-status-badge"
