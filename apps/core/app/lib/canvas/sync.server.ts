@@ -2,6 +2,7 @@ import { EnrollmentRole } from "@prisma/client";
 import type { CanvasCourseApi } from "~/lib/canvas/client.server";
 import {
   CANVAS_EXTERNAL_SOURCE,
+  getCanvasCourseWithTerm,
   listTeacherCanvasCourses,
 } from "~/lib/canvas/client.server";
 import {
@@ -31,8 +32,7 @@ async function findCanvasCourseByExternalId(
   userId: string,
 ): Promise<CanvasCourseApi | null> {
   const credentials = await requireCanvasCredentials(userId);
-  const courses = await listTeacherCanvasCourses(credentials, fetchImpl);
-  return courses.find((course) => String(course.id) === canvasCourseId) ?? null;
+  return getCanvasCourseWithTerm(credentials, canvasCourseId, fetchImpl);
 }
 
 async function syncSingleCanvasCourse(

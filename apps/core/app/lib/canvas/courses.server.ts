@@ -6,7 +6,7 @@ import {
 } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
-import { ubcTermFromDate } from "~/lib/canvas/term.server";
+import { ubcTermFromDate, inferStartDateFromTermName, inferUbcTermStartFromEndDate } from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
 
 export class CanvasNotConnectedError extends Error {
@@ -40,17 +40,21 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
   endDate: Date | null;
 } {
   const term = canvasCourse.term;
+  const termEndDate = parseCanvasIsoDate(term?.end_at);
   const startDate =
-    parseCanvasIsoDate(canvasCourse.start_at) ?? parseCanvasIsoDate(term?.start_at);
+    parseCanvasIsoDate(canvasCourse.start_at) ??
+    parseCanvasIsoDate(term?.start_at) ??
+    inferStartDateFromTermName(term?.name) ??
+    (termEndDate ? inferUbcTermStartFromEndDate(termEndDate) : null);
 
   if (!startDate) {
     throw new Error(
-      `Canvas course ${canvasCourse.id} has no start date. Set course dates in Canvas or ensure the course has an enrollment term with a start date.`,
+      `Canvas course ${canvasCourse.id} has no start date. Set course or term start dates in Canvas, or give the enrollment term an end date EduAI can infer from.`,
     );
   }
 
   const endDate =
-    parseCanvasIsoDate(canvasCourse.end_at) ?? parseCanvasIsoDate(term?.end_at) ?? null;
+    parseCanvasIsoDate(canvasCourse.end_at) ?? termEndDate ?? null;
 
   return { startDate, endDate };
 }

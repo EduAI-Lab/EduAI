@@ -9,6 +9,18 @@ import { logger } from "../utils/logger.js";
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
 
+/**
+ * Cloud providers we can probe for the connectivity badge, in preference order,
+ * each paired with a lightweight probe model. Keys mirror the browser-stored
+ * provider ids (see the frontend apiKeyStorage `CLOUD_PROVIDERS`).
+ */
+const CLOUD_PROBE_MODELS = {
+  google: "google:gemini-2.5-flash",
+  openai: "openai:gpt-4o-mini",
+  deepseek: "deepseek:deepseek-chat",
+  anthropic: "anthropic:claude-3-5-haiku-latest",
+};
+
 class EduAIService {
   constructor() {
     this.baseURL = config.eduaiApiUrl;
@@ -19,7 +31,6 @@ class EduAIService {
         baseURL: this.baseURL,
         hasApiKey: !!this.apiKey,
         apiKeyLength: this.apiKey ? this.apiKey.length : 0,
-        apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + "..." : "none",
       },
       "EduAI Service initialized"
     );
@@ -60,24 +71,48 @@ class EduAIService {
   }
 
   /**
-   * Picks a lightweight model for connectivity checks. Prefers a cloud (Google)
-   * provider whenever a key is available — from the client (browser-stored key)
-   * or the server config — so the badge reflects cloud availability even when the
-   * UBC-hosted (Ollama) provider is offline. Falls back to Ollama only when no
-   * cloud key exists at all.
+   * Picks a lightweight model for connectivity checks. Prefers whichever cloud
+   * provider the caller has a key for (browser-stored key), then the server's
+   * Google key — so the badge reflects cloud availability for ANY supported cloud
+   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
+   * offline. Falls back to Ollama only when no cloud key exists at all.
+   *
+   * `forceProvider` overrides the auto-selection so a caller can probe a specific
+   * path regardless of what keys exist. The status chips rely on this: the UBC
+   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
+   * configured — otherwise the auto-selection would test Google and the UBC chip
+   * would report Google's state, never its own.
    */
-  getConnectivityTestParams(clientApiKeys = {}) {
-    const clientGoogleKey = clientApiKeys?.google?.apiKey?.trim?.();
-    const googleKey = clientGoogleKey || config.googleGenerativeAiApiKey?.trim();
-    if (googleKey) {
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
+    if (forceProvider === "ollama") {
       return {
-        provider: "google",
-        model: "google:gemini-2.5-flash",
-        apiKeys: {
-          google: { apiKey: googleKey, isEnabled: true },
-        },
+        provider: "ollama",
+        model: "ollama:gpt-oss:120b",
+        apiKeys: { ollama: { isEnabled: true } },
       };
     }
+
+    for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
+      const clientKey = clientApiKeys?.[provider]?.apiKey?.trim?.();
+      if (clientKey) {
+        return {
+          provider,
+          model: CLOUD_PROBE_MODELS[provider],
+          apiKeys: { [provider]: { apiKey: clientKey, isEnabled: true } },
+        };
+      }
+    }
+
+    // No client cloud key — fall back to the server-configured Google key if present.
+    const serverGoogleKey = config.googleGenerativeAiApiKey?.trim();
+    if (serverGoogleKey) {
+      return {
+        provider: "google",
+        model: CLOUD_PROBE_MODELS.google,
+        apiKeys: { google: { apiKey: serverGoogleKey, isEnabled: true } },
+      };
+    }
+
     return {
       provider: "ollama",
       model: "ollama:gpt-oss:120b",
@@ -808,9 +843,10 @@ Please ensure the questions are appropriate for the course level and cover the k
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
    * the (possibly offline) UBC-hosted provider. `provider` is echoed back so the
-   * UI can tell the user which path is live.
+   * UI can tell the user which path is live. `forceProvider` pins the probe to a
+   * specific path (e.g. `'ollama'` for the independent UBC status chip).
    */
-  async testApiKey({ cookie, apiKeys: clientApiKeys = {} } = {}) {
+  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
@@ -825,7 +861,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys);
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
     try {
       const response = await this.chat({
         systemPrompt: "Reply briefly.",

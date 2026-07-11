@@ -36,6 +36,14 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          docker system prune --all --force --volumes
+          df -h
+
       - name: Run E2E tests
         run: npm run test:e2e
 

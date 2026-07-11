@@ -1,14 +1,13 @@
 import { describe, it, expect } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
-import { IconDashboard, IconBooks } from "@tabler/icons-react"
-import { NavMain, type NavMainItem } from "@eduai/ui"
-import { SidebarProvider } from "@eduai/ui"
+import { IconDashboard, IconBooks, IconShieldLock, IconUsers, IconBrain } from "@tabler/icons-react"
+import { NavMain, type NavGroupItem, type NavMainItem, SidebarProvider } from "@eduai/ui"
 
 const items: NavMainItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: IconDashboard },
   { title: "Courses", url: "/courses", icon: IconBooks },
-];
+]
 
 function renderWithSidebar(ui: React.ReactElement, { path = "/" } = {}) {
   return render(
@@ -44,5 +43,52 @@ describe("NavMain — active state", () => {
     renderWithSidebar(<NavMain items={items} currentPath="/courses/abc123" />, { path: "/courses/abc123" })
     expect(screen.getByRole("link", { name: "Courses" })).toHaveAttribute("aria-current", "page")
     expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current")
+  })
+})
+
+const adminGroup: NavGroupItem = {
+  title: "Administration",
+  icon: IconShieldLock,
+  children: [
+    { title: "User Management", url: "/admin/users", icon: IconUsers },
+    { title: "AI Management", url: "/admin/ai-models", icon: IconBrain },
+  ],
+}
+
+describe("NavMain — group collapsed by default", () => {
+  it("renders the group header button but not child links", () => {
+    renderWithSidebar(<NavMain items={[adminGroup]} currentPath="/" />)
+    expect(screen.getByRole("button", { name: /administration/i })).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "User Management" })).not.toBeInTheDocument()
+  })
+})
+
+describe("NavMain — group expand/collapse", () => {
+  it("shows child links after clicking the group header", () => {
+    renderWithSidebar(<NavMain items={[adminGroup]} currentPath="/" />)
+    fireEvent.click(screen.getByRole("button", { name: /administration/i }))
+    expect(screen.getByRole("link", { name: "User Management" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "AI Management" })).toBeInTheDocument()
+  })
+
+  it("hides child links after clicking the header twice", () => {
+    renderWithSidebar(<NavMain items={[adminGroup]} currentPath="/" />)
+    const header = screen.getByRole("button", { name: /administration/i })
+    fireEvent.click(header)
+    fireEvent.click(header)
+    expect(screen.queryByRole("link", { name: "User Management" })).not.toBeInTheDocument()
+  })
+})
+
+describe("NavMain — group auto-expand for active child", () => {
+  it("expands the group on mount when the current path matches a child", () => {
+    renderWithSidebar(<NavMain items={[adminGroup]} currentPath="/admin/users" />, { path: "/admin/users" })
+    expect(screen.getByRole("link", { name: "User Management" })).toBeInTheDocument()
+  })
+
+  it("marks the active child with aria-current=page", () => {
+    renderWithSidebar(<NavMain items={[adminGroup]} currentPath="/admin/users" />, { path: "/admin/users" })
+    expect(screen.getByRole("link", { name: "User Management" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "AI Management" })).not.toHaveAttribute("aria-current")
   })
 })
