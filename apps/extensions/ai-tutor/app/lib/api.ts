@@ -140,6 +140,9 @@ async function http(path: string, init?: RequestInit) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
   }
+  // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
+  // empty payload, so short-circuit to null.
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -204,6 +207,18 @@ export const api = {
     http(`/api/modules/${moduleId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateModule: (
+    moduleId: number,
+    payload: { title?: string; description?: string | null; position?: number },
+  ) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteModule: (moduleId: number) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'DELETE',
+    }),
   lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
   createLesson: (
     moduleId: number,
@@ -221,6 +236,18 @@ export const api = {
     http(`/api/lessons/${lessonId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateLesson: (
+    lessonId: number,
+    payload: { title?: string; contentMd?: string | null; position?: number },
+  ) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteLesson: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'DELETE',
+    }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
   createActivity: (
@@ -236,8 +263,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId: number;
-      secondaryTopicIds?: number[];
+      mainTopicId: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
@@ -260,8 +287,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId?: number;
-      secondaryTopicIds?: number[];
+      mainTopicId?: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
