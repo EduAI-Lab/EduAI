@@ -20,23 +20,31 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import { IconChevronLeft, IconNotebook, IconUpload } from '@tabler/icons-react';
+import { useNavigate, useParams } from 'react-router';
+import { IconNotebook, IconPlus, IconUpload } from '@tabler/icons-react';
 import {
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
-  PageHeading,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Textarea,
 } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
-import { PublishStatusButton } from '../components/PublishStatusButton';
+import { ModuleHero } from '../components/lessons/ModuleHero';
+import { PublishMenu } from '../components/PublishMenu';
+import { accentForCourse } from '../lib/course-display';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.module';
@@ -64,9 +72,17 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.lessonsForModule(moduleId) as Promise<Lesson[]>,
   ]);
 
-  const course = (await api.courseById(module.courseOfferingId)) as Course;
+  // Fetch the course + its ordered module list in parallel. The sibling list
+  // gives the module's true 1-based ordinal (matching the course-view chip),
+  // which the raw `position` field can't — it's 1-based from the seed but
+  // 0-based via UI create.
+  const [course, siblingModules] = await Promise.all([
+    api.courseById(module.courseOfferingId) as Promise<Course>,
+    api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+  ]);
+  const moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
 
-  return { course, module, lessons };
+  return { course, module, lessons, moduleOrder };
 }
 
 /**
@@ -79,10 +95,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
   const perms = useAtPermissions();
-  const { course, module, lessons: initialLessons } = loaderData;
+  const { course, module, lessons: initialLessons, moduleOrder } = loaderData;
+  const accentColor = course ? accentForCourse(course) : undefined;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
   const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [selectedSourceCourseId, setSelectedSourceCourseId] = useState<number | null>(null);
@@ -95,6 +114,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const [selectedLessonIds, setSelectedLessonIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingLesson, setDeletingLesson] = useState<Lesson | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const sourceModulesRequestIdRef = useRef(0);
   const sourceLessonsRequestIdRef = useRef(0);
 
@@ -209,9 +234,14 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     if (!numericModuleId || !title.trim()) return;
     setCreating(true);
     try {
-      await api.createLesson(numericModuleId, { title: title.trim() });
+      await api.createLesson(numericModuleId, {
+        title: title.trim(),
+        ...(content.trim() ? { contentMd: content.trim() } : {}),
+      });
       setTitle('');
-      refreshLessons();
+      setContent('');
+      setCreateOpen(false);
+      await refreshLessons();
     } catch (error) {
       console.error('Failed to create lesson', error);
     } finally {
@@ -276,6 +306,44 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
+  const openEditLesson = (lesson: Lesson) => {
+    setEditingLesson(lesson);
+    setEditTitle(lesson.title);
+    setEditContent(lesson.contentMd ?? '');
+  };
+
+  const onSaveEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingLesson || !editTitle.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.updateLesson(editingLesson.id, {
+        title: editTitle.trim(),
+        contentMd: editContent.trim() || null,
+      });
+      setEditingLesson(null);
+      await refreshLessons();
+    } catch (error) {
+      console.error('Failed to update lesson', error);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const onConfirmDelete = async () => {
+    if (!deletingLesson) return;
+    setDeleting(true);
+    try {
+      await api.deleteLesson(deletingLesson.id);
+      setDeletingLesson(null);
+      await refreshLessons();
+    } catch (error) {
+      console.error('Failed to delete lesson', error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   useShellBreadcrumbs([
     { label: 'Courses', href: '/instructor' },
     {
@@ -294,25 +362,29 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       : { label: 'Module' },
   ]);
 
+  const publishedCount = oLessons.filter((lesson) => lesson.isPublished).length;
+  const heroStats = [
+    { label: oLessons.length === 1 ? 'Lesson' : 'Lessons', value: oLessons.length, accent: true },
+    { label: 'Published', value: publishedCount },
+    { label: 'Drafts', value: oLessons.length - publishedCount },
+  ];
+
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <div className="flex flex-col gap-4">
-        {module?.courseOfferingId != null && (
-          <Link
-            to={`/instructor/courses/${module.courseOfferingId}`}
-            className="inline-flex w-fit items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <IconChevronLeft size={15} aria-hidden="true" />
-            Back to course
-          </Link>
-        )}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
+      <ModuleHero
+        order={moduleOrder > 0 ? moduleOrder : undefined}
+        title={module?.title || 'Module'}
+        description={module?.description}
+        accentColor={accentColor}
+        isPublished={module?.isPublished}
+        stats={heroStats}
+        actions={
           <PermissionGate allow={perms.canManageContent}>
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
               onClick={() => {
                 if (!showImport) {
                   ensureSourceCoursesLoaded();
@@ -325,9 +397,18 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               <IconUpload size={15} aria-hidden="true" />
               {showImport ? 'Close import' : 'Import lessons'}
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+              onClick={() => setCreateOpen(true)}
+            >
+              <IconPlus size={15} aria-hidden="true" />
+              Add lesson
+            </Button>
           </PermissionGate>
-        </div>
-      </div>
+        }
+      />
 
       <PermissionGate allow={perms.canManageContent}>
         {showImport && (
@@ -445,24 +526,157 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       </PermissionGate>
 
       <PermissionGate allow={perms.canManageContent}>
-        <Card>
-          <CardContent className="py-5">
-            <form onSubmit={onCreateLesson} className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-              <div className="flex-1 space-y-1.5">
+        <Dialog
+          open={createOpen}
+          onOpenChange={(open) => {
+            if (creating) return;
+            setCreateOpen(open);
+            if (!open) {
+              setTitle('');
+              setContent('');
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add lesson</DialogTitle>
+              <DialogDescription>
+                Create a new lesson in {module?.title || 'this module'}. It starts as a draft — you
+                can add activities and publish it afterwards.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={onCreateLesson} className="grid gap-4 py-2">
+              <div className="grid gap-2">
                 <Label htmlFor="new-lesson-title">Lesson title</Label>
                 <Input
                   id="new-lesson-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="New lesson title…"
+                  placeholder="e.g. Introduction"
+                  autoFocus
+                  required
                 />
               </div>
-              <Button type="submit" disabled={creating || !title.trim()}>
-                {creating ? 'Adding…' : 'Add lesson'}
-              </Button>
+              <div className="grid gap-2">
+                <Label htmlFor="new-lesson-content">
+                  Content{' '}
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Textarea
+                  id="new-lesson-content"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Overview, reading, or notes shown at the top of the lesson (Markdown supported)…"
+                  rows={5}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    setTitle('');
+                    setContent('');
+                  }}
+                  disabled={creating}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={creating || !title.trim()}>
+                  {creating ? 'Adding…' : 'Add lesson'}
+                </Button>
+              </DialogFooter>
             </form>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
+      </PermissionGate>
+
+      <PermissionGate allow={perms.canManageContent}>
+        <Dialog
+          open={editingLesson !== null}
+          onOpenChange={(open) => {
+            if (!savingEdit && !open) setEditingLesson(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit lesson</DialogTitle>
+              <DialogDescription>Update this lesson&apos;s title and content.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={onSaveEdit} className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-lesson-title">Lesson title</Label>
+                <Input
+                  id="edit-lesson-title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="e.g. Introduction"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-lesson-content">
+                  Content{' '}
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Textarea
+                  id="edit-lesson-content"
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="Overview, reading, or notes shown at the top of the lesson (Markdown supported)…"
+                  rows={5}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingLesson(null)}
+                  disabled={savingEdit}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={savingEdit || !editTitle.trim()}>
+                  {savingEdit ? 'Saving…' : 'Save changes'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </PermissionGate>
+
+      <PermissionGate allow={perms.canManageContent}>
+        <Dialog
+          open={deletingLesson !== null}
+          onOpenChange={(open) => {
+            if (!deleting && !open) setDeletingLesson(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete lesson</DialogTitle>
+              <DialogDescription>
+                Delete <span className="font-semibold text-foreground">{deletingLesson?.title}</span>?
+                This removes its activities and can't be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeletingLesson(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" onClick={onConfirmDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete lesson'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PermissionGate>
 
       {oLessons.length === 0 ? (
@@ -474,7 +688,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             <div className="space-y-1.5">
               <h3 className="text-lg font-semibold text-foreground">No lessons yet</h3>
               <p className="text-sm text-muted-foreground">
-                Add a lesson above, or import one from another course to get started.
+                Add a lesson, or import one from another course to get started.
               </p>
             </div>
           </CardContent>
@@ -498,26 +712,47 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               <LessonCard
                 key={lesson.id}
                 index={idx + 1}
+                orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
                 title={lesson.title}
-                actionLabel="View lesson"
+                content={lesson.contentMd}
+                accentColor={accentColor}
                 onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                 isPublished={lesson.isPublished}
-                statusSlot={
-                  perms.canPublishContent ? (
-                    <PublishStatusButton
+                menuSlot={
+                  perms.canPublishContent || perms.canManageContent ? (
+                    <PublishMenu
                       isPublished={lesson.isPublished}
                       pending={busy}
                       blockedReason={tooltipMessage}
-                      onClick={() => {
-                        if (busy || blocked) return;
-                        togglePublish(lesson.id, lesson.isPublished);
-                      }}
+                      itemLabel="lesson"
+                      onToggle={
+                        perms.canPublishContent
+                          ? () => {
+                              if (busy || blocked) return;
+                              togglePublish(lesson.id, lesson.isPublished);
+                            }
+                          : undefined
+                      }
+                      onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
+                      onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
                     />
                   ) : undefined
                 }
               />
             );
           })}
+          <PermissionGate allow={perms.canManageContent}>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="group flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <span className="flex size-9 items-center justify-center rounded-full bg-muted transition-colors group-hover:bg-primary/10">
+                <IconPlus size={18} aria-hidden="true" />
+              </span>
+              <span className="text-sm font-semibold">Add lesson</span>
+            </button>
+          </PermissionGate>
         </div>
       )}
     </div>

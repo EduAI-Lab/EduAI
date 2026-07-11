@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
-import { Link, useNavigate } from 'react-router';
-import { IconChevronLeft, IconNotebook } from '@tabler/icons-react';
-import { Badge, Card, CardContent, PageHeading } from '@eduai/ui';
+import { useNavigate } from 'react-router';
+import { IconNotebook } from '@tabler/icons-react';
+import { Card, CardContent } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
-import type { Course, Lesson, ModuleDetail } from '../lib/types';
+import { ModuleHero } from '../components/lessons/ModuleHero';
+import { accentForCourse } from '../lib/course-display';
+import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.module';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
@@ -23,25 +25,26 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     api.lessonsForModule(moduleId) as Promise<Lesson[]>,
   ]);
 
+  // Course + ordered module list in parallel — the sibling list gives the
+  // module's true 1-based ordinal for the hero watermark (see instructor.module).
   let course: Course | null = null;
+  let moduleOrder = 0;
   if (module.courseOfferingId) {
-    course = (await api.courseById(module.courseOfferingId)) as Course;
+    const [courseData, siblingModules] = await Promise.all([
+      api.courseById(module.courseOfferingId) as Promise<Course>,
+      api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+    ]);
+    course = courseData;
+    moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
   }
 
-  return { course, module, lessons };
-}
-
-/** Picks the action verb from the learner's progress on a lesson. */
-function actionLabelFor(lesson: Lesson): string {
-  const progress = lesson.progress;
-  if (!progress || progress.total === 0 || progress.completed === 0) return 'Start lesson';
-  if (progress.completed >= progress.total) return 'Review lesson';
-  return 'Continue lesson';
+  return { course, module, lessons, moduleOrder };
 }
 
 export default function StudentModuleLessons({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
-  const { course, module, lessons } = loaderData;
+  const { course, module, lessons, moduleOrder } = loaderData;
+  const accentColor = course ? accentForCourse(course) : undefined;
   const lessonList = useMemo(() => lessons ?? [], [lessons]);
 
   // Aggregate progress across all lessons in the module — real, derived from
@@ -68,48 +71,27 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
       : { label: 'Module' },
   ]);
 
+  const heroStats = [
+    {
+      label: lessonList.length === 1 ? 'Lesson' : 'Lessons',
+      value: lessonList.length,
+      accent: true,
+    },
+    ...(moduleProgress
+      ? [{ label: 'Activities', value: moduleProgress.total }]
+      : []),
+  ];
+
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <div className="flex flex-col gap-4">
-        {module?.courseOfferingId != null && (
-          <Link
-            to={`/student/courses/${module.courseOfferingId}`}
-            className="inline-flex w-fit items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <IconChevronLeft size={15} aria-hidden="true" />
-            Back to course
-          </Link>
-        )}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
-          <Badge variant="secondary" size="sm">
-            {lessonList.length} {lessonList.length === 1 ? 'lesson' : 'lessons'}
-          </Badge>
-        </div>
-      </div>
-
-      {(module?.description || moduleProgress) && (
-        <Card>
-          <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-            {module?.description ? (
-              <p className="text-sm text-muted-foreground">{module.description}</p>
-            ) : (
-              <span />
-            )}
-            {moduleProgress && (
-              <div className="flex shrink-0 items-center gap-2 text-sm">
-                <span className="font-medium text-muted-foreground">Your progress</span>
-                <span className="font-bold tabular-nums text-foreground">
-                  {moduleProgress.total > 0
-                    ? Math.round((moduleProgress.completed / moduleProgress.total) * 100)
-                    : 0}
-                  %
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <ModuleHero
+        order={moduleOrder > 0 ? moduleOrder : undefined}
+        title={module?.title || 'Module'}
+        description={module?.description}
+        accentColor={accentColor}
+        stats={heroStats}
+        progress={moduleProgress}
+      />
 
       {lessonList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
@@ -131,10 +113,12 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
             <LessonCard
               key={lesson.id}
               index={index + 1}
+              orderText={moduleOrder > 0 ? `${moduleOrder}.${index + 1}` : undefined}
               title={lesson.title}
+              content={lesson.contentMd}
+              accentColor={accentColor}
               progress={lesson.progress}
               isPublished={lesson.isPublished ? undefined : false}
-              actionLabel={actionLabelFor(lesson)}
               onClick={() => navigate(`/student/lesson/${lesson.id}`)}
               dataTour={index === 0 ? 'student-lesson-card-first' : undefined}
               dataTourRoute={index === 0 ? `/student/lesson/${lesson.id}` : undefined}
