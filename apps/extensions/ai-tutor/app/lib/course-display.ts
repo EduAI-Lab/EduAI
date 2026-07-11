@@ -7,6 +7,7 @@ import {
   type TermInfo,
 } from '@eduai/ui';
 import type { Course } from './types';
+import { titleName } from './course-title';
 
 /**
  * Course presentation helpers shared by the dashboard `CourseCard`s and the
@@ -20,15 +21,26 @@ export function accentForCourse(course: Pick<Course, 'id'>): CourseAccentColor {
 }
 
 /**
- * Short course code for the card/hero. Prefers the EduAI-synced `code`; when a
- * course has none, derives a short token from the title so the hero's
- * "CODE: Name" layout never renders a bare ": Name".
+ * Short course code for the card colour band / hero eyebrow. Prefers the
+ * EduAI-synced `code`; when a course has none, derives a short token from the
+ * title so the eyebrow never renders empty.
  */
 export function courseCode(course: Pick<Course, 'title' | 'externalMetadata'>): string {
   const code = course.externalMetadata?.code?.trim();
   if (code) return code;
   const firstWord = course.title.trim().split(/\s+/)[0] ?? '';
   return firstWord ? firstWord.slice(0, 10).toUpperCase() : 'COURSE';
+}
+
+/**
+ * Course name for the card/hero headline — the title with any leading course
+ * code stripped ("COSC 101 - Computer Studies" → "Computer Studies"). The code
+ * is shown separately (card colour band, hero eyebrow), so the headline needn't
+ * repeat it behind a colon/dash. Falls back to the whole title when it carries
+ * no code prefix.
+ */
+export function courseName(course: Pick<Course, 'title'>): string {
+  return titleName(course.title);
 }
 
 /** Raw term value from EduAI metadata (empty string when unknown). */
