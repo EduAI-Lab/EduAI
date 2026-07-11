@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { CourseListView } from "../course-list-view";
+import {
+  CourseListView,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+} from "../course-list-view";
 
 type Course = { id: number; title: string; code: string; term: string; year: number; published: boolean };
 
@@ -27,12 +32,15 @@ function renderList(props: Partial<React.ComponentProps<typeof CourseListView<Co
 }
 
 describe("CourseListView", () => {
-  it("groups courses by term with headings, most recent first", () => {
+  it("groups courses by term with compact headings, most recent first", () => {
     renderList();
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    // 3 distinct terms -> 3 sections, newest first.
-    expect(headings).toEqual(["Winter Term 2 2026", "Winter Term 1 2026", "Winter Term 1 2025"]);
+    // 3 distinct terms -> 3 sections, newest first, shown as UBC codes.
+    expect(headings).toEqual(["2026W2", "2026W1", "2025W1"]);
     expect(screen.getAllByTestId("card")).toHaveLength(3);
+    // Newest section reads as the current term, the rest as prior ones.
+    expect(screen.getByText(/Current term · 1 course/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Previous term ·/)).toHaveLength(2);
   });
 
   it("filters by search across title and code", () => {
@@ -60,14 +68,78 @@ describe("CourseListView", () => {
     expect(screen.queryByLabelText("Search courses")).not.toBeInTheDocument();
   });
 
-  it("renders a single term without a heading", () => {
+  it("always renders the term heading + separator, even for a single term", () => {
     renderList({ courses: [COURSES[0]] });
-    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3 })).toBeInTheDocument();
     expect(screen.getAllByTestId("card")).toHaveLength(1);
   });
 
   it("renders a custom filters slot", () => {
     renderList({ filters: <button>Status</button> });
     expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
+  });
+
+  it("renders a filter dropdown per active group, using its label as trigger", () => {
+    renderList({
+      filterGroups: [buildStatusFilterGroup<Course>((c) => c.published)],
+    });
+    // Mixed published/draft across COURSES -> control shows its label placeholder.
+    expect(screen.getByText("Status")).toBeInTheDocument();
+  });
+
+  it("hides a group whose courses hold a single distinct value", () => {
+    // All published -> Status control suppressed (nothing to choose).
+    renderList({
+      courses: COURSES.filter((c) => c.published),
+      filterGroups: [buildStatusFilterGroup<Course>((c) => c.published)],
+    });
+    expect(screen.queryByText("Status")).not.toBeInTheDocument();
+  });
+
+  it("hides a group when no course carries a value for it", () => {
+    renderList({
+      filterGroups: [buildDepartmentFilterGroup<Course>(() => null)],
+    });
+    expect(screen.queryByText("Department")).not.toBeInTheDocument();
+  });
+});
+
+describe("course filter builders", () => {
+  type C = { term: string; year: number; published: boolean; dept: string | null };
+  const c = (over: Partial<C> = {}): C => ({
+    term: "W1",
+    year: 2026,
+    published: true,
+    dept: "COSC",
+    ...over,
+  });
+
+  it("buildStatusFilterGroup maps published state to canonical values", () => {
+    const g = buildStatusFilterGroup<C>((x) => x.published);
+    expect(g.getValue(c({ published: true }))).toBe("published");
+    expect(g.getValue(c({ published: false }))).toBe("draft");
+    expect(g.options?.map((o) => o.value)).toEqual(["published", "draft"]);
+  });
+
+  it("buildTermFilterGroup encodes term+year and labels it compactly", () => {
+    const g = buildTermFilterGroup<C>((x) => ({ term: x.term, year: x.year }));
+    expect(g.getValue(c({ term: "W2", year: 2026 }))).toBe("W2::2026");
+    expect(g.optionLabel?.("W2::2026")).toBe("2026W2");
+    // More recent terms sort first (negated key).
+    expect(g.optionSortKey?.("W2::2026")).toBeLessThan(g.optionSortKey?.("W1::2025") as number);
+  });
+
+  it("buildTermFilterGroup yields no value when term/year missing", () => {
+    const g = buildTermFilterGroup<C>((x) => ({ term: x.term, year: x.year }));
+    expect(g.getValue({ term: "", year: 2026, published: true, dept: null })).toBeNull();
+  });
+
+  it("buildDepartmentFilterGroup reads the department and supports a label map", () => {
+    const g = buildDepartmentFilterGroup<C>((x) => x.dept, {
+      optionLabel: (code) => (code === "COSC" ? "Computer Science" : code),
+    });
+    expect(g.getValue(c({ dept: "COSC" }))).toBe("COSC");
+    expect(g.getValue(c({ dept: null }))).toBeNull();
+    expect(g.optionLabel?.("COSC")).toBe("Computer Science");
   });
 });
