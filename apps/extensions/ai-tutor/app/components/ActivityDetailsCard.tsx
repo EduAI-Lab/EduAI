@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react';
-import { IconChevronDown } from '@tabler/icons-react';
+import { IconChevronDown, IconListDetails } from '@tabler/icons-react';
+import { AnswerOption } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import type { Activity } from '../lib/types';
 
@@ -38,15 +39,20 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
   }, [activity]);
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-border bg-muted/30">
+    <div className="overflow-hidden rounded-[var(--radius-lg)] border border-border bg-muted/40">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-controls={`activity-${activity.id}-details`}
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-foreground transition hover:text-foreground/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-muted/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <span>Question details</span>
+        <span className="flex items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
+            <IconListDetails className="size-3.5" aria-hidden="true" />
+          </span>
+          Question details
+        </span>
         <IconChevronDown
           className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')}
           aria-hidden="true"
@@ -55,7 +61,7 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
       {open && (
         <div
           id={`activity-${activity.id}-details`}
-          className="space-y-3 px-3 pb-3 text-sm text-foreground"
+          className="space-y-3 border-t border-border px-4 py-3 text-sm text-foreground"
         >
           {activity.title && (
             <div>
@@ -76,33 +82,22 @@ function ActivityDetailsCard({ activity }: ActivityDetailsCardProps) {
           )}
 
           {details.choices.length > 0 && (
-            <div>
+            <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Choices
               </div>
-              <ul className="mt-1 space-y-1">
+              <div className="space-y-2">
                 {details.choices.map((choice, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <span className="text-xs font-semibold text-primary">
-                      {String.fromCharCode(65 + index)}.
-                    </span>
-                    <span className="flex-1 whitespace-pre-wrap">{choice}</span>
-                  </li>
+                  <AnswerOption
+                    key={index}
+                    letter={String.fromCharCode(65 + index)}
+                    size="compact"
+                    state={details.correctChoiceIndex === index ? 'correct' : 'default'}
+                  >
+                    {choice}
+                  </AnswerOption>
                 ))}
-              </ul>
-            </div>
-          )}
-
-          {activity.type === 'MCQ' && details.correctChoiceIndex !== null && (
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Correct answer
               </div>
-              <p className="mt-1 whitespace-pre-wrap">
-                {`${String.fromCharCode(65 + details.correctChoiceIndex)}. ${
-                  details.choices[details.correctChoiceIndex] ?? 'Option not found'
-                }`}
-              </p>
             </div>
           )}
 

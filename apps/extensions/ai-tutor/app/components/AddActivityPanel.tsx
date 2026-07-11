@@ -1,10 +1,14 @@
 /**
- * @file Inline form for instructors to author MCQ or short-text activities.
+ * @file Modal body for instructors to author MCQ or short-text activities.
  *
+ * Renders DialogHeader + form only — the parent supplies the `Dialog`/
+ * `DialogContent` shell (mirrors the "Add lesson" modal so both authoring
+ * flows behave the same). `onCancel` dismisses; `onActivityCreated` fires on
+ * success and the parent closes the modal.
  * Responsibility: Captures a question, choices/answer, hints, topic tagging
  *   (one main + N secondary), and the AI assistance modes the student is
  *   allowed to use. POSTs to `api.createActivity` and notifies the parent.
- * Used by: `app/routes/instructor.module.tsx` (the lesson editor view).
+ * Used by: `app/routes/instructor.lesson.tsx` (the lesson editor view).
  * Gotchas:
  *   - The `topics !== prevTopics` block (around line 30) uses the React
  *     "derived state during render" pattern to reset/repair the selected
@@ -26,14 +30,24 @@
 import type { FormEvent } from 'react';
 import { useMemo, useState } from 'react';
 import {
+  IconPlus,
+  IconX,
+  IconSparkles,
+  IconSchool,
+  IconRoute,
+  IconListCheck,
+  IconTag,
+  IconPencil,
+} from '@tabler/icons-react';
+import {
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Checkbox,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Label,
+  MultiSelect,
   SegmentedControl,
   Select,
   SelectContent,
@@ -54,9 +68,15 @@ const TYPE_OPTIONS = [
 interface AddActivityPanelProps {
   lessonId: number;
   onActivityCreated: () => void;
+  /** Dismiss the modal without creating (Cancel / backdrop). */
+  onCancel?: () => void;
 }
 
-export default function AddActivityPanel({ lessonId, onActivityCreated }: AddActivityPanelProps) {
+export default function AddActivityPanel({
+  lessonId,
+  onActivityCreated,
+  onCancel,
+}: AddActivityPanelProps) {
   const { topics, loading: loadingTopics, error: topicsError } = useCourseTopicsContext();
   const [type, setType] = useState<'MCQ' | 'SHORT_TEXT'>('MCQ');
   const [question, setQuestion] = useState('');
@@ -67,8 +87,10 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
   const [hint, setHint] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [selectedMainTopicId, setSelectedMainTopicId] = useState<number | ''>('');
-  const [selectedSecondaryTopicIds, setSelectedSecondaryTopicIds] = useState<number[]>([]);
+  // Topic ids are opaque cuid strings on the wire (server schema is
+  // z.array(z.string())), so keep them as strings — never Number() them.
+  const [selectedMainTopicId, setSelectedMainTopicId] = useState<string>('');
+  const [selectedSecondaryTopicIds, setSelectedSecondaryTopicIds] = useState<string[]>([]);
   const [topicSelectionError, setTopicSelectionError] = useState<string | null>(null);
 
   const [enableTeachMode, setEnableTeachMode] = useState(true);
@@ -86,27 +108,34 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
       if (selectedSecondaryTopicIds.length > 0) setSelectedSecondaryTopicIds([]);
     } else {
       // If current selection is invalid, default to first topic
-      if (selectedMainTopicId === '' || !topics.some((topic) => topic.id === selectedMainTopicId)) {
-        setSelectedMainTopicId(topics[0].id);
+      if (
+        selectedMainTopicId === '' ||
+        !topics.some((topic) => String(topic.id) === selectedMainTopicId)
+      ) {
+        setSelectedMainTopicId(String(topics[0].id));
       }
     }
   }
 
   const availableSecondaryTopics = useMemo(
-    () =>
-      topics.filter(
-        (topic) =>
-          topic.id !== (typeof selectedMainTopicId === 'number' ? selectedMainTopicId : -1),
-      ),
+    () => topics.filter((topic) => String(topic.id) !== selectedMainTopicId),
     [topics, selectedMainTopicId],
   );
 
-  const toggleSecondaryForNew = (topicId: number) => {
-    setSelectedSecondaryTopicIds((prev) => {
-      if (prev.includes(topicId)) {
-        return prev.filter((id) => id !== topicId);
+  const addChoice = () => {
+    setChoices((prev) => (prev.length < 8 ? [...prev, ''] : prev));
+  };
+
+  const removeChoice = (index: number) => {
+    setChoices((prev) => {
+      if (prev.length <= 2) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+    setCorrect((prevCorrect) => {
+      if (index < prevCorrect || index === prevCorrect) {
+        return Math.max(0, prevCorrect - 1);
       }
-      return [...prev, topicId];
+      return prevCorrect;
     });
   };
 
@@ -126,7 +155,7 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
     setBusy(true);
     setTopicSelectionError(null);
 
-    const mainTopicId = Number(selectedMainTopicId);
+    const mainTopicId = selectedMainTopicId;
     const secondaryIds = selectedSecondaryTopicIds.filter((id) => id !== mainTopicId);
 
     try {
@@ -173,16 +202,28 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add activity</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleAddActivity} className="space-y-4">
-          <SegmentedControl value={type} onValueChange={setType} options={TYPE_OPTIONS} />
+    <>
+      <DialogHeader>
+        <DialogTitle>Add activity</DialogTitle>
+        <DialogDescription>Author a new question for this lesson.</DialogDescription>
+      </DialogHeader>
+      <form onSubmit={handleAddActivity} className="space-y-6">
+        <div className="grid gap-x-6 gap-y-5 md:grid-cols-2">
+          {/* Left column: what's asked. */}
+          <div className="space-y-5">
+          <div className="space-y-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+              Question type
+            </span>
+            <SegmentedControl value={type} onValueChange={setType} options={TYPE_OPTIONS} />
+          </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-activity-question">Question prompt</Label>
+            <Label htmlFor="new-activity-question" className="flex items-center gap-1.5">
+              <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+              Question prompt <span className="text-destructive">*</span>
+            </Label>
             <Textarea
               id="new-activity-question"
               value={question}
@@ -193,33 +234,53 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
           </div>
 
           {type === 'MCQ' ? (
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-muted-foreground">Choices</div>
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+                  Choices <span className="text-destructive">*</span>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Click a letter to mark the correct answer
+                </span>
+              </div>
+              <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-3">
                 {choices.map((choice, index) => {
-                  const isSelected = correct === index && hasSelectedCorrect;
+                  const letter = String.fromCharCode(65 + index);
+                  const isCorrect = correct === index && hasSelectedCorrect;
                   return (
-                    <label
+                    <div
                       key={index}
                       className={cn(
-                        'flex items-center gap-3 rounded-[var(--radius-lg)] border bg-card px-3 py-2.5 transition cursor-pointer focus-within:outline-none',
-                        isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50',
+                        'relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors',
+                        isCorrect
+                          ? 'border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10'
+                          : 'border-transparent',
                       )}
                     >
-                      <input
-                        type="radio"
-                        name="correct"
-                        className="sr-only"
-                        checked={correct === index}
-                        onChange={() => {
+                      <button
+                        type="button"
+                        onClick={() => {
                           setCorrect(index);
                           setHasSelectedCorrect(true);
                         }}
-                      />
-                      <span className="w-6 text-xs font-semibold text-muted-foreground">
-                        {String.fromCharCode(65 + index)}.
-                      </span>
-                      <input
+                        aria-pressed={isCorrect}
+                        aria-label={
+                          isCorrect
+                            ? `Option ${letter} (correct answer)`
+                            : `Mark option ${letter} correct`
+                        }
+                        title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
+                        className={cn(
+                          'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isCorrect
+                            ? 'bg-[var(--color-success-500)] text-white'
+                            : 'bg-primary/15 text-foreground hover:bg-primary/30',
+                        )}
+                      >
+                        {letter}
+                      </button>
+                      <Input
                         value={choice}
                         onChange={(event) =>
                           setChoices((prev) => {
@@ -228,17 +289,48 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
                             return next;
                           })
                         }
-                        placeholder="Option text"
-                        className="min-w-0 flex-1 border-none bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
+                        placeholder={`Option ${letter}`}
+                        aria-label={`Option ${letter}`}
+                        className="flex-1"
                       />
-                    </label>
+                      {choices.length > 2 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-destructive hover:text-destructive"
+                          onClick={() => removeChoice(index)}
+                          aria-label={`Remove option ${letter}`}
+                        >
+                          <IconX className="size-4" aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
                   );
                 })}
+                {choices.length < 8 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={addChoice}
+                  >
+                    <IconPlus className="size-4" aria-hidden="true" />
+                    Add choice
+                  </Button>
+                )}
               </div>
+              {!hasSelectedCorrect && (
+                <p className="text-xs text-muted-foreground">No correct answer selected yet.</p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="new-activity-answer">Expected answer</Label>
+              <Label htmlFor="new-activity-answer" className="flex items-center gap-1.5">
+                <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+                Expected answer
+              </Label>
               <Input
                 id="new-activity-answer"
                 value={textAnswer}
@@ -247,16 +339,22 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
               />
             </div>
           )}
+          </div>
 
+          {/* Right column: tagging + AI assistance. */}
+          <div className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="new-activity-main-topic">Main topic</Label>
+            <Label htmlFor="new-activity-main-topic" className="flex items-center gap-1.5">
+              <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+              Main topic
+            </Label>
             <Select
-              value={selectedMainTopicId !== '' ? String(selectedMainTopicId) : undefined}
+              value={selectedMainTopicId !== '' ? selectedMainTopicId : undefined}
               onValueChange={(value) => {
-                const newMainTopicId = value ? Number(value) : '';
+                const newMainTopicId = value ?? '';
                 setSelectedMainTopicId(newMainTopicId);
                 // Remove new main topic from secondary topics if it was selected there
-                if (typeof newMainTopicId === 'number') {
+                if (newMainTopicId) {
                   setSelectedSecondaryTopicIds((prev) => prev.filter((id) => id !== newMainTopicId));
                 }
               }}
@@ -277,80 +375,91 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
           </div>
 
           <div className="space-y-2">
-            <span className="block text-xs font-semibold text-muted-foreground">
-              Secondary topics (optional)
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+              Secondary topics <span className="font-normal text-muted-foreground">(optional)</span>
             </span>
-            <div className="flex flex-wrap gap-2">
-              {availableSecondaryTopics.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No other topics available.</span>
-              ) : (
-                availableSecondaryTopics.map((topic) => {
-                  const checked = selectedSecondaryTopicIds.includes(topic.id);
-                  return (
-                    <label
-                      key={topic.id}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition',
-                        checked
-                          ? 'border-transparent bg-accent text-accent-foreground shadow-xs'
-                          : 'border-border bg-secondary hover:border-accent/50',
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={checked}
-                        onChange={() => toggleSecondaryForNew(topic.id)}
-                      />
-                      {topic.name}
-                    </label>
-                  );
-                })
-              )}
-            </div>
+            <MultiSelect
+              options={availableSecondaryTopics.map((topic) => ({
+                value: String(topic.id),
+                label: topic.name,
+              }))}
+              value={selectedSecondaryTopicIds}
+              onValueChange={setSelectedSecondaryTopicIds}
+              disabled={loadingTopics || availableSecondaryTopics.length === 0}
+              placeholder="Add secondary topics…"
+              searchPlaceholder="Search topics…"
+              emptyText="No other topics available."
+              className="w-full"
+            />
           </div>
 
-          <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-muted/30 p-3">
-            <span className="block text-xs font-semibold text-foreground">AI Study Buddy modes</span>
+          <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+            <div className="flex items-center gap-2">
+              <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                <IconSparkles className="size-3.5" aria-hidden="true" />
+              </span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                AI study buddy
+              </span>
+            </div>
             <p className="text-xs text-muted-foreground">
               Choose which AI assistance modes students can use for this activity.
             </p>
-            <div className="space-y-2 pt-1">
-              <label className="flex cursor-pointer items-center gap-2">
-                <Checkbox
-                  checked={enableTeachMode}
-                  onCheckedChange={(checked) => {
-                    if (!checked && !enableGuideMode) {
-                      alert('At least one AI mode must be enabled');
-                      return;
-                    }
-                    setEnableTeachMode(Boolean(checked));
-                  }}
-                />
-                <span className="text-sm text-foreground">
-                  Teach me — conceptual learning about topics
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <Checkbox
-                  checked={enableGuideMode}
-                  onCheckedChange={(checked) => {
-                    if (!checked && !enableTeachMode) {
-                      alert('At least one AI mode must be enabled');
-                      return;
-                    }
-                    setEnableGuideMode(Boolean(checked));
-                  }}
-                />
-                <span className="text-sm text-foreground">
-                  Guide me — step-by-step guidance on this question
-                </span>
-              </label>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  {
+                    key: 'teach' as const,
+                    label: 'Teach me',
+                    icon: IconSchool,
+                    enabled: enableTeachMode,
+                    other: enableGuideMode,
+                    set: setEnableTeachMode,
+                  },
+                  {
+                    key: 'guide' as const,
+                    label: 'Guide me',
+                    icon: IconRoute,
+                    enabled: enableGuideMode,
+                    other: enableTeachMode,
+                    set: setEnableGuideMode,
+                  },
+                ]
+              ).map((mode) => {
+                const ModeIcon = mode.icon;
+                return (
+                  <button
+                    key={mode.key}
+                    type="button"
+                    aria-pressed={mode.enabled}
+                    onClick={() => {
+                      if (mode.enabled && !mode.other) {
+                        alert('At least one AI mode must be enabled');
+                        return;
+                      }
+                      mode.set(!mode.enabled);
+                    }}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
+                      mode.enabled
+                        ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
+                        : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                    )}
+                  >
+                    <ModeIcon className="size-3.5" aria-hidden="true" />
+                    {mode.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-activity-hint">Hint (optional)</Label>
+            <Label htmlFor="new-activity-hint" className="flex items-center gap-1.5">
+              <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
+              Hint <span className="font-normal normal-case text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="new-activity-hint"
               value={hint}
@@ -358,14 +467,23 @@ export default function AddActivityPanel({ lessonId, onActivityCreated }: AddAct
               placeholder="Optional hint…"
             />
           </div>
-
-          <Button type="submit" className="w-full" disabled={busy || !question.trim()}>
-            {busy ? 'Adding…' : 'Add activity'}
-          </Button>
+          </div>
+        </div>
 
           {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
+
+          <DialogFooter>
+            {onCancel && (
+              <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" disabled={busy || !question.trim()}>
+              <IconPlus className="size-4" aria-hidden="true" />
+              {busy ? 'Adding…' : 'Add activity'}
+            </Button>
+          </DialogFooter>
         </form>
-      </CardContent>
-    </Card>
+    </>
   );
 }

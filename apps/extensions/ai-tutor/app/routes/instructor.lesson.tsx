@@ -15,9 +15,6 @@
  *     secondary topics, both autosaved.
  *   - Per-activity AI mode toggles (teach / guide / custom) plus the custom
  *     prompt editor and its short button-title field.
- *   - EduAI topic sync: the SyncTopicsButton triggers /topics/sync; if the
- *     server returns missingTopics > 0, opens TopicSyncMappingDialog so the
- *     instructor can remap orphan local topics to fresh EduAI topic IDs.
  *   - Bug-report context push: the editor includes the activity currently
  *     being edited so reports can pinpoint it.
  * Gotchas:
@@ -35,21 +32,37 @@
  *   - Bug-report context MUST be cleared on unmount to avoid leaking
  *     activity IDs into reports submitted from unrelated pages.
  * Related: components/AddActivityPanel, components/EditActivityPanel,
- *          components/TopicSyncMappingDialog, hooks/useCourseTopics
+ *          hooks/useCourseTopics. Course-level topic sync/create now lives in
+ *          the course hero (components/courses/CourseTopicsHeroAction).
  */
-import { useEffect, useOptimistic, useRef, useState } from 'react';
+import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
 import { useParams } from 'react-router';
-import { IconListCheck } from '@tabler/icons-react';
+import {
+  IconListCheck,
+  IconPencil,
+  IconCopy,
+  IconTrash,
+  IconPlus,
+  IconFileImport,
+  IconTag,
+  IconSparkles,
+  IconSchool,
+  IconRoute,
+  IconWand,
+  IconLoader2,
+} from '@tabler/icons-react';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
-import AddCourseTopicsButton from '../components/AddCourseTopicsButton';
+import { ModuleHero } from '../components/lessons/ModuleHero';
+import { accentForCourse } from '~/lib/course-display';
 import api from '../lib/api';
 import type { ImportableActivity } from '../lib/api';
 import type {
   Activity,
   Course,
   Lesson,
+  Module,
   ModuleDetail,
   Topic,
 } from '../lib/types';
@@ -63,9 +76,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
-  Checkbox,
   Combobox,
   Dialog,
   DialogContent,
@@ -75,7 +85,7 @@ import {
   DialogTitle,
   Input,
   Label,
-  PageHeading,
+  MultiSelect,
   Select,
   SelectContent,
   SelectItem,
@@ -86,54 +96,15 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  courseThemeVars,
 } from '@eduai/ui';
 import { splitTitle } from '~/lib/course-title';
 import { cn } from '~/lib/utils';
-import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useBugReport } from '~/components/bug-report/useBugReport';
 import { PermissionGate } from '~/components/rbac/PermissionGate';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
-
-/**
- * Tooltip-wrapped sync trigger surfaced only for EduAI-sourced courses. The
- * tooltip exists so instructors understand topics are externally owned and
- * the button is a re-pull rather than an arbitrary mutation.
- */
-function SyncTopicsButton({
-  courseId,
-  syncing,
-  onSync,
-}: {
-  courseId: number;
-  syncing: boolean;
-  onSync: () => Promise<void>;
-}) {
-  const label = syncing ? 'Syncing…' : 'Sync now';
-  return (
-    <TooltipProvider delayDuration={150}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="w-full"
-            aria-label="Sync topics now"
-            onClick={() => {
-              if (!syncing) onSync();
-            }}
-            disabled={syncing}
-          >
-            {label}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Topics are synced from EduAI for this course.</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
 
 /**
  * Loads the lesson and its activities (parallel), then walks up to the
@@ -155,21 +126,36 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
+  // Structural "module.lesson" order (e.g. "1.3") from the sibling positions,
+  // so newly-created lessons (whose titles carry no number) still follow the
+  // decimal system used on the module card grid.
+  let orderText: string | undefined;
   if (lesson.moduleId) {
     module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
     if (module.courseOfferingId) {
-      course = (await api.courseById(module.courseOfferingId)) as Course;
+      const [courseData, siblingModules, siblingLessons] = await Promise.all([
+        api.courseById(module.courseOfferingId) as Promise<Course>,
+        api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+        api.lessonsForModule(lesson.moduleId) as Promise<Lesson[]>,
+      ]);
+      course = courseData;
+      const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
+      const lessonIndex = siblingLessons.findIndex((l) => l.id === lesson.id) + 1;
+      if (moduleOrder > 0 && lessonIndex > 0) {
+        orderText = `${moduleOrder}.${lessonIndex}`;
+      }
     }
   }
 
-  return { course, module, lesson, activities };
+  return { course, module, lesson, activities, orderText };
 }
 
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
-  const { course, module, lesson, activities: initialActivities } = loaderData;
+  const { course, module, lesson, activities: initialActivities, orderText } = loaderData;
+  const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [oActivities, addActivityOpt] = useOptimistic(
     activities,
@@ -199,10 +185,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   const courseOfferingId = lesson?.courseOfferingId ?? null;
   const courseTopics = useCourseTopics(courseOfferingId);
-  const { topics, loading: loadingTopics, error: topicsError } = courseTopics;
-  const [syncingTopics, setSyncingTopics] = useState(false);
-  const [showMapping, setShowMapping] = useState(false);
-  const [missingTopics, setMissingTopics] = useState<{ id: number; name: string }[]>([]);
+  const { topics, loading: loadingTopics } = courseTopics;
 
   const [showTopicSaving, setShowTopicSaving] = useState(false);
   const topicSavingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -528,12 +511,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
+  // `value` is the raw topic id string from the Select. Topic ids are opaque
+  // cuids on the wire, so compare/send as strings — never Number() them.
   const handleActivityMainTopicChange = async (activityId: number, value: string) => {
     if (!value) return;
-    const newTopicId = Number(value);
-    if (!Number.isFinite(newTopicId)) return;
 
-    const topic = topics.find((entry) => entry.id === newTopicId);
+    const topic = topics.find((entry) => String(entry.id) === value);
     if (!topic) return;
 
     const targetActivity = oActivities.find((activity) => activity.id === activityId);
@@ -545,7 +528,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           ? {
               ...activity,
               mainTopic: topic,
-              secondaryTopics: activity.secondaryTopics.filter((item) => item.id !== newTopicId),
+              secondaryTopics: activity.secondaryTopics.filter(
+                (item) => String(item.id) !== value,
+              ),
             }
           : activity,
       ),
@@ -553,7 +538,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
     beginTopicUpdate(activityId);
     try {
-      const updated = await api.updateActivity(activityId, { mainTopicId: newTopicId });
+      const updated = await api.updateActivity(activityId, { mainTopicId: value });
       setActivities((prev) =>
         prev.map((activity) =>
           activity.id === activityId
@@ -573,57 +558,53 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
-  const handleActivitySecondaryToggle = async (
-    activityId: number,
-    topicId: number,
-    checked: boolean,
-  ) => {
-    const topic = topics.find((entry) => entry.id === topicId);
-    if (!topic) return;
-
+  // Full-array secondary-topic change from the MultiSelect. The optimistic
+  // update MUST run inside an action (startTransition) so React 19 keeps it on
+  // screen until the save resolves — otherwise the patch is dropped on the next
+  // render and the chip appears to "not select". The control is intentionally
+  // NOT disabled while saving so the popover stays open for multi-select.
+  // `nextIds` are the raw topic ids as strings (topic ids are opaque cuids on
+  // the wire — the server schema is z.array(z.string()) — so they MUST NOT be
+  // coerced to Number, which turns a cuid into NaN → null and 400s).
+  const handleActivitySecondaryChange = (activityId: number, nextIds: string[]) => {
     const targetActivity = oActivities.find((activity) => activity.id === activityId);
     if (!targetActivity) return;
 
-    const nextSecondary = checked
-      ? [...targetActivity.secondaryTopics.filter((item) => item.id !== topicId), topic]
-      : targetActivity.secondaryTopics.filter((item) => item.id !== topicId);
-
-    // Optimistic UI via useOptimistic
-    addActivityOpt((items) =>
-      items.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              secondaryTopics: nextSecondary.toSorted((a: Topic, b: Topic) =>
-                a.name.localeCompare(b.name),
-              ),
-            }
-          : activity,
-      ),
-    );
+    const nextTopics = topics
+      .filter((topic) => nextIds.includes(String(topic.id)))
+      .toSorted((a: Topic, b: Topic) => a.name.localeCompare(b.name));
 
     beginTopicUpdate(activityId);
-    try {
-      const updated = await api.updateActivity(activityId, {
-        secondaryTopicIds: nextSecondary.map((item) => item.id),
-      });
-      setActivities((prev) =>
-        prev.map((activity) =>
+    startTransition(async () => {
+      addActivityOpt((items) =>
+        items.map((activity) =>
           activity.id === activityId
-            ? {
-                ...activity,
-                secondaryTopics: updated.secondaryTopics,
-                mainTopic: updated.mainTopic,
-              }
+            ? { ...activity, secondaryTopics: nextTopics }
             : activity,
         ),
       );
-    } catch (error) {
-      console.error('Failed to update secondary topics', error);
-      // Base state remains unchanged; optimistic view will clear on next render
-    } finally {
-      endTopicUpdate(activityId);
-    }
+      try {
+        const updated = await api.updateActivity(activityId, {
+          secondaryTopicIds: nextIds,
+        });
+        setActivities((prev) =>
+          prev.map((activity) =>
+            activity.id === activityId
+              ? {
+                  ...activity,
+                  secondaryTopics: updated.secondaryTopics,
+                  mainTopic: updated.mainTopic,
+                }
+              : activity,
+          ),
+        );
+      } catch (error) {
+        console.error('Failed to update secondary topics', error);
+        // Base state unchanged; optimistic view clears when the action settles.
+      } finally {
+        endTopicUpdate(activityId);
+      }
+    });
   };
 
   const breadcrumbItems = [
@@ -658,11 +639,76 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   return (
     <CourseTopicsProvider value={courseTopics}>
       <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-        <PageHeading heading={lesson?.title || 'Lesson'} subheading="Activity editor" />
+        <ModuleHero
+          eyebrow="Lesson"
+          orderText={orderText}
+          title={lesson?.title || 'Lesson'}
+          description={lesson?.contentMd?.trim() || module?.title || 'Activity editor'}
+          accentColor={accentColor}
+          stats={
+            oActivities.length > 0
+              ? [
+                  {
+                    label: oActivities.length === 1 ? 'activity' : 'activities',
+                    value: oActivities.length,
+                  },
+                ]
+              : undefined
+          }
+          actions={
+            <PermissionGate allow={perms.canManageContent}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={openImportDialog}
+              >
+                <IconFileImport className="size-4" aria-hidden="true" />
+                Import
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                onClick={() => setShowAddPanel((open) => !open)}
+              >
+                <IconPlus className="size-4" aria-hidden="true" />
+                {showAddPanel ? 'Hide' : 'Add activity'}
+              </Button>
+            </PermissionGate>
+          }
+        />
 
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
-            <h2 className="text-lg font-semibold text-foreground">Activities</h2>
+        <div className="space-y-4">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-lg font-semibold text-foreground">Activities</h2>
+              {oActivities.length > 0 && (
+                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-muted px-2 text-xs font-semibold text-muted-foreground">
+                  {oActivities.length}
+                </span>
+              )}
+            </div>
+
+            <PermissionGate allow={perms.canManageContent}>
+              <Dialog
+                open={showAddPanel}
+                onOpenChange={(open) => setShowAddPanel(open)}
+              >
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+                  {numericLessonId !== null && (
+                    <AddActivityPanel
+                      lessonId={numericLessonId}
+                      onActivityCreated={() => {
+                        refreshActivities();
+                        setShowAddPanel(false);
+                      }}
+                      onCancel={() => setShowAddPanel(false)}
+                    />
+                  )}
+                </DialogContent>
+              </Dialog>
+            </PermissionGate>
 
             {oActivities.length === 0 ? (
               <Card>
@@ -679,7 +725,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   const isUpdatingTopics = updatingTopicsFor === activity.id;
                   const isUpdatingModes = updatingModesFor === activity.id;
                   const mainTopicId = activity.mainTopic?.id ?? '';
-                  const secondaryIds = new Set(activity.secondaryTopics.map((item) => item.id));
                   const isEditing = editingActivityId === activity.id;
                   const isSaving = savingActivityId === activity.id;
                   const isDeleting = deletingActivityId === activity.id;
@@ -693,73 +738,130 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   const promptError = promptErrors[activity.id];
                   return (
                     <li key={activity.id}>
-                      <Card>
-                        <CardContent className="space-y-3 pt-5">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-3">
-                              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                                {i + 1}
-                              </span>
-                              <div className="space-y-1">
+                      <Card
+                        className="group relative overflow-hidden"
+                        style={courseThemeVars(accentColor ?? 'var(--primary)')}
+                      >
+                        {/* Accent rail — ties the activity to its parent course. */}
+                        <div
+                          className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
+                          style={{
+                            background:
+                              'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+                          }}
+                          aria-hidden="true"
+                        />
+                        {/* Ghosted order-number watermark — the lesson-tier motif. */}
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 right-2 select-none text-[7rem] font-black leading-none tabular-nums"
+                          style={{
+                            color: 'color-mix(in oklch, var(--course-accent) 8%, transparent)',
+                          }}
+                        >
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <div className="relative flex items-start gap-3 p-5">
+                          <span
+                            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
+                            style={{
+                              background:
+                                'color-mix(in oklch, var(--course-accent) 14%, transparent)',
+                              color: 'var(--course-accent)',
+                              boxShadow:
+                                'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                            }}
+                          >
+                            {String(i + 1).padStart(2, '0')}
+                          </span>
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="secondary" size="sm">
+                                {activity.type}
+                              </Badge>
+                              {activity.mainTopic && (
                                 <Badge variant="outline" size="sm">
-                                  {activity.type}
+                                  {activity.mainTopic.name}
                                 </Badge>
-                                <div className="whitespace-pre-wrap font-medium text-foreground">
-                                  {activity.question}
-                                </div>
-                                {(isSaving || isDeleting || isDuplicating) && (
-                                  <div className="text-[0.7rem] text-muted-foreground">
-                                    {isSaving
-                                      ? 'Saving…'
-                                      : isDeleting
-                                        ? 'Removing…'
-                                        : 'Duplicating…'}
-                                  </div>
-                                )}
-                              </div>
+                              )}
+                              {(isSaving || isDeleting || isDuplicating) && (
+                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  {isSaving
+                                    ? 'Saving…'
+                                    : isDeleting
+                                      ? 'Removing…'
+                                      : 'Duplicating…'}
+                                </span>
+                              )}
                             </div>
-                            <PermissionGate allow={perms.canManageContent}>
-                              <div className="flex shrink-0 gap-2">
-                                {isEditing ? (
-                                  <Badge variant="secondary" size="sm">
-                                    Editing…
-                                  </Badge>
-                                ) : (
-                                  <>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => beginEditingActivity(activity)}
-                                      disabled={isDeleting || isDuplicating}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleDuplicateActivity(activity.id)}
-                                      disabled={isDeleting || isDuplicating}
-                                    >
-                                      {isDuplicating ? 'Duplicating…' : 'Duplicate'}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-destructive hover:text-destructive"
-                                      onClick={() => handleDeleteActivity(activity.id)}
-                                      disabled={isDeleting || isDuplicating}
-                                    >
-                                      {isDeleting ? 'Removing…' : 'Remove'}
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            </PermissionGate>
+                            <p className="whitespace-pre-wrap text-[15px] font-semibold leading-snug text-foreground">
+                              {activity.question}
+                            </p>
                           </div>
+                          <PermissionGate allow={perms.canManageContent}>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              {isEditing ? (
+                                <Badge variant="secondary" size="sm">
+                                  Editing…
+                                </Badge>
+                              ) : (
+                                <TooltipProvider delayDuration={200}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-8"
+                                        aria-label="Edit activity"
+                                        onClick={() => beginEditingActivity(activity)}
+                                        disabled={isDeleting || isDuplicating}
+                                      >
+                                        <IconPencil className="size-4" aria-hidden="true" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Edit</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-8"
+                                        aria-label="Duplicate activity"
+                                        onClick={() => handleDuplicateActivity(activity.id)}
+                                        disabled={isDeleting || isDuplicating}
+                                      >
+                                        <IconCopy className="size-4" aria-hidden="true" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Duplicate</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-8 text-muted-foreground hover:text-destructive"
+                                        aria-label="Remove activity"
+                                        onClick={() => handleDeleteActivity(activity.id)}
+                                        disabled={isDeleting || isDuplicating}
+                                      >
+                                        <IconTrash className="size-4" aria-hidden="true" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Remove</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </div>
+                          </PermissionGate>
+                        </div>
 
+                        <div className="relative space-y-4 border-t border-border p-5">
                           {isEditing && perms.canManageContent ? (
                             <EditActivityPanel
                               key={activity.id}
@@ -773,129 +875,133 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             <ActivityDetailsCard activity={activity} />
                           )}
 
-                          <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/30 p-3">
-                            <div className="text-xs font-semibold text-foreground">Topics</div>
-                            {topics.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">
-                                Define course topics to tag this activity.
-                              </p>
-                            ) : (
-                              <div className="space-y-3">
-                                <div className="space-y-1.5">
-                                  <Label
-                                    htmlFor={`activity-${activity.id}-main-topic`}
-                                    className="text-xs font-semibold text-muted-foreground"
-                                  >
-                                    Main topic
-                                  </Label>
-                                  <Select
-                                    value={mainTopicId !== '' ? String(mainTopicId) : undefined}
-                                    onValueChange={(value) =>
-                                      handleActivityMainTopicChange(activity.id, value)
-                                    }
-                                    disabled={loadingTopics || isUpdatingTopics}
-                                  >
-                                    <SelectTrigger
-                                      id={`activity-${activity.id}-main-topic`}
-                                      className="w-full"
+                          <div className="grid items-start gap-4 lg:grid-cols-2">
+                            <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-6 items-center justify-center rounded-md bg-secondary/15 text-secondary">
+                                  <IconTag className="size-3.5" aria-hidden="true" />
+                                </span>
+                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Topics
+                                </span>
+                              </div>
+                              {topics.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Define course topics to tag this activity.
+                                </p>
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="space-y-1.5">
+                                    <Label
+                                      htmlFor={`activity-${activity.id}-main-topic`}
+                                      className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground"
                                     >
-                                      <SelectValue placeholder="Select a topic…" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {topics.map((topic) => (
-                                        <SelectItem key={topic.id} value={String(topic.id)}>
-                                          {topic.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div>
-                                  <span className="mb-1 block text-xs font-semibold text-muted-foreground">
-                                    Secondary topics
-                                  </span>
-                                  <div className="flex flex-wrap gap-2">
-                                    {topics
-                                      .filter((topic) => topic.id !== mainTopicId)
-                                      .map((topic) => {
-                                        const checked = secondaryIds.has(topic.id);
-                                        return (
-                                          <label
-                                            key={topic.id}
-                                            className={cn(
-                                              'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition',
-                                              checked
-                                                ? 'border-transparent bg-accent text-accent-foreground shadow-xs'
-                                                : 'border-border bg-secondary hover:border-accent/50',
-                                              showTopicSaving && isUpdatingTopics && 'opacity-60',
-                                            )}
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              className="sr-only"
-                                              checked={checked}
-                                              disabled={isUpdatingTopics}
-                                              onChange={(event) =>
-                                                handleActivitySecondaryToggle(
-                                                  activity.id,
-                                                  topic.id,
-                                                  event.target.checked,
-                                                )
-                                              }
-                                            />
+                                      Main topic
+                                    </Label>
+                                    <Select
+                                      value={mainTopicId !== '' ? String(mainTopicId) : undefined}
+                                      onValueChange={(value) =>
+                                        handleActivityMainTopicChange(activity.id, value)
+                                      }
+                                      disabled={loadingTopics || isUpdatingTopics}
+                                    >
+                                      <SelectTrigger
+                                        id={`activity-${activity.id}-main-topic`}
+                                        className="w-full"
+                                      >
+                                        <SelectValue placeholder="Select a topic…" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {topics.map((topic) => (
+                                          <SelectItem key={topic.id} value={String(topic.id)}>
                                             {topic.name}
-                                          </label>
-                                        );
-                                      })}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <span className="block text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                                      Secondary topics
+                                    </span>
+                                    <MultiSelect
+                                      options={topics
+                                        .filter((topic) => topic.id !== mainTopicId)
+                                        .map((topic) => ({
+                                          value: String(topic.id),
+                                          label: topic.name,
+                                        }))}
+                                      value={activity.secondaryTopics.map((topic) =>
+                                        String(topic.id),
+                                      )}
+                                      onValueChange={(nextValues) =>
+                                        handleActivitySecondaryChange(activity.id, nextValues)
+                                      }
+                                      disabled={loadingTopics}
+                                      placeholder="Add secondary topics…"
+                                      searchPlaceholder="Search topics…"
+                                      emptyText="No other topics."
+                                      className="w-full"
+                                    />
                                   </div>
                                 </div>
-                              </div>
-                            )}
-                            {showTopicSaving && isUpdatingTopics && (
-                              <span className="text-[0.7rem] text-muted-foreground">Saving…</span>
-                            )}
-                          </div>
+                              )}
+                              {showTopicSaving && isUpdatingTopics && (
+                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  Saving…
+                                </span>
+                              )}
+                            </section>
 
-                          <div className="space-y-2 rounded-[var(--radius-lg)] border border-primary/20 bg-primary/5 p-3">
-                            <div className="text-xs font-semibold text-foreground">
-                              AI study buddy modes
-                            </div>
-                            <div className="space-y-2">
-                              <label className="flex cursor-pointer items-center gap-2">
-                                <Checkbox
-                                  checked={activity.enableTeachMode}
-                                  onCheckedChange={(checked) =>
-                                    handleActivityModeChange(activity.id, 'teach', Boolean(checked))
-                                  }
-                                  disabled={isUpdatingModes}
-                                />
-                                <span className="text-sm text-foreground">Teach me</span>
-                              </label>
-                              <label className="flex cursor-pointer items-center gap-2">
-                                <Checkbox
-                                  checked={activity.enableGuideMode}
-                                  onCheckedChange={(checked) =>
-                                    handleActivityModeChange(activity.id, 'guide', Boolean(checked))
-                                  }
-                                  disabled={isUpdatingModes}
-                                />
-                                <span className="text-sm text-foreground">Guide me</span>
-                              </label>
-                              <label className="flex cursor-pointer items-center gap-2">
-                                <Checkbox
-                                  checked={activity.enableCustomMode}
-                                  onCheckedChange={(checked) =>
-                                    handleActivityModeChange(activity.id, 'custom', Boolean(checked))
-                                  }
-                                  disabled={isUpdatingModes}
-                                />
-                                <span className="text-sm text-foreground">Custom prompt</span>
-                              </label>
-                            </div>
-                            {showModeSaving && isUpdatingModes && (
-                              <span className="text-[0.7rem] text-primary">Saving…</span>
-                            )}
-                            {isCustomEnabled && (
+                            <section className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-6 items-center justify-center rounded-md bg-accent/15 text-accent">
+                                  <IconSparkles className="size-3.5" aria-hidden="true" />
+                                </span>
+                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                  AI study buddy
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {(
+                                  [
+                                    { key: 'teach', label: 'Teach me', icon: IconSchool, enabled: activity.enableTeachMode },
+                                    { key: 'guide', label: 'Guide me', icon: IconRoute, enabled: activity.enableGuideMode },
+                                    { key: 'custom', label: 'Custom prompt', icon: IconWand, enabled: activity.enableCustomMode },
+                                  ] as const
+                                ).map((mode) => {
+                                  const ModeIcon = mode.icon;
+                                  return (
+                                    <button
+                                      key={mode.key}
+                                      type="button"
+                                      disabled={isUpdatingModes}
+                                      aria-pressed={mode.enabled}
+                                      onClick={() =>
+                                        handleActivityModeChange(activity.id, mode.key, !mode.enabled)
+                                      }
+                                      className={cn(
+                                        'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition',
+                                        mode.enabled
+                                          ? 'border-primary bg-primary text-primary-foreground shadow-[var(--shadow-2xs)]'
+                                          : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                                        isUpdatingModes && 'opacity-60',
+                                      )}
+                                    >
+                                      <ModeIcon className="size-3.5" aria-hidden="true" />
+                                      {mode.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {showModeSaving && isUpdatingModes && (
+                                <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
+                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  Saving…
+                                </span>
+                              )}
+                              {isCustomEnabled && (
                               <div className="mt-3 space-y-3">
                                 <div className="space-y-1.5">
                                   <Label
@@ -956,11 +1062,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                   />
                                   <div className="text-[0.65rem] text-muted-foreground">
                                     Tip: Use{' '}
-                                    <code className="rounded bg-secondary px-1">
+                                    <code className="rounded bg-muted px-1 text-foreground">
                                       [INSERT TOPIC HERE]
                                     </code>{' '}
                                     and{' '}
-                                    <code className="rounded bg-secondary px-1">
+                                    <code className="rounded bg-muted px-1 text-foreground">
                                       [ENTER KNOWLEDGE LEVEL]
                                     </code>{' '}
                                     as placeholders.
@@ -985,125 +1091,24 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     </span>
                                   )}
                                   {!promptError && isSavingPrompt && (
-                                    <span className="text-[0.75rem] text-primary">
+                                    <span className="text-[0.75rem] text-primary-text">
                                       Saving prompt…
                                     </span>
                                   )}
                                 </div>
                               </div>
                             )}
+                            </section>
                           </div>
-                        </CardContent>
+                        </div>
                       </Card>
                     </li>
                   );
                 })}
               </ul>
             )}
-
-            <PermissionGate allow={perms.canManageContent}>
-              <div className="flex justify-center gap-3">
-                <Button type="button" onClick={() => setShowAddPanel((open) => !open)}>
-                  {showAddPanel ? 'Hide add activities' : 'Add activities'}
-                </Button>
-                <Button type="button" variant="outline" onClick={openImportDialog}>
-                  Import activity
-                </Button>
-              </div>
-
-              {showAddPanel && numericLessonId !== null && (
-                <AddActivityPanel
-                  lessonId={numericLessonId}
-                  onActivityCreated={refreshActivities}
-                />
-              )}
-            </PermissionGate>
           </div>
-
-          <aside className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Course topics</CardTitle>
-                  {course?.title && (
-                    <span className="max-w-[55%] truncate text-xs text-muted-foreground">
-                      {course.title}
-                    </span>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {topicsError && <p className="text-xs text-destructive">{topicsError}</p>}
-                <PermissionGate allow={perms.canManageTopics}>
-                  <div className="flex items-center gap-2">
-                    {!!course?.externalId || course?.externalSource === 'EDUAI' ? (
-                      // EduAI course: Show only sync button
-                      lesson?.courseOfferingId && (
-                        <SyncTopicsButton
-                          courseId={lesson.courseOfferingId}
-                          syncing={syncingTopics}
-                          onSync={async () => {
-                            if (!lesson?.courseOfferingId) return;
-                            setSyncingTopics(true);
-                            try {
-                              const result = await api.syncCourseTopics(lesson.courseOfferingId);
-                              // Refresh topics first so the dialog options reflect latest topics
-                              await courseTopics.refresh();
-                              if (
-                                result &&
-                                Array.isArray(result.missingTopics) &&
-                                result.missingTopics.length > 0
-                              ) {
-                                setMissingTopics(
-                                  result.missingTopics.map((t: any) => ({ id: t.id, name: t.name })),
-                                );
-                                setShowMapping(true);
-                              }
-                            } catch (e) {
-                              console.error('Failed to sync topics', e);
-                              alert('Failed to sync topics from EduAI. Please try again.');
-                            } finally {
-                              setSyncingTopics(false);
-                            }
-                          }}
-                        />
-                      )
-                    ) : (
-                      // Regular course: Show add topics button
-                      <AddCourseTopicsButton disabled={!lesson?.courseOfferingId} />
-                    )}
-                  </div>
-                </PermissionGate>
-                <div className="max-h-48 overflow-y-auto">
-                  {topics.length === 0 ? (
-                    <div className="text-xs text-muted-foreground">No topics yet.</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {topics.map((topic) => (
-                        <Badge key={topic.id} variant="outline" size="sm">
-                          {topic.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </aside>
-        </div>
       </div>
-      <TopicSyncMappingDialog
-        open={showMapping}
-        onClose={() => setShowMapping(false)}
-        topics={topics}
-        missing={missingTopics}
-        busy={syncingTopics}
-        onApply={async (mappings) => {
-          if (!lesson?.courseOfferingId) return;
-          await api.remapCourseTopics(lesson.courseOfferingId, mappings);
-          await Promise.all([courseTopics.refresh(), refreshActivities()]);
-        }}
-      />
       <Dialog
         open={showImportDialog}
         onOpenChange={(next) => {

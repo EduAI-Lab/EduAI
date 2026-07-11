@@ -1,5 +1,14 @@
 import type { FormEvent } from 'react';
 import { useMemo, useState } from 'react';
+import {
+  IconPlus,
+  IconX,
+  IconPencil,
+  IconListCheck,
+  IconTag,
+  IconSparkles,
+  IconDeviceFloppy,
+} from '@tabler/icons-react';
 import { Button, Input, Label, SegmentedControl, Textarea } from '@eduai/ui';
 import { cn } from '~/lib/utils';
 import type { Activity } from '../lib/types';
@@ -68,10 +77,13 @@ export default function EditActivityPanel({
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-[var(--radius-lg)] border border-primary/30 bg-primary/5 p-4"
+      className="space-y-4 rounded-[var(--radius-lg)] border border-border bg-muted/40 p-4"
     >
       <div className="space-y-2">
-        <Label htmlFor={`activity-${activity.id}-title`}>Internal title (optional)</Label>
+        <Label htmlFor={`activity-${activity.id}-title`} className="flex items-center gap-1.5">
+          <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+          Internal title <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
         <Input
           id={`activity-${activity.id}-title`}
           value={values.title}
@@ -81,7 +93,10 @@ export default function EditActivityPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor={`activity-${activity.id}-question`}>Question prompt</Label>
+        <Label htmlFor={`activity-${activity.id}-question`} className="flex items-center gap-1.5">
+          <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+          Question prompt <span className="text-destructive">*</span>
+        </Label>
         <Textarea
           id={`activity-${activity.id}-question`}
           value={values.question}
@@ -113,37 +128,55 @@ export default function EditActivityPanel({
       />
 
       {values.type === 'MCQ' ? (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold text-muted-foreground">Choices</div>
-          <div className="space-y-2">
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <IconListCheck className="size-3.5 text-secondary" aria-hidden="true" />
+              Choices <span className="text-destructive">*</span>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Click a letter to mark the correct answer
+            </span>
+          </div>
+          <div className="space-y-2 rounded-[var(--radius-lg)] border border-border bg-background p-3">
             {paddedChoices.map((choice, index) => {
-              const isSelected = values.correctIndex === index;
+              const letter = choiceLabels[index] ?? String.fromCharCode(65 + index);
+              const isCorrect = values.correctIndex === index;
               return (
-                <label
+                <div
                   key={index}
                   className={cn(
-                    'flex items-center gap-3 rounded-[var(--radius-lg)] border bg-background px-3 py-2 transition cursor-pointer focus-within:outline-none',
-                    isSelected
-                      ? 'border-[var(--color-success-500)] bg-[var(--color-success-100)]/40'
-                      : 'border-border hover:border-primary/30',
+                    'relative flex items-center gap-3 rounded-[var(--radius-md)] border p-1.5 transition-colors',
+                    isCorrect
+                      ? 'border-[var(--color-success-500)]/60 bg-[var(--color-success-500)]/10'
+                      : 'border-transparent',
                   )}
                 >
-                  <input
-                    type="radio"
-                    name={`activity-${activity.id}-correct-choice`}
-                    className="sr-only"
-                    checked={isSelected}
-                    onChange={() =>
+                  <button
+                    type="button"
+                    onClick={() =>
                       setValues((prev) => ({
                         ...prev,
                         correctIndex: index,
                       }))
                     }
-                  />
-                  <span className="w-6 text-xs font-semibold text-muted-foreground">
-                    {choiceLabels[index] ?? String.fromCharCode(65 + index)}.
-                  </span>
-                  <input
+                    aria-pressed={isCorrect}
+                    aria-label={
+                      isCorrect
+                        ? `Option ${letter} (correct answer)`
+                        : `Mark option ${letter} correct`
+                    }
+                    title={isCorrect ? 'Correct answer' : 'Mark as correct answer'}
+                    className={cn(
+                      'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      isCorrect
+                        ? 'bg-[var(--color-success-500)] text-white'
+                        : 'bg-primary/15 text-foreground hover:bg-primary/30',
+                    )}
+                  >
+                    {letter}
+                  </button>
+                  <Input
                     value={choice}
                     onChange={(event) =>
                       setValues((prev) => {
@@ -152,15 +185,17 @@ export default function EditActivityPanel({
                         return { ...prev, choices: nextChoices };
                       })
                     }
-                    placeholder="Option text"
-                    className="min-w-0 flex-1 border-none bg-transparent text-foreground focus:outline-none"
+                    placeholder={`Option ${letter}`}
+                    aria-label={`Option ${letter}`}
+                    className="flex-1"
                   />
                   {paddedChoices.length > 2 && (
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
-                      className="h-auto px-2 py-1 text-[0.7rem] text-destructive hover:text-destructive"
+                      size="icon"
+                      className="size-8 text-destructive hover:text-destructive"
+                      aria-label={`Remove option ${letter}`}
                       onClick={() =>
                         setValues((prev) => {
                           if (prev.choices.length <= 2) return prev;
@@ -182,31 +217,35 @@ export default function EditActivityPanel({
                         })
                       }
                     >
-                      Remove
+                      <IconX className="size-4" aria-hidden="true" />
                     </Button>
                   )}
-                </label>
+                </div>
               );
             })}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() =>
+                setValues((prev) => ({
+                  ...prev,
+                  choices: [...ensureChoiceSlots(prev.choices), ''],
+                }))
+              }
+            >
+              <IconPlus className="size-4" aria-hidden="true" />
+              Add choice
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-auto px-2 py-1 text-xs font-medium text-primary hover:text-primary"
-            onClick={() =>
-              setValues((prev) => ({
-                ...prev,
-                choices: [...ensureChoiceSlots(prev.choices), ''],
-              }))
-            }
-          >
-            Add choice
-          </Button>
         </div>
       ) : (
         <div className="space-y-2">
-          <Label htmlFor={`activity-${activity.id}-answer`}>Expected answer</Label>
+          <Label htmlFor={`activity-${activity.id}-answer`} className="flex items-center gap-1.5">
+            <IconPencil className="size-3.5 text-secondary" aria-hidden="true" />
+            Expected answer
+          </Label>
           <Input
             id={`activity-${activity.id}-answer`}
             value={values.textAnswer}
@@ -217,7 +256,10 @@ export default function EditActivityPanel({
       )}
 
       <div className="space-y-2">
-        <Label htmlFor={`activity-${activity.id}-instructions`}>Instructions (optional)</Label>
+        <Label htmlFor={`activity-${activity.id}-instructions`} className="flex items-center gap-1.5">
+          <IconTag className="size-3.5 text-secondary" aria-hidden="true" />
+          Instructions <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
         <Textarea
           id={`activity-${activity.id}-instructions`}
           value={values.instructionsMd}
@@ -229,7 +271,10 @@ export default function EditActivityPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor={`activity-${activity.id}-hints`}>Hints (one per line)</Label>
+        <Label htmlFor={`activity-${activity.id}-hints`} className="flex items-center gap-1.5">
+          <IconSparkles className="size-3.5 text-secondary" aria-hidden="true" />
+          Hints <span className="font-normal text-muted-foreground">(one per line)</span>
+        </Label>
         <Textarea
           id={`activity-${activity.id}-hints`}
           value={values.hintsText}
@@ -254,6 +299,7 @@ export default function EditActivityPanel({
           Cancel
         </Button>
         <Button type="submit" disabled={busy}>
+          <IconDeviceFloppy className="size-4" aria-hidden="true" />
           {busy ? 'Saving…' : 'Save changes'}
         </Button>
       </div>
