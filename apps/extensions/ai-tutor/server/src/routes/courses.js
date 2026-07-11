@@ -33,6 +33,7 @@ import { calculateCourseProgress } from '../services/progressCalculation.js';
 import {
   findEduAiCourseById,
   listCoreAdminUsers,
+  listEduAiCourseEnrollmentsServiceKey,
   listEduAiCourses,
   setCoreCoursePublishState,
 } from '../services/eduaiClient.js';
@@ -63,6 +64,21 @@ async function userHasTaEnrollment(userId) {
     where: { userId, role: 'TA' },
   });
   return count > 0;
+}
+
+/**
+ * Pull the MCQ option labels out of a freeform `Activity.config`. Mirrors the
+ * `options` normalization in `mapActivity` — accepts the modern
+ * `{ options: { choices: [] } }` shape and the legacy bare-array form. Returns
+ * `null` when the activity carries no choices (e.g. short-answer questions).
+ */
+function extractChoices(config) {
+  if (!config || typeof config !== 'object') return null;
+  const { options } = config;
+  if (options == null) return null;
+  if (Array.isArray(options)) return options;
+  if (Array.isArray(options.choices)) return options.choices;
+  return null;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
@@ -798,9 +814,57 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
       orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }],
       take,
       skip,
+      include: {
+        activity: {
+          select: {
+            id: true,
+            title: true,
+            config: true,
+            lesson: { select: { title: true } },
+          },
+        },
+      },
     });
 
-    res.json(submissions);
+    // Resolve Core-owned student names (identity lives in Core, not this DB).
+    // Best-effort: a missing service key or Core hiccup falls back to the raw
+    // userId so the panel still renders.
+    const nameById = new Map();
+    if (course.coreOfferingId) {
+      try {
+        const enrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+        for (const enrollment of enrollments) {
+          if (enrollment?.studentId) nameById.set(enrollment.studentId, enrollment.studentName);
+        }
+      } catch {
+        // Leave the map empty; rows degrade to the userId.
+      }
+    }
+
+    const enriched = submissions.map((submission) => {
+      const { activity, ...rest } = submission;
+      const config = activity?.config ?? {};
+      const choices = extractChoices(config);
+      const response = rest.response ?? null;
+      // MCQ picks store a zero-based option index; map it back to the option
+      // label so instructors read the answer, not "Option 3".
+      const optionIndex =
+        response && typeof response.answerOption === 'number' ? response.answerOption : null;
+      const answerLabel =
+        optionIndex != null && choices && choices[optionIndex] != null
+          ? choices[optionIndex]
+          : null;
+      return {
+        ...rest,
+        studentName: nameById.get(rest.userId) ?? null,
+        activityTitle: activity?.title ?? null,
+        lessonTitle: activity?.lesson?.title ?? null,
+        questionText: config.question ?? config.prompt ?? null,
+        answerLabel,
+      };
+    });
+
+    res.json(enriched);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
