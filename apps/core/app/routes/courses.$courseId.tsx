@@ -20,9 +20,9 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@eduai/ui'
+import { CourseSwitcher } from '~/components/layout/course-switcher'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
@@ -241,7 +241,7 @@ export default function CourseDetailPage() {
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{course.name}</BreadcrumbPage>
+                  <CourseSwitcher currentCourseId={course.id} currentCourseName={course.name} />
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>

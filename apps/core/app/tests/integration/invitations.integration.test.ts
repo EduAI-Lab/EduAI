@@ -553,14 +553,33 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
 
-    // recordPasswordHistory (called during Better Auth sign-up) uses $transaction
-    // too, so we let the first call pass and reject only the second one (promote).
-    let txCallCount = 0;
-    const realTx = prisma.$transaction.bind(prisma);
-    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation((...args: Parameters<typeof prisma.$transaction>) => {
-      txCallCount++;
-      if (txCallCount < 2) return (realTx as any)(...args);
-      return Promise.reject(new Error("db hiccup"));
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (fn, ...args) => {
+      if (typeof fn !== "function") {
+        return originalTransaction(fn as never, ...args);
+      }
+      // Fail only the promote-step invitation update inside a real transaction so
+      // password-history writes during sign-up still succeed and user.update rolls back.
+      return originalTransaction(async (tx) => {
+        const proxiedTx = new Proxy(tx, {
+          get(target, prop) {
+            if (prop === "invitation") {
+              return new Proxy(target.invitation, {
+                get(invTarget, invProp) {
+                  if (invProp === "update") {
+                    return () => Promise.reject(new Error("db hiccup"));
+                  }
+                  const value = (invTarget as unknown as Record<string, unknown>)[invProp as string];
+                  return typeof value === "function" ? value.bind(invTarget) : value;
+                },
+              });
+            }
+            const value = (target as unknown as Record<string, unknown>)[prop as string];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return fn(proxiedTx);
+      }, ...args);
     });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
