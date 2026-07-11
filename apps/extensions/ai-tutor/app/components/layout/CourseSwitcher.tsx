@@ -51,6 +51,7 @@ export function CourseSwitcher({
       courses={options}
       currentId={courseId}
       onSelect={(id) => navigate(`${basePath}/courses/${id}`)}
+      onOpenCurrent={() => navigate(`${basePath}/courses/${courseId}`)}
       onViewAll={() => navigate(basePath)}
     />
   );

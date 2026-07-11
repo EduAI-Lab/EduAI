@@ -2,10 +2,18 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import type { ReactNode } from 'react';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
-import { Card, CardContent, CourseCard, CourseListView, PageHeading } from '@eduai/ui';
+import {
+  Card,
+  CardContent,
+  CourseCard,
+  CourseListView,
+  PageHeading,
+  buildTermFilterGroup,
+  type CourseFilterGroup,
+} from '@eduai/ui';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
-import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
@@ -42,6 +50,24 @@ function progressBadges(course: Course): string[] {
   if (p.completed >= p.total) return ['Completed'];
   return [`${Math.round(p.percentage)}% complete`];
 }
+
+/** Bucket a course by how far the student has progressed through it. */
+const PROGRESS_FILTER: CourseFilterGroup<Course> = {
+  id: 'progress',
+  label: 'Progress',
+  getValue: (course) => {
+    const p = course.progress;
+    if (!p || p.total <= 0) return null;
+    if (p.completed <= 0) return 'not-started';
+    if (p.completed >= p.total) return 'completed';
+    return 'in-progress';
+  },
+  options: [
+    { value: 'not-started', label: 'Not started' },
+    { value: 'in-progress', label: 'In progress' },
+    { value: 'completed', label: 'Completed' },
+  ],
+};
 
 /** Shared centered empty/no-results card used by the course list. */
 function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
@@ -85,6 +111,14 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
           startDate: course.startDate ?? null,
         })}
         getSearchText={(course) => `${course.title} ${courseCode(course)}`}
+        filterGroups={[
+          buildTermFilterGroup<Course>((c) => ({
+            term: courseTerm(c),
+            year: courseYear(c),
+            startDate: c.startDate ?? null,
+          })),
+          PROGRESS_FILTER,
+        ]}
         emptyState={
           <EmptyCourseCard
             icon={<IconBooks size={22} aria-hidden="true" />}
@@ -104,7 +138,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
             <CourseCard
               id={String(course.id)}
               code={courseCode(course)}
-              name={course.title}
+              name={courseName(course)}
               description={course.description}
               term={courseTerm(course)}
               year={courseYear(course)}
