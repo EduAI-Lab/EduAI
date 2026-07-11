@@ -5,6 +5,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Changed
+
+- [monorepo] docs: Update `docs/ARCHITECTURE.md` to reflect the centralized/monorepo repo layout, the RBAC permission model (`resolveCourseAccess`, `UserRole`/`EnrollmentRole` split), the unified `Enrollment`/`Discipline` schema, and the current AI Tutor/Question Maker course-import flow — now fully automatic on login and course-list fetch, replacing the old manual "Import from EduAI" button. (#274, @GlowyBlack, 2026-07-10) — #PR
+
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
