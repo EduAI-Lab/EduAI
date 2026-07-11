@@ -169,6 +169,20 @@ beforeEach(() => {
 });
 
 describe("Chat API client abort (#267)", () => {
+  it("requests streaming usage from OpenAI-compatible local providers", async () => {
+    mockStream();
+
+    await action(makeRequest(baseBody()));
+
+    expect(vi.mocked(streamText).mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        providerOptions: {
+          vllm: { streamOptions: { includeUsage: true } },
+        },
+      }),
+    );
+  });
+
   it("passes the request AbortSignal to streamText", async () => {
     const controller = new AbortController();
     const args = makeRequest(baseBody(), controller.signal);

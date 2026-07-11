@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   measureTurnEnergy,
   startSidecarMeasurement,
+  stopSidecarMeasurement,
 } from "~/lib/ai/energy/measurement.server";
 
 const baseInput = {
@@ -93,5 +94,22 @@ describe("startSidecarMeasurement", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
 
     await expect(startSidecarMeasurement("turn-1")).resolves.toBeNull();
+  });
+});
+
+describe("stopSidecarMeasurement", () => {
+  const originalSidecar = process.env.ENERGY_SIDECAR_URL;
+
+  afterEach(() => {
+    if (originalSidecar === undefined) delete process.env.ENERGY_SIDECAR_URL;
+    else process.env.ENERGY_SIDECAR_URL = originalSidecar;
+    vi.restoreAllMocks();
+  });
+
+  it("returns null when sidecar fetch fails instead of throwing", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
+
+    await expect(stopSidecarMeasurement("turn-1")).resolves.toBeNull();
   });
 });

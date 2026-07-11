@@ -12,13 +12,12 @@ import {
   activeRouterVersion,
   parseRouterMode,
   resolveRoutedModel,
+  resolveRoutedModelRules,
+  type RouterDecision,
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import { startSidecarMeasurement } from "~/lib/ai/energy/measurement.server";
-import {
-  coalesceTokenUsage,
-  normalizeTokenUsage,
-} from "~/lib/ai/routing/telemetry";
+import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
   FleetUnavailableError,
@@ -870,17 +869,20 @@ export async function action({ request }: ActionFunctionArgs) {
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
+    let routerRagPrefetch: HybridRagHit[] | null = null;
 
     if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
       try {
-        const ragPrefetch = await findRelevantContent(
+        routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
           effectiveCourseId,
           HYBRID_RAG_MAX_CHUNKS,
+          undefined,
+          restrictRagToStudentVisible,
         );
-        ragChunkCount = ragPrefetch.length;
-        ragTopSimilarity = ragPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = ragPrefetch.reduce(
+        ragChunkCount = routerRagPrefetch.length;
+        ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
+        ragContextTokenEstimate = routerRagPrefetch.reduce(
           (acc, hit) => acc + Math.ceil(hit.content.length / 4),
           0,
         );
@@ -895,21 +897,36 @@ export async function action({ request }: ActionFunctionArgs) {
     let resolvedRouterVersion: string | null = null;
 
     if (routeWithAuto) {
-      const decision = await resolveRoutedModel(
-        lastUserMessageTextForRouting,
-        {
-          courseId: effectiveCourseId,
-          courseCode: courseCode ?? null,
-          imagesPresent,
-          ragTopSimilarity,
-          ragChunkCount,
-          ragContextTokenEstimate,
-          courseRagNeeded,
-        },
-        autoRouting.modeOverride
-          ? { modeOverride: autoRouting.modeOverride }
-          : undefined,
-      );
+      const routingContext = {
+        courseId: effectiveCourseId,
+        courseCode: courseCode ?? null,
+        imagesPresent,
+        ragTopSimilarity,
+        ragChunkCount,
+        ragContextTokenEstimate,
+        courseRagNeeded,
+      };
+      let decision: RouterDecision;
+      try {
+        decision = await resolveRoutedModel(
+          lastUserMessageTextForRouting,
+          routingContext,
+          autoRouting.modeOverride
+            ? { modeOverride: autoRouting.modeOverride }
+            : undefined,
+        );
+      } catch (error) {
+        const fallbackReason = formatStreamError(error);
+        chatApiDebug("Auto routing failed; falling back to rules", {
+          err: error,
+          requestedAuto: autoRouting.requestedAuto,
+        });
+        decision = await resolveRoutedModelRules(
+          lastUserMessageTextForRouting,
+          routingContext,
+        );
+        decision.features.fallbackReason = fallbackReason;
+      }
       model = decision.modelId;
       wasAuto = true;
       routingTier = decision.tier;
@@ -1228,13 +1245,15 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
-          courseRagHits = await findRelevantContent(
-            userQuestion,
-            effectiveCourseId,
-            HYBRID_RAG_MAX_CHUNKS,
-            undefined,
-            restrictRagToStudentVisible,
-          );
+          courseRagHits =
+            routerRagPrefetch ??
+            (await findRelevantContent(
+              userQuestion,
+              effectiveCourseId,
+              HYBRID_RAG_MAX_CHUNKS,
+              undefined,
+              restrictRagToStudentVisible,
+            ));
           courseRagInject = shouldInjectCourseRag({
             hasCourse,
             courseRagNeeded,
@@ -1477,6 +1496,7 @@ ${buildEmptyCourseRagBlock()}`;
     try {
       result = await streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
+        providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
         onStepFinish: ({ toolCalls, toolResults }) => {
           if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
@@ -1489,7 +1509,7 @@ ${buildEmptyCourseRagBlock()}`;
               if (!streaming) {
                 return;
               }
-              const normalizedUsage = normalizeTokenUsage(
+              const normalizedUsage = coalesceTokenUsage(
                 usage as Record<string, unknown> | undefined,
               );
               await persistTurnTelemetry({
@@ -1582,7 +1602,7 @@ ${buildEmptyCourseRagBlock()}`;
           : emptyOversightAuditResult();
 
         finalText = audited.text || draft;
-        const normalizedOversightUsage = normalizeTokenUsage(
+        const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
         await persistTurnTelemetry({
@@ -1755,7 +1775,7 @@ ${buildEmptyCourseRagBlock()}`;
           }
         }
 
-        const normalizedUsage = normalizeTokenUsage(
+        const normalizedUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
         await persistTurnTelemetry({
