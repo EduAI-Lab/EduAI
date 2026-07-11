@@ -555,7 +555,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       {/* Header */}
       <div className="border-b border-border">
         <div className="flex items-center gap-3 px-5 py-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
             <IconSparkles className="h-5 w-5" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
@@ -686,7 +686,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           ) : !hasApiKey ? (
             apiKeysLoaded ? (
               <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                   <IconKey className="h-7 w-7" aria-hidden />
                 </div>
                 <div className="space-y-1">

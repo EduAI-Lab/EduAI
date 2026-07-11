@@ -28,7 +28,7 @@ export function KnowledgeLevelChips({ value, onSelect, className }: KnowledgeLev
             className={cn(
               'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
               value === level.value
-                ? 'border-primary bg-primary/10 text-primary'
+                ? 'border-secondary bg-secondary text-secondary-foreground'
                 : 'border-border text-foreground hover:border-primary/50 hover:bg-muted',
             )}
           >
