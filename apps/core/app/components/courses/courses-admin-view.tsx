@@ -12,6 +12,9 @@ import {
   PageHeading,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
 } from '@eduai/ui'
 import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
@@ -198,6 +201,13 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year })}
         getSearchText={(course) => `${course.name} ${course.code}`}
+        filterGroups={[
+          buildStatusFilterGroup<Course>((c) => c.isPublished),
+          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+          buildDepartmentFilterGroup<Course>((c) => c.department, {
+            optionLabel: getDepartmentLabel,
+          }),
+        ]}
         emptyState={
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-8">
