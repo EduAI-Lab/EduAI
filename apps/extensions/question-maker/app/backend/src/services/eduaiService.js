@@ -230,12 +230,27 @@ class EduAIService {
     let chatStartMs;
     try {
       const model = params.model || "google:gemini-2.5-flash";
+      // Core strips non-user roles from `messages` (ALLOWED_CLIENT_MESSAGE_ROLES).
+      // System instructions must go in top-level `systemPrompt` or they are discarded
+      // and Core falls back to the course-tutor persona (markdown prose, not JSON).
+      const incoming = Array.isArray(params.messages) ? params.messages : [];
+      const systemParts = incoming
+        .filter((m) => m?.role === "system" && typeof m.content === "string" && m.content.trim())
+        .map((m) => m.content.trim());
+      const userMessages = incoming.filter((m) => m?.role === "user");
+      const systemPrompt =
+        (typeof params.systemPrompt === "string" && params.systemPrompt.trim()) ||
+        systemParts.join("\n\n") ||
+        undefined;
+
       const requestPayload = {
-        messages: params.messages || [],
+        messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
         courseCode: params.courseCode,
-        streaming: params.streaming || false,
+        // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
+        streaming: params.streaming === true,
+        ...(systemPrompt ? { systemPrompt } : {}),
       };
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
@@ -247,7 +262,8 @@ class EduAIService {
         model: requestPayload.model,
         courseCode: requestPayload.courseCode,
         messageCount: (requestPayload.messages || []).length,
-        systemPromptLength: (requestPayload.messages || []).find((m) => m.role === "system")?.content?.length ?? 0,
+        hasSystemPrompt: Boolean(systemPrompt),
+        systemPromptLength: systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
@@ -426,7 +442,11 @@ IMPORTANT:
 
     const defaultUserPrompt = `Generate questions about: ${prompt}
 
-Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.`;
+Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.
+
+OUTPUT RULES (mandatory):
+- Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}).
+- No markdown, no code fences, no headings, no commentary before or after the JSON.`;
 
     const systemPrompt = systemPromptOverride ?? defaultSystemPrompt;
     const userPrompt = userPromptOverride ?? defaultUserPrompt;
