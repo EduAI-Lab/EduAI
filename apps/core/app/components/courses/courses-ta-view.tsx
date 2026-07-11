@@ -1,6 +1,15 @@
 import { Link } from 'react-router'
 import { IconBook } from '@tabler/icons-react'
-import { Card, CardContent, CourseCard, CourseListView, PageHeading } from '@eduai/ui'
+import {
+  Card,
+  CardContent,
+  CourseCard,
+  CourseListView,
+  PageHeading,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+} from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
 
 interface Props {
@@ -29,6 +38,11 @@ export function CoursesTaView({ courses }: Props) {
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year })}
         getSearchText={(course) => `${course.name} ${course.code}`}
+        filterGroups={[
+          buildStatusFilterGroup<Course>((c) => c.isPublished),
+          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+          buildDepartmentFilterGroup<Course>((c) => c.department),
+        ]}
         emptyState={<EmptyCourses message="You have no courses assigned yet." />}
         noResultsState={<EmptyCourses message="No courses match your search." />}
         renderCard={(course, index) => (

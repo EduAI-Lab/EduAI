@@ -1,6 +1,14 @@
 import { Link } from 'react-router'
 import { IconBook } from '@tabler/icons-react'
-import { Card, CardContent, CourseCard, CourseListView, PageHeading } from '@eduai/ui'
+import {
+  Card,
+  CardContent,
+  CourseCard,
+  CourseListView,
+  PageHeading,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+} from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
 import { CourseCardCustomizePopover } from '~/components/courses/course-card-customize-popover'
 import { CourseCardScrollItem } from '~/components/courses/course-card-scroll-item'
@@ -41,6 +49,10 @@ export function CoursesStudentView({ courses }: Props) {
         getKey={(course) => course.id}
         getTermInfo={(course) => ({ term: course.term, year: course.year })}
         getSearchText={(course) => `${course.name} ${course.code}`}
+        filterGroups={[
+          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+          buildDepartmentFilterGroup<Course>((c) => c.department),
+        ]}
         emptyState={<EmptyCourses message="No published courses available yet." />}
         noResultsState={<EmptyCourses message="No courses match your search." />}
         renderCard={(course, index) => {
