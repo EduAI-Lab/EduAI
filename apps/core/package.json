@@ -48,7 +48,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@mendable/firecrawl-js": "^4.3.8",
     "@opendocsg/pdf2md": "^0.2.1",
-    "@prisma/client": "npm:prisma-client-611f97ae4eac0586ca71c3e83ac1eb1bf9a71f83f812b665ba9de4d1eb6bc5bc@^6.19.3",
+    "@prisma/client": "^6.19.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
