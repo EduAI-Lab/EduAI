@@ -6,10 +6,10 @@
  * `progress` data from `api.listCourses()` — no fabricated numbers.
  */
 import { useNavigate } from 'react-router';
-import { IconBooks } from '@tabler/icons-react';
-import { Badge, Button, Card, CardContent, MeterBar } from '@eduai/ui';
+import { IconBooks, IconArrowRight } from '@tabler/icons-react';
+import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
 import type { Course } from '~/lib/types';
-import { courseCode } from '~/lib/course-display';
+import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
 import { findResumeCourse, inProgressCourses } from './dashboard-helpers';
 
 type ContinueLearningPanelProps = {
@@ -42,54 +42,101 @@ export function ContinueLearningPanel({ courses, coursesBaseHref }: ContinueLear
   }
 
   const progress = resumeCourse.progress;
+  const accent = accentForCourse(resumeCourse);
+  const pct = progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  // Darkened accent for the CTA label so text-on-white clears AA contrast
+  // (raw palette accent is ~3:1, too light for body text).
+  const ctaTextColor = `color-mix(in oklch, ${accent} 72%, black)`;
 
   return (
     <div className="flex flex-col gap-3">
-      <Card
-        style={{
-          background: 'linear-gradient(to bottom, oklch(from var(--primary) l c h / 0.05), var(--card))',
-        }}
+      {/* Solid accent-fill hero — mirrors the CourseHeroCard/ModuleHero idiom so
+          the resume card reads as the primary "pick this up" surface. */}
+      <button
+        type="button"
+        onClick={() => navigate(`${coursesBaseHref}/courses/${resumeCourse.id}`)}
+        style={courseHeroBackgroundStyle(accent)}
+        className="group relative w-full cursor-pointer overflow-hidden rounded-[var(--radius-xl)] p-5 text-left text-white shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <CardContent className="flex flex-col gap-3">
-          <Badge variant="secondary" size="sm">
-            In progress
-          </Badge>
-          <h3 className="text-base font-semibold leading-snug text-foreground">
-            {resumeCourse.title}
-          </h3>
-          <MeterBar label="Your progress" value={progress.completed} total={progress.total} showCount />
-          <Button
-            type="button"
-            variant="primary"
-            className="mt-1 w-full"
-            onClick={() => navigate(`${coursesBaseHref}/courses/${resumeCourse.id}`)}
+        <div className="relative flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-white/70">
+                {courseCode(resumeCourse)}
+              </div>
+              <h3 className="text-lg font-semibold leading-snug text-white">{courseName(resumeCourse)}</h3>
+            </div>
+            <span className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-inset ring-white/20">
+              <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
+              In progress
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-white/80">Your progress</span>
+              <span className="font-semibold text-white">
+                {progress.completed} / {progress.total}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/20">
+              <div
+                className="h-full rounded-full bg-white transition-[width] duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+
+          <span
+            style={{ color: ctaTextColor }}
+            className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-lg)] bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition-transform group-hover:scale-[1.01]"
           >
             Continue learning
-          </Button>
-        </CardContent>
-      </Card>
+            <IconArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </button>
 
       {others.length > 0 && (
-        <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
-          {others.slice(0, 3).map((course) => (
-            <button
-              key={course.id}
-              type="button"
-              onClick={() => navigate(`${coursesBaseHref}/courses/${course.id}`)}
-              className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-foreground">
-                  {courseCode(course)}
-                </div>
-                <div className="truncate text-xs text-muted-foreground">{course.title}</div>
-              </div>
-              <span className="flex-shrink-0 text-xs font-medium text-muted-foreground">
-                {Math.round(course.progress!.percentage)}%
-              </span>
-            </button>
-          ))}
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            {others.slice(0, 3).map((course) => {
+              const otherAccent = accentForCourse(course);
+              const otherPct = Math.round(course.progress!.percentage);
+              return (
+                <button
+                  key={course.id}
+                  type="button"
+                  onClick={() => navigate(`${coursesBaseHref}/courses/${course.id}`)}
+                  className="flex w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
+                >
+                  <span
+                    className="h-9 w-1 flex-shrink-0 rounded-full"
+                    style={{ background: otherAccent }}
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {courseCode(course)}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">{course.title}</div>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted sm:block">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${otherPct}%`, background: otherAccent }}
+                      />
+                    </div>
+                    <span className="w-9 text-right text-xs font-semibold tabular-nums text-muted-foreground">
+                      {otherPct}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </CardContent>
+        </Card>
       )}
     </div>
   );
