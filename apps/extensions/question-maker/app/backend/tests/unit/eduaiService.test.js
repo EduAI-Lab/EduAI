@@ -191,6 +191,49 @@ describe('generateQuestions', () => {
     expect(out[0].difficulty).toBe('hard');
   });
 
+  it('ignores CUID-like markdown citations instead of throwing SyntaxError', async () => {
+    // Old greedy /(\[[\s\S]*\])/ matched [mr68fk2hgh…] and JSON.parse threw
+    // "Unexpected token 'm'". Valid question array still follows in the prose.
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content:
+          'Based on context [mr68fk2hghxyz] here is the item:\n' +
+          '[{"content":"What is binary?","type":"SA","difficulty":"easy","reasoning_level":"factual","answer":"base 2"}]',
+      },
+    });
+    const out = await eduaiService.generateQuestions(baseParams);
+    expect(out).toHaveLength(1);
+    expect(out[0].content).toBe('What is binary?');
+  });
+
+  it('retries with a JSON-only repair when the first reply is prose only', async () => {
+    axios.post
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { content: 'Based on the provided context, here is a multiple-choice question about rockets...' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          content: JSON.stringify([
+            {
+              content: 'What fuels a rocket?',
+              type: 'SA',
+              difficulty: 'easy',
+              reasoning_level: 'factual',
+              answer: 'propellant',
+            },
+          ]),
+        },
+      });
+
+    const out = await eduaiService.generateQuestions(baseParams);
+    expect(out).toHaveLength(1);
+    expect(out[0].content).toBe('What fuels a rocket?');
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
   it('unwraps a { questions: [...] } envelope', async () => {
     axios.post.mockResolvedValue({
       status: 200,
