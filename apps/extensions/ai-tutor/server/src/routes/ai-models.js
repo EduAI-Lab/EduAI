@@ -37,12 +37,6 @@ router.get('/ai-models', async (req, res) => {
   try {
     const { policy, availableModels, availableModelsError } = await getAiModelPolicyState();
 
-    if (availableModelsError) {
-      return res
-        .status(500)
-        .json({ error: 'Failed to load AI models', detail: availableModelsError });
-    }
-
     const visibleModels =
       req.user?.role === 'STUDENT'
         ? availableModels.filter((model) => policy.allowedTutorModelIds.includes(model.modelId))

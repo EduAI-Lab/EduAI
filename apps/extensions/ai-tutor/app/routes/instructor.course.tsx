@@ -21,7 +21,7 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { PageHeading } from '@eduai/ui';
+import { ConfirmDialog, PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
@@ -37,6 +37,7 @@ import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
 import { AppShell } from '~/components/layout/AppShell';
 import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
+import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -83,6 +84,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [selectedModuleIds, setSelectedModuleIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: number;
+    isPublished: boolean;
+    title: string;
+  } | null>(null);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -229,7 +235,17 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         <ShellBreadcrumbs
           items={[
             { label: 'Teaching', href: '/instructor' },
-            { label: course?.title || 'Course' },
+            {
+              label: course?.title || 'Course',
+              node:
+                numericCourseId != null ? (
+                  <CourseSwitcher
+                    courseId={numericCourseId}
+                    basePath="/instructor"
+                    currentTitle={course?.title || 'Course'}
+                  />
+                ) : undefined,
+            },
           ]}
         />
       }
@@ -443,7 +459,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                           blockedReason={tooltipMessage}
                           onClick={() => {
                             if (busy || blocked) return;
-                            togglePublish(m.id, m.isPublished);
+                            setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
                           }}
                         />
                       </div>
@@ -457,6 +473,33 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           </>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPublish(null);
+        }}
+        title={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? `Unpublish "${pendingPublish.title}"?`
+              : `Publish "${pendingPublish.title}"?`
+            : ''
+        }
+        description={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? 'Students will lose access to this content.'
+              : 'Students will be able to see this content.'
+            : ''
+        }
+        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
+        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          setPendingPublish(null);
+        }}
+      />
     </AppShell>
   );
 }
