@@ -232,7 +232,7 @@ export default function CourseDetailPage() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <CourseSwitcher currentCourseId={course.id} currentCourseName={course.name} />
+              <CourseSwitcher currentCourseId={course.id} currentCourseCode={course.code} currentCourseName={course.name} />
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
