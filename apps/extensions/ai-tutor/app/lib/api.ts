@@ -46,6 +46,17 @@ import type {
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
+ * Hard ceiling on any single request. A request that opens a connection but
+ * never responds (e.g. the AT API is up but its upstream Core
+ * `/api/sessions/validate` hangs) would otherwise never settle — stranding
+ * loaders and leaving the "Initializing your workspace" spinner running
+ * forever. On timeout the fetch is aborted and surfaced as `ApiNetworkError`,
+ * which callers already treat as transient (retry, then fall through to the
+ * login redirect). Generous enough not to trip a slow-but-alive `/api/me`.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
+
+/**
  * Thrown when the request never reached the server (e.g. connection refused
  * because the API is still booting on a fresh dev-stack start). Distinct from
  * an authenticated-but-rejected response so callers can retry instead of
@@ -69,18 +80,29 @@ async function http(path: string, init?: RequestInit) {
     'Content-Type': 'application/json',
   };
 
+  // Arm an abort-based timeout unless the caller supplied its own signal
+  // (e.g. a streaming request that manages its own lifecycle).
+  const controller = init?.signal ? null : new AbortController();
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    : null;
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
       credentials: 'include',
+      signal: init?.signal ?? controller?.signal,
       headers: {
         ...headers,
         ...init?.headers,
       },
     });
   } catch {
+    // Covers both connection failures and an aborted (timed-out) request.
     throw new ApiNetworkError();
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
@@ -101,8 +123,24 @@ async function http(path: string, init?: RequestInit) {
   return res.json();
 }
 
+/**
+ * De-dupes concurrent `/api/me` calls. On a single navigation both the route
+ * guard (`requireClientUser`) and the `AuthProvider` mount effect call
+ * `api.me()` independently — without coalescing, that is two full round-trips
+ * to Core's `/api/sessions/validate` per page. While a request is in flight,
+ * additional callers share it; the slot clears as soon as it settles, so the
+ * result is never cached across navigations (auth state stays fresh).
+ */
+let meInFlight: Promise<{ user: User | null }> | null = null;
+
 export const api = {
-  me: () => http('/api/me') as Promise<{ user: User | null }>,
+  me: () => {
+    if (meInFlight) return meInFlight;
+    meInFlight = (http('/api/me') as Promise<{ user: User | null }>).finally(() => {
+      meInFlight = null;
+    });
+    return meInFlight;
+  },
   aiStatus: () =>
     http('/api/ai-status') as Promise<{
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };

@@ -1,7 +1,9 @@
 import type { Route } from './+types/home';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { PageLoader } from '@eduai/ui';
+// Subpath import — the index route is the pre-login landing, so avoid pulling
+// the whole `@eduai/ui` barrel here (see root.tsx for the rationale).
+import { PageLoader } from '@eduai/ui/page-loader';
 import { useLocalUser } from '../hooks/useLocalUser';
 import { routeForRole } from '../lib/role-routing';
 

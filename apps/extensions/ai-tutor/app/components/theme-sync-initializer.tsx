@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { initThemeSync, closeThemeSync, broadcastThemeChange, useTheme } from '@eduai/ui';
+// Narrow subpath imports — avoid the `@eduai/ui` barrel so this always-mounted
+// (pre-login) component doesn't drag the entire shared UI library into the
+// first-load transform. See root.tsx for the full rationale.
+import { useTheme } from '@eduai/ui/theme-provider';
+import { initThemeSync, closeThemeSync, broadcastThemeChange } from '@eduai/ui/theme-sync';
 
 /**
  * Initialize cross-app theme synchronization for AI Tutor.
