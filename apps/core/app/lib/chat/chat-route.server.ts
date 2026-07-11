@@ -8,10 +8,7 @@ import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.se
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
-import {
-  defaultChatModelId,
-  withAutoChatModel,
-} from "~/lib/chat-auto-model";
+import { withAutoChatModel } from "~/lib/chat-auto-model";
 import {
   routerAutoDefaultEnabled,
   routingPickerEnabled,
