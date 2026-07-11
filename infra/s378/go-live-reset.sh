@@ -80,6 +80,6 @@ host_ok dev.aitutor.eduai.ok.ubc.ca 3001 && echo "aitutor host: OK" || echo "ait
 host_ok dev.questionmaker.eduai.ok.ubc.ca 5173 && echo "qm host: OK" || echo "qm host: FAIL"
 
 echo "=== public HTTPS ==="
-curl -sI -k https://dev.eduai.ok.ubc.ca/login | head -1
-curl -sI -k https://dev.aitutor.eduai.ok.ubc.ca/ | head -1
-curl -sI -k https://dev.questionmaker.eduai.ok.ubc.ca/ | head -1
+curl -sI -k --connect-timeout 5 https://dev.eduai.ok.ubc.ca/login 2>/dev/null | head -1 || echo "core https: FAIL"
+curl -sI -k --connect-timeout 5 https://dev.aitutor.eduai.ok.ubc.ca/ 2>/dev/null | head -1 || echo "aitutor https: FAIL"
+curl -sI -k --connect-timeout 5 https://dev.questionmaker.eduai.ok.ubc.ca/ 2>/dev/null | head -1 || echo "qm https: FAIL"
