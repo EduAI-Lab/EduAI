@@ -46,7 +46,11 @@ trap cleanup EXIT
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Building E2E images..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-docker compose -f "$COMPOSE_FILE" build --parallel
+df -h
+docker system df
+docker compose -f "$COMPOSE_FILE" build
+df -h
+docker system df
 
 # ── Boot application stack ────────────────────────────────────────────────────
 echo ""
