@@ -9,8 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, and 503 when no healthy host hosts the model; AI Tutor and Question Maker send `routingContext.feature` for pool selection. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08)
-- [core] tests: `fleet-routing.test.ts` — feature parsing, round-robin, 503 paths, heavy-pool fallback. (@ssaada08, 2026-07-08)
+- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, and 503 when no healthy host hosts the model; AI Tutor and Question Maker send `routingContext.feature` telemetry that Core maps to an interactive or background job type for pool selection. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08)
+- [core] tests: `fleet-routing.test.ts` — feature parsing and job-type mapping, interactive/background pool routing, round-robin, 503 paths, and background-pool fallback. (@ssaada08, 2026-07-08)
 - [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08)
 
 ## [Week 9 — June 29–July 5, 2026]
