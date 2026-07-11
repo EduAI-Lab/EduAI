@@ -13,10 +13,15 @@ NVML_SAMPLE_INTERVAL_S = 0.1
 
 
 def _read_rapl_microjoules() -> Optional[float]:
-    """Sum Intel RAPL energy_uj counters (Linux). Returns None if unavailable."""
+    """Sum top-level Intel RAPL package counters. Returns None if unavailable."""
     total = 0.0
     found = False
     for path in glob.glob("/sys/class/powercap/intel-rapl*/energy_uj"):
+        zone = os.path.basename(os.path.dirname(path))
+        # Sub-zones and intel-rapl-mmio mirror package energy, so including
+        # them would count the same physical package more than once.
+        if "-mmio" in zone or zone.count(":") != 1:
+            continue
         try:
             with open(path, encoding="utf-8") as f:
                 total += float(f.read().strip())

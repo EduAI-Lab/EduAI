@@ -26,6 +26,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Harden PR #758 energy telemetry — count only top-level RAPL package zones, fall back to token estimates when the sidecar is unavailable, preserve combined RAPL + NVML attribution, and reject invalid GPU indices. (#731, @superbolt08, 2026-07-11) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
 - [core] fix: Material upload embedding insert — format pgvector literals as validated bracket strings before `prisma.$executeRaw`/`$queryRaw` (fixes intermittent `Couldn't serialize value` on `number[]`); sanitize upload failure messages so Prisma internals are not shown in the UI (#54, @ssaada08, 2026-07-02) — [#855](https://github.com/EduAI-Lab/EduAI/pull/855)
 - [ui] hotfix: Add missing imports in `packages/ui/src/ui/combobox.tsx` — `useRef`, `useEffect`, `Popover`, `PopoverTrigger`, and `PopoverContent` were used but not imported, causing `packages-ui-unit-tests` and QM frontend Docker build to fail on CI. (#823)
 - [infra] fix: Remove `legacy-peer-deps=true` from the root, AI Tutor, and AI Tutor server `.npmrc` files — installing against the existing `package-lock.json` resolves cleanly under npm's default strict peer-dependency mode (the `@better-auth/cli`/`@better-auth/telemetry` conflict only surfaces on a from-scratch resolution, e.g. a dry run with no lockfile). All 11 Docker test suites pass unchanged. (#804, @evanbones, 2026-07-01) — closes #172

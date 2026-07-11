@@ -20,19 +20,21 @@ const MAX_GPU_INDEX = 7;
 /** @param {unknown} raw */
 function validateGpuIndices(raw) {
   const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return values
-    .map(Number)
-    .filter((n) => Number.isInteger(n) && n >= 0 && n <= MAX_GPU_INDEX);
+  const indices = values.map(Number);
+  if (
+    indices.length === 0 ||
+    indices.some((n) => !Number.isInteger(n) || n < 0 || n > MAX_GPU_INDEX)
+  ) {
+    return null;
+  }
+  return [...new Set(indices)];
 }
 
 /** Comma-separated GPU indices, e.g. "0,1". Default: all visible GPUs. */
 function resolveGpuIndices() {
   const raw = process.env.ENERGY_GPU_INDICES?.trim();
   if (raw) {
-    return raw
-      .split(",")
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isInteger(n) && n >= 0);
+    return validateGpuIndices(raw.split(",").map((s) => s.trim())) ?? [0];
   }
   const r = spawnSync("nvidia-smi", ["--query-gpu=index", "--format=csv,noheader"], {
     encoding: "utf8",
@@ -80,7 +82,9 @@ function readRaplUj() {
     let total = 0;
     let found = false;
     for (const name of readdirSync(base)) {
-      if (!name.startsWith("intel-rapl")) continue;
+      // Count package counters only. Sub-zones and intel-rapl-mmio mirror
+      // package energy and would otherwise double-count the same CPU.
+      if (!/^intel-rapl:\d+$/.test(name)) continue;
       try {
         const uj = readFileSync(`${base}/${name}/energy_uj`, "utf8").trim();
         total += Number(uj);
@@ -258,7 +262,7 @@ const server = createServer(async (req, res) => {
         : body.gpuIndices?.length
           ? validateGpuIndices(body.gpuIndices)
           : resolveGpuIndices();
-    if (!gpuIndices.length) {
+    if (!gpuIndices?.length) {
       sendJson(res, 400, { error: "invalid or missing gpuIndex/gpuIndices" });
       return;
     }
@@ -295,6 +299,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/measure") {
+    // Legacy manual-debugging compatibility; application telemetry uses tagged sessions.
     if (lastResult) {
       sendJson(res, 200, {
         energyJoules: lastResult.energyJoules,
