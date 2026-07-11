@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sonner": "./src/ui/sonner.tsx",
+    "./page-loader": "./src/page-loader.tsx",
+    "./theme-provider": "./src/theme-provider.tsx",
+    "./theme-sync": "./src/lib/theme-sync.ts"
   },
   "scripts": {
     "test": "vitest run",
