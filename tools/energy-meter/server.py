@@ -107,7 +107,7 @@ class EnergyMeterHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/measure":
-            # Legacy endpoint used by measurement.server.ts — returns last measurement.
+            # Legacy manual-debugging compatibility; application telemetry uses tagged sessions.
             if _last_result:
                 _send_json(
                     self,

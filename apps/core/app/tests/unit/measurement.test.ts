@@ -74,4 +74,40 @@ describe("measureTurnEnergy", () => {
       energySource: "ESTIMATED_FROM_TOKENS",
     });
   });
+
+  it("falls back to token estimate when measure-stop throws", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("sidecar unavailable"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await measureTurnEnergy(baseInput, {
+      sidecarTag: "turn-3",
+    });
+
+    expect(result).toEqual({
+      energyJoules: 15,
+      carbonGramsCO2: 0.3,
+      energySource: "ESTIMATED_FROM_TOKENS",
+    });
+  });
+
+  it("preserves combined RAPL and NVML attribution", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          energyJoules: 42,
+          carbonGramsCO2: 1.2,
+          source: "RAPL_PLUS_NVML",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await measureTurnEnergy(baseInput, {
+      sidecarTag: "turn-4",
+    });
+
+    expect(result.energySource).toBe("RAPL_PLUS_NVML");
+  });
 });
