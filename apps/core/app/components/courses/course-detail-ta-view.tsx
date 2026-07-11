@@ -355,6 +355,18 @@ export function CourseDetailTaView({
         </Dialog>
       )}
 
+      {/* B2: Topics in hero, badges top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={course.name}
+        description={course.description}
+        accentColor={resolvePaletteAccent(course.id)}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+      />
+
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -365,18 +377,6 @@ export function CourseDetailTaView({
 
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* B2: Topics in hero, badges top-right */}
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={course.name}
-            description={course.description}
-            accentColor={resolvePaletteAccent(course.id)}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-          />
-
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             {/* B3: Enriched info card */}
             <Card>
