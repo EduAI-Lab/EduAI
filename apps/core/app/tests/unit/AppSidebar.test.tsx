@@ -82,7 +82,7 @@ describe("AppSidebar — rendering", () => {
 
   it("renders the app switcher (cross-app links moved into the switcher popover)", () => {
     // AI Tutor / Question Maker are no longer sidebar nav links — they live in
-    // the header app switcher (BrandSwitcher). Its popover contents aren't
+    // the footer app switcher (AppSwitcher). Its popover contents aren't
     // rendered under happy-dom (Radix), so assert the trigger is present; the
     // RBAC gate on the popover is covered in @eduai/ui's app-launcher.test.tsx.
     renderSidebar("STUDENT");
