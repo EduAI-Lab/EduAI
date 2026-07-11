@@ -42,6 +42,7 @@ import type {
   SuggestedPrompt,
   User,
 } from './types';
+import { getCoreLoginUrl } from './coreUrl';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -91,8 +92,7 @@ async function http(path: string, init?: RequestInit) {
     // lesson outside their unit). Surface 403 as a normal error instead so the
     // route's error boundary can render it.
     if (res.status === 401) {
-      const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
-      window.location.href = `${coreUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+      window.location.href = getCoreLoginUrl();
       throw new Error('Authentication required');
     }
     const text = await res.text();
