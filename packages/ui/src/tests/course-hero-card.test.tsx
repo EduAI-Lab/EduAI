@@ -18,7 +18,8 @@ describe("CourseHeroCard", () => {
       />
     );
     expect(screen.getByText(/CPSC 110 · 2024W2/)).toBeInTheDocument();
-    expect(screen.getByText("CPSC 110: Computation, Programs, and Programming")).toBeInTheDocument();
+    // Headline is the name alone; the code reads in the eyebrow, not repeated behind a colon.
+    expect(screen.getByText("Computation, Programs, and Programming")).toBeInTheDocument();
   });
 
   it("renders description when provided", () => {
