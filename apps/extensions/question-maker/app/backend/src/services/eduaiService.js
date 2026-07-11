@@ -53,19 +53,20 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/chat. The service key is the primary
-   * credential for server-to-server proxying — Core's requireServiceKey guard
-   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
-   * chat route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
-   * session cookie only when no service key is configured.
+   * Builds auth headers for Core /api/chat.
+   *
+   * Prefer the caller's Core session cookie so generation runs as that user
+   * (course access, audit, RBAC). Fall back to `Authorization: Bearer
+   * <EDUAI_API_KEY>` only when no cookie is available (e.g. background jobs).
+   * Do not send x-api-key — Core's chat route ignores it.
    */
   buildChatAuthHeaders(cookie) {
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
+    }
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }
@@ -140,7 +141,7 @@ class EduAIService {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
       throw new Error(
-        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
+        "EduAI chat requires a Core session. Sign in via Core, or set EDUAI_API_KEY for server-only calls."
       );
     }
 
@@ -829,14 +830,14 @@ Please ensure the questions are appropriate for the course level and cover the k
     if (!this.isConfigured()) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "EduAI base URL not configured (EDUAI_API_URL)",
       };
     }
 
-    if (!this.apiKey && !cookie?.trim()) {
+    if (!cookie?.trim() && !this.apiKey) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "Sign in via Core to use AI (session cookie required)",
       };
     }
 
@@ -853,7 +854,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
       return {
         success: true,
-        message: "API key is valid",
+        message: cookie?.trim() ? "Core session can reach AI" : "Service key can reach AI",
         provider,
         response: response,
       };
@@ -864,7 +865,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "Invalid EduAI API key - authentication failed",
+          error: "AI authentication failed — sign in via Core again",
         };
       } else if (
         error.message.includes("403") ||
@@ -872,7 +873,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "EduAI API key access forbidden",
+          error: "AI access forbidden for this session",
         };
       } else if (
         error.message.includes("Invalid API key") ||

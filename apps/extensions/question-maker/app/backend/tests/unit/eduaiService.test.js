@@ -70,28 +70,42 @@ describe('isConfigured', () => {
 });
 
 describe('chat', () => {
-  it('throws when the service is not configured', async () => {
+  it('throws when neither a session cookie nor a service key is available', async () => {
     eduaiService.apiKey = '';
-    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/not configured/i);
+    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/Core session/i);
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('posts to /api/chat and returns the response body', async () => {
+  it('prefers the Core session cookie over the service key for /api/chat', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
 
     const out = await eduaiService.chat({
       messages: [{ role: 'user', content: 'hi' }],
       courseCode: 'CS 101',
+      cookie: '__Secure-better-auth.session_token=abc',
     });
 
     expect(out).toEqual({ content: 'hello' });
     const [url, payload, opts] = axios.post.mock.calls[0];
     expect(url).toBe('http://eduai.test/api/chat');
     expect(payload.courseCode).toBe('CS 101');
-    // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
-    expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBe('__Secure-better-auth.session_token=abc');
+    expect(opts.headers.Authorization).toBeUndefined();
     expect(opts.headers['x-api-key']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
+  });
+
+  it('falls back to Bearer service key when no cookie is present', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
+
+    await eduaiService.chat({
+      messages: [{ role: 'user', content: 'hi' }],
+      courseCode: 'CS 101',
+    });
+
+    const [, , opts] = axios.post.mock.calls[0];
+    expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBeUndefined();
   });
 
   it('honors an explicit timeoutMs override', async () => {
@@ -382,29 +396,47 @@ describe('listAIModels', () => {
 });
 
 describe('testApiKey', () => {
-  it('returns failure when not configured', async () => {
+  it('returns failure when neither cookie nor service key is available', async () => {
     eduaiService.apiKey = '';
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'EduAI API key not configured' });
+    expect(out).toEqual({
+      success: false,
+      error: 'Sign in via Core to use AI (session cookie required)',
+    });
   });
 
-  it('returns success when the chat call works', async () => {
+  it('returns success when the chat call works via service key', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
     const out = await eduaiService.testApiKey();
     expect(out.success).toBe(true);
-    expect(out.message).toMatch(/valid/i);
+    expect(out.message).toMatch(/Service key can reach AI/i);
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
   });
 
-  it('flags an invalid key on a 401', async () => {
+  it('prefers the session cookie when both cookie and service key are present', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey({
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/Core session can reach AI/i);
+    expect(axios.post.mock.calls[0][2].headers.cookie).toContain('session_token=abc');
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBeUndefined();
+  });
+
+  it('flags auth failure on a 401', async () => {
     axios.post.mockRejectedValue(responseError({ status: 401, statusText: 'Unauthorized', data: {} }));
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'Invalid EduAI API key - authentication failed' });
+    expect(out).toEqual({
+      success: false,
+      error: 'AI authentication failed — sign in via Core again',
+    });
   });
 
   it('flags forbidden access on a 403', async () => {
     axios.post.mockRejectedValue(responseError({ status: 403, statusText: 'Forbidden', data: {} }));
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'EduAI API key access forbidden' });
+    expect(out).toEqual({ success: false, error: 'AI access forbidden for this session' });
   });
 
   it('treats a provider-key failure as a valid EduAI key', async () => {
