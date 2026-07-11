@@ -149,7 +149,7 @@ export const auth = betterAuth({
             if (reused) {
               throw new APIError("BAD_REQUEST", {
                 message:
-                  "This password was used recently. Please choose a password you have not used in the last 10.",
+                  "This password was used recently. Please choose a password you have not used before.",
               });
             }
           }

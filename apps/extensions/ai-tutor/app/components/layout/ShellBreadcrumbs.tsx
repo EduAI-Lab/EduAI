@@ -7,9 +7,11 @@ import {
   BreadcrumbSeparator,
 } from '@eduai/ui';
 import { Link } from 'react-router';
+import type { ReactNode } from 'react';
 
 type ShellBreadcrumbsProps = {
-  items: Array<{ label: string; href?: string }>;
+  /** `node` renders custom content (e.g. a course switcher) in place of the label. */
+  items: Array<{ label: string; href?: string; node?: ReactNode }>;
 };
 
 export function ShellBreadcrumbs({ items }: ShellBreadcrumbsProps) {
@@ -22,7 +24,9 @@ export function ShellBreadcrumbs({ items }: ShellBreadcrumbsProps) {
             <span key={`${item.label}-${index}`} className="contents">
               {index > 0 ? <BreadcrumbSeparator /> : null}
               <BreadcrumbItem>
-                {isLast || !item.href ? (
+                {item.node ? (
+                  item.node
+                ) : isLast || !item.href ? (
                   <BreadcrumbPage>{item.label}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>

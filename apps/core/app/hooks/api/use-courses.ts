@@ -59,7 +59,12 @@ export function useCourses() {
     }
   }, [])
 
-  useEffect(() => { fetchCourses() }, [fetchCourses])
+  useEffect(() => {
+    fetchCourses()
+    const onCoursesChanged = () => { void fetchCourses() }
+    window.addEventListener('eduai:courses-changed', onCoursesChanged)
+    return () => window.removeEventListener('eduai:courses-changed', onCoursesChanged)
+  }, [fetchCourses])
 
   const createCourse = useCallback(async (input: CreateCourseInput): Promise<Course> => {
     const formData = new FormData()
