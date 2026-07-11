@@ -44,10 +44,11 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Textarea,
 } from '@eduai/ui';
-import { PublishStatusButton } from '../components/PublishStatusButton';
+import { PublishMenu } from '../components/PublishMenu';
 import { ModuleCard } from '../components/courses/ModuleCard';
-import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import api from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
@@ -55,10 +56,12 @@ import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '../hooks/useLocalUser';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
+import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
 import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
+import { useCourseTopics } from '../hooks/useCourseTopics';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 
@@ -96,6 +99,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
   const { course, modules: initialModules } = loaderData;
   const accentColor = accentForCourse(course);
+  const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
@@ -109,6 +113,12 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [selectedModuleIds, setSelectedModuleIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [editingModule, setEditingModule] = useState<Module | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingModule, setDeletingModule] = useState<Module | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -262,6 +272,44 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
+  const openEditModule = (module: Module) => {
+    setEditingModule(module);
+    setEditTitle(module.title);
+    setEditDescription(module.description ?? '');
+  };
+
+  const onSaveEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingModule || !editTitle.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.updateModule(editingModule.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+      });
+      setEditingModule(null);
+      await refreshModules();
+    } catch (error) {
+      console.error('Failed to update module', error);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const onConfirmDelete = async () => {
+    if (!deletingModule) return;
+    setDeleting(true);
+    try {
+      await api.deleteModule(deletingModule.id);
+      setDeletingModule(null);
+      await refreshModules();
+    } catch (error) {
+      console.error('Failed to delete module', error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   useShellBreadcrumbs([
     { label: 'Courses', href: '/instructor' },
     {
@@ -283,10 +331,12 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
         code={courseCode(course)}
         term={courseTerm(course)}
         year={courseYear(course)}
-        name={course.title}
+        name={courseName(course)}
         description={course.description}
         accentColor={accentForCourse(course)}
+        topics={courseTopics.topics.map((topic) => topic.name)}
         topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
+        topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
       />
 
       <PageTabs
@@ -364,6 +414,90 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     </Button>
                   </DialogFooter>
                 </form>
+              </DialogContent>
+            </Dialog>
+          </PermissionGate>
+
+          <PermissionGate allow={perms.canManageContent}>
+            <Dialog
+              open={editingModule !== null}
+              onOpenChange={(open) => {
+                if (!savingEdit && !open) setEditingModule(null);
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Edit module</DialogTitle>
+                  <DialogDescription>Update the module title and description.</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={onSaveEdit} className="grid gap-4 py-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-module-title">Module title</Label>
+                    <Input
+                      id="edit-module-title"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="e.g. Getting started"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-module-description">Description</Label>
+                    <Textarea
+                      id="edit-module-description"
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Optional — what this module covers"
+                      rows={3}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditingModule(null)}
+                      disabled={savingEdit}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={savingEdit || !editTitle.trim()}>
+                      {savingEdit ? 'Saving…' : 'Save changes'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </PermissionGate>
+
+          <PermissionGate allow={perms.canManageContent}>
+            <Dialog
+              open={deletingModule !== null}
+              onOpenChange={(open) => {
+                if (!deleting && !open) setDeletingModule(null);
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Delete module</DialogTitle>
+                  <DialogDescription>
+                    Delete <span className="font-semibold text-foreground">{deletingModule?.title}</span>?
+                    This removes its lessons and activities and can't be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDeletingModule(null)}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={onConfirmDelete} disabled={deleting}>
+                    {deleting ? 'Deleting…' : 'Delete module'}
+                  </Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           </PermissionGate>
@@ -511,17 +645,24 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     isPublished={m.isPublished}
                     onClick={() => navigate(`/instructor/module/${m.id}`)}
                     actions={
-                      <PermissionGate allow={perms.canPublishContent}>
-                        <PublishStatusButton
+                      perms.canPublishContent || perms.canManageContent ? (
+                        <PublishMenu
                           isPublished={m.isPublished}
                           pending={busy}
                           blockedReason={tooltipMessage}
-                          onClick={() => {
-                            if (busy || blocked) return;
-                            togglePublish(m.id, m.isPublished);
-                          }}
+                          itemLabel="module"
+                          onToggle={
+                            perms.canPublishContent
+                              ? () => {
+                                  if (busy || blocked) return;
+                                  togglePublish(m.id, m.isPublished);
+                                }
+                              : undefined
+                          }
+                          onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
+                          onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
                         />
-                      </PermissionGate>
+                      ) : undefined
                     }
                   />
                 );
