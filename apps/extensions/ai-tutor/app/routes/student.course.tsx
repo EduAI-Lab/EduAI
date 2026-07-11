@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router';
 import { IconFolders } from '@tabler/icons-react';
 import { Card, CardContent, CourseHeroCard } from '@eduai/ui';
 import { ModuleCard } from '../components/courses/ModuleCard';
-import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/student.course';
+import { useCourseTopics } from '../hooks/useCourseTopics';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
@@ -31,6 +32,7 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   const { course, modules } = loaderData;
   const moduleList = useMemo(() => modules ?? [], [modules]);
   const accentColor = accentForCourse(course);
+  const { topics } = useCourseTopics(course?.id ?? null);
 
   useShellBreadcrumbs([
     { label: 'Courses', href: '/student' },
@@ -52,9 +54,10 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
         code={courseCode(course)}
         term={courseTerm(course)}
         year={courseYear(course)}
-        name={course.title}
+        name={courseName(course)}
         description={course.description}
         accentColor={accentForCourse(course)}
+        topics={topics.map((topic) => topic.name)}
         topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
       />
 
