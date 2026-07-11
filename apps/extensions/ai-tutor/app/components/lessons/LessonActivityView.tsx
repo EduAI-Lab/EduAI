@@ -21,7 +21,19 @@ import {
   IconLoader2,
   IconSparkles,
 } from '@tabler/icons-react';
-import { Badge, Button, Card, CardContent, CardFooter, CardHeader, CardTitle, Input } from '@eduai/ui';
+import {
+  AnswerOption,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Input,
+  courseThemeVars,
+  type CourseAccentColor,
+} from '@eduai/ui';
 import StudentActivityFeedbackCard from '~/components/StudentActivityFeedbackCard';
 import type { Activity } from '~/lib/types';
 import { cn } from '~/lib/utils';
@@ -42,6 +54,9 @@ type LessonActivityViewProps = {
   questionChunks: string[];
   questionNumber: number;
   questionCount: number;
+  /** Course accent — ties the question card back to its parent course, matching
+   * the lesson/module cards. Falls back to the brand primary. */
+  accentColor?: CourseAccentColor;
 
   mcq: number | null;
   onSelectMcq: (index: number) => void;
@@ -78,6 +93,7 @@ export function LessonActivityView({
   questionChunks,
   questionNumber,
   questionCount,
+  accentColor,
   mcq,
   onSelectMcq,
   text,
@@ -98,23 +114,69 @@ export function LessonActivityView({
   onFeedbackSubmit,
   onFeedbackDismiss,
 }: LessonActivityViewProps) {
+  const accent = accentColor ?? 'var(--primary)';
+  const orderLabel = String(questionNumber).padStart(2, '0');
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Question card */}
-      <Card data-tour="student-question-card">
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" size="sm">
-              Question {questionNumber} of {questionCount}
-            </Badge>
+      {/* Question card — carries the course-accent language of the lesson/module
+          cards one level down: an accent gradient rail, a ghosted order-number
+          watermark, and a ringed accent chip + uppercase kicker. */}
+      <Card
+        data-tour="student-question-card"
+        className="group relative overflow-hidden"
+        style={courseThemeVars(accent)}
+      >
+        {/* Accent gradient rail */}
+        <div
+          className="h-1 w-full shrink-0 opacity-80 transition-opacity duration-200 group-hover:opacity-100"
+          style={{
+            background:
+              'linear-gradient(90deg, var(--course-accent), color-mix(in oklch, var(--course-accent) 55%, transparent))',
+          }}
+          aria-hidden="true"
+        />
+
+        {/* Ghosted order-number watermark, pinned to the right edge. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-3 top-1/2 -translate-y-1/2 select-none text-[6rem] font-black leading-none tabular-nums"
+          style={{ color: 'color-mix(in oklch, var(--course-accent) 9%, transparent)' }}
+        >
+          {orderLabel}
+        </span>
+
+        <CardHeader className="relative pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex min-w-0 items-center gap-2.5">
+              <span
+                className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] text-sm font-bold tabular-nums"
+                style={{
+                  background: 'color-mix(in oklch, var(--course-accent) 14%, transparent)',
+                  color: 'var(--course-accent)',
+                  boxShadow:
+                    'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
+                }}
+              >
+                {questionNumber}
+              </span>
+              <span
+                className="text-[11px] font-bold uppercase tracking-[0.16em]"
+                style={{
+                  color: 'color-mix(in oklch, var(--course-accent) 78%, var(--muted-foreground))',
+                }}
+              >
+                Question {questionNumber} of {questionCount}
+              </span>
+            </span>
             {activity?.mainTopic && (
-              <Badge variant="outline" size="sm">
+              <Badge variant="outline" size="sm" className="shrink-0">
                 {activity.mainTopic.name}
               </Badge>
             )}
           </div>
         </CardHeader>
-        <CardContent className="reading-surface space-y-3">
+        <CardContent className="reading-surface relative space-y-3 pt-1">
           {questionChunks.map((line, index) => (
             <p key={index} className="text-lg leading-relaxed text-foreground">
               {line}
@@ -122,56 +184,57 @@ export function LessonActivityView({
           ))}
         </CardContent>
         {activity?.secondaryTopics && activity.secondaryTopics.length > 0 && (
-          <CardFooter className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Also covers:</span>
+          <CardFooter className="relative flex flex-wrap items-center gap-1.5 border-t border-border">
+            <span className="text-xs font-medium text-muted-foreground">Also covers</span>
             {activity.secondaryTopics.map((topic) => (
-              <span key={topic.id} className="text-xs text-muted-foreground">
+              <Badge key={topic.id} variant="outline" size="sm">
                 {topic.name}
-              </span>
+              </Badge>
             ))}
           </CardFooter>
         )}
       </Card>
 
       {/* Answer card */}
-      <Card data-tour="student-answer-card">
+      <Card data-tour="student-answer-card" style={courseThemeVars(accent)}>
         <CardHeader>
-          <CardTitle>Your answer</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{ background: 'var(--course-accent)' }}
+              aria-hidden="true"
+            />
+            Your answer
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           {activity?.type === 'MCQ' ? (
             Array.isArray(activity?.options?.choices) ? (
-              <div className="space-y-3">
-                {activity.options.choices.map((choice, i) => (
-                  <label
-                    key={i}
-                    className={cn(
-                      'flex cursor-pointer items-start gap-4 rounded-[var(--radius-lg)] border-2 p-4 transition-colors',
-                      mcq === i
-                        ? 'border-primary bg-primary/5 shadow-[var(--shadow-2xs)]'
-                        : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30',
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      name="mcq"
-                      checked={mcq === i}
-                      onChange={() => onSelectMcq(i)}
-                    />
-                    <div
-                      className={cn(
-                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] text-sm font-bold',
-                        mcq === i
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-secondary text-muted-foreground',
-                      )}
+              <div className="space-y-3" role="radiogroup" aria-label="Answer choices">
+                {activity.options.choices.map((choice, i) => {
+                  const graded = result !== null;
+                  const state = graded
+                    ? mcq === i
+                      ? wasCorrect
+                        ? 'correct'
+                        : 'incorrect'
+                      : 'default'
+                    : mcq === i
+                      ? 'selected'
+                      : 'default';
+                  return (
+                    <AnswerOption
+                      key={i}
+                      letter={String.fromCharCode(65 + i)}
+                      state={state}
+                      selected={mcq === i}
+                      disabled={submitting || wasCorrect}
+                      onSelect={() => onSelectMcq(i)}
                     >
-                      {String.fromCharCode(65 + i)}
-                    </div>
-                    <span className="pt-1 text-foreground">{choice}</span>
-                  </label>
-                ))}
+                      {choice}
+                    </AnswerOption>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-[var(--radius-lg)] bg-destructive/10 p-4 text-sm text-destructive">
@@ -227,13 +290,13 @@ export function LessonActivityView({
                 'flex items-center gap-3 rounded-[var(--radius-lg)] p-4',
                 wasCorrect
                   ? 'border border-[var(--color-success-500)] bg-[var(--color-success-100)] text-[var(--color-success-700)]'
-                  : 'border border-border bg-secondary text-foreground',
+                  : 'border border-destructive/40 bg-destructive/10 text-destructive',
               )}
             >
               {wasCorrect ? (
                 <IconCircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
               ) : (
-                <IconInfoCircle className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <IconInfoCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
               )}
               <span className="font-medium">{result}</span>
             </div>
