@@ -44,7 +44,7 @@ export function defaultExemplarsPath(): string {
   if (fromEnv) {
     return resolve(fromEnv);
   }
-  return resolve(process.cwd(), "data/routing-knn-exemplars.json");
+  return resolve(process.cwd(), "data/routing-knn-exemplars-strict.json");
 }
 
 export function loadExemplarFile(filePath: string): KnnExemplarFile {

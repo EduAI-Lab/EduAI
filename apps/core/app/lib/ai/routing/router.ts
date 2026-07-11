@@ -15,7 +15,11 @@ import {
   resolveCarbonPolicyMode,
   tieBreakForTier,
 } from "./carbon-policy";
-import { predictTierKnn, type KnnTierPrediction } from "./knn";
+import {
+  parseKnnMinSimilarity,
+  predictTierKnn,
+  type KnnTierPrediction,
+} from "./knn";
 import {
   classifyPromptForTier,
   tierFromLlmClassification,
@@ -313,7 +317,7 @@ export async function resolveRoutedModelHybrid(
   }
 
   const knn = await predictTierKnn(prompt);
-  const minSim = Number(process.env.ROUTING_KNN_MIN_SIM ?? "0.55");
+  const minSim = parseKnnMinSimilarity(process.env.ROUTING_KNN_MIN_SIM);
   const useKnn = knn.confidence >= minSim;
 
   if (useKnn) {

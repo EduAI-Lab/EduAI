@@ -3,7 +3,7 @@
  * Embed kNN exemplar prompts and persist vectors for offline leave-one-out eval.
  *
  * Env:
- *   ROUTING_KNN_EXEMPLARS_PATH  input/output JSON (default data/routing-knn-exemplars.json)
+ *   ROUTING_KNN_EXEMPLARS_PATH  input/output JSON (default data/routing-knn-exemplars-strict.json)
  *   RESEARCH_KNN_EMBED_OUT      optional separate output path
  */
 import { readFileSync, writeFileSync } from "node:fs";

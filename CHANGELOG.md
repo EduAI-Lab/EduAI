@@ -36,7 +36,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Scope `CMPS01_INTERNAL_KEY` to trusted cmps01 edge URLs only; require pre-embedded kNN exemplars; image turns keep cloud multimodal fallback on vLLM stack; low-confidence kNN defaults to tier 1 (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
+- [core] fix: Scope `CMPS01_INTERNAL_KEY` to trusted cmps01 edge URLs only; embed missing kNN exemplar vectors on demand (with optional offline persistence); image turns keep cloud multimodal fallback on vLLM stack; low-confidence kNN defaults to tier 1 (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [infra] fix: Gitignore rendered `nginx.conf` / `internal-allow.conf` and reject placeholder internal key in `deploy-edge-proxy.sh` (#831, @superbolt08, 2026-07-02) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [core] fix: Add missing `scripts/research/paths.mjs` so offline kNN/LLM router eval scripts resolve default label paths (#831, @superbolt08, 2026-06-30) — [#759](https://github.com/EduAI-Lab/EduAI/pull/759)
 - [infra] fix: Remove `legacy-peer-deps=true` from the root, AI Tutor, and AI Tutor server `.npmrc` files — installing against the existing `package-lock.json` resolves cleanly under npm's default strict peer-dependency mode (the `@better-auth/cli`/`@better-auth/telemetry` conflict only surfaces on a from-scratch resolution, e.g. a dry run with no lockfile). All 11 Docker test suites pass unchanged. (#804, @evanbones, 2026-07-01) — closes #172

@@ -227,7 +227,9 @@ Each section should use this format:
 | `course-rag-policy.test.ts` | Unit tests for smart course RAG inject gate (#484): prefetch when course selected; inject on `needsCourseRag`, similarity thresholds, or `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1`. |
 | `chat-always-on-rag.route.test.ts` | Route tests for smart course RAG on `POST /api/chat` (#484): prefetch on course-scoped turns; inject grounding block for course-intent or strong-similarity hits; skip inject for greetings/generic queries with weak hits; tool path uses same gate and caps `maxTokens` against model DB limit. |
 | `resolve-tool-max-tokens.test.ts` | Unit tests for tool-path `maxTokens` resolution — env cap default 8192, `CHAT_TOOL_MAX_OUTPUT_TOKENS` override, and clamping against `AIModel.maxTokens`. |
-| `routing-knn.test.ts` | kNN routing helpers — cosine similarity for exemplar vectors and `voteTierFromNeighbors` majority vote with empty-neighbor tier-2 fallback. |
+| `routing-knn.test.ts` | kNN routing helpers — cosine similarity, weighted exemplar voting with empty-neighbor tier-2 fallback, and on-demand embedding for exemplars without persisted vectors. |
+| `routing-router.test.ts` | Hybrid routing orchestration — invalid kNN similarity configuration uses the parsed default and out-of-range values are clamped before choosing kNN versus rules. |
+| `embedding-native-auth.test.ts` | Native Ollama embedding fetch — sends the cmps01 internal key to the protected `:8001/ollama/api/embed` edge path. |
 | `routing-llm-classifier.test.ts` | LLM classifier routing — maps parsed complexity/task/confidence to tiers (incl. local vLLM medium-chat vs medium-coding), and extracts JSON from bare or prose-wrapped classifier output. |
 | `routing-local-vllm.test.ts` | Local vLLM registry remap — remaps cloud tier-2 to tier-3 on vLLM stack, preserves `requireImages` picks for cloud multimodal fallback. |
 | `cmps01-internal-auth.test.ts` | cmps01 edge auth — internal key sent only for trusted `OLLAMA_BASE_URL` edge hosts, not arbitrary user URLs. |

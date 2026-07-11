@@ -6,7 +6,7 @@
  *
  * Env:
  *   RESEARCH_LABEL_IN
- *   ROUTING_KNN_EXEMPLARS_PATH  → apps/core/data/routing-knn-exemplars.json
+ *   ROUTING_KNN_EXEMPLARS_PATH  → apps/core/data/routing-knn-exemplars-strict.json
  *   ROUTING_KNN_K               default 5
  *   ROUTING_KNN_MIN_SIM         default 0.55
  *   RESEARCH_KNN_EVAL_SPLIT     dev (default) | test | all
@@ -81,7 +81,7 @@ async function main() {
   const labelsPath = readEnv("RESEARCH_LABEL_IN") ?? DEFAULT_LABELS_OUT;
   const exemplarPath =
     readEnv("ROUTING_KNN_EXEMPLARS_PATH") ??
-    resolve(process.cwd(), "data/routing-knn-exemplars.json");
+    resolve(process.cwd(), "data/routing-knn-exemplars-strict.json");
   const splitFilter = (readEnv("RESEARCH_KNN_EVAL_SPLIT") ?? "dev").toLowerCase();
   const leaveOneOut = readEnv("RESEARCH_KNN_LEAVE_ONE_OUT") === "1";
   const k = parseKnnK(process.env.ROUTING_KNN_K);
