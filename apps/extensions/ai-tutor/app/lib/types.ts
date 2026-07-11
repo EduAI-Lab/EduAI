@@ -20,10 +20,20 @@ export type SubmissionResponse = {
 export type SubmissionRow = {
   id: number;
   userId: string;
+  /** Core-owned display name for `userId`; null when Core lookup is unavailable. */
+  studentName?: string | null;
   activityId: number;
+  /** Activity title, e.g. "Balancing equations"; null falls back to the id. */
+  activityTitle?: string | null;
+  /** Parent lesson title for context, e.g. "Week 3 · Stoichiometry". */
+  lessonTitle?: string | null;
+  /** The activity's question prompt, so graders see what was asked. */
+  questionText?: string | null;
   attemptNumber: number;
   /** Actual submitted answer (text or selected MCQ option index). */
   response?: SubmissionResponse | null;
+  /** Resolved MCQ option label (the choice text), when the pick maps to a choice. */
+  answerLabel?: string | null;
   /** AI grader note, e.g. `{ message: string }`. */
   aiFeedback?: { message?: string | null } | null;
   score?: number | null;
