@@ -1054,7 +1054,7 @@ interface ComposerShellProps {
 function ComposerShell({ title, courseCode, children, onCancel, onSave, saving, saveLabel = 'Save' }: ComposerShellProps) {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 pb-16 lg:px-6">
-      <div className="sticky top-0 z-30 -mx-4 mb-6 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
+      <div className="sticky top-[var(--header-height)] z-10 -mx-4 mb-6 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
         <div className="flex items-center gap-2 min-w-0">
           <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Cancel">
             <IconArrowLeft className="size-5" />
