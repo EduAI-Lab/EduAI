@@ -22,7 +22,7 @@ import {
   resolveFleetHost,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import { parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
+import { featureToJobType, parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
 import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
@@ -410,10 +410,14 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
+    const workloadFeature = parseWorkloadFeature(body.routingContext);
+    const jobType = featureToJobType(workloadFeature);
 
     chatApiTrace("request received", {
       chatMode,
       chatbotType: expectedChatbotType,
+      feature: workloadFeature,
+      jobType,
       chatId: chatId ?? null,
       model: model ?? null,
       courseCode: courseCode ?? null,
@@ -425,7 +429,6 @@ export async function action({ request }: ActionFunctionArgs) {
     });
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
-    const workloadFeature = parseWorkloadFeature(body.routingContext);
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -790,7 +793,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
       try {
         fleetPick = await resolveFleetHost({
-          feature: workloadFeature,
+          jobType,
           resolvedModelId: model,
         });
       } catch (err) {

@@ -1,11 +1,12 @@
-/** Multi-server vLLM fleet routing — workload features and pick results. */
+/** Multi-server vLLM fleet routing — job types, telemetry features, and pick results. */
 
+export type JobType = "interactive" | "background";
 export type WorkloadFeature = "chat" | "tutor" | "question-maker";
 
 export type FleetServer = {
   id: string;
   baseUrl: string;
-  features: WorkloadFeature[];
+  jobTypes: JobType[];
   models: string[];
 };
 
@@ -23,6 +24,10 @@ export type FleetHealthResult = {
 };
 
 const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor", "question-maker"];
+
+export function featureToJobType(feature: WorkloadFeature): JobType {
+  return feature === "question-maker" ? "background" : "interactive";
+}
 
 export function parseWorkloadFeature(routingContext: unknown): WorkloadFeature {
   if (!routingContext || typeof routingContext !== "object") {
