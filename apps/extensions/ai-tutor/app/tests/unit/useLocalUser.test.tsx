@@ -3,13 +3,27 @@ import { render, screen } from '@testing-library/react';
 import { AuthProvider, useLocalUser } from '~/hooks/useLocalUser';
 import type { AuthUser } from '~/hooks/useLocalUser';
 
-// Mock the api module
-vi.mock('~/lib/api', () => ({
-  default: {
-    me: vi.fn().mockResolvedValue({ user: null }),
-    logout: vi.fn().mockResolvedValue({ ok: true }),
-  },
-}));
+// Mock the api module. `ApiNetworkError` is re-exported from the real module
+// (not stubbed) so `err instanceof ApiNetworkError` checks in useLocalUser
+// still work against errors thrown by the mocked `me()`.
+vi.mock('~/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('~/lib/api')>('~/lib/api');
+  return {
+    ApiNetworkError: actual.ApiNetworkError,
+    default: {
+      me: vi.fn().mockResolvedValue({ user: null }),
+      logout: vi.fn().mockResolvedValue({ ok: true }),
+    },
+  };
+});
+
+import api, { ApiNetworkError } from '~/lib/api';
+
+// Reset call history (not the mockResolvedValue default) between tests so
+// call-count assertions aren't polluted by earlier tests' `api.me()` calls.
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 const testUser: AuthUser = { id: 'test-1', name: 'Test User', role: 'STUDENT' };
 
@@ -83,6 +97,52 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(result.current.isInitializing).toBe(false);
     });
+  });
+
+  it('retries on ApiNetworkError instead of treating the caller as logged out', async () => {
+    const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
+    meMock
+      .mockRejectedValueOnce(new ApiNetworkError())
+      .mockRejectedValueOnce(new ApiNetworkError())
+      .mockResolvedValueOnce({
+        user: { id: 'retry-1', name: 'Retry User', role: 'STUDENT' },
+      });
+
+    const { result } = renderHook(() => useLocalUser(), {
+      wrapper: makeWrapper(null),
+    });
+
+    await waitFor(
+      () => {
+        expect(result.current.isInitializing).toBe(false);
+      },
+      { timeout: 5000 },
+    );
+
+    expect(meMock).toHaveBeenCalledTimes(3);
+    expect(result.current.user).toEqual({
+      id: 'retry-1',
+      name: 'Retry User',
+      email: undefined,
+      role: 'STUDENT',
+      authorizedUnits: undefined,
+    });
+  });
+
+  it('gives up and treats the caller as logged out on a non-network error', async () => {
+    const meMock = api.me as unknown as ReturnType<typeof vi.fn>;
+    meMock.mockRejectedValueOnce(new Error('Authentication required'));
+
+    const { result } = renderHook(() => useLocalUser(), {
+      wrapper: makeWrapper(null),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isInitializing).toBe(false);
+    });
+
+    expect(meMock).toHaveBeenCalledTimes(1);
+    expect(result.current.user).toBeNull();
   });
 
   it('saveAuth updates the user', () => {
