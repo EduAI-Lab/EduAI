@@ -95,6 +95,26 @@ describe('chat', () => {
     expect(opts.timeout).toBe(60000);
   });
 
+  it('posts user messages and elevates system role into top-level systemPrompt', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
+
+    await eduaiService.chat({
+      messages: [
+        { role: 'system', content: 'Return JSON only' },
+        { role: 'user', content: 'hi' },
+      ],
+      courseCode: 'CS 101',
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+
+    const [, payload, opts] = axios.post.mock.calls[0];
+    expect(payload.systemPrompt).toBe('Return JSON only');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(payload.streaming).toBe(false);
+    expect(opts.headers.cookie).toBe('__Secure-better-auth.session_token=abc');
+    expect(opts.headers.Authorization).toBeUndefined();
+  });
+
   it('falls back to Bearer service key when no cookie is present', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
 
@@ -333,15 +353,15 @@ describe('generateQuestions', () => {
     expect(out[0].secondary_topic_ids).toEqual([6, 7]);
   });
 
-  it('honors system/user prompt overrides without throwing', async () => {
+  it('honors system/user prompt overrides via Core systemPrompt field', async () => {
     axios.post.mockResolvedValue({
       status: 200,
       data: { content: [{ content: 'Q?', type: 'SA', difficulty: 'easy', reasoning_level: 'factual', answer: 'a' }] },
     });
     await eduaiService.generateQuestions({ ...baseParams, systemPromptOverride: 'sys', userPromptOverride: 'usr' });
     const payload = axios.post.mock.calls[0][1];
-    expect(payload.messages[0].content).toBe('sys');
-    expect(payload.messages[1].content).toBe('usr');
+    expect(payload.systemPrompt).toBe('sys');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'usr' }]);
   });
 });
 
