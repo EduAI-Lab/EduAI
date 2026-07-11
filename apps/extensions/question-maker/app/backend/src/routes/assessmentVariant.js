@@ -198,7 +198,8 @@ router.post('/generate-bank-variants', authenticateToken, requireRole(QM_AUTHORI
       model: typeof model === 'string' ? model : undefined,
       apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
       variantsToAdd: variantsToAdd != null ? Number(variantsToAdd) : 1,
-      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null
+      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.status(201).json({ success: true, data: result });

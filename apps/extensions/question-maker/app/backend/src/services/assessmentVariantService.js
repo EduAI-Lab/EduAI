@@ -647,7 +647,8 @@ export async function generateBankVariantsForQuestions(userId, params) {
     model = 'ollama:gpt-oss:120b',
     apiKeys = {},
     variantsToAdd = 1,
-    variantPromptInstructions = null
+    variantPromptInstructions = null,
+    cookie = '',
   } = params;
 
   let extraInstructions = '';
@@ -757,6 +758,7 @@ Return exactly one question in the required JSON format.`;
             numQuestions: 1,
             difficultyDistribution,
             reasoningDistribution,
+            cookie,
             ...(expectedMcqChoiceCount != null ? { mcqRequiredChoiceCount: expectedMcqChoiceCount } : {})
           });
 

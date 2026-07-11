@@ -46,6 +46,10 @@ if [ -z "$SERVICE_KEY" ] || [ "$SERVICE_KEY" = "your-eduai-api-key-here" ]; then
   exit 1
 fi
 
+# Optional: server-side Google key for QM AI when the browser has no BYO key.
+# Interactive chat still authenticates via Core session cookie.
+GOOGLE_KEY=$(read_env "$CORE" GOOGLE_GENERATIVE_AI_API_KEY)
+
 # Core — public URLs for app switcher + shared cookie
 set_or_replace "$CORE" BETTER_AUTH_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$CORE" COOKIE_DOMAIN ".eduai.ok.ubc.ca"
@@ -77,6 +81,9 @@ set_or_replace "$QM" EXTENSION_URL "https://dev.questionmaker.eduai.ok.ubc.ca"
 set_or_replace "$QM" CORS_ORIGINS "https://dev.questionmaker.eduai.ok.ubc.ca"
 set_or_replace "$QM" EDUAI_API_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$QM" EDUAI_API_KEY "$SERVICE_KEY"
+if [ -n "$GOOGLE_KEY" ]; then
+  set_or_replace "$QM" GOOGLE_GENERATIVE_AI_API_KEY "$GOOGLE_KEY"
+fi
 set_or_replace "$QM" VITE_API_URL "https://dev.questionmaker.eduai.ok.ubc.ca"
 set_or_replace "$QM" VITE_CORE_URL "https://dev.eduai.ok.ubc.ca"
 set_or_replace "$QM" VITE_EDUAI_URL "https://dev.eduai.ok.ubc.ca"
