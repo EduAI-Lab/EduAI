@@ -28,6 +28,8 @@ export {
 export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
+export { QuickActionsPanel } from "./quick-actions-panel"
+export type { QuickActionsPanelProps, QuickAction } from "./quick-actions-panel"
 export { Avatar } from "./avatar"
 export type { AvatarProps } from "./avatar"
 export { PageHeading } from "./page-heading"
