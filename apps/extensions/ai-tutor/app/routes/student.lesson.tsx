@@ -28,29 +28,25 @@
  *          components/StudentActivityFeedbackCard, components/bug-report/useBugReport
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconListCheck, IconSparkles } from '@tabler/icons-react';
+import { IconSparkles } from '@tabler/icons-react';
 import {
-  Badge,
   Button,
-  Card,
-  CardContent,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  PageHeading,
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
   useIsMobile,
 } from '@eduai/ui';
-import { ProgressBar } from '../components/ProgressBar';
+import { ModuleHero } from '../components/lessons/ModuleHero';
 import { LessonActivityView } from '../components/lessons/LessonActivityView';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
 import api from '../lib/api';
-import type { Activity, Course, Lesson, ModuleDetail } from '../lib/types';
+import type { Activity, Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/student.lesson';
 import { requireClientUser } from '~/lib/client-auth';
 import { useLocalUser } from '~/hooks/useLocalUser';
@@ -58,6 +54,7 @@ import { useBugReport } from '~/components/bug-report/useBugReport';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 import { splitTitle } from '~/lib/course-title';
+import { accentForCourse } from '~/lib/course-display';
 import { KNOWLEDGE_LEVELS } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
 
@@ -113,14 +110,27 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
+  // Structural "module.lesson" order (e.g. "1.3") from sibling positions, so
+  // lessons whose titles carry no number still follow the decimal system.
+  let orderText: string | undefined;
   if (lesson.moduleId) {
     module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
     if (module?.courseOfferingId) {
-      course = (await api.courseById(module.courseOfferingId)) as Course;
+      const [courseData, siblingModules, siblingLessons] = await Promise.all([
+        api.courseById(module.courseOfferingId) as Promise<Course>,
+        api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+        api.lessonsForModule(lesson.moduleId) as Promise<Lesson[]>,
+      ]);
+      course = courseData;
+      const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
+      const lessonIndex = siblingLessons.findIndex((l) => l.id === lesson.id) + 1;
+      if (moduleOrder > 0 && lessonIndex > 0) {
+        orderText = `${moduleOrder}.${lessonIndex}`;
+      }
     }
   }
 
-  return { course, module, lesson, activities };
+  return { course, module, lesson, activities, orderText };
 }
 
 /**
@@ -133,7 +143,8 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
   const { user } = useLocalUser();
   const { setContext: setBugReportContext, clearContext: clearBugReportContext } = useBugReport();
   const isMobile = useIsMobile();
-  const { course, module, lesson, activities } = loaderData;
+  const { course, module, lesson, activities, orderText } = loaderData;
+  const accentColor = course ? accentForCourse(course) : undefined;
   const [orderedActivities, setOrderedActivities] = useState<Activity[]>(activities ?? []);
   const [idx, setIdx] = useState(0);
   const [mcq, setMcq] = useState<number | null>(null);
@@ -459,6 +470,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       questionChunks={questionChunks}
       questionNumber={idx + 1}
       questionCount={orderedActivities.length}
+      accentColor={accentColor}
       mcq={mcq}
       onSelectMcq={setMcq}
       text={text}
@@ -500,31 +512,37 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height)-2.5rem)] min-h-[640px] flex-col gap-4 px-4 pt-6 pb-6 lg:px-6">
-      <div className="flex shrink-0 flex-col gap-4">
-        <PageHeading heading={lesson?.title || 'Lesson'} subheading={module?.title || undefined} />
-
-        {orderedActivities.length > 0 && (
-          <Card data-tour="student-lesson-progress">
-            <CardContent className="flex items-center gap-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <IconListCheck size={18} aria-hidden="true" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <ProgressBar
-                  completed={
-                    orderedActivities.filter((a) => a.completionStatus === 'correct').length
-                  }
-                  total={orderedActivities.length}
-                  size="sm"
-                  showLabel
-                />
-              </div>
-              <Badge variant="secondary" size="sm" className="shrink-0">
-                Question {idx + 1} of {orderedActivities.length}
-              </Badge>
-            </CardContent>
-          </Card>
-        )}
+      <div className="flex shrink-0 flex-col gap-4" data-tour="student-lesson-progress">
+        <ModuleHero
+          orderText={orderText}
+          eyebrow="Lesson"
+          title={lesson?.title || 'Lesson'}
+          description={lesson?.contentMd?.trim() || module?.title || undefined}
+          accentColor={accentColor}
+          stats={
+            orderedActivities.length > 0
+              ? [
+                  {
+                    label: `of ${orderedActivities.length} question${
+                      orderedActivities.length === 1 ? '' : 's'
+                    }`,
+                    value: idx + 1,
+                    accent: true,
+                  },
+                ]
+              : undefined
+          }
+          progress={
+            orderedActivities.length > 0
+              ? {
+                  completed: orderedActivities.filter(
+                    (a) => a.completionStatus === 'correct',
+                  ).length,
+                  total: orderedActivities.length,
+                }
+              : null
+          }
+        />
       </div>
 
       {/* The AI study buddy gets equal billing with the question, not a
@@ -560,7 +578,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
       >
         <DialogContent>
           <DialogHeader>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-accent">
               <IconSparkles size={24} aria-hidden="true" />
             </div>
             <DialogTitle>Before we start</DialogTitle>
@@ -581,7 +599,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
                   className={cn(
                     'rounded-[var(--radius-lg)] border-2 p-4 text-left transition-colors',
                     tempKnowledgeLevel === level.value
-                      ? 'border-primary bg-primary/5'
+                      ? 'border-secondary bg-secondary/10 ring-1 ring-inset ring-secondary'
                       : 'border-border hover:border-muted-foreground/30',
                   )}
                 >
