@@ -82,10 +82,13 @@ function readRaplUj() {
     let total = 0;
     let found = false;
     for (const name of readdirSync(base)) {
-      // Count package counters only. Sub-zones and intel-rapl-mmio mirror
-      // package energy and would otherwise double-count the same CPU.
+      // Only sum zones whose sysfs `name` is package-N.
+      // On cmps01: intel-rapl:0/2 are packages; :0:0/:2:0 are dram;
+      // intel-rapl:1 is psys (platform). MMIO mirrors (if present) are skipped.
       if (!/^intel-rapl:\d+$/.test(name)) continue;
       try {
+        const domain = readFileSync(`${base}/${name}/name`, "utf8").trim();
+        if (!domain.startsWith("package-")) continue;
         const uj = readFileSync(`${base}/${name}/energy_uj`, "utf8").trim();
         total += Number(uj);
         found = true;

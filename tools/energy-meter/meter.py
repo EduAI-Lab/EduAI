@@ -13,16 +13,25 @@ NVML_SAMPLE_INTERVAL_S = 0.1
 
 
 def _read_rapl_microjoules() -> Optional[float]:
-    """Sum top-level Intel RAPL package counters. Returns None if unavailable."""
+    """Sum Intel RAPL package-* counters only. Returns None if unavailable.
+
+    Confirmed on cmps01: package-0/package-1 are CPU packages; dram and psys
+    are separate domains and must not be summed. MMIO mirrors (if present)
+    are skipped via the package- name check.
+    """
     total = 0.0
     found = False
-    for path in glob.glob("/sys/class/powercap/intel-rapl*/energy_uj"):
-        zone = os.path.basename(os.path.dirname(path))
-        # Sub-zones and intel-rapl-mmio mirror package energy, so including
-        # them would count the same physical package more than once.
+    for path in glob.glob("/sys/class/powercap/intel-rapl:*/energy_uj"):
+        zone_dir = os.path.dirname(path)
+        zone = os.path.basename(zone_dir)
+        # Skip sub-zones (intel-rapl:0:0) and mmio mirrors.
         if "-mmio" in zone or zone.count(":") != 1:
             continue
         try:
+            with open(os.path.join(zone_dir, "name"), encoding="utf-8") as nf:
+                domain = nf.read().strip()
+            if not domain.startswith("package-"):
+                continue
             with open(path, encoding="utf-8") as f:
                 total += float(f.read().strip())
                 found = True
