@@ -23,9 +23,10 @@ import {
   CourseCard,
   CourseListView,
   PageHeading,
-  SegmentedControl,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
 } from '@eduai/ui';
-import { accentForCourse, courseCode, courseTerm, courseYear } from '../lib/course-display';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import api from '../lib/api';
 import { getEduAiAppUrl } from '../lib/extension-urls';
 import type { Course } from '../lib/types';
@@ -42,14 +43,6 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   const courses = (await api.listCourses()) as Course[];
   return { courses };
 }
-
-type StatusFilter = 'all' | 'published' | 'draft';
-
-const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'published', label: 'Published' },
-  { value: 'draft', label: 'Draft' },
-];
 
 /** Shared centered empty/no-results card used by the course list. */
 function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string; body: ReactNode }) {
@@ -70,7 +63,6 @@ function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string
 
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   const [courses] = useState<Course[]>(loaderData.courses ?? []);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
 
@@ -87,20 +79,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           startDate: course.startDate ?? null,
         })}
         getSearchText={(course) => `${course.title} ${courseCode(course)}`}
-        matchesFilter={(course) => {
-          if (statusFilter === 'published') return course.isPublished;
-          if (statusFilter === 'draft') return !course.isPublished;
-          return true;
-        }}
-        filters={
-          <SegmentedControl
-            value={statusFilter}
-            onValueChange={setStatusFilter}
-            options={STATUS_OPTIONS}
-            ariaLabel="Filter by status"
-            size="sm"
-          />
-        }
+        filterGroups={[
+          buildStatusFilterGroup<Course>((c) => c.isPublished),
+          buildTermFilterGroup<Course>((c) => ({
+            term: courseTerm(c),
+            year: courseYear(c),
+            startDate: c.startDate ?? null,
+          })),
+        ]}
         emptyState={
           <EmptyCourseCard
             icon={<IconSchool size={22} aria-hidden="true" />}
@@ -123,14 +109,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           <EmptyCourseCard
             icon={<IconSearch size={22} aria-hidden="true" />}
             title="No courses match"
-            body="Try a different search term or status filter."
+            body="Try a different search term."
           />
         }
         renderCard={(c) => (
           <CourseCard
             id={String(c.id)}
             code={courseCode(c)}
-            name={c.title}
+            name={courseName(c)}
             description={c.description}
             term={courseTerm(c)}
             year={courseYear(c)}
