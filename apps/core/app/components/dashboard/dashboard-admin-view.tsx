@@ -10,6 +10,7 @@ import { useUsers } from "~/hooks/api/use-users";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
 
 const QUICK_ACTIONS: DashboardQuickAction[] = [
@@ -68,6 +69,7 @@ export function DashboardAdminView() {
       leftPanelTitle="Quick actions"
       recentChats={chats}
       recentChatsLoading={chatsLoading}
+      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
     />
   );
 }

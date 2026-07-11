@@ -18,13 +18,23 @@ vi.mock("~/lib/auth/guards.server", () => ({
   validateRedirectUrl: vi.fn(() => "/dashboard"),
 }));
 
-import { loader as registerLoader } from "~/routes/auth/register";
+import { loader as registerLoader, action as registerAction } from "~/routes/auth/register";
 import { loader as loginLoader } from "~/routes/auth/login";
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
 
 function args(url = "http://localhost/auth/register") {
   return { request: new Request(url), params: {}, context: {} as never } as any;
+}
+
+function registerFormArgs(fields: Record<string, string>) {
+  const body = new FormData();
+  for (const [k, v] of Object.entries(fields)) body.set(k, v);
+  return {
+    request: new Request("http://localhost/auth/register", { method: "POST", body }),
+    params: {},
+    context: {} as never,
+  } as any;
 }
 
 beforeEach(() => {
@@ -59,5 +69,36 @@ describe("auth.allowPublicRegistration — route loaders (§6b)", () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     const res = await loginLoader(args("http://localhost/auth/login"));
     expect(res).toMatchObject({ allowRegistration: true });
+  });
+});
+
+describe("register action — UBC email gate (§567)", () => {
+  const validFields = {
+    name: "Ada Lovelace",
+    email: "ada@ubc.ca",
+    password: "Supersecret1!",
+    confirmPassword: "Supersecret1!",
+  };
+
+  it("returns a field error for a non-UBC email without invoking the auth handler", async () => {
+    const res = (await registerAction(
+      registerFormArgs({ ...validFields, email: "ada@gmail.com" }),
+    )) as { fieldErrors?: Record<string, string> };
+    expect(res.fieldErrors?.email).toMatch(/UBC/i);
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
+
+  it("passes a UBC email through to the auth handler (no email field error)", async () => {
+    vi.mocked(auth.handler).mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "u1" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const res = (await registerAction(registerFormArgs(validFields))) as {
+      fieldErrors?: Record<string, string>;
+    };
+    expect(res.fieldErrors?.email).toBeUndefined();
+    expect(auth.handler).toHaveBeenCalledTimes(1);
   });
 });
