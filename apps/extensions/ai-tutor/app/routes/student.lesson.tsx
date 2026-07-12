@@ -8,7 +8,7 @@
  * Owns: activity progression (idx), MCQ/SHORT_TEXT submission, per-activity
  *       result state, knowledge-level pre-chat modal, optional
  *       post-submission feedback prompt, and orchestration of StudentAiChat
- *       through a forward-ref handle (sendGuidePrompt / pushGuideMessage).
+ *       through a forward-ref handle (sendGuidePrompt).
  * Layout: a resizable split (desktop) gives the AI study buddy equal billing
  *         with the question — it is a flagship feature, not a sidebar. Below
  *         the `useIsMobile` breakpoint the split collapses to a single
@@ -228,9 +228,6 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
       if (res.isCorrect) {
         setWasCorrect(true);
-        chatRef.current?.pushGuideMessage(
-          res.message || 'Great job! Proceed when you are ready for the next question.',
-        );
       } else {
         setWasCorrect(false);
       }
