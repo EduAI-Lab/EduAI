@@ -42,6 +42,7 @@ import {
   ResizablePanelGroup,
   useIsMobile,
 } from '@eduai/ui';
+import { contentExcerpt } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { LessonActivityView } from '../components/lessons/LessonActivityView';
 import StudentAiChat, { type StudentAiChatHandle } from '../components/StudentAiChat';
@@ -517,7 +518,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           orderText={orderText}
           eyebrow="Lesson"
           title={lesson?.title || 'Lesson'}
-          description={lesson?.contentMd?.trim() || module?.title || undefined}
+          description={
+            (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
+            module?.title ||
+            undefined
+          }
           accentColor={accentColor}
           stats={
             orderedActivities.length > 0
