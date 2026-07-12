@@ -30,15 +30,15 @@ import { cn } from '~/lib/utils';
 import { titleName } from '~/lib/course-title';
 
 /**
- * Flatten Markdown source to a compact one-paragraph preview: strip heading
- * hashes, list bullets, emphasis/code markers, and collapse whitespace so the
- * card excerpt reads as plain prose rather than raw Markdown.
+ * Flatten Markdown source to a compact one-paragraph preview: drop heading
+ * lines, strip list bullets, emphasis/code markers, and collapse whitespace so
+ * the card excerpt reads as plain prose rather than raw Markdown.
  */
-function contentExcerpt(md: string): string {
+export function contentExcerpt(md: string): string {
   return md
     .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks
     .replace(/`([^`]+)`/g, '$1') // inline code
-    .replace(/^#{1,6}\s+/gm, '') // heading hashes
+    .replace(/^#{1,6}\s+.*$/gm, '') // drop heading lines entirely
     .replace(/^\s*[-*+]\s+/gm, '') // list bullets
     .replace(/^\s*>\s?/gm, '') // blockquotes
     .replace(/[*_~]/g, '') // emphasis markers

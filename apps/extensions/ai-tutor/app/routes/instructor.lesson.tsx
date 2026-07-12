@@ -54,6 +54,7 @@ import {
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
+import { contentExcerpt } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { accentForCourse } from '~/lib/course-display';
 import api from '../lib/api';
@@ -643,7 +644,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           eyebrow="Lesson"
           orderText={orderText}
           title={lesson?.title || 'Lesson'}
-          description={lesson?.contentMd?.trim() || module?.title || 'Activity editor'}
+          description={
+            (lesson?.contentMd?.trim() && contentExcerpt(lesson.contentMd)) ||
+            module?.title ||
+            'Activity editor'
+          }
           accentColor={accentColor}
           stats={
             oActivities.length > 0
