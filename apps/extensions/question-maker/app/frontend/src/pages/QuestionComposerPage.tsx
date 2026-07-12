@@ -28,6 +28,9 @@ import {
   IconDeviceFloppy,
   IconLock,
   IconCornerDownLeft,
+  IconCategory,
+  IconPencil,
+  IconTags,
 } from '@tabler/icons-react';
 
 import { ToastAction, useToast } from '@/components/ui/use-toast';
@@ -53,7 +56,6 @@ import type { Topic } from '@/types/topic';
 import { QuestionAIControls } from '@/components/questions/QuestionAIControls';
 import { QuestionOutputPanel } from '@/components/questions/QuestionOutputPanel';
 import { QuestionTypeSelector } from '@/components/composer/QuestionTypeSelector';
-import { ComposerPreview } from '@/components/composer/ComposerPreview';
 import {
   ComposerMetadataFields,
   type ComposerMetadataValue,
@@ -829,7 +831,9 @@ export function QuestionComposerPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-base">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-xs font-semibold text-secondary">1</span>
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-secondary">
+                  <IconCategory className="size-3.5" aria-hidden />
+                </span>
                 Question type
               </CardTitle>
             </CardHeader>
@@ -852,7 +856,9 @@ export function QuestionComposerPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-base">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/15 text-xs font-semibold text-accent">2</span>
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                  <IconPencil className="size-3.5" aria-hidden />
+                </span>
                 Content
               </CardTitle>
             </CardHeader>
@@ -889,10 +895,21 @@ export function QuestionComposerPage() {
             </CardContent>
           </Card>
 
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+
+        {/* RIGHT: metadata + AI assist + variant list */}
+        <div className="flex flex-col gap-6 lg:sticky lg:top-20 lg:self-start">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-base">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-gold-500)]/15 text-xs font-semibold text-[var(--color-gold-600)]">3</span>
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-gold-500)]/15 text-[var(--color-gold-600)]">
+                  <IconTags className="size-3.5" aria-hidden />
+                </span>
                 Metadata
               </CardTitle>
             </CardHeader>
@@ -913,31 +930,6 @@ export function QuestionComposerPage() {
               />
             </CardContent>
           </Card>
-
-          {error && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-
-        {/* RIGHT: sticky preview + AI assist + variant list */}
-        <div className="flex flex-col gap-6 lg:sticky lg:top-20 lg:self-start">
-          <div className="flex flex-col gap-2">
-            <Label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Live preview</Label>
-            <ComposerPreview
-              questionType={form.questionType}
-              difficulty={form.difficulty}
-              questionText={form.questionText}
-              choices={form.choices}
-              answer={form.answer}
-              primaryTopicId={form.primaryTopicId}
-              secondaryTopicIds={form.secondaryTopicIds}
-              topics={topics}
-              ai={isAiGenerated}
-              isDraft={!markAsReviewed}
-            />
-          </div>
 
           <QuestionAIControls
             value={{ generationPrompt: form.generationPrompt, generationModel: form.generationModel }}
@@ -1064,22 +1056,22 @@ function ComposerShell({ title, courseCode, children, onCancel, onSave, saving, 
             {courseCode && <span className="ml-2 text-sm font-normal text-muted-foreground">{courseCode}</span>}
           </h1>
         </div>
-        {onSave && (
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={onCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={onSave} disabled={saving} className="gap-1.5">
-              <IconDeviceFloppy className="size-4" />
-              {saving ? 'Saving…' : saveLabel}
-              <kbd className="ml-1 hidden items-center gap-0.5 rounded border border-primary-foreground/30 px-1 text-[10px] sm:inline-flex">
-                <IconCornerDownLeft className="size-3" />
-              </kbd>
-            </Button>
-          </div>
-        )}
       </div>
       {children}
+      {onSave && (
+        <div className="sticky bottom-0 z-10 -mx-4 mt-6 flex items-center justify-end gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur lg:-mx-6 lg:px-6">
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={onSave} disabled={saving} className="gap-1.5">
+            <IconDeviceFloppy className="size-4" />
+            {saving ? 'Saving…' : saveLabel}
+            <kbd className="ml-1 hidden items-center gap-0.5 rounded border border-primary-foreground/30 px-1 text-[10px] sm:inline-flex">
+              <IconCornerDownLeft className="size-3" />
+            </kbd>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
