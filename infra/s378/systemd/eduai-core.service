@@ -1,0 +1,24 @@
+[Unit]
+Description=EduAI Core (dev.eduai.ok.ubc.ca → :3000)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
+After=network-online.target
+Wants=network-online.target
+PartOf=eduai-dev.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+EnvironmentFile=-%h/.config/systemd/user/eduai-dev.env
+Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=VOLTA_HOME=%h/.volta
+ExecStart=%h/.volta/bin/npm run dev -w edu-ai
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+KillMode=control-group
+# Vite/React Router can take a while on first boot
+ExecStartPost=/bin/bash -c 'for i in $(seq 1 90); do curl -sf -o /dev/null --connect-timeout 2 http://127.0.0.1:3000/ && exit 0; sleep 2; done; exit 0'
+
+[Install]
+WantedBy=eduai-dev.target

@@ -8,20 +8,62 @@ Public hosts (Apache → local Vite/Node):
 | `https://dev.aitutor.eduai.ok.ubc.ca` | AI Tutor FE `:3001`, `/api/` → `:4000` |
 | `https://dev.questionmaker.eduai.ok.ubc.ca` | QM FE `:5173`, `/api/` → `:8000` |
 
+## Process management (prefer systemd over tmux)
+
+tmux is fine for a quick smoke test; it is **not** reliable long-term (logout, reboot, crash, partial restarts). Use **systemd user units** instead:
+
+| Unit | Port |
+|------|------|
+| `eduai-core.service` | `:3000` |
+| `eduai-aitutor-server.service` | `:4000` |
+| `eduai-aitutor-fe.service` | `:3001` |
+| `eduai-qm-backend.service` | `:8000` |
+| `eduai-qm-frontend.service` | `:5173` |
+| `eduai-dev.target` | starts/stops all of the above |
+
+### One-time install on s378
+
+```bash
+# From repo (or copy infra/s378 → ~/dev-vhosts including systemd/)
+bash infra/s378/go-live-systemd-install.sh
+
+# Required once so units survive SSH logout / reboot:
+sudo loginctl enable-linger "$USER"
+loginctl show-user "$USER" -p Linger   # Linger=yes
+
+# Stop tmux sessions and start the systemd stack:
+bash infra/s378/go-live-systemd-start.sh
+```
+
+### Day-to-day
+
+```bash
+systemctl --user status eduai-dev.target
+systemctl --user restart eduai-dev.target          # all five
+systemctl --user restart eduai-aitutor-fe          # one app
+journalctl --user -u eduai-core -f                 # logs
+```
+
+After env/code changes: `bash ~/dev-vhosts/go-live-env.sh` then `systemctl --user restart eduai-dev.target`.
+
+The older `go-live-reset.sh` (tmux) remains as a fallback only.
+
 ## Scripts (copy to `~/dev-vhosts/` on s378)
 
 | Script | Purpose |
 |--------|---------|
 | `go-live-env.sh` | Public URLs + **sync `EDUAI_API_KEY` from Core → AI Tutor + QM** |
 | `go-live-apache.sh` | Install/reload Apache vhosts |
-| `go-live-reset.sh` | Kill ports 3000–3003/4000/5173/8000 and restart all tmux apps |
-| `go-live-restart.sh` / `go-live-start.sh` | Lighter restarts |
+| `go-live-systemd-install.sh` | Install/enable systemd user units |
+| `go-live-systemd-start.sh` | Stop tmux, start `eduai-dev.target` |
+| `go-live-reset.sh` | **Legacy:** kill ports + restart all **tmux** apps |
+| `go-live-restart.sh` / `go-live-start.sh` | Lighter tmux restarts |
 
-Typical order after a code/env change:
+Typical order after a code/env change (systemd):
 
 ```bash
 bash ~/dev-vhosts/go-live-env.sh
-bash ~/dev-vhosts/go-live-reset.sh
+systemctl --user restart eduai-dev.target
 ```
 
 ## Shared `EDUAI_API_KEY` (required for extension APIs)
@@ -56,6 +98,7 @@ Core and both extension backends must share the **same** service key.
 2. Auth preference: **forwarded Core session cookie first**; `Authorization: Bearer <EDUAI_API_KEY>` only if no cookie (server-only jobs).
 3. Core still needs a working model provider key (e.g. `GOOGLE_GENERATIVE_AI_API_KEY` in Core `.env`).
 4. Interactive AI therefore works with shared-cookie login alone; keep `EDUAI_API_KEY` for topic sync / reconcile / cascade, not for day-to-day chat.
+5. Core must receive generation instructions via top-level `systemPrompt` (not `messages[].role=system`, which Core strips). Empty course-RAG refusals are skipped when a custom `systemPrompt` is set.
 
 ## Shared session cookie
 
@@ -69,6 +112,9 @@ Core and both extension backends must share the **same** service key.
 # Ports (on s378)
 curl -s -o /dev/null -w 'core:%{http_code} at:%{http_code} qm:%{http_code}\n' \
   http://127.0.0.1:3000/ http://127.0.0.1:3001/ http://127.0.0.1:5173/
+
+# systemd
+systemctl --user is-active eduai-core eduai-aitutor-fe eduai-qm-frontend
 
 # Key presence only (never print the value)
 grep -c '^EDUAI_API_KEY=.\+' apps/core/.env \
