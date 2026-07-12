@@ -323,7 +323,7 @@ component that participates in a tour, grep for the existing `data-tour` value b
 markup.
 
 Current consumers (non-exhaustive — run `grep -r 'data-tour' app/` for the full list):
-`student.tsx`, `student.course.tsx`, `student.topic.tsx`, `student.list.tsx`,
+`student.tsx`, `student.course.tsx`, `student.module.tsx`, `student.lesson.tsx`,
 `StudentAiChat.tsx`, `TourButton.tsx`.
 
 ---

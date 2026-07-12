@@ -5,6 +5,25 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [ui] feat: Extract the last forked chrome into `@eduai/ui` so all three apps render from one source — a shared `QuickActionsPanel` (dashboard quick-actions grid), `AnswerOption` (lettered MCQ choice row, default/selected/correct/incorrect), `CourseListView` declarative filter groups (`buildStatusFilterGroup`/`buildTermFilterGroup`/`buildDepartmentFilterGroup`, one MultiSelect per group, auto-hidden when a group has a single value), a sidebar-footer `AppSwitcher`, a `CourseHeroCard.topicsAction` slot, and `CourseSwitcher.onOpenCurrent`. Adopted across Core (5 course lists + 3 dashboards), QM, and AI Tutor. (#965, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor] feat: New surfaces to reach parity with Core/QM — a role-aware `/dashboard` landing page (real-data stat cards, continue-learning resume, quick actions), an in-app `/help` page, per-user Settings with an Accessibility tab wired to the shared Assistive-Mode reading treatment, and an admin AI-oversight tab surfacing captured `AiInteractionTrace` data. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor] feat: Feature-gap endpoints (no schema change) — manual grade override (`PATCH /activities/:id/submissions/:submissionId`), module editing (`PATCH /modules/:id`, role- and ownership-gated), content reuse (activity duplicate/import), and a cross-course `GET /me/dashboard-stats` rollup; submissions are enriched server-side with student names (resolved from Core via the service key) and human answer labels. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+### Changed
+
+- [ai-tutor] refactor: Full design-system redesign — every screen rebuilt on the shared `@eduai/ui` shell, cards, chat primitives, tables, and chart primitives; new solid-accent `ModuleHero`; redesigned module/lesson cards (accent rail, `PublishMenu`), a ground-up activity editor (Dialog add + import, click-a-letter correct-answer editor), a `SubmissionCard` grid with a grading dialog, hero-card dashboard panels, and course topics folded into the hero. The course Enrollments tab was removed (roster management is owned by Core), and the client-authored "guide nudge" was dropped so tutor replies only come from real model round-trips. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [core, question-maker] refactor: Adopt the newly-extracted shared surface — dashboards on `QuickActionsPanel`, course lists on the shared filter groups. QM moved course topics out of the deleted Topics tab into the hero (`CourseTopicsHeroAction`) and restyled the question composer (Tabler icon steps, persistent sticky save bar, live preview dropped); Core repositioned the course hero above the detail tabs so it stays visible on every tab. (#965, #939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+### Fixed
+
+- [ai-tutor, ui] fix: Dark-mode contrast root cause — `--primary` never flips in `.dark`, so `--primary-text` / `text-primary` / `bg-primary` accents washed out; `--primary-text` given a fixed `oklch` value, accents moved to `accent`/`secondary` tokens, the shared `PromptInputTextarea` switched to `text-foreground`, tutor chat re-rendered to match Core's chat, and the six missing `.dark` `success`/`warning` palette overrides added (fixes the near-white "medium" chip). Also: `course-theme` no longer washes the whole card in accent, the progress track uses `bg-muted`, and the lesson `ModuleHero` description renders a plain-text excerpt instead of leaking raw Markdown. (#939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor, core, question-maker] fix: Assorted UI bugs — activity topic ids were `Number()`-coerced (cuid → `NaN`, dropping topic assignments); the API client crashed calling `res.json()` on a 204; the Core course switcher flashed name → code before its list resolved; the Core course hero vanished when leaving the Overview tab; and the QM composer's sticky action bar was trapped by the scroll container. (#939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added
@@ -73,6 +92,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ci] ci: Add a Backend Coverage Report workflow — runs unit+integration coverage for the three backends on every push to `development`, aggregates them, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/`. (#773, @abdullahmoh21, 2026-06-25)
 - [core] feat: RAG ingestion preserves LaTeX equations, converts HTML tables to markdown, and chunks at clinical/slide section boundaries (#90, #91, #93, @superbolt08, 2026-06-23) — [#755](https://github.com/EduAI-Lab/EduAI/pull/755)
 - [core] feat: Human-readable math in chat — normalizeMathMarkdown, Streamdown math plugin, KaTeX CSS, prose-vs-equation guards (#142, @superbolt08, 2026-06-23) — [#757](https://github.com/EduAI-Lab/EduAI/pull/757)
+- [ai-tutor] feat: Add reusable `ConfirmDialog` component and confirmation guards for all destructive/visibility-changing actions — publish/unpublish (courses, modules, lessons) and remove actions (activity delete, student removal) now open a dialog before calling the API; `window.confirm` removed. (#806, @GlowyBlack, 2026-06-27) — [#806](https://github.com/EduAI-Lab/EduAI/pull/806)
+- [core] feat: Add confirmation dialog for course publish/unpublish in the courses list — clicking Publish or Unpublish now opens an `AlertDialog` with direction-specific copy (students gain/lose access) before calling the API. (#806, @GlowyBlack, 2026-06-27) — [#806](https://github.com/EduAI-Lab/EduAI/pull/806)
 - [core] docs: Add [`MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) — team guide for spreading vLLM inference across cmps01–03 (`JobType`: `interactive` / `background`, feature mapping, stale health-cache fallback, fleet router sketch); cross-linked from [`TEAM_ROUTING_LAYER_PLAN.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_ROUTING_LAYER_PLAN.md). Docs-only. ([#794](https://github.com/EduAI-Lab/EduAI/pull/794), @superbolt08, 2026-06-26)
 
 ### Fixed
