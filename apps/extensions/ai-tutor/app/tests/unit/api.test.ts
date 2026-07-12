@@ -104,6 +104,20 @@ describe('api methods', () => {
     await expect(api.listCourses()).rejects.toThrow('Internal server error');
   });
 
+  it('a fetch-level failure (e.g. API not listening yet) throws ApiNetworkError without redirecting', async () => {
+    window.location.pathname = '/dashboard';
+    window.location.href = 'http://localhost:3001/dashboard';
+
+    mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const { api, ApiNetworkError } = await import('~/lib/api');
+
+    await expect(api.me()).rejects.toThrow(ApiNetworkError);
+    // Unlike a 401, a connection failure must not bounce the user to login —
+    // the caller decides whether to retry.
+    expect(window.location.href).toBe('http://localhost:3001/dashboard');
+  });
+
   it('all expected API methods exist', async () => {
     const { api } = await import('~/lib/api');
 

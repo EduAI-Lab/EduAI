@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import api from '~/lib/api';
+import api, { ApiNetworkError } from '~/lib/api';
 import type { User } from '~/lib/types';
+
+// A fresh dev-stack start can briefly have the AI Tutor frontend reachable
+// before its Express API has finished migrate/generate/seed and started
+// listening. Retry a few times before concluding the user is logged out.
+const ME_MAX_ATTEMPTS = 5;
+const ME_RETRY_DELAY_MS = 800;
 
 export type AuthUser = Pick<User, 'id' | 'name' | 'role' | 'authorizedUnits'> & {
   email?: string;
@@ -35,31 +41,43 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
     // in-flight `/api/me` resolves (e.g. fast route swap during hydration).
     let cancelled = false;
 
-    api
-      .me()
-      .then((data) => {
-        if (cancelled) return;
-        const nextUser = data?.user ?? null;
-        if (nextUser) {
-          setUser({
-            id: nextUser.id,
-            name: nextUser.name,
-            email: nextUser.email,
-            role: nextUser.role,
-            authorizedUnits: nextUser.authorizedUnits,
-          });
-        } else {
+    async function loadUser() {
+      for (let attempt = 1; attempt <= ME_MAX_ATTEMPTS; attempt++) {
+        try {
+          const data = await api.me();
+          if (cancelled) return;
+          const nextUser = data?.user ?? null;
+          if (nextUser) {
+            setUser({
+              id: nextUser.id,
+              name: nextUser.name,
+              email: nextUser.email,
+              role: nextUser.role,
+              authorizedUnits: nextUser.authorizedUnits,
+            });
+          } else {
+            setUser(null);
+          }
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          // A network-level failure (e.g. the API hasn't started listening yet)
+          // is transient — retry. An authenticated-but-rejected response already
+          // redirects inside `http()`, so anything else reaching here is final.
+          if (err instanceof ApiNetworkError && attempt < ME_MAX_ATTEMPTS) {
+            await new Promise((resolve) => setTimeout(resolve, ME_RETRY_DELAY_MS));
+            continue;
+          }
           setUser(null);
+          return;
         }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setUser(null);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setIsInitializing(false);
-      });
+      }
+    }
+
+    loadUser().finally(() => {
+      if (cancelled) return;
+      setIsInitializing(false);
+    });
 
     return () => {
       cancelled = true;

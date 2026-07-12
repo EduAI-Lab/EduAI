@@ -13,7 +13,7 @@ import { AuthProvider } from '~/hooks/useLocalUser';
 import { TourProvider } from '~/components/TourProvider';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
 import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
-import { ThemeProvider, ThemeSyncInitializer, Toaster } from '@eduai/ui';
+import { ThemeProvider, ThemeSyncInitializer, Toaster, PageLoader } from '@eduai/ui';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
@@ -29,11 +29,7 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function HydrateFallback() {
-  return (
-    <div className="min-h-dvh bg-background flex items-center justify-center">
-      <div className="text-sm text-muted-foreground">Loading…</div>
-    </div>
-  );
+  return <PageLoader />;
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
