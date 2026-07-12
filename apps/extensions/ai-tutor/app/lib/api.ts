@@ -99,12 +99,6 @@ export interface AiTraceRow {
   courseTitle?: string | null;
 }
 
-export interface NotificationCounts {
-  unread?: number;
-  total?: number;
-  [key: string]: unknown;
-}
-
 /**
  * Thrown when the request never reached the server (e.g. connection refused
  * because the API is still booting on a fresh dev-stack start). Distinct from
@@ -510,7 +504,7 @@ export const api = {
   gradeSubmission: (
     activityId: number,
     submissionId: number,
-    body: { score?: number; isCorrect?: boolean; feedback?: string },
+    body: { score?: number; isCorrect?: boolean },
   ) =>
     http(`/api/activities/${activityId}/submissions/${submissionId}`, {
       method: 'PATCH',
@@ -540,7 +534,6 @@ export const api = {
     const qs = search.toString();
     return http(`/api/admin/ai-traces${qs ? `?${qs}` : ''}`) as Promise<AiTraceRow[]>;
   },
-  notificationCounts: () => http('/api/me/notifications') as Promise<NotificationCounts>,
   /**
    * Proxies sign-out through the AT backend (server-to-server to Core) so the
    * browser avoids CORS restrictions on Core's sign-out endpoint.
