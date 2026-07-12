@@ -687,6 +687,238 @@ describe('Activities routes', () => {
       expect(res.body.error).toMatch(/enrolled students/i);
     });
   });
+
+  // ── PATCH /api/activities/:activityId/submissions/:submissionId (grade override) ──
+
+  describe('PATCH /api/activities/:activityId/submissions/:submissionId', () => {
+    let activity;
+    let submissionId;
+
+    beforeEach(async () => {
+      activity = await createActivityInDb();
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      const answer = await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 0 }); // wrong answer → isCorrect=false
+      submissionId = answer.body.submissionId;
+    });
+
+    it('instructor overrides score and correctness (persisted)', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ score: 9.5, isCorrect: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.score).toBe(9.5);
+      expect(res.body.isCorrect).toBe(true);
+
+      const stored = await prisma.submission.findUnique({ where: { id: submissionId } });
+      expect(stored.score).toBe(9.5);
+      expect(stored.isCorrect).toBe(true);
+    });
+
+    it('enrolled TA can override', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isCorrect).toBe(true);
+    });
+
+    it('ADMIN can override', async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+
+      const res = await request(adminApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ score: 5 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.score).toBe(5);
+    });
+
+    it('enrolled STUDENT gets 403 (staff-only)', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('INSTRUCTOR of a different course gets 403', async () => {
+      const otherProf = makeProfessor();
+      await seedMinimalCourse(otherProf.id);
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('TA enrolled in a different course gets 403', async () => {
+      const otherSeed = await seedMinimalCourse(null);
+      const ta = makeTA();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: otherSeed.course.id, userId: ta.id, role: 'TA' },
+      });
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('404 for an unknown submission', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}/submissions/99999`)
+        .send({ isCorrect: true });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('400 when the body has nothing to update', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 when score is not a number', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ score: 'high' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('silently ignores a feedback field (no grader-feedback column)', async () => {
+      const res = await request(profApp)
+        .patch(`/api/activities/${activity.id}/submissions/${submissionId}`)
+        .send({ isCorrect: true, feedback: 'nice work' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).not.toHaveProperty('feedback');
+    });
+  });
+
+  // ── POST /api/activities/:activityId/duplicate ────────────────────
+
+  describe('POST /api/activities/:activityId/duplicate', () => {
+    let activity;
+
+    beforeEach(async () => {
+      activity = await createActivityInDb();
+    });
+
+    it('instructor duplicates the activity into the same lesson (201, new id)', async () => {
+      const res = await request(profApp).post(`/api/activities/${activity.id}/duplicate`);
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).not.toBe(activity.id);
+
+      const all = await prisma.activity.findMany({ where: { lessonId: seed.lesson.id } });
+      expect(all.length).toBe(2);
+    });
+
+    it('STUDENT gets 403 (content-manager only)', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).post(`/api/activities/${activity.id}/duplicate`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('INSTRUCTOR of a different course gets 403', async () => {
+      const otherProf = makeProfessor();
+      await seedMinimalCourse(otherProf.id);
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp).post(`/api/activities/${activity.id}/duplicate`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('404 for an unknown activity', async () => {
+      const res = await request(profApp).post('/api/activities/99999/duplicate');
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  // ── POST /api/lessons/:lessonId/activities/import ─────────────────
+
+  describe('POST /api/lessons/:lessonId/activities/import', () => {
+    let source;
+    let targetLesson;
+
+    beforeEach(async () => {
+      source = await createActivityInDb();
+      targetLesson = await prisma.lesson.create({
+        data: {
+          title: 'Target Lesson',
+          contentMd: 'x',
+          position: 1,
+          isPublished: true,
+          moduleId: seed.module.id,
+        },
+      });
+    });
+
+    it('instructor imports a source activity into another lesson (201)', async () => {
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: source.id });
+
+      expect(res.status).toBe(201);
+
+      const imported = await prisma.activity.findMany({ where: { lessonId: targetLesson.id } });
+      expect(imported.length).toBe(1);
+    });
+
+    it('400 when sourceActivityId is missing', async () => {
+      const res = await request(profApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+
+    it('STUDENT gets 403 (content-manager only)', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: source.id });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('INSTRUCTOR who does not manage the target course gets 403', async () => {
+      const otherProf = makeProfessor();
+      await seedMinimalCourse(otherProf.id);
+      const otherApp = await createApp({ mockUser: otherProf });
+
+      const res = await request(otherApp)
+        .post(`/api/lessons/${targetLesson.id}/activities/import`)
+        .send({ sourceActivityId: source.id });
+
+      expect(res.status).toBe(403);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
