@@ -5,7 +5,9 @@ import {
   IconPlus,
 } from '@tabler/icons-react';
 import {
+  Badge,
   Button,
+  ScrollArea,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -16,6 +18,7 @@ import {
   listChatSessions,
   type ApiChatSession,
 } from '~/lib/student-chat-history';
+import { cn } from '~/lib/utils';
 
 type StudentChatHistoryPanelProps = {
   open: boolean;
@@ -97,7 +100,7 @@ export function StudentChatHistoryPanel({
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <ScrollArea className="flex-1">
           {!activityId ? (
             <div className="px-5 py-10 text-center text-[13px] text-muted-foreground">
               Open an activity to view chat history.
@@ -108,10 +111,7 @@ export function StudentChatHistoryPanel({
             </div>
           ) : sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div
-                className="mb-3 flex h-12 w-12 items-center justify-center rounded-[12px]"
-                style={{ background: 'var(--muted)' }}
-              >
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
                 <IconMessageCircle size={22} className="text-muted-foreground" stroke={1.5} />
               </div>
               <p className="mb-1 text-[14px] font-semibold text-foreground">No conversations yet</p>
@@ -131,26 +131,25 @@ export function StudentChatHistoryPanel({
                       onSelect(session);
                       onOpenChange(false);
                     }}
-                    className={`group flex items-start gap-3 border-b border-border px-5 py-3 text-left transition-colors hover:bg-muted/40 ${
-                      isActive ? 'bg-muted/60' : ''
-                    }`}
+                    className={cn(
+                      'flex items-center gap-3 border-b border-border px-5 py-3 text-left transition-colors hover:bg-muted/40',
+                      isActive && 'bg-muted/60',
+                    )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium text-foreground">
-                        {MODE_LABELS[session.mode] ?? session.mode} mode
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Badge variant="secondary" size="sm">
+                        {MODE_LABELS[session.mode] ?? session.mode}
+                      </Badge>
+                      <p className="text-[11px] text-muted-foreground">
+                        {relativeTime(session.updatedAt)}
                       </p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          {relativeTime(session.updatedAt)}
-                        </span>
-                      </div>
                     </div>
                   </button>
                 );
               })}
             </div>
           )}
-        </div>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   );
