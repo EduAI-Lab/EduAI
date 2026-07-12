@@ -104,7 +104,7 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
           name: 'CS Indep Course',
           code: `CS-399-${RUN_SUFFIX}`,
           section: '001',
-          term: 'Fall',
+          term: 'W1',
           year: '2026',
           startDate: '2026-08-15',
           department: 'COSC',
