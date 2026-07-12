@@ -33,11 +33,12 @@ for p in 3000 3001 3002 3003 4000 5173 8000; do
 done
 sleep 2
 
-echo "=== starting systemd eduai-dev.target ==="
+echo "=== starting systemd eduai-dev.target (non-blocking) ==="
 systemctl --user daemon-reload
-systemctl --user start eduai-dev.target
+# --no-block: do not wait on slow Vite/Prisma boot; we poll ports below
+systemctl --user start --no-block eduai-dev.target
 
-echo "=== waiting for ports ==="
+echo "=== waiting for ports (up to ~2 min) ==="
 ready=0
 for i in $(seq 1 60); do
   ready=0

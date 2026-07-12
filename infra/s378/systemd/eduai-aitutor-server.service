@@ -15,9 +15,8 @@ Environment=VOLTA_HOME=%h/.volta
 ExecStart=%h/.volta/bin/npm run dev -w ai-tutor-server
 Restart=always
 RestartSec=5
-TimeoutStartSec=300
+TimeoutStartSec=120
 KillMode=control-group
-ExecStartPost=/bin/bash -c 'for i in $(seq 1 90); do code=$(curl -s -o /dev/null -w "%%{http_code}" --connect-timeout 2 http://127.0.0.1:4000/ || echo 000); [ "$code" != "000" ] && exit 0; sleep 2; done; exit 0'
 
 [Install]
 WantedBy=eduai-dev.target
