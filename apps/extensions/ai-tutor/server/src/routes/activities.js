@@ -26,10 +26,11 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapActivity } from '../utils/mappers.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
+import { cloneActivityIntoLesson } from '../services/activityCloning.js';
 import {
   hasActivityFeedback,
   recordActivityFeedback,
@@ -849,6 +850,242 @@ router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
 });
 
 /**
+ * POST /activities/:activityId/duplicate — clone an activity into its own lesson.
+ *
+ * Auth: content managers (INSTRUCTOR/UNIT_ADMIN/ADMIN) with course access
+ *   (`isCourseAdmin`) over the activity's course.
+ * Side effects: creates a new Activity (+ secondary topic joins) in the same
+ *   lesson, positioned after the current last activity.
+ *
+ * Why: authors want a quick "copy this question" action while iterating on a
+ * lesson; delegates the actual copy to `services/activityCloning.js` so the
+ * same topic-remap logic is shared with cross-lesson import below.
+ */
+router.post(
+  '/activities/:activityId/duplicate',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) {
+      return res.status(400).json({ error: 'Invalid activity id' });
+    }
+
+    try {
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          lesson: {
+            include: {
+              module: {
+                include: {
+                  courseOffering: { include: { instructors: { select: { userId: true } } } },
+                },
+              },
+            },
+          },
+          mainTopic: true,
+          secondaryTopics: { include: { topic: true } },
+        },
+      });
+
+      if (!activity) {
+        return res.status(404).json({ error: 'Activity not found' });
+      }
+
+      const course = activity.lesson.module.courseOffering;
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this activity' });
+      }
+
+      const clone = await cloneActivityIntoLesson({
+        sourceActivity: activity,
+        targetLessonId: activity.lessonId,
+        targetCourseOfferingId: course.id,
+      });
+
+      res.status(201).json(mapActivity(clone));
+    } catch (e) {
+      console.error('Error duplicating activity:', e);
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
+/**
+ * POST /lessons/:lessonId/activities/import — clone an activity from another
+ * lesson (that the caller can access) into this lesson.
+ *
+ * Auth: content managers (INSTRUCTOR/UNIT_ADMIN/ADMIN) with course access
+ *   over BOTH the target lesson's course and the source activity's course —
+ *   an instructor must not be able to pull content out of a course they
+ *   don't manage.
+ * Body: `{ sourceActivityId }`.
+ * Side effects: creates a new Activity (+ secondary topic joins, and any
+ *   Topic rows needed to remap source topics onto the target course) in the
+ *   target lesson, positioned after the current last activity.
+ */
+router.post(
+  '/lessons/:lessonId/activities/import',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isFinite(lessonId)) {
+      return res.status(400).json({ error: 'Invalid lesson id' });
+    }
+
+    const sourceActivityId = Number(req.body?.sourceActivityId);
+    if (!Number.isFinite(sourceActivityId)) {
+      return res.status(400).json({ error: 'sourceActivityId is required' });
+    }
+
+    try {
+      const targetLesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
+        include: {
+          module: {
+            include: {
+              courseOffering: { include: { instructors: { select: { userId: true } } } },
+            },
+          },
+        },
+      });
+      if (!targetLesson) {
+        return res.status(404).json({ error: 'Lesson not found' });
+      }
+
+      const targetCourse = targetLesson.module.courseOffering;
+      if (!isCourseAdmin(authUser, targetCourse)) {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      }
+
+      const sourceActivity = await prisma.activity.findUnique({
+        where: { id: sourceActivityId },
+        include: {
+          lesson: {
+            include: {
+              module: {
+                include: {
+                  courseOffering: { include: { instructors: { select: { userId: true } } } },
+                },
+              },
+            },
+          },
+          mainTopic: true,
+          secondaryTopics: { include: { topic: true } },
+        },
+      });
+      if (!sourceActivity) {
+        return res.status(404).json({ error: 'Source activity not found' });
+      }
+
+      const sourceCourse = sourceActivity.lesson.module.courseOffering;
+      if (!isCourseAdmin(authUser, sourceCourse)) {
+        return res.status(403).json({ error: 'Not authorized for the source activity' });
+      }
+
+      const clone = await cloneActivityIntoLesson({
+        sourceActivity,
+        targetLessonId: lessonId,
+        targetCourseOfferingId: targetCourse.id,
+      });
+
+      res.status(201).json(mapActivity(clone));
+    } catch (e) {
+      console.error('Error importing activity:', e);
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
+/**
+ * GET /activities/importable?courseId= — list candidate activities the
+ * caller may import from via `POST /lessons/:lessonId/activities/import`.
+ *
+ * Auth: content managers (INSTRUCTOR/UNIT_ADMIN/ADMIN). `courseId` identifies
+ *   the course the caller is importing INTO and must be one the caller
+ *   manages; the returned candidates span every course the caller manages
+ *   (including `courseId` itself, since importing between two lessons of the
+ *   same course is valid), not just `courseId`.
+ * Returns: `{ id, title, type, lessonId, lessonTitle, moduleTitle }[]`.
+ */
+router.get(
+  '/activities/importable',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.query.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'courseId is required' });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      // Mirrors the manageable-courses logic in routes/courses.js `GET /courses`.
+      let manageableCourseIds;
+      if (authUser.role === 'ADMIN') {
+        const all = await prisma.courseOffering.findMany({ select: { id: true } });
+        manageableCourseIds = all.map((c) => c.id);
+      } else if (authUser.role === 'UNIT_ADMIN') {
+        const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+        const owned = await prisma.courseOffering.findMany({
+          where: {
+            OR: [
+              ...(units.length > 0 ? [{ department: { in: units } }] : []),
+              { instructors: { some: { userId: authUser.id } } },
+            ],
+          },
+          select: { id: true },
+        });
+        manageableCourseIds = owned.map((c) => c.id);
+      } else {
+        const owned = await prisma.courseOffering.findMany({
+          where: { instructors: { some: { userId: authUser.id } } },
+          select: { id: true },
+        });
+        manageableCourseIds = owned.map((c) => c.id);
+      }
+
+      const activities = await prisma.activity.findMany({
+        where: { lesson: { module: { courseOfferingId: { in: manageableCourseIds } } } },
+        orderBy: [{ lessonId: 'asc' }, { position: 'asc' }],
+        include: {
+          lesson: { select: { title: true, module: { select: { title: true } } } },
+        },
+      });
+
+      const importable = activities.map((activity) => {
+        const config = activity.config ?? {};
+        return {
+          id: activity.id,
+          title: activity.title ?? config.question ?? activity.instructionsMd,
+          type: config.questionType ?? 'MCQ',
+          lessonId: activity.lessonId,
+          lessonTitle: activity.lesson?.title ?? null,
+          moduleTitle: activity.lesson?.module?.title ?? null,
+        };
+      });
+
+      res.json(importable);
+    } catch (e) {
+      console.error('Error listing importable activities:', e);
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
+/**
  * POST /questions/:id/answer — submit an answer attempt for an activity.
  *
  * Auth: enrolled STUDENT only (§15); activity + ancestor chain must be published.
@@ -1247,6 +1484,96 @@ router.get('/activities/:activityId/submissions', async (req, res) => {
     });
 
     res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * PATCH /activities/:activityId/submissions/:submissionId — manual grade override.
+ *
+ * Auth: course teaching staff — INSTRUCTOR/UNIT_ADMIN/ADMIN with course
+ *   access, or a TA enrolled (role TA) in the course — mirrors the access
+ *   check on `GET /activities/:activityId/submissions` above. No `requireRole`
+ *   middleware here because TA is a per-course `CourseEnrollment.role`, not a
+ *   platform role check alone can verify.
+ * Body: `{ score?, isCorrect? }`. `feedback` is intentionally NOT accepted:
+ *   `Submission` has no free-text grader-feedback column (only `aiFeedback`,
+ *   which holds the system-generated hint shown at submit time, a different
+ *   concern) — see prisma/schema.prisma Submission model. Adding one would
+ *   require a migration, which is out of scope here.
+ * Returns: the updated Submission row (same shape as the GET list above).
+ */
+router.patch('/activities/:activityId/submissions/:submissionId', async (req, res) => {
+  const authUser = req.user;
+  const activityId = Number(req.params.activityId);
+  const submissionId = Number(req.params.submissionId);
+
+  if (!Number.isFinite(activityId) || !Number.isFinite(submissionId)) {
+    return res.status(400).json({ error: 'Invalid activity or submission id' });
+  }
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const { score, isCorrect } = req.body || {};
+  if (typeof score !== 'undefined' && score !== null && typeof score !== 'number') {
+    return res.status(400).json({ error: 'score must be a number or null' });
+  }
+  if (typeof isCorrect !== 'undefined' && isCorrect !== null && typeof isCorrect !== 'boolean') {
+    return res.status(400).json({ error: 'isCorrect must be a boolean or null' });
+  }
+  const updateData = {};
+  if (typeof score !== 'undefined') updateData.score = score;
+  if (typeof isCorrect !== 'undefined') updateData.isCorrect = isCorrect;
+  if (Object.keys(updateData).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  try {
+    const submission = await prisma.submission.findUnique({
+      where: { id: submissionId },
+      include: {
+        activity: {
+          include: {
+            lesson: {
+              include: {
+                module: {
+                  include: {
+                    courseOffering: {
+                      include: {
+                        instructors: { select: { userId: true } },
+                        enrollments: { select: { userId: true, role: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!submission || submission.activityId !== activityId) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    const course = submission.activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!isCourseAdmin(authUser, course) && !isTa) {
+      return res.status(403).json({ error: 'Not authorized for this submission' });
+    }
+
+    const updated = await prisma.submission.update({
+      where: { id: submissionId },
+      data: updateData,
+    });
+
+    res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

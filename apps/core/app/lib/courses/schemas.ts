@@ -1,15 +1,19 @@
 import { z } from "zod";
+import { TERM_CODES } from "@eduai/ui/term";
 
 /**
  * Schema for creating a new course
  * - Used in POST /api/courses
  */
 
+// Canonical UBC term code — the single vocabulary shared across all EduAI apps.
+const TermCodeSchema = z.enum(TERM_CODES);
+
 export const CreateCourseSchema = z.object({
   name: z.string().min(1),
   code: z.string().min(1),
   section: z.string().min(1),
-  term: z.string().min(1),
+  term: TermCodeSchema,
   year: z.number().int(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
@@ -26,7 +30,7 @@ export const UpdateCourseSchema = z.object({
   name: z.string().min(1).optional(),
   code: z.string().min(1).optional(),
   section: z.string().min(1).optional(),
-  term: z.string().optional(),
+  term: TermCodeSchema.optional(),
   year: z.number().int().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional().nullable(),
