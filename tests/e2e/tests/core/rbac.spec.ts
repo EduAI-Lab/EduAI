@@ -94,7 +94,7 @@ test.describe('Core course access gates (STUDENT unenrolled)', () => {
         name: 'Unauthorized Course',
         code: 'HACK 101',
         section: '001',
-        term: 'Fall',
+        term: 'W1',
         year: '2026',
       },
     });

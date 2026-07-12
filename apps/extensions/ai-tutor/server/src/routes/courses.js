@@ -30,7 +30,13 @@ import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/
 import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
-import { findEduAiCourseById, listEduAiCourses, setCoreCoursePublishState } from '../services/eduaiClient.js';
+import {
+  findEduAiCourseById,
+  listCoreAdminUsers,
+  listEduAiCourseEnrollmentsServiceKey,
+  listEduAiCourses,
+  setCoreCoursePublishState,
+} from '../services/eduaiClient.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
@@ -39,6 +45,7 @@ import {
   importExternalCourseForUser,
   importTaughtCoursesFromCore,
 } from '../services/importTaughtCoursesService.js';
+import { listAdminBugReports } from '../services/bugReports.js';
 
 const router = express.Router();
 
@@ -57,6 +64,21 @@ async function userHasTaEnrollment(userId) {
     where: { userId, role: 'TA' },
   });
   return count > 0;
+}
+
+/**
+ * Pull the MCQ option labels out of a freeform `Activity.config`. Mirrors the
+ * `options` normalization in `mapActivity` — accepts the modern
+ * `{ options: { choices: [] } }` shape and the legacy bare-array form. Returns
+ * `null` when the activity carries no choices (e.g. short-answer questions).
+ */
+function extractChoices(config) {
+  if (!config || typeof config !== 'object') return null;
+  const { options } = config;
+  if (options == null) return null;
+  if (Array.isArray(options)) return options;
+  if (Array.isArray(options.choices)) return options.choices;
+  return null;
 }
 
 function respondEduAiUpstreamError(res, error, fallbackMessage) {
@@ -792,9 +814,57 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
       orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }],
       take,
       skip,
+      include: {
+        activity: {
+          select: {
+            id: true,
+            title: true,
+            config: true,
+            lesson: { select: { title: true } },
+          },
+        },
+      },
     });
 
-    res.json(submissions);
+    // Resolve Core-owned student names (identity lives in Core, not this DB).
+    // Best-effort: a missing service key or Core hiccup falls back to the raw
+    // userId so the panel still renders.
+    const nameById = new Map();
+    if (course.coreOfferingId) {
+      try {
+        const enrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+        for (const enrollment of enrollments) {
+          if (enrollment?.studentId) nameById.set(enrollment.studentId, enrollment.studentName);
+        }
+      } catch {
+        // Leave the map empty; rows degrade to the userId.
+      }
+    }
+
+    const enriched = submissions.map((submission) => {
+      const { activity, ...rest } = submission;
+      const config = activity?.config ?? {};
+      const choices = extractChoices(config);
+      const response = rest.response ?? null;
+      // MCQ picks store a zero-based option index; map it back to the option
+      // label so instructors read the answer, not "Option 3".
+      const optionIndex =
+        response && typeof response.answerOption === 'number' ? response.answerOption : null;
+      const answerLabel =
+        optionIndex != null && choices && choices[optionIndex] != null
+          ? choices[optionIndex]
+          : null;
+      return {
+        ...rest,
+        studentName: nameById.get(rest.userId) ?? null,
+        activityTitle: activity?.title ?? null,
+        lessonTitle: activity?.lesson?.title ?? null,
+        questionText: config.question ?? config.prompt ?? null,
+        answerLabel,
+      };
+    });
+
+    res.json(enriched);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -803,7 +873,7 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
 /**
  * GET /courses/:courseId/student-metrics — per-student aggregated metrics.
  *
- * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
  */
 router.get('/courses/:courseId/student-metrics', async (req, res) => {
   const authUser = req.user;
@@ -814,11 +884,17 @@ router.get('/courses/:courseId/student-metrics', async (req, res) => {
   try {
     const course = await prisma.courseOffering.findUnique({
       where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    if (!isCourseAdmin(authUser, course)) {
+    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -852,7 +928,7 @@ router.get('/courses/:courseId/student-metrics', async (req, res) => {
 /**
  * GET /courses/:courseId/analytics — per-activity aggregate analytics.
  *
- * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C). TA not admitted per §15.
+ * Auth: ADMIN / UNIT_ADMIN(D) / INSTRUCTOR(C) / TA(C).
  */
 router.get('/courses/:courseId/analytics', async (req, res) => {
   const authUser = req.user;
@@ -863,11 +939,17 @@ router.get('/courses/:courseId/analytics', async (req, res) => {
   try {
     const course = await prisma.courseOffering.findUnique({
       where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
+      include: {
+        instructors: { select: { userId: true } },
+        enrollments: { select: { userId: true, role: true } },
+      },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    if (!isCourseAdmin(authUser, course)) {
+    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    if (!hasAdminAccess && !isTa) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -878,6 +960,183 @@ router.get('/courses/:courseId/analytics', async (req, res) => {
     });
 
     res.json(analytics);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Dashboard rollups (§938) ─────────────────────────────────────
+
+/**
+ * GET /me/dashboard-stats — role-aware aggregate rollup across the caller's
+ * visible courses.
+ *
+ * Auth: any authenticated user; response shape is scoped by role.
+ * Returns numbers backed only by local tables (CourseOffering,
+ * CourseEnrollment, Submission) plus, for ADMIN, counts sourced from the
+ * existing Core admin-user / bug-report service calls already used elsewhere
+ * in this file — never fabricated fields.
+ *
+ * Why: STUDENT/TA/INSTRUCTOR/UNIT_ADMIN/ADMIN all want a different rollup, so
+ * this branches on role the same way `GET /courses` does rather than trying
+ * to force one shape onto every caller.
+ */
+router.get('/me/dashboard-stats', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    if (authUser.role === 'ADMIN') {
+      const courses = await prisma.courseOffering.findMany({ select: { isPublished: true } });
+      const publishedCourses = courses.filter((c) => c.isPublished).length;
+
+      const stats = {
+        role: 'ADMIN',
+        totalCourses: courses.length,
+        publishedCourses,
+      };
+
+      try {
+        const users = await listCoreAdminUsers(req.headers.cookie ?? '');
+        if (Array.isArray(users)) stats.totalUsers = users.length;
+      } catch (err) {
+        console.warn('[me/dashboard-stats] Could not fetch Core users', err.message);
+      }
+
+      try {
+        const reports = await listAdminBugReports(getEduAiCookieForRequest(req));
+        if (Array.isArray(reports)) {
+          stats.openBugReports = reports.filter((r) => r.status === 'unhandled').length;
+        }
+      } catch (err) {
+        console.warn('[me/dashboard-stats] Could not fetch bug reports', err.message);
+      }
+
+      return res.json(stats);
+    }
+
+    if (authUser.role === 'INSTRUCTOR' || authUser.role === 'UNIT_ADMIN') {
+      const courseWhere =
+        authUser.role === 'INSTRUCTOR'
+          ? { instructors: { some: { userId: authUser.id } } }
+          : {
+              OR: [
+                ...(Array.isArray(authUser.authorizedUnits) && authUser.authorizedUnits.length > 0
+                  ? [{ department: { in: authUser.authorizedUnits } }]
+                  : []),
+                { instructors: { some: { userId: authUser.id } } },
+              ],
+            };
+
+      const courses = await prisma.courseOffering.findMany({
+        where: courseWhere,
+        select: { id: true, isPublished: true },
+      });
+      const courseIds = courses.map((c) => c.id);
+      const publishedCourses = courses.filter((c) => c.isPublished).length;
+
+      let enrolledStudents = 0;
+      let submissionsToReview = 0;
+      if (courseIds.length > 0) {
+        const distinctStudents = await prisma.courseEnrollment.findMany({
+          where: { courseOfferingId: { in: courseIds }, role: 'STUDENT' },
+          select: { userId: true },
+          distinct: ['userId'],
+        });
+        enrolledStudents = distinctStudents.length;
+
+        submissionsToReview = await prisma.submission.count({
+          where: {
+            isCorrect: null,
+            activity: { lesson: { module: { courseOfferingId: { in: courseIds } } } },
+          },
+        });
+      }
+
+      return res.json({
+        role: authUser.role,
+        // Same value under two keys so the instructor view (yourCourses) and the
+        // unit-admin view (totalCourses) each read the field they expect.
+        yourCourses: courses.length,
+        totalCourses: courses.length,
+        publishedCourses,
+        draftCourses: courses.length - publishedCourses,
+        enrolledStudents,
+        submissionsToReview,
+      });
+    }
+
+    // TA — either the platform role is TA, or a STUDENT account also holds a
+    // TA enrollment on at least one course (mirrors GET /courses §174).
+    const isEffectiveTa =
+      authUser.role === 'TA' || (authUser.role === 'STUDENT' && (await userHasTaEnrollment(authUser.id)));
+
+    if (isEffectiveTa) {
+      const taEnrollments = await prisma.courseEnrollment.findMany({
+        where: { userId: authUser.id, role: 'TA' },
+        select: { courseOfferingId: true },
+      });
+      const courseIds = taEnrollments.map((e) => e.courseOfferingId);
+
+      const [submissionsToReview, publishedCourses] =
+        courseIds.length > 0
+          ? await Promise.all([
+              prisma.submission.count({
+                where: {
+                  isCorrect: null,
+                  activity: { lesson: { module: { courseOfferingId: { in: courseIds } } } },
+                },
+              }),
+              prisma.courseOffering.count({
+                where: { id: { in: courseIds }, isPublished: true },
+              }),
+            ])
+          : [0, 0];
+
+      return res.json({
+        role: 'TA',
+        yourCourses: courseIds.length,
+        publishedCourses,
+        submissionsToReview,
+      });
+    }
+
+    // STUDENT (default)
+    const enrollments = await prisma.courseEnrollment.findMany({
+      where: { userId: authUser.id, role: 'STUDENT' },
+      select: { courseOfferingId: true },
+    });
+    const enrolledCourseIds = enrollments.map((e) => e.courseOfferingId);
+    const courses =
+      enrolledCourseIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: enrolledCourseIds }, isPublished: true },
+            select: { id: true },
+          })
+        : [];
+
+    const progresses = await Promise.all(
+      courses.map((c) => calculateCourseProgress(c.id, authUser.id)),
+    );
+    const completedCourses = progresses.filter((p) => p.total > 0 && p.completed === p.total).length;
+    const inProgressCourses = progresses.filter(
+      (p) => p.total > 0 && p.completed > 0 && p.completed < p.total,
+    ).length;
+
+    const [correctCount, gradedCount] = await Promise.all([
+      prisma.submission.count({ where: { userId: authUser.id, isCorrect: true } }),
+      prisma.submission.count({ where: { userId: authUser.id, isCorrect: { not: null } } }),
+    ]);
+    const correctAnswerPercentage =
+      gradedCount > 0 ? Math.round((correctCount / gradedCount) * 100) : 0;
+
+    res.json({
+      role: 'STUDENT',
+      enrolledCourses: courses.length,
+      coursesInProgress: inProgressCourses,
+      coursesCompleted: completedCourses,
+      correctAnswerPercentage,
+    });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

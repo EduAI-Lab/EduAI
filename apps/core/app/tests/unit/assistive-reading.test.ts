@@ -6,7 +6,7 @@ import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
 
 const cssPath = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../styles/assistive-reading.css",
+  "../../../../../packages/ui/src/styles/assistive-reading.css",
 );
 const css = readFileSync(cssPath, "utf-8");
 
