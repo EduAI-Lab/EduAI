@@ -15,10 +15,8 @@ Environment=VOLTA_HOME=%h/.volta
 ExecStart=%h/.volta/bin/npm run dev -w edu-ai
 Restart=always
 RestartSec=5
-TimeoutStartSec=300
+TimeoutStartSec=120
 KillMode=control-group
-# Vite/React Router can take a while on first boot
-ExecStartPost=/bin/bash -c 'for i in $(seq 1 90); do curl -sf -o /dev/null --connect-timeout 2 http://127.0.0.1:3000/ && exit 0; sleep 2; done; exit 0'
 
 [Install]
 WantedBy=eduai-dev.target
