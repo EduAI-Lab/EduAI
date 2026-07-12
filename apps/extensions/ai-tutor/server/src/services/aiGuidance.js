@@ -42,6 +42,12 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
+// #999: bound how long a single EduAI round-trip can hang — without this, a
+// slow/stuck upstream call leaves the student staring at an unbounded
+// "Thinking..." spinner with no way out.
+const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
+const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
+
 /**
  * Single round-trip to the EduAI chat completion endpoint.
  *
@@ -112,6 +118,7 @@ async function callEduAI({
         cookie,
       },
       body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -133,6 +140,13 @@ async function callEduAI({
     console.error('[aiGuidance] Unexpected response format:', data);
     throw new Error('Invalid response format from AI API');
   } catch (error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      console.error('[aiGuidance] EduAI call timed out after', EDUAI_CALL_TIMEOUT_MS, 'ms');
+      const timeoutError = new Error(TIMEOUT_MESSAGE);
+      timeoutError.status = 504;
+      timeoutError.code = 'TIMEOUT';
+      throw timeoutError;
+    }
     console.error('[aiGuidance] Error calling eduAI:', error);
     throw error;
   }
