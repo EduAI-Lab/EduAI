@@ -100,6 +100,8 @@ npm run eval:adhd -- --only S2,S3 --mode assist-oversight --label paper1-frozen-
 
 Numbers doc: `eduai-summer-2026/reports/form-a/paper1-frozen-eval-numbers.md` (2026-07-12, git `3967e5b4`, `google:gemini-2.5-flash`, `EDUAI_COURSE_ID=seed_course_cosc101`).
 
+**Repeat v2 (5× per arm, S1+S2+S3+S5+S2L):** `eval-runs/paper1-repeat-v2/gemini-2.5-flash/{baseline,prompt-only,oversight}/run-01…05`
+
 ---
 
 ## Saturday PM — Block 2: Build THE table
