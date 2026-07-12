@@ -65,17 +65,16 @@ Fleet routing uses two **job types**. They describe how long the user can wait, 
 | **`interactive`** | User is waiting on screen (seconds) | `VLLM_FLEET_CHAT_URLS` |
 | **`background`** | Minutes are OK (generation, extraction) | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool if unset) |
 
-Extensions still send a **feature** tag for telemetry and debugging. EduAI maps it to a job type:
+Extensions still send a **feature** tag for telemetry and debugging. Slice 1 features are interactive; background is selected by explicit `JobType` (not a feature tag):
 
 | `routingContext.feature` | Maps to `JobType` | Apps |
 |--------------------------|-------------------|------|
 | `chat` (default) | `interactive` | EduAI chat |
 | `tutor` | `interactive` | AI Tutor |
-| `question-maker` | `background` | Question Maker |
 
 ```typescript
 type JobType = "interactive" | "background";
-type WorkloadFeature = "chat" | "tutor" | "question-maker";
+type WorkloadFeature = "chat" | "tutor";
 ```
 
 Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs 32B) is chosen by Auto routing before the fleet step.
@@ -85,7 +84,7 @@ Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs
 | Job type | Who uses it | How fast should it feel? | Send to |
 |----------|-------------|--------------------------|---------|
 | **`interactive`** | EduAI chat, AI Tutor, tool-heavy chat | Seconds | cmps01 + cmps02 (chat pool) |
-| **`background`** | Question Maker | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
+| **`background`** | Explicit `JobType: "background"` callers | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
 | *(not fleet)* | Embeddings / RAG index | Not user-visible | Ollama on cmps01 |
 
 **Why this matters:** Background jobs must not block interactive traffic on the same GPU host.
@@ -100,7 +99,7 @@ All three are expected to have **two NVIDIA RTX 6000 Ada GPUs**. Each host runs 
 |--------|--------|--------|----------|
 | **cmps01** | Running | 7B + 32B | Dev, research, interactive |
 | **cmps02** | Infra in repo | 7B + 32B | Extra **interactive** capacity |
-| **cmps03** | Planned | TBD (likely 32B) | **Background** (Question Maker) |
+| **cmps03** | Planned | TBD (likely 32B) | **Background** (explicit job type) |
 
 When `VLLM_FLEET_CHAT_URLS` is set, fleet routing is **on**; otherwise the app uses single-host `VLLM_BASE_URL` only.
 
@@ -149,7 +148,7 @@ VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 {
   "messages": [ ... ],
   "model": "vllm:qwen2.5-32b-instruct",
-  "routingContext": { "feature": "question-maker" }
+  "routingContext": { "feature": "tutor" }
 }
 ```
 
@@ -239,7 +238,7 @@ Fleet is **on** when `VLLM_FLEET_CHAT_URLS` is non-empty. Routing applies only t
 
 Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (or `cmps02`) in the Network tab on `/api/chat` response headers. With two healthy hosts, the header should alternate across requests.
 
-**Question Maker (heavy pool):** include `"routingContext": { "feature": "question-maker" }` in the chat body when `VLLM_FLEET_HEAVY_URL` is set.
+**Background / heavy pool:** call `resolveFleetHost` with `jobType: "background"` when `VLLM_FLEET_HEAVY_URL` is set (not via a feature tag).
 
 ### 5. Negative checks (optional)
 
