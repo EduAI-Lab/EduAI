@@ -296,7 +296,7 @@ describe("enrollment management lifecycle (#305)", () => {
       form.set("name", "Lifecycle 305");
       form.set("code", "LC 305");
       form.set("section", "001");
-      form.set("term", "Fall");
+      form.set("term", "W1");
       form.set("year", "2026");
       form.set("startDate", "2026-09-01");
       form.set("department", "COSC");
