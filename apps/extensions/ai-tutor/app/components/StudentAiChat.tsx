@@ -527,8 +527,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         </Message>
       ) : (
         <Message key={msg.id}>
-          {/* `reading-surface` applies relaxed typography under Assistive Mode. */}
-          <MessageContent markdown className="reading-surface max-w-[88%]">
+          {/* Match Core's chat: render AI markdown directly on the card (bg-transparent)
+              instead of the default bg-secondary bubble, which broke dark-mode contrast.
+              MessageContent applies `reading-surface` internally for Assistive Mode. */}
+          <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
             {msg.content}
           </MessageContent>
         </Message>
@@ -709,8 +711,14 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               {renderMessages(activeTab)}
               {chatState[activeTab].loading && (
                 <Message>
-                  <div className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-3.5 text-foreground">
-                    <Loader variant="loading-dots" text="Thinking" size="sm" />
+                  {/* Mirror Core's ChatTypingIndicator: subtle bg-muted/50 bubble + text-shimmer. */}
+                  <div className="max-w-none rounded-lg bg-muted/50 px-4 py-3 text-foreground">
+                    <Loader
+                      variant="text-shimmer"
+                      text="Thinking"
+                      size="sm"
+                      className="text-muted-foreground"
+                    />
                   </div>
                 </Message>
               )}
