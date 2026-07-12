@@ -1,7 +1,7 @@
 /** Multi-server vLLM fleet routing — job types, telemetry features, and pick results. */
 
 export type JobType = "interactive" | "background";
-export type WorkloadFeature = "chat" | "tutor" | "question-maker";
+export type WorkloadFeature = "chat" | "tutor";
 
 export type FleetServer = {
   id: string;
@@ -23,10 +23,11 @@ export type FleetHealthResult = {
   error?: string;
 };
 
-const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor", "question-maker"];
+const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor"];
 
-export function featureToJobType(feature: WorkloadFeature): JobType {
-  return feature === "question-maker" ? "background" : "interactive";
+/** Slice-1 features are interactive; background is reserved for explicit job-type callers. */
+export function featureToJobType(_feature: WorkloadFeature): JobType {
+  return "interactive";
 }
 
 export function parseWorkloadFeature(routingContext: unknown): WorkloadFeature {

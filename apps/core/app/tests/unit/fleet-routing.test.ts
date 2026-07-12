@@ -22,22 +22,19 @@ describe("parseWorkloadFeature", () => {
 
   it("parses known feature values", () => {
     expect(parseWorkloadFeature({ feature: "tutor" })).toBe("tutor");
-    expect(parseWorkloadFeature({ feature: "question-maker" })).toBe("question-maker");
+    expect(parseWorkloadFeature({ feature: "chat" })).toBe("chat");
   });
 
   it("falls back to chat for unknown values", () => {
     expect(parseWorkloadFeature({ feature: "unknown" })).toBe("chat");
+    expect(parseWorkloadFeature({ feature: "question-maker" })).toBe("chat");
   });
 });
 
 describe("featureToJobType", () => {
-  it("maps latency-sensitive features to interactive jobs", () => {
+  it("maps known features to interactive jobs", () => {
     expect(featureToJobType("chat")).toBe("interactive");
     expect(featureToJobType("tutor")).toBe("interactive");
-  });
-
-  it("maps question generation to a background job", () => {
-    expect(featureToJobType("question-maker")).toBe("background");
   });
 });
 

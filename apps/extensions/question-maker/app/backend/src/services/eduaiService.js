@@ -153,7 +153,7 @@ class EduAIService {
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
         courseCode: params.courseCode,
         streaming: params.streaming || false,
-        routingContext: params.routingContext || { feature: "question-maker" },
+        routingContext: params.routingContext || { feature: "chat" },
       };
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
