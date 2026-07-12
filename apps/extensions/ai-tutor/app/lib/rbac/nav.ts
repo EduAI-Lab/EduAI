@@ -2,7 +2,6 @@ import type { AtNavItem, AtUser } from './types';
 import {
   canAccessAdminConsole,
   canViewCourseAnalytics,
-  canViewTeachingContent,
   usesInstructorShell,
 } from './permissions';
 
@@ -49,12 +48,8 @@ export function getNavForUser(user: AtUser | null | undefined): AtNavItem[] {
 }
 
 export function getCourseDetailTabs(user: AtUser | null | undefined) {
-  const tabs: Array<{ id: 'content' | 'enrollments' | 'submissions' | 'analytics'; label: string }> =
+  const tabs: Array<{ id: 'content' | 'submissions' | 'analytics'; label: string }> =
     [{ id: 'content', label: 'Content' }];
-
-  if (canViewTeachingContent(user) && user?.role !== 'TA') {
-    tabs.push({ id: 'enrollments', label: 'Enrollments' });
-  }
 
   if (canViewCourseAnalytics(user) || user?.role === 'TA') {
     tabs.push({ id: 'submissions', label: 'Submissions' });

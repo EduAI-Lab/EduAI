@@ -57,7 +57,6 @@ import { useLocalUser } from '../hooks/useLocalUser';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
 import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
-import { CourseEnrollmentsPanel } from '../components/courses/CourseEnrollmentsPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
@@ -670,18 +669,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </div>
           )}
         </PageTabsContent>
-
-        {tabs.some((tab) => tab.id === 'enrollments') && (
-          <PageTabsContent value="enrollments">
-            {numericCourseId ? (
-              <CourseEnrollmentsPanel
-                courseId={numericCourseId}
-                canManage={perms.canManageEnrollments}
-                canAssignTa={perms.canAssignTaRole}
-              />
-            ) : null}
-          </PageTabsContent>
-        )}
 
         {tabs.some((tab) => tab.id === 'submissions') && (
           <PageTabsContent value="submissions">
