@@ -83,12 +83,9 @@ type StudentSelectableModel = AiModel & {
  *   generic fallback. Used after a student answers to nudge the AI toward
  *   guidance. If no provider key is set, it still switches to Guide so the
  *   inline "add a key" notice is visible instead of silently doing nothing.
- * - `pushGuideMessage`: append an assistant message into Guide history without
- *   round-tripping the server (client-authored nudges).
  */
 export type StudentAiChatHandle = {
   sendGuidePrompt: () => void;
-  pushGuideMessage: (content: string) => void;
 };
 
 type StudentAiChatProps = {
@@ -446,12 +443,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         const fallback = guideInput.trim() || 'I would like guidance on this question.';
         void sendChat('guide', fallback);
       },
-      pushGuideMessage: (content: string) => {
-        if (!activity || !content || !activity.enableGuideMode) return;
-        appendMessage('guide', 'assistant', content);
-      },
     }),
-    [activity, appendMessage, getKey, guideInput, selectedModelId, sendChat],
+    [activity, getKey, guideInput, selectedModelId, sendChat],
   );
 
   const chatDisabled = !activity || !hasApiKey || !isUserReady;
