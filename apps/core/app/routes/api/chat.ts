@@ -1267,12 +1267,9 @@ ${buildEmptyCourseRagBlock()}`;
                 });
               }
             },
-        onError:
-          chatMode === "admin"
-            ? ({ error }) => {
-                logStreamError(error, streamTrace);
-              }
-            : undefined,
+        onError: ({ error }) => {
+          logStreamError(error, streamTrace);
+        },
       });
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
