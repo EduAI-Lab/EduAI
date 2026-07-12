@@ -343,6 +343,56 @@ describe('Modules routes', () => {
     });
   });
 
+  // ── PATCH /api/modules/:id (update) ───────────────────────────────
+
+  describe('PATCH /api/modules/:id', () => {
+    it('professor can update title and description', async () => {
+      const res = await request(profApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: 'Renamed module', description: 'New description' });
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Renamed module');
+      const found = await prisma.module.findUnique({ where: { id: seed.module.id } });
+      expect(found.title).toBe('Renamed module');
+      expect(found.description).toBe('New description');
+    });
+
+    it('returns 400 when nothing to update', async () => {
+      const res = await request(profApp).patch(`/api/modules/${seed.module.id}`).send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for an empty title', async () => {
+      const res = await request(profApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: '' });
+      expect(res.status).toBe(400);
+    });
+
+    it('TA cannot update a module', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: 'Nope' });
+      expect(res.status).toBe(403);
+    });
+
+    it('non-instructor cannot update', async () => {
+      const otherProf = makeProfessor();
+      const otherApp = await createApp({ mockUser: otherProf });
+      const res = await request(otherApp)
+        .patch(`/api/modules/${seed.module.id}`)
+        .send({ title: 'Nope' });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 404 for non-existent module', async () => {
+      const res = await request(profApp).patch('/api/modules/9999999').send({ title: 'x' });
+      expect(res.status).toBe(404);
+    });
+  });
+
   // ── UNIT_ADMIN access ─────────────────────────────────────────────
 
   describe('UNIT_ADMIN access', () => {
