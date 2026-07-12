@@ -149,6 +149,52 @@ describe('api methods', () => {
     }
   });
 
+  it('a caller-aborted request rejects with the AbortError as-is (Stop button, #999)', async () => {
+    const controller = new AbortController();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(
+      1,
+      { knowledgeLevel: 'beginner', message: 'hi', modelId: 'm', apiKey: 'k' },
+      controller.signal,
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('an internal timeout rejects with ApiTimeoutError, distinct from a caller abort', async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api, ApiTimeoutError } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(1, {
+      knowledgeLevel: 'beginner',
+      message: 'hi',
+      modelId: 'm',
+      apiKey: 'k',
+    });
+    const assertion = expect(pending).rejects.toThrow(ApiTimeoutError);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await assertion;
+    vi.useRealTimers();
+  });
+
   it('api.logout proxies sign-out through the AT backend with POST and credentials', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
