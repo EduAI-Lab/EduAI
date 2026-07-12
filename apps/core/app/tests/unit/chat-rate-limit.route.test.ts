@@ -1,6 +1,7 @@
 // @vitest-environment node
-// Client abort / stop-button support for /api/chat (#267).
-import { describe, it, expect, vi, beforeEach } from "vitest";
+// Per-user rate limiting for /api/chat (#987): caps LLM completion requests
+// so an authenticated user can't submit unbounded requests to the model.
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -37,6 +38,12 @@ vi.mock("~/lib/auth/server", () => ({
 
 vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+  requireServiceKey: vi.fn().mockResolvedValue(
+    new Response(JSON.stringify({ error: "MISSING_SERVICE_KEY" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    }),
+  ),
 }));
 
 vi.mock("~/lib/auth/course-access.server", () => ({
@@ -59,14 +66,14 @@ vi.mock("~/lib/assistive-events.server", () => ({
   recordResponseComplianceEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("~/lib/ai/adhd-oversight", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/ai/adhd-oversight")>();
-  return { ...actual, auditAndMaybeRewrite: vi.fn() };
-});
-
 vi.mock("~/lib/policy.server", () => ({
   getPolicy: vi.fn().mockResolvedValue(false),
   invalidatePolicyCache: vi.fn(),
+}));
+
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: vi.fn((p: Promise<unknown>) => p),
+  logSecurityEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({
@@ -83,18 +90,20 @@ import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
+const originalChatRateLimit = process.env.CHAT_RATE_LIMIT;
+const originalChatRateWindow = process.env.CHAT_RATE_WINDOW_MS;
 
-function makeRequest(body: object, signal?: AbortSignal) {
+function makeRequest(body: object) {
   return {
     request: new Request("http://localhost/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal,
     }),
     params: {},
     context: {} as never,
@@ -128,17 +137,12 @@ function mockStream() {
   } as never);
 }
 
-function lastAbortSignal(): AbortSignal | undefined {
-  const call = vi.mocked(streamText).mock.calls.at(-1)?.[0] as
-    | { abortSignal?: AbortSignal }
-    | undefined;
-  return call?.abortSignal;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  process.env.CHAT_RATE_LIMIT = "2";
+  process.env.CHAT_RATE_WINDOW_MS = "60000";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -152,42 +156,73 @@ beforeEach(() => {
     systemPrompt: null,
   } as never);
 
-  vi.mocked(prisma.chat.update).mockImplementation(
-    (async (args: { data?: Record<string, unknown> }) => ({
-      id: CHAT_ID,
-      userId: "user-1",
-      courseId: COURSE_ID,
-      adhdAssist: false,
-      systemPrompt: null,
-      ...(args.data ?? {}),
-    })) as never,
-  );
-
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
+  mockStream();
 });
 
-describe("Chat API client abort (#267)", () => {
-  it("passes the request AbortSignal to streamText", async () => {
-    const controller = new AbortController();
-    const args = makeRequest(baseBody(), controller.signal);
-    mockStream();
+afterEach(() => {
+  if (originalChatRateLimit === undefined) delete process.env.CHAT_RATE_LIMIT;
+  else process.env.CHAT_RATE_LIMIT = originalChatRateLimit;
+  if (originalChatRateWindow === undefined) delete process.env.CHAT_RATE_WINDOW_MS;
+  else process.env.CHAT_RATE_WINDOW_MS = originalChatRateWindow;
+});
 
-    await action(args);
-
-    expect(lastAbortSignal()).toBe(args.request.signal);
+describe("POST /api/chat — per-user rate limit (#987)", () => {
+  it("allows requests under the configured limit", async () => {
+    const res1 = await action(makeRequest(baseBody()));
+    const res2 = await action(makeRequest(baseBody()));
+    expect(res1.status).not.toBe(429);
+    expect(res2.status).not.toBe(429);
   });
 
-  it("returns 499 when streamText throws AbortError", async () => {
-    const abortError = new Error("The operation was aborted");
-    abortError.name = "AbortError";
-    vi.mocked(streamText).mockRejectedValue(abortError);
+  it("returns 429 once a user exceeds CHAT_RATE_LIMIT within the window", async () => {
+    await action(makeRequest(baseBody()));
+    await action(makeRequest(baseBody()));
+    const res3 = await action(makeRequest(baseBody()));
+
+    expect(res3.status).toBe(429);
+    expect(await res3.json()).toEqual({ error: "Too Many Requests" });
+    expect(streamText).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs a RATE_LIMIT_EXCEEDED security event when throttled", async () => {
+    await action(makeRequest(baseBody()));
+    await action(makeRequest(baseBody()));
+    await action(makeRequest(baseBody()));
+
+    expect(logSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "RATE_LIMIT_EXCEEDED",
+        outcome: "DENIED",
+        entityType: "Chat",
+      }),
+    );
+  });
+
+  it("tracks each user independently", async () => {
+    await action(makeRequest(baseBody()));
+    await action(makeRequest(baseBody()));
+
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "user-2", role: "STUDENT" },
+    } as never);
 
     const res = await action(makeRequest(baseBody()));
+    expect(res.status).not.toBe(429);
+  });
 
-    expect(res.status).toBe(499);
+  it("does not rate-limit the unauthenticated service-key caller", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const { requireServiceKey } = await import("~/lib/auth/guards.server");
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+
+    for (let i = 0; i < 5; i++) {
+      const res = await action(makeRequest({ messages: [] }));
+      expect(res.status).not.toBe(429);
+    }
   });
 });
