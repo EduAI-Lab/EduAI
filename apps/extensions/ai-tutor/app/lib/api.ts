@@ -112,29 +112,69 @@ export class ApiNetworkError extends Error {
   }
 }
 
+/** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
+export class ApiTimeoutError extends Error {
+  constructor(message = 'Request timed out') {
+    super(message);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+// #999: the chat send path has no bound on how long a hung upstream call can
+// leave the UI showing "Thinking...". This is the client-side half of that
+// fix — the AI Tutor server also bounds its own EduAI round-trip
+// (EDUAI_CALL_TIMEOUT_MS, default 45s) so this should normally see a clean
+// error response before ever firing; it exists as a backstop.
+const DEFAULT_TIMEOUT_MS = 60_000;
+
 /**
  * Single fetch wrapper for the entire API surface. Every caller goes through
  * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
  * (e.g. sign-out) should bypass this helper intentionally.
+ *
+ * `init.signal`, if provided, lets the caller cancel the request directly
+ * (e.g. a "Stop generating" button) — it's merged with the internal timeout
+ * controller rather than passed straight through, so both can independently
+ * abort the same underlying fetch.
  */
-async function http(path: string, init?: RequestInit) {
+async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
+  const { signal: callerSignal, timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
+  const controller = new AbortController();
+  const TIMEOUT_REASON = Symbol('http-timeout');
+  const timeoutId = setTimeout(() => controller.abort(TIMEOUT_REASON), timeoutMs);
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', () => controller.abort(callerSignal.reason), { once: true });
+  }
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      ...init,
+      ...rest,
       credentials: 'include',
       headers: {
         ...headers,
         ...init?.headers,
       },
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (controller.signal.reason === TIMEOUT_REASON) {
+      throw new ApiTimeoutError();
+    }
+    if (controller.signal.aborted) {
+      // Caller-initiated cancellation (e.g. Stop button) — rethrow as-is so
+      // callers can distinguish it from a real failure via `error.name`.
+      throw err;
+    }
     throw new ApiNetworkError();
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
@@ -366,10 +406,12 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/teach`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
     }),
   sendGuideMessage: (
     activityId: number,
@@ -382,10 +424,12 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/guide`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
     }),
   sendCustomMessage: (
     activityId: number,
@@ -399,10 +443,12 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/custom`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
     }),
   listChatSessions: (activityId: number) =>
     http(`/api/activities/${activityId}/chat-sessions`) as Promise<
