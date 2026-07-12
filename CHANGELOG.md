@@ -9,16 +9,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
 ### Changed
 
-- [core, ai-tutor, question-maker] feat: Shared-session auth across `*.eduai.ok.ubc.ca` — extensions redirect to Core login with `?force=1` to avoid cookie redirect loops; QM AI chat prefers the Core session cookie over the service key. (#936, @superbolt08, 2026-07-11) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
-- [monorepo] docs: Update `docs/rag-ai/HOW_TO_USE_DEV_SERVER.md` and `infra/s378/GO-LIVE.md` for systemd ops, public URLs, `COOKIE_DOMAIN`, and extension troubleshooting. (#936, @superbolt08, 2026-07-11) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core, ai-tutor, question-maker] feat: Shared-session auth across `*.eduai.ok.ubc.ca` — extensions redirect to Core login with `?force=1` to avoid cookie redirect loops; QM AI chat prefers the Core session cookie over the service key. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
+- [monorepo] docs: Update `docs/rag-ai/HOW_TO_USE_DEV_SERVER.md` and `infra/s378/GO-LIVE.md` for systemd ops, public URLs, `COOKIE_DOMAIN`, and extension troubleshooting. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
 ### Fixed
 
-- [question-maker, core] fix: Question generation JSON parse (balanced extract instead of greedy regex) and Core `systemPrompt` handling so variant/generate-questions does not fall into tutor prose or refuse empty-RAG custom prompts. (#936, @superbolt08, 2026-07-11) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [question-maker, core] fix: Question generation JSON parse (balanced extract instead of greedy regex) and Core `systemPrompt` handling so variant/generate-questions does not fall into tutor prose or refuse empty-RAG custom prompts. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
 ## [Week 9 — June 29–July 5, 2026]
 
