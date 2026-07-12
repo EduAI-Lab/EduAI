@@ -37,6 +37,7 @@
  */
 import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
 import { useParams } from 'react-router';
+import { toast } from 'sonner';
 import {
   IconListCheck,
   IconPencil,
@@ -76,6 +77,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmDialog,
   CardContent,
   Combobox,
   Dialog,
@@ -171,6 +173,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [editingActivityId, setEditingActivityId] = useState<number | null>(null);
   const [savingActivityId, setSavingActivityId] = useState<number | null>(null);
   const [deletingActivityId, setDeletingActivityId] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
 
   const [duplicatingActivityId, setDuplicatingActivityId] = useState<number | null>(null);
@@ -323,14 +326,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   }, []);
 
   const handleDeleteActivity = async (activityId: number) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const confirmed = window.confirm('Remove this activity? This action cannot be undone.');
-    if (!confirmed) {
-      return;
-    }
-
     setDeletingActivityId(activityId);
     try {
       await api.deleteActivity(activityId);
@@ -340,7 +335,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       }
     } catch (error) {
       console.error('Failed to remove activity', error);
-      alert('Failed to remove activity. Please try again.');
+      toast.error('Failed to remove activity. Please try again.');
     } finally {
       setDeletingActivityId((current) => (current === activityId ? null : current));
     }
@@ -852,7 +847,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                         size="icon"
                                         className="size-8 text-muted-foreground hover:text-destructive"
                                         aria-label="Remove activity"
-                                        onClick={() => handleDeleteActivity(activity.id)}
+                                        onClick={() => setPendingDeleteId(activity.id)}
                                         disabled={isDeleting || isDuplicating}
                                       >
                                         <IconTrash className="size-4" aria-hidden="true" />
@@ -1187,6 +1182,21 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+        title="Remove activity?"
+        description="This action cannot be undone."
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingDeleteId === null) return;
+          void handleDeleteActivity(pendingDeleteId);
+          setPendingDeleteId(null);
+        }}
+      />
     </CourseTopicsProvider>
   );
 }

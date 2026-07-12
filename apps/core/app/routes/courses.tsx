@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link, redirect, useLoaderData, useSearchParams } from 'react-router'
+import { toast } from 'sonner'
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
@@ -17,6 +19,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  ConfirmDialog,
 } from '@eduai/ui'
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -74,8 +77,24 @@ export default function CoursesPage() {
   // TA is a course-level enrollment role, not a platform role (#499).
   const isTA = taCourseIds.length > 0
 
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: string
+    publish: boolean
+    label: string
+  } | null>(null)
+
   const handlePublishToggle = async (id: string, publish: boolean) => {
-    await updateCourse(id, { isPublished: publish })
+    try {
+      await updateCourse(id, { isPublished: publish })
+    } catch {
+      toast.error('Failed to update course. Please try again.')
+    }
+  }
+
+  const handlePublishToggleRequest = (id: string, publish: boolean) => {
+    const course = courses.find((c) => c.id === id)
+    setPendingPublish({ id, publish, label: `${course?.code ?? ''} — ${course?.name ?? ''}`.trim() })
+    return Promise.resolve()
   }
 
   if (loading) {
@@ -113,7 +132,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isUnitAdmin ? (
           <CoursesUnitAdminView
@@ -125,7 +144,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isInstructor ? (
           <CoursesInstructorView
@@ -133,7 +152,7 @@ export default function CoursesPage() {
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
-            onPublishToggle={handlePublishToggle}
+            onPublishToggle={handlePublishToggleRequest}
           />
         ) : isTA ? (
           <CoursesTaView
@@ -147,6 +166,31 @@ export default function CoursesPage() {
           />
         )}
       </div>
+      <ConfirmDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => { if (!open) setPendingPublish(null) }}
+        title={
+          pendingPublish
+            ? pendingPublish.publish
+              ? `Publish "${pendingPublish.label}"?`
+              : `Unpublish "${pendingPublish.label}"?`
+            : ''
+        }
+        description={
+          pendingPublish
+            ? pendingPublish.publish
+              ? 'Students will be able to see this course.'
+              : 'Students will lose access to this course.'
+            : ''
+        }
+        confirmLabel={pendingPublish?.publish ? 'Publish' : 'Unpublish'}
+        variant={pendingPublish?.publish ? 'default' : 'destructive'}
+        onConfirm={() => {
+          if (!pendingPublish) return
+          void handlePublishToggle(pendingPublish.id, pendingPublish.publish)
+          setPendingPublish(null)
+        }}
+      />
     </Layout>
   )
 }

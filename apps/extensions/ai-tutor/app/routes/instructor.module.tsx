@@ -26,6 +26,7 @@ import {
   Button,
   Card,
   CardContent,
+  ConfirmDialog,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -114,6 +115,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const [selectedLessonIds, setSelectedLessonIds] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [publishingId, setPublishingId] = useState<number | null>(null);
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: number;
+    isPublished: boolean;
+    title: string;
+  } | null>(null);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -729,7 +735,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         perms.canPublishContent
                           ? () => {
                               if (busy || blocked) return;
-                              togglePublish(lesson.id, lesson.isPublished);
+                              setPendingPublish({
+                                id: lesson.id,
+                                isPublished: lesson.isPublished,
+                                title: lesson.title,
+                              });
                             }
                           : undefined
                       }
@@ -755,6 +765,33 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           </PermissionGate>
         </div>
       )}
+      <ConfirmDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPublish(null);
+        }}
+        title={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? `Unpublish "${pendingPublish.title}"?`
+              : `Publish "${pendingPublish.title}"?`
+            : ''
+        }
+        description={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? 'Students will lose access to this content.'
+              : 'Students will be able to see this content.'
+            : ''
+        }
+        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
+        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          setPendingPublish(null);
+        }}
+      />
     </div>
   );
 }

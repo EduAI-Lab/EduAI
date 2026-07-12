@@ -26,6 +26,7 @@ import {
   Button,
   Card,
   CardContent,
+  ConfirmDialog,
   CourseHeroCard,
   Dialog,
   DialogContent,
@@ -118,6 +119,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingModule, setDeletingModule] = useState<Module | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [pendingPublish, setPendingPublish] = useState<{
+    id: number;
+    isPublished: boolean;
+    title: string;
+  } | null>(null);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -654,7 +660,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                             perms.canPublishContent
                               ? () => {
                                   if (busy || blocked) return;
-                                  togglePublish(m.id, m.isPublished);
+                                  setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
                                 }
                               : undefined
                           }
@@ -682,6 +688,33 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           </PageTabsContent>
         )}
       </PageTabs>
+      <ConfirmDialog
+        open={pendingPublish !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPublish(null);
+        }}
+        title={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? `Unpublish "${pendingPublish.title}"?`
+              : `Publish "${pendingPublish.title}"?`
+            : ''
+        }
+        description={
+          pendingPublish
+            ? pendingPublish.isPublished
+              ? 'Students will lose access to this content.'
+              : 'Students will be able to see this content.'
+            : ''
+        }
+        confirmLabel={pendingPublish?.isPublished ? 'Unpublish' : 'Publish'}
+        variant={pendingPublish?.isPublished ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (!pendingPublish) return;
+          void togglePublish(pendingPublish.id, pendingPublish.isPublished);
+          setPendingPublish(null);
+        }}
+      />
     </div>
   );
 }
