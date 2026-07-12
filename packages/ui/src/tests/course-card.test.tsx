@@ -49,7 +49,7 @@ describe("CourseCard", () => {
         href="/courses/1"
       />
     );
-    expect(screen.getByText(/Summer 2025/)).toBeInTheDocument();
+    expect(screen.getByText(/2025S1/)).toBeInTheDocument();
   });
 
   it("displays published status based on isPublished prop", () => {

@@ -16,6 +16,11 @@ import {
     DialogHeader,
     DialogTitle,
     DialogFooter,
+    TERM_CODES,
+    termFromMonth,
+    termLabel,
+    termLabelLong,
+    termSortKey,
 } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
@@ -31,20 +36,37 @@ interface GenerateAssessmentModalProps {
   courseId: number;
 }
 
-function getSemesterOptions(initialSemester?: string): string[] {
-  const options: string[] = [];
+/** Canonical current-term value, e.g. "2026W1", from today's date. */
+function defaultSemester(): string {
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const seasons = ['Winter', 'Spring', 'Summer', 'Fall'] as const;
+  return termLabel(termFromMonth(now.getMonth()), now.getFullYear());
+}
+
+/**
+ * Semester picker options using the canonical UBC term model. `value` is the
+ * compact code ("2026W1") stored on the assessment; `label` is the readable
+ * heading ("Winter Term 1 2026"). Any pre-existing legacy value (e.g. a saved
+ * "Fall 2026") is preserved at the top so editing an old assessment still works.
+ */
+function getSemesterOptions(initialSemester?: string): { value: string; label: string }[] {
+  const currentYear = new Date().getFullYear();
+  const opts: { value: string; label: string; sort: number }[] = [];
   for (let y = currentYear - 1; y <= currentYear + 2; y++) {
-    for (const season of seasons) {
-      options.push(`${season} ${y}`);
+    for (const code of TERM_CODES) {
+      opts.push({
+        value: termLabel(code, y),
+        label: termLabelLong(code, y),
+        sort: termSortKey({ term: code, year: y }),
+      });
     }
   }
-  if (initialSemester?.trim() && !options.includes(initialSemester.trim())) {
-    options.unshift(initialSemester.trim());
+  const legacy = initialSemester?.trim();
+  if (legacy && !opts.some((o) => o.value === legacy)) {
+    opts.push({ value: legacy, label: legacy, sort: Number.POSITIVE_INFINITY });
   }
-  return options;
+  return opts
+    .sort((a, b) => b.sort - a.sort)
+    .map(({ value, label }) => ({ value, label }));
 }
 
 export const GenerateAssessmentModal = ({
@@ -59,17 +81,15 @@ export const GenerateAssessmentModal = ({
   const isEdit = mode === 'edit';
   const [assessmentName, setAssessmentName] = React.useState(initialValues?.name ?? '');
   const [assessmentType, setAssessmentType] = React.useState<AssessmentType>(initialValues?.type ?? 'Assignment');
-  const [assessmentSemester, setAssessmentSemester] = React.useState(() => {
-    if (initialValues?.semester) return initialValues.semester;
-    const now = new Date();
-    return `Fall ${now.getFullYear()}`;
-  });
+  const [assessmentSemester, setAssessmentSemester] = React.useState(
+    () => initialValues?.semester ?? defaultSemester(),
+  );
 
   React.useEffect(() => {
     if (!open) return;
     setAssessmentName(initialValues?.name ?? '');
     setAssessmentType(initialValues?.type ?? 'Assignment');
-    setAssessmentSemester(initialValues?.semester ?? `Fall ${new Date().getFullYear()}`);
+    setAssessmentSemester(initialValues?.semester ?? defaultSemester());
   }, [open, initialValues?.name, initialValues?.type, initialValues?.semester]);
 
   const semesterOptions = React.useMemo(
@@ -176,8 +196,8 @@ export const GenerateAssessmentModal = ({
                 </SelectTrigger>
                 <SelectContent>
                   {semesterOptions.map((sem) => (
-                    <SelectItem key={sem} value={sem}>
-                      {sem}
+                    <SelectItem key={sem.value} value={sem.value}>
+                      {sem.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

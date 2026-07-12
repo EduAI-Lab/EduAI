@@ -1,5 +1,4 @@
-import { IconBooks, IconMessageChatbot, IconSchool } from '@tabler/icons-react';
-import { QUESTION_MAKER_ROLES, type LauncherApp } from '@eduai/ui';
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui';
 import { getCoreUrl, getAiTutorUrl } from './coreUrl';
 
 /** Stable id for the app rendering this sidebar — passed to AppLauncher. */
@@ -10,36 +9,18 @@ function getQuestionMakerUrl(): string {
 }
 
 /**
- * Every EduAI app/extension, for the bottom-left launcher. Role gating is
- * applied by AppLauncher from each entry's `roles`; Core and AI Tutor are open
- * to all roles, Question Maker only to instructors/admins.
+ * Every EduAI app/extension, for the bottom-left launcher. Names/icons/colors/
+ * role-gating now live in the shared `@eduai/ui` registry (issue #764) so
+ * Core, AI Tutor, and Question Maker agree on one canonical list; this app
+ * only resolves its own per-env URLs and injects them.
  */
 export function getLauncherApps(): LauncherApp[] {
-  return [
-    {
-      id: 'core',
-      name: 'EduAI Core',
-      url: getCoreUrl(),
-      icon: <IconSchool className="size-4" />,
-      description: 'Courses, materials & class hub',
-      color: 'oklch(0.580 0.150 250)',
+  return getSharedLauncherApps({
+    currentAppId: CURRENT_APP_ID,
+    urls: {
+      core: getCoreUrl(),
+      aiTutor: getAiTutorUrl(),
+      questionMaker: getQuestionMakerUrl(),
     },
-    {
-      id: 'ai-tutor',
-      name: 'AI Tutor',
-      url: getAiTutorUrl(),
-      icon: <IconMessageChatbot className="size-4" />,
-      description: 'Chat-based study assistant',
-      color: 'oklch(0.560 0.130 165)',
-    },
-    {
-      id: 'question-maker',
-      name: 'Question Maker',
-      url: getQuestionMakerUrl(),
-      icon: <IconBooks className="size-4" />,
-      description: 'Build & manage assessments',
-      color: 'oklch(0.660 0.145 65)',
-      roles: QUESTION_MAKER_ROLES,
-    },
-  ];
+  });
 }
