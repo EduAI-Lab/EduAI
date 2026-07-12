@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Fixed
+
+- [core] fix: Fail closed on Canvas credential decrypt — `decrypt()` now throws on key rotation or auth-tag failure instead of returning ciphertext as a Bearer token; Canvas API routes return a 400 reconnect prompt when stored credentials cannot be decrypted, and encrypted student numbers fall back to unreadable (re-entry) rather than hard-500ing callers. (#1006, #980, @GlowyBlack, 2026-07-12)
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added

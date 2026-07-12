@@ -13,6 +13,14 @@ const PBKDF2_ITERATIONS = 100_000;
 
 const STRICT_BASE64_SEGMENT = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/** Thrown when an encrypted blob fails GCM auth/decrypt (key rotation, tampering, corruption). */
+export class CanvasCredentialDecryptError extends Error {
+  constructor(message = "Failed to decrypt Canvas credential") {
+    super(message);
+    this.name = "CanvasCredentialDecryptError";
+  }
+}
+
 function getEncryptionKey(): string {
   const encryptionKey = process.env.ENCRYPTION_KEY;
   if (!encryptionKey) {
@@ -108,8 +116,9 @@ export function decrypt(encryptedData: string): string {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch (cause) {
-    throw new Error("Failed to decrypt Canvas credential: invalid key or corrupted data", {
-      cause,
-    });
+    throw new CanvasCredentialDecryptError(
+      "Failed to decrypt Canvas credential: invalid key or corrupted data",
+      { cause },
+    );
   }
 }
