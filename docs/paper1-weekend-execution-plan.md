@@ -94,9 +94,11 @@ npm run eval:adhd -- --only S2,S3 --mode assist-oversight --label paper1-frozen-
 
 | Arm | Label | `eval-runs/` path |
 |-----|-------|-------------------|
-| Baseline | `paper1-frozen-baseline` | |
-| Prompt-only | `paper1-frozen-prompt-only` | |
-| Oversight | `paper1-frozen-oversight` | |
+| Baseline | `paper1-frozen-baseline` | `eval-runs/paper1-frozen-baseline` |
+| Prompt-only | `paper1-frozen-prompt-only` | `eval-runs/paper1-frozen-prompt-only` |
+| Oversight | `paper1-frozen-oversight` | `eval-runs/paper1-frozen-oversight` |
+
+Numbers doc: `eduai-summer-2026/reports/form-a/paper1-frozen-eval-numbers.md` (2026-07-12, git `3967e5b4`, `google:gemini-2.5-flash`, `EDUAI_COURSE_ID=seed_course_cosc101`).
 
 ---
 

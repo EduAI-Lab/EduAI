@@ -104,6 +104,8 @@ Required environment variables:
 Optional environment variables:
   EDUAI_BASE_URL        Default http://localhost:5173 (core dev: http://localhost:3000)
   EDUAI_MODEL           Default openai:gpt-4o-mini
+  EDUAI_COURSE_ID       Course id for /api/chat (required when API enforces course context)
+  EDUAI_COURSE_CODE     Alternative: resolve course by code (e.g. COSC101)
 
 Phase 3 after-capture (oversight ON on server):
   EDUAI_BASE_URL=http://localhost:3000 \\
@@ -312,6 +314,8 @@ async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adh
     streaming: false,
     adhdAssist,
     chatId,
+    ...(process.env.EDUAI_COURSE_ID ? { courseId: process.env.EDUAI_COURSE_ID } : {}),
+    ...(process.env.EDUAI_COURSE_CODE ? { courseCode: process.env.EDUAI_COURSE_CODE } : {}),
   };
 
   const res = await fetch(`${baseUrl}/api/chat`, {
