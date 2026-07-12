@@ -1,0 +1,113 @@
+# Question Maker frontend (Vite/React SPA)
+# Target:
+#   serve — vite preview for E2E
+#
+# Build context: monorepo root
+#
+# Must build from the repo root because the frontend declares
+# "question-maker-backend": "*" as a workspace dependency.
+
+# ── Shared: install workspace dependencies ─────────────────────────────────
+FROM node:24-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY packages/ui/package.json                                 ./packages/ui/
+COPY apps/core/package.json                                   ./apps/core/
+COPY apps/extensions/ai-tutor/package.json                    ./apps/extensions/ai-tutor/
+COPY apps/extensions/ai-tutor/server/package.json             ./apps/extensions/ai-tutor/server/
+COPY apps/extensions/question-maker/package.json              ./apps/extensions/question-maker/
+COPY apps/extensions/question-maker/app/backend/package.json  ./apps/extensions/question-maker/app/backend/
+COPY apps/extensions/question-maker/app/frontend/package.json ./apps/extensions/question-maker/app/frontend/
+
+RUN npm ci --ignore-scripts
+
+# ── Shared test runner base ────────────────────────────────────────────────
+FROM node:24-alpine AS test-base
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/extensions/question-maker/node_modules \
+     ./apps/extensions/question-maker/node_modules
+
+COPY packages/ui                     ./packages/ui/
+
+# Backend stub required for workspace symlink resolution
+COPY apps/extensions/question-maker/app/backend/src \
+     ./apps/extensions/question-maker/app/backend/src
+COPY apps/extensions/question-maker/app/backend/package.json \
+     ./apps/extensions/question-maker/app/backend/
+
+COPY apps/extensions/question-maker/app/frontend/src \
+     ./apps/extensions/question-maker/app/frontend/src
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/vitest.unit.config.ts \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/vitest.integration.config.ts \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/tsconfig.json \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/tsconfig.node.json \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/index.html \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/package.json \
+     ./apps/extensions/question-maker/app/frontend/
+
+ENV PATH="/app/apps/extensions/question-maker/node_modules/.bin:/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/question-maker/app/frontend
+
+# Create a minimal .env at the project root inside the image so test runners
+# can load DATABASE_URL even if no .env is mounted at runtime. 
+RUN mkdir -p /app/apps/extensions/question-maker \
+     && printf 'DATABASE_URL=postgresql://postgres:password@question-maker-test-db:5432/question_maker_test\nNODE_ENV=test\n' > /app/apps/extensions/question-maker/.env
+
+# ── Target: test-unit ──────────────────────────────────────────────────────
+FROM test-base AS test-unit
+# vitest resolves from PATH: /app/node_modules/.bin/vitest (v4.1.9 hoisted to root by npm ci)
+CMD ["sh", "-c", "vitest run --config vitest.unit.config.ts"]
+
+# ── Target: test-integration ──────────────────────────────────────────────
+FROM test-base AS test-integration
+CMD ["sh", "-c", "vitest run --config vitest.integration.config.ts"]
+
+# ── Build ──────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS build
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+# @eduai/ui is source-only; the node_modules/@eduai/ui symlink points here
+COPY packages/ui ./packages/ui/
+
+COPY apps/extensions/question-maker/app/backend/src \
+     ./apps/extensions/question-maker/app/backend/src
+COPY apps/extensions/question-maker/app/backend/package.json \
+     ./apps/extensions/question-maker/app/backend/
+
+COPY apps/extensions/question-maker/app/frontend \
+     ./apps/extensions/question-maker/app/frontend
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/question-maker/app/frontend
+RUN npm run build
+
+# ── Target: serve ──────────────────────────────────────────────────────────
+FROM node:24-alpine AS serve
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=build /app/apps/extensions/question-maker/app/frontend/dist \
+     ./apps/extensions/question-maker/app/frontend/dist
+COPY apps/extensions/question-maker/app/frontend/package.json \
+     ./apps/extensions/question-maker/app/frontend/
+COPY apps/extensions/question-maker/app/frontend/vite.config.mts \
+     ./apps/extensions/question-maker/app/frontend/
+
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
+WORKDIR /app/apps/extensions/question-maker/app/frontend
+CMD ["sh", "-c", "npx vite preview --port ${PORT:-5173} --host 0.0.0.0"]

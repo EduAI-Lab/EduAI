@@ -1,31 +1,36 @@
-import { loadEnv } from 'vite'
-import { defineConfig } from 'vitest/config'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { defineConfig } from 'vitest/config'
+import tsconfigPaths from 'vite-tsconfig-paths'
 
-export default defineConfig(({ mode }) => {
-  // Load env file from project root (2 levels up from frontend)
-  const env = loadEnv(mode, process.cwd() + '/../..', '')
+const frontendDir = path.dirname(fileURLToPath(import.meta.url))
+const extensionRoot = path.resolve(frontendDir, '../..')
+const monorepoRoot = path.resolve(frontendDir, '../../../..')
 
-  return {
-    plugins: [react()],
-    resolve: {
-      alias: {
-        '@': resolve(__dirname, './src'),
-      },
+export default defineConfig({
+  plugins: [tailwindcss(), react(), tsconfigPaths()],
+  resolve: {
+    alias: {
+      '@': path.resolve(frontendDir, './src'),
     },
-    define: {
-      // Make environment variables available to the app
-      'process.env': env,
+    dedupe: ['react', 'react-dom'],
+  },
+  envDir: extensionRoot,
+  envPrefix: 'VITE_',
+  server: {
+    port: 5173,
+    host: '0.0.0.0',
+    fs: {
+      allow: [monorepoRoot],
     },
-    server: {
-      port: 5173,
-      host: '0.0.0.0',
-    },
-    test: {
-      clearMocks: true,
-      environment: 'jsdom',
-      setupFiles: ['./src/test/vitest.setup.ts'],
-    },
-  }
+  },
+  test: {
+    clearMocks: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/tests/vitest.setup.ts'],
+    passWithNoTests: true,
+  },
 })

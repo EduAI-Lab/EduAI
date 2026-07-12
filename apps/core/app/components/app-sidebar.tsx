@@ -1,217 +1,181 @@
 import * as React from "react"
+import { Form, Link, useLocation, useRouteLoaderData } from "react-router"
 import {
-  IconCamera,
-  IconChartBar,
-  IconDatabase,
-  IconDashboard,
-  IconFileAi,
-  IconFileDescription,
-  IconFileWord,
-  IconFolder,
-  IconHelp,
-  IconInnerShadowTop,
   IconBooks,
-  IconReport,
-  IconSearch,
-  IconSettings,
-  IconUsers,
-  IconMessageCircle,
-  IconRobot,
   IconBrain,
+  IconClockCog,
+  IconDashboard,
+  IconFileText,
+  IconListCheck,
+  IconLogout,
+  IconMessageChatbot,
+  IconReport,
+  IconRobot,
+  IconSettings,
+  IconShieldLock,
+  IconMail,
+  IconUser,
+  IconUsers,
+  type Icon,
 } from "@tabler/icons-react"
 
-import { NavDocuments } from "~/components/nav-documents"
-import { NavMain } from "~/components/nav-main"
-import { NavSecondary } from "~/components/nav-secondary"
-import { NavUser } from "~/components/nav-user"
 import {
+  AppSidebar as SharedAppSidebar,
   Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "~/components/ui/sidebar"
+} from "@eduai/ui"
+import type { NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
+import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps"
+import {
+  getNavForUser,
+  getNavSecondaryForUser,
+  type NavItemKey,
+} from "~/lib/rbac"
+import { usePolicyGate } from "~/components/policy/policy-gate"
+import { useCronJobStatus } from "~/hooks/api/use-cron-job-status"
 
-const data = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: IconDashboard,
-    },
-    {
-      title: "Courses",
-      url: "/courses",
-      icon: IconBooks,
-    },
-    {
-      title: "AI Management",
-      url: "/admin/ai-models",
-      icon: IconBrain,
-    },
-    {
-      title: "User Management",
-      url: "/admin/users",
-      icon: IconUsers,
-    },
-    {
-      title: "Chatbot",
-      url: "/chat",
-      icon: IconRobot,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: IconCamera,
-    },
-    {
-      title: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-  ],
-  navDocs: [
-    {
-      title: "Documents",
-      icon: IconFileDescription,
-      url: "#",
-      items: [
-        {
-          title: "Recent",
-          url: "#",
-        },
-        {
-          title: "Shared",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Users",
-      icon: IconUsers,
-      url: "#",
-      items: [
-        {
-          title: "All Users",
-          url: "#",
-        },
-        {
-          title: "Roles",
-          url: "#",
-        },
-        {
-          title: "Permissions",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Projects",
-      icon: IconFolder,
-      url: "#",
-      items: [
-        {
-          title: "Active",
-          url: "#",
-        },
-        {
-          title: "Completed",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Prompts",
-      icon: IconFileAi,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: IconSettings,
-    },
-    {
-      title: "Get Help",
-      url: "#",
-      icon: IconHelp,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: IconSearch,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: IconDatabase,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: IconReport,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: IconFileWord,
-    },
-  ],
+const NAV_ICONS: Record<NavItemKey, Icon> = {
+  dashboard: IconDashboard,
+  courses: IconBooks,
+  chat: IconRobot,
+  "question-maker": IconListCheck,
+  "admin-users": IconUsers,
+  "admin-ai": IconBrain,
+  "admin-bugs": IconReport,
+  "admin-chat": IconRobot,
+  "admin-invites": IconMail,
+  "admin-settings": IconShieldLock,
+  "admin-logs": IconFileText,
+  "unitadmin-invites": IconMail,
+  "admin-cron": IconClockCog,
+  settings: IconSettings,
+  "ai-tutor": IconMessageChatbot,
 }
+
+function toNavMainItems(items: ReturnType<typeof getNavForUser>): NavMainItem[] {
+  return items.map((item) => ({
+    title: item.title,
+    url: item.url,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+    disabled: item.disabled,
+    disabledReason: item.disabledReason,
+  }))
+}
+
+function toNavSecondaryItems(
+  items: ReturnType<typeof getNavSecondaryForUser>,
+): NavSecondaryItem[] {
+  return items.map((item) => ({
+    title: item.title,
+    url: item.url,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }))
+}
+
+export type AppSidebarProps = {
+  user: User
+  navMain?: NavMainItem[]
+  navSecondary?: NavSecondaryItem[]
+} & React.ComponentProps<typeof Sidebar>
 
 export function AppSidebar({
   user,
+  navMain: navMainOverride,
+  navSecondary: navSecondaryOverride,
+  variant = "sidebar",
   ...props
-}: {
-  user: User
-} & React.ComponentProps<typeof Sidebar>) {
+}: AppSidebarProps) {
+  const { isEnabled } = usePolicyGate()
+  const { pathname } = useLocation()
+  // Prefer the server-resolved flag from the root loader (authoritative,
+  // default-aware, no paint flash). Fall back to the SSR-seeded policy gate only
+  // if root data is somehow unavailable.
+  const rootData = useRouteLoaderData("root") as { canInvite?: boolean } | undefined
+
+  const cronStatusColor = useCronJobStatus(user.role === "ADMIN")
+
+  // Policy-gated nav lives in getNavForUser: a UNIT_ADMIN only sees the
+  // Invitations link when `unitAdmins.canInvite` is on (matches the route gate).
+  const navItems = getNavForUser(user, {
+    canInvite: rootData?.canInvite ?? isEnabled("unitAdmins.canInvite"),
+  })
+  const autoNav = toNavMainItems(navItems).map((item) =>
+    item.url === "/admin/cron-jobs" && cronStatusColor
+      ? { ...item, badge: cronStatusColor }
+      : item,
+  )
+  const navMain = navMainOverride ?? autoNav
+  const navSecondary =
+    navSecondaryOverride ?? toNavSecondaryItems(getNavSecondaryForUser(user))
+
+  const logo = (
+    <>
+      {/* Globe logo — same as login/signup page */}
+      <div
+        className="flex items-center justify-center shrink-0"
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          background: "var(--primary)",
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.75" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3a9 9 0 0 1 0 18"/>
+          <path d="M3 12h18"/>
+          <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+        </svg>
+      </div>
+      <span className="text-base font-bold" style={{ letterSpacing: "-0.01em" }}>EduAI</span>
+    </>
+  )
+
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
+    <SharedAppSidebar
+      logo={logo}
+      logoHref="/dashboard"
+      navMain={navMain}
+      navSecondary={navSecondary}
+      currentPath={pathname}
+      LinkComponent={Link}
+      launcher={{
+        apps: getLauncherApps(),
+        currentAppId: CURRENT_APP_ID,
+        role: user.role,
+      }}
+      user={user}
+      navUser={{
+        items: [
+          {
+            label: "Settings",
+            icon: <IconSettings size={15} strokeWidth={1.75} />,
+            href: "/settings",
+          },
+          // TODO: remove Account menu item (note carried over from the old Core
+          // nav-user, which was extracted into @eduai/ui during the QM redesign).
+          {
+            label: "Account",
+            icon: <IconUser size={15} strokeWidth={1.75} />,
+            href: "/settings/account",
+          },
+        ],
+        logoutElement: (
+          <Form method="post" action="/auth/logout" replace className="w-full">
+            <button
+              type="submit"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
             >
-              <a href="#">
-                <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">EduAI</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={data.navMain.filter(item =>
-          (item.title !== "AI Management" && item.title !== "User Management") || user.role === "ADMIN"
-        )} />
-        {/* <NavDocuments items={data.documents} /> */}
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
-      </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={user} />
-      </SidebarFooter>
-    </Sidebar>
+              <IconLogout size={15} strokeWidth={1.75} />
+              Log out
+            </button>
+          </Form>
+        ),
+      }}
+      variant={variant}
+      {...props}
+    />
   )
 }

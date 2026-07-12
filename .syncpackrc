@@ -1,0 +1,73 @@
+{
+  "versionGroups": [
+    {
+      "label": "QM legacy toolchain — major upgrade tracked separately",
+      "packages": ["question-maker-frontend", "question-maker-backend"],
+      "dependencies": [
+        "vite",
+        "vitest",
+        "@vitest/coverage-v8",
+        "tailwindcss",
+        "tailwind-merge",
+        "express",
+        "supertest",
+        "dotenv"
+      ],
+      "isIgnored": true
+    },
+    {
+      "label": "react-router — intentionally split (Core 7.5.x, AI Tutor 7.13.x)",
+      "dependencies": [
+        "react-router",
+        "@react-router/dev",
+        "@react-router/node",
+        "@react-router/serve"
+      ],
+      "isIgnored": true
+    },
+    {
+      "label": "AI SDK — intentionally split (Core v4, AI Tutor v5)",
+      "dependencies": ["ai"],
+      "isIgnored": true
+    },
+    {
+      "label": "vite — intentionally split (Core v6, AI Tutor v8); QM v4 handled above",
+      "packages": ["edu-ai", "ai-tutor"],
+      "dependencies": ["vite"],
+      "isIgnored": true
+    },
+    {
+      "label": "better-auth — 1.6.22 pinned via overrides for Core/QM; AI Tutor tracks newer",
+      "dependencies": ["better-auth", "@better-auth/cli"],
+      "isIgnored": true
+    },
+    {
+      "label": "question-maker-backend workspace reference — * is valid here",
+      "packages": ["question-maker-frontend"],
+      "dependencies": ["question-maker-backend"],
+      "isIgnored": true
+    },
+    {
+      "label": "drizzle-orm — root devDep pins patched version for @better-auth/cli transitive vuln",
+      "packages": ["eduai-monorepo"],
+      "dependencies": ["drizzle-orm"],
+      "isIgnored": true
+    },
+    {
+      "label": "@eduai/ui peerDependencies use * intentionally (consuming app controls the version)",
+      "packages": ["@eduai/ui"],
+      "dependencyTypes": ["peer"],
+      "isIgnored": true
+    },
+    {
+      "label": "internal workspace packages referenced with * — npm workspace convention",
+      "dependencies": ["@eduai/ui", "@eduai/types"],
+      "isIgnored": true
+    },
+    {
+      "label": "react-markdown — intentionally split (Core v10, QM frontend v9)",
+      "dependencies": ["react-markdown"],
+      "isIgnored": true
+    }
+  ]
+}

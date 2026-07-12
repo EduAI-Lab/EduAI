@@ -1,8 +1,4 @@
-/**
- * Axios client configured with base URL, auth token injection, and 401 handling redirect.
- * Shared by all service modules to standardize headers and error behavior.
- */
-import axios, { InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosResponse, AxiosError } from 'axios';
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || '/api';
 
@@ -14,26 +10,21 @@ export const api = axios.create({
   withCredentials: true
 });
 
-// Request interceptor to add auth token
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Response interceptor to handle errors
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      // Only redirect if not already on login page to prevent infinite loops
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      const apiError = (error.response.data as { error?: string; success?: boolean })?.error;
+      const isSessionExpired =
+        apiError === 'Authentication required' ||
+        (apiError === 'Unauthorized' &&
+          typeof error.config?.url === 'string' &&
+          error.config.url.includes('/api/auth/me'));
+
+      if (isSessionExpired) {
+        const coreUrl = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3000';
+        const returnUrl = encodeURIComponent(window.location.href);
+        window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
       }
     }
     return Promise.reject(error);

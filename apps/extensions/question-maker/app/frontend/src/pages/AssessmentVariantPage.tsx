@@ -1,35 +1,39 @@
 /**
- * Assessment variant workflow: (1) baseline reference exam → (2) generate variants from those questions →
- * (3) assemble one variant exam matching baseline structure → (4) AI review.
+ * Assessment variant workflow, presented as a focused 4-step wizard:
+ *   1. Baseline   — choose/import the reference exam and tag it.
+ *   2. Generate   — give every base question at least one AI variant.
+ *   3. Assemble   — build a parallel exam matching the baseline structure.
+ *   4. AI review  — score the variant exam's equivalence to the baseline.
+ * Only the active step renders, so the flow reads top-to-bottom one decision at a time.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, ClipboardList, History, Loader2, Sparkles, Trash2, Upload, XCircle } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import { Textarea } from '../components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { ScrollArea } from '../components/ui/scroll-area';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams, useParams } from 'react-router';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '../components/ui/select';
-import { Badge } from '../components/ui/badge';
-import { Tooltip } from '../components/ui/tooltip';
-import { useToast } from '../components/ui/use-toast';
+  IconArrowLeft, IconArrowRight, IconBook, IconCircleCheck, IconClipboardList, IconHistory,
+  IconLoader2, IconSparkles, IconTrash, IconUpload, IconCircleX, IconFileText, IconScale,
+} from '@tabler/icons-react';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import {
+  Button, Textarea, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent,
+  DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge,
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Separator, cn,
+} from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/use-toast';
 import { useCourses } from '../hooks/useCourses';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
-import assessmentVariantService, { type BaselineVariantReadiness } from '../services/assessmentVariantService';
+import assessmentVariantService, { type BaselineVariantReadiness, type GenerateBankVariantsResult } from '../services/assessmentVariantService';
 import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
 import { QuestionUploadDialog } from '../components/question-bank/QuestionUploadDialog';
+import { GeneratedVariantsReviewDialog } from '../components/assessments/GeneratedVariantsReviewDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import type { Assessment, Course, Question } from '../types/question';
 import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
+import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -205,12 +209,17 @@ async function loadAssessmentDetail(assessmentId: number): Promise<Assessment> {
 export function AssessmentVariantPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const courseIdParam = searchParams.get('courseId');
-  const baselineAssessmentIdParam = searchParams.get('baselineAssessmentId');
+  const { courseId: routeCourseIdParam, assessmentId: routeAssessmentIdParam } = useParams<{ courseId?: string; assessmentId?: string }>();
+  // Support both nested route params and query params for backward compatibility
+  const courseIdParam = routeCourseIdParam || searchParams.get('courseId');
+  const baselineAssessmentIdParam = routeAssessmentIdParam || searchParams.get('baselineAssessmentId');
   const { toast } = useToast();
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const { canManageAssessment, canRunAiReview, canManageCanvas } = useQmPermissionsForCourse(
+    selectedCourse?.id ?? null,
+  );
   const [topics, setTopics] = useState<Topic[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [baselineAssessmentId, setBaselineAssessmentId] = useState<string>('');
@@ -218,6 +227,8 @@ export function AssessmentVariantPage() {
   const [canvasImportOpen, setCanvasImportOpen] = useState(false);
   const [generatingVariants, setGeneratingVariants] = useState(false);
   const [variantGenMode, setVariantGenMode] = useState<'all' | 'missing' | null>(null);
+  const [variantReviewResult, setVariantReviewResult] = useState<GenerateBankVariantsResult | null>(null);
+  const [variantReviewOpen, setVariantReviewOpen] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [lastAssembled, setLastAssembled] = useState<Array<{ id: number; name: string }>>([]);
   const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
@@ -235,6 +246,7 @@ export function AssessmentVariantPage() {
   const [aiReviewHistoryOpen, setAiReviewHistoryOpen] = useState(false);
   const [aiReviewHistory, setAiReviewHistory] = useState<AiReviewHistoryItem[]>([]);
   const [aiReviewHistoryReady, setAiReviewHistoryReady] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
     void fetchCourses();
@@ -450,20 +462,35 @@ export function AssessmentVariantPage() {
         variantsToAdd: 1,
         variantPromptInstructions: variantUserPrompt.trim() ? variantUserPrompt.trim() : null
       });
+      // The endpoint returns HTTP 200 even when every question fails AI generation
+      // (per-question errors are collected, not thrown). Report the real created
+      // count so the UI never claims success when nothing was actually generated.
+      const createdCount =
+        result.results?.reduce((sum, r) => sum + (r.createdVariantIds?.length ?? 0), 0) ?? 0;
       const failed = result.errors?.length ?? 0;
-      const scope =
-        mode === 'all'
-          ? `all ${questionIds.length} base question(s)`
-          : `${questionIds.length} question(s) that still need variants`;
-      toast({
-        title: 'Variants generated',
-        description: `Generated one AI variant for ${scope}. ${failed ? `${failed} step(s) logged errors (see console).` : 'Re-check readiness before assembly.'}`
-      });
       if (result.errors?.length) {
         console.warn('Assessment variant workflow: generateBankVariants errors', result.errors);
       }
-      void loadAssessments(selectedCourse.id);
-      void refreshVariantReadiness();
+
+      if (createdCount === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No variants were generated',
+          description: failed
+            ? `All ${failed} generation attempt(s) failed (details in console). Check the selected AI model / EduAI configuration and try again.`
+            : 'The AI returned no new variants. Try again or choose another model.',
+          duration: Number.POSITIVE_INFINITY
+        });
+      } else {
+        // Generated variants are DRAFTS — open the review modal so the instructor can
+        // inspect and explicitly approve them. Nothing is marked reviewed automatically.
+        setVariantReviewResult(result);
+        setVariantReviewOpen(true);
+        toast({
+          title: `${createdCount} draft variant(s) generated`,
+          description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ''}`
+        });
+      }
     } catch (e: unknown) {
       toast({
         variant: 'destructive',
@@ -474,6 +501,13 @@ export function AssessmentVariantPage() {
     } finally {
       setGeneratingVariants(false);
       setVariantGenMode(null);
+      // Always re-sync with the server's truth — even on partial/failed runs the
+      // primary variant may have been promoted, and on early returns the readiness
+      // table must still reflect current state.
+      if (selectedCourse?.id) {
+        void loadAssessments(selectedCourse.id);
+        void refreshVariantReadiness();
+      }
     }
   };
 
@@ -578,7 +612,7 @@ export function AssessmentVariantPage() {
       setAiReviewHistory((prev) => [historyItem, ...prev].slice(0, AI_REVIEW_HISTORY_MAX_ITEMS));
       toast({
         title: 'AI review complete',
-        description: `Compared ${result.comparedSlots} slot(s). See Phase 5 results below.`
+        description: `Compared ${result.comparedSlots} slot(s). See the results below.`
       });
     } catch (e: unknown) {
       toast({
@@ -607,6 +641,7 @@ export function AssessmentVariantPage() {
     setAiReviewVariantId(String(item.variantAssessmentId));
     setAiReviewModel(item.model);
     setAiReviewResult(item.result);
+    setAiReviewHistoryOpen(false);
   };
 
   const removeAiReviewHistoryItem = (id: string) => {
@@ -625,7 +660,7 @@ export function AssessmentVariantPage() {
           {title} ({items.length})
         </p>
         {items.map((item) => (
-          <div key={item.id} className="rounded border bg-white p-2 text-xs">
+          <div key={item.id} className="rounded-lg border bg-card p-3 text-xs">
             <button
               type="button"
               className="w-full text-left"
@@ -692,713 +727,884 @@ export function AssessmentVariantPage() {
     }
   };
 
+  const baselineMarked = baselineAssessment?.blueprintConfig?.studyRole === 'reference_baseline';
+
+  const wizardSteps = [
+    {
+      id: 'vstep-1',
+      label: 'Baseline',
+      caption: 'Pick the reference exam',
+      icon: IconClipboardList,
+      done: baselineMarked,
+    },
+    {
+      id: 'vstep-2',
+      label: 'Generate',
+      caption: 'AI variants per question',
+      icon: IconSparkles,
+      done: Boolean(
+        variantReadiness && variantReadiness.slots.length > 0 && variantReadiness.slots.every((s) => s.ready),
+      ),
+    },
+    {
+      id: 'vstep-3',
+      label: 'Assemble',
+      caption: 'Build a parallel exam',
+      icon: IconFileText,
+      done: lastAssembled.length > 0,
+    },
+    {
+      id: 'vstep-4',
+      label: 'AI review',
+      caption: 'Score equivalence',
+      icon: IconScale,
+      done: aiReviewResult != null,
+    },
+  ];
+  const lastStepIndex = wizardSteps.length - 1;
+  const goBackToAssessments = () => {
+    if (routeAssessmentIdParam && courseIdParam) {
+      navigate(`/courses/${courseIdParam}/assessments/${routeAssessmentIdParam}`);
+    } else if (courseIdParam) {
+      navigate(`/courses/${courseIdParam}?tab=assessments`);
+    } else {
+      navigate('/courses');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground">
-              <Link to="/home?tab=assessments">
-                <ArrowLeft className="h-4 w-4" />
-                Home
-              </Link>
-            </Button>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-indigo-600" />
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Assessment variant workflow</h1>
-            </div>
-          </div>
-          <div className="flex min-w-[220px] flex-1 items-center justify-end gap-2 sm:max-w-md">
-            <Select
-              value={selectedCourse?.id?.toString() ?? ''}
-              onValueChange={(v) => {
-                const c = courses.find((x) => x.id.toString() === v);
-                if (c) setSelectedCourse(c);
-              }}
-              disabled={coursesLoading || courses.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={coursesLoading ? 'Loading courses…' : 'Select course'} />
-              </SelectTrigger>
-              <SelectContent>
-                {courses.map((c) => (
-                  <SelectItem key={c.id} value={c.id.toString()}>
-                    {c.code || '—'} · {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl space-y-8 px-4 py-10">
-        <p className="text-sm text-muted-foreground">
-          <strong className="font-medium text-foreground">Order:</strong> set the baseline reference exam, ensure each base
-          question has enough variants (or generate one AI variant per question that still needs an alternate),
-          then assemble a single variant exam that mirrors the baseline structure.
-        </p>
-
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">1 · Baseline reference exam</h2>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ClipboardList className="h-4 w-4" />
-                Upload or import the reference exam
-              </CardTitle>
-              <CardDescription>
-                OCR (creates an assessment with questions) or Canvas import. This is the structural ground truth for later
-                assembly.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Button type="button" variant="secondary" disabled={!selectedCourse?.id} onClick={() => setExamUploadOpen(true)}>
-                <Upload className="mr-2 h-4 w-4" />
-                OCR upload
+    <div className="px-4 py-4 md:py-6 lg:px-6">
+      <div className="min-h-full bg-background">
+        <div className="mx-auto max-w-5xl space-y-6">
+          {/* ── Header ───────────────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground"
+                onClick={goBackToAssessments}
+              >
+                <IconArrowLeft className="h-4 w-4" />
+                Assessments
               </Button>
-              <Button type="button" variant="outline" disabled={!selectedCourse?.id} onClick={() => setCanvasImportOpen(true)}>
-                Import from Canvas
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Select baseline &amp; mark reference</CardTitle>
-              <CardDescription>Choose the exam you uploaded and tag it as the reference baseline.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <div className="min-w-[240px] flex-1 space-y-2">
-                <span className="text-sm font-medium">Assessment</span>
-                <Select
-                  value={baselineAssessmentId}
-                  onValueChange={setBaselineAssessmentId}
-                  disabled={!selectedCourse?.id || assessments.length === 0}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select assessment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assessments.map((a) => (
-                      <SelectItem key={a.id} value={a.id.toString()}>
-                        {a.name} ({a.type})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-2">
+                <IconSparkles className="h-6 w-6 text-primary" />
+                <h1 className="text-lg font-semibold tracking-tight text-foreground">Assessment variants</h1>
               </div>
-              <Button type="button" variant="outline" onClick={markBaseline} disabled={!baselineAssessmentId}>
-                Mark as reference baseline
-              </Button>
-              {baselineAssessment?.blueprintConfig?.studyRole === 'reference_baseline' && (
-                <Badge className="w-fit bg-indigo-700">Reference</Badge>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+            </div>
+            {selectedCourse && (
+              <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm">
+                <IconBook className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate font-medium text-foreground">{selectedCourse.code || '—'}</span>
+                <span className="truncate text-muted-foreground">{selectedCourse.name}</span>
+              </div>
+            )}
+          </div>
 
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">2 · Generate variants from baseline</h2>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="h-4 w-4" />
-                Variants for each exam question
-              </CardTitle>
-              <CardDescription>
-                Add one AI variant per base question: use <strong className="font-medium text-foreground">all questions</strong>{' '}
-                for a full pass, or—when some rows are already ready—use{' '}
-                <strong className="font-medium text-foreground">missing only</strong> to fill the rest without touching ready
-                slots.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!baselineAssessmentId && (
-                <p className="text-sm text-muted-foreground">Select a baseline assessment in step 1 to check variant readiness.</p>
-              )}
-              {baselineAssessmentId && selectedCourse?.id && (
-                <>
-                  {variantReadinessLoading && (
-                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Checking variant counts…
-                    </p>
+          {/* ── Stepper ──────────────────────────────────────────────────── */}
+          <nav className="flex items-stretch gap-1 overflow-x-auto rounded-[var(--radius-xl)] border border-border bg-card p-2 shadow-[var(--shadow-2xs)]">
+            {wizardSteps.map((step, i) => {
+              const active = i === currentStep;
+              return (
+                <Fragment key={step.id}>
+                  {i > 0 && (
+                    <div className="flex flex-1 items-center" aria-hidden>
+                      <span className={cn('h-px w-full', wizardSteps[i - 1].done ? 'bg-success-500' : 'bg-border')} />
+                    </div>
                   )}
-                  {!variantReadinessLoading && variantReadiness && (
-                    <>
-                      {variantReadiness.allReady ? (
-                        <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                          <span>
-                            All {variantReadiness.slots.length} base question(s) have at least{' '}
-                            {variantReadiness.minRequiredNonDraft} variants. You can proceed to assembly.
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                          <strong className="font-medium">{variantSlotsNeedingCount}</strong> base question(s) still need an
-                          extra variant. Run generation to add one AI variant each for those slots.
-                          {variantHasMixedReadiness && (
-                            <span className="mt-1 block text-amber-900/90">
-                              Some questions are already ready — use <strong className="font-medium">Generate variants for missing
-                              questions only</strong> below to skip the rest.
-                            </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(i)}
+                    aria-current={active ? 'step' : undefined}
+                    className={cn(
+                      'flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors',
+                      active ? 'bg-primary/10' : 'hover:bg-muted',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors',
+                        step.done
+                          ? 'bg-success-100 text-success-700'
+                          : active
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {step.done ? <IconCircleCheck className="size-5" /> : i + 1}
+                    </span>
+                    <span className="hidden min-w-0 flex-col sm:flex">
+                      <span className={cn('truncate text-sm font-medium', active ? 'text-foreground' : 'text-muted-foreground')}>
+                        {step.label}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">{step.caption}</span>
+                    </span>
+                  </button>
+                </Fragment>
+              );
+            })}
+          </nav>
+
+          {/* ── Step content ─────────────────────────────────────────────── */}
+          <div className="min-h-[320px]">
+            {/* Step 1 — Baseline */}
+            {currentStep === 0 && (
+              <section className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Baseline reference exam</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Choose the exam that defines the structure and answers. Everything later mirrors this one. Don’t have
+                    it in the bank yet? Import it first.
+                  </p>
+                </div>
+                <Card>
+                  <CardContent className="space-y-5 pt-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="min-w-[240px] flex-1 space-y-1.5">
+                        <span className="text-sm font-medium">Reference exam</span>
+                        <Select
+                          value={baselineAssessmentId}
+                          onValueChange={setBaselineAssessmentId}
+                          disabled={!selectedCourse?.id || assessments.length === 0}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={assessments.length === 0 ? 'No assessments — import one below' : 'Select assessment'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {assessments.map((a) => (
+                              <SelectItem key={a.id} value={a.id.toString()}>
+                                {a.name} ({a.type})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <PermissionGate allow={canManageAssessment}>
+                        {baselineMarked ? (
+                          <div className="inline-flex h-9 items-center gap-1.5 rounded-md bg-success-100 px-3 text-sm font-medium text-success-700">
+                            <IconCircleCheck className="h-4 w-4" />
+                            Reference set
+                          </div>
+                        ) : (
+                          <Button type="button" onClick={markBaseline} disabled={!baselineAssessmentId}>
+                            Mark as reference
+                          </Button>
+                        )}
+                      </PermissionGate>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Need to bring an exam in?
+                      </span>
+                      <div className="flex flex-wrap gap-3">
+                        <PermissionGate allow={canManageAssessment}>
+                          <Button type="button" variant="secondary" disabled={!selectedCourse?.id} onClick={() => setExamUploadOpen(true)}>
+                            <IconUpload className="mr-2 h-4 w-4" />
+                            OCR upload
+                          </Button>
+                        </PermissionGate>
+                        <PermissionGate allow={canManageCanvas}>
+                          <Button type="button" variant="outline" disabled={!selectedCourse?.id} onClick={() => setCanvasImportOpen(true)}>
+                            Import from Canvas
+                          </Button>
+                        </PermissionGate>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        OCR creates an assessment from an uploaded paper; Canvas pulls an existing quiz. Either becomes
+                        selectable above.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+
+            {/* Step 2 — Generate */}
+            {currentStep === 1 && (
+              <section className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Generate variants</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Give every base question at least one AI variant. Run <strong className="font-medium text-foreground">all questions</strong>{' '}
+                    for a full pass, or <strong className="font-medium text-foreground">missing only</strong> to fill the gaps without touching ready slots.
+                  </p>
+                </div>
+                <Card>
+                  <CardContent className="space-y-4 pt-6">
+                    {!baselineAssessmentId && (
+                      <p className="text-sm text-muted-foreground">Select a baseline assessment in step 1 to check variant readiness.</p>
+                    )}
+                    {baselineAssessmentId && selectedCourse?.id && (
+                      <>
+                        {variantReadinessLoading && (
+                          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <IconLoader2 className="h-4 w-4 animate-spin" />
+                            Checking variant counts…
+                          </p>
+                        )}
+                        {!variantReadinessLoading && variantReadiness && (
+                          <>
+                            {variantReadiness.allReady ? (
+                              <div className="flex items-start gap-2 rounded-md border border-success-500 bg-success-100 px-3 py-2 text-sm text-success-700">
+                                <IconCircleCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                                <span>
+                                  All {variantReadiness.slots.length} base question(s) have at least{' '}
+                                  {variantReadiness.minRequiredNonDraft} variants. You can proceed to assembly.
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="rounded-md border border-warning-500 bg-warning-100 px-3 py-2 text-sm text-warning-700">
+                                <strong className="font-medium">{variantSlotsNeedingCount}</strong> base question(s) still need an
+                                extra variant. Run generation to add one AI variant each for those slots.
+                                {variantHasMixedReadiness && (
+                                  <span className="mt-1 block">
+                                    Some questions are already ready — use <strong className="font-medium">missing only</strong> below to skip them.
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {variantReadiness.slots.length > 0 && (
+                              <div className="max-h-56 overflow-auto rounded-md border text-sm">
+                                <table className="w-full border-collapse text-left">
+                                  <thead>
+                                    <tr className="border-b bg-muted/50">
+                                      <th className="p-2 font-medium">#</th>
+                                      <th className="p-2 font-medium">Question</th>
+                                      <th className="p-2 font-medium">
+                                        <Tooltip content={REVIEWED_VARIANTS_TOOLTIP} multiline side="top">
+                                          <span className="cursor-help border-b border-dotted border-current">
+                                            Variants
+                                          </span>
+                                        </Tooltip>
+                                      </th>
+                                      <th className="p-2 font-medium">
+                                        <Tooltip
+                                          content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
+                                          multiline
+                                          side="top"
+                                        >
+                                          <span className="cursor-help border-b border-dotted border-current">Status</span>
+                                        </Tooltip>
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {variantReadiness.slots.map((row) => (
+                                      <tr key={row.questionMetadataId} className="border-b border-border/60">
+                                        <td className="p-2">{row.order}</td>
+                                        <td className="p-2">
+                                          <span className="line-clamp-2" title={row.description ?? undefined}>
+                                            {row.description?.trim() || `Metadata #${row.questionMetadataId}`}
+                                          </span>
+                                          {row.questionType && (
+                                            <span className="text-xs text-muted-foreground"> · {row.questionType}</span>
+                                          )}
+                                        </td>
+                                        <td className="p-2 tabular-nums">{row.nonDraftVariantCount}</td>
+                                        <td className="p-2">
+                                          <Tooltip
+                                            content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
+                                            multiline
+                                            side="top"
+                                          >
+                                            {row.ready ? (
+                                              <span className="inline-flex cursor-help items-center gap-1 border-b border-dotted border-current text-success-700">
+                                                <IconCircleCheck className="h-3.5 w-3.5" /> Ready
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex cursor-help items-center gap-1 border-b border-dotted border-current text-warning-700">
+                                                <IconCircleX className="h-3.5 w-3.5" /> Needs variant
+                                              </span>
+                                            )}
+                                          </Tooltip>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
+                        <Select value={variantModel} onValueChange={setVariantModel} disabled={generatingVariants}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableModels.length === 0 ? (
+                              <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
+                            ) : (
+                              availableModels.map((model) => (
+                                <SelectItem key={model.id} value={model.id}>
+                                  {model.label}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label htmlFor="variant-ai-prompt" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Optional instructions for the AI
+                        </label>
+                        <Textarea
+                          id="variant-ai-prompt"
+                          placeholder="e.g. Keep MCQ distractors plausible; use different numeric values…"
+                          value={variantUserPrompt}
+                          onChange={(e) => setVariantUserPrompt(e.target.value)}
+                          disabled={generatingVariants || !baselineAssessmentId}
+                          className="min-h-[72px] border-input bg-background text-foreground placeholder:text-muted-foreground"
+                        />
+                      </div>
+                    </div>
+
+                    <PermissionGate allow={canManageAssessment}>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          variant="default"
+                          className="sm:flex-1"
+                          disabled={variantGenerateAllDisabled}
+                          onClick={() => void generateVariantsFromBaseline('all')}
+                        >
+                          {generatingVariants && variantGenMode === 'all' ? (
+                            <>
+                              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Generating…
+                            </>
+                          ) : (
+                            <>
+                              <IconSparkles className="mr-2 h-4 w-4" />
+                              Generate for all questions
+                            </>
                           )}
+                        </Button>
+                        {showMissingOnlyGenerate && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="sm:flex-1"
+                            disabled={variantGenerateMissingDisabled}
+                            onClick={() => void generateVariantsFromBaseline('missing')}
+                          >
+                            {generatingVariants && variantGenMode === 'missing' ? (
+                              <>
+                                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Generating…
+                              </>
+                            ) : (
+                              <>
+                                <IconSparkles className="mr-2 h-4 w-4" />
+                                Missing only ({variantSlotsNeedingCount})
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </PermissionGate>
+
+                    {variantReviewResult && variantReviewResult.results.some((r) => r.createdVariants.length > 0) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setVariantReviewOpen(true)}
+                      >
+                        <IconSparkles className="mr-2 h-4 w-4" />
+                        Review last generated drafts
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+
+            {/* Step 3 — Assemble */}
+            {currentStep === 2 && (
+              <section className="space-y-4">
+                <div className="space-y-1">
+                  <h2 className="text-base font-semibold text-foreground">Assemble variant exam</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Builds one assessment with the same ordering and base question per slot as the baseline, picking
+                    alternate variants so wording differs from the reference when possible.
+                  </p>
+                </div>
+                <Card>
+                  <CardContent className="space-y-4 pt-6">
+                    <PermissionGate allow={canManageAssessment}>
+                      <Button
+                        type="button"
+                        onClick={assembleStructureMatchedExams}
+                        disabled={!baselineAssessmentId || assembling || !selectedCourse}
+                      >
+                        {assembling ? (
+                          <>
+                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Assembling…
+                          </>
+                        ) : (
+                          <>
+                            <IconFileText className="mr-2 h-4 w-4" />
+                            Assemble variant exam
+                          </>
+                        )}
+                      </Button>
+                      {lastAssembled.length > 0 && (
+                        <div className="space-y-2 rounded-lg border border-success-500 bg-success-100 p-3">
+                          <p className="flex items-center gap-1.5 text-sm font-medium text-success-700">
+                            <IconCircleCheck className="h-4 w-4" />
+                            Assembled — open it or continue to AI review.
+                          </p>
+                          <ul className="space-y-1 text-sm">
+                            {lastAssembled.map((a) => (
+                              <li key={a.id}>
+                                <button
+                                  type="button"
+                                  className="font-medium text-primary-text underline-offset-2 hover:underline"
+                                  onClick={() =>
+                                    navigate(
+                                      selectedCourse
+                                        ? `/courses/${selectedCourse.id}/assessments/${a.id}`
+                                        : `/assessments/${a.id}/builder`,
+                                    )
+                                  }
+                                >
+                                  {a.name}
+                                </button>{' '}
+                                <span className="text-muted-foreground">#{a.id}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
-                      {variantReadiness.slots.length > 0 && (
-                        <div className="max-h-48 overflow-auto rounded-md border text-sm">
-                          <table className="w-full border-collapse text-left">
+                    </PermissionGate>
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+
+            {/* Step 4 — AI review */}
+            {currentStep === 3 && (
+              <section className="space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <h2 className="text-base font-semibold text-foreground">AI review</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Uses the selected model as a judge to score each aligned slot against your rubric for validity and
+                      credibility.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setAiReviewHistoryOpen(true)}>
+                    <IconHistory className="mr-1.5 h-4 w-4" />
+                    History
+                    {aiReviewHistoryForCourse.length > 0 && (
+                      <span className="ml-1.5 text-muted-foreground">({aiReviewHistoryForCourse.length})</span>
+                    )}
+                  </Button>
+                </div>
+                <Card>
+                  <CardContent className="space-y-4 pt-6">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-1">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Baseline exam</span>
+                        <Select value={aiReviewBaselineEffectiveId} onValueChange={setAiReviewBaselineId} disabled={!selectedCourse?.id}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select baseline exam" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {assessments.map((a) => (
+                              <SelectItem key={a.id} value={a.id.toString()}>
+                                {a.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Exam variant</span>
+                        <Select value={aiReviewVariantId} onValueChange={setAiReviewVariantId} disabled={!selectedCourse?.id}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select exam variant" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {aiReviewCandidates.map((a) => (
+                              <SelectItem key={a.id} value={a.id.toString()}>
+                                {a.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI model</span>
+                        <Select value={aiReviewModel} onValueChange={setAiReviewModel} disabled={aiReviewLoading}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableModels.length === 0 ? (
+                              <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
+                            ) : (
+                              availableModels.map((model) => (
+                                <SelectItem key={model.id} value={model.id}>
+                                  {model.label}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <PermissionGate allow={canRunAiReview}>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" onClick={() => setAiReviewRubricOpen(true)}>
+                          Edit rubric
+                        </Button>
+                        <Button type="button" onClick={runAiReview} disabled={aiReviewDisabled}>
+                          {aiReviewLoading ? (
+                            <>
+                              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Reviewing…
+                            </>
+                          ) : (
+                            <>
+                              <IconScale className="mr-2 h-4 w-4" />
+                              Run AI review
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </PermissionGate>
+
+                    {aiReviewResult && (
+                      <div className="space-y-4 rounded-lg border bg-card p-4 text-sm">
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" onClick={() => void exportAiReviewWord()}>
+                            Export Word (.docx)
+                          </Button>
+                          <Button type="button" variant="outline" onClick={exportAiReviewJson}>
+                            Export raw JSON
+                          </Button>
+                        </div>
+                        <p className="text-muted-foreground">
+                          Compared {aiReviewResult.comparedSlots} aligned slot(s). Baseline slots: {aiReviewResult.baselineSlotCount}
+                          , variant slots: {aiReviewResult.variantSlotCount}.
+                        </p>
+
+                        <p className="text-xs text-muted-foreground">
+                          Review time:{' '}
+                          {typeof aiReviewResult.reviewTimeMs === 'number' ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1) : 'n/a'}s
+                        </p>
+
+                        <div className="rounded border bg-muted p-3">
+                          <p className="text-sm font-semibold text-foreground">
+                            Overall variant score:{' '}
+                            {typeof aiReviewResult.examVariantScoreFinal0to100 === 'number'
+                              ? aiReviewResult.examVariantScoreFinal0to100.toFixed(0)
+                              : 'n/a'}{' '}
+                            / 100
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Base (rubric-only):{' '}
+                            {typeof aiReviewResult.examVariantScoreBase0to100 === 'number'
+                              ? aiReviewResult.examVariantScoreBase0to100.toFixed(0)
+                              : 'n/a'}{' '}
+                            · Usable questions:{' '}
+                            {typeof aiReviewResult.usableQuestionPercentage === 'number'
+                              ? aiReviewResult.usableQuestionPercentage.toFixed(0)
+                              : 'n/a'}
+                            %
+                            <br />
+                            · Distinctness:{' '}
+                            {typeof aiReviewResult.distinctnessAverage1to5 === 'number'
+                              ? aiReviewResult.distinctnessAverage1to5.toFixed(2)
+                              : 'n/a'}
+                            /5 (factor{' '}
+                            {typeof aiReviewResult.distinctnessFactorAvg === 'number'
+                              ? aiReviewResult.distinctnessFactorAvg.toFixed(2)
+                              : 'n/a'}
+                            )
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Total score calculation:{' '}
+                            {typeof aiReviewResult.totalScoreCalculationSummary === 'string'
+                              ? aiReviewResult.totalScoreCalculationSummary
+                              : 'n/a'}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 grid-cols-2 sm:grid-cols-5">
+                          <div className="rounded border bg-card p-2">
+                            <span className="font-medium">Concept</span>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof aiReviewResult.averages.conceptual_equivalence === 'number'
+                                ? aiReviewResult.averages.conceptual_equivalence.toFixed(2)
+                                : 'n/a'}
+                              /5
+                            </div>
+                          </div>
+                          <div className="rounded border bg-card p-2">
+                            <span className="font-medium">Difficulty</span>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof aiReviewResult.averages.difficulty_similarity === 'number'
+                                ? aiReviewResult.averages.difficulty_similarity.toFixed(2)
+                                : 'n/a'}
+                              /5
+                            </div>
+                          </div>
+                          <div className="rounded border bg-card p-2">
+                            <span className="font-medium">Structure</span>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof aiReviewResult.averages.structural_validity === 'number'
+                                ? aiReviewResult.averages.structural_validity.toFixed(2)
+                                : 'n/a'}
+                              /5
+                            </div>
+                          </div>
+                          <div className="rounded border bg-card p-2">
+                            <span className="font-medium">Answer</span>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof aiReviewResult.averages.answer_correctness === 'number'
+                                ? aiReviewResult.averages.answer_correctness.toFixed(2)
+                                : 'n/a'}
+                              /5
+                            </div>
+                          </div>
+                          <div className="rounded border bg-card p-2">
+                            <span className="font-medium">Topic</span>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof aiReviewResult.averages.topic_alignment === 'number'
+                                ? aiReviewResult.averages.topic_alignment.toFixed(2)
+                                : 'n/a'}
+                              /5
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded border bg-card p-3">
+                          <p className="text-sm font-semibold">Instructor summary</p>
+                          <p className="text-xs text-muted-foreground">
+                            {aiReviewResult.overallSummary?.summaryText ?? 'n/a'}
+                          </p>
+                          <div className="mt-2 text-xs">
+                            <p>
+                              <span className="font-medium">Strengths:</span>{' '}
+                              {aiReviewResult.overallSummary?.strengths?.join('; ') ?? 'n/a'}
+                            </p>
+                            <p>
+                              <span className="font-medium">Weaknesses:</span>{' '}
+                              {aiReviewResult.overallSummary?.weaknesses?.join('; ') ?? 'n/a'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="rounded border bg-muted p-2">Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}</div>
+                          <div className="rounded border bg-muted p-2">
+                            Usable w/ edits: {aiReviewResult.usabilityCounts.usable_with_edits}
+                          </div>
+                          <div className="rounded border bg-muted p-2">Unusable: {aiReviewResult.usabilityCounts.unusable}</div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[820px] border-collapse text-left text-xs">
                             <thead>
-                              <tr className="border-b bg-muted/50">
-                                <th className="p-2 font-medium">#</th>
-                                <th className="p-2 font-medium">Question</th>
-                                <th className="p-2 font-medium">
-                                  <Tooltip content={REVIEWED_VARIANTS_TOOLTIP} multiline side="top">
-                                    <span className="cursor-help border-b border-dotted border-current">
-                                      Variants
-                                    </span>
+                              <tr className="border-b">
+                                <th className="p-2">Slot</th>
+                                <th className="p-2">
+                                  <Tooltip content="How well the variant preserves the same concept and reasoning intent as the original." side="top">
+                                    <span>Concept</span>
                                   </Tooltip>
                                 </th>
-                                <th className="p-2 font-medium">
+                                <th className="p-2">
+                                  <Tooltip content="How similar the variant’s difficulty level is to the original question." side="top">
+                                    <span>Difficulty</span>
+                                  </Tooltip>
+                                </th>
+                                <th className="p-2">
+                                  <Tooltip content="Whether the variant is internally valid and unambiguous." side="top">
+                                    <span>Structure</span>
+                                  </Tooltip>
+                                </th>
+                                <th className="p-2">
+                                  <Tooltip content="Whether the provided answer is correct and the distractors/solution are consistent with that answer." side="top">
+                                    <span>Answer</span>
+                                  </Tooltip>
+                                </th>
+                                <th className="p-2">
+                                  <Tooltip content="Whether the variant matches the same course topic." side="top">
+                                    <span>Topic</span>
+                                  </Tooltip>
+                                </th>
+                                <th className="p-2">
                                   <Tooltip
-                                    content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
-                                    multiline
+                                    content="How different the variant is from the original (values/context/structure/scenario) while preserving the core concept. Low distinctness = near-duplicate wording/parameters."
                                     side="top"
                                   >
-                                    <span className="cursor-help border-b border-dotted border-current">Status</span>
+                                    <span>Distinctness</span>
                                   </Tooltip>
                                 </th>
+                                <th className="p-2">Usability</th>
+                                <th className="p-2">Reason</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {variantReadiness.slots.map((row) => (
-                                <tr key={row.questionMetadataId} className="border-b border-border/60">
-                                  <td className="p-2">{row.order}</td>
-                                  <td className="p-2">
-                                    <span className="line-clamp-2" title={row.description ?? undefined}>
-                                      {row.description?.trim() || `Metadata #${row.questionMetadataId}`}
-                                    </span>
-                                    {row.questionType && (
-                                      <span className="text-xs text-muted-foreground"> · {row.questionType}</span>
-                                    )}
-                                  </td>
-                                  <td className="p-2 tabular-nums">{row.nonDraftVariantCount}</td>
-                                  <td className="p-2">
-                                    <Tooltip
-                                      content={variantStatusTooltip(variantReadiness.minRequiredNonDraft)}
-                                      multiline
-                                      side="top"
-                                    >
-                                      {row.ready ? (
-                                        <span className="inline-flex cursor-help items-center gap-1 border-b border-dotted border-current text-emerald-700">
-                                          <CheckCircle2 className="h-3.5 w-3.5" /> Ready
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex cursor-help items-center gap-1 border-b border-dotted border-current text-amber-800">
-                                          <XCircle className="h-3.5 w-3.5" /> Needs variant
-                                        </span>
-                                      )}
-                                    </Tooltip>
-                                  </td>
+                              {aiReviewResult.perQuestion.map((row) => (
+                                <tr key={`${row.slot}-${row.variantVariantId}`} className="border-b border-border">
+                                  <td className="p-2">{row.slot}</td>
+                                  <td className="p-2">{row.conceptual_equivalence ?? '-'}</td>
+                                  <td className="p-2">{row.difficulty_similarity ?? '-'}</td>
+                                  <td className="p-2">{row.structural_validity ?? '-'}</td>
+                                  <td className="p-2">{row.answer_correctness ?? '-'}</td>
+                                  <td className="p-2">{row.topic_alignment ?? '-'}</td>
+                                  <td className="p-2">{row.distinctness ?? '-'}</td>
+                                  <td className="p-2">{formatUsabilityLabel(row.usability)}</td>
+                                  <td className="p-2">{row.brief_reason}</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-              <div className="space-y-2">
-                <label htmlFor="variant-ai-prompt" className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Optional instructions for the AI
-                </label>
-                <Textarea
-                  id="variant-ai-prompt"
-                  placeholder="e.g. Keep MCQ distractors plausible; use different numeric values; avoid cultural names…"
-                  value={variantUserPrompt}
-                  onChange={(e) => setVariantUserPrompt(e.target.value)}
-                  disabled={generatingVariants || !baselineAssessmentId}
-                  className="min-h-[88px] border-input bg-background text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="min-w-[260px] space-y-1">
-                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">AI model</span>
-                  <Select value={variantModel} onValueChange={setVariantModel} disabled={generatingVariants}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModels.length === 0 ? (
-                        <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
-                      ) : (
-                        availableModels.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.label}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex min-w-[min(100%,280px)] flex-col gap-2">
-                  <Button
-                    type="button"
-                    variant="default"
-                    disabled={variantGenerateAllDisabled}
-                    onClick={() => void generateVariantsFromBaseline('all')}
-                  >
-                    {generatingVariants && variantGenMode === 'all' ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating…
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Generate variants for all questions
-                      </>
+                      </div>
                     )}
-                  </Button>
-                  {showMissingOnlyGenerate && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={variantGenerateMissingDisabled}
-                      onClick={() => void generateVariantsFromBaseline('missing')}
-                    >
-                      {generatingVariants && variantGenMode === 'missing' ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Generating…
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          Generate variants for missing questions only ({variantSlotsNeedingCount})
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+          </div>
 
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">3 · Assemble variant exam</h2>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Match baseline structure</CardTitle>
-              <CardDescription>
-                Builds one assessment with the same ordering and the same base question per slot as the baseline, picking
-                alternate variants so wording differs from the reference when possible.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Button
-                type="button"
-                onClick={assembleStructureMatchedExams}
-                disabled={!baselineAssessmentId || assembling || !selectedCourse}
-              >
-                {assembling ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Assembling…
-                  </>
-                ) : (
-                  'Assemble variant exam'
-                )}
+          {/* ── Footer nav ───────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={currentStep === 0}
+              onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+            >
+              <IconArrowLeft className="mr-1.5 h-4 w-4" />
+              Back
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Step {currentStep + 1} of {wizardSteps.length} · {wizardSteps[currentStep].label}
+            </span>
+            {currentStep < lastStepIndex ? (
+              <Button type="button" onClick={() => setCurrentStep((s) => Math.min(lastStepIndex, s + 1))}>
+                Continue
+                <IconArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
-              {lastAssembled.length > 0 && (
-                <ul className="text-sm text-muted-foreground">
-                  {lastAssembled.map((a) => (
-                    <li key={a.id}>
-                      <button
-                        type="button"
-                        className="text-indigo-600 underline-offset-2 hover:underline"
-                        onClick={() => navigate(`/assessments/${a.id}/builder`)}
-                      >
-                        {a.name}
-                      </button>{' '}
-                      <span className="text-slate-400">#{a.id}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+            ) : (
+              <Button type="button" variant="outline" onClick={goBackToAssessments}>
+                <IconCircleCheck className="mr-1.5 h-4 w-4" />
+                Done
+              </Button>
+            )}
+          </div>
+        </div>
 
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">4 · AI review</h2>
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">AI judge: baseline vs exam variant</CardTitle>
-                  <CardDescription>
-                    Uses the selected model as a judge to score each aligned slot against your rubric for validity and
-                    credibility.
-                  </CardDescription>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAiReviewHistoryOpen((v) => !v)}
-                  className="ml-auto"
-                >
-                  <History className="mr-1.5 h-4 w-4" />
-                  AI review history
+        {/* ── AI review history drawer ───────────────────────────────────── */}
+        <Sheet open={aiReviewHistoryOpen} onOpenChange={setAiReviewHistoryOpen}>
+          <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+            <SheetHeader className="border-b px-4 py-3">
+              <SheetTitle className="flex items-center gap-2 text-base">
+                <IconHistory className="h-4 w-4" />
+                AI review history
+                <span className="text-sm font-normal text-muted-foreground">({aiReviewHistoryForCourse.length})</span>
+              </SheetTitle>
+              <SheetDescription className="text-left">
+                Previous AI reviews for this course. Click one to reload its result.
+              </SheetDescription>
+            </SheetHeader>
+            {aiReviewHistoryForCourse.length > 0 && (
+              <div className="flex items-center justify-end border-b px-4 py-2">
+                <Button type="button" variant="ghost" size="sm" onClick={clearAiReviewHistory}>
+                  <IconTrash className="mr-1 h-3.5 w-3.5" />
+                  Clear all
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent className="relative overflow-hidden">
-              <div className={`space-y-4 transition-all duration-200 ${aiReviewHistoryOpen ? 'lg:pr-80' : 'pr-0'}`}>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Baseline exam</span>
-                    <Select value={aiReviewBaselineEffectiveId} onValueChange={setAiReviewBaselineId} disabled={!selectedCourse?.id}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select baseline exam" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {assessments.map((a) => (
-                          <SelectItem key={a.id} value={a.id.toString()}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Exam variant</span>
-                    <Select value={aiReviewVariantId} onValueChange={setAiReviewVariantId} disabled={!selectedCourse?.id}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select exam variant" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {aiReviewCandidates.map((a) => (
-                          <SelectItem key={a.id} value={a.id.toString()}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">AI model</span>
-                    <Select value={aiReviewModel} onValueChange={setAiReviewModel} disabled={aiReviewLoading}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableModels.length === 0 ? (
-                          <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
-                        ) : (
-                          availableModels.map((model) => (
-                            <SelectItem key={model.id} value={model.id}>
-                              {model.label}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" onClick={() => setAiReviewRubricOpen(true)}>
-                    Rubric
-                  </Button>
-                  <Button type="button" onClick={runAiReview} disabled={aiReviewDisabled}>
-                    {aiReviewLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Reviewing…
-                      </>
-                    ) : (
-                      'Run AI review'
-                    )}
-                  </Button>
-                </div>
-
-                {aiReviewResult && (
-                  <div className="space-y-4 rounded-lg border bg-white p-4 text-sm">
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" onClick={() => void exportAiReviewWord()}>
-                        Export Word (.docx)
-                      </Button>
-                      <Button type="button" variant="outline" onClick={exportAiReviewJson}>
-                        Export raw JSON
-                      </Button>
-                    </div>
-                    <p className="text-muted-foreground">
-                      Compared {aiReviewResult.comparedSlots} aligned slot(s). Baseline slots: {aiReviewResult.baselineSlotCount}
-                      , variant slots: {aiReviewResult.variantSlotCount}.
-                    </p>
-
-                    <p className="text-xs text-muted-foreground">
-                      Review time:{' '}
-                      {typeof aiReviewResult.reviewTimeMs === 'number' ? (aiReviewResult.reviewTimeMs / 1000).toFixed(1) : 'n/a'}s
-                    </p>
-
-                    <div className="rounded border bg-slate-50 p-3">
-                      <p className="text-sm font-semibold text-slate-900">
-                        Overall variant score:{' '}
-                        {typeof aiReviewResult.examVariantScoreFinal0to100 === 'number'
-                          ? aiReviewResult.examVariantScoreFinal0to100.toFixed(0)
-                          : 'n/a'}{' '}
-                        / 100
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Base (rubric-only):{' '}
-                        {typeof aiReviewResult.examVariantScoreBase0to100 === 'number'
-                          ? aiReviewResult.examVariantScoreBase0to100.toFixed(0)
-                          : 'n/a'}{' '}
-                        · Usable questions:{' '}
-                        {typeof aiReviewResult.usableQuestionPercentage === 'number'
-                          ? aiReviewResult.usableQuestionPercentage.toFixed(0)
-                          : 'n/a'}
-                        %
-                        <br />
-                        · Distinctness:{' '}
-                        {typeof aiReviewResult.distinctnessAverage1to5 === 'number'
-                          ? aiReviewResult.distinctnessAverage1to5.toFixed(2)
-                          : 'n/a'}
-                        /5 (factor{' '}
-                        {typeof aiReviewResult.distinctnessFactorAvg === 'number'
-                          ? aiReviewResult.distinctnessFactorAvg.toFixed(2)
-                          : 'n/a'}
-                        )
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Total score calculation:{' '}
-                        {typeof aiReviewResult.totalScoreCalculationSummary === 'string'
-                          ? aiReviewResult.totalScoreCalculationSummary
-                          : 'n/a'}
-                      </p>
-                    </div>
-
-                    <div className="grid gap-2 grid-cols-2 sm:grid-cols-5">
-                      <div className="rounded border bg-white p-2">
-                        <span className="font-medium">Concept</span>
-                        <div className="text-xs text-muted-foreground">
-                          {typeof aiReviewResult.averages.conceptual_equivalence === 'number'
-                            ? aiReviewResult.averages.conceptual_equivalence.toFixed(2)
-                            : 'n/a'}
-                          /5
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white p-2">
-                        <span className="font-medium">Difficulty</span>
-                        <div className="text-xs text-muted-foreground">
-                          {typeof aiReviewResult.averages.difficulty_similarity === 'number'
-                            ? aiReviewResult.averages.difficulty_similarity.toFixed(2)
-                            : 'n/a'}
-                          /5
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white p-2">
-                        <span className="font-medium">Structure</span>
-                        <div className="text-xs text-muted-foreground">
-                          {typeof aiReviewResult.averages.structural_validity === 'number'
-                            ? aiReviewResult.averages.structural_validity.toFixed(2)
-                            : 'n/a'}
-                          /5
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white p-2">
-                        <span className="font-medium">Answer</span>
-                        <div className="text-xs text-muted-foreground">
-                          {typeof aiReviewResult.averages.answer_correctness === 'number'
-                            ? aiReviewResult.averages.answer_correctness.toFixed(2)
-                            : 'n/a'}
-                          /5
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white p-2">
-                        <span className="font-medium">Topic</span>
-                        <div className="text-xs text-muted-foreground">
-                          {typeof aiReviewResult.averages.topic_alignment === 'number'
-                            ? aiReviewResult.averages.topic_alignment.toFixed(2)
-                            : 'n/a'}
-                          /5
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded border bg-white p-3">
-                      <p className="text-sm font-semibold">Instructor summary</p>
-                      <p className="text-xs text-muted-foreground">
-                        {aiReviewResult.overallSummary?.summaryText ?? 'n/a'}
-                      </p>
-                      <div className="mt-2 text-xs">
-                        <p>
-                          <span className="font-medium">Strengths:</span>{' '}
-                          {aiReviewResult.overallSummary?.strengths?.join('; ') ?? 'n/a'}
-                        </p>
-                        <p>
-                          <span className="font-medium">Weaknesses:</span>{' '}
-                          {aiReviewResult.overallSummary?.weaknesses?.join('; ') ?? 'n/a'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded border bg-slate-50 p-2">Usable as-is: {aiReviewResult.usabilityCounts.usable_as_is}</div>
-                      <div className="rounded border bg-slate-50 p-2">
-                        Usable w/ edits: {aiReviewResult.usabilityCounts.usable_with_edits}
-                      </div>
-                      <div className="rounded border bg-slate-50 p-2">Unusable: {aiReviewResult.usabilityCounts.unusable}</div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[820px] border-collapse text-left text-xs">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="p-2">Slot</th>
-                            <th className="p-2">
-                              <Tooltip content="How well the variant preserves the same concept and reasoning intent as the original." side="top">
-                                <span>Concept</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">
-                              <Tooltip content="How similar the variant’s difficulty level is to the original question." side="top">
-                                <span>Difficulty</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">
-                              <Tooltip content="Whether the variant is internally valid and unambiguous." side="top">
-                                <span>Structure</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">
-                              <Tooltip content="Whether the provided answer is correct and the distractors/solution are consistent with that answer." side="top">
-                                <span>Answer</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">
-                              <Tooltip content="Whether the variant matches the same course topic." side="top">
-                                <span>Topic</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">
-                              <Tooltip
-                                content="How different the variant is from the original (values/context/structure/scenario) while preserving the core concept. Low distinctness = near-duplicate wording/parameters."
-                                side="top"
-                              >
-                                <span>Distinctness</span>
-                              </Tooltip>
-                            </th>
-                            <th className="p-2">Usability</th>
-                            <th className="p-2">Reason</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {aiReviewResult.perQuestion.map((row) => (
-                            <tr key={`${row.slot}-${row.variantVariantId}`} className="border-b border-slate-100">
-                              <td className="p-2">{row.slot}</td>
-                              <td className="p-2">{row.conceptual_equivalence ?? '-'}</td>
-                              <td className="p-2">{row.difficulty_similarity ?? '-'}</td>
-                              <td className="p-2">{row.structural_validity ?? '-'}</td>
-                              <td className="p-2">{row.answer_correctness ?? '-'}</td>
-                              <td className="p-2">{row.topic_alignment ?? '-'}</td>
-                              <td className="p-2">{row.distinctness ?? '-'}</td>
-                              <td className="p-2">{formatUsabilityLabel(row.usability)}</td>
-                              <td className="p-2">{row.brief_reason}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+            )}
+            <ScrollArea className="flex-1 px-4 py-3">
+              <div className="space-y-4">
+                {aiReviewHistoryForCourse.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No previous AI reviews for this course yet.</p>
+                ) : (
+                  <>
+                    {renderAiReviewHistoryGroup('Today', aiReviewHistoryGroups.today)}
+                    {renderAiReviewHistoryGroup('Yesterday', aiReviewHistoryGroups.yesterday)}
+                    {renderAiReviewHistoryGroup('Earlier', aiReviewHistoryGroups.earlier)}
+                  </>
                 )}
               </div>
-              <aside
-                className={`absolute bottom-0 right-0 top-0 w-72 border-l bg-slate-50/95 shadow-sm transition-transform duration-200 ${
-                  aiReviewHistoryOpen ? 'translate-x-0' : 'translate-x-full'
-                }`}
-                aria-hidden={!aiReviewHistoryOpen}
-              >
-                <div className="flex items-center justify-between border-b px-3 py-2">
-                  <div className="inline-flex items-center gap-2 text-sm font-medium">
-                    <History className="h-4 w-4" />
-                    AI review history
-                    <span className="text-xs text-muted-foreground">({aiReviewHistoryForCourse.length})</span>
-                  </div>
-                  {aiReviewHistoryForCourse.length > 0 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={clearAiReviewHistory}>
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                <ScrollArea className="h-[420px] p-3">
-                  <div className="space-y-2">
-                    {aiReviewHistoryForCourse.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No previous AI reviews for this course yet.</p>
-                    ) : (
-                      <>
-                        {renderAiReviewHistoryGroup('Today', aiReviewHistoryGroups.today)}
-                        {renderAiReviewHistoryGroup('Yesterday', aiReviewHistoryGroups.yesterday)}
-                        {renderAiReviewHistoryGroup('Earlier', aiReviewHistoryGroups.earlier)}
-                      </>
-                    )}
-                  </div>
-                </ScrollArea>
-              </aside>
-            </CardContent>
-          </Card>
-        </section>
-      </main>
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
 
-      {selectedCourse?.id && (
-        <>
-          <QuestionUploadDialog
-            open={examUploadOpen}
-            onClose={() => setExamUploadOpen(false)}
-            courseId={selectedCourse.id}
-            courseName={selectedCourse.name}
-            topics={topics}
-            saveTarget="assessment"
-            onEnsureTopics={async (cid) => {
-              const t = await loadTopics(cid);
-              return t;
-            }}
-            onQuestionsSaved={handleExamQuestionsSaved}
-          />
-          <CanvasImportDialog open={canvasImportOpen} onClose={() => setCanvasImportOpen(false)} onImportSuccess={handleCanvasImport} />
-          <Dialog open={aiReviewRubricOpen} onOpenChange={setAiReviewRubricOpen}>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>AI review rubric</DialogTitle>
-                <DialogDescription>
-                  Customize the rubric passed to AI judge. Keep dimensions + scoring language explicit for consistent JSON.
-                </DialogDescription>
-              </DialogHeader>
-              <Textarea
-                value={aiReviewRubricText}
-                onChange={(e) => setAiReviewRubricText(e.target.value)}
-                className="min-h-[360px] font-mono text-xs"
-              />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setAiReviewRubricText(DEFAULT_AI_JUDGE_RUBRIC)}>
-                  Reset default rubric
-                </Button>
-                <Button type="button" onClick={() => setAiReviewRubricOpen(false)}>
-                  Done
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </>
-      )}
+        {/* ── Dialogs ────────────────────────────────────────────────────── */}
+        {selectedCourse?.id && (
+          <>
+            <QuestionUploadDialog
+              open={examUploadOpen}
+              onClose={() => setExamUploadOpen(false)}
+              courseId={selectedCourse.id}
+              courseName={selectedCourse.name}
+              topics={topics}
+              saveTarget="assessment"
+              onEnsureTopics={async (cid) => {
+                const t = await loadTopics(cid);
+                return t;
+              }}
+              onQuestionsSaved={handleExamQuestionsSaved}
+            />
+            <CanvasImportDialog
+              open={canvasImportOpen}
+              onClose={() => setCanvasImportOpen(false)}
+              courseId={selectedCourse?.id ?? null}
+              onImportSuccess={handleCanvasImport}
+            />
+            <GeneratedVariantsReviewDialog
+              open={variantReviewOpen}
+              onOpenChange={setVariantReviewOpen}
+              result={variantReviewResult}
+              onReviewed={() => {
+                void refreshVariantReadiness();
+                if (selectedCourse?.id) void loadAssessments(selectedCourse.id);
+              }}
+            />
+            <Dialog open={aiReviewRubricOpen} onOpenChange={setAiReviewRubricOpen}>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>AI review rubric</DialogTitle>
+                  <DialogDescription>
+                    Customize the rubric passed to AI judge. Keep dimensions + scoring language explicit for consistent JSON.
+                  </DialogDescription>
+                </DialogHeader>
+                <Textarea
+                  value={aiReviewRubricText}
+                  onChange={(e) => setAiReviewRubricText(e.target.value)}
+                  className="min-h-[360px] font-mono text-xs"
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setAiReviewRubricText(DEFAULT_AI_JUDGE_RUBRIC)}>
+                    Reset default rubric
+                  </Button>
+                  <Button type="button" onClick={() => setAiReviewRubricOpen(false)}>
+                    Done
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
+      </div>
     </div>
   );
 }

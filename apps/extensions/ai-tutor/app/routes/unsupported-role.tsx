@@ -1,13 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useLocalUser } from '../hooks/useLocalUser';
-
-function routeForRole(role: string) {
-  if (role === 'STUDENT') return '/student';
-  if (role === 'PROFESSOR') return '/instructor';
-  if (role === 'ADMIN') return '/admin';
-  return '/';
-}
+import { routeForRole } from '../lib/role-routing';
 
 export default function UnsupportedRolePage() {
   const navigate = useNavigate();
@@ -19,9 +13,7 @@ export default function UnsupportedRolePage() {
       return;
     }
 
-    if (user.role !== 'TA') {
-      navigate(routeForRole(user.role), { replace: true });
-    }
+    navigate(routeForRole(user.role), { replace: true });
   }, [navigate, user]);
 
   const handleLogout = async () => {
@@ -33,7 +25,7 @@ export default function UnsupportedRolePage() {
     <main className="relative min-h-dvh overflow-hidden bg-background">
       <div className="absolute inset-0 dots-pattern" />
       <div className="relative container mx-auto flex min-h-dvh items-center justify-center px-6 py-12">
-        <div className="card-editorial w-full max-w-xl p-8 sm:p-10">
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-xl p-8 sm:p-10">
           <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
             <svg
               className="h-7 w-7"
@@ -50,12 +42,12 @@ export default function UnsupportedRolePage() {
             </svg>
           </div>
 
-          <h1 className="mb-3 font-display text-3xl font-bold text-foreground">
-            TA access is not available yet
+          <h1 className="mb-3 text-3xl font-bold text-foreground">
+            Your role is not supported yet
           </h1>
           <p className="mb-4 text-base text-muted-foreground">
-            Your EduAI account was authenticated successfully, but AI Tutor does not support TA
-            access in this first release.
+            Your EduAI account was authenticated successfully, but AI Tutor does not support your
+            role ({user?.role}) in this release.
           </p>
           <p className="mb-8 text-sm text-muted-foreground">
             If you expected a different role, update it in EduAI and sign in again. Otherwise,
@@ -65,13 +57,6 @@ export default function UnsupportedRolePage() {
           <div className="flex flex-col gap-3 sm:flex-row">
             <button type="button" onClick={handleLogout} className="btn-primary">
               Sign out
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/', { replace: true })}
-              className="btn-ghost"
-            >
-              Back to home
             </button>
           </div>
         </div>

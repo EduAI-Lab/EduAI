@@ -11,7 +11,7 @@ Full-stack app for building course question banks and assessments, with AI-assis
 | Backend      | Node.js, Express (ESM), Sequelize, PostgreSQL                                |
 | Auth         | JWT + bcrypt                                                                 |
 | Integrations | EduAI API, Canvas (per-user API keys from the app UI)                        |
-| Testing      | Jest (unit + integration), Vitest (frontend)                                 |
+| Testing      | Vitest (unit + integration + frontend)                                       |
 
 
 ## Prerequisites
@@ -59,7 +59,7 @@ question-maker/
 │   │   │   ├── schema/
 │   │   │   ├── services/
 │   │   │   └── utils/
-│   │   └── test/
+│   │   └── tests/
 │   └── frontend/
 │       ├── src/components/
 │       ├── src/contexts/
@@ -149,14 +149,16 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | --------------- | ---------------- |
 | `npm run dev`   | Vite dev server  |
 | `npm run build` | Production build |
-| `npm test`      | Vitest           |
+| `npm test`      | Unit + integration Vitest suites |
+| `npm run test:unit` | Frontend unit tests |
+| `npm run test:integration` | Frontend integration tests |
 | `npm run lint`  | Lint             |
 
 
 ## Testing
 
 - Backend: `cd app/backend && npm test` and `npm run test:integration` (integration needs PostgreSQL; optional `TEST_DATABASE_URL`).
-- Frontend: `cd app/frontend && npm test`.
+- Frontend: `cd app/frontend && npm test` for both suites, or `npm run test:unit` / `npm run test:integration` individually.
 
 Details: [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 

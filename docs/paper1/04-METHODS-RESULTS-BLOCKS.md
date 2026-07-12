@@ -38,7 +38,7 @@
 
 ## BLOCK 8 — Pilot feasibility results (paste in §6.6 — DESCRIPTIVE ONLY)
 
-> **These are feasibility signals, not confirmatory findings.** In a pilot (n=4 finished; distribution marked preview-stage), preference favored Assist (3/4 preferred Assist, 0 baseline, 1 no preference; 4/4 rated Assist easier to read/scan). Paired descriptives favored Assist on comprehension (Cohen's d ≈ 0.92, large), NASA-TLX effort (d ≈ 0.87), mental demand (d ≈ 0.78), and a composite cognitive-load index (d ≈ 0.85). However, aggregate TLX/SUS were mixed at this n — one participant preferred Assist in words while rating its workload higher, and one UX re-orientation item favored baseline. We therefore treat the pilot as motivating the powered study rather than as evidence for the hypotheses.
+> **These are feasibility signals, not confirmatory findings.** In the July 2026 ADHD cohort export (n=6 analyzed after excluding one outlier; 7 finished of 9 records), preference favored Assist (5/6 preferred Assist, 0 baseline, 1 no preference; 6/6 rated Assist easier to read/scan). Paired descriptives favored Assist on comprehension (Cohen's d ≈ 1.06, large), NASA-TLX workload (d ≈ 0.94), cognitive-load index (d ≈ 0.98), and SUS (d ≈ 0.84). One participant (`R_62F6naaHk7ItKgb`) was excluded: they preferred Assist in open feedback but rated dramatically worse SUS/TLX — likely response-order or technical confound. Treat as **descriptive pilot** only until powered recruitment.
 
 ## BLOCK 9 — Contribution-boundary footnote (paste in Intro or Acknowledgments)
 
@@ -56,12 +56,12 @@
 | E2 structural predictability | 2.4 → 4.6 (→~4.9) | Track A |
 | E1 conciseness | 2.9 → 4.6 (→~4.8) | Track A |
 | E5 stability | 2.7 → 4.5 (→~4.9) | Track A |
-| Preference | 3/4 Assist | Track B pilot |
-| Comprehension d | ≈0.92 (large) | Track B pilot |
-| TLX effort d | ≈0.87 | Track B pilot |
-| TLX mental demand d | ≈0.78 | Track B pilot |
-| Cognitive-load index d | ≈0.85 | Track B pilot |
-| Pilot n (finished) | 4 (of 5; 1 excluded) | Track B pilot |
+| Preference | 5/6 Assist | Track B pilot |
+| Comprehension d | ≈1.06 (large) | Track B pilot |
+| TLX workload d | ≈0.94 | Track B pilot |
+| SUS d | ≈0.84 | Track B pilot |
+| Cognitive-load index d | ≈0.98 | Track B pilot |
+| Pilot n (finished) | 6 analyzed (7 finished; 1 excluded) | Track B pilot |
 | Tutoring word cap | 250 (target 150) | policy |
 | Clarification word cap | 120 (target 80) | policy |
 | WM chunk ceiling | ~3–5 | Cowan 2010 |

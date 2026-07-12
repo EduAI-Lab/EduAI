@@ -1,7 +1,6 @@
+import { Button } from '@eduai/ui';
 import React, { useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
-import { Button } from '../ui/button';
-import { ScrollArea } from '../ui/scroll-area';
+import { IconPlus, IconLayoutList } from '@tabler/icons-react';
 import { Assessment, AssessmentSection, QuestionVariantEntry, Topic } from '../../types/question';
 import { AssessmentSectionCard } from './AssessmentSectionCard';
 import { AssessmentQuestionPicker } from './AssessmentQuestionPicker';
@@ -18,6 +17,7 @@ interface AssessmentBuilderProps {
     onViewQuestion?: (entry: QuestionVariantEntry) => void;
     onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
     onCreateVariant?: (entry: QuestionVariantEntry) => void;
+    readOnly?: boolean;
 }
 
 export function AssessmentBuilder({
@@ -31,7 +31,8 @@ export function AssessmentBuilder({
     onRemoveQuestionFromSection,
     onViewQuestion,
     onToggleDraft,
-    onCreateVariant
+    onCreateVariant,
+    readOnly = false,
 }: AssessmentBuilderProps) {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerSectionId, setPickerSectionId] = useState<number | null>(null);
@@ -49,58 +50,75 @@ export function AssessmentBuilder({
     }, [pickerSectionId, sections]);
 
     return (
-        <div className="flex flex-col gap-4 h-full">
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)] h-full">
-                <ScrollArea className="h-full pr-2">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                Sections
-                            </h3>
-                        </div>
+        <div className="flex flex-col gap-5">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <IconLayoutList className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Sections ({sections.length})
+                    </span>
+                </div>
+                {!readOnly && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={onAddSection}
+                    >
+                        <IconPlus className="h-3.5 w-3.5" />
+                        Add section
+                    </Button>
+                )}
+            </div>
 
-                        {sections.length === 0 ? (
-                            <div className="rounded border border-dashed border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
-                                No sections yet. Click &quot;Add section&quot; to get started.
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-3">
-                                {sections.map((section, index) => (
-                                    <AssessmentSectionCard
-                                        key={section.id}
-                                        section={section}
-                                        sectionIndex={index}
-                                        questionLinks={section.sectionVariants ?? []}
-                                        questionBank={questionBank}
-                                        onUpdateTitle={(name) => onUpdateSectionName(section.id, name)}
-                                        onRemoveQuestion={(variantId) =>
-                                            onRemoveQuestionFromSection(section.id, variantId)
-                                        }
-                                        onDeleteSection={() => onDeleteSection(section.id)}
-                                        onViewQuestion={onViewQuestion}
-                                        onToggleDraft={onToggleDraft}
-                                        onCreateVariant={onCreateVariant}
-                                        onAddQuestions={() => {
-                                            setPickerSectionId(section.id);
-                                            setPickerOpen(true);
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                        <div className="pt-3">
+            <div>
+                {sections.length === 0 ? (
+                    <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border bg-muted/30 p-12 text-center">
+                        <IconLayoutList className="h-10 w-10 text-muted-foreground/40" />
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">No sections yet</p>
+                            <p className="text-xs text-muted-foreground">
+                                Add a section to start organizing your assessment questions.
+                            </p>
+                        </div>
+                        {!readOnly && (
                             <Button
                                 type="button"
                                 size="sm"
-                                className="gap-1.5 bg-slate-800 text-white hover:bg-slate-700"
+                                className="mt-1 gap-1.5"
                                 onClick={onAddSection}
                             >
-                                <Plus className="h-3.5 w-3.5" />
-                                Add section
+                                <IconPlus className="h-3.5 w-3.5" />
+                                Add first section
                             </Button>
-                        </div>
+                        )}
                     </div>
-                </ScrollArea>
+                ) : (
+                    <div className="flex flex-col gap-4">
+                        {sections.map((section, index) => (
+                            <AssessmentSectionCard
+                                key={section.id}
+                                section={section}
+                                sectionIndex={index}
+                                questionLinks={section.sectionVariants ?? []}
+                                questionBank={questionBank}
+                                onUpdateTitle={(name) => onUpdateSectionName(section.id, name)}
+                                onRemoveQuestion={(variantId) =>
+                                    onRemoveQuestionFromSection(section.id, variantId)
+                                }
+                                onDeleteSection={() => onDeleteSection(section.id)}
+                                onViewQuestion={onViewQuestion}
+                                onToggleDraft={onToggleDraft}
+                                onCreateVariant={onCreateVariant}
+                                onAddQuestions={() => {
+                                    setPickerSectionId(section.id);
+                                    setPickerOpen(true);
+                                }}
+                                readOnly={readOnly}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
 
             <AssessmentQuestionPicker
@@ -122,4 +140,3 @@ export function AssessmentBuilder({
         </div>
     );
 }
-

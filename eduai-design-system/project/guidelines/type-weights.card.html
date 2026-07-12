@@ -1,0 +1,51 @@
+<!-- @dsCard group="Type" viewport="700x220" name="Font Weights" subtitle="Outfit variable — 300 Light through 800 Extrabold" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); color: var(--foreground); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .cell { }
+  .sample { font-size: 20px; line-height: 1.2; color: var(--foreground); }
+  .label { font-size: 11px; font-family: var(--font-mono); color: var(--muted-foreground); margin-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="cell">
+      <div class="sample" style="font-weight:300">EduAI</div>
+      <div class="label">300 Light</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-weight:400">EduAI</div>
+      <div class="label">400 Regular</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-weight:500">EduAI</div>
+      <div class="label">500 Medium</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-weight:600">EduAI</div>
+      <div class="label">600 Semibold</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-weight:700">EduAI</div>
+      <div class="label">700 Bold</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-weight:800">EduAI</div>
+      <div class="label">800 Extrabold</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-family:var(--font-mono); font-size:16px; margin-top:4px">console.log()</div>
+      <div class="label">JetBrains Mono 400</div>
+    </div>
+    <div class="cell">
+      <div class="sample" style="font-size:16px; letter-spacing:var(--tracking-widest); font-weight:500; text-transform:uppercase; margin-top:4px">LABEL</div>
+      <div class="label">Uppercase label style</div>
+    </div>
+  </div>
+</body>
+</html>

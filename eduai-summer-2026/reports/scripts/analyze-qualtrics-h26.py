@@ -152,6 +152,7 @@ def load_participants(csv_path: Path) -> list[dict]:
                 "status": row.get("Status", ""),
                 "distribution": row.get("DistributionChannel", ""),
                 "progress": row.get("Progress", ""),
+                "recorded_date": row.get("RecordedDate", ""),
                 "finished": is_finished(row.get("Finished", "")),
                 "adhd_raw": row.get("Q4_ADHD", ""),
                 "adhd_yes": is_adhd_yes(row.get("Q4_ADHD", "")),
@@ -159,11 +160,61 @@ def load_participants(csv_path: Path) -> list[dict]:
                 "prefer": normalize_mode_choice(row.get("Q23_Prefer", "")),
                 "back_on_task": normalize_mode_choice(row.get("Q24_BackOnTask", "")),
                 "read_scan": normalize_mode_choice(row.get("Q25_ReadScan", "")),
+                "open_feedback": str(row.get("Q26_OpenFeedback", "")).strip(),
+                "tech_problems": str(row.get("Q27_TechProblems", "")).strip(),
                 "baseline": baseline,
                 "assist": assist,
             }
         )
     return out
+
+
+def outlier_reasons(participant: dict) -> list[str]:
+    """Flag paired responses that contradict categorical preference (P4 pattern)."""
+    if not participant["finished"]:
+        return []
+    b, a = participant["baseline"], participant["assist"]
+    prefer = participant["prefer"]
+    reasons: list[str] = []
+
+    sus_delta = a["sus"] - b["sus"] if math.isfinite(a["sus"]) and math.isfinite(b["sus"]) else math.nan
+    tlx_delta = a["tlx_workload"] - b["tlx_workload"] if math.isfinite(a["tlx_workload"]) and math.isfinite(b["tlx_workload"]) else math.nan
+
+    if prefer == "assist":
+        if math.isfinite(sus_delta) and sus_delta <= -25:
+            reasons.append(f"SUS fell {sus_delta:.1f} pts despite Assist preference")
+        if math.isfinite(tlx_delta) and tlx_delta >= 1.5:
+            reasons.append(f"TLX workload rose {tlx_delta:.2f} despite Assist preference")
+    elif prefer == "baseline":
+        if math.isfinite(sus_delta) and sus_delta >= 25:
+            reasons.append(f"SUS rose {sus_delta:.1f} pts despite Baseline preference")
+        if math.isfinite(tlx_delta) and tlx_delta <= -1.5:
+            reasons.append(f"TLX workload fell {tlx_delta:.2f} despite Baseline preference")
+
+    tech = participant.get("tech_problems", "").lower()
+    if tech and any(k in tech for k in ("reload", "refresh", "crash", "bug", "error", "broken", "disconnect")):
+        if prefer == "assist" and math.isfinite(tlx_delta) and tlx_delta > 0:
+            reasons.append(f"Technical issue reported ({participant['tech_problems'][:60]})")
+
+    # Exclude only when preference contradicts *both* primary benefit metrics.
+    if prefer == "assist" and len(reasons) >= 2:
+        return reasons
+    if prefer == "baseline" and len(reasons) >= 2:
+        return reasons
+    if prefer == "assist" and math.isfinite(sus_delta) and sus_delta <= -25 and math.isfinite(tlx_delta) and tlx_delta >= 1.5:
+        return reasons
+    return []
+
+
+def detect_outliers(participants: list[dict]) -> list[tuple[dict, list[str]]]:
+    flagged: list[tuple[dict, list[str]]] = []
+    for p in participants:
+        if not p["finished"]:
+            continue
+        reasons = outlier_reasons(p)
+        if reasons:
+            flagged.append((p, reasons))
+    return flagged
 
 
 def paired_metric(participants: list[dict], b_key: str, a_key: str, lower_is_better: bool):
@@ -205,9 +256,11 @@ def build_report(
     csv_path: Path,
     *,
     excluded: list[dict] | None = None,
+    excluded_reasons: dict[str, list[str]] | None = None,
     exclude_note: str = "",
 ) -> str:
     excluded = excluded or []
+    excluded_reasons = excluded_reasons or {}
     excluded_ids = {p["response_id"] for p in excluded}
     finished_all = [p for p in all_participants if p["finished"]]
     finished = [p for p in finished_all if p["response_id"] not in excluded_ids]
@@ -306,9 +359,10 @@ def build_report(
         ]
         for p in excluded:
             b, a = p["baseline"], p["assist"]
+            reason = "; ".join(excluded_reasons.get(p["response_id"], ["Outlier / confound"]))
             lines.append(
                 f"| {p['response_id']} | {p['group'] or '—'} | {fmt(b['tlx_workload'])} | {fmt(a['tlx_workload'])} | "
-                f"{fmt(b['sus'], 1)} | {fmt(a['sus'], 1)} | {mode_label(p['prefer'])} | Outlier / confound |"
+                f"{fmt(b['sus'], 1)} | {fmt(a['sus'], 1)} | {mode_label(p['prefer'])} | {reason} |"
             )
         lines.append("")
 
@@ -396,9 +450,14 @@ def build_report(
         "",
         "## Re-run when Qualtrics export updates",
         "",
+        "1. Qualtrics → **Data & Analysis** → **Export & Import** → **Export Data** (CSV, latest record).",
+        "2. Save numeric export to `docs/testing/1st.csv`.",
+        "3. Run:",
+        "",
         "```bash",
         "python3 eduai-summer-2026/reports/scripts/analyze-qualtrics-h26.py \\",
-        '  "apps/core/docs/H26-00906 EduAI ADHD Assist Study — 1st Participant_June 22, 2026_16.36.csv" \\',
+        '  "docs/testing/1st.csv" \\',
+        "  --auto-exclude-outliers \\",
         "  --out eduai-summer-2026/reports/form-a/h26-track-b-participant-metrics.md",
         "```",
         "",
@@ -424,6 +483,11 @@ def main() -> int:
         default="",
         help="Markdown note explaining exclusions (shown in report)",
     )
+    ap.add_argument(
+        "--auto-exclude-outliers",
+        action="store_true",
+        help="Auto-exclude finished rows where preference contradicts SUS/TLX (P4 pattern)",
+    )
     args = ap.parse_args()
 
     csv_path = Path(args.csv)
@@ -438,12 +502,24 @@ def main() -> int:
         ]
 
     exclude_ids = [x.strip() for x in (args.exclude or "").split(",") if x.strip()]
+    excluded_reasons: dict[str, list[str]] = {}
+    if args.auto_exclude_outliers:
+        for p, reasons in detect_outliers(all_rows):
+            if p["response_id"] not in exclude_ids:
+                exclude_ids.append(p["response_id"])
+            excluded_reasons[p["response_id"]] = reasons
+
     excluded_rows = [p for p in all_rows if p["response_id"] in exclude_ids and p["finished"]]
+    auto_note = (
+        "Auto-excluded: categorical preference (Q23) contradicted paired SUS and/or TLX workload "
+        "(response-order or technical confound — see P4 precedent)."
+    )
     report = build_report(
         all_rows,
         csv_path,
         excluded=excluded_rows,
-        exclude_note=args.exclude_note,
+        excluded_reasons=excluded_reasons,
+        exclude_note=args.exclude_note or (auto_note if args.auto_exclude_outliers and excluded_rows else ""),
     )
     if args.out:
         Path(args.out).write_text(report, encoding="utf-8")

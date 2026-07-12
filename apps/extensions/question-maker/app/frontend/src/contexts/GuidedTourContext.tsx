@@ -16,7 +16,7 @@ type GuidedTourContextValue = {
   /** Register a callback to run when the tour ends (Done or Skip). Returns unregister function. */
   registerOnTourEnd: (callback: () => void) => () => void;
   /** Register a callback to run when Next is clicked on a specific step (e.g. navigate). Overrides default click behavior. Returns unregister function. */
-  registerStepAction: (stepId: string, callback: () => void) => () => void;
+  registerStepAction: (stepId: string, callback: () => void | Promise<void>) => () => void;
   isActive: boolean;
   activeTourId: TourId | null;
 };
@@ -30,8 +30,29 @@ type HighlightPosition = {
   height: number;
 } | null;
 
-const getTarget = (step: TourStep | undefined) =>
-  step ? (document.querySelector(`[data-tour-id="${step.id}"]`) as HTMLElement | null) : null;
+const getStepTargetId = (step: TourStep | undefined) => step?.targetId ?? step?.id;
+
+const getTarget = (step: TourStep | undefined) => {
+  const targetId = getStepTargetId(step);
+  return targetId ? (document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null) : null;
+};
+
+const waitForTarget = (step: TourStep | undefined, timeoutMs = 2500): Promise<void> =>
+  new Promise((resolve) => {
+    if (!step) {
+      resolve();
+      return;
+    }
+    const deadline = Date.now() + timeoutMs;
+    const tick = () => {
+      if (getTarget(step) || Date.now() >= deadline) {
+        resolve();
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
+  });
 
 const PADDING = 24;
 const TOOLTIP_WIDTH = 320;
@@ -117,29 +138,29 @@ const Tooltip = ({
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <div className="rounded-lg bg-white shadow-xl border border-gray-200 p-4 space-y-2">
+      <div className="rounded-lg bg-card shadow-xl border border-border p-4 space-y-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs uppercase tracking-wide text-gray-500">Step</p>
-            <h4 className="font-semibold text-gray-900">{step.title}</h4>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Step</p>
+            <h4 className="font-semibold text-foreground">{step.title}</h4>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-800 text-sm"
+            className="text-muted-foreground hover:text-foreground text-sm"
             aria-label="Close tour"
           >
             Skip
           </button>
         </div>
-        <p className="text-sm text-gray-700 leading-relaxed">{step.content}</p>
+        <p className="text-sm text-foreground leading-relaxed">{step.content}</p>
         <div className="flex justify-between items-center pt-2">
           <button
             onClick={onPrev}
             className={cn(
               'px-3 py-1 rounded border text-sm',
               isFirst
-                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                ? 'border-border text-muted-foreground cursor-not-allowed'
+                : 'border-border text-foreground hover:border-border'
             )}
             disabled={isFirst}
           >
@@ -147,7 +168,7 @@ const Tooltip = ({
           </button>
           <button
             onClick={isLast ? onClose : onNext}
-            className="px-3 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+            className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm hover:bg-primary/90"
           >
             {isLast ? 'Done' : 'Next'}
           </button>
@@ -251,28 +272,28 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<TourState>({ steps: [], currentIndex: 0, isActive: false });
   const [activeTourId, setActiveTourId] = useState<TourId | null>(null);
   const onTourEndRef = useRef<(() => void) | null>(null);
-  const stepActionOverridesRef = useRef<Map<string, () => void>>(new Map());
+  const stepActionOverridesRef = useRef<Map<string, () => void | Promise<void>>>(new Map());
+  const advancingRef = useRef(false);
 
-  const registerStepAction = useCallback((stepId: string, callback: () => void) => {
+  const registerStepAction = useCallback((stepId: string, callback: () => void | Promise<void>) => {
     stepActionOverridesRef.current.set(stepId, callback);
     return () => {
       stepActionOverridesRef.current.delete(stepId);
     };
   }, []);
 
-  const runStepAction = useCallback((step: TourStep | undefined) => {
+  const runStepAction = useCallback(async (step: TourStep | undefined) => {
     if (!step) return;
 
     const override = stepActionOverridesRef.current.get(step.id);
     if (override) {
-      override();
+      await override();
       return;
     }
 
     // Default: some steps trigger a click to move the user forward (navigate, switch tab, or open builder).
     if (step.id === 'course-select' || step.id === 'assessment-tab' || step.id === 'builder-add-section-button') {
-      const target = getTarget(step);
-      target?.click();
+      getTarget(step)?.click();
     }
   }, []);
 
@@ -340,8 +361,20 @@ export const GuidedTourProvider = ({ children }: { children: ReactNode }) => {
           index={state.currentIndex}
           total={state.steps.length}
           onNext={() => {
-            runStepAction(step);
-            setTimeout(() => advanceTo(state.currentIndex + 1), 100);
+            if (advancingRef.current) return;
+            advancingRef.current = true;
+            void (async () => {
+              try {
+                await runStepAction(step);
+                const delay = step.advanceDelayMs ?? 150;
+                await new Promise((r) => window.setTimeout(r, delay));
+                const nextStep = state.steps[state.currentIndex + 1];
+                await waitForTarget(nextStep, nextStep?.waitForTargetMs ?? 2500);
+                advanceTo(state.currentIndex + 1);
+              } finally {
+                advancingRef.current = false;
+              }
+            })();
           }}
           onPrev={() => advanceTo(Math.max(0, state.currentIndex - 1))}
           onClose={stopTour}

@@ -9,12 +9,11 @@ server/
   src/
     index.js              # Bootstrap: load env, create app, listen on PORT
     app.js                # Express app factory (createApp), middleware + route mounting
-    auth.js               # Better Auth config (EduAI OAuth, Prisma adapter, cookies)
     config/
       database.js         # PrismaClient singleton
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
-      auth.js             # attachSession, requireAuth, requireRole, requireRoles
+      auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
     routes/
       authentication.js   # GET /me
       courses.js          # Course CRUD, EduAI import, publish/unpublish
@@ -35,7 +34,7 @@ server/
       courseCloning.js     # Deep-clone courses (modules, lessons, activities, topics)
       progressCalculation.js # Course/module/lesson progress calculation
       eduaiClient.js      # HTTP client for EduAI API
-      eduaiAuth.js        # EduAI OAuth access token retrieval
+      eduaiAuth.js        # Extracts the Core session cookie for forwarding on EduAI API calls
       topicSync.js        # Sync topics from EduAI
       enrollmentSync.js   # Sync enrollments from EduAI (creates users/accounts)
       systemSettings.js   # Key-value settings store (DB-backed)
@@ -62,23 +61,30 @@ server/
 The middleware chain in `app.js` processes requests in this order:
 
 1. **CORS** — Open origin with `credentials: true`.
-2. **Better Auth** — Mounted at `/api/auth/{*any}` (handles its own body parsing).
-3. **JSON parser** — `express.json()` for all subsequent routes.
-4. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
-5. **Session hydration** — `attachSession` resolves Better Auth cookies and hydrates `req.user` from Prisma.
-6. **Auth gate** — `requireAuth` enforced for all `/api/*` except `/api/health` and `/api/auth/*`.
-7. **Admin isolation** — Users with `role === 'ADMIN'` can only access `/api/me`, `/api/admin/*`, and `/api/ai-models/*`.
-8. **Route modules** — All 11 route files mounted at `/api`.
+2. **JSON parser** — `express.json()` for all routes.
+3. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
+4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
+   `POST /api/sessions/validate` and populates `req.user` from the response; enforced for all
+   `/api/*` except `/api/health` and `POST /api/logout`.
+5. **Admin isolation** — Users with `role === 'ADMIN'` can only access `/api/me`,
+   `/api/admin/*`, and `/api/ai-models/*`; `UNIT_ADMIN` is additionally blocked from
+   `/api/admin/settings/*` and `/api/admin/users*`.
+6. **Route modules** — All 11 route files mounted at `/api`.
 
 ## Authentication
 
-- **Provider**: Better Auth with EduAI OAuth (OIDC + PKCE) via the `genericOAuth` plugin.
-- **Email/password**: Disabled. All authentication goes through EduAI SSO.
-- **Session storage**: Better Auth `Session` table in PostgreSQL, exposed as cookies.
-- **Role source**: Extracted from EduAI's custom claim `https://eduai.app/role`, normalized to enum values.
-- **Cookie config**: Domain from `COOKIE_DOMAIN`, secure in production, `sameSite=lax`.
-- **Trusted origins**: `localhost:5173` (dev) and `aitutor.ok.ubc.ca` (production).
-- **Account linking**: Enabled with `eduai` as a trusted provider.
+- **Provider**: None locally — session validation is proxied to Core via `CORE_URL`
+  (`middleware/auth.js`). There is no local login flow, OAuth client, or session store; this
+  server has no `auth.js` and no Better Auth tables in its Prisma schema.
+- **Session check**: Every `/api/*` request (except `/api/health` and `POST /api/logout`)
+  forwards its `Cookie` header to Core's `POST /api/sessions/validate`; a non-OK response is a
+  401.
+- **Role source**: Whatever `role` Core's validate response reports, normalized to one of
+  `STUDENT`, `INSTRUCTOR`, `TA`, `ADMIN`, `UNIT_ADMIN` (unrecognized values fall back to
+  `STUDENT`).
+- **Logout**: `POST /api/logout` proxies to Core's `/api/auth/sign-out` server-to-server,
+  bypassing browser CORS; it's excluded from the auth gate so signing out an invalid session
+  is a no-op, not a 401.
 
 ## RBAC
 
@@ -90,10 +96,12 @@ The middleware chain in `app.js` processes requests in this order:
 
 | Function | Purpose |
 |----------|---------|
-| `attachSession(req, res, next)` | Resolves session from cookies, hydrates `req.user` |
-| `requireAuth(req, res, next)` | Returns 401 if `req.user` is null |
+| `requireAuth(req, res, next)` | Validates the session cookie against Core and hydrates `req.user`; returns 401 if absent/invalid |
 | `requireRole(role)` | Returns 403 if `req.user.role !== role` |
 | `requireRoles([...])` | Returns 403 if `req.user.role` not in array |
+| `requireInstructorPolicy(flag)` | Returns 403 for an `INSTRUCTOR` when the named Core policy flag is disabled (ADMIN/UNIT_ADMIN unaffected) |
+
+Configurable permissions are owned by Core. `services/policyService.js` fetches `GET {EDUAI_BASE_URL}/policies` with the service key and caches the result on a short TTL (falling back to the last known-good value on a Core outage). `requireInstructorPolicy('instructors.canCreateCourses')` gates `POST /courses` so an admin can enable/disable instructor course creation centrally.
 
 ### Admin Isolation
 
@@ -161,17 +169,11 @@ Source of truth: `server/.env.example`.
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `PORT` | No | `4000` | Express listen port |
-| `NODE_ENV` | No | - | `production` enables secure cookies |
-| `BETTER_AUTH_SECRET` | Yes | - | Session signing secret |
-| `BETTER_AUTH_URL` | No | `http://localhost:4000/api/auth` | Better Auth base URL |
-| `COOKIE_DOMAIN` | No | `localhost` | Session cookie domain |
-| `EDUAI_DISCOVERY_URL` | Yes | - | EduAI OIDC discovery endpoint |
-| `EDUAI_CLIENT_ID` | Yes | - | OAuth client ID |
-| `EDUAI_CLIENT_SECRET` | Yes | - | OAuth client secret |
-| `EDUAI_USERINFO_URL` | Yes | - | EduAI user info endpoint |
+| `CORE_URL` | Yes | - | Core base URL — session validation is proxied here (`middleware/auth.js`), not handled locally |
 | `EDUAI_BASE_URL` | No | `http://localhost:5174/api` | EduAI API base URL |
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
+| `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
 
 ### EduAI API Key Precedence
 
@@ -183,7 +185,7 @@ Source of truth: `server/.env.example`.
 
 ### Schema
 
-15 domain models + 3 Better Auth tables. Key relationships:
+18 domain models — no Better Auth tables (session validation is delegated to Core). Key relationships:
 
 ```
 CourseOffering ─┬─ Module ─── Lesson ─── Activity ─┬─ Submission
@@ -199,16 +201,16 @@ See `server/prisma/schema.prisma` for the full schema.
 
 ```bash
 # Apply migrations
-cd server && bunx prisma migrate deploy
+cd server && npx prisma migrate deploy
 
 # Create a new migration after schema changes
-cd server && bunx prisma migrate dev --name description_of_change
+cd server && npx prisma migrate dev --name description_of_change
 ```
 
 ### Seed Data
 
 ```bash
-cd server && bun run seed
+cd server && npm run seed
 ```
 
 > **Warning:** The seed script is destructive. It calls `clearDatabase()` and deletes all existing rows before inserting demo data.
@@ -226,16 +228,16 @@ Seed creates:
 - **Runner**: Vitest 4 with supertest for HTTP assertions
 - **Config**: `server/vitest.config.js` (node environment, forks pool, 15s timeout)
 - **Test DB**: Configured via `.env.test` (database `aitutor_test`, port 4001)
-- **Mock auth**: `createApp({ mockUser })` bypasses Better Auth for testing
+- **Mock auth**: `createApp({ mockUser })` bypasses the Core session-validation call and injects `mockUser` as `req.user` directly
 
 ### Commands
 
 ```bash
 cd server
-bun run test              # All tests
-bun run test:unit         # Unit tests only
-bun run test:integration  # Integration tests only
-bun run test:watch        # Watch mode
+npm run test              # All tests
+npm run test:unit         # Unit tests only
+npm run test:integration  # Integration tests only
+npm run test:watch        # Watch mode
 ```
 
 ### Test Structure

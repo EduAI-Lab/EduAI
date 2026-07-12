@@ -26,7 +26,7 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapActivity } from '../utils/mappers.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
@@ -45,7 +45,8 @@ import {
   generateGuideResponse,
   generateTeachResponse,
 } from '../services/aiGuidance.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
@@ -103,31 +104,16 @@ function resolveTopicName(activity, topicId) {
   return activity.mainTopic?.name;
 }
 
-// Chat sessions are keyed by (user, activity, mode) so a student keeps a single
-// continuous conversation per AI mode on a given activity. Skipped when no
-// upstream chatId came back (nothing meaningful to remember).
+// Each chatId is unique across sessions. When Core returns the same chatId
+// (continuing an existing session) we update the row; when it mints a new one
+// (student started a fresh chat) we insert a new row so history is preserved.
 async function upsertChatSession({ userId, activityId, mode, chatId, tutorModelId }) {
   if (!chatId) return null;
 
   return prisma.aiChatSession.upsert({
-    where: {
-      userId_activityId_mode: {
-        userId,
-        activityId,
-        mode,
-      },
-    },
-    update: {
-      chatId,
-      modelId: tutorModelId ?? null,
-    },
-    create: {
-      userId,
-      activityId,
-      mode,
-      chatId,
-      modelId: tutorModelId ?? null,
-    },
+    where: { chatId },
+    update: { modelId: tutorModelId ?? null },
+    create: { userId, activityId, mode, chatId, modelId: tutorModelId ?? null },
   });
 }
 
@@ -200,10 +186,11 @@ async function loadActivityForChat(activityId) {
               courseOffering: {
                 select: {
                   id: true,
+                  isPublished: true,
                   externalId: true,
                   externalSource: true,
                   externalMetadata: true,
-                  instructors: { select: { userId: true } },
+                  coreOfferingId: true,
                   enrollments: { select: { userId: true } },
                 },
               },
@@ -224,24 +211,25 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     return res.status(500).json({ error: 'Activity course context missing' });
   }
 
-  const { isInstructorForCourse, isEnrolledStudent } = getActivityAccess(course, authUser);
-  if (!(isInstructorForCourse || isEnrolledStudent)) {
-    return res.status(403).json({ error: 'Not authorized for this activity' });
+  if (authUser.role !== 'STUDENT') {
+    return res.status(403).json({ error: 'Only students can use AI tutoring' });
+  }
+  const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+  if (!isEnrolled) {
+    return res.status(403).json({ error: 'Not enrolled in this course' });
+  }
+  const lesson = activity.lesson;
+  if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished) {
+    return res.status(403).json({ error: 'Activity is not available' });
   }
 
   try {
-    // Stage 2: lookup prior session only when the client already holds a chatId,
-    // so the very first call doesn't pay the DB roundtrip.
+    // Stage 2: verify the client's chatId belongs to this user. Skip when no
+    // chatId provided (new session — Core will mint one after the response).
     const existingSession =
       payload.chatId && payload.chatId.trim().length > 0
-        ? await prisma.aiChatSession.findUnique({
-            where: {
-              userId_activityId_mode: {
-                userId: authUser.id,
-                activityId,
-                mode,
-              },
-            },
+        ? await prisma.aiChatSession.findFirst({
+            where: { chatId: payload.chatId, userId: authUser.id, activityId, mode },
           })
         : null;
 
@@ -250,9 +238,14 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     const { dualLoopEnabled, maxSupervisorIterations, supervisorModelId } =
       await resolveSupervisorSettings();
     const tutorModelId = await resolveTutorModelSelection(payload.modelId);
-    const eduAiAccessToken = await getEduAiAccessTokenForUser(authUser.id);
+    const cookie = getEduAiCookieForRequest(req);
     const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
+
+    // Stage 4: fetch testable questions for the linked Core course (fail-soft).
+    const testableQuestions = course.coreOfferingId
+      ? await listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
+      : [];
 
     // Stage 5: mode-specific EduAI call.
     const aiResult = await generateResponse({
@@ -260,10 +253,11 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       supervisorModelId,
       dualLoopEnabled,
       maxSupervisorIterations,
-      eduAiAccessToken,
+      cookie,
       chatId,
       messageId,
       courseCode: getCourseCode(course),
+      testableQuestions,
     });
 
     // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
@@ -314,7 +308,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
 /**
  * GET /lessons/:lessonId/activities — list activities for a lesson.
  *
- * Auth: any authenticated user; PROFESSOR must instruct the course, STUDENT
+ * Auth: any authenticated user; INSTRUCTOR must instruct the course, STUDENT
  *   must be enrolled AND lesson must be published.
  * Returns: For students, each activity is enriched with `completionStatus`
  *   so the lesson page can render attempt indicators without N+1 calls.
@@ -342,7 +336,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
             courseOffering: {
               include: {
                 instructors: { select: { userId: true } },
-                enrollments: { select: { userId: true } },
+                enrollments: { select: { userId: true, role: true } },
               },
             },
           },
@@ -355,25 +349,23 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     }
 
     const isInstructor = lesson.module.courseOffering.instructors.some(
-      (assignment) => assignment.userId === authUser.id,
+      (i) => i.userId === authUser.id,
     );
-    const isStudent = lesson.module.courseOffering.enrollments.some(
-      (enrollment) => enrollment.userId === authUser.id,
+    const enrollment = lesson.module.courseOffering.enrollments.find(
+      (e) => e.userId === authUser.id,
     );
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
+    const isMember = hasElevatedAccess || isStudent;
 
-    if (authUser.role === 'PROFESSOR' && !isInstructor) {
+    if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
-    if (authUser.role === 'STUDENT') {
-      if (!isStudent) {
-        return res.status(403).json({ error: 'Not authorized for this lesson' });
-      }
-      if (!lesson.isPublished) {
-        return res.status(403).json({ error: 'Lesson is not published' });
-      }
-    }
-    if (authUser.role !== 'PROFESSOR' && authUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
+    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+      return res.status(403).json({ error: 'Lesson is not published' });
     }
 
     const activities = await prisma.activity.findMany({
@@ -389,7 +381,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     });
 
     // For students, add completion status to each activity
-    if (authUser.role === 'STUDENT') {
+    if (isStudent && !hasElevatedAccess) {
       const activityIds = activities.map((a) => a.id);
       const statusMap = await getActivityCompletionStatuses(activityIds, authUser.id);
 
@@ -410,13 +402,14 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
 /**
  * POST /lessons/:lessonId/activities — create a new activity.
  *
- * Auth: PROFESSOR who instructs the lesson's course.
+ * Auth: INSTRUCTOR who instructs the lesson's course.
  * Side effects: writes Activity + ActivitySecondaryTopic rows.
  *
  * Why: at-least-one-mode invariant is enforced here (and in PATCH) so the
  * frontend never has to render a tutor screen with no available modes.
  */
-router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
   const lessonId = Number(req.params.lessonId);
   if (!Number.isFinite(lessonId)) {
     return res.status(400).json({ error: 'Invalid lesson id' });
@@ -441,7 +434,11 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
     const lesson = await prisma.lesson.findUnique({
       where: { id: lessonId },
       include: {
-        module: { select: { courseOfferingId: true } },
+        module: {
+          include: {
+            courseOffering: { include: { instructors: { select: { userId: true } } } },
+          },
+        },
       },
     });
 
@@ -449,7 +446,15 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
       return res.status(404).json({ error: 'Lesson not found' });
     }
 
-    const courseOfferingId = lesson.module.courseOfferingId;
+    const isInstructor = lesson.module.courseOffering.instructors.some(
+      (i) => i.userId === authUser.id,
+    );
+    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+
+    const courseOfferingId = lesson.module.courseOffering.id;
 
     const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
     if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
@@ -459,9 +464,9 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
     const normalizedSecondaryIds = Array.isArray(payload.secondaryTopicIds)
       ? Array.from(
           new Set(
-            payload.secondaryTopicIds
-              .map((value) => Number(value))
-              .filter((value) => Number.isFinite(value) && value !== payload.mainTopicId),
+            payload.secondaryTopicIds.filter(
+              (value) => typeof value === 'string' && value.length > 0 && value !== payload.mainTopicId,
+            ),
           ),
         )
       : [];
@@ -524,7 +529,7 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
 /**
  * PATCH /activities/:activityId — partial update of an activity.
  *
- * Auth: PROFESSOR who instructs the activity's course.
+ * Auth: INSTRUCTOR who instructs the activity's course.
  * Side effects: when `secondaryTopicIds` is provided the entire join table is
  *   rewritten (deleteMany + create) for that activity.
  *
@@ -532,7 +537,7 @@ router.post('/lessons/:lessonId/activities', requireRole('PROFESSOR'), async (re
  * column, so the handler reads-modifies-writes that blob whenever any of those
  * fields appear, leaving other config keys untouched.
  */
-router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, res) => {
+router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -592,8 +597,9 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
+    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -699,8 +705,8 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
 
     let resolvedMainTopicId = activity.mainTopicId;
     if (typeof payload.mainTopicId !== 'undefined') {
-      if (typeof payload.mainTopicId !== 'number' || !Number.isFinite(payload.mainTopicId)) {
-        return res.status(400).json({ error: 'mainTopicId must be a number' });
+      if (typeof payload.mainTopicId !== 'string' || payload.mainTopicId.length === 0) {
+        return res.status(400).json({ error: 'mainTopicId must be a string' });
       }
       const mainTopic = await prisma.topic.findUnique({ where: { id: payload.mainTopicId } });
       if (!mainTopic || mainTopic.courseOfferingId !== courseOfferingId) {
@@ -716,9 +722,9 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
       }
       const normalizedSecondaryIds = Array.from(
         new Set(
-          payload.secondaryTopicIds
-            .map((value) => Number(value))
-            .filter((value) => Number.isFinite(value) && value !== resolvedMainTopicId),
+          payload.secondaryTopicIds.filter(
+            (value) => typeof value === 'string' && value.length > 0 && value !== resolvedMainTopicId,
+          ),
         ),
       );
 
@@ -796,7 +802,7 @@ router.patch('/activities/:activityId', requireRole('PROFESSOR'), async (req, re
   }
 });
 
-router.delete('/activities/:activityId', requireRole('PROFESSOR'), async (req, res) => {
+router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const activityId = Number(req.params.activityId);
   if (!Number.isFinite(activityId)) {
@@ -828,8 +834,9 @@ router.delete('/activities/:activityId', requireRole('PROFESSOR'), async (req, r
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
+    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
-    if (!isInstructor) {
+    if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
     }
 
@@ -844,7 +851,7 @@ router.delete('/activities/:activityId', requireRole('PROFESSOR'), async (req, r
 /**
  * POST /questions/:id/answer — submit an answer attempt for an activity.
  *
- * Auth: enrolled STUDENT or course instructor (instructors can self-test).
+ * Auth: enrolled STUDENT only (§15); activity + ancestor chain must be published.
  * Side effects: creates a Submission row with monotonic `attemptNumber`,
  *   updates submission analytics for students, and signals whether
  *   per-activity feedback is still owed.
@@ -877,10 +884,10 @@ router.post('/questions/:id/answer', async (req, res) => {
                 courseOffering: {
                   select: {
                     id: true,
+                    isPublished: true,
                     externalId: true,
                     externalSource: true,
                     externalMetadata: true,
-                    instructors: { select: { userId: true } },
                     enrollments: { select: { userId: true } },
                   },
                 },
@@ -892,15 +899,20 @@ router.post('/questions/:id/answer', async (req, res) => {
     });
     if (!activity) return res.status(404).json({ error: 'Activity not found' });
 
-    // Authorization: user must be enrolled (student) or an instructor of the course
+    // §15: only enrolled STUDENTs may submit; activity ancestor chain must be published
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
 
-    const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
-    const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
-
-    if (!(isInstructorForCourse || isEnrolledStudent)) {
-      return res.status(403).json({ error: 'Not authorized for this activity' });
+    if (authUser.role !== 'STUDENT' && authUser.role !== 'TA') {
+      return res.status(403).json({ error: 'Only students and TAs can submit answers' });
+    }
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    if (!isEnrolled) {
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    }
+    const answerLesson = activity.lesson;
+    if (!course.isPublished || !answerLesson.module.isPublished || !answerLesson.isPublished) {
+      return res.status(403).json({ error: 'Activity is not available' });
     }
 
     const { isCorrect } = evaluateQuestion(activity, {
@@ -975,21 +987,33 @@ router.post('/activities/:activityId/teach', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = TeachRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
+
+    let payload;
+    try {
+      payload = TeachRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    }
+
     const topicName = resolveTopicName(activity, payload.topicId);
     return handleAiInteraction({
       req,
@@ -1034,21 +1058,33 @@ router.post('/activities/:activityId/guide', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = GuideRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
+
+    let payload;
+    try {
+      payload = GuideRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
+    }
+
     return handleAiInteraction({
       req,
       res,
@@ -1092,21 +1128,23 @@ router.post('/activities/:activityId/custom', async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  let payload;
-  try {
-    payload = CustomRequestSchema.parse(req.body || {});
-  } catch (error) {
-    return res
-      .status(400)
-      .json({ error: 'Invalid payload', details: error?.errors || String(error) });
-  }
-
   try {
     const activity = await loadActivityForChat(activityId);
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
     }
+
+    // Auth check before schema parse: unauthorized callers get 403, not 400
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+    if (authUser.role !== 'STUDENT')
+      return res.status(403).json({ error: 'Only students can use AI tutoring' });
+    if (!course.enrollments.some((e) => e.userId === authUser.id))
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    const lesson = activity.lesson;
+    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+      return res.status(403).json({ error: 'Activity is not available' });
 
     // Check if custom mode is enabled and has a prompt
     if (!activity.enableCustomMode) {
@@ -1115,6 +1153,15 @@ router.post('/activities/:activityId/custom', async (req, res) => {
 
     if (!activity.customPrompt) {
       return res.status(400).json({ error: 'No custom prompt configured for this activity' });
+    }
+
+    let payload;
+    try {
+      payload = CustomRequestSchema.parse(req.body || {});
+    } catch (error) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid payload', details: error?.errors || String(error) });
     }
 
     const topicName = resolveTopicName(activity, payload.topicId);
@@ -1137,6 +1184,134 @@ router.post('/activities/:activityId/custom', async (req, res) => {
     });
   } catch (e) {
     console.error('Error generating custom response:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/submissions — list all submissions for an activity.
+ *
+ * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
+ * Returns: all Submission rows for the activity, ordered by userId then attemptNumber.
+ */
+router.get('/activities/:activityId/submissions', async (req, res) => {
+  const authUser = req.user;
+  const activityId = Number(req.params.activityId);
+
+  if (!Number.isFinite(activityId)) {
+    return res.status(400).json({ error: 'Invalid activity id' });
+  }
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      include: {
+        lesson: {
+          include: {
+            module: {
+              include: {
+                courseOffering: {
+                  include: {
+                    instructors: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isAdmin = authUser.role === 'ADMIN';
+
+    if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this activity' });
+    }
+
+    const submissions = await prisma.submission.findMany({
+      where: { activityId },
+      orderBy: [{ userId: 'asc' }, { attemptNumber: 'asc' }],
+    });
+
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/feedback — list all feedback for an activity.
+ *
+ * Auth: INSTRUCTOR of the course or TA enrolled in the course (TA(C) per §15).
+ * Returns: all ActivityFeedback rows for the activity, ordered by creation date.
+ */
+router.get('/activities/:activityId/feedback', async (req, res) => {
+  const authUser = req.user;
+  const activityId = Number(req.params.activityId);
+
+  if (!Number.isFinite(activityId)) {
+    return res.status(400).json({ error: 'Invalid activity id' });
+  }
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      include: {
+        lesson: {
+          include: {
+            module: {
+              include: {
+                courseOffering: {
+                  include: {
+                    instructors: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const isAdmin = authUser.role === 'ADMIN';
+
+    if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
+      return res.status(403).json({ error: 'Not authorized for this activity' });
+    }
+
+    const feedback = await prisma.activityFeedback.findMany({
+      where: { activityId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.json(feedback);
+  } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
@@ -1244,6 +1419,115 @@ router.post('/activities/:activityId/feedback', async (req, res) => {
     }
     console.error('Error recording activity feedback:', error);
     res.status(500).json({ error: String(error) });
+  }
+});
+
+/**
+ * GET /me/submissions — own-resource: caller's submissions regardless of enrollment status.
+ *
+ * Auth: any authenticated user. No enrollment check so inactive students retain access.
+ */
+router.get('/me/submissions', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const submissions = await prisma.submission.findMany({
+      where: { userId: authUser.id },
+      orderBy: [{ activityId: 'asc' }, { attemptNumber: 'asc' }],
+    });
+    res.json(submissions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /me/feedback — own-resource: caller's activity feedback regardless of enrollment status.
+ *
+ * Auth: any authenticated user. No enrollment check so inactive students retain access.
+ */
+router.get('/me/feedback', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const feedback = await prisma.activityFeedback.findMany({
+      where: { userId: authUser.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(feedback);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/chat-sessions — list all AI chat sessions the
+ * authenticated student has started for this activity, newest-first.
+ *
+ * Auth: STUDENT enrolled in the activity's course.
+ */
+router.get('/activities/:activityId/chat-sessions', async (req, res) => {
+  try {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+
+    const activity = await loadActivityForChat(activityId);
+    if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+    const course = activity.lesson?.module?.courseOffering;
+    if (!course) return res.status(500).json({ error: 'Activity course context missing' });
+
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    if (authUser.role !== 'STUDENT' || !isEnrolled) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const sessions = await prisma.aiChatSession.findMany({
+      where: { userId: authUser.id, activityId },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, chatId: true, mode: true, modelId: true, createdAt: true, updatedAt: true },
+    });
+
+    return res.json(sessions);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * GET /activities/:activityId/chat-sessions/:chatId/messages — proxy the Core
+ * message list for a specific session. Verifies the session belongs to the
+ * requesting student before forwarding.
+ *
+ * Auth: STUDENT who owns the session.
+ */
+router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req, res) => {
+  try {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    const { chatId } = req.params;
+    if (!Number.isFinite(activityId)) return res.status(400).json({ error: 'Invalid activityId' });
+
+    const session = await prisma.aiChatSession.findFirst({
+      where: { chatId, userId: authUser.id, activityId },
+    });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const cookie = getEduAiCookieForRequest(req);
+    const coreUrl = getEduAiBaseUrl().replace(/\/api$/, '');
+    const upstream = await fetch(`${coreUrl}/api/chats/${chatId}/messages`, {
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
+    });
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: 'Failed to fetch messages from Core' });
+    }
+    const data = await upstream.json();
+    return res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 

@@ -1,35 +1,37 @@
 {
-  "name": "server",
+  "name": "ai-tutor-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.integration.config.js",
     "test:watch": "vitest",
-    "test:unit": "vitest run test/unit/",
-    "test:integration": "vitest run test/integration/",
-    "start": "bunx prisma generate && node src/index.js",
-    "dev": "bunx prisma generate && nodemon src/index.js",
-    "seed": "prisma generate && bun prisma/seed.ts"
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.js",
+    "test:coverage": "vitest run --coverage --config vitest.coverage.config.js",
+    "start": "npx prisma generate && node src/index.js",
+    "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
+    "seed": "tsx prisma/seed.ts",
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@better-auth/oauth-provider": "1.5.4",
-    "@prisma/client": "^6.16.1",
-    "better-auth": "1.5.4",
+    "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "zod": "^3.23.8"
+    "node-cron": "^4.2.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10",
+    "@vitest/coverage-v8": "^4.1.7",
     "oxlint": "^1.56.0",
     "prisma": "^6.16.1",
     "supertest": "^7.2.2",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.9"
   }
 }

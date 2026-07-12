@@ -12,12 +12,9 @@ import './app.css';
 import { AuthProvider } from '~/hooks/useLocalUser';
 import { TourProvider } from '~/components/TourProvider';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
-
-// Theme script runs before React hydration to prevent flash.
-// The app currently forces dark mode globally.
-const themeScript = `(function(){
-  document.documentElement.classList.add("dark");
-})();`;
+import { ThemeProvider } from '~/components/theme-provider';
+import { ThemeSyncInitializer } from '~/components/theme-sync-initializer';
+import { Toaster } from '@eduai/ui';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
@@ -26,48 +23,39 @@ export const links: Route.LinksFunction = () => [
     href: 'https://fonts.gstatic.com',
     crossOrigin: 'anonymous',
   },
-  // Satoshi - Modern geometric sans for body text
   {
     rel: 'stylesheet',
-    href: 'https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap',
-  },
-  // Fraunces - Distinctive old-style serif for display headings
-  {
-    rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&display=swap',
-  },
-  // JetBrains Mono - For code and monospace elements
-  {
-    rel: 'stylesheet',
-    href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap',
+    href: 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap',
   },
 ];
 
 export function HydrateFallback() {
   return (
-    <div className="min-h-dvh bg-gradient-to-br from-gray-50 to-white dark:from-gray-950 dark:to-gray-900 flex items-center justify-center">
-      <div className="text-sm text-gray-600 dark:text-gray-300">Loading…</div>
+    <div className="min-h-dvh bg-background flex items-center justify-center">
+      <div className="text-sm text-muted-foreground">Loading…</div>
     </div>
   );
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* Theme script MUST run before CSS loads to prevent flash */}
         <script
           dangerouslySetInnerHTML={{
-            __html: themeScript,
+            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark')}}catch(e){}})()`,
           }}
         />
         <Meta />
         <Links />
       </head>
       <body>
-        {children}
+        <ThemeProvider>
+          {children}
+          <Toaster />
+        </ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -80,6 +68,7 @@ export default function App() {
     <AuthProvider initialUser={null}>
       <BugReportProvider>
         <TourProvider>
+          <ThemeSyncInitializer />
           <Outlet />
         </TourProvider>
       </BugReportProvider>

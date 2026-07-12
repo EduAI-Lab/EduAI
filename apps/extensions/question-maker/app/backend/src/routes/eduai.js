@@ -3,17 +3,47 @@
  * All routes require authentication and delegate to eduaiService for actual API interactions.
  */
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { QM_AUTHORIZED } from '../middleware/roles.js';
 import eduaiService from '../services/eduaiService.js';
+import { Op } from 'sequelize';
 import { Course } from '../schema/Course.js';
+import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
+import { normalizeCourseCode } from '../services/courseCodeUtils.js';
 
 const router = express.Router();
 
+/**
+ * Confirm the caller has at least TA access to a QM course matching `courseCode`
+ * before proxying to EduAI (#4). Resolves the local QM Course row by normalized
+ * code and reuses the same access helper as the per-course middleware. Returns
+ * the resolved access on success, or null when no accessible match exists.
+ */
+async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
+  const target = normalizeCourseCode(courseCode);
+  if (!target) return null;
+
+  // Narrow with case-insensitive matches (raw + space-stripped forms) so common
+  // code variations hit the index, then normalize-compare in JS to collapse any
+  // remaining whitespace differences (mirrors findScopedCoreCourseByCode).
+  const compact = courseCode.replace(/\s+/g, '');
+  const candidates = await Course.findAll({
+    where: { code: { [Op.or]: [{ [Op.iLike]: courseCode }, { [Op.iLike]: compact }] } },
+  }).catch(() => []);
+  const matches = candidates.filter((c) => normalizeCourseCode(c.code) === target);
+  for (const course of matches) {
+    const access = await resolveAccessForCourse(reqUser, course, { cookie });
+    if (access && access.rank >= LEVELS.ta.rank) return access;
+  }
+  return null;
+}
+
+router.use(authenticateToken, requireRole(QM_AUTHORIZED));
+
 /** POST /api/eduai/chat – proxies streaming chat prompts to EduAI with the given course code. */
-router.post('/chat', authenticateToken, async (req, res) => {
+router.post('/chat', async (req, res) => {
   try {
     const { messages, model, apiKeys, courseCode, streaming } = req.body;
-    const userId = req.user.id;
 
     // Validate required fields
     if (!messages || !Array.isArray(messages)) {
@@ -24,9 +54,17 @@ router.post('/chat', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Course code is required' });
     }
 
-    // Note: EduAI manages its own course context, so we don't need to validate
-    // against our local database. EduAI will handle course access validation.
-    // We'll create a placeholder course object for the response.
+    // Confirm the caller actually has access to this course in QM before
+    // proxying (#4) — the client-supplied courseCode is otherwise unverified.
+    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!access) {
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have access to this course',
+        code: 'COURSE_ACCESS_DENIED'
+      });
+    }
+
     const course = {
       id: 0,
       name: `EduAI Course: ${courseCode}`,
@@ -61,7 +99,7 @@ router.post('/chat', authenticateToken, async (req, res) => {
 });
 
 /** POST /api/eduai/generate-questions – requests generated questions from EduAI using the provided prompt and options. */
-router.post('/generate-questions', authenticateToken, async (req, res) => {
+router.post('/generate-questions', async (req, res) => {
   try {
     const { 
       prompt, 
@@ -73,18 +111,25 @@ router.post('/generate-questions', authenticateToken, async (req, res) => {
       reasoningDistribution,
       mcqRequiredChoiceCount
     } = req.body;
-    const userId = req.user.id;
 
     // Validate required fields
     if (!prompt || !courseCode) {
-      return res.status(400).json({ 
-        error: 'Prompt and course code are required' 
+      return res.status(400).json({
+        error: 'Prompt and course code are required'
       });
     }
 
-    // Note: EduAI manages its own course context, so we don't need to validate
-    // against our local database. EduAI will handle course access validation.
-    // We'll create a placeholder course object for the response.
+    // Confirm the caller actually has access to this course in QM before
+    // proxying (#4) — the client-supplied courseCode is otherwise unverified.
+    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!access) {
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have access to this course',
+        code: 'COURSE_ACCESS_DENIED'
+      });
+    }
+
     const course = {
       id: 0,
       name: `EduAI Course: ${courseCode}`,
@@ -136,7 +181,7 @@ router.post('/generate-questions', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/courses – fetches the list of EduAI-managed courses for selection. */
-router.get('/courses', authenticateToken, async (req, res) => {
+router.get('/courses', async (req, res) => {
   try {
     const coursesData = await eduaiService.listCourses();
 
@@ -154,7 +199,7 @@ router.get('/courses', authenticateToken, async (req, res) => {
 });
 
 /** GET /api/eduai/courses/:courseId/topics – retrieves EduAI topics for the given course ID. */
-router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
+router.get('/courses/:courseId/topics', async (req, res) => {
   try {
     const { courseId } = req.params;
 
@@ -177,20 +222,30 @@ router.get('/courses/:courseId/topics', authenticateToken, async (req, res) => {
   }
 });
 
-/** GET /api/eduai/test-api-key – validates that the configured EduAI credentials work. */
-router.get('/test-api-key', authenticateToken, async (req, res) => {
+/**
+ * POST /api/eduai/test-api-key – validates AI connectivity. Accepts an optional
+ * `apiKeys` body carrying the caller's browser-stored provider keys (e.g. Google)
+ * so the check validates the cloud provider rather than the (possibly offline)
+ * UBC-hosted provider. Echoes back `provider` so the UI can report which path is live.
+ */
+router.post('/test-api-key', async (req, res) => {
   try {
-    const result = await eduaiService.testApiKey();
+    const result = await eduaiService.testApiKey({
+      cookie: req.headers.cookie ?? '',
+      apiKeys: req.body?.apiKeys ?? {},
+    });
 
     if (result.success) {
       res.json({
         success: true,
         message: result.message,
+        provider: result.provider,
         data: result.response
       });
     } else {
       res.status(400).json({
         success: false,
+        provider: result.provider,
         error: result.error,
         statusCode: result.statusCode
       });
@@ -204,17 +259,50 @@ router.get('/test-api-key', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * Minimal cloud/local model catalog used when EduAI Core's model list is
+ * unreachable. Lets the picker stay usable (especially the cloud Google model,
+ * which only needs the caller's own API key) instead of rendering empty.
+ */
+const FALLBACK_AI_MODELS = [
+  {
+    provider: 'google',
+    modelId: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    description: 'Cloud model — uses your own Google API key.',
+    isActive: true,
+  },
+  {
+    provider: 'ollama',
+    modelId: 'gpt-oss:120b',
+    name: 'GPT-OSS 120B (UBC hosted)',
+    description: 'UBC-hosted model. Requires UBC network/VPN.',
+    isActive: true,
+  },
+];
+
 /** GET /api/eduai/ai-models – returns the available AI model identifiers from EduAI. */
-router.get('/ai-models', authenticateToken, async (req, res) => {
+router.get('/ai-models', async (req, res) => {
   try {
-    const models = await eduaiService.listAIModels();
-    res.json(models);
+    const models = await eduaiService.listAIModels({ cookie: req.headers.cookie ?? '' });
+    if (Array.isArray(models) && models.length > 0) {
+      return res.json(models);
+    }
+    // Core catalog empty/unreachable — fall back to a minimal list so the picker
+    // stays usable (the cloud model works with the caller's own provider key).
+    console.warn('EduAI model list empty — serving fallback catalog. Check Core session or EDUAI_API_KEY');
+    return res.json(FALLBACK_AI_MODELS);
   } catch (error) {
     console.error('EduAI list models error:', error);
-    res.status(500).json({
-      error: 'Failed to retrieve AI models from EduAI',
-      details: error.message
-    });
+    // Auth failures are the caller's problem to fix; surface them. For any other
+    // failure, degrade gracefully to the fallback catalog rather than an empty picker.
+    if (error.status === 401 || error.status === 403) {
+      return res.status(error.status).json({
+        error: 'Failed to retrieve AI models from EduAI',
+        details: error.message,
+      });
+    }
+    return res.json(FALLBACK_AI_MODELS);
   }
 });
 

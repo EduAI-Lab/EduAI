@@ -14,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu"
+} from "@eduai/ui"
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -23,17 +23,19 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "~/components/ui/sidebar"
+} from "@eduai/ui"
 
-export function NavDocuments({
-  items,
-}: {
-  items: {
-    name: string
-    url: string
-    icon: Icon
-  }[]
-}) {
+export interface NavDocumentItem {
+  name: string
+  url: string
+  icon: Icon
+}
+
+export interface NavDocumentsProps {
+  items: NavDocumentItem[]
+}
+
+export function NavDocuments({ items }: NavDocumentsProps) {
   const { isMobile } = useSidebar()
 
   return (

@@ -1,14 +1,31 @@
 /**
- * Question bank list with search/sort controls, add/upload actions, and variant cards.
- * Filters variants client-side and exposes callbacks for viewing/creating variants.
+ * Question browser for the course Questions tab: a compact filter toolbar, a sort +
+ * grid/list view toggle, and a responsive grid of question cards. Creation/upload
+ * actions sit in the header; filtering is client-side. The cross-course Question
+ * Library (pages/QuestionBankPage) shares the same toolbar for a consistent feel.
  */
-import { useState, useMemo } from 'react';
-import { QuestionVariantEntry, QuestionType, QuestionDifficulty, ReasoningLevel } from '../../types/question';
+import { useMemo, useState } from 'react';
+import { Button, cn } from '@eduai/ui';
+import {
+  IconStack2,
+  IconInfoCircle,
+  IconFilterX,
+  IconPlus,
+  IconCompass,
+  IconUpload,
+  IconLayoutGrid,
+  IconLayoutList,
+} from '@tabler/icons-react';
+import { QuestionVariantEntry } from '../../types/question';
 import { QuestionCard } from './QuestionCard';
-import { SearchAndFilters, QuestionFilters } from './SearchAndFilters';
-import { QuestionBankHeader } from './QuestionBankHeader';
-import { Loader2, User, Info } from 'lucide-react';
-import { Button } from '../ui/button';
+import {
+  QuestionFilterToolbar,
+  EMPTY_QUESTION_FILTERS,
+  type QuestionFilters,
+  type QuestionSort,
+} from './QuestionFilterToolbar';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { CardGridSkeleton } from '@/components/shared/Skeletons';
 
 interface QuestionBankProps {
   variants: QuestionVariantEntry[];
@@ -22,7 +39,14 @@ interface QuestionBankProps {
   disableAdd?: boolean;
   disableUpload?: boolean;
   onOpenProfile?: () => void;
+  /** Render cards in compact (dense) mode — used by the standalone Question Bank page. */
+  compact?: boolean;
 }
+
+const timeValue = (entry: QuestionVariantEntry) =>
+  new Date(entry.variant.createdAt || entry.variant.updatedAt || 0).getTime();
+
+const DIFFICULTY_RANK: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
 
 export const QuestionBank = ({
   variants,
@@ -35,146 +59,237 @@ export const QuestionBank = ({
   emptyMessage,
   disableAdd = false,
   disableUpload = false,
-  onOpenProfile
+  onOpenProfile,
+  compact = false,
 }: QuestionBankProps) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'type'>('newest');
-  const [filters, setFilters] = useState<QuestionFilters>({
-    questionTypes: [],
-    reasoningLevels: [],
-    difficulties: [],
-    aiGenerated: 'all',
-    draftStatus: 'all'
-  });
+  const [sortBy, setSortBy] = useState<QuestionSort>('newest');
+  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
+
+  // Every variant shares its base question's id, so a card needs an ordinal — "Variant 2
+  // of #4" — to be distinguishable. Number the non-base variants of each question (a base
+  // variant has referenceId == null) in creation order.
+  const variantNumbers = useMemo(() => {
+    const byQuestion = new Map<number, QuestionVariantEntry[]>();
+    for (const entry of variants) {
+      const list = byQuestion.get(entry.questionId);
+      if (list) list.push(entry);
+      else byQuestion.set(entry.questionId, [entry]);
+    }
+    const numbers = new Map<number, number>(); // variant.id -> ordinal
+    for (const list of byQuestion.values()) {
+      const sorted = [...list].sort((a, b) => timeValue(a) - timeValue(b) || a.variant.id - b.variant.id);
+      let n = 0;
+      for (const entry of sorted) {
+        if (entry.variant.referenceId != null) numbers.set(entry.variant.id, ++n);
+      }
+    }
+    return numbers;
+  }, [variants]);
 
   const filteredVariants = useMemo(() => {
     let filtered = [...variants];
-
-    // Apply text search filter
-    if (searchTerm) {
-      const lowered = searchTerm.toLowerCase();
-      filtered = filtered.filter((entry) =>
-        entry.variant.questionText.toLowerCase().includes(lowered) ||
-        entry.questionDescription?.toLowerCase().includes(lowered)
+    const term = searchTerm.trim().toLowerCase();
+    if (term) {
+      filtered = filtered.filter(
+        (entry) =>
+          entry.variant.questionText.toLowerCase().includes(term) ||
+          entry.questionDescription?.toLowerCase().includes(term) ||
+          entry.primaryTopicName?.toLowerCase().includes(term),
       );
     }
-
-    // Apply question type filter
     if (filters.questionTypes.length > 0) {
-      filtered = filtered.filter((entry) =>
-        filters.questionTypes.includes(entry.questionType)
-      );
+      filtered = filtered.filter((entry) => filters.questionTypes.includes(entry.questionType));
     }
-
-    // Apply reasoning level filter
     if (filters.reasoningLevels.length > 0) {
-      filtered = filtered.filter((entry) =>
-        entry.variant.reasoningLevel &&
-        filters.reasoningLevels.includes(entry.variant.reasoningLevel)
+      filtered = filtered.filter(
+        (entry) =>
+          entry.variant.reasoningLevel && filters.reasoningLevels.includes(entry.variant.reasoningLevel),
       );
     }
-
-    // Apply difficulty filter
     if (filters.difficulties.length > 0) {
-      filtered = filtered.filter((entry) =>
-        filters.difficulties.includes(entry.variant.difficulty)
-      );
+      filtered = filtered.filter((entry) => filters.difficulties.includes(entry.variant.difficulty));
     }
-
-    // Apply AI generated filter
     if (filters.aiGenerated !== 'all') {
-      if (filters.aiGenerated === 'ai') {
-        filtered = filtered.filter((entry) => entry.isAiGenerated === true);
-      } else {
-        filtered = filtered.filter((entry) => entry.isAiGenerated !== true);
-      }
+      const wantAi = filters.aiGenerated === 'ai';
+      filtered = filtered.filter((entry) => (entry.isAiGenerated === true) === wantAi);
     }
-
-    // Apply draft status filter
     if (filters.draftStatus !== 'all') {
-      if (filters.draftStatus === 'draft') {
-        filtered = filtered.filter((entry) => entry.isDraft === true);
-      } else {
-        filtered = filtered.filter((entry) => entry.isDraft !== true);
-      }
+      const wantDraft = filters.draftStatus === 'draft';
+      filtered = filtered.filter((entry) => (entry.isDraft === true) === wantDraft);
     }
 
-    // Apply sorting
     switch (sortBy) {
       case 'newest':
-        filtered.sort((a, b) =>
-          new Date(b.variant.createdAt || b.variant.updatedAt || b.variant.id).getTime() -
-          new Date(a.variant.createdAt || a.variant.updatedAt || a.variant.id).getTime()
-        );
+        filtered.sort((a, b) => timeValue(b) - timeValue(a));
         break;
       case 'oldest':
-        filtered.sort((a, b) =>
-          new Date(a.variant.createdAt || a.variant.updatedAt || a.variant.id).getTime() -
-          new Date(b.variant.createdAt || b.variant.updatedAt || b.variant.id).getTime()
-        );
+        filtered.sort((a, b) => timeValue(a) - timeValue(b));
         break;
       case 'type':
         filtered.sort((a, b) => a.questionType.localeCompare(b.questionType));
         break;
+      case 'difficulty':
+        filtered.sort(
+          (a, b) =>
+            (DIFFICULTY_RANK[a.variant.difficulty] ?? 1) - (DIFFICULTY_RANK[b.variant.difficulty] ?? 1),
+        );
+        break;
     }
-
     return filtered;
   }, [variants, searchTerm, sortBy, filters]);
 
+  const hasFilters =
+    searchTerm.trim() !== '' ||
+    filters.questionTypes.length > 0 ||
+    filters.reasoningLevels.length > 0 ||
+    filters.difficulties.length > 0 ||
+    filters.aiGenerated !== 'all' ||
+    filters.draftStatus !== 'all';
+
+  const clearAll = () => {
+    setSearchTerm('');
+    setFilters(EMPTY_QUESTION_FILTERS);
+  };
+
+  const dense = compact || view === 'grid';
+
   return (
-    <div className="space-y-6">
-      <QuestionBankHeader
-        questionCount={filteredVariants.length}
-        courseName={courseName}
-        onAddQuestion={onAddQuestion}
-        onUploadQuestions={onUploadQuestions}
-        disableAdd={disableAdd}
-        disableUpload={disableUpload}
-      />
+    <div className="space-y-4">
+      {/* Header: count + actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Questions</h2>
+          <p className="text-sm text-muted-foreground">
+            {variants.length === 0
+              ? 'No questions yet'
+              : hasFilters
+                ? `${filteredVariants.length} of ${variants.length} shown`
+                : `${variants.length} question${variants.length === 1 ? '' : 's'} in this course`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!disableUpload && (
+            <Button
+              variant="outline"
+              onClick={onUploadQuestions}
+              className="gap-1.5"
+              data-tour-id="upload-questions-btn"
+            >
+              <IconUpload className="size-4" />
+              <span className="hidden sm:inline">Upload</span>
+            </Button>
+          )}
+          {!disableAdd && (
+            <Button onClick={onAddQuestion} className="gap-1.5" data-tour-id="add-question-btn">
+              <IconPlus className="size-4" />
+              Add question
+            </Button>
+          )}
+        </div>
+      </div>
 
       {variants.length > 0 && (
-        <SearchAndFilters
+        <QuestionFilterToolbar
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           filters={filters}
           onFiltersChange={setFilters}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          trailing={
+            <div className="hidden items-center rounded-lg border border-border p-0.5 sm:inline-flex">
+              <button
+                type="button"
+                aria-label="Grid view"
+                aria-pressed={view === 'grid'}
+                onClick={() => setView('grid')}
+                className={cn(
+                  'flex size-8 items-center justify-center rounded-md transition-colors',
+                  view === 'grid'
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <IconLayoutGrid className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="List view"
+                aria-pressed={view === 'list'}
+                onClick={() => setView('list')}
+                className={cn(
+                  'flex size-8 items-center justify-center rounded-md transition-colors',
+                  view === 'list'
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <IconLayoutList className="size-4" />
+              </button>
+            </div>
+          }
         />
       )}
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading questions...
-        </div>
+        <CardGridSkeleton count={6} columns={view === 'grid' ? 3 : 1} />
+      ) : variants.length === 0 ? (
+        !courseName && onOpenProfile ? (
+          <EmptyState
+            icon={<IconInfoCircle className="size-6" />}
+            title={emptyMessage || 'No courses available'}
+            description="Take a quick guided tour to see how Question Maker works."
+            primaryAction={{
+              label: 'Start guided tour',
+              onClick: onOpenProfile,
+              icon: <IconCompass className="size-4" />,
+            }}
+          />
+        ) : (
+          <EmptyState
+            icon={<IconStack2 className="size-6" />}
+            title="No questions yet"
+            description={
+              emptyMessage || "Add your first question or upload a batch to start building this course's bank."
+            }
+            primaryAction={
+              !disableAdd
+                ? { label: 'Add question', onClick: onAddQuestion, icon: <IconPlus className="size-4" /> }
+                : undefined
+            }
+            secondaryAction={!disableUpload ? { label: 'Upload', onClick: onUploadQuestions } : undefined}
+          />
+        )
+      ) : filteredVariants.length === 0 ? (
+        <EmptyState
+          size="sm"
+          icon={<IconFilterX className="size-6" />}
+          title="No questions match your filters"
+          description="Try a different search term or clear the filters."
+          primaryAction={{ label: 'Clear filters', onClick: clearAll, variant: 'outline' }}
+        />
       ) : (
-        <div className="space-y-3" data-tour-id="question-list">
+        <div
+          className={cn(
+            view === 'grid'
+              ? 'grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3'
+              : 'flex flex-col gap-3',
+          )}
+          data-tour-id="question-list"
+        >
           {filteredVariants.map((entry, index) => (
             <QuestionCard
               key={`${entry.questionId}-${entry.variant.id}`}
               entry={entry}
               questionNumber={index + 1}
+              variantNumber={variantNumbers.get(entry.variant.id)}
               onView={onViewVariant}
               onCreateVariant={onCreateVariant}
+              compact={dense}
             />
           ))}
-
-          {filteredVariants.length === 0 && (
-            <div className="text-center py-8">
-              {!courseName && onOpenProfile ? (
-                <div className="flex flex-col items-center space-y-4 py-4">
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <Info className="h-5 w-5" />
-                    <p className="text-gray-700 font-medium">{emptyMessage || 'No courses available.'}</p>
-                  </div>
-                  <Button onClick={onOpenProfile} className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    <span>Start Guided Tour</span>
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-gray-500">{emptyMessage || 'No variants available for this course yet.'}</p>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

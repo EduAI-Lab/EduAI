@@ -1,238 +1,253 @@
+/**
+ * A single section inside the assessment builder: an editable title, a numbered list
+ * of its questions (each rendered as the shared QuestionCard with a kebab action menu),
+ * and an "add questions" affordance. Numbers are inline (not absolutely positioned) and
+ * every row is min-w-0 so long prompts wrap instead of overflowing the section.
+ */
+import {
+  Input,
+  Button,
+  QuestionCard,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  questionStatus,
+} from '@eduai/ui';
+import type { QuestionCardChoice, QuestionDifficulty } from '@eduai/ui';
 import React, { useState, useEffect } from 'react';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { Tooltip } from '../ui/tooltip';
-import { Trash2, X, Plus, AlertTriangle } from 'lucide-react';
+import {
+  IconTrash,
+  IconX,
+  IconPlus,
+  IconAlertTriangle,
+  IconEye,
+  IconGitBranch,
+  IconCircleCheck,
+  IconDots,
+} from '@tabler/icons-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
 
 interface AssessmentSectionCardProps {
-    section: AssessmentSection;
-    sectionIndex: number;
-    questionLinks: SectionVariantLink[];
-    questionBank: QuestionVariantEntry[];
-    onUpdateTitle: (name: string) => void;
-    onRemoveQuestion: (variantId: number) => void;
-    onDeleteSection: () => void;
-    onAddQuestions: () => void;
-    onViewQuestion?: (entry: QuestionVariantEntry) => void;
-    onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
-    onCreateVariant?: (entry: QuestionVariantEntry) => void;
+  section: AssessmentSection;
+  sectionIndex: number;
+  questionLinks: SectionVariantLink[];
+  questionBank: QuestionVariantEntry[];
+  onUpdateTitle: (name: string) => void;
+  onRemoveQuestion: (variantId: number) => void;
+  onDeleteSection: () => void;
+  onAddQuestions: () => void;
+  onViewQuestion?: (entry: QuestionVariantEntry) => void;
+  onToggleDraft?: (entry: QuestionVariantEntry, nextDraft: boolean) => void;
+  onCreateVariant?: (entry: QuestionVariantEntry) => void;
+  readOnly?: boolean;
+}
+
+/** Map our internal difficulty string to QuestionCard's difficultyLevel type */
+function toDifficultyLevel(diff: string | undefined): QuestionDifficulty {
+  if (diff === 'easy') return 'easy';
+  if (diff === 'hard') return 'hard';
+  return 'medium';
+}
+
+/** Dashed full-width affordance used for empty sections + the "add more" row. */
+function AddQuestionsButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-lg)] border border-dashed border-border bg-card py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted hover:text-foreground"
+    >
+      <IconPlus className="size-4" />
+      {label}
+    </button>
+  );
 }
 
 export function AssessmentSectionCard({
-    section,
-    sectionIndex,
-    questionLinks,
-    questionBank,
-    onUpdateTitle,
-    onRemoveQuestion,
-    onDeleteSection,
-    onAddQuestions,
-    onViewQuestion,
-    onToggleDraft,
-    onCreateVariant
+  section,
+  sectionIndex,
+  questionLinks,
+  questionBank,
+  onUpdateTitle,
+  onRemoveQuestion,
+  onDeleteSection,
+  onAddQuestions,
+  onViewQuestion,
+  onToggleDraft,
+  onCreateVariant,
+  readOnly = false,
 }: AssessmentSectionCardProps) {
-    const [localName, setLocalName] = useState(section.name);
+  const [localName, setLocalName] = useState(section.name);
 
-    useEffect(() => {
-        setLocalName(section.name);
-    }, [section.name]);
+  useEffect(() => {
+    setLocalName(section.name);
+  }, [section.name]);
 
-    const handleTitleChange = (value: string) => {
-        setLocalName(value);
-    };
+  const handleTitleBlur = () => {
+    const trimmed = localName.trim() || section.name;
+    if (trimmed !== section.name) {
+      onUpdateTitle(trimmed);
+    }
+  };
 
-    const handleTitleBlur = () => {
-        const trimmed = localName.trim() || section.name;
-        if (trimmed !== section.name) {
-            onUpdateTitle(trimmed);
-        }
-    };
+  const questions = React.useMemo(
+    () =>
+      questionLinks
+        .map((link) => {
+          const entry = questionBank.find((q) => q.variant.id === link.variantId);
+          if (!entry) return null;
+          return { link, entry };
+        })
+        .filter(Boolean) as Array<{ link: SectionVariantLink; entry: QuestionVariantEntry }>,
+    [questionLinks, questionBank],
+  );
 
-    const questions = React.useMemo(
-        () =>
-            questionLinks
-                .map((link) => {
-                    const entry = questionBank.find((q) => q.variant.id === link.variantId);
-                    if (!entry) return null;
-                    return {
-                        link,
-                        entry
-                    };
-                })
-                .filter(Boolean) as Array<{ link: SectionVariantLink; entry: QuestionVariantEntry }>,
-        [questionLinks, questionBank]
-    );
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+      {/* Section header — light, with an inline number badge */}
+      <div className="flex items-center gap-2.5 border-b border-border bg-muted/30 px-4 py-2.5">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+          {sectionIndex + 1}
+        </span>
+        <Input
+          value={localName}
+          onChange={(event) => setLocalName(event.target.value)}
+          onBlur={handleTitleBlur}
+          placeholder={`Section ${sectionIndex + 1}`}
+          readOnly={readOnly}
+          className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm font-semibold text-foreground shadow-none focus-visible:ring-0"
+        />
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {questions.length} {questions.length === 1 ? 'question' : 'questions'}
+        </span>
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onDeleteSection}
+            className="size-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+            aria-label="Delete section"
+          >
+            <IconTrash className="size-4" />
+          </Button>
+        )}
+      </div>
 
-    return (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-            {/* Section header: */}
-            <div className="flex items-center gap-2 rounded-t-lg bg-slate-800 px-3 py-2">
-                <Input
-                    value={localName}
-                    onChange={(event) => handleTitleChange(event.target.value)}
-                    onBlur={handleTitleBlur}
-                    placeholder={`Section ${sectionIndex + 1}`}
-                    className="h-8 flex-1 min-w-0 border-0 bg-white text-gray-900 font-medium placeholder:text-gray-500 focus-visible:ring-1 focus-visible:ring-white"
-                />
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={onDeleteSection}
-                    className="h-8 w-8 shrink-0 p-0 text-gray-300 hover:bg-slate-700 hover:text-white"
-                    aria-label="Delete section"
-                >
-                    <Trash2 className="h-4 w-4" />
-                </Button>
-            </div>
+      <div className="space-y-3 p-4">
+        {questions.length === 0 ? (
+          readOnly ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">No questions in this section.</p>
+          ) : (
+            <AddQuestionsButton label="Add questions" onClick={onAddQuestions} />
+          )
+        ) : (
+          <>
+            <div className="space-y-3">
+              {questions.map(({ link, entry }, idx) => {
+                const isDraft = entry.isDraft ?? entry.variant.isDraft ?? false;
+                const diffLevel = toDifficultyLevel(entry.variant.difficulty);
 
-            <div className="space-y-2 border-t border-gray-200 bg-gray-50/50 p-3">
-                {questions.length === 0 ? (
-                    <div className="flex flex-col items-center gap-3 rounded border border-dashed border-gray-200 bg-white p-6">
-                        <p className="text-sm text-gray-500">No questions added yet</p>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={onAddQuestions}
-                            className="gap-1.5 border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        >
-                            Add questions
-                        </Button>
-                    </div>
-                ) : (
-                    <>
-                        <div className="space-y-2">
-                            {questions.map(({ link, entry }, idx) => {
-                                const isDraft = entry.isDraft ?? entry.variant.isDraft ?? false;
-                                return (
-                                    <div
-                                        key={link.id}
-                                        className="flex items-start gap-3 rounded border border-gray-200 bg-white p-3 shadow-sm group"
-                                    >
-                                        <span className="mt-0.5 w-5 shrink-0 text-right text-xs font-mono text-gray-500">
-                                            {idx + 1}.
-                                        </span>
-                                        <div className="min-w-0 flex-1 space-y-1.5">
-                                            <p className="text-sm leading-relaxed text-gray-800">
-                                                {entry.variant.questionText}
-                                            </p>
-                                            {(entry.variant.choices?.length ?? 0) > 0 && (
-                                                <ul className="list-none space-y-0.5 pl-0 text-xs text-gray-600">
-                                                    {entry.variant.choices?.map((c) => (
-                                                        <li key={c.letter} className="flex gap-1.5">
-                                                            <span className="font-mono font-medium text-gray-500">{c.letter}.</span>
-                                                            <span>{c.text}</span>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            )}
-                                            {entry.variant.answer != null && String(entry.variant.answer).trim() !== '' && (
-                                                <p className="text-xs text-gray-600">
-                                                    <span className="font-medium text-gray-500">Answer: </span>
-                                                    <span className="whitespace-pre-wrap">{entry.variant.answer}</span>
-                                                </p>
-                                            )}
-                                            <div className="flex flex-wrap items-center gap-1.5">
-                                                <span className="rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium capitalize text-gray-700">
-                                                    {entry.questionType}
-                                                </span>
-                                                <span className="rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium capitalize text-gray-700">
-                                                    {entry.variant.difficulty}
-                                                </span>
-                                                {entry.primaryTopicName && (
-                                                    <span className="truncate rounded border border-gray-200 bg-gray-100 px-1.5 py-0 text-[10px] font-medium text-gray-700">
-                                                        {entry.primaryTopicName}
-                                                    </span>
-                                                )}
-                                                <span
-                                                    className={`rounded border px-1.5 py-0 text-[10px] font-medium capitalize ${
-                                                        isDraft
-                                                            ? 'border-gray-300 bg-gray-200 text-gray-700'
-                                                            : 'border-gray-200 bg-gray-100 text-gray-700'
-                                                    }`}
-                                                >
-                                                    {isDraft ? 'Draft' : 'Reviewed'}
-                                                </span>
-                                                {isDraft && (
-                                                    <Tooltip
-                                                        content="Need to mark as reviewed before exporting"
-                                                        side="top"
-                                                    >
-                                                        <button
-                                                            type="button"
-                                                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-amber-700"
-                                                        >
-                                                            <AlertTriangle className="h-3 w-3" />
-                                                        </button>
-                                                    </Tooltip>
-                                                )}
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                                                {onViewQuestion && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                                                        onClick={() => onViewQuestion(entry)}
-                                                    >
-                                                        View
-                                                    </Button>
-                                                )}
-                                                {onToggleDraft && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                                                        onClick={() => onToggleDraft(entry, !isDraft)}
-                                                    >
-                                                        {isDraft ? 'Mark reviewed' : 'Mark draft'}
-                                                    </Button>
-                                                )}
-                                                {onCreateVariant && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-7 border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                                                        onClick={() => onCreateVariant(entry)}
-                                                    >
-                                                        New variant
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => onRemoveQuestion(link.variantId)}
-                                            className="h-6 w-6 shrink-0 p-0 text-gray-400 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
-                                            aria-label="Remove question"
-                                        >
-                                            <X className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </div>
-                                );
-                            })}
+                const choices: QuestionCardChoice[] | undefined =
+                  (entry.variant.choices?.length ?? 0) > 0
+                    ? entry.variant.choices!.map((c) => ({
+                        letter: c.letter,
+                        text: c.text,
+                        correct:
+                          entry.variant.answer != null
+                            ? c.letter === String(entry.variant.answer).trim()
+                            : false,
+                      }))
+                    : undefined;
+
+                const topics: string[] = [
+                  ...(entry.primaryTopicName ? [entry.primaryTopicName] : []),
+                  ...(entry.secondaryTopicNames ?? []),
+                ];
+
+                const menu = (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label="Question actions"
+                      className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <IconDots className="size-[18px]" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {onViewQuestion && (
+                        <DropdownMenuItem onSelect={() => setTimeout(() => onViewQuestion(entry), 0)}>
+                          <IconEye className="size-4" /> View
+                        </DropdownMenuItem>
+                      )}
+                      {onToggleDraft && !readOnly && (
+                        <DropdownMenuItem onSelect={() => onToggleDraft(entry, !isDraft)}>
+                          <IconCircleCheck className="size-4" /> {isDraft ? 'Mark reviewed' : 'Mark as draft'}
+                        </DropdownMenuItem>
+                      )}
+                      {onCreateVariant && !readOnly && (
+                        <DropdownMenuItem onSelect={() => setTimeout(() => onCreateVariant(entry), 0)}>
+                          <IconGitBranch className="size-4" /> New variant
+                        </DropdownMenuItem>
+                      )}
+                      {!readOnly && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => onRemoveQuestion(link.variantId)}
+                          >
+                            <IconX className="size-4" /> Remove from section
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+
+                return (
+                  <div key={link.id} className="flex gap-2.5">
+                    <span className="mt-1.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                      {idx + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <QuestionCard
+                        size="compact"
+                        type={entry.questionType}
+                        difficulty={
+                          entry.variant.difficulty
+                            ? entry.variant.difficulty.charAt(0).toUpperCase() + entry.variant.difficulty.slice(1)
+                            : undefined
+                        }
+                        difficultyLevel={diffLevel}
+                        ai={entry.isAiGenerated ?? entry.variant.isAiGenerated}
+                        question={entry.variant.questionText ?? ''}
+                        choices={choices}
+                        answer={
+                          !choices && entry.variant.answer != null && String(entry.variant.answer).trim()
+                            ? String(entry.variant.answer)
+                            : undefined
+                        }
+                        topics={topics}
+                        status={questionStatus(isDraft)}
+                        menu={menu}
+                      />
+                      {isDraft && (
+                        <div className="mt-1 flex items-center gap-1 pl-1">
+                          <IconAlertTriangle className="size-3 text-warning-600" />
+                          <span className="text-[10px] text-warning-700">Mark as reviewed before exporting</span>
                         </div>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={onAddQuestions}
-                            className="mt-1 gap-1.5 self-start text-[11px] font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                        >
-                            <Plus className="h-3.5 w-3.5" />
-                            Add more questions
-                        </Button>
-                    </>
-                )}
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-        </div>
-    );
+            {!readOnly && <AddQuestionsButton label="Add more questions" onClick={onAddQuestions} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
-

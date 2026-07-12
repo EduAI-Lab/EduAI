@@ -18,7 +18,7 @@ API runs as a host process under PM2, and the SPA is served as static files by A
 ```mermaid
 flowchart TD
     Client[Browser] -->|"HTTPS, port 443"| Apache["Apache httpd<br/>(s216.ok.ubc.ca)"]
-    Apache -->|"static files"| SPA["build/client/<br/>(SPA assets from bun run build)"]
+    Apache -->|"static files"| SPA["build/client/<br/>(SPA assets from npm run build)"]
     Apache -->|"reverse proxy /api/*"| PM2["PM2: aitutor-api<br/>(node src/index.js)<br/>cwd=./server, max_memory 512M"]
     PM2 -->|"DATABASE_URL"| Docker["Docker container<br/>aitutor_db (postgres:16-alpine)"]
     PM2 -->|"OIDC + LLM"| EduAI["EduAI external service"]
@@ -27,7 +27,7 @@ flowchart TD
 | Layer | What runs it | Source of truth |
 |-------|--------------|-----------------|
 | TLS / static / reverse proxy | `httpd` (system service) | server-managed Apache vhost (not in repo) |
-| SPA assets | Apache document root | `bun run build` -> `build/client/` |
+| SPA assets | Apache document root | `npm run build` -> `build/client/` |
 | API | PM2 process `aitutor-api` | [`ecosystem.config.cjs`](../ecosystem.config.cjs) |
 | Database | Docker container `aitutor_db` | [`docker-compose.yml`](../docker-compose.yml) |
 
@@ -47,7 +47,7 @@ flowchart TD
 The repo contains a `Dockerfile` at the root. **It is not used in production and should not be
 trusted as a deployment artifact.** Specifically:
 
-- It is **npm-based** (`npm ci`, `npm run start`) while the rest of the repo is Bun-first.
+- It is **npm-based** (`npm ci`, `npm run start`) — consistent with the repo toolchain, but still outdated.
 - Its final `CMD ["npm", "run", "start"]` resolves to `vite preview --outDir build/client`,
   which only serves the **frontend preview bundle**. It does not run the Express API
   (`server/src/index.js`).
@@ -81,10 +81,10 @@ Step by step (line numbers reference [`deploy.sh`](../deploy.sh)):
 | Branch check | `git checkout main` + `git fetch origin`. | Branch is hardcoded to `main`. (line 14, 50-53) |
 | Commit gate | Compares `origin/main` to `.last_commit`. Exits 0 if unchanged unless `--force`. | `.last_commit` lives in repo root and is written at the very end. (lines 55-66) |
 | Pull | `git pull origin main`. | (line 69) |
-| Install | `bun install` (root), `bun install` (server). | (lines 75-80) |
+| Install | `npm install` (root), `npm install` (server). | (lines 75-80) |
 | DB up | `sudo docker compose up -d`. | Brings up the `aitutor_db` container if it isn't already running. **Requires passwordless sudo.** (lines 82-84) |
-| Migrate | `bunx prisma generate && bunx prisma migrate deploy` from `server/`. | Uses `migrate deploy`, never `migrate dev`. (lines 86-91) |
-| Build | `bun run build` (root). | Outputs static SPA to `build/client/`. (lines 93-95) |
+| Migrate | `npx prisma generate && npx prisma migrate deploy` from `server/`. | Uses `migrate deploy`, never `migrate dev`. (lines 86-91) |
+| Build | `npm run build` (root). | Outputs static SPA to `build/client/`. (lines 93-95) |
 | Restart API | `pm2 restart ecosystem.config.cjs --update-env` falling back to `pm2 start ecosystem.config.cjs`. Then `pm2 save`. | The `||` chain is the cold-start fallback the first time PM2 has never seen the app. (lines 97-100) |
 | Pin commit | Write `LATEST_COMMIT` to `.last_commit`. | The next no-arg deploy will short-circuit until a new commit lands. (line 103) |
 | Restart Apache | `sudo systemctl restart httpd`. | Kicks Apache so any new SPA assets are served fresh. (line 112) |
@@ -115,9 +115,8 @@ Things to know:
 
 - **PM2 only manages the API.** The frontend is not under PM2 — Apache serves `build/client/`
   directly.
-- **Node, not Bun, is the runtime.** `interpreter: 'node'` overrides PM2's default. The repo
-  uses Bun for *tooling* (install, build, scripts), but the long-running production process is
-  Node. Code that depends on Bun-only globals will break in production.
+- **Node is the runtime.** `interpreter: 'node'` overrides PM2's default. The long-running
+  production process is Node.
 - **One instance, hard 512 MB cap.** PM2 will restart the process if RSS exceeds 512 MB.
 - **`cwd: './server'`** — relative to `pm2 start ecosystem.config.cjs`'s working directory,
   which `deploy.sh` invokes from the repo root, so the effective cwd is `/srv/www/AiTutor/server`.
@@ -175,26 +174,16 @@ All values default to local-dev sane values; production must override the secret
 |----------|---------|---------|
 | `DATABASE_URL` | (none) | Prisma Postgres connection string. Local: `postgresql://postgres:postgres@localhost:54321/aitutor`. |
 | `PORT` | `4000` | API listen port. |
-| `BETTER_AUTH_SECRET` | dev placeholder; **required in prod** | HMAC secret for Better Auth sessions. The auth.js bootstrap throws if unset and `NODE_ENV=production`. |
-| `BETTER_AUTH_URL` | `http://localhost:4000/api/auth` | Public URL of the Better Auth handler. |
-| `COOKIE_DOMAIN` | `localhost` | Session-cookie scope. Set to `aitutor.ok.ubc.ca` in production. |
+| `CORE_URL` | (none) | Core base URL. Session validation is proxied to Core (`POST /api/sessions/validate`), not handled locally — see `server/src/middleware/auth.js`. |
 | `EDUAI_BASE_URL` | `http://localhost:5174/api` | Base URL for EduAI's chat endpoint (used by `eduaiClient.js`). |
 | `EDUAI_API_KEY` | (none) | Optional server-wide fallback API key. Overridden at runtime by the `EDUAI_API_KEY` row in `SystemSetting` if set via the admin UI. |
 | `EDUAI_MODEL` | `google:gemini-2.5-flash` | Default model id passed to EduAI when the request body omits one. |
-| `AI_SUPERVISOR_ENABLED` | (env example only) | Documentation hint. Runtime behavior is currently driven by the `AI_MODEL_POLICY` row, not this variable. |
 
-EduAI OAuth values (used by `genericOAuth` in `auth.js`) — also live in `server/.env`:
-
-| Variable | Default |
-|----------|---------|
-| `EDUAI_DISCOVERY_URL` | `http://localhost:5174/api/auth/.well-known/openid-configuration` |
-| `EDUAI_USERINFO_URL`  | `http://localhost:5174/api/auth/oauth2/userinfo` |
-| `EDUAI_CLIENT_ID`     | `aitutor-local` |
-| `EDUAI_CLIENT_SECRET` | `aitutor-local-secret` |
-
-> No `JWT_SECRET` is required by the current auth flow. If it is set, `auth.js` will accept it as
-> a secondary fallback for `BETTER_AUTH_SECRET`, but new deployments should set `BETTER_AUTH_SECRET`
-> explicitly.
+> `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, `AI_SUPERVISOR_ENABLED`, and the
+> `genericOAuth`/EduAI OAuth vars (`EDUAI_DISCOVERY_URL`, `EDUAI_USERINFO_URL`, `EDUAI_CLIENT_ID`,
+> `EDUAI_CLIENT_SECRET`) previously documented here are not read anywhere in the current
+> `server/src` — this server has no local Better Auth instance or OAuth flow of its own; it
+> proxies session validation to Core. Removed per #817.
 
 ---
 
@@ -206,9 +195,6 @@ The backend test suite uses a **separate** Postgres database to keep developer d
 
 ```bash
 DATABASE_URL="postgresql://postgres:postgres@localhost:54321/aitutor_test"
-BETTER_AUTH_SECRET="test-secret-not-for-production"
-BETTER_AUTH_URL="http://localhost:4000/api/auth"
-COOKIE_DOMAIN="localhost"
 PORT=4001
 ```
 
@@ -217,7 +203,7 @@ Notes:
 - **Same Postgres container, different database name.** Both `aitutor` and `aitutor_test` live
   in the single `aitutor_db` container on port `54321`.
 - **`PORT=4001`** so an integration test that boots the API does not collide with a developer's
-  `bun run dev` on `:4000`.
+  `npm run dev` on `:4000`.
 - **Tests must not run in parallel against the same DB.** [`server/vitest.config.js`](../server/vitest.config.js)
   sets `fileParallelism: false` and `pool: 'forks'` for this reason. If you change the runner
   config to enable parallelism, you must also rework the test setup to give each worker its own
@@ -227,31 +213,16 @@ Run with:
 
 ```bash
 cd server
-bun run test
+npm run test
 ```
 
 ---
 
-## The Dual Lockfile Situation
+## Lockfiles
 
-Both the root and `server/` contain **two lockfiles each**: `bun.lock` *and* `package-lock.json`.
-This is intentional but confusing.
-
-| Tool that uses which | Where |
-|----------------------|-------|
-| `bun install` (developers, `deploy.sh`, README, `CONTRIBUTING.md`) | `bun.lock` |
-| `npm ci` (the orphaned `Dockerfile`) | `package-lock.json` |
-
-The README and `CONTRIBUTING.md` both say "use Bun". `deploy.sh` uses Bun. `package.json`
-scripts assume Bun-style execution. The npm lockfiles exist purely so that the orphaned
-`Dockerfile` build does not fail.
-
-**If you delete the `Dockerfile`**, you should also delete both `package-lock.json` files to
-remove the inconsistency. Until then:
-
-- Add new dependencies with `bun add ...`. Do not run `npm install`.
-- If you regenerate `package-lock.json` for any reason, regenerate `bun.lock` in the same commit
-  so they cannot drift independently.
+Both the root and `server/` use `package-lock.json` exclusively. The project was migrated from
+Bun to npm — `bun.lock` files no longer exist. Use `npm install` everywhere: install, CI, and
+`deploy.sh`.
 
 ---
 

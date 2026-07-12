@@ -2,7 +2,7 @@
  * @file Instructor module view — the lesson list inside a single module.
  *
  * Route: /instructor/module/:moduleId
- * Auth: PROFESSOR
+ * Auth: INSTRUCTOR
  * Loads: module detail, its lessons (parallel), then its course (sequential
  *        because the courseId comes from the module row).
  * Owns: lesson CRUD entry points, cross-course lesson import (course →
@@ -21,21 +21,17 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import Nav from '../components/Nav';
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '../components/ui/breadcrumb';
+import { useNavigate, useParams } from 'react-router';
+import { PageHeading } from '@eduai/ui';
 import { PublishStatusButton } from '../components/PublishStatusButton';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.topic';
+import { PermissionGate } from '../components/rbac/PermissionGate';
+import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
+import { AppShell } from '~/components/layout/AppShell';
+import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -43,7 +39,7 @@ import { requireClientUser } from '~/lib/client-auth';
  * needed for breadcrumbs and to compute the publish-cascade gate.
  */
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  await requireClientUser('PROFESSOR');
+  await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const moduleId = Number(params.moduleId);
   if (!Number.isFinite(moduleId)) {
     throw new Response('Invalid module id', { status: 400 });
@@ -68,6 +64,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const navigate = useNavigate();
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
+  const perms = useAtPermissions();
   const { course, module, lessons: initialLessons } = loaderData;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
   const [title, setTitle] = useState('');
@@ -265,37 +262,20 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
+  const breadcrumbItems = [
+    { label: 'Teaching', href: '/instructor' },
+    ...(course && module
+      ? [{ label: course.title, href: `/instructor/courses/${module.courseOfferingId}` }]
+      : [{ label: 'Course' }]),
+    { label: module?.title || 'Module' },
+  ];
+
   return (
-    <div className="min-h-dvh bg-background">
-      <Nav />
-      <div className="container mx-auto px-4 py-8 space-y-6">
-        <Breadcrumb className="mb-6">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/instructor">Teaching</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              {course && module ? (
-                <BreadcrumbLink asChild>
-                  <Link to={`/instructor/courses/${module.courseOfferingId}`}>{course.title}</Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>Course</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>/</BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>{module?.title || 'Module'}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+    <AppShell breadcrumbs={<ShellBreadcrumbs items={breadcrumbItems} />}>
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-display text-2xl font-semibold text-foreground">Lessons</h2>
-          </div>
+          <PageHeading heading={module?.title || 'Module'} subheading="Module lessons" />
+          <PermissionGate allow={perms.canManageContent}>
           <button
             onClick={() => {
               if (!showImport) {
@@ -309,10 +289,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           >
             {showImport ? 'Close' : 'Import Lessons'}
           </button>
+          </PermissionGate>
         </div>
 
+        <PermissionGate allow={perms.canManageContent}>
         {showImport && (
-          <div className="card-editorial p-5 space-y-4">
+          <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 space-y-4">
             <div>
               <label className="block text-sm font-semibold mb-1 text-foreground">
                 Choose course
@@ -419,7 +401,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             )}
           </div>
         )}
+        </PermissionGate>
 
+        <PermissionGate allow={perms.canManageContent}>
         <form onSubmit={onCreateLesson} className="flex gap-3">
           <input
             value={title}
@@ -431,6 +415,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             {creating ? 'Adding…' : 'Add Lesson'}
           </button>
         </form>
+        </PermissionGate>
 
         {oLessons.length === 0 ? (
           <div className="text-muted-foreground">No lessons yet.</div>
@@ -452,7 +437,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
               return (
                 <div
                   key={lesson.id}
-                  className="card-editorial p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
+                  className="rounded-lg border bg-card text-card-foreground shadow-sm p-5 hover:shadow-lg transition group cursor-pointer flex flex-col h-full animate-fade-up"
                   style={{ animationDelay: `${idx * 50}ms` }}
                   onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                   role="button"
@@ -465,7 +450,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   }}
                 >
                   <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-display font-semibold text-sm">
+                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
                     <div className="flex-1 min-w-0">
@@ -476,6 +461,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                   </div>
                   <div className="flex-grow"></div>
                   <div className="mt-4 flex justify-end">
+                    <PermissionGate allow={perms.canPublishContent}>
                     <div
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
@@ -490,6 +476,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         }}
                       />
                     </div>
+                    </PermissionGate>
                   </div>
                 </div>
               );
@@ -497,6 +484,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

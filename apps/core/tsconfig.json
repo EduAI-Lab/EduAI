@@ -15,7 +15,9 @@
     "rootDirs": [".", "./.react-router/types"],
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": ["./app/*"],
+      "@prisma/client": ["./node_modules/@prisma/client"],
+      "@eduai/types": ["../../packages/types/src/index.ts"]
     },
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,

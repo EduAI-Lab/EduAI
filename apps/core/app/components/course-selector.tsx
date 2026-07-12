@@ -1,45 +1,27 @@
-import { useState, useEffect } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { BookOpen, MessageSquare } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@eduai/ui';
+import { IconBook, IconMessage } from '@tabler/icons-react';
 
-interface Course {
+export interface Course {
   id: string;
   code: string;
   name: string;
   description?: string;
 }
 
-interface CourseSelectorProps {
+export interface CourseSelectorProps {
+  courses: Course[];
   selectedCourseId: string | null;
   onCourseSelect: (courseId: string | null) => void;
+  isLoading?: boolean;
 }
 
-export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelectorProps) {
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCourses();
-  }, []);
-
-  const loadCourses = async () => {
-    try {
-      const response = await fetch('/api/courses');
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load courses');
-      }
-
-      setCourses(result.courses || []);
-    } catch (err) {
-      console.error('Failed to load courses:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+export function CourseSelector({
+  courses,
+  selectedCourseId,
+  onCourseSelect,
+  isLoading = false,
+}: CourseSelectorProps) {
   const handleCourseChange = (courseId: string) => {
     onCourseSelect(courseId === 'none' ? null : courseId);
   };
@@ -48,7 +30,7 @@ export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelec
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <BookOpen className="h-5 w-5" />
+          <IconBook className="h-5 w-5" />
           Course Selection
         </CardTitle>
         <CardDescription>
@@ -59,9 +41,13 @@ export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelec
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium">Course</label>
-            <Select value={selectedCourseId || 'none'} onValueChange={handleCourseChange}>
+            <Select
+              value={selectedCourseId || 'none'}
+              onValueChange={handleCourseChange}
+              disabled={isLoading}
+            >
               <SelectTrigger className="mt-2">
-                <SelectValue placeholder="Select a course" />
+                <SelectValue placeholder={isLoading ? 'Loading courses...' : 'Select a course'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No course selected</SelectItem>
@@ -76,7 +62,7 @@ export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelec
 
           {selectedCourseId && (
             <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-              <MessageSquare className="h-4 w-4 text-blue-500" />
+              <IconMessage className="h-4 w-4 text-blue-500" />
               <span className="text-sm">
                 Chat will now search through materials from the selected course
               </span>
@@ -85,7 +71,7 @@ export function CourseSelector({ selectedCourseId, onCourseSelect }: CourseSelec
 
           {!selectedCourseId && (
             <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <BookOpen className="h-4 w-4 text-yellow-500" />
+              <IconBook className="h-4 w-4 text-yellow-500" />
               <span className="text-sm text-yellow-700">
                 Select a course to enable RAG chat with course materials
               </span>

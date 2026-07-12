@@ -1,59 +1,16 @@
 import { useState, useEffect } from "react";
-import { Button } from "~/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
-import { Textarea } from "~/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
-import { Switch } from "~/components/ui/switch";
-import { Alert, AlertDescription } from "~/components/ui/alert";
-import { Loader } from "~/components/ui/loader";
+import { Button } from "@eduai/ui";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@eduai/ui";
+import { Input } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@eduai/ui";
+import { Switch } from "@eduai/ui";
+import { Alert, AlertDescription } from "@eduai/ui";
+import { Loader } from "@eduai/ui";
+import type { AIProvider, AIModel } from "~/types/ai";
 
-type AIProvider = {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string;
-  requiresApiKey: boolean;
-  defaultBaseUrl?: string;
-  envVarName?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  models?: AIModel[];
-  _count?: {
-    models: number;
-  };
-};
-
-type AIModel = {
-  id: string;
-  modelId: string;
-  name: string;
-  description: string;
-  type: "CHAT" | "COMPLETION" | "EMBEDDING" | "IMAGE" | "AUDIO" | "VIDEO";
-  maxTokens?: number;
-  supportsImages: boolean;
-  supportsTools: boolean;
-  supportsStreaming: boolean;
-  inputPricing?: number;
-  outputPricing?: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  providerId: string;
-  provider: Omit<AIProvider, 'models' | '_count'>;
-};
-
-interface ModelFormDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  model?: AIModel | null;
-  providers: AIProvider[];
-  onSubmit: (data: any) => void;
-}
-
-type OllamaModel = {
+export type OllamaModel = {
   name: string;
   model: string;
   size: number;
@@ -62,7 +19,49 @@ type OllamaModel = {
   details: any;
 };
 
-export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit }: ModelFormDialogProps) {
+export type VllmModel = {
+  id: string;
+  owned_by?: string;
+  created?: number;
+};
+
+export interface ModelFormDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  model?: AIModel | null;
+  providers: AIProvider[];
+  onSubmit: (data: any) => void;
+  ollamaModels?: OllamaModel[];
+  fetchingOllamaModels?: boolean;
+  ollamaError?: string | null;
+  onFetchOllamaModels?: () => void;
+  ollamaFetched?: boolean;
+  vllmModels?: VllmModel[];
+  fetchingVllmModels?: boolean;
+  vllmError?: string | null;
+  onFetchVllmModels?: () => void;
+  vllmFetched?: boolean;
+  syncMessage?: string | null;
+}
+
+export function ModelFormDialog({
+  open,
+  onOpenChange,
+  model,
+  providers,
+  onSubmit,
+  ollamaModels = [],
+  fetchingOllamaModels = false,
+  ollamaError = null,
+  onFetchOllamaModels,
+  ollamaFetched = false,
+  vllmModels = [],
+  fetchingVllmModels = false,
+  vllmError = null,
+  onFetchVllmModels,
+  vllmFetched = false,
+  syncMessage = null,
+}: ModelFormDialogProps) {
   const [formData, setFormData] = useState<{
     modelId: string;
     name: string;
@@ -91,11 +90,8 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
     providerId: "",
   });
 
-  // Ollama-specific state
-  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
-  const [fetchingOllamaModels, setFetchingOllamaModels] = useState(false);
-  const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [selectedOllamaModel, setSelectedOllamaModel] = useState<string>("");
+  const [selectedVllmModel, setSelectedVllmModel] = useState<string>("");
 
   useEffect(() => {
     if (model) {
@@ -131,73 +127,96 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
     }
   }, [model, open]);
 
-  // Reset Ollama state when provider changes
   useEffect(() => {
-    setOllamaModels([]);
-    setOllamaError(null);
     setSelectedOllamaModel("");
+    setSelectedVllmModel("");
   }, [formData.providerId]);
 
-  // Check if current provider is Ollama
   const selectedProvider = providers.find(p => p.id === formData.providerId);
-  const isOllamaProvider = selectedProvider?.name === 'ollama';
+  const providerName = selectedProvider?.name?.toLowerCase() ?? "";
+  const isOllamaProvider = providerName === "ollama";
+  const isVllmProvider = providerName === "vllm";
 
-  // Fetch Ollama models
-  const fetchOllamaModels = async () => {
-    setFetchingOllamaModels(true);
-    setOllamaError(null);
+  useEffect(() => {
+    if (!open || !isVllmProvider || !onFetchVllmModels || vllmFetched) return;
+    if (fetchingVllmModels || vllmModels.length > 0) return;
+    onFetchVllmModels();
+  }, [
+    open,
+    isVllmProvider,
+    formData.providerId,
+    onFetchVllmModels,
+    fetchingVllmModels,
+    vllmModels.length,
+    vllmFetched,
+  ]);
 
-    try {
-      const response = await fetch('/api/ollama-models');
-      const data = await response.json();
+  useEffect(() => {
+    if (!open || !isOllamaProvider || !onFetchOllamaModels || ollamaFetched) return;
+    if (fetchingOllamaModels || ollamaModels.length > 0) return;
+    onFetchOllamaModels();
+  }, [
+    open,
+    isOllamaProvider,
+    formData.providerId,
+    onFetchOllamaModels,
+    fetchingOllamaModels,
+    ollamaModels.length,
+    ollamaFetched,
+  ]);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch Ollama models');
-      }
-
-      setOllamaModels(data.models || []);
-    } catch (error: any) {
-      setOllamaError(error.message || 'Failed to fetch Ollama models');
-      setOllamaModels([]);
-    } finally {
-      setFetchingOllamaModels(false);
+  const handleOllamaModelSelect = (modelName: string) => {
+    setSelectedOllamaModel(modelName);
+    const selected = ollamaModels.find(m => m.name === modelName);
+    if (selected) {
+      setFormData(prev => ({
+        ...prev,
+        modelId: selected.name,
+        name: selected.name.charAt(0).toUpperCase() + selected.name.slice(1),
+        description: `Local Ollama model: ${selected.name}`,
+        type: "CHAT",
+        maxTokens: "",
+        supportsImages: selected.name.toLowerCase().includes("vision") || selected.name.toLowerCase().includes("llava"),
+        supportsTools: true,
+        supportsStreaming: true,
+        inputPricing: "0",
+        outputPricing: "0",
+      }));
     }
   };
 
-  // Handle Ollama model selection
-  const handleOllamaModelSelect = (modelName: string) => {
-    setSelectedOllamaModel(modelName);
-    const selectedModel = ollamaModels.find(m => m.name === modelName);
-
-    if (selectedModel) {
-      // Auto-populate form fields based on Ollama model
+  const handleVllmModelSelect = (modelId: string) => {
+    setSelectedVllmModel(modelId);
+    const selected = vllmModels.find(m => m.id === modelId);
+    if (selected) {
+      const displayName = selected.id
+        .split(/[-_]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
       setFormData(prev => ({
         ...prev,
-        modelId: selectedModel.name,
-        name: selectedModel.name.charAt(0).toUpperCase() + selectedModel.name.slice(1),
-        description: `Local Ollama model: ${selectedModel.name}`,
-        type: "CHAT", // Most Ollama models are chat models
-        maxTokens: "", // Ollama doesn't provide max tokens info
-        supportsImages: selectedModel.name.toLowerCase().includes('vision') || selectedModel.name.toLowerCase().includes('llava'),
-        supportsTools: true, // Most modern Ollama models support tools
+        modelId: selected.id,
+        name: displayName,
+        description: `Local vLLM model: ${selected.id}`,
+        type: "CHAT",
+        maxTokens: "",
+        supportsImages: false,
+        supportsTools: false,
         supportsStreaming: true,
-        inputPricing: "0", // Local models are free
-        outputPricing: "0", // Local models are free
+        inputPricing: "0",
+        outputPricing: "0",
       }));
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const submitData = {
+    onSubmit({
       ...formData,
       maxTokens: formData.maxTokens ? Number(formData.maxTokens) : undefined,
       inputPricing: formData.inputPricing ? Number(formData.inputPricing) : undefined,
       outputPricing: formData.outputPricing ? Number(formData.outputPricing) : undefined,
-    };
-
-    onSubmit(submitData);
+    });
   };
 
   return (
@@ -254,54 +273,59 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
             </div>
           </div>
 
-          {/* Ollama Model Fetching Section */}
           {isOllamaProvider && (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
-              <div className="flex items-center justify-between">
-                <Label>Available Ollama Models</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Ollama models</Label>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={fetchOllamaModels}
-                  disabled={fetchingOllamaModels}
+                  onClick={() => onFetchOllamaModels?.()}
+                  disabled={fetchingOllamaModels || !onFetchOllamaModels}
                 >
                   {fetchingOllamaModels ? (
                     <>
                       <Loader className="w-4 h-4 mr-2" />
-                      Fetching...
+                      Syncing...
                     </>
                   ) : (
-                    'Fetch Models'
+                    "Sync models"
                   )}
                 </Button>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                Discovered models are registered automatically in AI Management. Use the dropdown
+                below only if you want to pre-fill this form for a single model.
+              </p>
+
+              {syncMessage && (
+                <Alert>
+                  <AlertDescription>{syncMessage}</AlertDescription>
+                </Alert>
+              )}
+
               {ollamaError && (
                 <Alert variant="destructive">
-                  <AlertDescription>
-                    {ollamaError}
-                  </AlertDescription>
+                  <AlertDescription>{ollamaError}</AlertDescription>
                 </Alert>
               )}
 
               {ollamaModels.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="ollamaModelSelect">Select Model</Label>
-                  <Select
-                    value={selectedOllamaModel}
-                    onValueChange={handleOllamaModelSelect}
-                  >
+                  <Select value={selectedOllamaModel} onValueChange={handleOllamaModelSelect}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose an Ollama model" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {ollamaModels.map((model) => (
-                        <SelectItem key={model.name} value={model.name}>
+                    <SelectContent className="z-[100]">
+                      {ollamaModels.map((m) => (
+                        <SelectItem key={m.name} value={m.name}>
                           <div className="flex flex-col">
-                            <span>{model.name}</span>
+                            <span>{m.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              Size: {Math.round(model.size / 1024 / 1024 / 1024 * 100) / 100} GB
+                              Size: {Math.round(m.size / 1024 / 1024 / 1024 * 100) / 100} GB
                             </span>
                           </div>
                         </SelectItem>
@@ -310,6 +334,96 @@ export function ModelFormDialog({ open, onOpenChange, model, providers, onSubmit
                   </Select>
                 </div>
               )}
+            </div>
+          )}
+
+          {isVllmProvider && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center justify-between gap-2">
+                <Label>vLLM models</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onFetchVllmModels?.()}
+                  disabled={fetchingVllmModels || !onFetchVllmModels}
+                >
+                  {fetchingVllmModels ? (
+                    <>
+                      <Loader className="w-4 h-4 mr-2" />
+                      Syncing...
+                    </>
+                  ) : (
+                    "Sync models"
+                  )}
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Loaded from server <code className="text-xs">VLLM_BASE_URL</code> and registered
+                automatically. Pick a model below only to pre-fill this form.
+              </p>
+
+              {syncMessage && (
+                <Alert>
+                  <AlertDescription>{syncMessage}</AlertDescription>
+                </Alert>
+              )}
+
+              {vllmError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{vllmError}</AlertDescription>
+                </Alert>
+              )}
+
+              {fetchingVllmModels && (
+                <p className="text-sm text-muted-foreground">Syncing models from vLLM proxy…</p>
+              )}
+
+              {vllmFetched && !fetchingVllmModels && !vllmError && vllmModels.length === 0 && (
+                <Alert>
+                  <AlertDescription>
+                    No models returned. Ops: verify LiteLLM on cmps01 and{" "}
+                    <code>VLLM_BASE_URL</code> in EduAI <code>.env</code> (
+                    <code>http://cmps01.ok.ubc.ca:8001</code>).
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="vllmModelSelect">Select Model</Label>
+                <Select
+                  value={selectedVllmModel}
+                  onValueChange={handleVllmModelSelect}
+                  disabled={vllmModels.length === 0}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        fetchingVllmModels
+                          ? "Syncing…"
+                          : vllmModels.length === 0
+                            ? "Sync models first"
+                            : "Choose a vLLM model"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    {vllmModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <div className="flex flex-col">
+                          <span>{m.id}</span>
+                          {m.owned_by && (
+                            <span className="text-xs text-muted-foreground">
+                              {m.owned_by}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
 

@@ -234,6 +234,7 @@ Aggregates only in repo; never participant prose unless ethics-approved.
 | Step-by-step interview plan | [`adhd-pilot-interview-runbook.md`](./adhd-pilot-interview-runbook.md) |
 | Blank form for participant | [`adhd-pilot-participant-form.md`](./adhd-pilot-participant-form.md) |
 | Your scoring + paste prompts | [`adhd-pilot-facilitator-sheet.md`](./adhd-pilot-facilitator-sheet.md) |
+| **Track B ADHD cohort stats (Qualtrics)** | [`h26-track-b-participant-metrics.md`](../../eduai-summer-2026/reports/form-a/h26-track-b-participant-metrics.md) |
 | User turn text | [`form-a-scenario-test-sheet.md`](../literature/form-a-scenario-test-sheet.md) |
 | AI-side drift examples | [`form-a-external-claude-run-tracker.md`](../literature/form-a-external-claude-run-tracker.md) |
 | Phase roadmap | [`adhd-assist-architecture-phases.md`](../literature/adhd-assist-architecture-phases.md) |

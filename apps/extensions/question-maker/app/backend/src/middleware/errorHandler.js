@@ -50,6 +50,26 @@ export const errorHandler = (err, req, res, next) => {
     error = { message, status: 400 };
   }
 
+  // Sequelize unique-constraint violation → 409 Conflict
+  if (err.name === 'SequelizeUniqueConstraintError') {
+    const fields = err.errors?.map((e) => e.path).filter(Boolean);
+    const message = fields?.length
+      ? `A record with this ${fields.join(', ')} already exists`
+      : 'Resource already exists';
+    error = { message, status: 409 };
+  }
+
+  // Sequelize validation error → 400
+  if (err.name === 'SequelizeValidationError') {
+    const message = err.errors?.map((e) => e.message).join('; ') || 'Validation failed';
+    error = { message, status: 400 };
+  }
+
+  // Sequelize foreign-key violation → 400 (references a missing record)
+  if (err.name === 'SequelizeForeignKeyConstraintError') {
+    error = { message: 'Referenced resource does not exist', status: 400 };
+  }
+
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
     const message = 'Invalid token';
@@ -64,6 +84,7 @@ export const errorHandler = (err, req, res, next) => {
   res.status(error.status || 500).json({
     success: false,
     error: error.message || 'Server Error',
+    ...(error.body?.error ? { code: error.body.error } : {}),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

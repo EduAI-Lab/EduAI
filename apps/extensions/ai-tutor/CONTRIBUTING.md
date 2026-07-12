@@ -9,9 +9,9 @@
    ```
 3. Run the verification baseline before starting:
    ```bash
-   bun run typecheck
-   bun run test
-   cd server && bun run test
+   npm run typecheck
+   npm run test
+   cd server && npm run test
    ```
 
 ## Development Workflow
@@ -20,10 +20,10 @@
 
 ```bash
 # Terminal 1: Backend (port 4000)
-cd server && bun run dev
+cd server && npm run dev
 
 # Terminal 2: Frontend (port 5173)
-bun run dev
+npm run dev
 ```
 
 ### After Schema Changes
@@ -32,15 +32,15 @@ If you modify `server/prisma/schema.prisma`:
 
 ```bash
 cd server
-bunx prisma migrate dev --name description_of_change
-bun run seed   # Warning: destructive, clears all data
+npx prisma migrate dev --name description_of_change
+npm run seed   # Warning: destructive, clears all data
 cd ..
-bun run typecheck
+npm run typecheck
 ```
 
 ### After Route Changes
 
-If you modify `app/routes.ts`, run `bun run typecheck` to regenerate React Router types.
+If you modify `app/routes.ts`, run `npm run typecheck` to regenerate React Router types.
 
 ## Code Style
 
@@ -82,12 +82,12 @@ The project uses [oxlint](https://oxc.rs/docs/guide/usage/linter) and [oxfmt](ht
 
 ```bash
 # Lint
-bun run lint          # Check for issues
-bun run lint:fix      # Auto-fix
+npm run lint          # Check for issues
+npm run lint:fix      # Auto-fix
 
 # Format
-bun run format        # Format files
-bun run format:check  # Check without modifying
+npm run format        # Format files
+npm run format:check  # Check without modifying
 ```
 
 Configuration files: `.oxlintrc.json` and `.oxfmtrc.json` in the project root.
@@ -103,27 +103,27 @@ Configuration files: `.oxlintrc.json` and `.oxfmtrc.json` in the project root.
 ### Frontend Tests
 
 ```bash
-bun run test              # All frontend tests
-bun run test:watch        # Watch mode
-bun run test:frontend     # Frontend only
+npm run test              # All frontend tests
+npm run test:watch        # Watch mode
+npm run test:frontend     # Frontend only
 ```
 
 - **Runner**: Vitest with jsdom environment
 - **Libraries**: `@testing-library/react`, `@testing-library/jest-dom`
-- **Location**: `app/__tests__/` (mirrors `app/` structure)
+- **Location**: `app/tests/` (mirrors `app/` structure)
 - **Co-located tests**: Some test files live next to source (e.g., `tour-engine.test.ts`)
 
 ### Backend Tests
 
 ```bash
 cd server
-bun run test              # All backend tests
-bun run test:unit         # Unit tests only
-bun run test:integration  # Integration tests only
+npm run test              # All backend tests
+npm run test:unit         # Unit tests only
+npm run test:integration  # Integration tests only
 ```
 
 - **Runner**: Vitest with supertest for HTTP assertions
-- **Location**: `server/test/unit/` and `server/test/integration/`
+- **Location**: `server/tests/unit/` and `server/tests/integration/`
 - **Test DB**: Uses `.env.test` (database `aitutor_test`, port 4001)
 - **Mock auth**: `createApp({ mockUser })` bypasses Better Auth
 
@@ -136,7 +136,7 @@ bun run test:integration  # Integration tests only
 ### Dead Code Detection
 
 ```bash
-bun run knip
+npm run knip
 ```
 
 Uses [Knip](https://knip.dev/) to find unused exports, dependencies, and files.
@@ -275,14 +275,14 @@ Include:
 | `app/lib/` | API client, auth utilities, type definitions |
 | `app/lib/tours/` | Guided tour engine and definitions |
 | `app/components/ui/` | shadcn/ui primitives |
-| `app/__tests__/` | Frontend test files |
+| `app/tests/` | Frontend test files |
 | `server/src/routes/` | Express route handlers |
 | `server/src/services/` | Business logic (AI, analytics, cloning, sync) |
 | `server/src/middleware/` | Auth and session middleware |
 | `server/src/utils/` | Response mappers |
 | `server/src/config/` | Database client, admin bootstrap |
 | `server/prisma/` | Schema, migrations, seed |
-| `server/test/` | Backend test files |
+| `server/tests/` | Backend test files |
 | `shared/schemas/` | Zod validation schemas (used by both) |
 | `docs/` | Design documents |
 | `scripts/` | E2E and automation scripts |

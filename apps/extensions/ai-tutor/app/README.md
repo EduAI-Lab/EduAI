@@ -42,8 +42,8 @@ app/
       prompt-input.tsx              #   Input with model selector + attachments
     bug-report/                     # Bug reporting system
       BugReportProvider.tsx         #   Context: captures console, network, screenshots
-      BugReportDialog.tsx           #   Report form (react-hook-form + zod)
       useBugReport.ts               #   Context accessor hook
+      # Report form lives in @eduai/ui BugReportDialog
     admin/
       BugReportsTab.tsx             # Admin bug report viewer + triage
     ui/                             # shadcn/ui primitives (14 components)
@@ -62,7 +62,6 @@ app/
     utils.ts                        # cn() utility (clsx + tailwind-merge)
     client-auth.ts                  # requireClientUser() route guard
     auth-client.ts                  # Better Auth client + signInWithEduAi()
-    server-api.ts                   # Server-side fetch helpers (unused in SPA mode)
     activityForm.ts                 # Activity form value parsing/validation
     tours/                          # Guided tour engine
       tour-types.ts                 #   Type definitions
@@ -72,11 +71,10 @@ app/
       tour-utils.ts                 #   waitForElement, route resolution
       tour-engine.test.ts           #   Unit tests
 
-  __tests__/                        # Test files (Vitest + jsdom)
+  tests/                            # Test files (Vitest + jsdom)
     setup.ts                        # jest-dom matchers, ResizeObserver mock
     components/Nav.test.tsx
     components/admin/BugReportsTab.test.tsx
-    components/bug-report/BugReportDialog.test.tsx
     components/bug-report/BugReportProvider.test.tsx
     hooks/useLocalUser.test.tsx
     lib/api.test.ts
@@ -171,6 +169,6 @@ Tours use `data-tour` attributes on elements for targeting and `data-tour-route`
 ## Testing
 
 - **Runner**: Vitest 4 with jsdom environment
-- **Config**: `vitest.config.ts` (root), includes `app/__tests__/**/*.test.{ts,tsx}`
+- **Config**: `vitest.config.ts` (root), includes `app/tests/**/*.test.{ts,tsx}`
 - **Utilities**: `@testing-library/react`, `@testing-library/jest-dom`
-- **Run**: `bun run test` (all) or `bun run test:watch` (watch mode)
+- **Run**: `npm run test` (all) or `npm run test:watch` (watch mode)

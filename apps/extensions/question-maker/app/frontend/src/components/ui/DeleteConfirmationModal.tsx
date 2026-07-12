@@ -1,17 +1,19 @@
 /**
- * Reusable confirmation dialog for delete flows with optional destructive styling.
+ * Reusable confirmation dialog for dangerous actions (delete, publish/unpublish, …).
+ * Built on the shared `@eduai/ui` AlertDialog so every confirmation across the
+ * suite looks and behaves the same. Keeps a stable prop API for existing call
+ * sites; despite the historical name it is not delete-specific.
  */
-import * as React from 'react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './dialog';
-import { Button } from './button';
-import { AlertTriangle } from 'lucide-react';
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from '@eduai/ui';
+import { IconAlertTriangle } from '@tabler/icons-react';
 
 interface DeleteConfirmationModalProps {
   open: boolean;
@@ -42,42 +44,40 @@ export const DeleteConfirmationModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent className="sm:max-w-[425px]">
+        <AlertDialogHeader>
           <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-              variant === 'destructive' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-gray-100 dark:bg-gray-800'
-            }`}>
-              <AlertTriangle className={`h-5 w-5 ${
-                variant === 'destructive' ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'
-              }`} />
+            <div
+              className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                variant === 'destructive' ? 'bg-red-100 dark:bg-red-900/20' : 'bg-muted dark:bg-muted'
+              }`}
+            >
+              <IconAlertTriangle
+                className={`h-5 w-5 ${
+                  variant === 'destructive'
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-muted-foreground dark:text-muted-foreground'
+                }`}
+              />
             </div>
-            <DialogTitle className="text-left">{title}</DialogTitle>
+            <AlertDialogTitle className="text-left">{title}</AlertDialogTitle>
           </div>
           {message && (
-            <DialogDescription className="pt-2 text-left">
+            <AlertDialogDescription className="pt-2 text-left">
               {message}
-            </DialogDescription>
+            </AlertDialogDescription>
           )}
-        </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isLoading}
-          >
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
             {cancelLabel}
           </Button>
-          <Button
-            variant={variant}
-            onClick={handleConfirm}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Deleting...' : confirmLabel}
+          <Button variant={variant} onClick={handleConfirm} disabled={isLoading}>
+            {isLoading ? `${confirmLabel}…` : confirmLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 };

@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import api from '~/lib/api';
 import type { User } from '~/lib/types';
 
-export type AuthUser = Pick<User, 'id' | 'name' | 'role'>;
+export type AuthUser = Pick<User, 'id' | 'name' | 'role' | 'authorizedUnits'> & {
+  email?: string;
+};
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -39,7 +41,13 @@ export function AuthProvider({ initialUser, children }: AuthProviderProps) {
         if (cancelled) return;
         const nextUser = data?.user ?? null;
         if (nextUser) {
-          setUser({ id: nextUser.id, name: nextUser.name, role: nextUser.role });
+          setUser({
+            id: nextUser.id,
+            name: nextUser.name,
+            email: nextUser.email,
+            role: nextUser.role,
+            authorizedUnits: nextUser.authorizedUnits,
+          });
         } else {
           setUser(null);
         }

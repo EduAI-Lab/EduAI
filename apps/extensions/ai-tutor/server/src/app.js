@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { requireAuth } from './middleware/auth.js';
 
-// Route imports
 import authRoutes from './routes/authentication.js';
 import courseRoutes from './routes/courses.js';
 import moduleRoutes from './routes/modules.js';
@@ -14,14 +13,28 @@ import aiModelRoutes from './routes/ai-models.js';
 import adminRoutes from './routes/admin.js';
 import suggestedPromptRoutes from './routes/suggested-prompts.js';
 import bugReportRoutes from './routes/bug-reports.js';
+import internalRoutes from './routes/internal.js';
 import { prisma } from './config/database.js';
 
 function isAllowedAdminPath(path) {
   return (
     path === '/me' ||
+    path.startsWith('/me/') ||
     path.startsWith('/admin/') ||
     path === '/ai-models' ||
-    path.startsWith('/ai-models/')
+    path.startsWith('/ai-models/') ||
+    path === '/bug-reports' ||
+    // Admins share the instructor Courses dashboard, so they need the course
+    // list itself plus topic endpoints (the lesson builder calls these). Course-
+    // nested resources under /courses/, /modules/, /lessons/, /activities/ are
+    // already covered below.
+    path === '/courses' ||
+    path === '/topics' ||
+    path.startsWith('/topics/') ||
+    path.startsWith('/modules/') ||
+    path.startsWith('/lessons/') ||
+    path.startsWith('/courses/') ||
+    path.startsWith('/activities/')
   );
 }
 
@@ -29,7 +42,7 @@ function isAllowedAdminPath(path) {
  * Creates and configures the Express application.
  *
  * @param {object} [options]
- * @param {object} [options.mockUser] - When provided, skips Better Auth and
+ * @param {object} [options.mockUser] - When provided, skips Core session validation and
  *   injects this object as `req.user` on every request. Used by tests.
  * @returns {Promise<import('express').Express>}
  */
@@ -37,13 +50,6 @@ export async function createApp(options = {}) {
   const app = express();
 
   app.use(cors({ origin: true, credentials: true }));
-
-  if (!options.mockUser) {
-    // Production path: mount Better Auth handler BEFORE json parser
-    const { toNodeHandler } = await import('better-auth/node');
-    const { auth } = await import('./auth.js');
-    app.all('/api/auth/{*any}', toNodeHandler(auth));
-  }
 
   // JSON parser for our own routes
   app.use(express.json());
@@ -58,38 +64,36 @@ export async function createApp(options = {}) {
     }
   });
 
-  // Session middleware: real or mock
+  // Session middleware: real (Core session validation) or mock (tests)
   if (options.mockUser) {
-    app.use('/api', (req, res, next) => {
+    app.use('/api', (req, _res, next) => {
       req.user = options.mockUser;
       next();
     });
   } else {
-    const { attachSession } = await import('./middleware/auth.js');
-    app.use('/api', attachSession);
+    app.use('/api', (req, res, next) => {
+      if (req.path === '/health') return next();
+      if (req.method === 'POST' && req.path === '/logout') return next();
+      // Server-to-server (Core → AI Tutor); authenticated by requireServiceKey instead.
+      if (req.path.startsWith('/internal/')) return next();
+      return requireAuth(req, res, next);
+    });
   }
 
-  // Require auth for all /api routes except health and auth
+  // Admins are intentionally isolated to admin-only endpoints.
+  // UNIT_ADMINs can reach /admin/courses/* (enrollment management) but not
+  // /admin/settings/* or /admin/users* (system config / user management).
   app.use('/api', (req, res, next) => {
-    if (req.path === '/health' || req.path.startsWith('/auth/')) {
-      return next();
-    }
-    return requireAuth(req, res, next);
-  });
-
-  // Admins are intentionally isolated to admin-only endpoints
-  app.use('/api', (req, res, next) => {
-    if (req.path === '/health' || req.path.startsWith('/auth/')) {
-      return next();
-    }
-    if (!req.user) {
-      return next();
-    }
+    if (req.path === '/health') return next();
+    if (!req.user) return next();
     if (req.user.role === 'ADMIN') {
-      if (isAllowedAdminPath(req.path)) {
-        return next();
-      }
+      if (isAllowedAdminPath(req.path)) return next();
       return res.status(403).json({ error: 'Admins can only access admin endpoints' });
+    }
+    if (req.user.role === 'UNIT_ADMIN') {
+      if (req.path.startsWith('/admin/settings') || req.path.startsWith('/admin/users')) {
+        return res.status(403).json({ error: 'Unit admins cannot access system configuration' });
+      }
     }
     next();
   });
@@ -106,6 +110,7 @@ export async function createApp(options = {}) {
   app.use('/api', adminRoutes);
   app.use('/api', suggestedPromptRoutes);
   app.use('/api', bugReportRoutes);
+  app.use('/api', internalRoutes);
 
   return app;
 }

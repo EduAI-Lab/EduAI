@@ -1,6 +1,6 @@
 # ADHD Assist — week progress brief (prof presentation)
 
-**Study:** H26-00906 · **Form A** RQ1–RQ3 · **Week of June 15–22, 2026**  
+**Study:** H26-00906 · **Form A** RQ1–RQ3 · **Updated:** 2026-07-11  
 **Full metrics:** [`h26-track-b-participant-metrics.md`](./h26-track-b-participant-metrics.md)
 
 ---
@@ -12,7 +12,7 @@
 | Track | What | Status |
 | ----- | ---- | ------ |
 | **Track A — Form A / IURA** | Synthetic scenarios + expert rubric + three-arm ablation (Baseline / Assist prompt-only / Assist + oversight) | Eval harness shipped ([#645](https://github.com/EduAI-Lab/EduAI/pull/645)); ~95% structural pass with oversight |
-| **Track B — BREB humans** | Within-person Qualtrics: NASA-TLX, SUS, comprehension, preference | **5 finished** / 7 started (preview distribution) |
+| **Track B — BREB humans** | Within-person Qualtrics: NASA-TLX, SUS, comprehension, preference | **9 records / 7 finished** (July 2026 export); **n=6 analyzed** after 1 outlier excluded |
 
 ### What we built in EduAI
 
@@ -56,18 +56,23 @@
 
 Source: [`expert-scores-external-claude.md`](./expert-scores-external-claude.md), [`qa-checklist-policy-s9-results.md`](./qa-checklist-policy-s9-results.md)
 
-### C. Human participants — Track B (n=5 finished)
+### C. Human participants — Track B (n=6 analyzed · July 2026 export)
 
-| Finding | Result |
-| ------- | ------ |
-| Prefer Assist (Q23) | **4/5** (1 no preference) |
-| Easier to scan (Q25) | **5/5** Assist |
-| Back on task (Q24) | **4/5** Assist |
-| Comprehension | Assist **+0.8** (1–7), Cohen's d ≈ **−0.30** (small) |
-| TLX workload (aggregate) | **Flat** (2.95 vs 3.05) |
-| SUS (aggregate) | **Flat** (69.7 vs 66.7) |
+| Finding | Result (clean n=6, 1 outlier excluded) |
+| ------- | -------------------------------------- |
+| Prefer Assist (Q23) | **5/6** (1 no preference) |
+| Easier to scan (Q25) | **6/6** Assist |
+| Back on task (Q24) | **5/6** Assist |
+| Comprehension | Assist **+2.17** (1–7), Cohen's d ≈ **−1.06** (large, descriptive) |
+| TLX workload (aggregate) | Assist lower (3.71 → 2.21), d ≈ **0.94** |
+| SUS (aggregate) | Assist higher (58.9 → 80.3), d ≈ **−0.84** |
+| Cognitive load index | Assist lower, d ≈ **0.98** |
 
-**Honest read:** Preference and comprehension favor Assist; workload/SUS are **mixed** at n=5. P1 showed strong wins (+20 SUS, −29% TLX); one participant preferred Assist in words but rated **higher** Assist workload.
+**Excluded:** `R_62F6naaHk7ItKgb` (P4) — verbal preference for Assist but SUS 76.7→35.0 and TLX load 2.0→5.0; response-order / confound.
+
+**New since June:** `R_4I5fHRkrubLLy6M`, `R_6VdPMKyVbd0Thqp` — both strongly favor Assist (SUS +48 and +53 pts respectively).
+
+**Honest read:** With outlier removed, descriptives consistently favor Assist on load, usability, comprehension, and preference at n=6. Still **descriptive pilot only** — not confirmatory.
 
 ### D. Model routing — 7B vs 32B (June 19–21)
 

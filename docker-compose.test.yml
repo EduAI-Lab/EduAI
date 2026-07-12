@@ -1,0 +1,203 @@
+name: eduai-test
+
+services:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Test databases
+  # ──────────────────────────────────────────────────────────────────────
+
+  eduai-test-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduai_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  ai-tutor-server-test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  ai-tutor-frontend-test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor_integration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  question-maker-test-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: question_maker_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Live AI Tutor server for frontend integration tests
+  # ──────────────────────────────────────────────────────────────────────
+
+  ai-tutor-frontend-test-server:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
+      target: serve
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-frontend-test-db:5432/aitutor_integration
+      PORT: "4000"
+      EDUAI_BASE_URL: http://localhost:3000/api
+    depends_on:
+      ai-tutor-frontend-test-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Test runners
+  # ──────────────────────────────────────────────────────────────────────
+
+  eduai-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.eduai
+      target: test
+    command: ["npx", "vitest", "run", "app/tests/unit"]
+
+  eduai-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.eduai
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@eduai-test-db:5432/eduai_test
+      BETTER_AUTH_SECRET: test-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:3000
+      GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+      NODE_ENV: test
+    command:
+      - sh
+      - -c
+      - "npx prisma migrate deploy --schema=prisma/schema.prisma && npx vitest run --config vitest.integration.config.ts"
+    depends_on:
+      eduai-test-db:
+        condition: service_healthy
+
+  ai-tutor-app-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
+      target: test
+    command: ["npx", "vitest", "run", "app/tests/unit"]
+
+  ai-tutor-app-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
+      target: test
+    environment:
+      AI_TUTOR_SERVER_URL: http://ai-tutor-frontend-test-server:4000
+    command: ["npx", "vitest", "run", "app/tests/integration", "--passWithNoTests"]
+    depends_on:
+      ai-tutor-frontend-test-server:
+        condition: service_healthy
+
+  ai-tutor-server-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-server-test-db:5432/aitutor_test
+      DB_HOST: ai-tutor-server-test-db
+      DB_PORT: "5432"
+    command: ["npm", "run", "test:unit"]
+    depends_on:
+      ai-tutor-server-test-db:
+        condition: service_healthy
+
+  ai-tutor-server-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@ai-tutor-server-test-db:5432/aitutor_test
+      PORT: "4001"
+    command: ["npm", "run", "test:integration"]
+    depends_on:
+      ai-tutor-server-test-db:
+        condition: service_healthy
+
+  qm-app-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-app
+      target: test-unit
+
+  qm-app-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-app
+      target: test-integration
+    environment:
+      DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      NODE_ENV: test
+
+  qm-server-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-server
+      target: test
+    command: ["sh", "-c", "./node_modules/.bin/vitest run tests/unit"]
+
+  qm-server-integration-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-server
+      target: test
+    environment:
+      TEST_DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      DATABASE_URL: postgresql://postgres:password@question-maker-test-db:5432/question_maker_test
+      JWT_SECRET: test-jwt-secret-for-docker
+      ENCRYPTION_KEY: test-encryption-key-32bytes!!
+      NODE_ENV: test
+    command: ["npm", "run", "test:integration"]
+
+    depends_on:
+      question-maker-test-db:
+        condition: service_healthy
+
+  # ── Design-system component suite (packages/ui) ───────────────────────────
+  # No database required; pure Vitest + happy-dom component tests.
+  packages-ui-unit-tests:
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.packages-ui
+      target: test
+    command: ["sh", "-c", "vitest run"]

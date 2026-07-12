@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Button } from "~/components/ui/button";
+import { Button } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -8,12 +8,13 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "~/components/ui/dialog";
-import { Textarea } from "~/components/ui/textarea";
-import { Label } from "~/components/ui/label";
-import { MessageSquare } from "lucide-react";
+} from "@eduai/ui";
+import { Textarea } from "@eduai/ui";
+import { Label } from "@eduai/ui";
+import { IconMessage } from "@tabler/icons-react";
+import { SYSTEM_PROMPT_MAX_CHARS_DEFAULT } from "~/lib/ai/prompt-safety";
 
-interface SystemPromptSettingsProps {
+export interface SystemPromptSettingsProps {
   systemPrompt?: string | null;
   onSave: (systemPrompt: string | null) => void;
 }
@@ -27,7 +28,12 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
   }, [systemPrompt]);
 
   const handleSave = () => {
-    onSave(prompt.trim() || null);
+    const trimmed = prompt.trim();
+    const capped =
+      trimmed.length > SYSTEM_PROMPT_MAX_CHARS_DEFAULT
+        ? trimmed.slice(0, SYSTEM_PROMPT_MAX_CHARS_DEFAULT)
+        : trimmed;
+    onSave(capped || null);
     setOpen(false);
   };
 
@@ -45,7 +51,7 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
           variant="outline"
           className="h-9 gap-2"
         >
-          <MessageSquare className="h-4 w-4" />
+          <IconMessage className="h-4 w-4" />
           <span>System Prompt</span>
         </Button>
       </DialogTrigger>
@@ -64,10 +70,13 @@ export function SystemPromptSettings({ systemPrompt, onSave }: SystemPromptSetti
               placeholder="Enter a custom system prompt (leave empty to use default)..."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              maxLength={SYSTEM_PROMPT_MAX_CHARS_DEFAULT}
               className="min-h-[200px] font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              The system prompt guides the AI's behavior and responses. Leave empty to use the default prompt.
+              The system prompt guides the AI&apos;s behavior and responses. Leave empty to use the
+              default prompt. Max {SYSTEM_PROMPT_MAX_CHARS_DEFAULT.toLocaleString()} characters (
+              {prompt.length.toLocaleString()} used).
             </p>
           </div>
         </div>

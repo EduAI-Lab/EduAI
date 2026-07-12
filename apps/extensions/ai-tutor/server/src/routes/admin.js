@@ -22,7 +22,7 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import {
   SYSTEM_SETTING_KEYS,
   clearSystemSetting,
@@ -30,20 +30,28 @@ import {
   setSystemSetting,
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
-import { mapAdminUser, mapCourseOffering } from '../utils/mappers.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import {
+  deleteCoreEnrollment,
+  listCoreAdminUsers,
+  listEduAiCourseEnrollmentsServiceKey,
+  patchCoreEnrollmentRole,
+} from '../services/eduaiClient.js';
 
 const router = express.Router();
 
-router.get('/admin/users', requireRole('ADMIN'), async (_req, res) => {
+
+router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
   try {
-    const users = await prisma.user.findMany({
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
-    res.json(users.map(mapAdminUser));
+    const cookie = req.headers.cookie ?? '';
+    const users = await listCoreAdminUsers(cookie);
+    const rows = Array.isArray(users) ? users : [];
+    res.json(rows.map(mapCoreAdminUser));
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    const status = typeof e?.status === 'number' ? e.status : 500;
+    res.status(status).json({ error: String(e.message ?? e) });
   }
 });
 
@@ -80,49 +88,87 @@ router.get('/admin/courses', requireRole('ADMIN'), async (_req, res) => {
  * render add/remove pickers without a second roundtrip; `availableStudents`
  * excludes anyone already enrolled.
  */
-router.get('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (req, res) => {
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: {
-        enrollments: {
-          include: {
-            user: true,
-          },
-        },
-      },
-    });
-
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+router.get(
+  '/admin/courses/:courseId/enrollments',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    const enrolledIds = course.enrollments.map((enrollment) => enrollment.userId);
-    const availableStudents = await prisma.user.findMany({
-      where: {
-        role: 'STUDENT',
-        id: { notIn: enrolledIds.length > 0 ? enrolledIds : undefined },
-      },
-      orderBy: [{ name: 'asc' }, { email: 'asc' }],
-    });
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: {
+          enrollments: true,
+          instructors: { select: { userId: true } },
+        },
+      });
 
-    res.json({
-      courseId,
-      enrolledStudents: course.enrollments
-        .map((enrollment) => enrollment.user)
-        .toSorted((a, b) => a.name.localeCompare(b.name))
-        .map(mapAdminUser),
-      availableStudents: availableStudents.map(mapAdminUser),
-    });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
+      let coreEnrollmentMap = new Map();
+      if (course.externalId) {
+        try {
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+          for (const e of coreEnrollments) {
+            coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
+          }
+        } catch (err) {
+          console.warn('[admin] Could not fetch Core enrollment names for course', courseId, err.message);
+        }
+      }
+
+      const enrolledUserIds = new Set(course.enrollments.map((e) => e.userId));
+      let coreUserMap = new Map();
+      let availableStudents = [];
+
+      try {
+        const cookie = req.headers.cookie ?? '';
+        const coreUsers = await listCoreAdminUsers(cookie);
+        const rows = Array.isArray(coreUsers) ? coreUsers : [];
+        for (const user of rows.map(mapCoreAdminUser)) {
+          coreUserMap.set(user.id, { name: user.name, email: user.email });
+        }
+        availableStudents = rows
+          .map(mapCoreAdminUser)
+          .filter((user) => user.role === 'STUDENT' && !enrolledUserIds.has(user.id))
+          .toSorted((a, b) => a.name.localeCompare(b.name));
+      } catch (err) {
+        console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
+      }
+
+      res.json({
+        courseId,
+        enrolledStudents: course.enrollments
+          .toSorted((a, b) => a.userId.localeCompare(b.userId))
+          .map((e) => {
+            const userInfo = coreUserMap.get(e.userId) ?? coreEnrollmentMap.get(e.userId);
+            const displayName = userInfo?.name?.trim() || e.userId;
+            return {
+              id: e.userId,
+              name: displayName,
+              email: userInfo?.email ?? '',
+              role: e.role,
+              createdAt: e.createdAt,
+            };
+          }),
+        availableStudents,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 /**
  * POST /admin/courses/:courseId/enrollments — enroll a student in a course.
@@ -132,59 +178,69 @@ router.get('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (
  *
  * Why: idempotent so accidental double-clicks in the admin UI don't error.
  */
-router.post('/admin/courses/:courseId/enrollments', requireRole('ADMIN'), async (req, res) => {
-  const courseId = Number(req.params.courseId);
-  const userId =
-    typeof req.body?.userId === 'string' && req.body.userId.trim().length > 0
-      ? req.body.userId.trim()
-      : null;
+router.post(
+  '/admin/courses/:courseId/enrollments',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    const userId =
+      typeof req.body?.userId === 'string' && req.body.userId.trim().length > 0
+        ? req.body.userId.trim()
+        : null;
+    const rawRole = req.body?.role;
+    const enrollmentRole =
+      rawRole === 'TA' || rawRole === 'STUDENT' ? rawRole : 'STUDENT';
 
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Invalid user id' });
-  }
-
-  try {
-    const [course, user] = await Promise.all([
-      prisma.courseOffering.findUnique({ where: { id: courseId } }),
-      prisma.user.findUnique({ where: { id: userId } }),
-    ]);
-
-    if (!course) {
-      return res.status(404).json({ error: 'Course not found' });
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
     }
 
-    if (!user || user.role !== 'STUDENT') {
-      return res.status(400).json({ error: 'Only student users can be enrolled' });
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
     }
 
-    await prisma.courseEnrollment.upsert({
-      where: {
-        courseOfferingId_userId: {
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      await prisma.courseEnrollment.upsert({
+        where: {
+          courseOfferingId_userId: {
+            courseOfferingId: courseId,
+            userId,
+          },
+        },
+        update: { role: enrollmentRole },
+        create: {
           courseOfferingId: courseId,
           userId,
+          role: enrollmentRole,
         },
-      },
-      update: {},
-      create: {
-        courseOfferingId: courseId,
-        userId,
-      },
-    });
+      });
 
-    res.status(201).json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 router.delete(
   '/admin/courses/:courseId/enrollments/:userId',
-  requireRole('ADMIN'),
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
   async (req, res) => {
+    const authUser = req.user;
     const courseId = Number(req.params.courseId);
     const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
 
@@ -197,6 +253,30 @@ router.delete(
     }
 
     try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      // Write through to Core first, so a later sync doesn't re-import the student (#812).
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await deleteCoreEnrollment(course.externalId, coreEnrollment.id, cookie);
+      }
+
       await prisma.courseEnrollment.deleteMany({
         where: {
           courseOfferingId: courseId,
@@ -206,7 +286,91 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
+    }
+  },
+);
+
+/**
+ * PATCH /admin/courses/:courseId/enrollments/:userId/role — assign or remove TA role.
+ *
+ * Auth: ADMIN, UNIT_ADMIN (department-scoped), or INSTRUCTOR (course-scoped).
+ * Body: `{ role: 'STUDENT' | 'TA' }`.
+ * Side effects: updates the enrollment role in place.
+ *
+ * Why: dedicated endpoint so TA assignment doesn't require a delete+re-enroll
+ * cycle that would lose audit history on the enrollment row.
+ */
+router.patch(
+  '/admin/courses/:courseId/enrollments/:userId/role',
+  requireRole(['ADMIN', 'UNIT_ADMIN', 'INSTRUCTOR']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
+    const rawRole = req.body?.role;
+
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    if (rawRole !== 'STUDENT' && rawRole !== 'TA') {
+      return res.status(400).json({ error: 'role must be STUDENT or TA' });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+
+      if (!isCourseAdmin(authUser, course)) {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      const enrollment = await prisma.courseEnrollment.findUnique({
+        where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+      });
+
+      if (!enrollment) {
+        return res.status(404).json({ error: 'Enrollment not found' });
+      }
+
+      let coreRollback = null;
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+        coreRollback = () =>
+          patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
+      }
+
+      try {
+        const updated = await prisma.courseEnrollment.update({
+          where: { courseOfferingId_userId: { courseOfferingId: courseId, userId } },
+          data: { role: rawRole },
+        });
+        res.json({ ok: true, role: updated.role });
+      } catch (dbErr) {
+        coreRollback?.();
+        throw dbErr;
+      }
+    } catch (e) {
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
     }
   },
 );
@@ -225,7 +389,7 @@ router.get('/admin/settings/eduai-api-key', requireRole('ADMIN'), async (req, re
  *
  * Auth: ADMIN.
  * Side effects: writes the key into SystemSetting('EDUAI_API_KEY'); subsequent
- *   `getEduAiAccessTokenForUser` calls will use the new key.
+ *   session-cookie EduAI calls will use the new key.
  *
  * Why: stored in DB rather than env so admins can rotate without redeploying.
  */
@@ -310,10 +474,7 @@ router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), a
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 
-    const accessToken = await getEduAiAccessTokenForUser(req.user?.id);
-
-    // Pass the already-fetched course to avoid a duplicate DB lookup inside the service
-    const result = await syncCourseEnrollments(courseId, { accessToken, course });
+    const result = await syncCourseEnrollments(courseId, { course });
     res.json(result);
   } catch (error) {
     console.error('[eduai] Manual enrollment sync failed:', error);
