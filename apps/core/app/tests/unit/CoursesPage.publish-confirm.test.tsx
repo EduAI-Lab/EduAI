@@ -29,6 +29,13 @@ vi.mock('~/components/courses/courses-student-view', () => ({
 vi.mock('~/components/app-sidebar', () => ({ AppSidebar: () => null }))
 vi.mock('~/components/site-header', () => ({ SiteHeader: () => null }))
 
+// This branch routes the page chrome through CoreAppShell (which calls
+// useCoreSidebarProps); stub it to render children only so the courses page
+// under test isn't coupled to the shared shell.
+vi.mock('~/components/layout/core-app-shell', () => ({
+  CoreAppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+
 vi.mock('react-router', async (importActual) => {
   const actual = await importActual<typeof import('react-router')>()
   return {

@@ -5,9 +5,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
-import { AppSidebar } from '~/components/app-sidebar'
-import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '@eduai/ui'
+import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
@@ -199,37 +197,29 @@ export default function CoursesPage() {
 
 function Layout({ user, children }: { user: any; children: React.ReactNode }) {
   return (
-    <SidebarProvider
-      style={{
-        '--sidebar-width': 'calc(var(--spacing) * 72)',
-        '--header-height': 'calc(var(--spacing) * 12)',
-      } as React.CSSProperties}
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Courses</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Courses</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              {children}
-            </div>
+      <div className="flex flex-1 flex-col">
+        <div className="@container/main flex flex-1 flex-col gap-2">
+          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            {children}
           </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </CoreAppShell>
   )
 }

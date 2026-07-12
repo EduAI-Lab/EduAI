@@ -1,12 +1,11 @@
 import type { Role } from './types';
 
-export function routeForRole(role: Role): string {
-  if (role === 'STUDENT') return '/student';
-  if (role === 'INSTRUCTOR') return '/instructor';
-  if (role === 'UNIT_ADMIN') return '/instructor';
-  if (role === 'TA') return '/instructor';
-  // Admins land on the shared Courses dashboard (admin ⊇ instructor); the
-  // admin-only Bug Reports console stays reachable via its own nav item (/admin).
-  if (role === 'ADMIN') return '/instructor';
-  return '/admin';
+/**
+ * All supported roles land on the shared, role-aware Dashboard (`/dashboard`)
+ * — the AI Tutor equivalent of Core's `/dashboard` and QM's `/dashboard`
+ * (issue #938). Role-specific stats/panels are handled inside the dashboard
+ * itself, not by routing to a different URL per role.
+ */
+export function routeForRole(_role: Role): string {
+  return '/dashboard';
 }
