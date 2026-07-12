@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button } from '@eduai/ui';
+import { Badge, Button, ConfirmDialog } from '@eduai/ui';
 import { toast } from 'sonner';
 import api from '~/lib/api';
 import type { AdminEnrollmentData, EnrollmentRole } from '~/lib/types';
@@ -19,6 +19,10 @@ export function CourseEnrollmentsPanel({
   const [data, setData] = useState<AdminEnrollmentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [pendingRemoveUser, setPendingRemoveUser] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -148,7 +152,7 @@ export function CourseEnrollmentsPanel({
                       size="sm"
                       variant="destructive"
                       disabled={busy}
-                      onClick={() => void removeStudent(student.id)}
+                      onClick={() => setPendingRemoveUser({ id: student.id, name: student.name || student.id })}
                     >
                       Remove
                     </Button>
@@ -159,6 +163,22 @@ export function CourseEnrollmentsPanel({
           })}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingRemoveUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoveUser(null);
+        }}
+        title={`Remove ${pendingRemoveUser?.name ?? 'student'}?`}
+        description="They will lose access to this course immediately."
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => {
+          if (!pendingRemoveUser) return;
+          setUpdatingUserId(pendingRemoveUser.id);
+          void removeStudent(pendingRemoveUser.id);
+          setPendingRemoveUser(null);
+        }}
+      />
     </div>
   );
 }
