@@ -7,6 +7,7 @@ import { CanvasIntegration, CanvasCourseMapping, Question_Metadata, Variants, As
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
+import { validateCanvasUrl } from '../utils/canvasUrlGuard.js';
 
 /**
  * Canvas LMS API Service
@@ -113,7 +114,11 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     return { data: { success: true } };
   }
 
-  // Real Canvas API request
+  // Real Canvas API request — re-validate at request time (#991) so an
+  // integration saved before this guard existed, or one whose row was
+  // altered directly, can't pivot the backend into an internal network or
+  // cloud metadata endpoint.
+  validateCanvasUrl(integration.canvasUrl);
   const url = `${integration.canvasUrl}/api/v1${endpoint}`;
   const config = {
     method,
