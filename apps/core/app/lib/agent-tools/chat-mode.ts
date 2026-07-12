@@ -82,13 +82,36 @@ Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCours
 listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.`;
 }
 
+/**
+ * Write-safety confirmation rules. Always appended to the admin system prompt —
+ * including when a caller supplies a custom prompt — since these are the only
+ * thing standing between a write tool call and an unconfirmed mutation (#988).
+ */
+export function formatAdminWriteSafetyRules(): string {
+  return `Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
+- createUser, updateUser, deleteUser
+- createCourseEnrollment, updateCourseEnrollment, deactivateCourseEnrollment
+- createCourseTopic, updateCourseTopic, deleteCourseTopic
+- updateBugReportStatus
+
+Write safety:
+1. Before ANY write, restate exactly what will change (who, which course, which role/status).
+2. Wait for the admin to explicitly confirm (e.g. "yes, do it") in the conversation.
+3. Only then call the write tool with confirmed: true. If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
+4. A write ONLY succeeded if the tool result JSON contains writeSucceeded: true. If writeSucceeded is false or error is CONFIRMATION_REQUIRED, tell the admin the write was not applied yet.
+5. After a successful write (writeSucceeded: true), call the matching read tool (listUsers, listCourseEnrollments, listCourseTopics, listBugReports) to show the updated database state.
+6. For user-targeting writes, pass userId from listUsers OR userEmail — never invent ids.
+7. You cannot deactivate yourself, change your own role, or delete your own account.`;
+}
+
 export function buildAdminSystemPrompt({
   customPrompt,
 }: Pick<AdminPromptOptions, "customPrompt">): string {
   const courseContext = formatAdminCourseContext();
+  const writeSafetyRules = formatAdminWriteSafetyRules();
 
   if (customPrompt) {
-    return `${customPrompt.trim()}\n\n${courseContext}`;
+    return `${customPrompt.trim()}\n\n${writeSafetyRules}\n\n${courseContext}`;
   }
 
   return `You are EduAI Admin Assistant for platform administrators at UBC Okanagan (UBCO).
@@ -103,20 +126,7 @@ CRITICAL RULES:
 Read tools:
 - listCourses, getCourse, listCourseEnrollments, listCourseTopics, getCourseTopic, listUsers, listBugReports
 
-Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
-- createUser, updateUser, deleteUser
-- createCourseEnrollment, updateCourseEnrollment, deactivateCourseEnrollment
-- createCourseTopic, updateCourseTopic, deleteCourseTopic
-- updateBugReportStatus
-
-Write safety:
-1. Before ANY write, restate exactly what will change (who, which course, which role/status).
-2. Wait for the admin to explicitly confirm (e.g. "yes, do it") in the conversation.
-3. Only then call the write tool with confirmed: true. If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
-4. A write ONLY succeeded if the tool result JSON contains writeSucceeded: true. If writeSucceeded is false or error is CONFIRMATION_REQUIRED, tell the admin the write was not applied yet.
-5. After a successful write (writeSucceeded: true), call the matching read tool (listUsers, listCourseEnrollments, listCourseTopics, listBugReports) to show the updated database state.
-6. For user-targeting writes, pass userId from listUsers OR userEmail — never invent ids.
-7. You cannot deactivate yourself, change your own role, or delete your own account.
+${writeSafetyRules}
 
 When answering:
 1. Call the relevant read tool(s) first when listing or verifying current state.
