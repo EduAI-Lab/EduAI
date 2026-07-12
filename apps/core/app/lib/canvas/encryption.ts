@@ -15,8 +15,8 @@ const STRICT_BASE64_SEGMENT = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /** Thrown when an encrypted blob fails GCM auth/decrypt (key rotation, tampering, corruption). */
 export class CanvasCredentialDecryptError extends Error {
-  constructor(message = "Failed to decrypt Canvas credential") {
-    super(message);
+  constructor(message = "Failed to decrypt Canvas credential", options?: ErrorOptions) {
+    super(message, options);
     this.name = "CanvasCredentialDecryptError";
   }
 }
