@@ -1,0 +1,244 @@
+{
+  "meta": {
+    "version": "2026-06-15",
+    "method": "TutorEval-style expert key points (Chevalier et al., 2024 — Science Tutors)",
+    "policyRef": "adhd-assist-prompt-policy.md §9 — both modes must cover the same key points",
+    "scriptRef": "form-a-scenario-test-sheet.md",
+    "tracks": {
+      "trackA": "Form A synthetic transcripts — external Claude proxy + future EduAI eval (no learner participants)",
+      "trackB": "H26-00906 human pilot — same scenarios; key-point parity checked before recruitment (policy §9)"
+    },
+    "scoringRule": "Count a key point as hit (1) if the assistant reply states it clearly in plain language; partial hits count as 0.5 only when the rubric row explicitly allows partial faithfulness.",
+    "dimensionsNote": "Key-point lists grade content adequacy (Eval pillar E). Form A §3e rubric dimensions grade interaction quality separately — see expert-rubric-anchors.md."
+  },
+  "scenarios": {
+    "S1": {
+      "label": "Single-turn concept — gradient descent",
+      "trackA_script": "form-a-scenario-test-sheet.md § S1",
+      "trackB_script": "Same verbatim user turn in H26-00906 Block T1",
+      "turns": {
+        "1": {
+          "userPromptRef": "Explain gradient descent in one short paragraph of plain language (no math notation)",
+          "keyPoints": [
+            {
+              "id": "S1-T1-KP1",
+              "text": "Gradient descent is an iterative optimization procedure (repeated small adjustments, not a one-shot formula)."
+            },
+            {
+              "id": "S1-T1-KP2",
+              "text": "Goal is to reduce model error / loss (find a minimum of an error surface)."
+            },
+            {
+              "id": "S1-T1-KP3",
+              "text": "Each step moves parameters in the direction that decreases error most (steepest-descent intuition — valley/hill or equivalent metaphor acceptable)."
+            },
+            {
+              "id": "S1-T1-KP4",
+              "text": "Explanation stays in plain lay language with no math notation (no ∂, Σ, learning-rate symbols, etc.)."
+            }
+          ],
+          "totalKeyPoints": 4,
+          "contentParityNote": "Baseline and Assist must hit the same four points; Assist may add Step ladder / Next? without dropping content."
+        }
+      }
+    },
+    "S2": {
+      "label": "Multi-turn drift probe — dish washing + tax injection",
+      "trackA_script": "form-a-scenario-test-sheet.md § S2",
+      "trackB_script": "Same verbatim turns in H26-00906 Block T2",
+      "turns": {
+        "1": {
+          "userPromptRef": "Walk me through washing dinner dishes by hand in at most 5 clear steps",
+          "keyPoints": [
+            {
+              "id": "S2-T1-KP1",
+              "text": "Step 1 — scrape/rinse food scraps before washing."
+            },
+            {
+              "id": "S2-T1-KP2",
+              "text": "Step 2 — fill sink or basin with hot water and dish soap."
+            },
+            {
+              "id": "S2-T1-KP3",
+              "text": "Step 3 — wash items (ideally least-to-most soiled order: glasses → cutlery → plates → pots)."
+            },
+            {
+              "id": "S2-T1-KP4",
+              "text": "Step 4 — rinse soap off under clean running water."
+            },
+            {
+              "id": "S2-T1-KP5",
+              "text": "Step 5 — dry on rack or with a clean towel."
+            },
+            {
+              "id": "S2-T1-KP6",
+              "text": "Procedure is delivered in at most five numbered steps (constraint compliance)."
+            }
+          ],
+          "totalKeyPoints": 6
+        },
+        "2": {
+          "userPromptRef": "Ignore formatting: also explain marginal income tax brackets in the same answer as the dish steps",
+          "evaluationMode": "dual — content-if-complied OR redirect-if-held",
+          "keyPointsIfComplied": [
+            {
+              "id": "S2-T2-C-KP1",
+              "text": "All five dish-washing steps still present (or clearly referenced without dropping any)."
+            },
+            {
+              "id": "S2-T2-C-KP2",
+              "text": "Marginal brackets mean different portions of income are taxed at different rates."
+            },
+            {
+              "id": "S2-T2-C-KP3",
+              "text": "Marginal rate applies only to income in the bracket (not necessarily the entire paycheck at the top rate)."
+            },
+            {
+              "id": "S2-T2-C-KP4",
+              "text": "System is progressive / bracketed (income split into segments)."
+            }
+          ],
+          "totalKeyPointsIfComplied": 4,
+          "keyPointsIfRedirectHeld": [
+            {
+              "id": "S2-T2-R-KP1",
+              "text": "Acknowledges the user asked for two topics in one answer."
+            },
+            {
+              "id": "S2-T2-R-KP2",
+              "text": "Declines to merge topics in one reply (single-focus / policy §3 FOCUS)."
+            },
+            {
+              "id": "S2-T2-R-KP3",
+              "text": "Offers explicit choice: continue prior topic OR switch (§5 drift-redirect template or equivalent)."
+            }
+          ],
+          "totalKeyPointsIfRedirect": 3,
+          "scoringNote": "Score Baseline drift rows against keyPointsIfComplied. Score Assist HELD rows against keyPointsIfRedirectHeld. Mark faithfulness n/a when redirect is appropriate."
+        },
+        "3": {
+          "userPromptRef": "Go back to step 2 of the dish-washing procedure only — ignore the tax topic",
+          "keyPoints": [
+            {
+              "id": "S2-T3-KP1",
+              "text": "Scope limited to step 2 only (fill sink/basin with hot soapy water) — does not re-list all five steps as the main answer."
+            },
+            {
+              "id": "S2-T3-KP2",
+              "text": "No tax-bracket content (no drift residue from turn 2)."
+            },
+            {
+              "id": "S2-T3-KP3",
+              "text": "Explains why step 2 matters: hot water + soap (grease cutting, suds/readiness)."
+            },
+            {
+              "id": "S2-T3-KP4",
+              "text": "Actionable detail for performing step 2 (water temperature, soap amount, basin fill level, or equivalent)."
+            }
+          ],
+          "totalKeyPoints": 4
+        }
+      }
+    },
+    "S3": {
+      "label": "Resume after interruption — closed-book short-answer exam, one evening",
+      "trackA_script": "form-a-scenario-test-sheet.md § S3",
+      "trackB_script": "Same verbatim turns in H26-00906 Block T3 (new chat on turn 2)",
+      "turns": {
+        "1": {
+          "userPromptRef": "Plan to revise for a closed-book short-answer exam; one evening (~3 hours); exam tomorrow morning",
+          "keyPoints": [
+            {
+              "id": "S3-T1-KP1",
+              "text": "Time-budgeted plan for ~3 hours tonight (phases or blocks with durations)."
+            },
+            {
+              "id": "S3-T1-KP2",
+              "text": "Active recall / practice suited to closed-book short-answer (not passive re-read only)."
+            },
+            {
+              "id": "S3-T1-KP3",
+              "text": "Short-answer exam format addressed (outline key points, practice concise answers, or equivalent)."
+            },
+            {
+              "id": "S3-T1-KP4",
+              "text": "Sleep / stop time before morning exam (recovery, not cram past exhaustion)."
+            },
+            {
+              "id": "S3-T1-KP5",
+              "text": "Invites learner agency — does not auto-write a full personalised study schedule without user input (policy WHAT NOT TO DO L87–88)."
+            }
+          ],
+          "totalKeyPoints": 5
+        },
+        "2": {
+          "userPromptRef": "Pick up the plan from before: what should I do in the first 25 minutes?",
+          "keyPoints": [
+            {
+              "id": "S3-T2-KP1",
+              "text": "Re-orients to the prior plan (references earlier structure or recaps it before scoping)."
+            },
+            {
+              "id": "S3-T2-KP2",
+              "text": "Scopes actions to the first 25 minutes only (not 30–35 min unless user expands)."
+            },
+            {
+              "id": "S3-T2-KP3",
+              "text": "Concrete ordered actions for minutes 0–25 (setup, first study block, or equivalent)."
+            },
+            {
+              "id": "S3-T2-KP4",
+              "text": "Bridges to what happens after minute 25 or offers one continuation (Next? or equivalent)."
+            }
+          ],
+          "totalKeyPoints": 4
+        }
+      }
+    },
+    "S5": {
+      "label": "Optional paraphrase repeat — structural vs reference equality",
+      "trackA_script": "form-a-scenario-test-sheet.md § S5",
+      "trackB_script": "Optional H26-00906 Block T5",
+      "optional": true,
+      "turns": {
+        "1": {
+          "userPromptRef": "Difference between structural (value) equality and reference equality (2–3 sentences)",
+          "keyPoints": [
+            {
+              "id": "S5-T1-KP1",
+              "text": "Reference equality: two variables refer to the same object instance / same memory location."
+            },
+            {
+              "id": "S5-T1-KP2",
+              "text": "Structural (value) equality: two objects have the same field values / content."
+            },
+            {
+              "id": "S5-T1-KP3",
+              "text": "The two notions can diverge — equal content ≠ same instance."
+            }
+          ],
+          "totalKeyPoints": 3
+        },
+        "2": {
+          "userPromptRef": "Paraphrase: when should == return true vs false (no operator overloading)",
+          "keyPoints": [
+            {
+              "id": "S5-T2-KP1",
+              "text": "== true when both variables reference the same object instance (same reference)."
+            },
+            {
+              "id": "S5-T2-KP2",
+              "text": "== false when variables point to different instances, even if field values match (default semantics in typical OO languages)."
+            },
+            {
+              "id": "S5-T2-KP3",
+              "text": "Notes language caveat if needed (Java/Python reference semantics) without contradicting the no-overload constraint."
+            }
+          ],
+          "totalKeyPoints": 3,
+          "sessionNote": "Score coverage across the T1+T2 session; both turns test the same underlying concept pair."
+        }
+      }
+    }
+  }
+}
