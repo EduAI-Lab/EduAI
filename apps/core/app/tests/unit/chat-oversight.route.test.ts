@@ -74,6 +74,7 @@ import { auth } from "~/lib/auth/server";
 	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 	import { invalidatePolicyCache } from "~/lib/policy.server";
+	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 	import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -159,6 +160,7 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+	  resetRateLimitsForTests();
 	  process.env.VLLM_BASE_URL = "http://localhost:8001";
 	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
 	  invalidatePolicyCache();
