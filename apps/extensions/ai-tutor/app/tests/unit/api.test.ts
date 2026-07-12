@@ -58,7 +58,7 @@ describe('api methods', () => {
     expect(result).toEqual(mockData);
   });
 
-  it('401 response redirects to Core login with a ?redirect= param', async () => {
+  it('401 response redirects to Core login with force=1 and a ?redirect= param', async () => {
     window.location.pathname = '/dashboard';
     window.location.href = 'http://localhost:3001/dashboard';
 
@@ -71,7 +71,9 @@ describe('api methods', () => {
     const { api } = await import('~/lib/api');
 
     await expect(api.listCourses()).rejects.toThrow('Authentication required');
-    expect(window.location.href).toMatch(/^http:\/\/localhost:3000\/login\?redirect=/);
+    expect(window.location.href).toMatch(
+      /^http:\/\/localhost:3000\/login\?force=1&redirect=/,
+    );
   });
 
   it('403 response throws without redirecting to login (no infinite loop)', async () => {
