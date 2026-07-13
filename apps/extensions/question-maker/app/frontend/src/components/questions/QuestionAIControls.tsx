@@ -7,7 +7,7 @@ import { Label, Button, Input, Textarea } from '@eduai/ui';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
-import { apiKeyStorage } from '../../services/apiKeyStorage';
+import { apiKeyStorage, type AIProvider, type CampusProvider } from '../../services/apiKeyStorage';
 import { IconSparkles, IconCircleCheck } from '@tabler/icons-react';
 import type { EduAIModelOption } from '../../services/eduaiService';
 import type { QuestionGenerationPhase } from '../../hooks/useEduAIStatus';
@@ -38,7 +38,7 @@ interface QuestionAIControlsProps {
     apiKeySaveState?: 'idle' | 'saving' | 'saved' | 'error';
     status: 'loading' | 'ok' | 'error';
     statusMessage?: string;
-    statusProvider?: 'google' | 'ollama';
+    statusProvider?: AIProvider | CampusProvider;
     onRefreshStatus: () => void;
     questionGenerationPhase?: QuestionGenerationPhase;
     courseWarningMessage: string | null;
