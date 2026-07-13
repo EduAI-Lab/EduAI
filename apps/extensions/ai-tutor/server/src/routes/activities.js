@@ -80,6 +80,12 @@ function getCourseCode(course) {
   );
 }
 
+/** Core Course CUID when the offering is linked; omit when unlinked (#1021). */
+function getCoreCourseId(course) {
+  const id = course?.coreOfferingId;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
 function getActivityAccess(course, authUser) {
   const isInstructorForCourse = course.instructors.some((i) => i.userId === authUser.id);
   const isEnrolledStudent = course.enrollments.some((e) => e.userId === authUser.id);
@@ -275,6 +281,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       chatId,
       messageId,
       courseCode: getCourseCode(course),
+      courseId: getCoreCourseId(course),
       testableQuestions,
       signal: abortController.signal,
     });
