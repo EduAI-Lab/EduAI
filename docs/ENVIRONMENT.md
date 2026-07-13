@@ -118,6 +118,7 @@ Loaded on top of `.env` for local integration tests only (ignored in Docker CI).
 | `EDUAI_BASE_URL` | required | Core API base for course import/sync |
 | `EDUAI_MODEL` | required | LLM model id, e.g. `google:gemini-2.5-flash` |
 | `POLICY_CACHE_TTL_MS` | optional (default 30000) | TTL for cached Core RBAC policy flags |
+| `EDUAI_CALL_TIMEOUT_MS` | optional (default 45000) | Timeout for a single EduAI chat completion round-trip in `callEduAI()` |
 
 `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `COOKIE_DOMAIN`, and `AI_SUPERVISOR_ENABLED` were removed
 per #817 — none are read anywhere in `server/src`. This server has no local Better Auth instance;
