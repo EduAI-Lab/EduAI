@@ -23,7 +23,7 @@ import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-pro
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
-import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
+import { ThemeSyncInitializer } from "@eduai/ui";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },

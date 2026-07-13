@@ -151,6 +151,85 @@ describe('api methods', () => {
     }
   });
 
+  it('a caller-aborted request rejects with the AbortError as-is (Stop button, #999)', async () => {
+    const controller = new AbortController();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(
+      1,
+      { knowledgeLevel: 'beginner', message: 'hi', modelId: 'm', apiKey: 'k' },
+      controller.signal,
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('a chat send method\'s opt-in client-side timeout rejects with ApiTimeoutError, distinct from a caller abort', async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api, ApiTimeoutError } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(1, {
+      knowledgeLevel: 'beginner',
+      message: 'hi',
+      modelId: 'm',
+      apiKey: 'k',
+    });
+    const assertion = expect(pending).rejects.toThrow(ApiTimeoutError);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await assertion;
+    vi.useRealTimers();
+  });
+
+  it('a 504 response (server-side EDUAI_CALL_TIMEOUT_MS bound) maps to ApiTimeoutError', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 504,
+      text: () => Promise.resolve('{"error":"The AI study buddy took too long to respond. Please try again."}'),
+    });
+
+    const { api, ApiTimeoutError } = await import('~/lib/api');
+
+    await expect(
+      api.sendGuideMessage(1, { knowledgeLevel: 'beginner', message: 'hi', modelId: 'm', apiKey: 'k' }),
+    ).rejects.toThrow(ApiTimeoutError);
+  });
+
+  it('http() applies no timeout unless a caller opts in via timeoutMs (#999 review scope)', async () => {
+    vi.useFakeTimers();
+    // A call that never resolves and is never aborted — if a global timeout
+    // existed, this would reject once fake time advances past it.
+    mockFetch.mockImplementation(() => new Promise(() => {}));
+
+    const { api } = await import('~/lib/api');
+    const pending = api.listCourses();
+    let settled = false;
+    pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(settled).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('api.logout proxies sign-out through the AT backend with POST and credentials', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
