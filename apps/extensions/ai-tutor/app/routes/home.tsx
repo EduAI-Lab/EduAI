@@ -1,8 +1,8 @@
 import type { Route } from './+types/home';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { PageLoader } from '@eduai/ui';
 import { useLocalUser } from '../hooks/useLocalUser';
+import { IconBrain } from '@tabler/icons-react';
 import { routeForRole } from '../lib/role-routing';
 
 export function meta({}: Route.MetaArgs) {
@@ -31,5 +31,21 @@ export default function Home() {
     window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
   }, [isInitializing, user]);
 
-  return <PageLoader />;
+  return (
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background">
+      <div aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
+        <div className="h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+      </div>
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <div className="relative h-16 w-16">
+          <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
+          <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <IconBrain className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary" />
+        </div>
+        <p className="text-sm font-medium text-muted-foreground">
+          Initializing your workspace...
+        </p>
+      </div>
+    </main>
+  );
 }
