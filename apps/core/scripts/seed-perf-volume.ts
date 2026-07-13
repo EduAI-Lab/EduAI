@@ -159,14 +159,23 @@ async function seedPool(instructorId: string, deptCode: string) {
   });
 
   // --- courses ---
-  const newCourse = (code: string, name: string, published = true) =>
-    prisma.course.create({
+  // Core RBAC resolves course access ONLY through an active Enrollment row
+  // (lib/auth/course-access.server.ts) — `Course.instructorId` alone grants
+  // nothing. Every perf course therefore also gets an INSTRUCTOR enrollment for
+  // the pool instructor, or every instructor-role endpoint 403s.
+  const newCourse = async (code: string, name: string, published = true) => {
+    const course = await prisma.course.create({
       data: {
         code, name, section: "001", term: "Fall", year: 2026, isActive: true,
         isPublished: published, startDate: now, department: deptCode,
         instructorId, externalSource: "perf-volume", aiInstructions: "",
       },
     });
+    await prisma.enrollment.create({
+      data: { courseId: course.id, userId: instructorId, role: "INSTRUCTOR", isActive: true },
+    });
+    return course;
+  };
   const sharedCourse = await newCourse(mk.code("MAIN"), "Perf Pool Main Course");
   const updateCourse = await newCourse(mk.code("UPD"), "Perf Pool Update Course", false);
   const deleteCoursePool = [];

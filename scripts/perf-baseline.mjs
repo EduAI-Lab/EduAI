@@ -26,16 +26,18 @@
  *
  * Usage:
  *   npm run db:seed:perf          # once (and again between runs to refill pools)
- *   TARGET_LABEL=local-docker CORE_URL=http://localhost:3000 \
- *     AITUTOR_URL=http://localhost:4000 QM_URL=http://localhost:8000 \
- *     PERF_OUT=docs/perf/baseline npm run perf:endpoints
+ *   CORE_URL=http://localhost:3000 AITUTOR_URL=http://localhost:4000 \
+ *     QM_URL=http://localhost:8000 \
+ *     npm run perf:endpoints -- --out=docs/perf/baseline --target=local-docker
  *
+ * CLI flags (win over env): --out=<dir> (output dir), --target=<label>.
+ *   Note the npm `--` that forwards args to the script.
  * Env: CORE_URL, AITUTOR_URL, QM_URL (set "" to skip an app), SEED_PASSWORD,
  *   PERF_WARMUP(3), PERF_SAMPLES(30), PERF_MUT_SAMPLES(15), PERF_POOL_DIR,
  *   PERF_VALIDATE_LIMIT(300), PERF_VALIDATE_WINDOW_MS(60000), TARGET_LABEL,
- *   PERF_SKIP_MUTATIONS(0).
+ *   PERF_SKIP_MUTATIONS(0).  (Output dir is --out only, no env.)
  *
- * Output: <PERF_OUT>/response-times.json.
+ * Output: <out>/response-times.json + <out>/errors.log + <out>/errors.json.
  */
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
@@ -46,6 +48,19 @@ import { execSync } from "node:child_process";
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+// CLI flags. Supports `--out=dir`, `--out dir`, and `--target=label`.
+// --out sets the output dir (no env equivalent); --target wins over TARGET_LABEL env.
+// Invoke via npm with a forwarding `--`:  npm run perf:endpoints -- --out=docs/perf/baseline
+function cliFlag(name) {
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === `--${name}`) return (argv[i + 1] ?? "").trim() || undefined;
+    if (a.startsWith(`--${name}=`)) return a.slice(name.length + 3).trim() || undefined;
+  }
+  return undefined;
+}
+
 const CORE_URL = (process.env.CORE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const AITUTOR_URL = (process.env.AITUTOR_URL ?? "http://localhost:4000").replace(/\/$/, "");
 const QM_URL = (process.env.QM_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -54,8 +69,8 @@ const WARMUP = Number(process.env.PERF_WARMUP ?? 3);
 const SAMPLES = Number(process.env.PERF_SAMPLES ?? 30);
 const RUN_MUTATIONS = (process.env.PERF_SKIP_MUTATIONS ?? "0") !== "1";
 const MUT = Number(process.env.PERF_MUT_SAMPLES ?? 15);
-const TARGET_LABEL = process.env.TARGET_LABEL ?? "unspecified";
-const OUT_DIR = process.env.PERF_OUT ?? `docs/perf/baseline`;
+const TARGET_LABEL = cliFlag("target") ?? process.env.TARGET_LABEL ?? "unspecified";
+const OUT_DIR = (cliFlag("out") ?? `docs/perf/baseline`).replace(/\/$/, "");
 const VALIDATE_LIMIT = Number(process.env.PERF_VALIDATE_LIMIT ?? 300);
 const VALIDATE_WINDOW_MS = Number(process.env.PERF_VALIDATE_WINDOW_MS ?? 60_000);
 
@@ -106,7 +121,7 @@ function summarize(samples) {
   let errors = 0, errSample = null;
   for (const s of samples) {
     statuses[s.status] = (statuses[s.status] ?? 0) + 1;
-    if (!isOk(s.status)) { errors++; if (!errSample) errSample = { status: s.status, message: s.errText ?? null }; }
+    if (!isOk(s.status)) { errors++; if (!errSample) errSample = { status: s.status, message: s.errText ?? null, body: s.text ?? s.errText ?? null }; }
   }
   const mean = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null;
   return {
@@ -410,12 +425,14 @@ function buildMutations(m, disc) {
     ops.push(opUpdate({ app: "core", method: "PUT", path: "PUT /api/courses/:id/materials/:mid", role: "instructor", url: `${base}/api/courses/${C.sharedCourseId}/materials/${C.updateMaterialId}`, body: (i) => ({ title: `Renamed put ${i}` }) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id/materials/:mid", role: "instructor", pool: C.deleteMaterialPool, urlFn: (id) => `${base}/api/courses/${C.sharedCourseId}/materials/${id}` }));
     // embedding + rag settings
-    ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/embedding-settings", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}/embedding-settings`, body: () => ({ embeddingProvider: "local", embeddingModel: "nomic-embed-text" }) }));
+    ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/embedding-settings", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}/embedding-settings`, body: () => ({ embeddingProvider: "local", embeddingModel: "mxbai-embed-large" }) }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/rag-settings", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}/rag-settings`, body: () => ({ ragTopK: 5, ragSimilarityThreshold: 0.5 }) }));
     // topics
     ops.push(opCreate({ app: "core", path: "POST /api/courses/:id/topics", role: "instructor", url: `${base}/api/courses/${C.sharedCourseId}/topics`, idPath: "id", cleanupUrl: (id) => `${base}/api/courses/${C.sharedCourseId}/topics/${id}`, body: (i) => ({ name: `Perf Topic ${uniq("t", i)}` }) }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/topics/:tid", role: "instructor", url: `${base}/api/courses/${C.sharedCourseId}/topics/${C.updateTopicId}`, body: (i) => ({ name: `Renamed ${uniq("t", i)}` }) }));
-    ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id/topics/:tid", role: "instructor", pool: C.deleteTopicPool, urlFn: (id) => `${base}/api/courses/${C.sharedCourseId}/topics/${id}` }));
+    // Canonical delete-topic contract carries {topicId} in the body (see the route's
+    // `await request.json()`); a bodyless DELETE throws "Unexpected end of JSON input".
+    ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id/topics/:tid", role: "instructor", pool: C.deleteTopicPool, urlFn: (id) => `${base}/api/courses/${C.sharedCourseId}/topics/${id}`, body: (id) => ({ topicId: id }) }));
     // TAs
     ops.push(opDelete({ app: "core", method: "POST", path: "POST /api/courses/:id/tas", role: "instructor", pool: C.taAddUserPool, urlFn: () => `${base}/api/courses/${C.sharedCourseId}/tas`, body: (uid) => ({ userId: uid }) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id/tas", role: "instructor", pool: C.taRemoveUserIds, urlFn: () => `${base}/api/courses/${C.sharedCourseId}/tas`, body: (uid) => ({ userId: uid }) }));
@@ -441,14 +458,16 @@ function buildMutations(m, disc) {
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/users/:id", role: "admin", url: `${base}/api/users/${C.updateUserId}`, body: (i) => ({ name: `Perf User v${i}` }) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/users/:id", role: "admin", pool: C.deleteUserPool, urlFn: (id) => `${base}/api/users/${id}` }));
     // invitations (admin)
-    ops.push(opCreate({ app: "core", path: "POST /api/invitations", role: "admin", url: `${base}/api/invitations`, idPath: "invitation.id", cleanupUrl: (id) => `${base}/api/invitations/${id}`, body: (i) => ({ email: `invite+${uniq("i", i)}@perf.local`, role: "INSTRUCTOR" }) }));
+    // Email must be a UBC address (lib/auth/ubc-email.ts) or the invite 400s.
+    ops.push(opCreate({ app: "core", path: "POST /api/invitations", role: "admin", url: `${base}/api/invitations`, idPath: "invitation.id", cleanupUrl: (id) => `${base}/api/invitations/${id}`, body: (i) => ({ email: `invite-${uniq("i", i)}@ubc.ca`, role: "INSTRUCTOR" }) }));
     ops.push(opUpdate({ app: "core", method: "POST", path: "POST /api/invitations/:id (resend)", role: "admin", url: `${base}/api/invitations/${C.resendInvitationId}`, body: () => ({}) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/invitations/:id", role: "admin", pool: C.deleteInvitationPool, urlFn: (id) => `${base}/api/invitations/${id}` }));
     // bug reports
     ops.push(opUpdate({ app: "core", method: "POST", path: "POST /api/bug-reports", role: "actor", url: `${base}/api/bug-reports`, body: (i) => ({ description: `perf bug ${i}` }) }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/admin/bug-reports/:id", role: "admin", url: `${base}/api/admin/bug-reports/${C.bugReportId}`, body: (i) => ({ status: i % 2 ? "IN_PROGRESS" : "UNHANDLED" }) }));
     // assistive events (create, no cleanup)
-    ops.push(opUpdate({ app: "core", method: "POST", path: "POST /api/assistive-events", role: "actor", url: `${base}/api/assistive-events`, body: () => ({ eventType: "focus" }) }));
+    // eventType must be one of ASSISTIVE_CLIENT_EVENT_TYPES (assistive-events.ts) or 422.
+    ops.push(opUpdate({ app: "core", method: "POST", path: "POST /api/assistive-events", role: "actor", url: `${base}/api/assistive-events`, body: () => ({ eventType: "mode_toggled" }) }));
     // cron jobs (update-schedule only) — needs a known job name
     if (disc.cronJob) ops.push(opUpdate({ app: "core", method: "POST", path: "POST /api/admin/cron-jobs", role: "admin", url: `${base}/api/admin/cron-jobs`, body: () => ({ intent: "update-schedule", jobName: disc.cronJob, schedule: "0 3 * * *", scheduleLabel: "Daily 3am" }) }));
     // policies — toggle a discovered flag, restored after the run
@@ -463,15 +482,23 @@ function buildMutations(m, disc) {
     const base = AITUTOR_URL;
     const nc = A.nativeCourseId;
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/courses/:id", role: "instructor", url: `${base}/api/courses/${nc}`, body: (i) => ({ title: `PERF upd ${i}` }) }));
-    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/courses/:id/publish", role: "instructor", url: `${base}/api/courses/${nc}/publish`, body: () => ({}) }));
-    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/courses/:id/unpublish", role: "instructor", url: `${base}/api/courses/${nc}/unpublish`, body: () => ({}) }));
+    // NOTE: course publish/unpublish are pushed AFTER the module/lesson publish ops
+    // below — module/lesson publish reject when the parent course is unpublished, and
+    // ops run in array order, so unpublishing the native course here would 400 them.
     ops.push(opCreate({ app: "ai-tutor", path: "POST /api/courses/:id/modules", role: "instructor", url: `${base}/api/courses/${nc}/modules`, idPath: "id", cleanupUrl: (id) => `${base}/api/modules/${id}`, body: (i) => ({ title: `PERF mod ${i}`, position: 0 }) }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/modules/:id/publish", role: "instructor", url: `${base}/api/modules/${A.poolModulesReuse[0]}/publish`, body: () => ({}) }));
-    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/modules/:id/unpublish", role: "instructor", url: `${base}/api/modules/${A.poolModulesReuse[0]}/unpublish`, body: () => ({}) }));
     ops.push(opDelete({ app: "ai-tutor", path: "DELETE /api/modules/:id", role: "instructor", pool: A.poolModulesDrop, urlFn: (id) => `${base}/api/modules/${id}` }));
     ops.push(opCreate({ app: "ai-tutor", path: "POST /api/modules/:id/lessons", role: "instructor", url: `${base}/api/modules/${A.poolModulesReuse[1]}/lessons`, idPath: "id", cleanupUrl: (id) => `${base}/api/lessons/${id}`, body: (i) => ({ title: `PERF les ${i}`, position: 0 }) }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/lessons/:id/publish", role: "instructor", url: `${base}/api/lessons/${A.poolLessonsReuse[0]}/publish`, body: () => ({}) }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/lessons/:id/unpublish", role: "instructor", url: `${base}/api/lessons/${A.poolLessonsReuse[0]}/unpublish`, body: () => ({}) }));
+    // Module unpublish runs AFTER the lesson publish/unpublish above: the reuse lessons
+    // live under this module, lesson-publish requires its parent module published, and
+    // module-unpublish cascades to its lessons — so it must go last of the module ops.
+    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/modules/:id/unpublish", role: "instructor", url: `${base}/api/modules/${A.poolModulesReuse[0]}/unpublish`, body: () => ({}) }));
+    // Course publish/unpublish run LAST: unpublishing the native course would 400 the
+    // module/lesson publish ops that target it.
+    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/courses/:id/publish", role: "instructor", url: `${base}/api/courses/${nc}/publish`, body: () => ({}) }));
+    ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/courses/:id/unpublish", role: "instructor", url: `${base}/api/courses/${nc}/unpublish`, body: () => ({}) }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/lessons/:id", role: "instructor", url: `${base}/api/lessons/${A.poolLessonsReuse[1]}`, body: (i) => ({ contentMd: `PERF ${i}` }) }));
     ops.push(opDelete({ app: "ai-tutor", path: "DELETE /api/lessons/:id", role: "instructor", pool: A.poolLessonsDrop, urlFn: (id) => `${base}/api/lessons/${id}` }));
     ops.push(opCreate({ app: "ai-tutor", path: "POST /api/lessons/:id/activities", role: "instructor", url: `${base}/api/lessons/${A.poolLessonsReuse[0]}/activities`, idPath: "id", cleanupUrl: (id) => `${base}/api/activities/${id}`, body: () => ({ question: "2+2?", mainTopicId: A.nativeTopicId, type: "MCQ", options: ["3", "4"], answer: 1, hints: [], enableTeachMode: true, enableGuideMode: true }) }));
@@ -514,7 +541,9 @@ function buildMutations(m, disc) {
     ops.push(opUpdate({ app: "qm", method: "PUT", path: "PUT /api/assessments/:aid/sections/:sid", role: "instructor", url: `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${Q.sectionUpdateId}`, body: (i) => ({ name: `__PERF__ upd sec ${i}` }) }));
     ops.push(opDelete({ app: "qm", path: "DELETE /api/assessments/:aid/sections/:sid", role: "instructor", pool: Q.sectionDeletePool, urlFn: (id) => `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${id}` }));
     // section variants
-    ops.push(opCreate({ app: "qm", path: "POST /api/assessments/:aid/sections/:sid/variants", role: "instructor", url: `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${Q.anchorSectionId}/variants`, idPath: "data.id", body: () => ({ variantId: Q.anchorVariantId, displayOrder: 1 }) }));
+    // (section_id, variant_id) is unique — reusing one variantId 409s after the
+    // first insert, so consume a pool of distinct fresh variants (one per sample).
+    ops.push(opDelete({ app: "qm", method: "POST", path: "POST /api/assessments/:aid/sections/:sid/variants", role: "instructor", pool: Q.sectionVariantAddPool, urlFn: () => `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${Q.anchorSectionId}/variants`, body: (vid) => ({ variantId: vid, displayOrder: 1 }) }));
     ops.push(opUpdate({ app: "qm", method: "PUT", path: "PUT /api/assessments/:aid/sections/:sid/variants/:vid/order", role: "instructor", url: `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${Q.sectionVariantUpdate.sectionId}/variants/${Q.sectionVariantUpdate.variantId}/order`, body: (i) => ({ displayOrder: i + 1 }) }));
     ops.push(opDelete({ app: "qm", path: "DELETE /api/assessments/:aid/sections/:sid/variants/:vid", role: "instructor", pool: Q.sectionVariantDeletePool, urlFn: (p) => `${base}/api/assessments/${Q.anchorAssessmentId}/sections/${p.sectionId}/variants/${p.variantId}` }));
     ops.push(opDelete({ app: "qm", path: "DELETE /api/assessments/questions/:qid/remove-from-all-sections", role: "instructor", pool: Q.questionWithSectionLinkPool, urlFn: (qid) => `${base}/api/assessments/questions/${qid}/remove-from-all-sections` }));
@@ -566,7 +595,7 @@ function fingerprint() {
 async function main() {
   console.error(`perf-baseline — target=${TARGET_LABEL}`);
   console.error(`  CORE=${CORE_URL} AITUTOR=${AITUTOR_URL || "(skip)"} QM=${QM_URL || "(skip)"}`);
-  console.error(`  warmup=${WARMUP} samples=${SAMPLES} mut=${MUT} concurrency=1\n`);
+  console.error(`  warmup=${WARMUP} samples=${SAMPLES} mut=${MUT} concurrency=1  out=${OUT_DIR}\n`);
 
   const m = { core: loadManifest("core"), aitutor: loadManifest("aitutor"), qm: loadManifest("qm") };
   if (!preflight(m)) process.exit(2);
@@ -610,6 +639,7 @@ async function main() {
   const jsonPath = `${OUT_DIR}/response-times.json`;
   writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
   console.error(`\n✓ wrote ${jsonPath} (${results.length} endpoints)`);
+  writeErrorLog(results, OUT_DIR);
 
   const measured = results.filter((r) => r.ok_count > 0);
   const errored = results.filter((r) => r.ok_count === 0);
@@ -621,6 +651,35 @@ async function main() {
     console.error(`\n⚠ errored endpoints (see error_sample in JSON):`);
     for (const r of errored) console.error(`  ✗ ${r.app} ${r.method} ${r.path} → ${r.error_sample?.status} ${r.error_sample?.message ?? ""}`);
   }
+}
+
+// Write every endpoint that failed on ≥1 sample to <OUT_DIR>/errors.log with the
+// FULL (untruncated) server response body so failures can be diagnosed offline.
+// error_sample.body holds the complete response text; the console only shows 160 chars.
+function writeErrorLog(results, dir) {
+  const errored = results.filter((r) => (r.error_count ?? 0) > 0 || r.ok_count === 0);
+  const logPath = `${dir}/errors.log`;
+  const jsonPath = `${dir}/errors.json`;
+  if (!errored.length) {
+    writeFileSync(logPath, `no errored endpoints — clean run (${results.length} measured)\n`);
+    writeFileSync(jsonPath, JSON.stringify({ env: fingerprint(), errors: [] }, null, 2));
+    console.error(`✓ wrote ${logPath} (no errors)`);
+    return;
+  }
+  const lines = [`=== errored endpoints (${errored.length} of ${results.length}) ===`, ""];
+  for (const r of errored) {
+    const es = r.error_sample ?? {};
+    lines.push(`[${r.app}] ${r.method} ${r.path}  (role=${r.role}, kind=${r.kind})`);
+    lines.push(`  samples=${r.count ?? 0} errors=${r.error_count ?? 0} status_codes=${JSON.stringify(r.status_codes ?? {})}${r.note ? ` note=${r.note}` : ""}`);
+    lines.push(`  first_error_status: ${es.status ?? "?"}`);
+    lines.push(`  body:`);
+    const body = (es.body ?? es.message ?? "(no body captured)").toString();
+    for (const bl of body.split("\n")) lines.push(`    ${bl}`);
+    lines.push("");
+  }
+  writeFileSync(logPath, lines.join("\n"));
+  writeFileSync(jsonPath, JSON.stringify({ env: fingerprint(), errors: errored.map((r) => ({ app: r.app, method: r.method, path: r.path, role: r.role, kind: r.kind, count: r.count, error_count: r.error_count, status_codes: r.status_codes, error_sample: r.error_sample, note: r.note })) }, null, 2));
+  console.error(`✓ wrote ${logPath} + ${jsonPath} (${errored.length} errored endpoints)`);
 }
 
 function logRow(r) {
