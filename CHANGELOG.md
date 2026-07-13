@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [ai-tutor] fix: Forward Core `courseId` (`course.coreOfferingId`) on EduAI tutor/supervisor chat calls so cookie-auth guidance avoids `COURSE_REQUIRED` (#657); add unit coverage and an Add Activity empty-topics hint when topics were never synced. (#1021, @superbolt08, 2026-07-13) — #PR
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
 
 ## [Week 10 — July 6–12, 2026]
