@@ -24,6 +24,7 @@ import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui";
+import { useNonce } from "~/lib/nonce";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -109,6 +110,7 @@ export function HydrateFallback() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const nonce = useNonce();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -118,6 +120,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})()`,
           }}
@@ -128,8 +131,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {children}
           <Toaster />
         </ThemeProvider>
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   );
