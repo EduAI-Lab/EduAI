@@ -212,6 +212,7 @@ export function ChatMessage({
             >
               {textContent}
             </MessageContent>
+
             {showContinue && onContinue && (
               <div>
                 <Button
@@ -233,6 +234,7 @@ export function ChatMessage({
                   size="sm"
                   onClick={handleCopy}
                   className="h-8 w-8 p-0"
+                  aria-label={copied ? "Copied" : "Copy message"}
                 >
                   {copied ? (
                     <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
