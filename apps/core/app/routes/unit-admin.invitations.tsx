@@ -5,6 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { getPolicy } from "~/lib/policy.server";
+import { firstFieldError } from "~/lib/form-errors";
 import {
   Button,
   Badge,
@@ -43,8 +44,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  SidebarInset,
-  SidebarProvider,
   PageHeading,
   Breadcrumb,
   BreadcrumbItem,
@@ -53,8 +52,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 
 // Unit admins may invite instructors and students only.
 type InviteRole = "INSTRUCTOR" | "STUDENT";
@@ -180,7 +178,7 @@ export default function UnitAdminInvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status));
+        setFormError(errorMessage(data?.error, res.status, data?.details));
         return;
       }
       setDialogOpen(false);
@@ -237,31 +235,22 @@ export default function UnitAdminInvitationsPage() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Invitations</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Invitations</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -413,8 +402,11 @@ export default function UnitAdminInvitationsPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="person@university.edu"
+                  placeholder="person@student.ubc.ca"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Must be a UBC address (e.g. person@student.ubc.ca or person@ubc.ca).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-name">Name (optional)</Label>
@@ -472,19 +464,19 @@ export default function UnitAdminInvitationsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SidebarInset>
-    </SidebarProvider>
+    </CoreAppShell>
   );
 }
 
-function errorMessage(code: unknown, status: number): string {
+function errorMessage(code: unknown, status: number, details?: unknown): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
     case "FORBIDDEN_ROLE":
       return "You can only invite instructors and students.";
     case "Invalid input":
-      return "Please check the fields and try again.";
+      // Surface the specific field reason (e.g. the UBC-email gate) when present.
+      return firstFieldError(details) ?? "Please check the fields and try again.";
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":

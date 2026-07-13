@@ -5,6 +5,7 @@ import { IconPlus, IconDots, IconCopy, IconMailForward, IconBan } from "@tabler/
 
 import { auth } from "~/lib/auth/server";
 import { invitableRolesFor } from "~/lib/invitations/schemas";
+import { firstFieldError } from "~/lib/form-errors";
 import { useDisciplines } from "~/hooks/api/use-disciplines";
 import {
   Button,
@@ -46,8 +47,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  SidebarInset,
-  SidebarProvider,
   PageHeading,
   Breadcrumb,
   BreadcrumbItem,
@@ -56,8 +55,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
@@ -181,7 +179,7 @@ export default function InvitationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFormError(errorMessage(data?.error, res.status, role));
+        setFormError(errorMessage(data?.error, res.status, role, data?.details));
         return;
       }
       setDialogOpen(false);
@@ -222,35 +220,26 @@ export default function InvitationsPage() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Invitations</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Invitations</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -402,8 +391,11 @@ export default function InvitationsPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="person@university.edu"
+                  placeholder="person@student.ubc.ca"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Must be a UBC address (e.g. person@student.ubc.ca or person@ubc.ca).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="invite-name">Name (optional)</Label>
@@ -485,19 +477,28 @@ export default function InvitationsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SidebarInset>
-    </SidebarProvider>
+    </CoreAppShell>
   );
 }
 
-function errorMessage(code: unknown, status: number, role?: string): string {
+function errorMessage(
+  code: unknown,
+  status: number,
+  role?: string,
+  details?: unknown,
+): string {
   switch (code) {
     case "USER_EXISTS":
       return "A user with that email already exists.";
-    case "Invalid input":
+    case "Invalid input": {
+      // Surface the specific field reason (e.g. the UBC-email gate) when the
+      // API returns one, instead of a generic "check the fields" message.
+      const fieldMessage = firstFieldError(details);
+      if (fieldMessage) return fieldMessage;
       return role === "UNIT_ADMIN"
         ? "Please check the fields and try again — a unit admin invitation must include at least one unit."
         : "Please check the fields and try again.";
+    }
     case "NOT_PENDING":
       return "This invitation is no longer pending.";
     case "NOT_FOUND":

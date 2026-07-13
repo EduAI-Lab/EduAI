@@ -10,7 +10,7 @@ describe("ChatWelcome — rendering", () => {
   it("renders the welcome heading", () => {
     render(<ChatWelcome onSelectPrompt={vi.fn()} />);
     expect(
-      screen.getByRole("heading", { name: /where should we begin/i }),
+      screen.getByRole("heading", { name: /course chat/i }),
     ).toBeInTheDocument();
   });
 

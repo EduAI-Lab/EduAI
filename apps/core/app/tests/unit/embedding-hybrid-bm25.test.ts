@@ -53,8 +53,10 @@ vi.mock("ollama-ai-provider", () => ({
 // Force cloud path (non-1024 branch → Google) so generateEmbedding goes through
 // the AI SDK embed mock instead of Ollama's native fetch.
 // Match EMBEDDING_DIMENSION to the 3-element embedding returned by the mock above.
+process.env.EMBEDDING_PROVIDER = "cloud";
 process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-google-key";
 process.env.EMBEDDING_DIMENSION = "3";
+delete process.env.OLLAMA_BASE_URL;
 
 // ── Module import (after mocks) ───────────────────────────────────────────────
 
@@ -141,6 +143,14 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("AND 1 -");
   });
 
+  // #315: soft-deleted materials must never leak into RAG context, including on
+  // the hybrid path (the pure-vector path already filtered this).
+  it('filters soft-deleted materials with cm."deletedAt" IS NULL', async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain('cm."deletedAt" IS NULL');
+  });
+
   it("passes the effective similarity threshold to the hybrid query", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4, 0.62);
     const params = capturedParams();
@@ -194,6 +204,20 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     const params = capturedParams();
     expect(params[params.length - 1]).toBe(2);
   });
+
+  it("excludes deleted and unpublished materials from the SQL filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain('cm."deletedAt" IS NULL');
+    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
+  });
+
+  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
+  });
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -226,6 +250,18 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
       similarity: 0.91,
       materialTitle: "Week 9 Lecture",
     });
+  });
+
+  it("excludes unpublished materials from the SQL filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
+  });
+
+  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
   });
 });
 

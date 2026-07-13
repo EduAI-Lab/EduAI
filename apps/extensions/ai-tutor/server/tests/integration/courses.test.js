@@ -366,6 +366,114 @@ describe('Courses routes', () => {
       expect(res.body.error).toMatch(/not imported from EduAI/i);
     });
   });
+
+  // ── GET /api/courses/:courseId/submissions (enriched) ─────────────
+
+  describe('GET /api/courses/:courseId/submissions', () => {
+    let activity;
+
+    beforeEach(async () => {
+      activity = await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+          instructionsMd: 'Answer.',
+          config: {
+            question: 'What is 2+2?',
+            questionType: 'MCQ',
+            options: ['3', '4', '5'],
+            answer: 1,
+            hints: [],
+          },
+        },
+      });
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+    });
+
+    it('enriches rows with lesson/question context and a human answer label', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/submissions`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+      const row = res.body[0];
+      expect(row.lessonTitle).toBe('Test Lesson');
+      expect(row.questionText).toBe('What is 2+2?');
+      // answerOption 1 → options[1] === '4' (index mapped back to the label)
+      expect(row.answerLabel).toBe('4');
+      // No Core service key wired in the test env → studentName degrades to null.
+      expect(row).toHaveProperty('studentName');
+    });
+
+    it('enrolled TA can read submissions', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}/submissions`);
+      expect(res.status).toBe(200);
+    });
+
+    it('STUDENT gets 403', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}/submissions`);
+      expect(res.status).toBe(403);
+    });
+
+    it('400 when take is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/submissions?take=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  // ── GET /api/me/dashboard-stats (role-aware rollup) ───────────────
+
+  describe('GET /api/me/dashboard-stats', () => {
+    it('INSTRUCTOR gets their course rollup', async () => {
+      const res = await request(profApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('INSTRUCTOR');
+      expect(res.body.yourCourses).toBe(1);
+      expect(res.body.publishedCourses).toBe(1);
+      expect(res.body).toHaveProperty('submissionsToReview');
+    });
+
+    it('STUDENT gets an enrolled/progress rollup', async () => {
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+      const res = await request(studentApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('STUDENT');
+      expect(res.body.enrolledCourses).toBe(1);
+      expect(res.body).toHaveProperty('correctAnswerPercentage');
+    });
+
+    it('TA gets a TA rollup', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('TA');
+      expect(res.body.yourCourses).toBe(1);
+    });
+
+    it('ADMIN gets a platform rollup', async () => {
+      const adminApp = await createApp({ mockUser: makeAdmin() });
+      const res = await request(adminApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('ADMIN');
+      expect(res.body.totalCourses).toBe(1);
+      expect(res.body.publishedCourses).toBe(1);
+    });
+  });
 });
 
 // ── Core write-through: publish state propagation (#477) ──────────────────────

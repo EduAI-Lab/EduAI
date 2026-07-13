@@ -58,7 +58,7 @@ describe("GET /api/courses/:id/topics — requireServiceKey guard (integration)"
     expect(body).toHaveProperty("topics");
     expect(body.topics).toHaveLength(2);
     expect(getCourseTopics).toHaveBeenCalledOnce();
-    expect(getCourseTopics).toHaveBeenCalledWith(COURSE_ID);
+    expect(getCourseTopics).toHaveBeenCalledWith(COURSE_ID, false);
   });
 
   it("returns 401 Unauthorized (session path) when no Authorization header is sent", async () => {

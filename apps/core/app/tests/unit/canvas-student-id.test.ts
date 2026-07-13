@@ -42,6 +42,17 @@ describe("student-id encryption", () => {
     expect(readStoredStudentId(prepared.studentId)).toBe("student_2");
   });
 
+  it("returns null when an encrypted student id cannot be decrypted after key rotation", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const { encryptStudentIdForStorage, readStoredStudentId } = await import(
+      "~/lib/canvas/student-id.server"
+    );
+
+    const stored = encryptStudentIdForStorage("12345678");
+    vi.stubEnv("ENCRYPTION_KEY", "a-different-encryption-key-value");
+    expect(readStoredStudentId(stored)).toBeNull();
+  });
+
   it("prepareRosterSisUserIdStorage mirrors user storage for roster matching", async () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
     const {
