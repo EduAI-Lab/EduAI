@@ -13,17 +13,20 @@ import {
   IconRobot,
   IconSettings,
   IconShieldLock,
+  IconHelp,
   IconMail,
   IconUser,
   IconUsers,
   type Icon,
 } from "@tabler/icons-react"
 
-import {
-  AppSidebar as SharedAppSidebar,
-  Sidebar,
+import { Sidebar } from "@eduai/ui"
+import type {
+  AppSidebarProps,
+  NavGroupItem as NavMainGroupItem,
+  NavMainItem,
+  NavSecondaryItem,
 } from "@eduai/ui"
-import type { NavGroupItem as NavMainGroupItem, NavMainItem, NavSecondaryItem } from "@eduai/ui"
 import type { User } from "~/lib/auth/types"
 import { CURRENT_APP_ID, getLauncherApps } from "~/lib/apps"
 import {
@@ -50,6 +53,7 @@ const NAV_ICONS: Record<NavItemKey, Icon> = {
   "unitadmin-invites": IconMail,
   "admin-cron": IconClockCog,
   settings: IconSettings,
+  help: IconHelp,
   "ai-tutor": IconMessageChatbot,
 }
 
@@ -96,19 +100,28 @@ function toNavSecondaryItems(
   }))
 }
 
-export type AppSidebarProps = {
+export type UseCoreSidebarPropsOptions = {
   user: User
   navMain?: (NavMainItem | NavMainGroupItem)[]
   navSecondary?: NavSecondaryItem[]
-} & React.ComponentProps<typeof Sidebar>
+} & Omit<React.ComponentProps<typeof Sidebar>, "children">
 
-export function AppSidebar({
+/**
+ * Core's sidebar props-builder (issue #764 core-shell parity). Used to render
+ * a component directly; now returns the plain `AppSidebarProps` data that
+ * `CoreAppShell` forwards to the shared `@eduai/ui` `AppShell`, which owns
+ * rendering the shared `AppSidebar` itself. Rendering the command palette is
+ * `CoreAppShell`'s job now, not this hook's — keeping this a pure props
+ * builder (RBAC nav, brand logo, app switcher, nav-user + logout) with no JSX
+ * side effects of its own.
+ */
+export function useCoreSidebarProps({
   user,
   navMain: navMainOverride,
   navSecondary: navSecondaryOverride,
   variant = "sidebar",
   ...props
-}: AppSidebarProps) {
+}: UseCoreSidebarPropsOptions): AppSidebarProps {
   const { isEnabled } = usePolicyGate()
   const { pathname } = useLocation()
   // Prefer the server-resolved flag from the root loader (authoritative,
@@ -151,49 +164,47 @@ export function AppSidebar({
     </>
   )
 
-  return (
-    <SharedAppSidebar
-      logo={logo}
-      logoHref="/dashboard"
-      navMain={navMain}
-      navSecondary={navSecondary}
-      currentPath={pathname}
-      LinkComponent={Link}
-      launcher={{
-        apps: getLauncherApps(),
-        currentAppId: CURRENT_APP_ID,
-        role: user.role,
-      }}
-      user={user}
-      navUser={{
-        items: [
-          {
-            label: "Settings",
-            icon: <IconSettings size={15} strokeWidth={1.75} />,
-            href: "/settings",
-          },
-          // TODO: remove Account menu item (note carried over from the old Core
-          // nav-user, which was extracted into @eduai/ui during the QM redesign).
-          {
-            label: "Account",
-            icon: <IconUser size={15} strokeWidth={1.75} />,
-            href: "/settings/account",
-          },
-        ],
-        logoutElement: (
-          <Form method="post" action="/auth/logout" replace className="w-full">
-            <button
-              type="submit"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
-            >
-              <IconLogout size={15} strokeWidth={1.75} />
-              Log out
-            </button>
-          </Form>
-        ),
-      }}
-      variant={variant}
-      {...props}
-    />
-  )
+  return {
+    logo,
+    logoHref: "/dashboard",
+    navMain,
+    navSecondary,
+    currentPath: pathname,
+    LinkComponent: Link,
+    launcher: {
+      apps: getLauncherApps(),
+      currentAppId: CURRENT_APP_ID,
+      role: user.role,
+    },
+    user,
+    navUser: {
+      items: [
+        {
+          label: "Settings",
+          icon: <IconSettings size={15} strokeWidth={1.75} />,
+          href: "/settings",
+        },
+        // TODO: remove Account menu item (note carried over from the old Core
+        // nav-user, which was extracted into @eduai/ui during the QM redesign).
+        {
+          label: "Account",
+          icon: <IconUser size={15} strokeWidth={1.75} />,
+          href: "/settings/account",
+        },
+      ],
+      logoutElement: (
+        <Form method="post" action="/auth/logout" replace className="w-full">
+          <button
+            type="submit"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
+          >
+            <IconLogout size={15} strokeWidth={1.75} />
+            Log out
+          </button>
+        </Form>
+      ),
+    },
+    variant,
+    ...props,
+  }
 }

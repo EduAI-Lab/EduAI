@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react"
+
 import { Separator } from "./ui/separator"
 import { SidebarTrigger, useSidebar } from "./ui/sidebar"
 
@@ -9,13 +11,45 @@ export interface SiteHeaderProps {
 }
 
 /**
- * Sidebar toggle shown only when the sidebar is collapsed (desktop) or on mobile.
- * When the sidebar is expanded it carries its own header trigger, so showing one
- * here too would be redundant.
+ * True while `<html data-assistive-focus-mode>` is set — an app-defined
+ * attribute (e.g. Core's chat "focus mode") that CSS uses to visually hide the
+ * nav rail while keeping its collapsed *state* "expanded". No app currently
+ * setting this attribute wants the header's expand/collapse trigger to
+ * disappear along with it, so this stays a plain attribute watch rather than
+ * routing through SidebarContext. Apps that never set the attribute (the
+ * common case) get `false` forever — zero behavior change for them.
+ */
+function useAssistiveFocusModeActive(): boolean {
+  const [active, setActive] = useState(false)
+
+  useEffect(() => {
+    const root = document.documentElement
+    const sync = () => setActive(root.hasAttribute("data-assistive-focus-mode"))
+    sync()
+
+    const observer = new MutationObserver(sync)
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-assistive-focus-mode"],
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return active
+}
+
+/**
+ * Sidebar toggle shown only when the sidebar is collapsed (desktop), on
+ * mobile, or when an app-level "focus mode" has hidden the nav rail via CSS
+ * while its state remains "expanded" — the trigger must stay reachable so the
+ * user can exit focus mode or navigate away. When the sidebar is expanded (and
+ * focus mode is off) it carries its own header trigger, so showing one here
+ * too would be redundant.
  */
 function HeaderSidebarTrigger() {
   const { isMobile, state } = useSidebar()
-  if (!isMobile && state === "expanded") {
+  const focusModeActive = useAssistiveFocusModeActive()
+  if (!isMobile && state === "expanded" && !focusModeActive) {
     return null
   }
   return (
