@@ -51,9 +51,12 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
 
     const out = await extractQuestionsFromText('Exam paper snippet with a question.', 7, 'test:model', {});
 
-    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'code', 'name'] });
+    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'code', 'name', 'coreCourseId'] });
     expect(findAll).toHaveBeenCalled();
     expect(generateQuestions).toHaveBeenCalled();
+    const call = generateQuestions.mock.calls[0][0];
+    expect(call.courseCode).toBe('CS 101');
+    expect(call.courseId).toBeUndefined();
     expect(out).toHaveLength(1);
     expect(out[0].question).toContain('2+2');
     expect(out[0].summary).toBe('Basic addition');
@@ -79,5 +82,32 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
 
     const call = generateQuestions.mock.calls[0][0];
     expect(call.courseCode).toBe('COURSE-UNKNOWN');
+    expect(call.courseId).toBeUndefined();
+  });
+
+  it('forwards Core courseId when the QM course is linked', async () => {
+    findByPk.mockResolvedValue({
+      id: 7,
+      code: 'COSC 121',
+      name: 'Intro',
+      coreCourseId: 'cuid-core-cosc121',
+    });
+    generateQuestions.mockResolvedValue([
+      {
+        content: 'Q?',
+        description: 'Short',
+        difficulty: 'medium',
+        type: 'SA',
+        answer: null,
+        primary_topic_id: null,
+        secondary_topic_ids: [],
+      },
+    ]);
+
+    await extractQuestionsFromText('Some exam text for extraction.', 7, 'm', {});
+
+    const call = generateQuestions.mock.calls[0][0];
+    expect(call.courseCode).toBe('COSC 121');
+    expect(call.courseId).toBe('cuid-core-cosc121');
   });
 });

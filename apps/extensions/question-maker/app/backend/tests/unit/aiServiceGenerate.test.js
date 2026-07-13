@@ -175,4 +175,18 @@ describe('extractQuestionsFromText (EduAI extraction)', () => {
     await extractQuestionsFromText('exam text', 99, 'm', {});
     expect(generateQuestionsMock.mock.calls[0][0].courseCode).toBe('COURSE-UNKNOWN');
   });
+
+  it('preserves course code spacing and forwards coreCourseId', async () => {
+    findByPk.mockResolvedValue({
+      id: 7,
+      code: 'COSC 121',
+      name: 'Intro',
+      coreCourseId: 'cuid-core-121',
+    });
+    generateQuestionsMock.mockResolvedValue([{ content: 'Q', difficulty: 'easy', type: 'SA', answer: null }]);
+    await extractQuestionsFromText('exam text', 7, 'm', {});
+    const call = generateQuestionsMock.mock.calls[0][0];
+    expect(call.courseCode).toBe('COSC 121');
+    expect(call.courseId).toBe('cuid-core-121');
+  });
 });

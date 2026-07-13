@@ -662,7 +662,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
   const course = await Course.findOne({
     where: { id: Number(courseId), userId },
-    attributes: ['id', 'code', 'name']
+    attributes: ['id', 'code', 'name', 'coreCourseId']
   });
 
   if (!course) {
@@ -673,8 +673,12 @@ export async function generateBankVariantsForQuestions(userId, params) {
     throw new Error('EduAI is not configured; cannot generate variants.');
   }
 
-  const rawCode = (course.code && course.code.trim()) || `COURSE-${course.id}`;
-  const courseCode = rawCode.replace(/\s+/g, '').toUpperCase();
+  // Preserve spacing so Core can resolve by code; prefer coreCourseId when linked.
+  const courseCode = (course.code && course.code.trim()) || `COURSE-${course.id}`;
+  const coreCourseId =
+    typeof course.coreCourseId === 'string' && course.coreCourseId.trim()
+      ? course.coreCourseId.trim()
+      : undefined;
 
   const topics = await Topics.findAll({
     where: { courseId: course.id },
@@ -752,6 +756,7 @@ Return exactly one question in the required JSON format.`;
           eduaiService.generateQuestions({
             prompt: promptText,
             courseCode,
+            courseId: coreCourseId,
             model,
             apiKeys,
             numQuestions: 1,
@@ -985,7 +990,7 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const baselineAssessment = await Assessments.findOne({
     where: { id: Number(baselineAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id'], required: true }]
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'code', 'coreCourseId'], required: true }]
   });
   if (!baselineAssessment) {
     throw new Error('Baseline assessment not found or course mismatch');
@@ -993,11 +998,19 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const variantAssessment = await Assessments.findOne({
     where: { id: Number(variantAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id'], required: true }]
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'code', 'coreCourseId'], required: true }]
   });
   if (!variantAssessment) {
     throw new Error('Variant assessment not found or course mismatch');
   }
+
+  const reviewCourse = baselineAssessment.course;
+  const reviewCourseCode =
+    (reviewCourse?.code && String(reviewCourse.code).trim()) || `COURSE-${courseId}`;
+  const reviewCoreCourseId =
+    typeof reviewCourse?.coreCourseId === 'string' && reviewCourse.coreCourseId.trim()
+      ? reviewCourse.coreCourseId.trim()
+      : undefined;
 
   const baselineVariants = await loadOrderedVariantsForAssessment(baselineAssessment.id);
   const variantVariants = await loadOrderedVariantsForAssessment(variantAssessment.id);
@@ -1076,7 +1089,8 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
     const response = await eduaiService.chat({
       model,
       apiKeys,
-      courseCode: `COURSE-${courseId}`,
+      courseId: reviewCoreCourseId,
+      courseCode: reviewCourseCode,
       messages: [
         { role: 'system', content: systemInstruction },
         { role: 'user', content: userPrompt }
@@ -1100,7 +1114,8 @@ Rules: no markdown, no code fences, no text before { or after }. Use double quot
       const retryResponse = await eduaiService.chat({
         model,
         apiKeys,
-        courseCode: `COURSE-${courseId}`,
+        courseId: reviewCoreCourseId,
+        courseCode: reviewCourseCode,
         messages: [
           { role: 'system', content: systemInstruction },
           { role: 'user', content: repairUser }
