@@ -48,6 +48,7 @@ export {
 } from "./course-list-view"
 export type {
   CourseListViewProps,
+  CourseListSection,
   CourseFilterGroup,
   CourseFilterOption,
 } from "./course-list-view"

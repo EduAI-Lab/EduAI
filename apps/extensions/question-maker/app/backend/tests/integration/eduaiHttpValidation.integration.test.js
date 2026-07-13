@@ -62,5 +62,14 @@ describe('EduAI HTTP validation (integration)', () => {
       expect(res.status).toBe(400);
       expect(String(res.body.error || '')).toMatch(/[Cc]ourse|required/i);
     });
+
+    it('returns 400 when numQuestions exceeds maxQuestions', async () => {
+      const res = await request(app)
+        .post('/api/eduai/generate-questions')
+        .set('Cookie', 'session=valid')
+        .send({ prompt: 'Write many MCQs', courseCode: 'TEST', numQuestions: 10000 });
+      expect(res.status).toBe(400);
+      expect(String(res.body.error || '')).toMatch(/numQuestions|exceed|max/i);
+    });
   });
 });

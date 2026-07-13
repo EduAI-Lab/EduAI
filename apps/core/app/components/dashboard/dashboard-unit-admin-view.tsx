@@ -33,7 +33,7 @@ export function DashboardUnitAdminView() {
   const quickActions: DashboardQuickAction[] = [
     {
       label: "Courses",
-      description: "Create and manage courses in your authorized departments.",
+      description: "Create and manage courses in your authorized course codes.",
       href: "/courses",
       icon: <IconBook2 size={16} stroke={1.75} />,
     },
