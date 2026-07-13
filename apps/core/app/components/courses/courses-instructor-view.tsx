@@ -31,6 +31,7 @@ import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
+import { buildDateListSections } from '~/lib/courses/date-list-sections'
 import {
   PolicyTooltip,
   usePolicyGate,
@@ -206,7 +207,8 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
         courses={courses}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
-        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
+        groupSections={buildDateListSections}
         getSearchText={(course) => `${course.name} ${course.code}`}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
