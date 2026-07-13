@@ -933,9 +933,9 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         throw new Error(`Unsupported file type: ${file.type}`);
     }
 
-    // Defense-in-depth: bound extracted text for every format. Catches PDF
-    // decompression bombs (pdf2md has no streaming hook) and any archive that
-    // slips past the per-entry ZIP caps.
+    // Defense-in-depth: bound the extracted text length before chunking, so an
+    // archive that slips past the per-entry ZIP caps still can't flood the
+    // chunking/embedding path.
     if (content.length > MAX_EXTRACTED_CONTENT_CHARS) {
       throw new Error(
         `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
