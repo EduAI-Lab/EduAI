@@ -265,7 +265,9 @@ exit
 
 ## Running Tests
 
-All test suites run inside Docker. This ensures every developer and CI run uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+Locally, all test suites run inside Docker. This ensures every developer uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+
+> **Note:** CI (`.github/workflows/pr-tests.yml`) runs the unit/integration suites natively on the runner via `turbo run test` against Postgres service containers instead — remote runners get no Docker layer cache, so the containerized suites rebuilt every image (including a full `npm ci` per image) on every run. E2E still runs the full dockerized stack, with image layers cached in the GitHub Actions cache.
 
 ### Prerequisites
 
