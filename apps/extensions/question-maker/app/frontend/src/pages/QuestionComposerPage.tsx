@@ -70,7 +70,7 @@ const DEFAULT_CHOICES: MCQChoice[] = [
   { letter: 'D', text: '' },
 ];
 
-const DEFAULT_MODEL = 'ollama:gpt-oss:120b';
+const DEFAULT_MODEL = 'vllm:qwen2.5-32b-instruct';
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 interface FormState {

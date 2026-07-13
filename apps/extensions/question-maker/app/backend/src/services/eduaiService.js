@@ -84,11 +84,13 @@ class EduAIService {
    * would report Google's state, never its own.
    */
   getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
-    if (forceProvider === "ollama") {
+    // UBC-hosted path is vLLM on cmps01 (7B/32B). Accept legacy `ollama` force
+    // so older status-chip callers still pin the campus provider.
+    if (forceProvider === "ollama" || forceProvider === "vllm") {
       return {
-        provider: "ollama",
-        model: "ollama:gpt-oss:120b",
-        apiKeys: { ollama: { isEnabled: true } },
+        provider: "vllm",
+        model: "vllm:qwen2.5-7b-instruct",
+        apiKeys: { vllm: { isEnabled: true } },
       };
     }
 
@@ -114,9 +116,9 @@ class EduAIService {
     }
 
     return {
-      provider: "ollama",
-      model: "ollama:gpt-oss:120b",
-      apiKeys: { ollama: { isEnabled: true } },
+      provider: "vllm",
+      model: "vllm:qwen2.5-7b-instruct",
+      apiKeys: { vllm: { isEnabled: true } },
     };
   }
 
@@ -131,6 +133,9 @@ class EduAIService {
     }
     if (provider === "ollama" && !merged.ollama) {
       merged.ollama = { isEnabled: true };
+    }
+    if (provider === "vllm" && !merged.vllm) {
+      merged.vllm = { isEnabled: true };
     }
     return merged;
   }
@@ -860,6 +865,8 @@ Please ensure the questions are appropriate for the course level and cover the k
         apiKeys,
         courseCode: "COSC 121",
         streaming: false,
+        // Status chips should fail fast — full extract uses a longer timeout.
+        timeoutMs: 20000,
         cookie,
       });
 
