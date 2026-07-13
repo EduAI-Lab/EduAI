@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ServiceStatus } from '@eduai/ui';
 import eduaiService from '../services/eduaiService';
-import { apiKeyStorage, isCloudProvider } from '../services/apiKeyStorage';
+import { apiKeyStorage, isCloudProvider, isCampusProvider } from '../services/apiKeyStorage';
 
 const POLL_MS = 60_000;
 
@@ -50,7 +50,7 @@ async function probeUbc(): Promise<ServiceStatus> {
     // enough — with no client key the backend may fall back to its own Google key
     // and would probe Cloud, so the UBC chip must pin the provider.
     const res = await eduaiService.testApiKey({}, { forceProvider: 'vllm' });
-    if (res?.success && res.provider === 'vllm') {
+    if (res?.success && isCampusProvider(res.provider)) {
       return { state: 'online', detail: 'UBC-hosted AI · Online.' };
     }
     if (res?.configured === false) {

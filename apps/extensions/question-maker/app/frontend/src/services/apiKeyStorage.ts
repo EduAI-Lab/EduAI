@@ -8,12 +8,20 @@ const ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
 
 export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic';
 
-/** Cloud (key-bearing) providers, as opposed to the UBC-hosted `ollama` path. */
+/** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
+export type CampusProvider = 'vllm' | 'ollama';
+
+/** Cloud (key-bearing) providers, as opposed to the UBC-hosted campus path. */
 export const CLOUD_PROVIDERS: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
 
 /** True when a provider id names a cloud provider (any supported one — not just Google). */
 export function isCloudProvider(provider: string | null | undefined): provider is AIProvider {
   return !!provider && (CLOUD_PROVIDERS as string[]).includes(provider);
+}
+
+/** True when a provider id names the UBC-hosted campus path (`vllm` or legacy `ollama`). */
+export function isCampusProvider(provider: string | null | undefined): provider is CampusProvider {
+  return provider === 'vllm' || provider === 'ollama';
 }
 
 /** Generates or retrieves a derived AES-GCM key for encrypting provider secrets in this browser. */
