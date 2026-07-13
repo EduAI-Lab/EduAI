@@ -27,26 +27,17 @@ function buildRequestId() {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// Number of trusted proxy hops between the public internet and this app, read from
-// `TRUSTED_PROXY_HOP_COUNT`. `x-forwarded-for` is appended left-to-right by each proxy, so the
-// rightmost entries are the ones our own infrastructure wrote and a client cannot forge. The true
-// client sits `hopCount` entries in from the right. See docs/LOGGING.md §3 and apps/core/.env.example.
+// Derive the client IP from the LAST `x-forwarded-for` entry.
 //
-// Default 0 = trust only the rightmost (immediate) hop — safe when the proxy count is unknown,
-// because the rightmost token is non-spoofable. Values below 0 or non-numeric fall back to 0.
-function resolveTrustedProxyHopCount(): number {
-  const parsed = Number(process.env.TRUSTED_PROXY_HOP_COUNT);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 0;
-  }
-  return Math.floor(parsed);
-}
-
-// Derive the client IP from `x-forwarded-for`, counting `hopCount` trusted proxy hops from the
-// right. Attacker-prepended entries on the left are ignored. Returns null when the header is
-// absent/empty or when the trusted-hop offset points past the start of the chain (misconfigured
-// hop count) — we fail closed rather than fall back to a spoofable leftmost token.
-function deriveClientIp(value: string | null, hopCount: number): string | null {
+// Deployment invariant (see docs/DEPLOYMENT.md): every app sits behind exactly one trusted reverse
+// proxy — Apache `ProxyPass` to Node on localhost, with no Cloudflare or second proxy in front and
+// Node not directly reachable. Apache's mod_proxy appends the real socket-peer address as the last
+// XFF entry, so the rightmost token is written by our own infrastructure and a client cannot forge
+// it: a spoofed `X-Forwarded-For: 1.2.3.4` becomes `1.2.3.4, <real-client>` and we take the latter.
+//
+// Returns null when the header is absent/empty (e.g. local dev with no proxy). If a second proxy is
+// ever added, this selection and its tests must be updated as part of that deployment change.
+function deriveClientIp(value: string | null): string | null {
   if (!value) {
     return null;
   }
@@ -56,16 +47,7 @@ function deriveClientIp(value: string | null, hopCount: number): string | null {
     .map((token) => token.trim())
     .filter((token) => token.length > 0);
 
-  if (tokens.length === 0) {
-    return null;
-  }
-
-  const index = tokens.length - 1 - hopCount;
-  if (index < 0) {
-    return null;
-  }
-
-  return tokens[index] ?? null;
+  return tokens[tokens.length - 1] ?? null;
 }
 
 export function getRequestContext(request: Request): RequestContext {
@@ -80,11 +62,10 @@ export function getRequestContext(request: Request): RequestContext {
 
   const requestId = request.headers.get("x-request-id")?.trim() || buildRequestId();
 
-  const ipAddress =
-    deriveClientIp(request.headers.get("x-forwarded-for"), resolveTrustedProxyHopCount()) ||
-    request.headers.get("x-real-ip")?.trim() ||
-    request.headers.get("cf-connecting-ip")?.trim() ||
-    null;
+  // Only x-forwarded-for is trusted: our single Apache proxy sets it. `x-real-ip` /
+  // `cf-connecting-ip` are not set by Apache, so honoring them would only add a client-forgeable
+  // spoof vector.
+  const ipAddress = deriveClientIp(request.headers.get("x-forwarded-for"));
 
   return {
     requestId,
