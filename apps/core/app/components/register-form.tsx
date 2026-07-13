@@ -50,8 +50,12 @@ export function RegisterForm({
             disabled={isLoading}
             className={fieldErrors?.email ? "border-destructive" : ""}
           />
-          {fieldErrors?.email && (
+          {fieldErrors?.email ? (
             <p className="text-sm text-destructive">{fieldErrors.email}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Must be a UBC address (e.g. you@student.ubc.ca or you@ubc.ca).
+            </p>
           )}
         </div>
         <div className="grid gap-3">

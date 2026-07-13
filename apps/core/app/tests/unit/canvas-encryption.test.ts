@@ -47,4 +47,31 @@ describe("canvas encryption", () => {
 
     expect(() => encrypt("secret")).toThrow("ENCRYPTION_KEY is not set");
   });
+
+  it("throws instead of returning ciphertext when the key was rotated", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const { encrypt, decrypt, CanvasCredentialDecryptError } = await import(
+      "~/lib/canvas/encryption"
+    );
+
+    const blob = encrypt("canvas-token");
+
+    vi.stubEnv("ENCRYPTION_KEY", "a-different-encryption-key-value");
+    expect(() => decrypt(blob)).toThrow(CanvasCredentialDecryptError);
+  });
+
+  it("throws instead of returning ciphertext when the auth tag fails verification", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
+    const { encrypt, decrypt, CanvasCredentialDecryptError } = await import(
+      "~/lib/canvas/encryption"
+    );
+
+    const blob = encrypt("canvas-token");
+    const [salt, iv, tag, ciphertext] = blob.split(":");
+    const tamperedCiphertext = Buffer.from(ciphertext, "base64");
+    tamperedCiphertext[0] ^= 0xff;
+    const tampered = `${salt}:${iv}:${tag}:${tamperedCiphertext.toString("base64")}`;
+
+    expect(() => decrypt(tampered)).toThrow(CanvasCredentialDecryptError);
+  });
 });

@@ -18,6 +18,7 @@ import { auth } from "~/lib/auth/server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { hashToken } from "~/lib/invitations/token.server";
 import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
+import { buildAuthSubRequest } from "~/lib/auth/auth-handler-request";
 import { seedUser, cleanupRbac } from "../helpers/rbac";
 
 import { loader as listLoader, action as createAction } from "~/routes/api/invitations";
@@ -40,7 +41,7 @@ let adminId = "";
 let unitAdminId = "";
 
 function uniqueEmail(): string {
-  const email = `invite-${randomUUID().slice(0, 8)}@test.local`;
+  const email = `invite-${randomUUID().slice(0, 8)}@ubc.ca`;
   emails.push(email);
   return email;
 }
@@ -149,6 +150,12 @@ describe("POST /api/invitations (create)", () => {
   it("rejects a UNIT_ADMIN invite without units (400)", async () => {
     asAdmin();
     const res = await createAction(createReq({ email: uniqueEmail(), role: "UNIT_ADMIN" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a non-UBC invite email (400, #567)", async () => {
+    asAdmin();
+    const res = await createAction(createReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
     expect(res.status).toBe(400);
   });
 
@@ -326,6 +333,13 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
     const res = await createAction(createReq({ email: uniqueEmail(), role: "ADMIN" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
+  });
+
+  it("rejects a non-UBC student invite from a unit admin (400, #567)", async () => {
+    await setPolicy("unitAdmins.canInvite", true, adminId);
+    asUnitAdmin();
+    const res = await createAction(createReq({ email: "stu@gmail.com", role: "STUDENT" }));
+    expect(res.status).toBe(400);
   });
 
   it("scopes the list to invitations the unit admin sent", async () => {
@@ -539,14 +553,33 @@ describe("accept flow", () => {
     const token = tokenFromAcceptUrl(created.acceptUrl);
     const body = { token, name: "Pat Prof", password: INVITE_TEST_PASSWORD, confirmPassword: INVITE_TEST_PASSWORD };
 
-    // recordPasswordHistory (called during Better Auth sign-up) uses $transaction
-    // too, so we let the first call pass and reject only the second one (promote).
-    let txCallCount = 0;
-    const realTx = prisma.$transaction.bind(prisma);
-    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation((...args: Parameters<typeof prisma.$transaction>) => {
-      txCallCount++;
-      if (txCallCount < 2) return (realTx as any)(...args);
-      return Promise.reject(new Error("db hiccup"));
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const txSpy = vi.spyOn(prisma, "$transaction").mockImplementation(async (fn, ...args) => {
+      if (typeof fn !== "function") {
+        return originalTransaction(fn as never, ...args);
+      }
+      // Fail only the promote-step invitation update inside a real transaction so
+      // password-history writes during sign-up still succeed and user.update rolls back.
+      return originalTransaction(async (tx) => {
+        const proxiedTx = new Proxy(tx, {
+          get(target, prop) {
+            if (prop === "invitation") {
+              return new Proxy(target.invitation, {
+                get(invTarget, invProp) {
+                  if (invProp === "update") {
+                    return () => Promise.reject(new Error("db hiccup"));
+                  }
+                  const value = (invTarget as unknown as Record<string, unknown>)[invProp as string];
+                  return typeof value === "function" ? value.bind(invTarget) : value;
+                },
+              });
+            }
+            const value = (target as unknown as Record<string, unknown>)[prop as string];
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        return fn(proxiedTx);
+      }, ...args);
     });
     const failed = (await acceptAction(acceptReq(body))) as any;
     txSpy.mockRestore();
@@ -586,5 +619,75 @@ describe("accept flow", () => {
     // PENDING with a live link lingering until natural expiry.
     const invite = await prisma.invitation.findUnique({ where: { tokenHash: hashToken(token) } });
     expect(invite?.status).toBe("REVOKED");
+  });
+});
+
+describe("public registration — UBC backend gate (§567)", () => {
+  // Drives auth.handler directly with a public /sign-up/email request (NO invite
+  // marker) so the §567 check inside the before-hook runs — the backend layer
+  // that catches API calls bypassing register.tsx's signUpSchema. Both cases use
+  // a Date.now offset to land past Better Auth's per-IP sign-up rate window.
+  function publicSignup(email: string, extra: Record<string, unknown> = {}): Promise<Response> {
+    const base = new Request("http://localhost/auth/register");
+    const req = buildAuthSubRequest("/api/auth/sign-up/email", base, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Public User", email, password: INVITE_TEST_PASSWORD, ...extra }),
+    });
+    return auth.handler(req);
+  }
+
+  it("rejects a non-UBC public signup and creates no account", async () => {
+    const email = `public-reject-${randomUUID().slice(0, 8)}@gmail.com`;
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 11_000);
+    let res: Response;
+    try {
+      res = await publicSignup(email);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(400);
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+  });
+
+  it("allows a UBC public signup (proves the hook reads the email, not a blanket block)", async () => {
+    const email = uniqueEmail(); // @ubc.ca, tracked for cleanup
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 22_000);
+    let res: Response;
+    try {
+      res = await publicSignup(email);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.ok).toBe(true);
+    expect(await prisma.user.findUnique({ where: { email } })).not.toBeNull();
+  });
+
+  // #970: additionalFields for role/isActive/authorizedUnits must have
+  // `input: false` so the raw sign-up endpoint can't be used to self-escalate.
+  it("ignores client-supplied role, isActive, and authorizedUnits on public signup", async () => {
+    const email = uniqueEmail();
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + 33_000);
+    let res: Response;
+    try {
+      res = await publicSignup(email, {
+        role: "ADMIN",
+        isActive: false,
+        authorizedUnits: ["SCIE"],
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+    expect(res.ok).toBe(true);
+
+    const created = await prisma.user.findUnique({ where: { email } });
+    expect(created).not.toBeNull();
+    expect(created?.role).toBe("STUDENT");
+    expect(created?.isActive).toBe(true);
+    expect(created?.authorizedUnits).toEqual([]);
   });
 });

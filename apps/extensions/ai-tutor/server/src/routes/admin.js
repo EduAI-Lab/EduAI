@@ -34,6 +34,7 @@ import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
+  deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   patchCoreEnrollmentRole,
@@ -265,6 +266,17 @@ router.delete(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
+      // Write through to Core first, so a later sync doesn't re-import the student (#812).
+      if (course.externalId && course.externalSource === 'EDUAI') {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+        const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
+        if (!coreEnrollment) {
+          return res.status(404).json({ error: 'Enrollment not found in Core' });
+        }
+        const cookie = getEduAiCookieForRequest(req);
+        await deleteCoreEnrollment(course.externalId, coreEnrollment.id, cookie);
+      }
+
       await prisma.courseEnrollment.deleteMany({
         where: {
           courseOfferingId: courseId,
@@ -274,7 +286,8 @@ router.delete(
 
       res.json({ ok: true });
     } catch (e) {
-      res.status(500).json({ error: String(e) });
+      const status = Number.isInteger(e?.status) ? e.status : 500;
+      res.status(status).json({ error: String(e) });
     }
   },
 );
@@ -442,6 +455,121 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
         ? 400
         : 500;
     res.status(status).json({ error: String(e.message || e) });
+  }
+});
+
+/**
+ * GET /admin/ai-traces — recent AiInteractionTrace rows for oversight.
+ *
+ * Auth: UNIT_ADMIN (scoped to `authorizedUnits` via CourseOffering.department),
+ *   ADMIN (unscoped).
+ * Query params: `unit` (department filter — for UNIT_ADMIN it must be one of
+ *   their authorized units), `courseId` (numeric CourseOffering id), `limit`
+ *   (default 50, max 200).
+ *
+ * Why: `AiInteractionTrace.userId` has no local FK (User is owned by Core), so
+ * display names are resolved the same way `/admin/courses/:courseId/enrollments`
+ * already does — via `listCoreAdminUsers` and an id->name map — rather than a
+ * Prisma include that can't exist.
+ */
+router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req, res) => {
+  const authUser = req.user;
+  const { unit } = req.query;
+
+  let numericCourseId = null;
+  if (req.query.courseId !== undefined) {
+    numericCourseId = Number(req.query.courseId);
+    if (!Number.isFinite(numericCourseId)) {
+      return res.status(400).json({ error: 'courseId must be a number' });
+    }
+  }
+
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
+
+  try {
+    const courseOfferingWhere = {};
+
+    if (authUser.role === 'UNIT_ADMIN') {
+      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      if (units.length === 0) {
+        return res.json([]);
+      }
+      if (unit) {
+        if (!units.includes(unit)) {
+          return res.status(403).json({ error: 'Not authorized for this unit' });
+        }
+        courseOfferingWhere.department = unit;
+      } else {
+        courseOfferingWhere.department = { in: units };
+      }
+    } else if (unit) {
+      // ADMIN scoping by unit is optional filtering, not an authorization boundary.
+      courseOfferingWhere.department = unit;
+    }
+
+    if (numericCourseId !== null) {
+      courseOfferingWhere.id = numericCourseId;
+    }
+
+    const traces = await prisma.aiInteractionTrace.findMany({
+      where: {
+        activity: {
+          lesson: { module: { courseOffering: courseOfferingWhere } },
+        },
+      },
+      include: {
+        activity: {
+          select: {
+            id: true,
+            title: true,
+            lesson: {
+              select: {
+                module: {
+                  select: {
+                    courseOfferingId: true,
+                    courseOffering: { select: { title: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    let userNameMap = new Map();
+    try {
+      const cookie = req.headers.cookie ?? '';
+      const coreUsers = await listCoreAdminUsers(cookie);
+      const rows = Array.isArray(coreUsers) ? coreUsers : [];
+      for (const u of rows) {
+        userNameMap.set(u.id, u.name ?? '');
+      }
+    } catch (err) {
+      console.warn('[admin] Could not fetch Core users for ai-traces', err.message);
+    }
+
+    const result = traces.map((t) => ({
+      id: t.id,
+      mode: t.mode,
+      knowledgeLevel: t.knowledgeLevel,
+      tutorModelId: t.tutorModelId,
+      supervisorModelId: t.supervisorModelId,
+      iterationCount: t.iterationCount,
+      finalOutcome: t.finalOutcome,
+      createdAt: t.createdAt,
+      user: { id: t.userId, name: userNameMap.get(t.userId) ?? null },
+      activity: { id: t.activity.id, title: t.activity.title },
+      courseId: t.activity.lesson.module.courseOfferingId,
+      courseTitle: t.activity.lesson.module.courseOffering?.title ?? null,
+    }));
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 

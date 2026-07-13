@@ -4,6 +4,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
 import { getPolicy, logPolicyDenial } from "../policy.server";
 import { INTERNAL_INVITE_SIGNUP_HEADER } from "./auth-handler-request";
+import { isUbcEmail, UBC_EMAIL_MESSAGE } from "./ubc-email";
 import {
   extractPolicyPassword,
   isStrongPassword,
@@ -108,9 +109,32 @@ export const auth = betterAuth({
             if (reused) {
               throw new APIError("BAD_REQUEST", {
                 message:
-                  "This password was used recently. Please choose a password you have not used in the last 10.",
+                  "This password was used recently. Please choose a password you have not used before.",
               });
             }
+          }
+        }
+      }
+
+      // #971: reject credential sign-in for deactivated users. Checked here
+      // (before the endpoint's own credential verification) so a deactivated
+      // account never gets a session in the first place — the get-session
+      // after-hook below only covers sessions that already exist. A dummy
+      // password hash keeps the timing profile identical to the "user not
+      // found" branch in better-auth's own sign-in handler, so this check
+      // can't be used to distinguish "wrong password" from "deactivated" by
+      // response latency.
+      if (ctx.path === "/sign-in/email") {
+        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+        const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
+        if (email) {
+          const targetUser = await prisma.user.findUnique({
+            where: { email },
+            select: { isActive: true },
+          });
+          if (targetUser && !targetUser.isActive) {
+            await ctx.context.password.hash(password);
+            throw new APIError("UNAUTHORIZED", { message: "Invalid email or password" });
           }
         }
       }
@@ -127,6 +151,35 @@ export const auth = betterAuth({
           message: "Public registration is disabled",
         });
       }
+      // §567: backend chokepoint for the UBC-only rule on public self-signup.
+      // Invitation acceptance returned above (its email was UBC-validated at
+      // invite creation), so this only guards public registration. Catches
+      // direct POSTs to /sign-up/email that bypass register.tsx's zod check.
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+      if (!isUbcEmail(email)) {
+        throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
+      }
+    }),
+    // #971: shared session-resolution guard. `/get-session` is the endpoint
+    // every `auth.api.getSession()` call in the app resolves to (they all run
+    // through this same hook pipeline, not just HTTP requests), so gating
+    // here closes the guard for every caller at once instead of patching
+    // each route individually. Handles the case where a user is deactivated
+    // *after* already holding a valid session: the next request treats them
+    // as signed out and the now-orphaned session row is deleted so a leaked
+    // or cached cookie can't be replayed later.
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/get-session") return;
+      const returned = ctx.context.returned as
+        | { session?: { token?: string }; user?: { isActive?: boolean } }
+        | null
+        | undefined;
+      if (!returned?.user || returned.user.isActive !== false) return;
+      const token = returned.session?.token;
+      if (token) {
+        await prisma.session.deleteMany({ where: { token } }).catch(() => {});
+      }
+      return null;
     }),
   },
   databaseHooks: {
@@ -170,20 +223,25 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
+      // input: false — these are only ever set server-side (admin/invitation
+      // flows), never accepted from the client on sign-up/update-user.
       role: {
         type: "string",
         defaultValue: "STUDENT",
         required: false,
+        input: false,
       },
       isActive: {
         type: "boolean",
         defaultValue: true,
         required: false,
+        input: false,
       },
       authorizedUnits: {
         type: "string[]",
         defaultValue: [],
         required: false,
+        input: false,
       },
     },
   },

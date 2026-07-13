@@ -84,7 +84,7 @@ beforeAll(async () => {
       name: "Integration Test Course",
       code: "INT 999",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2025,
       startDate: new Date("2025-09-01"),
     },
@@ -120,6 +120,56 @@ describe("GET /api/courses", () => {
   it("returns 401 when unauthenticated", async () => {
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(401);
+  });
+
+  // #315 §19: soft-deleted courses are invisible by default; an ADMIN may opt in
+  // with ?includeDeleted=true. The flag is ignored for non-ADMIN callers.
+  it("hides soft-deleted courses by default and surfaces them for ADMIN with ?includeDeleted=true", async () => {
+    const admin = await seedUser({ role: "ADMIN" });
+    const deleted = await seedCourse({ isPublished: true });
+    await prisma.course.update({
+      where: { id: deleted.id },
+      data: { deletedAt: new Date() },
+    });
+
+    try {
+      mockSession(admin);
+
+      // Default read: soft-deleted course is invisible even to ADMIN.
+      const defaultRes = await getCourses(makeGetRequest());
+      const defaultIds = (await defaultRes.json()).courses.map((c: { id: string }) => c.id);
+      expect(defaultIds).not.toContain(deleted.id);
+
+      // ADMIN forensics opt-in: soft-deleted course appears.
+      const inclRes = await getCourses(
+        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+      );
+      const inclIds = (await inclRes.json()).courses.map((c: { id: string }) => c.id);
+      expect(inclIds).toContain(deleted.id);
+    } finally {
+      await cleanupRbac({ userIds: [admin.id], courseIds: [deleted.id] });
+    }
+  });
+
+  it("ignores ?includeDeleted=true for a non-ADMIN caller", async () => {
+    const instructor = await seedUser({ role: "INSTRUCTOR" });
+    const deleted = await seedCourse({ isPublished: true });
+    await enroll(deleted.id, instructor.id, "INSTRUCTOR");
+    await prisma.course.update({
+      where: { id: deleted.id },
+      data: { deletedAt: new Date() },
+    });
+
+    try {
+      mockSession(instructor);
+      const res = await getCourses(
+        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+      );
+      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      expect(ids).not.toContain(deleted.id);
+    } finally {
+      await cleanupRbac({ userIds: [instructor.id], courseIds: [deleted.id] });
+    }
   });
 
   it("returns 200 scoped to enrollments for an INSTRUCTOR (#298)", async () => {
@@ -206,7 +256,7 @@ describe("GET /api/courses", () => {
         name: "Deleted Course",
         code: "DEL 999",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2025,
         startDate: new Date("2025-09-01"),
         deletedAt: new Date(),
@@ -236,7 +286,7 @@ describe("POST /api/courses", () => {
         name: "Forbidden Course",
         code: "FB 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2025,
         startDate: "2025-09-01",
         department: "COSC",
@@ -257,7 +307,7 @@ describe("POST /api/courses", () => {
     }));
     expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body).toHaveProperty("error");
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
   it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
@@ -266,7 +316,7 @@ describe("POST /api/courses", () => {
       name: "Bad Instructor Course",
       code: "BI 001",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2025,
       startDate: "2025-09-01",
       department: "COSC",
@@ -283,7 +333,7 @@ describe("POST /api/courses", () => {
       name: "Transaction Test Course",
       code: "TX 001",
       section: "002",
-      term: "Winter",
+      term: "W2",
       year: 2026,
       startDate: "2026-01-01",
       department: "COSC",
@@ -308,12 +358,14 @@ describe("POST /api/courses", () => {
       name: "No Instructor Course",
       code: "NI 001",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2026,
       startDate: "2026-09-01",
     }));
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
     expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
     const row = await prisma.course.findFirst({ where: { code: "NI 001" } });
     expect(row).toBeNull();
   });
@@ -326,7 +378,7 @@ describe("POST /api/courses", () => {
         name: "Wrong Unit Course",
         code: "WU 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
@@ -347,7 +399,7 @@ describe("POST /api/courses", () => {
         name: "Unit Admin Course",
         code: "UA 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",

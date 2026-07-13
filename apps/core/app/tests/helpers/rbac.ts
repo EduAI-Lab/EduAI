@@ -32,7 +32,9 @@ export async function seedUser(opts: {
   const suffix = randomUUID().slice(0, 8);
   const user = await prisma.user.create({
     data: {
-      email: `rbac-${role.toLowerCase()}-${suffix}@test.local`,
+      // UBC-only platform (#567): seeded users use a UBC domain so emails that
+      // flow into the invitation/registration validators stay valid.
+      email: `rbac-${role.toLowerCase()}-${suffix}@ubc.ca`,
       name: opts.name ?? `RBAC ${role} ${suffix}`,
       role,
       authorizedUnits: opts.authorizedUnits ?? [],
@@ -54,7 +56,7 @@ export async function seedCourse(opts: {
       name: opts.name ?? `RBAC Course ${suffix}`,
       code: `RBC ${suffix}`,
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2026,
       startDate: new Date("2026-09-01"),
       department: opts.department ?? null,
