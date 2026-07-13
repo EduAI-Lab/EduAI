@@ -232,14 +232,14 @@ export function AssessmentVariantPage() {
   const [assembling, setAssembling] = useState(false);
   const [lastAssembled, setLastAssembled] = useState<Array<{ id: number; name: string }>>([]);
   const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
-  const [variantModel, setVariantModel] = useState('ollama:gpt-oss:120b');
+  const [variantModel, setVariantModel] = useState('vllm:qwen2.5-32b-instruct');
   const [variantReadiness, setVariantReadiness] = useState<BaselineVariantReadiness | null>(null);
   const [variantReadinessLoading, setVariantReadinessLoading] = useState(false);
   const [variantUserPrompt, setVariantUserPrompt] = useState('');
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [aiReviewBaselineId, setAiReviewBaselineId] = useState<string>('');
   const [aiReviewVariantId, setAiReviewVariantId] = useState<string>('');
-  const [aiReviewModel, setAiReviewModel] = useState('ollama:gpt-oss:120b');
+  const [aiReviewModel, setAiReviewModel] = useState('vllm:qwen2.5-32b-instruct');
   const [aiReviewRubricOpen, setAiReviewRubricOpen] = useState(false);
   const [aiReviewRubricText, setAiReviewRubricText] = useState(DEFAULT_AI_JUDGE_RUBRIC);
   const [aiReviewResult, setAiReviewResult] = useState<AiReviewResult | null>(null);
@@ -288,7 +288,7 @@ export function AssessmentVariantPage() {
     if (availableModels.length === 0) return;
     const hasSelected = availableModels.some((m) => m.id === variantModel);
     if (hasSelected) return;
-    const preferred = availableModels.find((m) => m.id === 'ollama:gpt-oss:120b');
+    const preferred = availableModels.find((m) => m.id === 'vllm:qwen2.5-32b-instruct');
     setVariantModel(preferred?.id ?? availableModels[0].id);
   }, [availableModels, variantModel]);
 
@@ -304,7 +304,7 @@ export function AssessmentVariantPage() {
     if (availableModels.length === 0) return;
     const hasSelected = availableModels.some((m) => m.id === aiReviewModel);
     if (hasSelected) return;
-    const preferred = availableModels.find((m) => m.id === 'ollama:gpt-oss:120b');
+    const preferred = availableModels.find((m) => m.id === 'vllm:qwen2.5-32b-instruct');
     setAiReviewModel(preferred?.id ?? availableModels[0].id);
   }, [availableModels, aiReviewModel]);
 
@@ -1042,7 +1042,8 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
+                              <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (default)</SelectItem>
+                              <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct</SelectItem>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>
@@ -1253,7 +1254,8 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (default)</SelectItem>
+                              <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (default)</SelectItem>
+                              <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct</SelectItem>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>

@@ -644,7 +644,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const {
     questionIds,
     courseId,
-    model = 'ollama:gpt-oss:120b',
+    model = 'vllm:qwen2.5-32b-instruct',
     apiKeys = {},
     variantsToAdd = 1,
     variantPromptInstructions = null,
@@ -975,7 +975,7 @@ export async function reviewVariantExamWithAi(userId, params) {
     baselineAssessmentId,
     variantAssessmentId,
     courseId,
-    model = 'ollama:gpt-oss:120b',
+    model = 'vllm:qwen2.5-32b-instruct',
     apiKeys = {},
     rubricText = '',
     // If true, penalize low-usability slots when computing the overall score.

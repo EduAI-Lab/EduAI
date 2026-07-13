@@ -174,7 +174,7 @@ const defaultForm: FormState = {
     primaryTopicId: '',
     questionOrder: '',
     generationPrompt: '',
-    generationModel: 'ollama:gpt-oss:120b'
+    generationModel: 'vllm:qwen2.5-32b-instruct'
 };
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];

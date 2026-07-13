@@ -585,27 +585,28 @@ describe('getConnectivityTestParams', () => {
   it('falls back to the UBC-hosted path when no cloud key exists at all', () => {
     config.googleGenerativeAiApiKey = undefined;
     const params = eduaiService.getConnectivityTestParams({});
-    expect(params.provider).toBe('ollama');
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
   });
 
-  it('forceProvider "ollama" pins the UBC path even when a server Google key exists', () => {
+  it('forceProvider "ollama" pins the UBC vLLM path even when a server Google key exists', () => {
     // The UBC status chip probes independently: with a server Google key set,
-    // auto-selection would test Google, so the chip must force ollama to check
-    // its own path. Regression guard for the "empty keys isn't enough" bug.
+    // auto-selection would test Google, so the chip must force the campus path.
     config.googleGenerativeAiApiKey = 'server-google';
     const params = eduaiService.getConnectivityTestParams({}, 'ollama');
-    expect(params.provider).toBe('ollama');
-    expect(params.model).toBe('ollama:gpt-oss:120b');
-    expect(params.apiKeys.ollama.isEnabled).toBe(true);
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(params.apiKeys.vllm.isEnabled).toBe(true);
     expect(params.apiKeys.google).toBeUndefined();
   });
 
-  it('forceProvider "ollama" pins the UBC path even when a client cloud key is present', () => {
+  it('forceProvider "vllm" pins the UBC path even when a client cloud key is present', () => {
     const params = eduaiService.getConnectivityTestParams(
       { openai: { apiKey: 'sk-openai', isEnabled: true } },
-      'ollama',
+      'vllm',
     );
-    expect(params.provider).toBe('ollama');
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
   });
 });
 
@@ -615,15 +616,16 @@ describe('testApiKey forceProvider', () => {
     config.googleGenerativeAiApiKey = savedConfigKey;
   });
 
-  it('probes the UBC path (ollama) when forced, ignoring the server Google key', async () => {
+  it('probes the UBC path (vllm) when forced, ignoring the server Google key', async () => {
     config.googleGenerativeAiApiKey = 'server-google';
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
-    const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'ollama' });
+    const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'vllm' });
     expect(out.success).toBe(true);
-    expect(out.provider).toBe('ollama');
-    const [, body] = axios.post.mock.calls.at(-1);
-    expect(body.model).toBe('ollama:gpt-oss:120b');
-    expect(body.apiKeys.ollama.isEnabled).toBe(true);
+    expect(out.provider).toBe('vllm');
+    const [, body, opts] = axios.post.mock.calls.at(-1);
+    expect(body.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(body.apiKeys.vllm.isEnabled).toBe(true);
     expect(body.apiKeys.google).toBeUndefined();
+    expect(opts.timeout).toBe(20000);
   });
 });
