@@ -9,8 +9,7 @@ import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
   Breadcrumb,
@@ -154,15 +153,11 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggleRequest}
           />
-        ) : isTA ? (
-          <CoursesTaView
-            courses={courses.filter((c) => taCourseIds.includes(c.id))}
-          />
         ) : (
-          <CoursesStudentView
-            courses={courses.filter(
-              (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
-            )}
+          <CoursesMixedView
+            courses={courses}
+            taCourseIds={taCourseIds}
+            enrolledCourseIds={enrolledCourseIds}
           />
         )}
       </div>

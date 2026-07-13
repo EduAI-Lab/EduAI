@@ -18,7 +18,7 @@ export function DepartmentCombobox({
   value,
   onValueChange,
   disabled,
-  placeholder = 'Select department',
+  placeholder = 'Select course code',
 }: DepartmentComboboxProps) {
   const options: ComboboxOption[] = departments.map((d) => ({
     value: d.code,
@@ -36,8 +36,8 @@ export function DepartmentCombobox({
         }
       }}
       placeholder={placeholder}
-      searchPlaceholder="Search departments..."
-      emptyText="No department found."
+      searchPlaceholder="Search course codes..."
+      emptyText="No course code found."
       disabled={disabled}
     />
   )
