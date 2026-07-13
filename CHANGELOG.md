@@ -5,6 +5,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 11 — July 13–19, 2026]
+
+### Fixed
+
+- [question-maker, core] fix: QM OCR/EduAI `COURSE_REQUIRED` under cookie auth — prefer linked `coreCourseId` as Core `courseId`, preserve course-code spacing, and resolve common code variants in Core chat (e.g. `COSC121` → `COSC 121`); default campus models to vLLM 7B/32B (off retired `gpt-oss:120b`); drive pickers/probes from the live Core catalog; fix Assessment Variant empty-model `Select` JSX so Vite builds; keep OCR upload Save footer visible. (#1020, @superbolt08, 2026-07-13) — [#1022](https://github.com/EduAI-Lab/EduAI/pull/1022)
+
+
 ## [Week 10 — July 6–12, 2026]
 
 ### Added
