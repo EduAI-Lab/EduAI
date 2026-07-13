@@ -23,7 +23,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
-    allowedHosts: true,
+    // Explicit hosts only — avoid `allowedHosts: true` (DNS rebinding risk).
+    allowedHosts: ['localhost', '127.0.0.1', 'dev.questionmaker.eduai.ok.ubc.ca'],
     fs: {
       allow: [monorepoRoot],
     },
