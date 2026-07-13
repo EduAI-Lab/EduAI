@@ -18,12 +18,23 @@ describe('encrypt / decrypt', () => {
     expect(decrypt('')).toBe('');
   });
 
-  it('treats non-colon strings as legacy plaintext in decrypt', () => {
+  it('treats non-four-segment strings as legacy plaintext in decrypt', () => {
     expect(decrypt('plain-key-no-colons')).toBe('plain-key-no-colons');
+    expect(decrypt('only:two:parts')).toBe('only:two:parts');
   });
 
-  it('treats colon strings that are not encrypted blobs as legacy plaintext', () => {
-    expect(decrypt('not:an:encrypted:blob')).toBe('not:an:encrypted:blob');
+  it('throws CredentialDecryptError for malformed four-segment values', () => {
+    expect(isEncrypted('not:an:encrypted:blob')).toBe(false);
+    expect(() => decrypt('not:an:encrypted:blob')).toThrow(CredentialDecryptError);
+  });
+
+  it('throws when corruption makes an encrypted segment malformed', () => {
+    const blob = encrypt('canvas-api-key-12345');
+    // Replace the first salt character with '!' so the segment fails strict base64
+    // validation — isEncrypted() is false, but decrypt must still fail closed (#994).
+    const tampered = `!${blob.slice(1)}`;
+    expect(isEncrypted(tampered)).toBe(false);
+    expect(() => decrypt(tampered)).toThrow(CredentialDecryptError);
   });
 
   it('throws CredentialDecryptError when ciphertext is tampered', () => {
