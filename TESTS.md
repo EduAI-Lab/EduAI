@@ -479,6 +479,7 @@ Each section should use this format:
 | [`ai-service-status.test.ts`](apps/core/app/tests/unit/ai-service-status.test.ts) | `classifyCloudStatus` maps cloud API-key presence to online/offline (whitespace-only keys treated as absent) and names each configured provider; `resolveUbcBaseUrls` reads and trims the vLLM/Ollama env URLs and returns undefined for unset/blank ones (#764). |
 | [`command-palette.test.ts`](apps/core/app/tests/unit/command-palette.test.ts) | `paletteNavItems` RBAC filter — students get core links but no admin links, ADMIN sees the admin section, the policy-disabled UNIT_ADMIN invite link is dropped, and no disabled item is surfaced for any role (#764). |
 | [`product-tour.test.tsx`](apps/core/app/tests/unit/product-tour.test.tsx) | `ProductTour` force-starts on `?tour=1`, auto-skips anchored steps whose target is absent, marks the tour seen in localStorage when finished, and does not auto-start once already seen (#764). |
+| [`security-headers.test.ts`](apps/core/app/tests/unit/security-headers.test.ts) | HTTP security headers (#982): `generateNonce` freshness/base64; `applySecurityHeaders` sets the static headers in every env, gates HSTS + CSP to production, emits a strict nonce'd `script-src` (with `'strict-dynamic'` and Google Fonts) for HTML, and a locked-down `default-src 'none'` CSP for resource responses; and the root `middleware` stamps all six headers onto a real API (JSON) response while leaving an HTML response's existing nonce CSP untouched. |
 
 ---
 

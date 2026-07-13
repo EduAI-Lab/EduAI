@@ -20,7 +20,7 @@ export function generateNonce(): string {
  *   scripts. Google Fonts' stylesheet origin is whitelisted.
  * - `frame-ancestors 'none'` is the modern equivalent of `X-Frame-Options: DENY`.
  */
-function buildCsp(nonce: string): string {
+function buildHtmlCsp(nonce: string): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
@@ -36,16 +36,34 @@ function buildCsp(nonce: string): string {
 }
 
 /**
+ * CSP for non-document responses (JSON resource routes, redirects, errors).
+ *
+ * These bodies execute nothing and load no sub-resources, so everything is
+ * denied. No nonce is needed. `frame-ancestors 'none'` still blocks framing.
+ */
+function buildResourceCsp(): string {
+  return [
+    "default-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
+}
+
+/**
  * Sets the HTTP security headers on a response.
  *
  * The static headers (clickjacking, MIME-sniff, referrer, permissions) apply in
  * every environment. HSTS and CSP are production-only: on http localhost HSTS is
  * ignored, and a strict CSP would break Vite HMR's inline eval + websocket in dev.
+ *
+ * Pass `nonce` for document (HTML) responses — the CSP then carries a strict
+ * nonce'd `script-src`. Omit it for resource responses (JSON/redirects/errors),
+ * which receive a locked-down `default-src 'none'` policy instead.
  */
 export function applySecurityHeaders(
   headers: Headers,
-  nonce: string,
-  opts: { isProd: boolean },
+  opts: { isProd: boolean; nonce?: string },
 ): void {
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
@@ -60,6 +78,9 @@ export function applySecurityHeaders(
       "Strict-Transport-Security",
       "max-age=31536000; includeSubDomains",
     );
-    headers.set("Content-Security-Policy", buildCsp(nonce));
+    headers.set(
+      "Content-Security-Policy",
+      opts.nonce ? buildHtmlCsp(opts.nonce) : buildResourceCsp(),
+    );
   }
 }
