@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from 'react';
+import { PageLoader } from '@eduai/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessQm } from '@/lib/rbac/roles';
 import { AccessDeniedView } from '@/components/auth/AccessDeniedView';
@@ -21,11 +22,7 @@ export function QmAppGate({ children }: QmAppGateProps) {
   }, [isLoading, user]);
 
   if (isLoading || !user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!canAccessQm(user.role)) {

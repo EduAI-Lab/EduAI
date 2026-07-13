@@ -7,7 +7,10 @@ const u = (role: AtUser['role']): AtUser => ({ id: '1', role });
 describe('getNavForUser', () => {
   it("labels the student course list 'Courses' (#741)", () => {
     const nav = getNavForUser(u('STUDENT'));
-    expect(nav).toEqual([{ key: 'my-courses', title: 'Courses', href: '/student' }]);
+    expect(nav).toEqual([
+      { key: 'dashboard', title: 'Dashboard', href: '/dashboard' },
+      { key: 'my-courses', title: 'Courses', href: '/student' },
+    ]);
   });
 
   it("labels every instructor-shell role's course list 'Courses' (#741)", () => {
@@ -25,23 +28,24 @@ describe('getNavForUser', () => {
     }
   });
 
-  it('drops User Management and Enrollments from admin nav, keeps Bug Reports (#734/#735)', () => {
+  it('drops User Management and Enrollments from admin nav, keeps the Admin console (#734/#735)', () => {
     const nav = getNavForUser(u('ADMIN'));
     const keys = nav.map((i) => i.key);
     expect(keys).not.toContain('admin-users');
     expect(keys).not.toContain('admin-enrollments');
     expect(nav).toContainEqual({
       key: 'admin-bug-reports',
-      title: 'Bug Reports',
+      title: 'Admin',
       href: '/admin',
     });
   });
 
-  it('gives admins the shared Courses dashboard plus Bug Reports (#781)', () => {
+  it('gives admins the shared Courses dashboard plus the Admin console (#781)', () => {
     const nav = getNavForUser(u('ADMIN'));
     expect(nav).toEqual([
+      { key: 'dashboard', title: 'Dashboard', href: '/dashboard' },
       { key: 'admin-courses', title: 'Courses', href: '/instructor' },
-      { key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin' },
+      { key: 'admin-bug-reports', title: 'Admin', href: '/admin' },
     ]);
   });
 
@@ -62,6 +66,6 @@ describe('getCourseDetailTabs', () => {
 
   it('keeps submissions and feedback alongside analytics for instructors (#784)', () => {
     const tabs = getCourseDetailTabs(u('INSTRUCTOR')).map((tab) => tab.id);
-    expect(tabs).toEqual(['content', 'enrollments', 'submissions', 'feedback', 'analytics']);
+    expect(tabs).toEqual(['content', 'submissions', 'feedback', 'analytics']);
   });
 });

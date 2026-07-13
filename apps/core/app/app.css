@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "katex/dist/katex.min.css";
-@import "./styles/assistive-reading.css";
+@import "../../../packages/ui/src/styles/assistive-reading.css";
 @import "./styles/assistive-active-highlight.css";
 @import "./styles/streamdown.css";
 @source "../../../node_modules/streamdown/dist/index.js";
