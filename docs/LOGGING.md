@@ -91,7 +91,7 @@ Each row may contain:
 | Field | Personal data? | Notes |
 | --- | --- | --- |
 | `actorUserId`, `actorRole` | Yes (pseudonymous) | The acting user's ID and role. The **name** is shown in the UI via a live join to the user table, not stored on the log row. |
-| `ipAddress` | Yes | Origin IP, when provided by an upstream proxy header. Often null in local/dev. |
+| `ipAddress` | Yes | Client IP derived from `x-forwarded-for` using a trusted-proxy hop count (see **Client IP derivation** below). Often null in local/dev. |
 | `userAgent` | Yes | Browser/client string. |
 | `entityId` / `entityLabel` | Sometimes | The affected record (e.g. a user or course ID). For identity-related events `entityLabel` holds the subject's **email** (for user events, formatted as `name <email>` so users who share a display name stay distinguishable). |
 | `details` (JSON) | Minimized | Free-form context, **sanitized before write** (see below). |
@@ -101,6 +101,24 @@ Each row may contain:
 **Email addresses are stored** for identity-relevant events — login success/failure, logout, user created/updated/deleted, and invitation created/resent/revoked/accepted — so an admin can answer *who* without a fragile join (and, on a failed login, the attempted email is the only available subject identifier). This is a deliberate product decision recorded in `logging.server.ts`; `email` is intentionally **not** in the redaction deny-list. Re-adding `email` to that list restores full email redaction if a future privacy decision requires it.
 
 **Actor attribution.** If an actor's user record is later deleted, the log's `actorUserId` is nulled (`ON DELETE SET NULL`) but the `actorRole` captured at write time is retained, so the event remains attributable by role without retaining a foreign key to a deleted person.
+
+**Client IP derivation (trusted proxy).** `ipAddress` is derived in `app/lib/request-context.server.ts` from `x-forwarded-for` (XFF). Each proxy **appends** the address it received from, left-to-right, so the **leftmost** entry is client-controlled and forgeable while the **rightmost** entries are written by our own infrastructure. We therefore count trusted hops from the right using the env var **`TRUSTED_PROXY_HOP_COUNT`** (integer, default `0`):
+
+- The client IP is taken from the entry at position `len - 1 - TRUSTED_PROXY_HOP_COUNT`.
+- `0` (default) trusts only the **rightmost / immediate** hop — the safe choice when the deployment's proxy count is unknown, because the rightmost token cannot be forged by the client.
+- Set it to the **number of trusted proxies in front of the app** (e.g. Cloudflare + nginx = `2`) so derivation steps back past them to the real client.
+- If the count points past the start of the chain (misconfigured — too high), derivation **fails closed** (returns null and falls through to `x-real-ip` / `cf-connecting-ip`) rather than fall back to a spoofable leftmost token. Negative or non-numeric values are treated as `0`.
+
+**What breaks if set incorrectly:**
+
+| Setting vs. reality | Effect |
+| --- | --- |
+| Too **low** (e.g. `0` behind 2 proxies) | Logs the **innermost proxy's IP** instead of the real client. Attribution is imprecise but **not attacker-controllable** — safe-ish. |
+| Too **high** (e.g. `3` behind 1 proxy) | Offset underflows → `ipAddress` becomes **null** (or the `x-real-ip` fallback). Loss of attribution, not a spoof. |
+| **Exactly right** | The true originating client IP is recorded. |
+| **`0` with no proxy in front** (misconfigured prod / local dev) | A client that manually sends `X-Forwarded-For` can still **spoof** the value; a normal client (no XFF) records **null**. The socket peer IP is **not recoverable** under `react-router-serve`, so a trusted proxy in front of the app is a **hard requirement** for reliable IP attribution in production. |
+
+Never over-set the count "to be safe" — too high silently drops attribution. When unsure of the topology, leave it at `0` (rightmost, non-spoofable) and only raise it once the real proxy chain is known.
 
 ---
 
