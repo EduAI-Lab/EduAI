@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '../../../../packages/ui/src/styles/assistive-reading.css';
 @source "../node_modules/streamdown/dist/index.js";
 @source "../../../../node_modules/streamdown/dist/*.js";
 @source "../../../../node_modules/@streamdown/code/dist/*.js";
@@ -102,7 +103,7 @@ body {
   --popover-foreground: oklch(0.4386 0 0);
   --primary: oklch(0.192 0.055 259);
   --primary-foreground: oklch(1 0 0);
-  --primary-text: var(--primary);
+  --primary-text: oklch(0.55 0.16 252);
   --secondary: oklch(0.418 0.171 257);
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.9219 0 0);
@@ -199,10 +200,19 @@ body {
   --muted-foreground: oklch(0.68 0 0);
   --accent: oklch(0.684 0.14 232);
   --accent-foreground: oklch(1 0 0);
+  /* Error palette — flips for dark bg legibility */
   --color-error-100: oklch(0.23 0.06 27);
   --color-error-500: oklch(0.625 0.24 25);
   --color-error-600: oklch(0.7 0.22 25);
   --color-error-700: oklch(0.875 0.065 25);
+  /* Success palette — flips for dark bg legibility */
+  --color-success-100: oklch(0.23 0.06 145);
+  --color-success-500: oklch(0.554 0.155 145);
+  --color-success-700: oklch(0.875 0.065 145);
+  /* Warning palette — flips for dark bg legibility (previously missing → pale chips) */
+  --color-warning-100: oklch(0.25 0.055 80);
+  --color-warning-500: oklch(0.79 0.165 80);
+  --color-warning-700: oklch(0.88 0.07 85);
   --destructive: var(--color-error-500);
   --destructive-hover: var(--color-error-600);
   --destructive-foreground: oklch(1 0 0);
@@ -296,33 +306,3 @@ body {
   background: transparent;
 }
 
-/* Legacy AiTutor class aliases mapped to EduAI design tokens (visual parity only) */
-@layer components {
-  .input-field {
-    @apply flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 min-h-[44px];
-  }
-
-  .tag {
-    @apply inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground;
-  }
-
-  .tag-primary {
-    @apply bg-primary/10 text-primary;
-  }
-
-  .tag-accent {
-    @apply bg-accent/15 text-accent-foreground;
-  }
-}

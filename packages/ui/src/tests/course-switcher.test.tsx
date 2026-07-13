@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { CourseSwitcher } from "../course-switcher";
 
@@ -9,19 +9,20 @@ const COURSES = [
 ];
 
 describe("CourseSwitcher", () => {
-  it("shows the current course label on the trigger", () => {
+  it("shows the current course label", () => {
     render(
       <CourseSwitcher courses={COURSES} currentId={2} onSelect={() => {}} />,
     );
-    const trigger = screen.getByLabelText("Switch course");
-    expect(trigger).toHaveTextContent("MATH 200");
+    expect(screen.getByText("MATH 200")).toBeInTheDocument();
+    // The dropdown arrow is its own control, separate from the label.
+    expect(screen.getByLabelText("Switch course")).toBeInTheDocument();
   });
 
   it("falls back to a placeholder when the current id is unknown", () => {
     render(
       <CourseSwitcher courses={COURSES} currentId={999} onSelect={() => {}} />,
     );
-    expect(screen.getByLabelText("Switch course")).toHaveTextContent("Select course");
+    expect(screen.getByText("Select course")).toBeInTheDocument();
   });
 
   it("accepts string ids", () => {
@@ -32,6 +33,20 @@ describe("CourseSwitcher", () => {
         onSelect={() => {}}
       />,
     );
-    expect(screen.getByLabelText("Switch course")).toHaveTextContent("ENGL 100");
+    expect(screen.getByText("ENGL 100")).toBeInTheDocument();
+  });
+
+  it("renders the label as a clickable control that opens the current course", () => {
+    const onOpenCurrent = vi.fn();
+    render(
+      <CourseSwitcher
+        courses={COURSES}
+        currentId={2}
+        onSelect={() => {}}
+        onOpenCurrent={onOpenCurrent}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "MATH 200" }));
+    expect(onOpenCurrent).toHaveBeenCalledTimes(1);
   });
 });

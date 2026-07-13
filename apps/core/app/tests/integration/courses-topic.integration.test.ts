@@ -121,7 +121,7 @@ beforeAll(async () => {
       name: "Topics Integration Course",
       code: "TOP 999",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2025,
       startDate: new Date("2025-09-01"),
     },
