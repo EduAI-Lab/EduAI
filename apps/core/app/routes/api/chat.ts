@@ -470,12 +470,26 @@ export async function action({ request }: ActionFunctionArgs) {
         .filter((m): m is GenericMessage => m !== null),
     );
 
-    // Resolve course code to internal ID when needed
+    // Resolve course code to internal ID when needed.
+    // Prefer exact match; fall back to common whitespace/case variants because
+    // callers (e.g. QM before coreCourseId pass-through) sometimes send
+    // "COSC121" while Core stores "COSC 121". Prefer courseId when available.
     let resolvedCourseId: string | null = null;
     if (courseCode && typeof courseCode === "string") {
       try {
-        const course = await prisma.course.findFirst({ where: { code: courseCode, deletedAt: null } });
-        resolvedCourseId = course?.id || null;
+        const trimmed = courseCode.trim();
+        const compact = trimmed.replace(/\s+/g, "");
+        const spaced = compact.replace(/([A-Za-z]+)(\d+)/, "$1 $2");
+        const codeCandidates = [...new Set([trimmed, compact, spaced].filter(Boolean))];
+        for (const code of codeCandidates) {
+          const course = await prisma.course.findFirst({
+            where: { code, deletedAt: null },
+          });
+          if (course) {
+            resolvedCourseId = course.id;
+            break;
+          }
+        }
       } catch (e) {
         console.error("Failed to resolve course by code", e);
       }

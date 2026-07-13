@@ -17,7 +17,7 @@ const router = express.Router();
  * Confirm the caller has at least TA access to a QM course matching `courseCode`
  * before proxying to EduAI (#4). Resolves the local QM Course row by normalized
  * code and reuses the same access helper as the per-course middleware. Returns
- * the resolved access on success, or null when no accessible match exists.
+ * `{ course, access }` on success, or null when no accessible match exists.
  */
 async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
   const target = normalizeCourseCode(courseCode);
@@ -33,7 +33,7 @@ async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
   const matches = candidates.filter((c) => normalizeCourseCode(c.code) === target);
   for (const course of matches) {
     const access = await resolveAccessForCourse(reqUser, course, { cookie });
-    if (access && access.rank >= LEVELS.ta.rank) return access;
+    if (access && access.rank >= LEVELS.ta.rank) return { course, access };
   }
   return null;
 }
@@ -56,8 +56,8 @@ router.post('/chat', async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
-    if (!access) {
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!resolved) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this course',
@@ -65,28 +65,32 @@ router.post('/chat', async (req, res) => {
       });
     }
 
-    const course = {
-      id: 0,
-      name: `EduAI Course: ${courseCode}`,
-      code: courseCode
-    };
+    const { course: qmCourse } = resolved;
+    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
+    const coreCourseId =
+      typeof qmCourse.coreCourseId === 'string' && qmCourse.coreCourseId.trim()
+        ? qmCourse.coreCourseId.trim()
+        : undefined;
 
-    // Call EduAI service
+    // Call EduAI service — prefer Core courseId when the QM course is linked.
     const response = await eduaiService.chat({
       messages,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
-      courseCode,
-      streaming: streaming || false
+      courseId: coreCourseId,
+      courseCode: resolvedCourseCode,
+      streaming: streaming || false,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({
       success: true,
       data: response,
       course: {
-        id: course.id,
-        name: course.name,
-        code: course.code
+        id: qmCourse.id,
+        name: qmCourse.name,
+        code: resolvedCourseCode,
+        coreCourseId: coreCourseId ?? null,
       }
     });
   } catch (error) {
@@ -121,8 +125,8 @@ router.post('/generate-questions', async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
-    if (!access) {
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!resolved) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this course',
@@ -130,11 +134,12 @@ router.post('/generate-questions', async (req, res) => {
       });
     }
 
-    const course = {
-      id: 0,
-      name: `EduAI Course: ${courseCode}`,
-      code: courseCode
-    };
+    const { course: qmCourse } = resolved;
+    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
+    const coreCourseId =
+      typeof qmCourse.coreCourseId === 'string' && qmCourse.coreCourseId.trim()
+        ? qmCourse.coreCourseId.trim()
+        : undefined;
 
     // Call EduAI service to generate questions
     const mcqN =
@@ -144,13 +149,15 @@ router.post('/generate-questions', async (req, res) => {
 
     const questions = await eduaiService.generateQuestions({
       prompt,
-      courseCode,
+      courseCode: resolvedCourseCode,
+      courseId: coreCourseId,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
       numQuestions: numQuestions || 5,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || { factual: 40, analytical: 30, application: 30 },
-      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {})
+      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({
@@ -159,9 +166,10 @@ router.post('/generate-questions', async (req, res) => {
         questions,
         count: questions.length,
         course: {
-          id: course.id,
-          name: course.name,
-          code: course.code
+          id: qmCourse.id,
+          name: qmCourse.name,
+          code: resolvedCourseCode,
+          coreCourseId: coreCourseId ?? null,
         }
       }
     });

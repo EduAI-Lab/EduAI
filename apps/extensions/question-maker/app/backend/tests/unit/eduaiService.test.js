@@ -82,16 +82,26 @@ describe('chat', () => {
     const out = await eduaiService.chat({
       messages: [{ role: 'user', content: 'hi' }],
       courseCode: 'CS 101',
+      courseId: 'cuid-core-cs101',
     });
 
     expect(out).toEqual({ content: 'hello' });
     const [url, payload, opts] = axios.post.mock.calls[0];
     expect(url).toBe('http://eduai.test/api/chat');
     expect(payload.courseCode).toBe('CS 101');
+    expect(payload.courseId).toBe('cuid-core-cs101');
     // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
     expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
     expect(opts.headers['x-api-key']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
+  });
+
+  it('omits courseId from the payload when it is not provided', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'ok' } });
+    await eduaiService.chat({ messages: [], courseCode: 'BIO 101' });
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.courseCode).toBe('BIO 101');
+    expect(payload).not.toHaveProperty('courseId');
   });
 
   it('honors an explicit timeoutMs override', async () => {
@@ -134,8 +144,22 @@ describe('chat', () => {
 describe('generateQuestions', () => {
   const baseParams = { prompt: 'cells', courseCode: 'BIO 101' };
 
-  it('throws when prompt or courseCode is missing', async () => {
+  it('throws when prompt is missing, or both courseCode and courseId are missing', async () => {
     await expect(eduaiService.generateQuestions({ prompt: 'x' })).rejects.toThrow(/required/i);
+    await expect(eduaiService.generateQuestions({ courseCode: 'BIO 101' })).rejects.toThrow(/required/i);
+  });
+
+  it('accepts courseId without courseCode', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content: [{ content: 'Q?', description: 'd', difficulty: 'easy', reasoning_level: 'factual', type: 'SA', answer: 'a' }],
+      },
+    });
+    const out = await eduaiService.generateQuestions({ prompt: 'cells', courseId: 'cuid-core' });
+    expect(out).toHaveLength(1);
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-core');
+    expect(axios.post.mock.calls[0][1]).not.toHaveProperty('courseCode');
   });
 
   it('normalizes a plain array of SA questions', async () => {
