@@ -10,6 +10,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
+- [ai-tutor] test: Add component-level regression coverage for `StudentAiChat` and `StudentChatHistoryPanel` — tab switching maintains independent message history per mode; the API key dialog guards against an undefined `tempApiKey` crash when no key is configured (bug fix), validates via `validateKey`, and saves on success; send/receive round trip confirms user and assistant messages appear in order and input clears; chatId threading verifies the second request carries the `chatId` from the first response; history restoration calls `loadSessionMessages` and renders loaded messages; the history panel covers loading, empty state, session rows with mode badge and relative timestamp, active-session highlighting, and session/new-chat interactions. (#1003, @evanbones, 2026-07-13)
 
 ## [Week 10 — July 6–12, 2026]
 
