@@ -66,6 +66,10 @@ async function callEduAI({
   chatId = null,
   messageId = null,
   courseCode = null,
+  // Core Course CUID (AI Tutor `course.coreOfferingId`). Prefer this over
+  // courseCode — Core's interactive chat is course-scoped (#657) and exact
+  // code lookup fails with COURSE_REQUIRED when the code mismatches (#1021).
+  courseId = null,
   signal,
 }) {
   const endpoint = getEduAiChatUrl();
@@ -108,6 +112,7 @@ async function callEduAI({
     apiKeys,
     streaming: false,
     ...(chatId ? { chatId } : {}),
+    ...(courseId ? { courseId } : {}),
     ...(courseCode ? { courseCode } : {}),
   };
 
@@ -222,6 +227,8 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  courseCode = null,
+  courseId = null,
   signal,
 }) {
   const template = await getPromptTemplateBySlug('supervisor-prompt');
@@ -257,6 +264,8 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      courseCode,
+      courseId,
       signal,
     });
 
@@ -515,6 +524,8 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.userApiKey,
+        courseCode: context.courseCode,
+        courseId: context.courseId,
         signal: context.signal,
       });
 
@@ -576,6 +587,7 @@ async function generateWithSupervisor({
   chatId,
   messageId,
   courseCode,
+  courseId = null,
   signal,
 }) {
   const context = {
@@ -590,6 +602,8 @@ async function generateWithSupervisor({
     dualLoopEnabled,
     maxSupervisorIterations,
     lastFeedback: null,
+    courseCode,
+    courseId,
     signal,
   };
 
@@ -613,6 +627,7 @@ async function generateWithSupervisor({
       // the same turn; only the original turn reuses the caller's messageId.
       messageId: isRevision ? randomUUID() : messageId,
       courseCode,
+      courseId,
       signal,
     });
   };
@@ -639,6 +654,7 @@ export async function generateTeachResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -678,6 +694,7 @@ export async function generateTeachResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
@@ -717,6 +734,7 @@ export async function generateGuideResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -754,6 +772,7 @@ export async function generateGuideResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
@@ -795,6 +814,7 @@ export async function generateCustomResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -832,6 +852,7 @@ export async function generateCustomResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
