@@ -38,12 +38,22 @@ function isAuthenticatedNavigation(requestedUrl, finalUrl) {
   return !/\/(auth\/)?login\b/i.test(final.pathname);
 }
 
-export async function auditPage(page, { app, name, url, viewport, outDir }) {
+/** True when an anonymous session reached the requested public page (e.g. sign-in). */
+function isPublicPageNavigation(requestedUrl, finalUrl) {
+  const requested = new URL(requestedUrl);
+  const final = new URL(finalUrl);
+  if (final.origin !== requested.origin) return false;
+  return final.pathname === requested.pathname;
+}
+
+export async function auditPage(page, { app, name, url, viewport, outDir, requiresAuth = true }) {
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
   await page.goto(url, { waitUntil: 'networkidle' });
 
   const finalUrl = page.url();
-  const authOk = isAuthenticatedNavigation(url, finalUrl);
+  const authOk = requiresAuth
+    ? isAuthenticatedNavigation(url, finalUrl)
+    : isPublicPageNavigation(url, finalUrl);
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
