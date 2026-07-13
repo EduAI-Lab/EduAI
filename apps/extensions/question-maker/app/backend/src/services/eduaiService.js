@@ -5,6 +5,7 @@
 import axios from "axios";
 import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
+import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
@@ -155,26 +156,15 @@ class EduAIService {
 
   /**
    * Picks a lightweight model for connectivity checks. Prefers whichever cloud
-   * provider the caller has a key for (browser-stored key), then the server's
-   * Google key — so the badge reflects cloud availability for ANY supported cloud
-   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
-   * offline. Falls back to Ollama only when no cloud key exists at all.
-   *
-   * `forceProvider` overrides the auto-selection so a caller can probe a specific
-   * path regardless of what keys exist. The status chips rely on this: the UBC
-   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
-   * configured — otherwise the auto-selection would test Google and the UBC chip
-   * would report Google's state, never its own.
+   * provider the caller has a key for, then the server's Google key. Campus
+   * probes (`forceProvider` vllm/ollama) resolve the smallest active campus
+   * model from Core's live catalog when `campusModels` is provided.
    */
-  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
-    // UBC-hosted path is vLLM on cmps01 (7B/32B). Accept legacy `ollama` force
-    // so older status-chip callers still pin the campus provider.
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider, campusModels = null) {
+    // UBC-hosted path. Accept legacy `ollama` force so older status-chip callers
+    // still pin the campus provider.
     if (forceProvider === "ollama" || forceProvider === "vllm") {
-      return {
-        provider: "vllm",
-        model: "vllm:qwen2.5-7b-instruct",
-        apiKeys: { vllm: { isEnabled: true } },
-      };
+      return campusProbeParams(campusModels);
     }
 
     for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
@@ -198,11 +188,7 @@ class EduAIService {
       };
     }
 
-    return {
-      provider: "vllm",
-      model: "vllm:qwen2.5-7b-instruct",
-      apiKeys: { vllm: { isEnabled: true } },
-    };
+    return campusProbeParams(campusModels);
   }
 
   /** Fills in server-side provider keys when the client did not supply one (local dev). */
@@ -983,7 +969,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
+    let campusModels = null;
+    if (forceProvider === "ollama" || forceProvider === "vllm" || !Object.keys(clientApiKeys || {}).length) {
+      try {
+        campusModels = await this.listAIModels({ cookie });
+      } catch (err) {
+        console.warn(`${DEBUG_PREFIX} campus model catalog unavailable for probe`, err.message);
+      }
+    }
+
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(
+      clientApiKeys,
+      forceProvider,
+      campusModels,
+    );
     try {
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],

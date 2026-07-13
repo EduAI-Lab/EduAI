@@ -11,6 +11,7 @@ import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { IconSparkles, IconCircleCheck } from '@tabler/icons-react';
 import type { EduAIModelOption } from '../../services/eduaiService';
 import type { QuestionGenerationPhase } from '../../hooks/useEduAIStatus';
+import { isCampusModel } from '../../utils/aiModels';
 
 export interface QuestionAIControlsValue {
     generationPrompt: string;
@@ -66,7 +67,8 @@ export function QuestionAIControls({
     mode,
     disabled = false
 }: QuestionAIControlsProps) {
-    const isUbcModel = value.generationModel.startsWith('ollama');
+    const isUbcModel =
+        value.generationModel.startsWith('ollama') || value.generationModel.startsWith('vllm');
     const isExternal = !isUbcModel;
     const requiresKey = apiKeyStorage.requiresApiKey(value.generationModel);
     const providerName = apiKeyStorage.getProviderFromModel(value.generationModel);
@@ -115,16 +117,16 @@ export function QuestionAIControls({
                             <SelectItem value="__no_models" disabled>No models available</SelectItem>
                         ) : (
                             <>
-                                {availableModels.some((m) => m.provider === 'ollama') && (
+                                {availableModels.some((m) => isCampusModel(m)) && (
                                     <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">UBC Hosted</div>
                                 )}
-                                {availableModels.filter((m) => m.provider === 'ollama').map((m) => (
+                                {availableModels.filter((m) => isCampusModel(m)).map((m) => (
                                     <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
                                 ))}
-                                {availableModels.some((m) => m.provider !== 'ollama') && (
+                                {availableModels.some((m) => !isCampusModel(m)) && (
                                     <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">External</div>
                                 )}
-                                {availableModels.filter((m) => m.provider !== 'ollama').map((m) => (
+                                {availableModels.filter((m) => !isCampusModel(m)).map((m) => (
                                     <SelectItem key={m.id} value={m.id}>{m.label}{m.provider ? ` (${m.provider})` : ''}</SelectItem>
                                 ))}
                             </>

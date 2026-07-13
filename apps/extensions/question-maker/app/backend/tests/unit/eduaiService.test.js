@@ -589,11 +589,13 @@ describe('getConnectivityTestParams', () => {
     expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
   });
 
-  it('forceProvider "ollama" pins the UBC vLLM path even when a server Google key exists', () => {
-    // The UBC status chip probes independently: with a server Google key set,
-    // auto-selection would test Google, so the chip must force the campus path.
+  it('forceProvider "ollama" uses the smallest campus model from the live catalog', () => {
     config.googleGenerativeAiApiKey = 'server-google';
-    const params = eduaiService.getConnectivityTestParams({}, 'ollama');
+    const catalog = [
+      { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
+      { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+    ];
+    const params = eduaiService.getConnectivityTestParams({}, 'ollama', catalog);
     expect(params.provider).toBe('vllm');
     expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
     expect(params.apiKeys.vllm.isEnabled).toBe(true);
@@ -601,12 +603,16 @@ describe('getConnectivityTestParams', () => {
   });
 
   it('forceProvider "vllm" pins the UBC path even when a client cloud key is present', () => {
+    const catalog = [
+      { provider: { name: 'vllm' }, modelId: 'custom-campus-3b', name: '3B', isActive: true },
+    ];
     const params = eduaiService.getConnectivityTestParams(
       { openai: { apiKey: 'sk-openai', isEnabled: true } },
       'vllm',
+      catalog,
     );
     expect(params.provider).toBe('vllm');
-    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(params.model).toBe('vllm:custom-campus-3b');
   });
 });
 
@@ -618,6 +624,13 @@ describe('testApiKey forceProvider', () => {
 
   it('probes the UBC path (vllm) when forced, ignoring the server Google key', async () => {
     config.googleGenerativeAiApiKey = 'server-google';
+    axios.get.mockResolvedValue({
+      status: 200,
+      data: [
+        { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
+        { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+      ],
+    });
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
     const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'vllm' });
     expect(out.success).toBe(true);
