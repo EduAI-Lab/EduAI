@@ -5,6 +5,26 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [ui] feat: Extract the last forked chrome into `@eduai/ui` so all three apps render from one source — a shared `QuickActionsPanel` (dashboard quick-actions grid), `AnswerOption` (lettered MCQ choice row, default/selected/correct/incorrect), `CourseListView` declarative filter groups (`buildStatusFilterGroup`/`buildTermFilterGroup`/`buildDepartmentFilterGroup`, one MultiSelect per group, auto-hidden when a group has a single value), a sidebar-footer `AppSwitcher`, a `CourseHeroCard.topicsAction` slot, and `CourseSwitcher.onOpenCurrent`. Adopted across Core (5 course lists + 3 dashboards), QM, and AI Tutor. (#965, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor] feat: New surfaces to reach parity with Core/QM — a role-aware `/dashboard` landing page (real-data stat cards, continue-learning resume, quick actions), an in-app `/help` page, per-user Settings with an Accessibility tab wired to the shared Assistive-Mode reading treatment, and an admin AI-oversight tab surfacing captured `AiInteractionTrace` data. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor] feat: Feature-gap endpoints (no schema change) — manual grade override (`PATCH /activities/:id/submissions/:submissionId`), module editing (`PATCH /modules/:id`, role- and ownership-gated), content reuse (activity duplicate/import), and a cross-course `GET /me/dashboard-stats` rollup; submissions are enriched server-side with student names (resolved from Core via the service key) and human answer labels. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+### Changed
+
+- [ai-tutor] refactor: Full design-system redesign — every screen rebuilt on the shared `@eduai/ui` shell, cards, chat primitives, tables, and chart primitives; new solid-accent `ModuleHero`; redesigned module/lesson cards (accent rail, `PublishMenu`), a ground-up activity editor (Dialog add + import, click-a-letter correct-answer editor), a `SubmissionCard` grid with a grading dialog, hero-card dashboard panels, and course topics folded into the hero. The course Enrollments tab was removed (roster management is owned by Core), and the client-authored "guide nudge" was dropped so tutor replies only come from real model round-trips. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [core, question-maker] refactor: Adopt the newly-extracted shared surface — dashboards on `QuickActionsPanel`, course lists on the shared filter groups. QM moved course topics out of the deleted Topics tab into the hero (`CourseTopicsHeroAction`) and restyled the question composer (Tabler icon steps, persistent sticky save bar, live preview dropped); Core repositioned the course hero above the detail tabs so it stays visible on every tab. (#965, #939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+### Fixed
+
+- [core] fix: Fail closed on Canvas credential decrypt — `decrypt()` now throws on key rotation or auth-tag failure instead of returning ciphertext as a Bearer token; Canvas API routes return a 400 reconnect prompt when stored credentials cannot be decrypted, and encrypted student numbers fall back to unreadable (re-entry) rather than hard-500ing callers. (#1006, #980, @GlowyBlack, 2026-07-12)
+- [ai-tutor, ui] fix: Dark-mode contrast root cause — `--primary` never flips in `.dark`, so `--primary-text` / `text-primary` / `bg-primary` accents washed out; `--primary-text` given a fixed `oklch` value, accents moved to `accent`/`secondary` tokens, the shared `PromptInputTextarea` switched to `text-foreground`, tutor chat re-rendered to match Core's chat, and the six missing `.dark` `success`/`warning` palette overrides added (fixes the near-white "medium" chip). Also: `course-theme` no longer washes the whole card in accent, the progress track uses `bg-muted`, and the lesson `ModuleHero` description renders a plain-text excerpt instead of leaking raw Markdown. (#939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [ai-tutor, core, question-maker] fix: Assorted UI bugs — activity topic ids were `Number()`-coerced (cuid → `NaN`, dropping topic assignments); the API client crashed calling `res.json()` on a 204; the Core course switcher flashed name → code before its list resolved; the Core course hero vanished when leaving the Overview tab; and the QM composer's sticky action bar was trapped by the scroll container. (#939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+
+
 ## [Week 9 — June 29–July 5, 2026]
 
 ### Added

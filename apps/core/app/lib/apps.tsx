@@ -1,5 +1,4 @@
-import { IconBooks, IconMessageChatbot, IconSchool } from '@tabler/icons-react'
-import { QUESTION_MAKER_ROLES, type LauncherApp } from '@eduai/ui'
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui'
 import { getEduAiAppUrl, getAiTutorAppUrl } from '~/lib/extension-urls'
 import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
 
@@ -7,36 +6,18 @@ import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
 export const CURRENT_APP_ID = 'core'
 
 /**
- * Every EduAI app/extension, for the sidebar app switcher. Role gating is
- * applied by AppLauncher from each entry's `roles`; Core and AI Tutor are open
- * to all roles, Question Maker only to instructors/admins (rbac-matrix §4).
+ * Every EduAI app/extension, for the sidebar app switcher. Names/icons/colors/
+ * role-gating now live in the shared `@eduai/ui` registry (issue #764) so
+ * Core, AI Tutor, and Question Maker agree on one canonical list; this app
+ * only resolves its own per-env URLs and injects them.
  */
 export function getLauncherApps(): LauncherApp[] {
-  return [
-    {
-      id: 'core',
-      name: 'EduAI Core',
-      url: getEduAiAppUrl(),
-      icon: <IconSchool className="size-4" />,
-      description: 'Courses, materials & class hub',
-      color: 'oklch(0.580 0.150 250)',
+  return getSharedLauncherApps({
+    currentAppId: CURRENT_APP_ID,
+    urls: {
+      core: getEduAiAppUrl(),
+      aiTutor: getAiTutorAppUrl(),
+      questionMaker: getQuestionMakerUrl(),
     },
-    {
-      id: 'ai-tutor',
-      name: 'AI Tutor',
-      url: getAiTutorAppUrl(),
-      icon: <IconMessageChatbot className="size-4" />,
-      description: 'Chat-based study assistant',
-      color: 'oklch(0.560 0.130 165)',
-    },
-    {
-      id: 'question-maker',
-      name: 'Question Maker',
-      url: getQuestionMakerUrl(),
-      icon: <IconBooks className="size-4" />,
-      description: 'Build & manage assessments',
-      color: 'oklch(0.660 0.145 65)',
-      roles: QUESTION_MAKER_ROLES,
-    },
-  ]
+  })
 }

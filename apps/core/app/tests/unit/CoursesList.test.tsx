@@ -261,42 +261,6 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
 
-  it('groups older-term courses under "Previous Terms"', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-10-15'))
-    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', startDate: '2020-01-01', endDate: '2020-04-15' }
-    wrap(
-      <CoursesInstructorView
-        courses={[PUBLISHED_COURSE, oldCourse]}
-        onCreateCourse={NOOP}
-        onEditCourse={NOOP}
-        onDeleteCourse={NOOP}
-        onPublishToggle={NOOP}
-      />
-    )
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
-    expect(screen.getByText('COSC 999')).toBeInTheDocument()
-  })
-
-  it('groups not-yet-started courses under "Upcoming Terms"', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-10-15'))
-    const futureCourse = { ...PUBLISHED_COURSE, id: 'future1', code: 'COSC 555', startDate: '2026-01-01', endDate: '2026-04-15' }
-    wrap(
-      <CoursesInstructorView
-        courses={[PUBLISHED_COURSE, futureCourse]}
-        onCreateCourse={NOOP}
-        onEditCourse={NOOP}
-        onDeleteCourse={NOOP}
-        onPublishToggle={NOOP}
-      />
-    )
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
-    expect(screen.getByText('COSC 555')).toBeInTheDocument()
-  })
-
   it('labels the department field as "Course Code"', () => {
     wrap(
       <CoursesInstructorView
