@@ -224,6 +224,23 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     return res.status(403).json({ error: 'Activity is not available' });
   }
 
+  // #999 review: forward a client disconnect (e.g. the Stop button aborting
+  // the browser fetch) to the upstream EduAI call, so cancellation actually
+  // stops the in-flight model request instead of letting it run to
+  // completion in the background and still persist a session/trace/analytics
+  // event for a turn the student already cancelled.
+  const abortController = new AbortController();
+  const onClientClose = () => {
+    // `res` (not `req`) 'close' fires once when the underlying connection
+    // terminates — `req`'s 'close' fires as soon as the (small, already
+    // fully-parsed) request body stream ends, which happens long before the
+    // async handler below even runs, so it can't detect a real disconnect.
+    // `writableEnded` distinguishes "closed because we already responded"
+    // from "closed because the client bailed mid-request".
+    if (!res.writableEnded) abortController.abort();
+  };
+  res.on('close', onClientClose);
+
   try {
     // Stage 2: verify the client's chatId belongs to this user. Skip when no
     // chatId provided (new session — Core will mint one after the response).
@@ -259,6 +276,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       messageId,
       courseCode: getCourseCode(course),
       testableQuestions,
+      signal: abortController.signal,
     });
 
     // EduAI may mint a new chatId on the first reply; prefer that over the prior one.
@@ -300,9 +318,18 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       supervisorModelId,
     });
   } catch (error) {
+    if (abortController.signal.aborted) {
+      // Client already disconnected (Stop button / navigation) — the
+      // upstream EduAI call was cancelled via the forwarded signal above.
+      // Nothing to send back and nothing to persist for a turn the student
+      // cancelled.
+      return;
+    }
     console.error(`Error generating ${mode} guidance:`, error);
     const status = Number.isInteger(error?.status) ? error.status : 500;
     return res.status(status).json({ error: String(error.message || error) });
+  } finally {
+    res.removeListener('close', onClientClose);
   }
 }
 
