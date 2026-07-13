@@ -193,7 +193,7 @@ jobs:
           args=()
           for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
             args+=(--set "${target}.cache-from=type=gha,scope=${target}")
-            args+=(--set "${target}.cache-to=type=gha,scope=${target},mode=max")
+            args+=(--set "${target}.cache-to=type=gha,scope=${target},mode=max,ignore-error=true")
           done
           docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}"
 
