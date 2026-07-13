@@ -541,7 +541,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   );
 
   const handleOpenApiKeyDialog = useCallback(() => {
-    setTempApiKey(currentApiKey);
+    setTempApiKey(currentApiKey ?? '');
     setApiKeyError(null);
     setShowApiKeyDialog(true);
   }, [currentApiKey]);
