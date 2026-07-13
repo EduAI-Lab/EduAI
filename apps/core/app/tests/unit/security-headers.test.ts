@@ -4,6 +4,7 @@ import {
   applySecurityHeaders,
   generateNonce,
 } from "~/lib/security-headers.server";
+import { middleware } from "~/root";
 
 describe("generateNonce", () => {
   it("returns a fresh value on each call", () => {
@@ -20,7 +21,7 @@ describe("generateNonce", () => {
 describe("applySecurityHeaders", () => {
   it("always sets the static security headers", () => {
     const headers = new Headers();
-    applySecurityHeaders(headers, "abc", { isProd: false });
+    applySecurityHeaders(headers, { isProd: false });
 
     expect(headers.get("X-Frame-Options")).toBe("DENY");
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -34,7 +35,7 @@ describe("applySecurityHeaders", () => {
 
   it("omits HSTS and CSP outside production", () => {
     const headers = new Headers();
-    applySecurityHeaders(headers, "abc", { isProd: false });
+    applySecurityHeaders(headers, { isProd: false, nonce: "abc" });
 
     expect(headers.get("Strict-Transport-Security")).toBeNull();
     expect(headers.get("Content-Security-Policy")).toBeNull();
@@ -42,7 +43,7 @@ describe("applySecurityHeaders", () => {
 
   it("sets HSTS and CSP in production", () => {
     const headers = new Headers();
-    applySecurityHeaders(headers, "abc", { isProd: true });
+    applySecurityHeaders(headers, { isProd: true, nonce: "abc" });
 
     expect(headers.get("Strict-Transport-Security")).toBe(
       "max-age=31536000; includeSubDomains",
@@ -50,9 +51,9 @@ describe("applySecurityHeaders", () => {
     expect(headers.get("Content-Security-Policy")).not.toBeNull();
   });
 
-  it("embeds the given nonce and strict-dynamic in the CSP script-src", () => {
+  it("embeds the given nonce and strict-dynamic in the HTML CSP script-src", () => {
     const headers = new Headers();
-    applySecurityHeaders(headers, "test-nonce-123", { isProd: true });
+    applySecurityHeaders(headers, { isProd: true, nonce: "test-nonce-123" });
 
     const csp = headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("script-src");
@@ -60,9 +61,9 @@ describe("applySecurityHeaders", () => {
     expect(csp).toContain("'strict-dynamic'");
   });
 
-  it("whitelists Google Fonts origins and denies framing in the CSP", () => {
+  it("whitelists Google Fonts origins and denies framing in the HTML CSP", () => {
     const headers = new Headers();
-    applySecurityHeaders(headers, "abc", { isProd: true });
+    applySecurityHeaders(headers, { isProd: true, nonce: "abc" });
 
     const csp = headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain(
@@ -70,5 +71,72 @@ describe("applySecurityHeaders", () => {
     );
     expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
     expect(csp).toContain("frame-ancestors 'none'");
+  });
+
+  it("uses a locked-down resource CSP when no nonce is given", () => {
+    const headers = new Headers();
+    applySecurityHeaders(headers, { isProd: true });
+
+    const csp = headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain("script-src");
+    expect(csp).not.toContain("nonce");
+  });
+});
+
+// Exercises the real root middleware against actual Response objects, proving
+// that both an API (JSON) response and a page (HTML) response carry the right
+// headers — the gap the helper-only tests could not catch (#982, PR #1016).
+describe("root middleware", () => {
+  const runProd = async (response: Response): Promise<Response> => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      // Middleware ignores its first arg; a Response-returning next() is enough.
+      // Must await before restoring env — the isProd check runs after `await next()`.
+      return await (middleware[0] as any)(undefined, async () => response);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  };
+
+  it("applies security headers to an API (JSON) response", async () => {
+    const json = new Response(JSON.stringify({ status: "ok" }), {
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const res: Response = await runProd(json);
+
+    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Referrer-Policy")).toBe(
+      "strict-origin-when-cross-origin",
+    );
+    expect(res.headers.get("Permissions-Policy")).toBe(
+      "camera=(), microphone=(), geolocation=()",
+    );
+    expect(res.headers.get("Strict-Transport-Security")).toBe(
+      "max-age=31536000; includeSubDomains",
+    );
+    expect(res.headers.get("Content-Security-Policy")).toContain(
+      "default-src 'none'",
+    );
+  });
+
+  it("does not clobber the nonce CSP already set on an HTML response", async () => {
+    const nonceCsp =
+      "default-src 'self'; script-src 'self' 'nonce-abc' 'strict-dynamic'";
+    const html = new Response("<!doctype html><html></html>", {
+      headers: {
+        "Content-Type": "text/html",
+        "Content-Security-Policy": nonceCsp,
+      },
+    });
+
+    const res: Response = await runProd(html);
+
+    // entry.server owns the HTML response; middleware must leave it untouched.
+    expect(res.headers.get("Content-Security-Policy")).toBe(nonceCsp);
   });
 });

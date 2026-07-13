@@ -26,7 +26,7 @@ export default function handleRequest(
 ) {
   const nonce = generateNonce();
   const isProd = process.env.NODE_ENV === "production";
-  applySecurityHeaders(responseHeaders, nonce, { isProd });
+  applySecurityHeaders(responseHeaders, { isProd, nonce });
 
   // https://httpwg.org/specs/rfc9110.html#HEAD
   if (request.method.toUpperCase() === "HEAD") {
