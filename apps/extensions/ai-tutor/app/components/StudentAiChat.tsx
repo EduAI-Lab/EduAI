@@ -221,23 +221,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     clearActiveTabChat();
   }, [clearActiveTabChat]);
 
-  const handleRestoreSession = useCallback(
-    async (session: ApiChatSession) => {
-      setActiveTab(session.mode);
-      setActiveChatId(session.chatId);
-      setChatState((prev) => ({
-        ...prev,
-        [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
-      }));
-      const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
-      setChatState((prev) => ({
-        ...prev,
-        [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
-      }));
-    },
-    [activity?.id],
-  );
-
   useEffect(() => {
     const chatId = chatState[activeTab].chatId;
     if (chatId) setActiveChatId(chatId);
@@ -332,6 +315,37 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       }));
     },
     [],
+  );
+
+  const handleRestoreSession = useCallback(
+    async (session: ApiChatSession) => {
+      const tab = session.mode;
+      setActiveTab(tab);
+      setActiveChatId(session.chatId);
+      setChatState((prev) => ({
+        ...prev,
+        [tab]: { messages: [], input: '', loading: true, chatId: session.chatId },
+      }));
+      try {
+        const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages, loading: false },
+        }));
+      } catch (error) {
+        console.error('Failed to restore chat session:', error);
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages: [], loading: false },
+        }));
+        appendMessage(
+          tab,
+          'assistant',
+          "Couldn't load this conversation. Please open chat history and try again.",
+        );
+      }
+    },
+    [activity?.id, appendMessage],
   );
 
   const sendChat = useCallback(

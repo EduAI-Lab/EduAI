@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  IconAlertCircle,
   IconLoader2,
   IconMessageCircle,
   IconPlus,
@@ -57,16 +58,22 @@ export function StudentChatHistoryPanel({
 }: StudentChatHistoryPanelProps) {
   const [sessions, setSessions] = useState<ApiChatSession[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!activityId) {
       setSessions([]);
+      setLoadError(false);
       return;
     }
     setLoading(true);
+    setLoadError(false);
     try {
       const rows = await listChatSessions(activityId);
       setSessions(rows);
+    } catch {
+      setSessions([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -108,6 +115,19 @@ export function StudentChatHistoryPanel({
           ) : loading ? (
             <div className="flex items-center justify-center py-16">
               <IconLoader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10">
+                <IconAlertCircle size={22} className="text-destructive" stroke={1.5} />
+              </div>
+              <p className="mb-1 text-[14px] font-semibold text-foreground">Couldn&apos;t load history</p>
+              <p className="mb-4 text-[12px] text-muted-foreground">
+                Check your connection and try again.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void refresh()}>
+                Retry
+              </Button>
             </div>
           ) : sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
