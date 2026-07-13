@@ -27,10 +27,10 @@ describe('rbac permissions', () => {
     expect(canManageContent({ id: '1', role: 'UNIT_ADMIN' })).toBe(true);
   });
 
-  it('allows TA to view submissions but not analytics', () => {
+  it('grants TA read parity on submissions and analytics (#938)', () => {
     expect(canViewCourseSubmissions({ id: '1', role: 'TA' })).toBe(true);
     expect(canViewCourseFeedback({ id: '1', role: 'TA' })).toBe(true);
-    expect(canViewCourseAnalytics({ id: '1', role: 'TA' })).toBe(false);
+    expect(canViewCourseAnalytics({ id: '1', role: 'TA' })).toBe(true);
   });
 
   it('hides course feedback from students (#784)', () => {
@@ -50,21 +50,21 @@ describe('rbac permissions', () => {
     expect(canCreateCourse({ id: '1', role: 'ADMIN' })).toBe(false);
   });
 
-  it('limits bug reports to student and instructor', () => {
+  it('allows any authenticated role to submit a bug report (#938)', () => {
     expect(canSubmitBugReport({ id: '1', role: 'STUDENT' })).toBe(true);
     expect(canSubmitBugReport({ id: '1', role: 'INSTRUCTOR' })).toBe(true);
-    expect(canSubmitBugReport({ id: '1', role: 'TA' })).toBe(false);
+    expect(canSubmitBugReport({ id: '1', role: 'TA' })).toBe(true);
+    expect(canSubmitBugReport({ id: '1', role: 'UNIT_ADMIN' })).toBe(true);
+    expect(canSubmitBugReport({ id: '1', role: 'ADMIN' })).toBe(true);
   });
 });
 
 describe('role routing', () => {
-  it('routes all five roles to expected shells', () => {
-    expect(routeFromRouting('STUDENT')).toBe('/student');
-    expect(routeFromRouting('INSTRUCTOR')).toBe('/instructor');
-    expect(routeFromRouting('TA')).toBe('/instructor');
-    expect(routeFromRouting('UNIT_ADMIN')).toBe('/instructor');
-    // Admins land on the shared Courses dashboard (#781); Bug Reports stays a
-    // separate nav item at /admin.
-    expect(routeFromRouting('ADMIN')).toBe('/instructor');
+  it('routes all five roles to the shared dashboard (#938)', () => {
+    expect(routeFromRouting('STUDENT')).toBe('/dashboard');
+    expect(routeFromRouting('INSTRUCTOR')).toBe('/dashboard');
+    expect(routeFromRouting('TA')).toBe('/dashboard');
+    expect(routeFromRouting('UNIT_ADMIN')).toBe('/dashboard');
+    expect(routeFromRouting('ADMIN')).toBe('/dashboard');
   });
 });

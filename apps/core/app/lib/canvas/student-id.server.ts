@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import { decrypt, encrypt, isEncrypted } from "~/lib/canvas/encryption";
+import { decrypt, encrypt, isEncrypted, CanvasCredentialDecryptError } from "~/lib/canvas/encryption";
 
 /** Normalizes a student number / Canvas sis_user_id for comparison. */
 export function normalizeStudentId(value: string | null | undefined): string | null {
@@ -36,7 +36,14 @@ export function readStoredStudentId(stored: string | null | undefined): string |
   if (stored == null) {
     return null;
   }
-  return normalizeStudentId(decrypt(stored));
+  try {
+    return normalizeStudentId(decrypt(stored));
+  } catch (error) {
+    if (error instanceof CanvasCredentialDecryptError) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export function prepareStudentIdStorage(normalizedStudentId: string): {
