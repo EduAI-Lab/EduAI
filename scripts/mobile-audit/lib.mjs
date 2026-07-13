@@ -14,9 +14,36 @@ export async function loginToCore(page, coreUrl, { email, password }) {
   await page.waitForURL((url) => !url.pathname.startsWith('/auth/login'), { timeout: 15000 });
 }
 
+/**
+ * True when the navigation landed where it was told to, rather than being
+ * bounced to a login screen. AI Tutor and Question Maker never establish
+ * their own session — they authenticate a request by forwarding the
+ * incoming `Cookie` header to Core's `/api/sessions/validate`. A single
+ * `loginToCore()` call is enough for all three apps ONLY because Better
+ * Auth's dev cookie is host-only for `localhost` (no `Domain=` attribute set
+ * — `crossSubDomainCookies` is disabled unless `COOKIE_DOMAIN` is
+ * configured, and `useSecureCookies` is false over plain http://localhost)
+ * — cookies are scoped by hostname, not port per RFC 6265, so the same
+ * cookie is sent to :3000, :3001, and :5180 alike. If that ever stops being
+ * true (e.g. a dev COOKIE_DOMAIN override, or auditing a non-localhost
+ * deployment where each app is a real distinct origin), an unauthenticated
+ * request bounces to Core's login page on a *different* origin than the one
+ * requested — which this check catches instead of silently screenshotting
+ * a login page as if it were the target.
+ */
+function isAuthenticatedNavigation(requestedUrl, finalUrl) {
+  const requested = new URL(requestedUrl);
+  const final = new URL(finalUrl);
+  if (final.origin !== requested.origin) return false;
+  return !/\/(auth\/)?login\b/i.test(final.pathname);
+}
+
 export async function auditPage(page, { app, name, url, viewport, outDir }) {
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
   await page.goto(url, { waitUntil: 'networkidle' });
+
+  const finalUrl = page.url();
+  const authOk = isAuthenticatedNavigation(url, finalUrl);
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
@@ -37,6 +64,8 @@ export async function auditPage(page, { app, name, url, viewport, outDir }) {
     name,
     viewport: viewport.label,
     url,
+    finalUrl,
+    authOk,
     overflow,
     sidebarAriaOk,
     screenshotPath,
