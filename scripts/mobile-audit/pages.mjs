@@ -1,6 +1,6 @@
 export const APPS = {
   core: {
-    baseUrl: 'http://localhost:3000',
+    baseUrl: process.env.CORE_URL || 'http://localhost:3000',
     pages: [
       { name: 'sign-in', path: '/auth/login', requiresAuth: false },
       { name: 'home', path: '/', requiresAuth: true },
@@ -12,7 +12,7 @@ export const APPS = {
     ],
   },
   aiTutor: {
-    baseUrl: 'http://localhost:3001',
+    baseUrl: process.env.AI_TUTOR_URL || 'http://localhost:3001',
     pages: [
       { name: 'home', path: '/', requiresAuth: true },
       { name: 'student-list', path: '/student', requiresAuth: true },
@@ -21,7 +21,7 @@ export const APPS = {
     ],
   },
   questionMaker: {
-    baseUrl: 'http://localhost:5180',
+    baseUrl: process.env.QM_URL || 'http://localhost:5180',
     pages: [
       { name: 'course-selection', path: '/courses', requiresAuth: true },
       { name: 'dashboard', path: '/dashboard', requiresAuth: true },
