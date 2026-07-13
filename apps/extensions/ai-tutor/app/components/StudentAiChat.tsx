@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link } from 'react-router';
 import {
   Badge,
@@ -37,6 +45,7 @@ import {
   IconLoader2,
   IconMessageCircle,
   IconPencilPlus,
+  IconPlayerStop,
   IconSend,
   IconSparkles,
 } from '@tabler/icons-react';
@@ -47,7 +56,7 @@ import { useApiKeys } from '~/hooks/use-api-keys';
 import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
 import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
 import { cn } from '~/lib/utils';
-import api from '../lib/api';
+import api, { ApiTimeoutError } from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
 
 type ChatTab = 'teach' | 'guide' | 'custom';
@@ -174,6 +183,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  // #999: one in-flight AbortController per tab so a "Stop generating" click
+  // (or a tab switch away mid-request) can cancel that tab's request without
+  // touching the others.
+  const abortControllersRef = useRef<Partial<Record<ChatTab, AbortController>>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -324,6 +338,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     async (tab: ChatTab, overrideMessage?: string) => {
       if (!activity || !isUserReady) return;
 
+      // #998: guard against duplicate concurrent requests for this tab. The
+      // manual submit path is already gated by `canSend` (which checks
+      // `loading`), but the imperative `sendGuidePrompt` handle exposed to
+      // the parent route bypasses that — this guard is the single choke
+      // point both paths funnel through.
+      if (chatState[tab].loading) return;
+
       const modeEnabled =
         (tab === 'teach' && activity.enableTeachMode) ||
         (tab === 'guide' && activity.enableGuideMode) ||
@@ -358,6 +379,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       const messageId = generateMessageId();
 
+      const controller = new AbortController();
+      abortControllersRef.current[tab] = controller;
+
       setChatState((prev) => ({
         ...prev,
         [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : '', loading: true },
@@ -369,35 +393,47 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         const modelId = selectedModelId || DEFAULT_MODEL_ID;
         let response;
         if (tab === 'teach') {
-          response = await api.sendTeachMessage(activity.id, {
-            knowledgeLevel: level,
-            topicId,
-            message,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendTeachMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              topicId,
+              message,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         } else if (tab === 'guide') {
-          response = await api.sendGuideMessage(activity.id, {
-            knowledgeLevel: level,
-            message,
-            studentAnswer: normalizedStudentAnswer,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendGuideMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              message,
+              studentAnswer: normalizedStudentAnswer,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         } else {
-          response = await api.sendCustomMessage(activity.id, {
-            knowledgeLevel: level,
-            topicId,
-            message,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendCustomMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              topicId,
+              message,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         }
 
         const nextChatId = response.chatId ?? chatState[tab].chatId ?? null;
@@ -406,13 +442,24 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         }
         appendMessage(tab, 'assistant', response.message);
       } catch (error) {
-        console.error('AI chat failed:', error);
-        appendMessage(
-          tab,
-          'assistant',
-          'AI study buddy not available right now. Please try again later.',
-        );
+        if (controller.signal.aborted && !(error instanceof ApiTimeoutError)) {
+          // User clicked Stop — the in-progress turn is simply dropped, no
+          // error bubble (matches Core's stop-generating behavior).
+        } else if (error instanceof ApiTimeoutError) {
+          console.error('AI chat timed out:', error);
+          appendMessage(tab, 'assistant', 'That took too long to respond. Please try again.');
+        } else {
+          console.error('AI chat failed:', error);
+          appendMessage(
+            tab,
+            'assistant',
+            'AI study buddy not available right now. Please try again later.',
+          );
+        }
       } finally {
+        if (abortControllersRef.current[tab] === controller) {
+          delete abortControllersRef.current[tab];
+        }
         setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
       }
     },
@@ -475,6 +522,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const submitInput = useCallback(() => {
     if (canSend) void sendChat(activeTab);
   }, [activeTab, canSend, sendChat]);
+
+  // #999: lets the composer's stop control cancel the active tab's in-flight
+  // request (aborts the fetch in api.ts; sendChat's catch treats an
+  // already-aborted controller as a silent cancel, not an error).
+  const handleStop = useCallback(() => {
+    abortControllersRef.current[activeTab]?.abort();
+  }, [activeTab]);
 
   const handleSuggestedPromptClick = useCallback(
     (text: string) => {
@@ -781,7 +835,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                       ? 'Describe where you need guidance…'
                       : 'Ask a question…'
               }
-              disabled={chatDisabled}
+              disabled={chatDisabled || activeChat.loading}
               className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
             />
           </PromptInput>
@@ -806,15 +860,27 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
             <div className="flex-1" />
 
-            <Button
-              type="button"
-              size="icon"
-              onClick={submitInput}
-              disabled={!canSend}
-              aria-label="Send message"
-            >
-              <IconSend className="h-4 w-4" />
-            </Button>
+            {activeChat.loading ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleStop}
+                aria-label="Stop generating"
+              >
+                <IconPlayerStop className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon"
+                onClick={submitInput}
+                disabled={!canSend}
+                aria-label="Send message"
+              >
+                <IconSend className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
 
