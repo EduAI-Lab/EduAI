@@ -31,6 +31,7 @@ const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_CONTENT_ID = "app-sidebar-content"
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -187,6 +188,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          id={SIDEBAR_CONTENT_ID}
           className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
           style={
             {
@@ -228,6 +230,7 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        id={SIDEBAR_CONTENT_ID}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"
@@ -258,7 +261,8 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, isMobile, open, openMobile } = useSidebar()
+  const isExpanded = isMobile ? openMobile : open
 
   return (
     <Button
@@ -267,6 +271,8 @@ function SidebarTrigger({
       variant="ghost"
       size="icon"
       className={cn("size-7", className)}
+      aria-expanded={isExpanded}
+      aria-controls={SIDEBAR_CONTENT_ID}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
