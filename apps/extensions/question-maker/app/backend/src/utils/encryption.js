@@ -92,17 +92,26 @@ export function encrypt(plaintext) {
 }
 
 /**
- * Decrypts values produced by `encrypt`. Legacy plaintext (not matching our blob format)
- * is returned as-is; a format match that fails to decrypt throws instead of leaking
- * ciphertext back out where plaintext is expected.
+ * Decrypts values produced by `encrypt`. Legacy plaintext (not a four-segment blob)
+ * is returned as-is. Four-segment values are treated as encrypted format: malformed
+ * segments or GCM auth/decrypt failure throw instead of leaking ciphertext.
  */
 export function decrypt(encryptedData) {
   if (!encryptedData) {
     return encryptedData;
   }
 
-  if (!isEncrypted(encryptedData)) {
+  const parts = encryptedData.split(':');
+  // Anything other than salt:iv:tag:ciphertext is legacy plaintext.
+  if (parts.length !== 4) {
     return encryptedData;
+  }
+
+  // Four segments: fail closed on corruption/malformed format (#994 review).
+  if (!isEncrypted(encryptedData)) {
+    throw new CredentialDecryptError(
+      'Failed to decrypt credential: invalid or corrupted encrypted data format',
+    );
   }
 
   const encryptionKey = config.encryptionKey;
@@ -110,7 +119,6 @@ export function decrypt(encryptedData) {
     throw new Error('ENCRYPTION_KEY is not set in environment variables');
   }
 
-  const parts = encryptedData.split(':');
   const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
 
   const salt = decodeStrictBase64Segment(saltBase64, SALT_LENGTH);
@@ -118,7 +126,9 @@ export function decrypt(encryptedData) {
   const tag = decodeStrictBase64Segment(tagBase64, TAG_LENGTH);
 
   if (!salt || !iv || !tag) {
-    throw new Error('Invalid encrypted data format');
+    throw new CredentialDecryptError(
+      'Failed to decrypt credential: invalid or corrupted encrypted data format',
+    );
   }
 
   try {
@@ -132,6 +142,9 @@ export function decrypt(encryptedData) {
 
     return decrypted;
   } catch (cause) {
+    if (cause instanceof CredentialDecryptError) {
+      throw cause;
+    }
     throw new CredentialDecryptError(
       'Failed to decrypt credential: invalid key or corrupted data',
       { cause },
