@@ -10,6 +10,7 @@ import { MultiSelect } from "./ui/combobox"
 import { Skeleton } from "./ui/skeleton"
 import {
   groupCoursesByTerm,
+  termFromMonth,
   termLabel,
   termSortKey,
   type TermInfo,
@@ -56,6 +57,15 @@ export interface CourseFilterGroup<T> {
  * click, publish/edit actions, badges, accent) and any extra bespoke control —
  * is injected via `renderCard` and the `filters` slot. Do not fork this per app.
  */
+/** One renderable section in a course list. Omit `title` to render cards with no header. */
+export interface CourseListSection<T> {
+  key: string
+  title?: string
+  /** `term` = compact UBC term header; `simple` = muted text heading (e.g. date buckets). */
+  headerVariant?: "term" | "simple"
+  items: T[]
+}
+
 export interface CourseListViewProps<T> {
   /** Full course list for this role. Term grouping + search + filters run over it. */
   courses: T[]
@@ -65,6 +75,11 @@ export interface CourseListViewProps<T> {
   getKey: (course: T) => React.Key
   /** Extract canonical term info (term/year/startDate) for grouping + ordering. */
   getTermInfo: (course: T) => TermInfo
+  /**
+   * Optional override for how filtered courses are sectioned. When omitted, courses
+   * are grouped by canonical term code (the default shared layout).
+   */
+  groupSections?: (courses: T[]) => CourseListSection<T>[]
   /** Haystack (e.g. `"title code"`) matched against the search query. */
   getSearchText: (course: T) => string
   /** Declarative filter dimensions rendered as dropdowns in the toolbar. */
@@ -142,6 +157,7 @@ export function CourseListView<T>({
   renderCard,
   getKey,
   getTermInfo,
+  groupSections,
   getSearchText,
   filterGroups,
   matchesFilter,
@@ -195,17 +211,52 @@ export function CourseListView<T>({
     })
   }, [courses, search, matchesFilter, getSearchText, activeGroups, selected])
 
-  const groups = React.useMemo(
+  const termGroups = React.useMemo(
     () => groupCoursesByTerm(visible, getTermInfo),
     [visible, getTermInfo],
   )
-  // The current term is the most-recent one across ALL courses — not the top of
-  // the filtered view. Filtering down to a single past term must still label it
-  // "Previous term", so we key off the unfiltered ordering, not `groupIndex`.
-  const currentTermLabel = React.useMemo(
-    () => groupCoursesByTerm(courses, getTermInfo)[0]?.label,
-    [courses, getTermInfo],
-  )
+  // "Current term" reflects the real calendar date (UBC term calendar:
+  // Jan–Apr W2, May–Jun S1, Jul–Aug S2, Sep–Dec W1) — not whichever term
+  // happens to hold the most recently added course. A group chronologically
+  // after today is "Upcoming term"; before today, "Previous term".
+  const nowSortKey = React.useMemo(() => {
+    const now = new Date()
+    const term = termFromMonth(now.getMonth())
+    // `year` is the academic-session label (S1/S2/W1 share their calendar
+    // year; W2 belongs to the *previous* label, since it falls in Jan–Apr of
+    // the following calendar year — see lib/term.ts's TERM_RANK comment).
+    const year = term === "W2" ? now.getFullYear() - 1 : now.getFullYear()
+    return termSortKey({ term, year })
+  }, [])
+  const termRelative = React.useMemo(() => {
+    const map = new Map<string, "current" | "upcoming" | "previous">()
+    for (const group of termGroups) {
+      if (group.items.length === 0) continue
+      const sortKey = termSortKey(getTermInfo(group.items[0]))
+      map.set(
+        group.label,
+        sortKey === nowSortKey ? "current" : sortKey > nowSortKey ? "upcoming" : "previous",
+      )
+    }
+    return map
+  }, [termGroups, getTermInfo, nowSortKey])
+  // The current term always leads, even when a course has already been
+  // created for a future term (which would otherwise sort above it).
+  const orderedTermGroups = React.useMemo(() => {
+    const currentIndex = termGroups.findIndex((g) => termRelative.get(g.label) === "current")
+    if (currentIndex <= 0) return termGroups
+    const rest = termGroups.filter((_, i) => i !== currentIndex)
+    return [termGroups[currentIndex], ...rest]
+  }, [termGroups, termRelative])
+  const sections = React.useMemo<CourseListSection<T>[]>(() => {
+    if (groupSections) return groupSections(visible)
+    return orderedTermGroups.map((group) => ({
+      key: group.label,
+      title: group.label,
+      headerVariant: "term" as const,
+      items: group.items,
+    }))
+  }, [groupSections, visible, orderedTermGroups])
 
   const activeFilterCount =
     Object.values(selected).reduce((n, v) => n + (v?.length ?? 0), 0)
@@ -297,37 +348,47 @@ export function CourseListView<T>({
         noResultsState ?? emptyState
       ) : (
         <div className="space-y-10">
-          {groups.map((group) => (
-            <section key={group.label}>
-              {/* The term header (and its trailing separator line) always renders
-                  so the divider between sections stays visible even when a filter
-                  narrows the view to a single term. */}
-              <div className="mb-4 flex items-center gap-3">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-muted text-muted-foreground"
-                  aria-hidden="true"
-                >
-                  <IconCalendarEvent size={18} />
-                </span>
-                <div className="min-w-0">
-                  {/* We lead with the compact UBC code (e.g. "2026W2") and use the
-                      relative word as the subtitle — the long form
-                      ("Winter Term 2 2026") reads oddly as a heading. */}
-                  <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
-                    {group.label}
+          {sections.map((section) => (
+            <section key={section.key}>
+              {section.title ? (
+                section.headerVariant === "simple" ? (
+                  <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+                    {section.title}
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {group.label === currentTermLabel ? "Current term" : "Previous term"} ·{" "}
-                    {group.items.length} {group.items.length === 1 ? "course" : "courses"}
-                  </p>
-                </div>
-                <div
-                  className="ml-1 h-px flex-1 bg-gradient-to-r from-border to-transparent"
-                  aria-hidden="true"
-                />
-              </div>
+                ) : (
+                  <div className="mb-4 flex items-center gap-3">
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-muted text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <IconCalendarEvent size={18} />
+                    </span>
+                    <div className="min-w-0">
+                      {/* We lead with the compact UBC code (e.g. "2026W2") and use the
+                          relative word as the subtitle — the long form
+                          ("Winter Term 2 2026") reads oddly as a heading. */}
+                      <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
+                        {section.title}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {section.title && termRelative.get(section.title) === "current"
+                          ? "Current term"
+                          : section.title && termRelative.get(section.title) === "upcoming"
+                            ? "Upcoming term"
+                            : "Previous term"}{" "}
+                        · {section.items.length}{" "}
+                        {section.items.length === 1 ? "course" : "courses"}
+                      </p>
+                    </div>
+                    <div
+                      className="ml-1 h-px flex-1 bg-gradient-to-r from-border to-transparent"
+                      aria-hidden="true"
+                    />
+                  </div>
+                )
+              ) : null}
               <div className={gridClassName}>
-                {group.items.map((course) => (
+                {section.items.map((course) => (
                   <React.Fragment key={getKey(course)}>
                     {renderCard(course, courses.indexOf(course))}
                   </React.Fragment>
