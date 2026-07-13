@@ -10,6 +10,7 @@ import { Op } from 'sequelize';
 import { Course } from '../schema/Course.js';
 import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
 import { normalizeCourseCode } from '../services/courseCodeUtils.js';
+import { config } from '../config/settings.js';
 
 const router = express.Router();
 
@@ -120,6 +121,13 @@ router.post('/generate-questions', async (req, res) => {
       });
     }
 
+    const resolvedNumQuestions = parseInt(numQuestions, 10) || 5;
+    if (resolvedNumQuestions > config.maxQuestions) {
+      return res.status(400).json({
+        error: `numQuestions cannot exceed ${config.maxQuestions}`
+      });
+    }
+
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
     const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
@@ -148,7 +156,7 @@ router.post('/generate-questions', async (req, res) => {
       courseCode,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
-      numQuestions: numQuestions || 5,
+      numQuestions: resolvedNumQuestions,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || { factual: 40, analytical: 30, application: 30 },
       ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
