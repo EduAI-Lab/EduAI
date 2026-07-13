@@ -70,7 +70,9 @@ const DEFAULT_CHOICES: MCQChoice[] = [
   { letter: 'D', text: '' },
 ];
 
-const DEFAULT_MODEL = 'vllm:qwen2.5-32b-instruct';
+import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../utils/aiModels';
+
+const DEFAULT_MODEL = FALLBACK_GENERATION_MODEL;
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 interface FormState {
@@ -240,8 +242,7 @@ export function QuestionComposerPage() {
         setAvailableEduCourses(eduCourses);
         setForm((prev) => {
           if (models.length === 0 || models.some((m) => m.id === prev.generationModel)) return prev;
-          const preferred = models.find((m) => m.isDefault) ?? models[0];
-          return { ...prev, generationModel: preferred.id };
+          return { ...prev, generationModel: pickPreferredGenerationModel(models) };
         });
       } catch {
         if (!cancelled) {

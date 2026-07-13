@@ -25,6 +25,7 @@ import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { useOCRHistory } from '../../hooks/use-ocr-history';
 import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
 import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
+import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
 import type { OCRJob, StoredQuestion } from '../../types/ocr';
 
 // Configure PDF.js worker
@@ -288,7 +289,7 @@ export const QuestionUploadDialog = ({
         return `Fall ${year}`;
     });
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
-    const [aiModel, setAiModel] = useState('vllm:qwen2.5-32b-instruct');
+    const [aiModel, setAiModel] = useState(FALLBACK_GENERATION_MODEL);
     const [providerApiKey, setProviderApiKey] = useState('');
     const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [uploadSectionCollapsed, setUploadSectionCollapsed] = useState(true);
@@ -314,7 +315,7 @@ export const QuestionUploadDialog = ({
     const isExternalModel = useMemo(
         () =>
             selectedModel
-                ? selectedModel.provider !== 'ollama' && selectedModel.provider !== 'vllm'
+                ? !isCampusModel(selectedModel)
                 : apiKeyStorage.requiresApiKey(aiModel),
         [aiModel, selectedModel]
     );
@@ -400,6 +401,9 @@ export const QuestionUploadDialog = ({
             try {
                 const models = await eduaiService.listModels();
                 setAvailableModels(models);
+                setAiModel((prev) =>
+                    models.some((m) => m.id === prev) ? prev : pickPreferredGenerationModel(models),
+                );
             } catch (error) {
                 console.error('Failed to fetch AI models:', error);
                 setAvailableModels([]);
@@ -1112,7 +1116,7 @@ export const QuestionUploadDialog = ({
                                                             <>
                                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
                                                                 {availableModels
-                                                                    .filter((option) => option.provider === 'ollama')
+                                                                    .filter((option) => isCampusModel(option))
                                                                     .map((option) => (
                                                                         <SelectItem key={option.id} value={option.id}>
                                                                             {option.label}
@@ -1120,7 +1124,7 @@ export const QuestionUploadDialog = ({
                                                                     ))}
                                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
                                                                 {availableModels
-                                                                    .filter((option) => option.provider !== 'ollama')
+                                                                    .filter((option) => !isCampusModel(option))
                                                                     .map((option) => (
                                                                         <SelectItem key={option.id} value={option.id}>
                                                                             {option.label} ({option.provider})
@@ -1416,7 +1420,7 @@ export const QuestionUploadDialog = ({
                                             <>
                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
                                                 {availableModels
-                                                    .filter((option) => option.provider === 'ollama')
+                                                    .filter((option) => isCampusModel(option))
                                                     .map((option) => (
                                                         <SelectItem key={option.id} value={option.id}>
                                                             {option.label}
@@ -1424,7 +1428,7 @@ export const QuestionUploadDialog = ({
                                                     ))}
                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
                                                 {availableModels
-                                                    .filter((option) => option.provider !== 'ollama')
+                                                    .filter((option) => !isCampusModel(option))
                                                     .map((option) => (
                                                         <SelectItem key={option.id} value={option.id}>
                                                             {option.label} ({option.provider})

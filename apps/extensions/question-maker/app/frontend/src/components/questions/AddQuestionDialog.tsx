@@ -41,6 +41,7 @@ import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../../utils/aiModels';
 import {
     DIFFICULTY_META,
     difficultyChipClass,
@@ -174,7 +175,7 @@ const defaultForm: FormState = {
     primaryTopicId: '',
     questionOrder: '',
     generationPrompt: '',
-    generationModel: 'vllm:qwen2.5-32b-instruct'
+    generationModel: FALLBACK_GENERATION_MODEL
 };
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
@@ -579,10 +580,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 setAvailableModels(models);
                 setAvailableEduCourses(eduCourses);
                 if (models.length > 0) {
-                    const defaultModel = models.find((model) => model.isDefault) ?? models[0];
                     setForm((prev) => {
                         if (models.some((model) => model.id === prev.generationModel)) return prev;
-                        return { ...prev, generationModel: defaultModel.id };
+                        return { ...prev, generationModel: pickPreferredGenerationModel(models) };
                     });
                 }
             } catch (optionsError) {

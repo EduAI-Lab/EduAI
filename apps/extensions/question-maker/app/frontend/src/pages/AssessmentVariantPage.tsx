@@ -34,6 +34,7 @@ import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
+import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -232,14 +233,14 @@ export function AssessmentVariantPage() {
   const [assembling, setAssembling] = useState(false);
   const [lastAssembled, setLastAssembled] = useState<Array<{ id: number; name: string }>>([]);
   const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
-  const [variantModel, setVariantModel] = useState('vllm:qwen2.5-32b-instruct');
+  const [variantModel, setVariantModel] = useState(FALLBACK_GENERATION_MODEL);
   const [variantReadiness, setVariantReadiness] = useState<BaselineVariantReadiness | null>(null);
   const [variantReadinessLoading, setVariantReadinessLoading] = useState(false);
   const [variantUserPrompt, setVariantUserPrompt] = useState('');
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
   const [aiReviewBaselineId, setAiReviewBaselineId] = useState<string>('');
   const [aiReviewVariantId, setAiReviewVariantId] = useState<string>('');
-  const [aiReviewModel, setAiReviewModel] = useState('vllm:qwen2.5-32b-instruct');
+  const [aiReviewModel, setAiReviewModel] = useState(FALLBACK_GENERATION_MODEL);
   const [aiReviewRubricOpen, setAiReviewRubricOpen] = useState(false);
   const [aiReviewRubricText, setAiReviewRubricText] = useState(DEFAULT_AI_JUDGE_RUBRIC);
   const [aiReviewResult, setAiReviewResult] = useState<AiReviewResult | null>(null);
@@ -288,8 +289,7 @@ export function AssessmentVariantPage() {
     if (availableModels.length === 0) return;
     const hasSelected = availableModels.some((m) => m.id === variantModel);
     if (hasSelected) return;
-    const preferred = availableModels.find((m) => m.id === 'vllm:qwen2.5-32b-instruct');
-    setVariantModel(preferred?.id ?? availableModels[0].id);
+    setVariantModel(pickPreferredGenerationModel(availableModels));
   }, [availableModels, variantModel]);
 
   useEffect(() => {
@@ -304,8 +304,7 @@ export function AssessmentVariantPage() {
     if (availableModels.length === 0) return;
     const hasSelected = availableModels.some((m) => m.id === aiReviewModel);
     if (hasSelected) return;
-    const preferred = availableModels.find((m) => m.id === 'vllm:qwen2.5-32b-instruct');
-    setAiReviewModel(preferred?.id ?? availableModels[0].id);
+    setAiReviewModel(pickPreferredGenerationModel(availableModels));
   }, [availableModels, aiReviewModel]);
 
   useEffect(() => {
@@ -1042,8 +1041,9 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (default)</SelectItem>
-                              <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct</SelectItem>
+                              <SelectItem value="__loading" disabled>
+                                Loading models…
+                              </SelectItem>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>
@@ -1254,8 +1254,9 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (default)</SelectItem>
-                              <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct</SelectItem>
+                              <SelectItem value="__loading" disabled>
+                                Loading models…
+                              </SelectItem>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>
