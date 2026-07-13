@@ -5,7 +5,7 @@
  * its own availability — neither depends on the other.
  *
  *   - cloud: probed with the user's saved cloud key (offline when none is saved).
- *   - ubc:   probed with an explicit `forceProvider: 'ollama'`, pinning the
+ *   - ubc:   probed with an explicit `forceProvider: 'vllm'`, pinning the
  *            UBC-hosted path even when the server has its own cloud key.
  *
  * Feeds the shared `@eduai/ui` AIServiceIndicators. Polls on an interval; a manual
@@ -46,11 +46,11 @@ async function probeCloud(): Promise<ServiceStatus> {
 
 async function probeUbc(): Promise<ServiceStatus> {
   try {
-    // Force the UBC-hosted (ollama) path explicitly. Sending `{}` alone is not
-    // enough — with no client key the backend falls back to its own Google key
+    // Force the UBC-hosted (vLLM) path explicitly. Sending `{}` alone is not
+    // enough — with no client key the backend may fall back to its own Google key
     // and would probe Cloud, so the UBC chip must pin the provider.
-    const res = await eduaiService.testApiKey({}, { forceProvider: 'ollama' });
-    if (res?.success && res.provider === 'ollama') {
+    const res = await eduaiService.testApiKey({}, { forceProvider: 'vllm' });
+    if (res?.success && res.provider === 'vllm') {
       return { state: 'online', detail: 'UBC-hosted AI · Online.' };
     }
     if (res?.configured === false) {

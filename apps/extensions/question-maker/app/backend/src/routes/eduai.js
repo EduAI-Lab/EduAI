@@ -284,10 +284,17 @@ const FALLBACK_AI_MODELS = [
     isActive: true,
   },
   {
-    provider: 'ollama',
-    modelId: 'gpt-oss:120b',
-    name: 'GPT-OSS 120B (UBC hosted)',
-    description: 'UBC-hosted model. Requires UBC network/VPN.',
+    provider: 'vllm',
+    modelId: 'qwen2.5-7b-instruct',
+    name: 'Qwen2.5 7B Instruct (UBC hosted)',
+    description: 'UBC-hosted vLLM. Requires UBC network/VPN. Fast connectivity probe.',
+    isActive: true,
+  },
+  {
+    provider: 'vllm',
+    modelId: 'qwen2.5-32b-instruct',
+    name: 'Qwen2.5 32B Instruct (UBC hosted)',
+    description: 'UBC-hosted vLLM. Requires UBC network/VPN. Preferred for extraction.',
     isActive: true,
   },
 ];

@@ -288,7 +288,7 @@ export const QuestionUploadDialog = ({
         return `Fall ${year}`;
     });
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
-    const [aiModel, setAiModel] = useState('ollama:gpt-oss:120b');
+    const [aiModel, setAiModel] = useState('vllm:qwen2.5-32b-instruct');
     const [providerApiKey, setProviderApiKey] = useState('');
     const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [uploadSectionCollapsed, setUploadSectionCollapsed] = useState(true);
@@ -312,7 +312,10 @@ export const QuestionUploadDialog = ({
         [aiModel, availableModels]
     );
     const isExternalModel = useMemo(
-        () => (selectedModel ? selectedModel.provider !== 'ollama' : !aiModel.startsWith('ollama')),
+        () =>
+            selectedModel
+                ? selectedModel.provider !== 'ollama' && selectedModel.provider !== 'vllm'
+                : apiKeyStorage.requiresApiKey(aiModel),
         [aiModel, selectedModel]
     );
 

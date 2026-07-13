@@ -141,9 +141,9 @@ export const apiKeyStorage = {
     return null;
   },
 
-  /** Returns true when the selected model requires a provider API key (i.e., not ollama). */
+  /** Returns true when the selected model requires a provider API key (cloud only). */
   requiresApiKey(modelId: string): boolean {
-    return !modelId.startsWith('ollama');
+    return !modelId.startsWith('ollama') && !modelId.startsWith('vllm');
   },
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
@@ -151,6 +151,13 @@ export const apiKeyStorage = {
     if (modelId.startsWith('ollama')) {
       return {
         ollama: {
+          isEnabled: true
+        }
+      };
+    }
+    if (modelId.startsWith('vllm')) {
+      return {
+        vllm: {
           isEnabled: true
         }
       };

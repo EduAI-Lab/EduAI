@@ -215,7 +215,10 @@ class EduAIService {
                     label: model.name ?? model.modelId,
                     provider: model.provider?.name ?? String(model.provider ?? 'unknown'),
                     description: model.description,
-                    isDefault: model.modelId === 'gpt-oss:120b' || model.modelId === 'gemini-2.5-flash',
+                    isDefault:
+                        model.modelId === 'qwen2.5-32b-instruct' ||
+                        model.modelId === 'qwen2.5-7b-instruct' ||
+                        model.modelId === 'gemini-2.5-flash',
                 }));
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
