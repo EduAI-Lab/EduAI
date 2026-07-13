@@ -100,7 +100,7 @@ test.describe('STUDENT access', () => {
       name: 'Sneaky Course',
       code: 'HACK 101',
       section: '001',
-      term: 'Fall',
+      term: 'W1',
       year: '2026',
     });
     const res = await request.post(`${CORE_URL}/api/courses`, {

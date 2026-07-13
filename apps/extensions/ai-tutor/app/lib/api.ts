@@ -27,6 +27,7 @@ import type {
   AdminEnrollmentData,
   AdminAiModelPolicy,
   AdminUser,
+  Activity,
   ActivityAnswerResult,
   ActivityAnalyticsRow,
   ActivityFeedbackRow,
@@ -46,6 +47,72 @@ import type {
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
+ * Local response shapes for endpoints not yet modeled in `./types`. Kept here
+ * (rather than in the shared types file, which this module does not own)
+ * until the canonical types land; fields are optional wherever the server
+ * response shape isn't locked down yet, to avoid fabricating a contract.
+ */
+export interface GradedSubmission extends SubmissionRow {
+  score?: number | null;
+  feedback?: string | null;
+}
+
+export interface ImportableActivity {
+  id: number;
+  title?: string | null;
+  question: string;
+  type?: 'MCQ' | 'SHORT_TEXT';
+  lessonId?: number;
+  lessonTitle?: string | null;
+  moduleTitle?: string | null;
+  courseId?: number;
+  courseTitle?: string | null;
+}
+
+export interface DashboardStats {
+  enrolledCourses?: number;
+  coursesInProgress?: number;
+  coursesCompleted?: number;
+  yourCourses?: number;
+  publishedCourses?: number;
+  draftCourses?: number;
+  totalUsers?: number;
+  totalCourses?: number;
+  openBugReports?: number;
+  totalBugReports?: number;
+  pendingSubmissions?: number;
+  [key: string]: unknown;
+}
+
+export interface AiTraceRow {
+  id: number;
+  mode?: string | null;
+  knowledgeLevel?: string | null;
+  tutorModelId?: string | null;
+  supervisorModelId?: string | null;
+  iterationCount?: number | null;
+  finalOutcome?: string | null;
+  createdAt?: string;
+  user?: { id: string; name?: string | null } | null;
+  activity?: { id: number; title?: string | null } | null;
+  courseId?: number | null;
+  courseTitle?: string | null;
+}
+
+/**
+ * Thrown when the request never reached the server (e.g. connection refused
+ * because the API is still booting on a fresh dev-stack start). Distinct from
+ * an authenticated-but-rejected response so callers can retry instead of
+ * treating it as "logged out".
+ */
+export class ApiNetworkError extends Error {
+  constructor(message = 'Network request failed') {
+    super(message);
+    this.name = 'ApiNetworkError';
+  }
+}
+
+/**
  * Single fetch wrapper for the entire API surface. Every caller goes through
  * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
@@ -56,14 +123,19 @@ async function http(path: string, init?: RequestInit) {
     'Content-Type': 'application/json',
   };
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...headers,
-      ...init?.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...headers,
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new ApiNetworkError();
+  }
 
   if (!res.ok) {
     // 401 = unauthenticated → bounce to Core login so a session can be
@@ -80,11 +152,19 @@ async function http(path: string, init?: RequestInit) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
   }
+  // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
+  // empty payload, so short-circuit to null.
+  if (res.status === 204) return null;
   return res.json();
 }
 
 export const api = {
   me: () => http('/api/me') as Promise<{ user: User | null }>,
+  aiStatus: () =>
+    http('/api/ai-status') as Promise<{
+      cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+      ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+    }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   updateCourse: (
@@ -139,6 +219,18 @@ export const api = {
     http(`/api/modules/${moduleId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateModule: (
+    moduleId: number,
+    payload: { title?: string; description?: string | null; position?: number },
+  ) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteModule: (moduleId: number) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'DELETE',
+    }),
   lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
   createLesson: (
     moduleId: number,
@@ -156,6 +248,18 @@ export const api = {
     http(`/api/lessons/${lessonId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateLesson: (
+    lessonId: number,
+    payload: { title?: string; contentMd?: string | null; position?: number },
+  ) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteLesson: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'DELETE',
+    }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
   createActivity: (
@@ -171,8 +275,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId: number;
-      secondaryTopicIds?: number[];
+      mainTopicId: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
@@ -195,8 +299,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId?: number;
-      secondaryTopicIds?: number[];
+      mainTopicId?: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
@@ -397,6 +501,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  gradeSubmission: (
+    activityId: number,
+    submissionId: number,
+    body: { score?: number; isCorrect?: boolean },
+  ) =>
+    http(`/api/activities/${activityId}/submissions/${submissionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<GradedSubmission>,
+  duplicateActivity: (activityId: number) =>
+    http(`/api/activities/${activityId}/duplicate`, {
+      method: 'POST',
+    }) as Promise<Activity>,
+  importActivity: (lessonId: number, sourceActivityId: number) =>
+    http(`/api/lessons/${lessonId}/activities/import`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceActivityId }),
+    }) as Promise<Activity>,
+  listImportableActivities: (courseId?: number) => {
+    const search = new URLSearchParams();
+    if (courseId != null) search.set('courseId', String(courseId));
+    const qs = search.toString();
+    return http(`/api/activities/importable${qs ? `?${qs}` : ''}`) as Promise<ImportableActivity[]>;
+  },
+  dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
+  adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.unit) search.set('unit', params.unit);
+    if (params?.courseId != null) search.set('courseId', String(params.courseId));
+    if (params?.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return http(`/api/admin/ai-traces${qs ? `?${qs}` : ''}`) as Promise<AiTraceRow[]>;
+  },
   /**
    * Proxies sign-out through the AT backend (server-to-server to Core) so the
    * browser avoids CORS restrictions on Core's sign-out endpoint.

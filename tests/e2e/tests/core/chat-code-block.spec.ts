@@ -27,7 +27,7 @@ function coursePayload(instrId: string, overrides: Record<string, string> = {}) 
     name: 'E2E Code Block Course',
     code: `${codeBase ?? 'CBK'}-${RUN_SUFFIX}`,
     section: '001',
-    term: 'Fall',
+    term: 'W1',
     year: '2026',
     startDate: '2026-08-15',
     department: 'COSC',

@@ -420,4 +420,91 @@ describe('testApiKey', () => {
     expect(out.success).toBe(false);
     expect(out.error).toMatch(/API key test failed/);
   });
+
+  it('reports the cloud path for any supported provider key, not just Google', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    for (const provider of ['openai', 'deepseek', 'anthropic']) {
+      const out = await eduaiService.testApiKey({
+        apiKeys: { [provider]: { apiKey: 'sk-test', isEnabled: true } },
+      });
+      expect(out.success).toBe(true);
+      expect(out.provider).toBe(provider);
+    }
+  });
+});
+
+describe('getConnectivityTestParams', () => {
+  const savedConfigKey = config.googleGenerativeAiApiKey;
+  afterEach(() => {
+    config.googleGenerativeAiApiKey = savedConfigKey;
+  });
+
+  it('prefers a client cloud key over the UBC-hosted path', () => {
+    const params = eduaiService.getConnectivityTestParams({
+      openai: { apiKey: 'sk-openai', isEnabled: true },
+    });
+    expect(params.provider).toBe('openai');
+    expect(params.model).toBe('openai:gpt-4o-mini');
+    expect(params.apiKeys.openai.apiKey).toBe('sk-openai');
+  });
+
+  it('picks Google first when multiple client keys are present', () => {
+    const params = eduaiService.getConnectivityTestParams({
+      anthropic: { apiKey: 'sk-ant', isEnabled: true },
+      google: { apiKey: 'g-key', isEnabled: true },
+    });
+    expect(params.provider).toBe('google');
+  });
+
+  it('falls back to the server Google key when no client key is present', () => {
+    config.googleGenerativeAiApiKey = 'server-google';
+    const params = eduaiService.getConnectivityTestParams({});
+    expect(params.provider).toBe('google');
+    expect(params.apiKeys.google.apiKey).toBe('server-google');
+  });
+
+  it('falls back to the UBC-hosted path when no cloud key exists at all', () => {
+    config.googleGenerativeAiApiKey = undefined;
+    const params = eduaiService.getConnectivityTestParams({});
+    expect(params.provider).toBe('ollama');
+  });
+
+  it('forceProvider "ollama" pins the UBC path even when a server Google key exists', () => {
+    // The UBC status chip probes independently: with a server Google key set,
+    // auto-selection would test Google, so the chip must force ollama to check
+    // its own path. Regression guard for the "empty keys isn't enough" bug.
+    config.googleGenerativeAiApiKey = 'server-google';
+    const params = eduaiService.getConnectivityTestParams({}, 'ollama');
+    expect(params.provider).toBe('ollama');
+    expect(params.model).toBe('ollama:gpt-oss:120b');
+    expect(params.apiKeys.ollama.isEnabled).toBe(true);
+    expect(params.apiKeys.google).toBeUndefined();
+  });
+
+  it('forceProvider "ollama" pins the UBC path even when a client cloud key is present', () => {
+    const params = eduaiService.getConnectivityTestParams(
+      { openai: { apiKey: 'sk-openai', isEnabled: true } },
+      'ollama',
+    );
+    expect(params.provider).toBe('ollama');
+  });
+});
+
+describe('testApiKey forceProvider', () => {
+  const savedConfigKey = config.googleGenerativeAiApiKey;
+  afterEach(() => {
+    config.googleGenerativeAiApiKey = savedConfigKey;
+  });
+
+  it('probes the UBC path (ollama) when forced, ignoring the server Google key', async () => {
+    config.googleGenerativeAiApiKey = 'server-google';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'ollama' });
+    expect(out.success).toBe(true);
+    expect(out.provider).toBe('ollama');
+    const [, body] = axios.post.mock.calls.at(-1);
+    expect(body.model).toBe('ollama:gpt-oss:120b');
+    expect(body.apiKeys.ollama.isEnabled).toBe(true);
+    expect(body.apiKeys.google).toBeUndefined();
+  });
 });
