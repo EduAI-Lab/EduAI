@@ -102,23 +102,11 @@ Each row may contain:
 
 **Actor attribution.** If an actor's user record is later deleted, the log's `actorUserId` is nulled (`ON DELETE SET NULL`) but the `actorRole` captured at write time is retained, so the event remains attributable by role without retaining a foreign key to a deleted person.
 
-**Client IP derivation (trusted proxy).** `ipAddress` is derived in `app/lib/request-context.server.ts` from `x-forwarded-for` (XFF). Each proxy **appends** the address it received from, left-to-right, so the **leftmost** entry is client-controlled and forgeable while the **rightmost** entries are written by our own infrastructure. We therefore count trusted hops from the right using the env var **`TRUSTED_PROXY_HOP_COUNT`** (integer, default `0`):
+**Client IP derivation (trusted proxy).** `ipAddress` is derived in `app/lib/request-context.server.ts` from the **last** `x-forwarded-for` (XFF) entry. XFF is appended left-to-right, so the **leftmost** token is client-controlled and forgeable while the **rightmost** token is the one our own reverse proxy wrote. The deployment runs behind exactly one trusted proxy — Apache `ProxyPass` to Node on `localhost`, no Cloudflare or second proxy, Node not directly reachable (see [DEPLOYMENT.md](./DEPLOYMENT.md)). Apache's mod_proxy appends the real socket-peer address as the last entry, so a spoofed `X-Forwarded-For: 1.2.3.4` arrives as `1.2.3.4, <real-client>` and we record the real client.
 
-- The client IP is taken from the entry at position `len - 1 - TRUSTED_PROXY_HOP_COUNT`.
-- `0` (default) trusts only the **rightmost / immediate** hop — the safe choice when the deployment's proxy count is unknown, because the rightmost token cannot be forged by the client.
-- Set it to the **number of trusted proxies in front of the app** (e.g. Cloudflare + nginx = `2`) so derivation steps back past them to the real client.
-- If the count points past the start of the chain (misconfigured — too high), derivation **fails closed** (returns null and falls through to `x-real-ip` / `cf-connecting-ip`) rather than fall back to a spoofable leftmost token. Negative or non-numeric values are treated as `0`.
-
-**What breaks if set incorrectly:**
-
-| Setting vs. reality | Effect |
-| --- | --- |
-| Too **low** (e.g. `0` behind 2 proxies) | Logs the **innermost proxy's IP** instead of the real client. Attribution is imprecise but **not attacker-controllable** — safe-ish. |
-| Too **high** (e.g. `3` behind 1 proxy) | Offset underflows → `ipAddress` becomes **null** (or the `x-real-ip` fallback). Loss of attribution, not a spoof. |
-| **Exactly right** | The true originating client IP is recorded. |
-| **`0` with no proxy in front** (misconfigured prod / local dev) | A client that manually sends `X-Forwarded-For` can still **spoof** the value; a normal client (no XFF) records **null**. The socket peer IP is **not recoverable** under `react-router-serve`, so a trusted proxy in front of the app is a **hard requirement** for reliable IP attribution in production. |
-
-Never over-set the count "to be safe" — too high silently drops attribution. When unsure of the topology, leave it at `0` (rightmost, non-spoofable) and only raise it once the real proxy chain is known.
+- `x-real-ip` and `cf-connecting-ip` are **not** honored — Apache never sets them, so trusting them would only add a client-forgeable spoof vector.
+- With no proxy in front (local dev), XFF is absent and `ipAddress` is `null`. The socket peer IP is not recoverable under `react-router-serve`, so a trusted proxy is a **hard requirement** for reliable IP attribution in production.
+- **If a second proxy is ever added**, the rightmost entry would become that proxy's IP rather than the client; the selection here (and its tests) must be updated as part of that deployment change.
 
 ---
 
