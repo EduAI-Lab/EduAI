@@ -9,6 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Course materials list 500 — pass { headers: request.headers } into Better Auth getSession in the materials loader (raw Request threw Headers is required), so uploads no longer look empty after a successful POST. (#1024, @superbolt08, 2026-07-13) — [#1022](https://github.com/EduAI-Lab/EduAI/pull/1022)
 - [question-maker, core] fix: QM OCR/EduAI `COURSE_REQUIRED` under cookie auth — prefer linked `coreCourseId` as Core `courseId`, preserve course-code spacing, and resolve common code variants in Core chat (e.g. `COSC121` → `COSC 121`); default campus models to vLLM 7B/32B (off retired `gpt-oss:120b`); drive pickers/probes from the live Core catalog; fix Assessment Variant empty-model `Select` JSX so Vite builds; keep OCR upload Save footer visible. (#1020, @superbolt08, 2026-07-13) — [#1022](https://github.com/EduAI-Lab/EduAI/pull/1022)
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
 
