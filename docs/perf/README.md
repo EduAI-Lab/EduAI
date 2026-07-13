@@ -63,8 +63,10 @@ scope (see the per-app `*-measurement-spec.md` SKIP lists).
 3. Configure targets (env): `CORE_URL`, `AITUTOR_URL`, `QM_URL` — point at local or UBC dev.
 4. Run:
    ```bash
-   PERF_OUT=docs/perf/baseline npm run perf:endpoints        # or after-<date> for the AFTER run
+   npm run perf:endpoints -- --out=docs/perf/baseline       # or --out=docs/perf/after-<date> for the AFTER run
    ```
+   (Output dir is the `--out` flag; note the npm `--` that forwards it. Errors land in
+   `<out>/errors.log` + `<out>/errors.json`.)
    The script mints real better-auth sessions per role + a pooled "perf actor" (`POST {CORE_URL}/api/auth/sign-in/email`,
    seed password `EduAI2026!`), reuses each cookie across all three apps (all validate against Core),
    reads the `.perf-pool/*.json` manifests for pooled ids, warms up, then measures reads (hammered)

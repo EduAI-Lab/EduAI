@@ -144,6 +144,12 @@ async function main() {
   await SectionVariants.create({ sectionId: anchorSection.id, variantId: svUpdVariant.id, displayOrder: 999 });
   const sectionVariantUpdate = { sectionId: anchorSection.id, variantId: svUpdVariant.id };
 
+  // --- section-variant ADD pool: fresh variants NOT yet linked to anchorSection.
+  //     POST .../variants consumes one per sample; (section_id, variant_id) is
+  //     unique, so reusing one id 409s after the first insert. Re-seed to refill.
+  const sectionVariantAddPool = [];
+  for (const i of range(POOL)) sectionVariantAddPool.push((await newVariant(anchorQuestion.id)).id);
+
   // --- unlinked course pools (delete cascades children) + update ---
   const courseDeletePool = [];
   for (const i of range(POOL)) courseDeletePool.push((await Course.create({ name: `${NAME_MARK} del course ${i}`, code: 'PERFDEL', userId: CORE_INSTRUCTOR, coreCourseId: null })).id);
@@ -191,6 +197,7 @@ async function main() {
     sectionDeletePool,
     sectionUpdateId,
     sectionVariantDeletePool,
+    sectionVariantAddPool,
     sectionVariantUpdate,
     courseDeletePool,
     courseUpdateId,
