@@ -77,7 +77,8 @@ router.post('/chat', async (req, res) => {
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
       courseCode,
-      streaming: streaming || false
+      streaming: streaming || false,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({

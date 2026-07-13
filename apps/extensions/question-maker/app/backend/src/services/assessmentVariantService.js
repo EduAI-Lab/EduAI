@@ -976,7 +976,9 @@ export async function reviewVariantExamWithAi(userId, params) {
     // If true, penalize low-usability slots when computing the overall score.
     applyUsabilityPenalty = true,
     // If true, ask the LLM for a short strengths/weaknesses summary.
-    includeOverallSummary = true
+    includeOverallSummary = true,
+    // Core session cookie — preferred auth for eduaiService.chat (user-scoped).
+    cookie = '',
   } = params;
 
   const reviewStartMs = Date.now();
@@ -1084,7 +1086,8 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
         { role: 'user', content: userPrompt }
       ],
       streaming: false,
-      timeoutMs: 120000
+      timeoutMs: 120000,
+      cookie,
     });
 
     let content = response?.content ?? response?.message ?? '';
@@ -1108,7 +1111,8 @@ Rules: no markdown, no code fences, no text before { or after }. Use double quot
           { role: 'user', content: repairUser }
         ],
         streaming: false,
-        timeoutMs: 120000
+        timeoutMs: 120000,
+        cookie,
       });
       content = retryResponse?.content ?? retryResponse?.message ?? '';
       parsed = parseJsonObjectFromText(content);
@@ -1349,7 +1353,8 @@ Do not include markdown fences. Keep strings concise.`;
           { role: 'user', content: summaryUserPrompt }
         ],
         streaming: false,
-        timeoutMs: 60000
+        timeoutMs: 60000,
+        cookie,
       });
 
       const content = response?.content ?? response?.message ?? '';
