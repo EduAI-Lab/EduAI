@@ -165,7 +165,7 @@ const ARTICLES: HelpArticle[] = [
                     <li>Pick an AI model (campus-hosted by default; external allowed with API key).</li>
                     <li>Upload PDF or image; progress shows OCR → extraction.</li>
                     <li>Review extracted drafts: edit fields, include/exclude per question, remove unwanted entries.</li>
-                    <li>Click “Create Questions”; items become questions with draft variants under a new assessment.</li>
+                    <li>Click “Save questions”; items become questions with draft variants under a new assessment.</li>
                 </ol>
                 <p className="text-sm">Note: exports are blocked until draft flags are cleared.</p>
             </div>
