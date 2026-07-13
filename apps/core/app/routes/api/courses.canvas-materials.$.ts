@@ -10,6 +10,7 @@ import {
   CanvasNotConnectedError,
   InvalidCanvasCourseAccessError,
 } from "~/lib/canvas/courses.server";
+import { CanvasStoredCredentialsError } from "~/lib/canvas/integration.server";
 import {
   CanvasMaterialSyncError,
   discoverCanvasMaterialsForCourse,
@@ -123,6 +124,9 @@ function mapCanvasMaterialsError(error: unknown): Response {
     return json(error.statusCode, { success: false, error: error.message });
   }
   if (error instanceof CanvasNotConnectedError) {
+    return json(400, { success: false, error: error.message });
+  }
+  if (error instanceof CanvasStoredCredentialsError) {
     return json(400, { success: false, error: error.message });
   }
   if (error instanceof InvalidCanvasCourseAccessError) {

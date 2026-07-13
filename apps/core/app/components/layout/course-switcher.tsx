@@ -13,9 +13,11 @@ type CoreCourse = { id: string; code: string; name: string };
 
 export function CourseSwitcher({
   currentCourseId,
+  currentCourseCode,
   currentCourseName,
 }: {
   currentCourseId: string;
+  currentCourseCode: string;
   currentCourseName: string;
 }) {
   const navigate = useNavigate();
@@ -38,18 +40,19 @@ export function CourseSwitcher({
     };
   }, []);
 
-  // Seed with the current course so the trigger label is correct before the
-  // list resolves; the fetched list replaces it once available.
+  // Seed with the current course's code (matching the resolved list's label) so
+  // the trigger label doesn't flash name→code once the fetch resolves.
   const options: CourseSwitcherOption[] =
     courses.length > 0
       ? courses.map((c) => ({ id: c.id, label: c.code || c.name, sublabel: c.name }))
-      : [{ id: currentCourseId, label: currentCourseName }];
+      : [{ id: currentCourseId, label: currentCourseCode || currentCourseName, sublabel: currentCourseName }];
 
   return (
     <SharedCourseSwitcher
       courses={options}
       currentId={currentCourseId}
       onSelect={(id) => navigate(`/courses/${id}`)}
+      onOpenCurrent={() => navigate(`/courses/${currentCourseId}`)}
       onViewAll={() => navigate("/courses")}
     />
   );
