@@ -4,7 +4,7 @@
  */
 import { termLabelLong } from '@eduai/ui';
 import api from './api';
-import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
+import { apiKeyStorage, type AIProvider, type CampusProvider } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -128,8 +128,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
-    /** Which provider path was validated: a cloud provider (google/openai/deepseek/anthropic) or 'ollama' (UBC-hosted). */
-    provider?: AIProvider | 'ollama';
+    /** Which provider path was validated: a cloud provider or campus (`vllm` / legacy `ollama`). */
+    provider?: AIProvider | CampusProvider;
 }
 
 class EduAIService {
@@ -160,7 +160,7 @@ class EduAIService {
      */
     async testApiKey(
         overrideApiKeys?: Record<string, any>,
-        opts?: { forceProvider?: string },
+        opts?: { forceProvider?: CampusProvider },
     ): Promise<EduAITestResponse> {
         // Build the apiKeys payload the backend expects from any locally-stored keys,
         // unless the caller supplied an explicit override.
