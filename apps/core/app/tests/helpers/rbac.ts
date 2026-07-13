@@ -56,7 +56,7 @@ export async function seedCourse(opts: {
       name: opts.name ?? `RBAC Course ${suffix}`,
       code: `RBC ${suffix}`,
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2026,
       startDate: new Date("2026-09-01"),
       department: opts.department ?? null,

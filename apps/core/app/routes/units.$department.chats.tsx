@@ -3,11 +3,8 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
-import { AppSidebar } from '~/components/app-sidebar'
-import { SiteHeader } from '~/components/site-header'
+import { CoreAppShell } from '~/components/layout/core-app-shell'
 import {
-  SidebarInset,
-  SidebarProvider,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -62,47 +59,40 @@ export default function UnitChatsPage() {
   const codeById = new Map(chats.map((c) => [c.id, c.courseCode]))
 
   return (
-    <SidebarProvider
-      style={{
-        '--sidebar-width': 'calc(var(--spacing) * 72)',
-        '--header-height': 'calc(var(--spacing) * 12)',
-      } as React.CSSProperties}
+    <CoreAppShell
+      user={user}
+      sidebarVariant="inset"
+      title="Unit Chats"
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{departmentLabel} Chats</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
     >
-      <AppSidebar variant="inset" user={user} />
-      <SidebarInset>
-        <SiteHeader
-          title="Unit Chats"
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{departmentLabel} Chats</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <div className="flex flex-1 flex-col">
-          <div className="px-4 lg:px-6 py-6 flex flex-col gap-4">
-            <div>
-              <h1 className="text-3xl font-bold">Unit Chats</h1>
-              <p className="text-muted-foreground mt-1">
-                Student chats across courses in {departmentLabel}.
-              </p>
-            </div>
-            <CourseChatsPanel
-              chats={chats}
-              loading={loading}
-              error={error}
-              secondaryLabel={(id) => codeById.get(id) ?? null}
-            />
+      <div className="flex flex-1 flex-col">
+        <div className="px-4 lg:px-6 py-6 flex flex-col gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Unit Chats</h1>
+            <p className="text-muted-foreground mt-1">
+              Student chats across courses in {departmentLabel}.
+            </p>
           </div>
+          <CourseChatsPanel
+            chats={chats}
+            loading={loading}
+            error={error}
+            secondaryLabel={(id) => codeById.get(id) ?? null}
+          />
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </CoreAppShell>
   )
 }
