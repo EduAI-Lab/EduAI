@@ -210,16 +210,17 @@ class EduAIService {
 
             return models
                 .filter((model: any) => model.isActive !== false)
-                .map((model: any) => ({
-                    id: `${model.provider?.name ?? model.provider}:${model.modelId}`,
-                    label: model.name ?? model.modelId,
-                    provider: model.provider?.name ?? String(model.provider ?? 'unknown'),
-                    description: model.description,
-                    isDefault:
-                        model.modelId === 'qwen2.5-32b-instruct' ||
-                        model.modelId === 'qwen2.5-7b-instruct' ||
-                        model.modelId === 'gemini-2.5-flash',
-                }));
+                .map((model: any) => {
+                    const provider = model.provider?.name ?? String(model.provider ?? 'unknown');
+                    const modelId = model.modelId;
+                    return {
+                        id: `${provider}:${modelId}`,
+                        label: model.name ?? modelId,
+                        provider,
+                        description: model.description,
+                        isDefault: false,
+                    };
+                });
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
             return [];
