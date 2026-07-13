@@ -25,8 +25,10 @@ export interface ChatMessageProps {
   isStreaming?: boolean;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
-  /** When true, relabel Assistive policy headings at display time only (#699). */
   assistiveDisplay?: boolean;
+  showContinue?: boolean;
+  onContinue?: () => void;
+  continueDisabled?: boolean;
 }
 
 /**
@@ -67,6 +69,9 @@ export function ChatMessage({
   highlightRole = null,
   webToolsEnabled = false,
   assistiveDisplay = false,
+  showContinue = false,
+  onContinue,
+  continueDisabled = false,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -207,6 +212,19 @@ export function ChatMessage({
             >
               {textContent}
             </MessageContent>
+            {showContinue && onContinue && (
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onContinue}
+                  disabled={continueDisabled}
+                >
+                  Continue
+                </Button>
+              </div>
+            )}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">

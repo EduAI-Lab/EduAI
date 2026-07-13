@@ -20,6 +20,7 @@ import {
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
+import { capTokensForLongOutputIntent } from "~/lib/ai/long-output-cap";
 import {
   buildChatToolRegistry,
   buildToolCallingSystemPrompt,
@@ -1127,9 +1128,26 @@ ${buildEmptyCourseRagBlock()}`;
     const lastUserText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
+
+    const longOutputCap = capTokensForLongOutputIntent({
+      prompt: lastUserText,
+      currentMaxTokens: streamConfig.maxTokens,
+      adhdAssist: effectiveAdhdAssist,
+    });
+
+    streamConfig.maxTokens = longOutputCap.maxTokens;
+
+    const didHitLongOutputCap = (
+      finishReason: string | null | undefined,
+    ): boolean =>
+      longOutputCap.isLongOutputIntent &&
+      finishReason === "length";
+
     const priorAssistantText = extractMessageText(
       [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
     );
+
+
 
     let adhdProfile: AdhdTurnProfile | undefined;
     let adhdProfileRequirements:
@@ -1225,6 +1243,8 @@ ${buildEmptyCourseRagBlock()}`;
       forceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
+      longOutputIntent: longOutputCap.isLongOutputIntent,
+      effectiveMaxTokens: streamConfig.maxTokens,
       adhdOversight: needsOversight,
       ...llmPromptSizeHints(streamConfig.system, modelMessages),
     });
@@ -1257,13 +1277,26 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
-              if (!streaming) return;
-              const assistantText = text || extractAssistantText(response?.messages);
+              const assistantText =
+                text || extractAssistantText(response?.messages);
+
               if (assistantText) {
                 await appendMessages([
-                  { id: randomUUID(), role: "assistant", content: assistantText },
+                  {
+                    id: randomUUID(),
+                    role: "assistant",
+                    content: assistantText,
+                    metadata: {
+                      finishReason,
+                      hitLongOutputCap:
+                        didHitLongOutputCap(finishReason),
+                    },
+                  },
                 ]).catch((err) => {
-                  console.error("[chat-api] failed to persist streaming assistant message", err);
+                  console.error(
+                    "[chat-api] failed to persist streaming assistant message",
+                    err,
+                  );
                 });
               }
             },
@@ -1346,10 +1379,27 @@ ${buildEmptyCourseRagBlock()}`;
           oversightCompletionTokens: audited.oversightUsage?.completionTokens,
         });
 
-        const persistOverseenAssistantMessages = async (text: string) => {
-          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
-          if (toPersist.length > 0) {
-            await appendMessages(toPersist);
+        const persistOverseenAssistantMessages = async (
+          text: string,
+        ) => {
+          const toPersist =
+            buildOverseenAssistantMessagesToPersist(
+              response?.messages,
+              text,
+            );
+
+          const messagesWithMetadata: GenericMessage[] =
+            toPersist.map((message) => ({
+              ...(message as GenericMessage),
+              metadata: {
+                finishReason,
+                hitLongOutputCap:
+                  didHitLongOutputCap(finishReason),
+              },
+            }));
+
+          if (messagesWithMetadata.length > 0) {
+            await appendMessages(messagesWithMetadata);
           }
         };
 
@@ -1370,8 +1420,11 @@ ${buildEmptyCourseRagBlock()}`;
             headers,
             execute: (dataStream) => {
               if (finalText) {
-                dataStream.write(formatDataStreamPart("text", finalText));
+                dataStream.write(
+                  formatDataStreamPart("text", finalText),
+                );
               }
+
               dataStream.write(
                 formatDataStreamPart("finish_message", {
                   finishReason: finishReason ?? "stop",
@@ -1389,6 +1442,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(finishReason),
             sources: sources || [],
             reasoning,
             responseId: response?.id,
@@ -1457,20 +1511,43 @@ ${buildEmptyCourseRagBlock()}`;
         ]);
 
         if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
+          const assistantMessages: GenericMessage[] =
+            response.messages
+              .filter((message) => message.role === "assistant")
+              .map((message) => ({
+                ...(message as GenericMessage),
+                metadata: {
+                  finishReason,
+                  hitLongOutputCap:
+                    didHitLongOutputCap(finishReason),
+                },
+              }));
+
           await appendMessages(assistantMessages);
         } else {
-          const assistantText = text || extractAssistantText(response?.messages);
-          if (assistantText) {
-            await appendMessages([
-              {
-                id: randomUUID(),
-                role: "assistant",
-                content: assistantText,
-              },
-            ]);
+            const assistantText =
+              text || extractAssistantText(response?.messages);
+
+            if (assistantText) {
+              await appendMessages([
+                {
+                  id: randomUUID(),
+                  role: "assistant",
+                  content: assistantText,
+                  metadata: {
+                    finishReason,
+                    hitLongOutputCap:
+                      didHitLongOutputCap(finishReason),
+                  },
+                },
+              ]).catch((err) => {
+                console.error(
+                  "[chat-api] failed to persist non-streaming assistant message",
+                  err,
+                );
+              });
+            }
           }
-        }
 
         return new Response(
           JSON.stringify({
@@ -1478,6 +1555,7 @@ ${buildEmptyCourseRagBlock()}`;
             model,
             usage,
             finishReason,
+            hitLongOutputCap: didHitLongOutputCap(finishReason),
             sources: sources || [],
             reasoning,
             responseId: response?.id,

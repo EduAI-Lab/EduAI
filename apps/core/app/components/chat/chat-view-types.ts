@@ -1,3 +1,5 @@
+import type { Message } from "ai";
+
 export type ChatModelOption = {
   id: string;
   name: string;
@@ -22,7 +24,7 @@ export type ChatViewSharedProps = {
   selectedCourseCode: string | null;
   setSelectedCourseCode: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
-  messages: Array<{ id: string; role: string; content: string }>;
+  messages: Message[];
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;
@@ -39,4 +41,7 @@ export type ChatViewSharedProps = {
   onSelectPrompt: (prompt: string) => void;
   isStudentWithCourseChat?: boolean;
   disabledReason?: string;
+
+  cappedMessageIds?: Set<string>;
+  onContinue?: (messageId: string) => void;
 };

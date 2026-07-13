@@ -42,6 +42,7 @@ import {
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { isLongOutputIntent } from "~/lib/ai/long-output-intent";
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -101,6 +102,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
+  const pendingLongOutputIntentRef = useRef(false);
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -110,6 +112,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
+  const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
@@ -210,8 +215,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
-    useChat({
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    append,
+  } = useChat({
       api: "/api/chat",
       // Seed the composer from the route loader's transcript (DB is the source of
       // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
@@ -243,8 +255,24 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           setWebToolsEnabled(webToolsHeader === "1");
         }
       },
-      onFinish: () => {
+      onFinish: (message, { finishReason }) => {
+        const hitLongOutputCap =
+          message.role === "assistant" &&
+          finishReason === "length" &&
+          pendingLongOutputIntentRef.current;
+
+        if (hitLongOutputCap) {
+          setCappedMessageIds((current) => {
+            const next = new Set(current);
+            next.add(message.id);
+            return next;
+          });
+        }
+
+        pendingLongOutputIntentRef.current = false;
+
         const id = pendingNavigateChatId.current;
+
         if (id && location.pathname === "/chat") {
           pendingNavigateChatId.current = null;
           navigate(`/chat/${id}`, { replace: true });
@@ -276,9 +304,31 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           },
         });
       }
+      pendingLongOutputIntentRef.current =
+        isLongOutputIntent(input);
+
       handleSubmit(e);
     },
-    [adhdAssist, chatId, handleSubmit],
+    [adhdAssist, chatId, handleSubmit, input],
+  );
+
+  const handleContinue = useCallback(
+    async (messageId: string) => {
+      setCappedMessageIds((current) => {
+        const next = new Set(current);
+        next.delete(messageId);
+        return next;
+      });
+
+      pendingLongOutputIntentRef.current = false;
+
+      await append({
+        role: "user",
+        content:
+          "Continue the previous response from where it stopped. Do not repeat content already provided.",
+      });
+    },
+    [append],
   );
 
   useEffect(() => {
@@ -364,11 +414,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     handleInputChange(inputEvent);
 
     requestAnimationFrame(() => {
+      pendingLongOutputIntentRef.current =
+        isLongOutputIntent(prompt);
+
       const formEvent = {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
-      onSubmit(formEvent);
+
+      handleSubmit(formEvent);
     });
   };
 
@@ -397,6 +451,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,
+    cappedMessageIds,
+    onContinue: handleContinue,
   };
 
   return (

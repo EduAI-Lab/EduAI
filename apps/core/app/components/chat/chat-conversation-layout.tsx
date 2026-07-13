@@ -54,6 +54,8 @@ export function ChatConversationLayout({
   WelcomeComponent = ChatWelcome,
   isStudentWithCourseChat,
   disabledReason,
+  cappedMessageIds,
+  onContinue,
 }: ChatConversationLayoutProps) {
   return (
     <div
@@ -129,6 +131,15 @@ export function ChatConversationLayout({
                         )}
                         webToolsEnabled={webToolsEnabled}
                         assistiveDisplay={adhdAssist}
+                        showContinue={
+                          cappedMessageIds?.has(message.id) ?? false
+                        }
+                        onContinue={
+                          onContinue
+                            ? () => onContinue(message.id)
+                            : undefined
+                        }
+                        continueDisabled={isLoading}
                       />
                     );
                   })}

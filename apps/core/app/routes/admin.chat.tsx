@@ -105,7 +105,14 @@ export default function AdminChatPage() {
     adhdAssist,
   };
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } = useChat({
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+  } = useChat({
     api: "/api/chat",
     sendExtraMessageFields: true,
     body: requestMetadata,
@@ -166,6 +173,7 @@ export default function AdminChatPage() {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
+
       handleSubmit(formEvent);
     });
   };
