@@ -243,15 +243,23 @@ class EduAIService {
         systemParts.join("\n\n") ||
         undefined;
 
+      // Prefer Core's courseId (CUID) when QM has linked the course — Core's
+      // courseCode lookup is exact-match and rejects space-stripped codes
+      // (e.g. "COSC121" vs "COSC 121") with COURSE_REQUIRED (#657).
       const requestPayload = {
         messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
-        courseCode: params.courseCode,
         // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
         streaming: params.streaming === true,
         ...(systemPrompt ? { systemPrompt } : {}),
       };
+      if (params.courseId) {
+        requestPayload.courseId = params.courseId;
+      }
+      if (params.courseCode) {
+        requestPayload.courseCode = params.courseCode;
+      }
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
@@ -260,7 +268,8 @@ class EduAIService {
         url: `${this.baseURL}/api/chat`,
         timeoutMs,
         model: requestPayload.model,
-        courseCode: requestPayload.courseCode,
+        courseId: requestPayload.courseId ?? null,
+        courseCode: requestPayload.courseCode ?? null,
         messageCount: (requestPayload.messages || []).length,
         hasSystemPrompt: Boolean(systemPrompt),
         systemPromptLength: systemPrompt?.length ?? 0,
@@ -364,6 +373,7 @@ class EduAIService {
     const {
       prompt,
       courseCode,
+      courseId,
       model = "google:gemini-2.5-flash",
       apiKeys = {},
       numQuestions = 5,
@@ -375,9 +385,9 @@ class EduAIService {
       cookie,
     } = params;
 
-    if (!prompt || !courseCode) {
+    if (!prompt || (!courseCode && !courseId)) {
       throw new Error(
-        "Prompt and courseCode are required for question generation"
+        "Prompt and courseCode (or courseId) are required for question generation"
       );
     }
 
@@ -454,7 +464,8 @@ OUTPUT RULES (mandatory):
     try {
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
-        courseCode,
+        courseId: courseId ?? null,
+        courseCode: courseCode ?? null,
         model,
         numQuestions,
         mcqRequiredChoiceCount: mcqCountEnforced ? mcqRequiredChoiceCount : undefined,
@@ -471,6 +482,7 @@ OUTPUT RULES (mandatory):
         ],
         model,
         apiKeys,
+        courseId,
         courseCode,
         streaming: false,
         timeoutMs: 180000, // 3 minutes for question generation/extraction
