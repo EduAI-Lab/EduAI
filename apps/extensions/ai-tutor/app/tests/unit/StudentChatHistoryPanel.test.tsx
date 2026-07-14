@@ -12,6 +12,15 @@ vi.mock('~/lib/student-chat-history', () => ({
 
 const NOW = Date.now();
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const SESSION_GUIDE: ApiChatSession = {
   id: 1,
   chatId: 'chat-aaa',
@@ -107,10 +116,10 @@ describe('StudentChatHistoryPanel — session list', () => {
     renderPanel({ activeChatId: SESSION_GUIDE.chatId });
 
     const activeBtn = await screen.findByRole('button', { name: /guide/i });
-    expect(activeBtn).toHaveClass('bg-muted/60');
+    expect(activeBtn).toHaveAttribute('aria-current', 'true');
 
     const inactiveBtn = screen.getByRole('button', { name: /teach/i });
-    expect(inactiveBtn).not.toHaveClass('bg-muted/60');
+    expect(inactiveBtn).not.toHaveAttribute('aria-current');
   });
 });
 
