@@ -4,9 +4,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
-import { AppSidebar } from '~/components/app-sidebar'
-import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '@eduai/ui'
+import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CourseDetailManagerView } from '~/components/courses/course-detail-manager-view'
 import { CourseDetailTaView } from '~/components/courses/course-detail-ta-view'
 import { CourseDetailStudentView } from '~/components/courses/course-detail-student-view'
@@ -19,9 +17,9 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@eduai/ui'
+import { CourseSwitcher } from '~/components/layout/course-switcher'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
@@ -114,6 +112,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       aiInstructions: course.aiInstructions,
       instructorId: course.instructorId,
       department: course.department,
+      startDate: course.startDate.toISOString(),
+      endDate: course.endDate?.toISOString() ?? null,
       externalSource: course.externalSource,
       externalId: course.externalId,
       createdAt: course.createdAt.toISOString(),
@@ -217,101 +217,93 @@ export default function CourseDetailPage() {
   }
 
   return (
-    <SidebarProvider
-      style={{
-        '--sidebar-width': 'calc(var(--spacing) * 72)',
-        '--header-height': 'calc(var(--spacing) * 12)',
-      } as React.CSSProperties}
+    <CoreAppShell
+      user={user}
+      title={course.name}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/courses">Courses</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <CourseSwitcher currentCourseId={course.id} currentCourseCode={course.code} currentCourseName={course.name} />
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          title={course.name}
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/courses">Courses</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{course.name}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <div className="flex flex-1 flex-col">
-          <div className="px-4 lg:px-6 py-6">
-            {access === 'admin' || access === 'unit' || access === 'instructor' ? (
-              <CourseDetailManagerView
-                course={course}
-                access={access}
-                topics={topics}
-                enrollments={enrollments}
-                enrollmentsLoading={enrollmentsLoading}
-                enrollmentsError={enrollmentsError}
-                materials={uploadMaterials}
-                tas={tas}
-                instructors={instructors}
-                studentUsers={studentUsers}
-                onEnrollStudent={handleEnrollStudent}
-                onRemoveEnrollment={handleRemoveEnrollment}
-                isUploading={isUploading}
-                materialsError={materialsError}
-                materialsSuccess={materialsSuccess}
-                onFileSelect={handleFileSelect}
-                onCreateTopic={async (name) => { await createTopic(name) }}
-                onDeleteTopic={async (id) => { await deleteTopic(id) }}
-                onAssignInstructor={handleAssignInstructor}
-                onAddTA={addTA}
-                onRemoveTA={removeTA}
-                onRefreshMaterials={refetchMaterials}
-                courseId={course.id}
-                currentUserId={user.id}
-                showCanvasMaterialSync={
-                  access === 'instructor' &&
-                  course.externalSource === 'canvas' &&
-                  Boolean(course.externalId)
-                }
-                onMaterialsRefresh={() => void refetchMaterials()}
-              />
-            ) : access === 'ta' ? (
-              <CourseDetailTaView
-                course={course}
-                topics={topics}
-                materials={uploadMaterials}
-                isUploading={isUploading}
-                materialsError={materialsError}
-                materialsSuccess={materialsSuccess}
-                onFileSelect={handleFileSelect}
-                courseId={course.id}
-                currentUserId={user.id}
-                onRefreshMaterials={refetchMaterials}
-                tas={tas}
-                onCreateTopic={async (name) => { await createTopic(name) }}
-                onDeleteTopic={async (id) => { await deleteTopic(id) }}
-                onUpdateAiInstructions={handleUpdateAiInstructions}
-              />
-            ) : (
-              <CourseDetailStudentView
-                course={course}
-                materials={uploadMaterials}
-                topics={topics}
-                tas={tas}
-                isUploading={isUploading}
-                materialsError={materialsError}
-                materialsSuccess={materialsSuccess}
-                onFileSelect={handleFileSelect}
-              />
-            )}
-          </div>
+      <div className="flex flex-1 flex-col">
+        <div className="px-4 lg:px-6 py-6">
+          {access === 'admin' || access === 'unit' || access === 'instructor' ? (
+            <CourseDetailManagerView
+              course={course}
+              access={access}
+              topics={topics}
+              enrollments={enrollments}
+              enrollmentsLoading={enrollmentsLoading}
+              enrollmentsError={enrollmentsError}
+              materials={uploadMaterials}
+              tas={tas}
+              instructors={instructors}
+              studentUsers={studentUsers}
+              onEnrollStudent={handleEnrollStudent}
+              onRemoveEnrollment={handleRemoveEnrollment}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+              onCreateTopic={async (name) => { await createTopic(name) }}
+              onDeleteTopic={async (id) => { await deleteTopic(id) }}
+              onAssignInstructor={handleAssignInstructor}
+              onAddTA={addTA}
+              onRemoveTA={removeTA}
+              onRefreshMaterials={refetchMaterials}
+              courseId={course.id}
+              currentUserId={user.id}
+              showCanvasMaterialSync={
+                access === 'instructor' &&
+                course.externalSource === 'canvas' &&
+                Boolean(course.externalId)
+              }
+              onMaterialsRefresh={() => void refetchMaterials()}
+            />
+          ) : access === 'ta' ? (
+            <CourseDetailTaView
+              course={course}
+              topics={topics}
+              materials={uploadMaterials}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+              courseId={course.id}
+              currentUserId={user.id}
+              onRefreshMaterials={refetchMaterials}
+              tas={tas}
+              onCreateTopic={async (name) => { await createTopic(name) }}
+              onDeleteTopic={async (id) => { await deleteTopic(id) }}
+              onUpdateAiInstructions={handleUpdateAiInstructions}
+            />
+          ) : (
+            <CourseDetailStudentView
+              course={course}
+              materials={uploadMaterials}
+              topics={topics}
+              tas={tas}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+            />
+          )}
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </CoreAppShell>
   )
 }

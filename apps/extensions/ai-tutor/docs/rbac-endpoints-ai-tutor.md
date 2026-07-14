@@ -32,10 +32,10 @@ Write endpoints require INSTRUCTOR, UNIT_ADMIN, or ADMIN plus course authorizati
 | Prefix | UI routes |
 |--------|-----------|
 | `/api/courses/:courseId/modules` | `instructor.course.tsx` |
-| `/api/modules/:moduleId` | `instructor.topic.tsx` |
-| `/api/lessons/:lessonId` | `instructor.list.tsx`, `student.list.tsx` |
-| `/api/activities/:activityId` | `instructor.list.tsx` |
-| POST `/api/questions/:id/answer` | `student.list.tsx` (STUDENT only) |
+| `/api/modules/:moduleId` | `instructor.module.tsx` |
+| `/api/lessons/:lessonId` | `instructor.lesson.tsx`, `student.lesson.tsx` |
+| `/api/activities/:activityId` | `instructor.lesson.tsx` |
+| POST `/api/questions/:id/answer` | `student.lesson.tsx` (STUDENT only) |
 
 ## Topics & Prompts
 

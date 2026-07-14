@@ -13,6 +13,14 @@ const PBKDF2_ITERATIONS = 100_000;
 
 const STRICT_BASE64_SEGMENT = /^[A-Za-z0-9+/]+={0,2}$/;
 
+/** Thrown when an encrypted blob fails GCM auth/decrypt (key rotation, tampering, corruption). */
+export class CanvasCredentialDecryptError extends Error {
+  constructor(message = "Failed to decrypt Canvas credential", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CanvasCredentialDecryptError";
+  }
+}
+
 function getEncryptionKey(): string {
   const encryptionKey = process.env.ENCRYPTION_KEY;
   if (!encryptionKey) {
@@ -74,7 +82,9 @@ export function encrypt(plaintext: string): string {
 }
 
 /**
- * Decrypts values from `encrypt`. Legacy plaintext (no colons) is returned as-is.
+ * Decrypts values from `encrypt`. Legacy plaintext (not matching our blob format) is
+ * returned as-is; a format match that fails to decrypt throws instead of leaking
+ * ciphertext back out as a credential.
  */
 export function decrypt(encryptedData: string): string {
   if (!encryptedData) {
@@ -85,18 +95,18 @@ export function decrypt(encryptedData: string): string {
     return encryptedData;
   }
 
+  const parts = encryptedData.split(":");
+  const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
+
+  const salt = decodeStrictBase64Segment(saltBase64, SALT_LENGTH);
+  const iv = decodeStrictBase64Segment(ivBase64, IV_LENGTH);
+  const tag = decodeStrictBase64Segment(tagBase64, TAG_LENGTH);
+
+  if (!salt || !iv || !tag) {
+    throw new Error("Invalid encrypted data format");
+  }
+
   try {
-    const parts = encryptedData.split(":");
-    const [saltBase64, ivBase64, tagBase64, encrypted] = parts;
-
-    const salt = decodeStrictBase64Segment(saltBase64, SALT_LENGTH);
-    const iv = decodeStrictBase64Segment(ivBase64, IV_LENGTH);
-    const tag = decodeStrictBase64Segment(tagBase64, TAG_LENGTH);
-
-    if (!salt || !iv || !tag) {
-      throw new Error("Invalid encrypted data format");
-    }
-
     const key = deriveKey(getEncryptionKey(), salt);
 
     const decipher = createDecipheriv(ALGORITHM, key, iv);
@@ -105,8 +115,10 @@ export function decrypt(encryptedData: string): string {
     let decrypted = decipher.update(encrypted, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
-  } catch {
-    // Backward compatibility: treat failed decrypt as legacy plaintext (QM behavior).
-    return encryptedData;
+  } catch (cause) {
+    throw new CanvasCredentialDecryptError(
+      "Failed to decrypt Canvas credential: invalid key or corrupted data",
+      { cause },
+    );
   }
 }
