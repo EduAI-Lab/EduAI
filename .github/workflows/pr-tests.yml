@@ -187,7 +187,28 @@ jobs:
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
-      - name: Build E2E images (layer-cached)
+      # cache-from only, no cache-to: a GitHub Actions cache-service hiccup here can only
+      # slow the build down to an uncached one, never fail it. Cache writes happen in a
+      # separate best-effort step below so an outage there can't take the E2E check down
+      # (buildx bake aborts the whole graph on any target's failure, incl. mid-build
+      # targets that haven't been --load'ed yet, so cache-to must never share this step).
+      - name: Build and load E2E images
+        run: |
+          set -euo pipefail
+          args=()
+          for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
+            args+=(--set "${target}.cache-from=type=gha,scope=${target}")
+          done
+          docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}"
+
+      # Images are already built and loaded above; this re-solves against the same
+      # builder's local cache (near-instant, no rebuild) purely to push layers to the GHA
+      # cache for future runs. continue-on-error means a cache-service outage (or the
+      # known buildx bug where a malformed error response crashes past ignore-error, see
+      # https://github.com/docker/buildx/issues/2028) degrades next run's cache instead of
+      # failing this one.
+      - name: Warm E2E build cache (best-effort)
+        continue-on-error: true
         run: |
           set -euo pipefail
           args=()
@@ -195,7 +216,7 @@ jobs:
             args+=(--set "${target}.cache-from=type=gha,scope=${target}")
             args+=(--set "${target}.cache-to=type=gha,scope=${target},mode=max,ignore-error=true")
           done
-          docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}"
+          docker buildx bake -f docker-compose.e2e.yml "${args[@]}"
 
       - name: Run E2E tests
         env:
