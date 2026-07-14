@@ -8,7 +8,9 @@
     "./sonner": "./src/ui/sonner.tsx",
     "./page-loader": "./src/page-loader.tsx",
     "./theme-provider": "./src/theme-provider.tsx",
-    "./theme-sync": "./src/lib/theme-sync.ts"
+    "./theme-sync": "./src/lib/theme-sync.ts",
+    "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
+    "./term": "./src/lib/term.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -16,6 +16,7 @@ vi.mock('../../src/services/authService.js', () => ({
 const { requireAuth, requireRole, authenticateToken } = await import(
   '../../src/middleware/auth.js'
 );
+const { config } = await import('../../src/config/settings.js');
 
 function makeRes() {
   const res = {
@@ -113,7 +114,7 @@ describe('requireAuth', () => {
     await requireAuth(req, makeRes(), next);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://core.test/api/sessions/validate',
+      `${config.coreUrl}/api/sessions/validate`,
       expect.objectContaining({
         method: 'POST',
         headers: { cookie: 'session=tok123' },
