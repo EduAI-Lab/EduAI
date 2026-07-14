@@ -81,7 +81,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
-export default function PermissionsPage() {
+export default function AdminSettingsPage() {
   const { user } = useLoaderData<typeof loader>()
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
 
@@ -110,7 +110,7 @@ export default function PermissionsPage() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Permissions</BreadcrumbPage>
+              <BreadcrumbPage>Settings</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -121,7 +121,7 @@ export default function PermissionsPage() {
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
             <div className="px-4 lg:px-6">
               <PageHeading
-                heading="Permissions"
+                heading="Settings"
                 subheading="Toggle role-based capabilities across the platform. Changes take effect live."
               />
             </div>
