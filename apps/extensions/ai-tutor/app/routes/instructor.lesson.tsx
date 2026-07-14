@@ -57,7 +57,6 @@ import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import { contentExcerpt } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
-import { ReorderControls } from '../components/common/ReorderControls';
 import { accentForCourse } from '~/lib/course-display';
 import api from '../lib/api';
 import type { ImportableActivity } from '../lib/api';
@@ -100,6 +99,9 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  SortableProvider,
+  SortableItem,
+  DragHandle,
   courseThemeVars,
 } from '@eduai/ui';
 import { splitTitle } from '~/lib/course-title';
@@ -314,25 +316,20 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
-  // Move an activity one slot earlier (-1) or later (+1) within the lesson.
-  // Swaps with the neighbour, updates optimistically, then persists the full
-  // order; a failure rolls back to the prior order.
-  const moveActivity = async (activityId: number, direction: -1 | 1) => {
+  // Persist a drag-reordered activity list: reorder the local list to match the
+  // dropped order optimistically, then confirm with the bulk reorder endpoint;
+  // a failure rolls back to the prior order.
+  const reorderActivitiesList = async (orderedIds: number[]) => {
     if (!numericLessonId) return;
     const current = activities;
-    const idx = current.findIndex((a) => a.id === activityId);
-    const target = idx + direction;
-    if (idx < 0 || target < 0 || target >= current.length) return;
+    const byId = new Map(current.map((a) => [a.id, a]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
+    if (next.length !== current.length) return;
 
-    const next = [...current];
-    [next[idx], next[target]] = [next[target], next[idx]];
     setActivities(next);
     setReorderingActivities(true);
     try {
-      const updated = await api.reorderActivities(
-        numericLessonId,
-        next.map((a) => a.id),
-      );
+      const updated = await api.reorderActivities(numericLessonId, orderedIds);
       setActivities(updated);
     } catch (error) {
       console.error('Failed to reorder activities', error);
@@ -750,7 +747,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 </CardContent>
               </Card>
             ) : (
-              <ul className="space-y-4">
+              <SortableProvider
+                ids={oActivities.map((a) => a.id)}
+                onReorder={reorderActivitiesList}
+                strategy="list"
+                disabled={
+                  !perms.canManageContent || oActivities.length < 2 || reorderingActivities
+                }
+              >
+              <div className="space-y-4">
                 {oActivities.map((activity, i) => {
                   const isUpdatingTopics = updatingTopicsFor === activity.id;
                   const isUpdatingModes = updatingModesFor === activity.id;
@@ -766,8 +771,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
+                  const canReorderActivity = perms.canManageContent && oActivities.length > 1;
                   return (
-                    <li key={activity.id}>
+                    <SortableItem
+                      key={activity.id}
+                      id={activity.id}
+                      disabled={!canReorderActivity}
+                    >
+                      {({ handleProps }) => (
                       <Card
                         className="group relative overflow-hidden"
                         style={courseThemeVars(accentColor ?? 'var(--primary)')}
@@ -831,14 +842,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                           <PermissionGate allow={perms.canManageContent}>
                             <div className="flex shrink-0 items-center gap-0.5">
-                              {!isEditing && oActivities.length > 1 && (
-                                <ReorderControls
-                                  isFirst={i === 0}
-                                  isLast={i === oActivities.length - 1}
-                                  isBusy={reorderingActivities}
-                                  itemLabel="activity"
-                                  onMoveEarlier={() => moveActivity(activity.id, -1)}
-                                  onMoveLater={() => moveActivity(activity.id, 1)}
+                              {!isEditing && canReorderActivity && (
+                                <DragHandle
+                                  handleProps={handleProps}
+                                  label={`Drag to reorder ${activity.title ?? 'activity'}`}
                                 />
                               )}
                               {isEditing ? (
@@ -1142,10 +1149,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                         </div>
                       </Card>
-                    </li>
+                      )}
+                    </SortableItem>
                   );
                 })}
-              </ul>
+              </div>
+              </SortableProvider>
             )}
           </div>
       </div>
