@@ -12,6 +12,7 @@ export type AtUser = {
 export type AtRoleView = 'admin' | 'unit-admin' | 'instructor' | 'ta' | 'student';
 
 export type AtNavItemKey =
+  | 'dashboard'
   | 'teaching'
   | 'my-courses'
   | 'admin-courses'

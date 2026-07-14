@@ -47,8 +47,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  SidebarInset,
-  SidebarProvider,
   PageHeading,
   Breadcrumb,
   BreadcrumbItem,
@@ -57,8 +55,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 
 type InviteRole = "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
 
@@ -223,35 +220,26 @@ export default function InvitationsPage() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Invitations</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Invitations</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -489,8 +477,7 @@ export default function InvitationsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SidebarInset>
-    </SidebarProvider>
+    </CoreAppShell>
   );
 }
 

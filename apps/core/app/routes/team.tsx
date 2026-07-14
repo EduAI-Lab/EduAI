@@ -1,6 +1,5 @@
 import { Link } from "react-router";
 import { AnimatedBackground } from "~/components/animated-background";
-import { SiteHeader } from "~/components/site-header";
 import { SiteNavigation } from "~/components/site-navigation";
 import { SiteFooter } from "~/components/site-footer";
 import { TeamMemberCard } from "~/components/team-member-card";

@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@eduai/ui';
+import {
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@eduai/ui';
 import { toast } from 'sonner';
 
 import api from '~/lib/api';
@@ -8,7 +20,6 @@ import {
   DEFAULT_POLICY,
   buildFallbackSummary,
   clampIterations,
-  costTierClassName,
   formatApiKeyUpdatedTime,
   formatCostTier,
   getAdminSettingsApi,
@@ -17,7 +28,20 @@ import {
   type AdminAiModelOption,
   type AdminAiModelPolicy,
   type AdminSettingsLoaderData,
+  type CostTier,
 } from '~/lib/admin-settings';
+
+// `costTierClassName` (shared with admin-settings) still returns a legacy
+// `.tag` className; here we only borrow the label text via `formatCostTier`
+// and pick a DS Badge variant locally, mirroring `sourceTagBadgeVariant` in
+// admin.tsx / settings-view.tsx.
+function costTierBadgeVariant(
+  costTier: CostTier | null | undefined,
+): 'default' | 'secondary' | 'outline' {
+  if (costTier === 'LOW') return 'secondary';
+  if (costTier === 'HIGH') return 'default';
+  return 'outline';
+}
 
 type AdminSettingsPanelProps = {
   loaderData: AdminSettingsLoaderData;
@@ -212,17 +236,15 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-foreground">{model.modelName}</span>
-                              <span className="tag">
+                              <Badge variant="outline">
                                 {model.provider ?? inferProvider(model.modelId)}
-                              </span>
-                              <span className={costTierClassName(model.costTier)}>
+                              </Badge>
+                              <Badge variant={costTierBadgeVariant(model.costTier)}>
                                 {formatCostTier(model.costTier)}
-                              </span>
-                              {isTutorDefault ? (
-                                <span className="tag tag-primary">Tutor default</span>
-                              ) : null}
+                              </Badge>
+                              {isTutorDefault ? <Badge variant="default">Tutor default</Badge> : null}
                               {isSupervisorDefault ? (
-                                <span className="tag tag-accent">Supervisor default</span>
+                                <Badge variant="secondary">Supervisor default</Badge>
                               ) : null}
                             </div>
                             <p className="text-sm text-muted-foreground">
@@ -283,56 +305,64 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                 <label className="block text-sm font-medium text-foreground">
                   Default tutor model
                 </label>
-                <select
-                  value={aiPolicy.defaultTutorModelId ?? ''}
-                  onChange={(e) =>
+                <Select
+                  value={aiPolicy.defaultTutorModelId ?? undefined}
+                  onValueChange={(value) =>
                     setAiPolicy((current) => ({
                       ...current,
-                      defaultTutorModelId: e.target.value || null,
+                      defaultTutorModelId: value || null,
                     }))
                   }
-                  className="input-field"
                   disabled={!hasAllowedTutorModels}
                 >
-                  {!hasAllowedTutorModels ? (
-                    <option value="">Choose allowed tutor models first</option>
-                  ) : (
-                    aiModels
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={
+                        hasAllowedTutorModels
+                          ? 'Select a model'
+                          : 'Choose allowed tutor models first'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aiModels
                       .filter((model) => aiPolicy.allowedTutorModelIds.includes(model.modelId))
                       .map((model) => (
-                        <option key={model.id} value={model.modelId}>
+                        <SelectItem key={model.id} value={model.modelId}>
                           {model.modelName}
-                        </option>
-                      ))
-                  )}
-                </select>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-foreground">
                   Default supervisor model
                 </label>
-                <select
-                  value={aiPolicy.defaultSupervisorModelId ?? ''}
-                  onChange={(e) =>
+                <Select
+                  value={aiPolicy.defaultSupervisorModelId ?? undefined}
+                  onValueChange={(value) =>
                     setAiPolicy((current) => ({
                       ...current,
-                      defaultSupervisorModelId: e.target.value || null,
+                      defaultSupervisorModelId: value || null,
                     }))
                   }
-                  className="input-field"
                   disabled={!aiModels.length}
                 >
-                  {!aiModels.length ? (
-                    <option value="">No models available</option>
-                  ) : (
-                    aiModels.map((model) => (
-                      <option key={model.id} value={model.modelId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={aiModels.length ? 'Select a model' : 'No models available'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aiModels.map((model) => (
+                      <SelectItem key={model.id} value={model.modelId}>
                         {model.modelName}
-                      </option>
-                    ))
-                  )}
-                </select>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">
                   Pick the more careful model here, even if it is slower or more expensive.
                 </p>
@@ -342,7 +372,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                 <label className="block text-sm font-medium text-foreground">
                   Max revision passes
                 </label>
-                <input
+                <Input
                   type="number"
                   min={1}
                   max={5}
@@ -353,7 +383,6 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                       maxSupervisorIterations: clampIterations(e.target.value),
                     }))
                   }
-                  className="input-field"
                 />
                 <p className="text-xs text-muted-foreground">
                   Three passes is a good default: enough room for correction without producing a
@@ -371,7 +400,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
-                <button
+                <Button
                   type="button"
                   onClick={saveAiPolicy}
                   disabled={
@@ -382,18 +411,18 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                     !aiPolicy.defaultTutorModelId ||
                     !aiPolicy.defaultSupervisorModelId
                   }
-                  className="btn-primary"
+                  variant="primary"
                 >
                   {savingAiPolicy ? 'Saving…' : 'Save loop settings'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={() => setAiPolicy(initialAiPolicy)}
                   disabled={savingAiPolicy || !aiPolicyDirty}
-                  className="btn-secondary"
+                  variant="secondary"
                 >
                   Reset changes
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -428,42 +457,33 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
           <div className="space-y-3">
             <label className="block text-sm font-medium text-foreground">New key</label>
             <div className="flex flex-col sm:flex-row gap-3">
-              <input
+              <Input
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 type={showKey ? 'text' : 'password'}
-                className="input-field flex-1"
+                className="flex-1"
                 placeholder="Paste EDUAI API key"
                 autoComplete="off"
               />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="btn-secondary text-sm"
-              >
+              <Button type="button" onClick={() => setShowKey((v) => !v)} variant="secondary">
                 {showKey ? 'Hide' : 'Show'}
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving || !apiKey.trim()}
-              className="btn-primary"
-            >
+            <Button type="button" onClick={save} disabled={saving || !apiKey.trim()} variant="primary">
               {saving ? 'Saving…' : 'Save key'}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={clear}
               disabled={clearing || !status.hasAdminOverride}
-              className="btn-secondary"
+              variant="secondary"
               title={!status.hasAdminOverride ? 'No admin override to clear' : undefined}
             >
               {clearing ? 'Clearing…' : 'Clear override'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
