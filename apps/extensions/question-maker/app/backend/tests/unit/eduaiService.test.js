@@ -70,7 +70,7 @@ describe('isConfigured', () => {
 });
 
 describe('chat', () => {
-  it('throws when the service is not configured', async () => {
+  it('throws when neither a session cookie nor a service key is available', async () => {
     eduaiService.apiKey = '';
     await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/not configured/i);
     expect(axios.post).not.toHaveBeenCalled();
@@ -85,6 +85,7 @@ describe('chat', () => {
         { role: 'user', content: 'hi' },
       ],
       courseCode: 'CS 101',
+      cookie: '__Secure-better-auth.session_token=abc',
     });
 
     expect(out).toEqual({ content: 'hello' });
@@ -97,6 +98,39 @@ describe('chat', () => {
     expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
     expect(opts.headers['x-api-key']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
+  });
+
+  it('posts user messages and elevates system role into top-level systemPrompt', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
+
+    await eduaiService.chat({
+      messages: [
+        { role: 'system', content: 'Return JSON only' },
+        { role: 'user', content: 'hi' },
+      ],
+      courseCode: 'CS 101',
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+
+    const [, payload, opts] = axios.post.mock.calls[0];
+    expect(payload.systemPrompt).toBe('Return JSON only');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(payload.streaming).toBe(false);
+    expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBeUndefined();
+  });
+
+  it('falls back to Bearer service key when no cookie is present', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
+
+    await eduaiService.chat({
+      messages: [{ role: 'user', content: 'hi' }],
+      courseCode: 'CS 101',
+    });
+
+    const [, , opts] = axios.post.mock.calls[0];
+    expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBeUndefined();
   });
 
   it('honors an explicit timeoutMs override', async () => {
@@ -180,6 +214,49 @@ describe('generateQuestions', () => {
     });
     const out = await eduaiService.generateQuestions(baseParams);
     expect(out[0].difficulty).toBe('hard');
+  });
+
+  it('ignores CUID-like markdown citations instead of throwing SyntaxError', async () => {
+    // Old greedy /(\[[\s\S]*\])/ matched [mr68fk2hgh…] and JSON.parse threw
+    // "Unexpected token 'm'". Valid question array still follows in the prose.
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content:
+          'Based on context [mr68fk2hghxyz] here is the item:\n' +
+          '[{"content":"What is binary?","type":"SA","difficulty":"easy","reasoning_level":"factual","answer":"base 2"}]',
+      },
+    });
+    const out = await eduaiService.generateQuestions(baseParams);
+    expect(out).toHaveLength(1);
+    expect(out[0].content).toBe('What is binary?');
+  });
+
+  it('retries with a JSON-only repair when the first reply is prose only', async () => {
+    axios.post
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { content: 'Based on the provided context, here is a multiple-choice question about rockets...' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          content: JSON.stringify([
+            {
+              content: 'What fuels a rocket?',
+              type: 'SA',
+              difficulty: 'easy',
+              reasoning_level: 'factual',
+              answer: 'propellant',
+            },
+          ]),
+        },
+      });
+
+    const out = await eduaiService.generateQuestions(baseParams);
+    expect(out).toHaveLength(1);
+    expect(out[0].content).toBe('What fuels a rocket?');
+    expect(axios.post).toHaveBeenCalledTimes(2);
   });
 
   it('unwraps a { questions: [...] } envelope', async () => {
@@ -281,7 +358,7 @@ describe('generateQuestions', () => {
     expect(out[0].secondary_topic_ids).toEqual([6, 7]);
   });
 
-  it('honors system/user prompt overrides without throwing', async () => {
+  it('honors system/user prompt overrides via Core systemPrompt field', async () => {
     axios.post.mockResolvedValue({
       status: 200,
       data: { content: [{ content: 'Q?', type: 'SA', difficulty: 'easy', reasoning_level: 'factual', answer: 'a' }] },
@@ -387,29 +464,47 @@ describe('listAIModels', () => {
 });
 
 describe('testApiKey', () => {
-  it('returns failure when not configured', async () => {
+  it('returns failure when neither cookie nor service key is available', async () => {
     eduaiService.apiKey = '';
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'EduAI API key not configured' });
+    expect(out).toEqual({
+      success: false,
+      error: 'Sign in via Core to use AI (session cookie required)',
+    });
   });
 
-  it('returns success when the chat call works', async () => {
+  it('returns success when the chat call works via service key', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
     const out = await eduaiService.testApiKey();
     expect(out.success).toBe(true);
-    expect(out.message).toMatch(/valid/i);
+    expect(out.message).toMatch(/Service key can reach AI/i);
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
   });
 
-  it('flags an invalid key on a 401', async () => {
+  it('prefers the service key when both cookie and service key are present', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey({
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/Service key can reach AI/i);
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
+    expect(axios.post.mock.calls[0][2].headers.cookie).toBeUndefined();
+  });
+
+  it('flags auth failure on a 401', async () => {
     axios.post.mockRejectedValue(responseError({ status: 401, statusText: 'Unauthorized', data: {} }));
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'Invalid EduAI API key - authentication failed' });
+    expect(out).toEqual({
+      success: false,
+      error: 'AI authentication failed — sign in via Core again',
+    });
   });
 
   it('flags forbidden access on a 403', async () => {
     axios.post.mockRejectedValue(responseError({ status: 403, statusText: 'Forbidden', data: {} }));
     const out = await eduaiService.testApiKey();
-    expect(out).toEqual({ success: false, error: 'EduAI API key access forbidden' });
+    expect(out).toEqual({ success: false, error: 'AI access forbidden for this session' });
   });
 
   it('treats a provider-key failure as a valid EduAI key', async () => {

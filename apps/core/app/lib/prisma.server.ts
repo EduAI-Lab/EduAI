@@ -20,6 +20,14 @@ function getPrismaClient(): PrismaClient {
 
 const prisma = getPrismaClient();
 
+// Warm the connection pool at module load so the first request after boot does
+// not pay Prisma's lazy connect (TCP/TLS handshake + query-engine spawn) — that
+// cold start was the multi-second stall on the first navigation. Fire-and-forget:
+// queries still connect lazily if this races, so a failure here is non-fatal.
+void prisma.$connect().catch((err) => {
+  console.error("[prisma] initial $connect failed (will retry lazily)", err);
+});
+
 export default prisma;
 
 

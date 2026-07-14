@@ -5,13 +5,18 @@ import {
   Button,
   Card, CardContent,
   CourseCard,
+  CourseListView,
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
   Input,
   Label,
   PageHeading,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
 } from '@eduai/ui'
+import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -54,7 +59,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   // disabled state reads as an admin choice rather than a missing feature.
   const canDelete = isEnabled('unitAdmins.canDeleteCourses')
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
-  const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
 
@@ -101,7 +106,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
-    setSelectedTerm('Fall')
+    setSelectedTerm(termFromMonth(new Date().getMonth()))
     setSelectedInstructor('')
     setCreateOpen(false)
   }
@@ -139,7 +144,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
             <DialogHeader>
               <DialogTitle>Create course</DialogTitle>
               <DialogDescription>
-                New courses will be assigned to one of your authorized departments.
+                New courses will be assigned to one of your authorized course codes.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
@@ -148,7 +153,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 <Input id="ua-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="ua-dept">Department</Label>
+                <Label htmlFor="ua-dept">Course Code</Label>
                 {authorizedDepts.length === 1 ? (
                   <>
                     <input type="hidden" name="department" value={authorizedDepts[0].code} />
@@ -164,7 +169,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                     departments={authorizedDepts}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    placeholder="Select department"
+                    placeholder="Select course code"
                   />
                 )}
               </div>
@@ -202,10 +207,9 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                   <Select value={selectedTerm} onValueChange={setSelectedTerm}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Fall">Fall</SelectItem>
-                      <SelectItem value="Spring">Spring</SelectItem>
-                      <SelectItem value="Summer">Summer</SelectItem>
-                      <SelectItem value="Winter">Winter</SelectItem>
+                      {TERM_CODES.map((code) => (
+                        <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -243,52 +247,70 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
         </Dialog>
       </div>
 
-      {courses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No courses in {unitLabel} yet.</p>
-            {authorizedDepts.length > 0 && (
-              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-                <IconPlus className="w-4 h-4 mr-2" />
-                Create first course
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course, index) => (
-            <CourseCard
-              key={course.id}
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-              colorIndex={index}
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-              actions={{
-                showPublish: true,
-                isPublished: course.isPublished,
-                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-                showEdit: true,
-                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                // §2 / issue #807: delete stays visible, greyed when the policy is off.
-                showDelete: true,
-                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-                deleteDisabled: !canDelete,
-                deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <CourseListView<Course>
+        courses={courses}
+        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        getKey={(course) => course.id}
+        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getSearchText={(course) => `${course.name} ${course.code}`}
+        filterGroups={[
+          buildStatusFilterGroup<Course>((c) => c.isPublished),
+          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+          buildDepartmentFilterGroup<Course>((c) => c.department, {
+            optionLabel: getDepartmentLabel,
+          }),
+        ]}
+        emptyState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses in {unitLabel} yet.</p>
+              {authorizedDepts.length > 0 && (
+                <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                  <IconPlus className="w-4 h-4 mr-2" />
+                  Create first course
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        }
+        noResultsState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses match your search.</p>
+            </CardContent>
+          </Card>
+        }
+        renderCard={(course, index) => (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
+            colorIndex={index}
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+            actions={{
+              showPublish: true,
+              isPublished: course.isPublished,
+              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+              showEdit: true,
+              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+              // §2 / issue #807: delete stays visible, greyed when the policy is off.
+              showDelete: true,
+              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+              deleteDisabled: !canDelete,
+              deleteDisabledReason: DEFAULT_POLICY_DISABLED_MESSAGE,
+            }}
+          />
+        )}
+      />
 
       {/* Delete confirmation */}
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
@@ -331,12 +353,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 <Input name="code" defaultValue={editingCourse.code} required />
               </div>
               <div className="grid gap-2">
-                <Label>Department</Label>
+                <Label>Course Code</Label>
                 <DepartmentCombobox
                   departments={authorizedDepts}
                   value={editDept}
                   onValueChange={setEditDept}
-                  placeholder="No department"
+                  placeholder="No course code"
                 />
               </div>
               <div className="grid gap-2">

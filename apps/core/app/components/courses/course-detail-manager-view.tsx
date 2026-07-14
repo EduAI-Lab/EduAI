@@ -21,6 +21,7 @@ import {
 import { Download } from "lucide-react";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
+import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
 import {
   Dialog,
@@ -812,6 +813,18 @@ export function CourseDetailManagerView({
         />
       )}
 
+      {/* B2: Topics folded into hero, badges top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={course.name}
+        description={course.description}
+        accentColor={resolvePaletteAccent(course.id)}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+      />
+
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -841,17 +854,6 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          {/* B2: Topics folded into hero, badges top-right */}
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={course.name}
-            description={course.description}
-            accentColor={resolvePaletteAccent(course.id)}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-          />
 
           {/* Stat row */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
@@ -880,13 +882,13 @@ export function CourseDetailManagerView({
                       Term
                     </p>
                     <p className="text-sm text-foreground">
-                      {course.term} {course.year}
+                      {termLabel(course.term, course.year)}
                     </p>
                   </div>
                   {course.department && (
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                        Department
+                        Course Code
                       </p>
                       <p className="text-sm text-foreground">
                         {course.department}

@@ -12,6 +12,8 @@ export interface Course {
   aiInstructions: string
   instructorId: string | null
   department: string | null
+  startDate: string
+  endDate: string | null
   createdAt: string
   updatedAt: string
 }
