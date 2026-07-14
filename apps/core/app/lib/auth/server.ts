@@ -248,12 +248,8 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
-    // NOTE: do NOT enable `cookieCache` here. Serving getSession() from a signed
-    // cookie bypasses the DB-backed session guard that revokes a session the
-    // moment a user is deactivated (#971) and lets a logged-out session cookie
-    // keep returning 200 until the cache expires. Both are security regressions,
-    // so the cookie perf shortcut is deliberately off — getSession() stays
-    // authoritative against Postgres.
+    // Intentionally NO `cookieCache`: serving getSession() from a signed cookie
+    // bypasses immediate session invalidation on deactivation (#971) / logout.
   },
   advanced: {
     useSecureCookies,
