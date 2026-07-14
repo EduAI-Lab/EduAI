@@ -78,7 +78,8 @@ router.post('/chat', async (req, res) => {
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
       courseCode,
-      streaming: streaming || false
+      streaming: streaming || false,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({
@@ -158,7 +159,8 @@ router.post('/generate-questions', async (req, res) => {
       numQuestions: resolvedNumQuestions,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || { factual: 40, analytical: 30, application: 30 },
-      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {})
+      ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {}),
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({

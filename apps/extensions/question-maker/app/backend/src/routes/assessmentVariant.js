@@ -198,7 +198,8 @@ router.post('/generate-bank-variants', authenticateToken, requireRole(QM_AUTHORI
       model: typeof model === 'string' ? model : undefined,
       apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
       variantsToAdd: variantsToAdd != null ? Number(variantsToAdd) : 1,
-      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null
+      variantPromptInstructions: typeof variantPromptInstructions === 'string' ? variantPromptInstructions : null,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.status(201).json({ success: true, data: result });
@@ -226,7 +227,8 @@ router.post('/review-variant-ai', authenticateToken, requireRole(QM_AUTHORIZED),
       apiKeys: apiKeys && typeof apiKeys === 'object' ? apiKeys : {},
       rubricText: typeof rubricText === 'string' ? rubricText : '',
       applyUsabilityPenalty: typeof applyUsabilityPenalty === 'boolean' ? applyUsabilityPenalty : undefined,
-      includeOverallSummary: typeof includeOverallSummary === 'boolean' ? includeOverallSummary : undefined
+      includeOverallSummary: typeof includeOverallSummary === 'boolean' ? includeOverallSummary : undefined,
+      cookie: req.headers.cookie ?? '',
     });
 
     res.json({ success: true, data });
