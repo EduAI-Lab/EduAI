@@ -2,6 +2,7 @@ import prisma from "~/lib/prisma.server";
 import { sendEmail } from "~/lib/email/mailer.server";
 import { buildApiKeyExpiryEmail } from "~/lib/email/templates/api-key-expiry";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
+import { authBaseURL } from "~/lib/auth/server";
 
 const WARN_DAYS = 7;
 
@@ -34,8 +35,7 @@ export async function notifyExpiringApiKeys(): Promise<{ notified: number }> {
     },
   });
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const settingsUrl = `${appUrl}/settings/ai-providers`;
+  const settingsUrl = `${authBaseURL}/settings`;
 
   let notified = 0;
   for (const row of settings) {

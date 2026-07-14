@@ -61,22 +61,40 @@ function ensureLoaded() {
   fetchInitiated = true;
 
   fetch('/api/user-provider-settings', { credentials: 'include' })
-    .then((r) => r.json() as Promise<ServerRow[]>)
+    .then((r) => {
+      if (r.status === 401) {
+        // Session expired/unauthenticated: surface as no keys rather than
+        // falling back to a stale, possibly-mismatched localStorage keyset.
+        console.error('Failed to load provider settings: unauthorized');
+        setState({ data: {}, isLoading: false });
+        return null;
+      }
+      if (!r.ok) throw new Error(`Failed to load provider settings: ${r.status}`);
+      return r.json() as Promise<ServerRow[]>;
+    })
     .then((rows) => {
+      if (rows === null) return;
       const data = rowsToSettings(rows);
+      const configuredProviders = new Set(rows.map((row) => row.providerName));
 
-      // One-time migration: if the server has nothing yet, promote localStorage keys.
-      if (Object.keys(data).length === 0) {
-        const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
-        if (raw) {
-          try {
-            const localKeys = JSON.parse(raw) as UserProviderSettings;
-            setState({ data: localKeys, isLoading: false });
-            migrateFromLocalStorage(localKeys);
+      // Migrate any legacy localStorage key that doesn't already have a DB
+      // row, rather than skipping migration entirely once any row exists.
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        try {
+          const localKeys = JSON.parse(raw) as UserProviderSettings;
+          const toMigrate = Object.fromEntries(
+            Object.entries(localKeys).filter(
+              ([providerName, v]) => v.isEnabled && !configuredProviders.has(providerName),
+            ),
+          );
+          if (Object.keys(toMigrate).length > 0) {
+            setState({ data: { ...data, ...toMigrate }, isLoading: false });
+            migrateFromLocalStorage(localKeys, toMigrate);
             return;
-          } catch {
-            // ignore parse errors — fall through to empty state
           }
+        } catch {
+          // ignore parse errors — fall through to server state
         }
       }
 
@@ -94,10 +112,13 @@ function ensureLoaded() {
     });
 }
 
-async function migrateFromLocalStorage(localKeys: UserProviderSettings): Promise<void> {
-  const tasks = Object.entries(localKeys)
-    .filter(([, v]) => v.isEnabled)
-    .map(([providerName, settings]) =>
+async function migrateFromLocalStorage(
+  allLocalKeys: UserProviderSettings,
+  toMigrate: UserProviderSettings,
+): Promise<void> {
+  const entries = Object.entries(toMigrate);
+  const results = await Promise.allSettled(
+    entries.map(([providerName, settings]) =>
       fetch('/api/user-provider-settings', {
         method: 'POST',
         credentials: 'include',
@@ -108,11 +129,29 @@ async function migrateFromLocalStorage(localKeys: UserProviderSettings): Promise
           apiKey: settings.apiKey,
           baseUrl: settings.baseUrl,
         }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Migration failed for ${providerName}: ${r.status}`);
       }),
-    );
+    ),
+  );
 
-  await Promise.allSettled(tasks);
-  localStorage.removeItem(LEGACY_STORAGE_KEY);
+  // Only drop the legacy keys that actually persisted to the server; keep
+  // the rest in localStorage so a failed write doesn't permanently lose the
+  // user's key.
+  const migratedProviders = new Set(
+    entries
+      .filter((_, i) => results[i].status === 'fulfilled')
+      .map(([providerName]) => providerName),
+  );
+  const remaining = Object.fromEntries(
+    Object.entries(allLocalKeys).filter(([providerName]) => !migratedProviders.has(providerName)),
+  );
+
+  if (Object.keys(remaining).length > 0) {
+    localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(remaining));
+  } else {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }
 }
 
 // ---------------------------------------------------------------------------

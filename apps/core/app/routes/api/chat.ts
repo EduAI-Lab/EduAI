@@ -760,13 +760,36 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Service key callers (AI Tutor, QM) may still pass apiKeys in the body for
-    // backward compatibility. Regular users' keys are loaded from the DB.
+    // Service key callers (AI Tutor, QM) have no real User row to look up DB
+    // settings for (actingUser.id is the synthetic "service" id), so they
+    // must still pass apiKeys in the body, same as before the DB migration.
+    // Regular users' keys are always loaded from the DB.
     let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
-    if (isServiceKeyCaller && body.apiKeys != null) {
-      const parsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+    if (isServiceKeyCaller) {
+      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      const apiKeysParsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+      if (!apiKeysParsed.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid apiKeys",
+            details: apiKeysParsed.error.flatten(),
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
       validatedApiKeys = mergeLocalInferenceFromEnv(
-        parsed.success ? toUserProviderSettings(parsed.data) : {},
+        toUserProviderSettings(apiKeysParsed.data),
         model,
       );
     } else {
