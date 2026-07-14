@@ -749,22 +749,26 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             const busy = publishingId === lesson.id;
             const canReorder = perms.canManageContent && oLessons.length > 1;
             return (
-              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
+              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder} className="relative">
                 {({ handleProps }) => (
-                  <LessonCard
-                    index={idx + 1}
-                    orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
-                    title={lesson.title}
-                    content={lesson.contentMd}
-                    accentColor={accentColor}
-                    onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
-                    isPublished={lesson.isPublished}
-                    menuSlot={
-                      perms.canPublishContent || perms.canManageContent ? (
-                        <>
-                          {canReorder && (
-                            <DragHandle handleProps={handleProps} label={`Drag to reorder ${lesson.title}`} />
-                          )}
+                  <>
+                    {canReorder && (
+                      <DragHandle
+                        handleProps={handleProps}
+                        label={`Drag to reorder ${lesson.title}`}
+                        className="absolute left-2 top-2 z-20 bg-background/85 shadow-sm ring-1 ring-border backdrop-blur-sm"
+                      />
+                    )}
+                    <LessonCard
+                      index={idx + 1}
+                      orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
+                      title={lesson.title}
+                      content={lesson.contentMd}
+                      accentColor={accentColor}
+                      onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
+                      isPublished={lesson.isPublished}
+                      menuSlot={
+                        perms.canPublishContent || perms.canManageContent ? (
                           <PublishMenu
                             isPublished={lesson.isPublished}
                             pending={busy}
@@ -785,10 +789,10 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                             onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
                             onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
                           />
-                        </>
-                      ) : undefined
-                    }
-                  />
+                        ) : undefined
+                      }
+                    />
+                  </>
                 )}
               </SortableItem>
             );

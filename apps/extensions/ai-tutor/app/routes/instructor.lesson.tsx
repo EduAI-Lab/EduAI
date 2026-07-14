@@ -777,8 +777,17 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                       key={activity.id}
                       id={activity.id}
                       disabled={!canReorderActivity}
+                      className="relative"
                     >
                       {({ handleProps }) => (
+                      <>
+                      {canReorderActivity && (
+                        <DragHandle
+                          handleProps={handleProps}
+                          label={`Drag to reorder ${activity.title ?? 'activity'}`}
+                          className="absolute left-2 top-2 z-20 bg-background/85 shadow-sm ring-1 ring-border backdrop-blur-sm"
+                        />
+                      )}
                       <Card
                         className="group relative overflow-hidden"
                         style={courseThemeVars(accentColor ?? 'var(--primary)')}
@@ -842,12 +851,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                           <PermissionGate allow={perms.canManageContent}>
                             <div className="flex shrink-0 items-center gap-0.5">
-                              {!isEditing && canReorderActivity && (
-                                <DragHandle
-                                  handleProps={handleProps}
-                                  label={`Drag to reorder ${activity.title ?? 'activity'}`}
-                                />
-                              )}
                               {isEditing ? (
                                 <Badge variant="secondary" size="sm">
                                   Editing…
@@ -1149,6 +1152,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                         </div>
                       </Card>
+                      </>
                       )}
                     </SortableItem>
                   );

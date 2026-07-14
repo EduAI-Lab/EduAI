@@ -675,21 +675,25 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   const busy = publishingId === m.id;
                   const canReorder = perms.canManageContent && oModules.length > 1;
                   return (
-                    <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
+                    <SortableItem key={m.id} id={m.id} disabled={!canReorder} className="relative">
                       {({ handleProps }) => (
-                        <ModuleCard
-                          index={idx}
-                          title={m.title}
-                          description={m.description}
-                          accentColor={accentColor}
-                          isPublished={m.isPublished}
-                          onClick={() => navigate(`/instructor/module/${m.id}`)}
-                          actions={
-                            perms.canPublishContent || perms.canManageContent ? (
-                              <>
-                                {canReorder && (
-                                  <DragHandle handleProps={handleProps} label={`Drag to reorder ${m.title}`} />
-                                )}
+                        <>
+                          {canReorder && (
+                            <DragHandle
+                              handleProps={handleProps}
+                              label={`Drag to reorder ${m.title}`}
+                              className="absolute left-2 top-2 z-20 bg-background/85 shadow-sm ring-1 ring-border backdrop-blur-sm"
+                            />
+                          )}
+                          <ModuleCard
+                            index={idx}
+                            title={m.title}
+                            description={m.description}
+                            accentColor={accentColor}
+                            isPublished={m.isPublished}
+                            onClick={() => navigate(`/instructor/module/${m.id}`)}
+                            actions={
+                              perms.canPublishContent || perms.canManageContent ? (
                                 <PublishMenu
                                   isPublished={m.isPublished}
                                   pending={busy}
@@ -706,10 +710,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                                   onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
                                   onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
                                 />
-                              </>
-                            ) : undefined
-                          }
-                        />
+                              ) : undefined
+                            }
+                          />
+                        </>
                       )}
                     </SortableItem>
                   );
