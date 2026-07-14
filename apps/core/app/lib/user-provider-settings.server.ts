@@ -57,7 +57,7 @@ export async function upsertUserProviderSetting(
     update: {
       isEnabled: input.isEnabled,
       ...(encryptedKey !== undefined ? { apiKey: encryptedKey } : {}),
-      baseUrl: input.baseUrl ?? null,
+      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl || null } : {}),
     },
   });
 }

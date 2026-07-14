@@ -64,6 +64,22 @@ export function SettingsView({
   // Local state for expiry date inputs, seeded from loader data.
   const [localExpiries, setLocalExpiries] = useState<Record<string, string>>(providerExpiries);
 
+  // Local drafts for unconfigured provider key inputs. Kept separate from the
+  // hook's optimistic state so the field doesn't unmount mid-keystroke when
+  // isProviderConfigured flips true after the first character.
+  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
+
+  function commitProviderKey(providerName: string) {
+    const draft = keyDrafts[providerName];
+    if (!draft) return;
+    updateProviderSettings(providerName, { apiKey: draft, isEnabled: true });
+    setKeyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[providerName];
+      return next;
+    });
+  }
+
   const expiryFetcher = useFetcher();
 
   function handleExpiryChange(providerName: string, value: string) {
@@ -211,12 +227,11 @@ export function SettingsView({
                       ) : (
                         <Input
                           placeholder="sk-..."
+                          value={keyDrafts["openai"] ?? ""}
                           onChange={(e) =>
-                            updateProviderSettings("openai", {
-                              apiKey: e.target.value,
-                              isEnabled: true,
-                            })
+                            setKeyDrafts((prev) => ({ ...prev, openai: e.target.value }))
                           }
+                          onBlur={() => commitProviderKey("openai")}
                         />
                       )}
                     </div>
@@ -263,12 +278,11 @@ export function SettingsView({
                       ) : (
                         <Input
                           placeholder="AIza-..."
+                          value={keyDrafts["google"] ?? ""}
                           onChange={(e) =>
-                            updateProviderSettings("google", {
-                              apiKey: e.target.value,
-                              isEnabled: true,
-                            })
+                            setKeyDrafts((prev) => ({ ...prev, google: e.target.value }))
                           }
+                          onBlur={() => commitProviderKey("google")}
                         />
                       )}
                     </div>
