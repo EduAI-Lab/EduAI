@@ -6,7 +6,6 @@ import { IconBrain, IconBook, IconUsers, IconBulb, IconArrowRight, IconCode, Ico
 import { Button } from "@eduai/ui";
 import { Card, CardContent } from "@eduai/ui";
 import { AnimatedBackground } from "~/components/animated-background";
-import { SiteHeader } from "~/components/site-header";
 import { SiteFooter } from "~/components/site-footer";
 import { ProjectGoals } from "~/components/project-goals";
 import { projectInfo, siteConfig } from "~/config/site";
