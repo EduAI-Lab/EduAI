@@ -741,6 +741,12 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { error: "CRON_JOB_NOT_TRIGGERABLE" };
   }
 
+  const { findRunningCronRun, startCronRun } = await import("~/lib/db.cron-jobs.server");
+  const alreadyRunning = await findRunningCronRun(jobName);
+  if (alreadyRunning) {
+    return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
+  }
+
   const runId = await startCronRun(jobName);
   triggerCronJobAsync(jobName, job.script, runId);
   return { ok: true, runId, jobName };

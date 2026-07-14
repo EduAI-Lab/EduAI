@@ -71,6 +71,29 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/auth.$.ts",
   }),
 
+  // ── Infra / UI probes (not agent ops) ─────────────────────────────────────
+  entry({
+    method: "GET",
+    path: "/api/health",
+    readiness: "excluded",
+    reason: "Infrastructure health probe; not an agent operation",
+    routeFile: "routes/api/health.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/ai-status",
+    readiness: "excluded",
+    reason: "UI AI-status polling; not an agent operation",
+    routeFile: "routes/api/ai-status.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/disciplines",
+    readiness: "excluded",
+    reason: "Reference data for course forms; not platform ops",
+    routeFile: "routes/api/disciplines.ts",
+  }),
+
   // ── Session & profile ─────────────────────────────────────────────────────
   entry({
     method: "GET",
@@ -253,7 +276,7 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     errorEnvelope: "standard",
     adminChatTool: "createCourseEnrollment",
     supportsIdempotency: true,
-    note: "Entity-column idempotencyKey (#828 phase 3 migration pending)",
+    idempotencyRoute: "POST /api/courses/:id/enrollments",
     routeFile: "routes/api/courses.enrollments.ts",
   }),
   entry({
@@ -370,6 +393,22 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "syncCanvasMaterials",
     errorEnvelope: "canvas",
     routeFile: "routes/api/courses.canvas-materials.$.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/courses/:courseId/canvas-materials/exclusions",
+    readiness: "excluded",
+    reason: "Instructor Canvas exclusion UI workflow; not an agent ops surface",
+    errorEnvelope: "canvas",
+    routeFile: "routes/api/courses.canvas-materials.exclusions.$.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/courses/:courseId/canvas-materials/exclusions",
+    readiness: "excluded",
+    reason: "Instructor Canvas exclusion UI workflow; not an agent ops surface",
+    errorEnvelope: "canvas",
+    routeFile: "routes/api/courses.canvas-materials.exclusions.$.ts",
   }),
   entry({
     method: "GET",
