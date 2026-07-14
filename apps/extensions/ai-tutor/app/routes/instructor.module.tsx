@@ -40,10 +40,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableProvider,
+  SortableItem,
+  DragHandle,
   Textarea,
 } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
-import { ReorderControls } from '../components/common/ReorderControls';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { PublishMenu } from '../components/PublishMenu';
 import { accentForCourse } from '../lib/course-display';
@@ -314,25 +316,20 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
-  // Move a lesson one slot earlier (-1) or later (+1) within the module. Swaps
-  // with the neighbour, updates optimistically, then persists the full order;
+  // Persist a drag-reordered lesson list: reorder the local list to match the
+  // dropped order optimistically, then confirm with the bulk reorder endpoint;
   // a failure rolls back to the prior order.
-  const moveLesson = async (lessonId: number, direction: -1 | 1) => {
+  const reorderLessonsList = async (orderedIds: number[]) => {
     if (!numericModuleId) return;
     const current = lessons;
-    const idx = current.findIndex((l) => l.id === lessonId);
-    const target = idx + direction;
-    if (idx < 0 || target < 0 || target >= current.length) return;
+    const byId = new Map(current.map((l) => [l.id, l]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
+    if (next.length !== current.length) return;
 
-    const next = [...current];
-    [next[idx], next[target]] = [next[target], next[idx]];
     setLessons(next);
     setReorderingLessons(true);
     try {
-      const updated = await api.reorderLessons(
-        numericModuleId,
-        next.map((l) => l.id),
-      );
+      const updated = await api.reorderLessons(numericModuleId, orderedIds);
       setLessons(updated);
     } catch (error) {
       console.error('Failed to reorder lessons', error);
@@ -730,6 +727,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           </CardContent>
         </Card>
       ) : (
+        <SortableProvider
+          ids={oLessons.map((l) => l.id)}
+          onReorder={reorderLessonsList}
+          strategy="grid"
+          disabled={!perms.canManageContent || oLessons.length < 2 || reorderingLessons}
+        >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {oLessons.map((lesson, idx) => {
             const canPublish = course?.isPublished && module?.isPublished;
@@ -744,53 +747,50 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
                 : null;
             const busy = publishingId === lesson.id;
+            const canReorder = perms.canManageContent && oLessons.length > 1;
             return (
-              <LessonCard
-                key={lesson.id}
-                index={idx + 1}
-                orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
-                title={lesson.title}
-                content={lesson.contentMd}
-                accentColor={accentColor}
-                onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
-                isPublished={lesson.isPublished}
-                menuSlot={
-                  perms.canPublishContent || perms.canManageContent ? (
-                    <>
-                      {perms.canManageContent && oLessons.length > 1 && (
-                        <ReorderControls
-                          isFirst={idx === 0}
-                          isLast={idx === oLessons.length - 1}
-                          isBusy={reorderingLessons}
-                          itemLabel="lesson"
-                          onMoveEarlier={() => moveLesson(lesson.id, -1)}
-                          onMoveLater={() => moveLesson(lesson.id, 1)}
-                        />
-                      )}
-                      <PublishMenu
-                        isPublished={lesson.isPublished}
-                        pending={busy}
-                        blockedReason={tooltipMessage}
-                        itemLabel="lesson"
-                        onToggle={
-                          perms.canPublishContent
-                            ? () => {
-                                if (busy || blocked) return;
-                                setPendingPublish({
-                                  id: lesson.id,
-                                  isPublished: lesson.isPublished,
-                                  title: lesson.title,
-                                });
-                              }
-                            : undefined
-                        }
-                        onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
-                        onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
-                      />
-                    </>
-                  ) : undefined
-                }
-              />
+              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
+                {({ handleProps }) => (
+                  <LessonCard
+                    index={idx + 1}
+                    orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
+                    title={lesson.title}
+                    content={lesson.contentMd}
+                    accentColor={accentColor}
+                    onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
+                    isPublished={lesson.isPublished}
+                    menuSlot={
+                      perms.canPublishContent || perms.canManageContent ? (
+                        <>
+                          {canReorder && (
+                            <DragHandle handleProps={handleProps} label={`Drag to reorder ${lesson.title}`} />
+                          )}
+                          <PublishMenu
+                            isPublished={lesson.isPublished}
+                            pending={busy}
+                            blockedReason={tooltipMessage}
+                            itemLabel="lesson"
+                            onToggle={
+                              perms.canPublishContent
+                                ? () => {
+                                    if (busy || blocked) return;
+                                    setPendingPublish({
+                                      id: lesson.id,
+                                      isPublished: lesson.isPublished,
+                                      title: lesson.title,
+                                    });
+                                  }
+                                : undefined
+                            }
+                            onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
+                            onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
+                          />
+                        </>
+                      ) : undefined
+                    }
+                  />
+                )}
+              </SortableItem>
             );
           })}
           <PermissionGate allow={perms.canManageContent}>
@@ -806,6 +806,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             </button>
           </PermissionGate>
         </div>
+        </SortableProvider>
       )}
       <ConfirmDialog
         open={pendingPublish !== null}
