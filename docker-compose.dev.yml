@@ -1,4 +1,4 @@
-# Local development databases only — apps run on the host (e.g. `turbo run dev`).
+# Local development databases and Redis only — apps run on the host (e.g. `turbo run dev`).
 #
 #   npm run docker:dev:db
 #
@@ -62,10 +62,25 @@ services:
       timeout: 5s
       retries: 5
 
+  eduai-redis:
+    image: redis:7-alpine
+    container_name: eduai-redis
+    restart: unless-stopped
+    ports:
+      - "${CORE_REDIS_PORT:-63790}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   db_data:
   ai_tutor_db_data:
   question_maker_db_data:
+  redis_data:
 
 networks:
   default:
