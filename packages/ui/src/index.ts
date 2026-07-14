@@ -5,6 +5,7 @@ export { cn, getInitials } from "./utils"
 export { ThemeProvider, useTheme } from "./theme-provider"
 export { initThemeSync, broadcastThemeChange, closeThemeSync } from "./lib/theme-sync"
 export type { Theme as ThemeType } from "./lib/theme-sync"
+export { ThemeSyncInitializer } from "./theme-sync-initializer"
 
 // ── Bug report ─────────────────────────────────────────────────────────────
 export { BugReportDialog } from './bug-report-dialog'
@@ -27,14 +28,30 @@ export {
 export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
+export { QuickActionsPanel } from "./quick-actions-panel"
+export type { QuickActionsPanelProps, QuickAction } from "./quick-actions-panel"
 export { Avatar } from "./avatar"
 export type { AvatarProps } from "./avatar"
 export { PageHeading } from "./page-heading"
 export type { PageHeadingProps } from "./page-heading"
+export { PageLoader } from "./page-loader"
+export type { PageLoaderProps } from "./page-loader"
 export { CourseHeroCard } from "./course-hero-card"
 export type { CourseHeroCardProps } from "./course-hero-card"
 export { CourseCard } from "./course-card"
 export type { CourseCardProps, CourseCardAction } from "./course-card"
+export {
+  CourseListView,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
+} from "./course-list-view"
+export type {
+  CourseListViewProps,
+  CourseListSection,
+  CourseFilterGroup,
+  CourseFilterOption,
+} from "./course-list-view"
 export { QuestionCard } from "./question-card"
 export type {
   QuestionCardProps,
@@ -42,6 +59,8 @@ export type {
   QuestionCardStatus,
   QuestionDifficulty,
 } from "./question-card"
+export { AnswerOption } from "./answer-option"
+export type { AnswerOptionProps, AnswerOptionState } from "./answer-option"
 export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
 export { QuestionStatusBadge, questionStatus } from "./question-status-badge"
@@ -50,6 +69,8 @@ export { VariantBadge, variantLabel } from "./variant-badge"
 export type { VariantBadgeProps, VariantIdentity } from "./variant-badge"
 export { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "./page-tabs"
 export type { PageTabsProps, PageTabsListProps, PageTabsTriggerProps, PageTabsContentProps } from "./page-tabs"
+export { ConfirmDialog } from "./confirm-dialog"
+export type { ConfirmDialogProps } from "./confirm-dialog"
 export { SegmentedControl } from "./segmented-control"
 export type { SegmentedControlProps, SegmentedControlOption } from "./segmented-control"
 export { ThemeToggle } from "./theme-toggle"
@@ -62,16 +83,48 @@ export { NavSecondary } from "./nav-secondary"
 export type { NavSecondaryProps, NavSecondaryItem } from "./nav-secondary"
 export { AppSidebar } from "./app-sidebar"
 export type { AppSidebarProps } from "./app-sidebar"
-export { BrandSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher"
-export type { BrandSwitcherProps, LauncherApp } from "./app-launcher"
+export { BrandSwitcher, AppSwitcher, QUESTION_MAKER_ROLES } from "./app-launcher"
+export type { BrandSwitcherProps, AppSwitcherProps, LauncherApp } from "./app-launcher"
+export { getLauncherApps } from "./launcher-registry"
+export type { LauncherAppId, LauncherAppUrls, GetLauncherAppsOptions } from "./launcher-registry"
 export { SiteHeader } from "./site-header"
 export type { SiteHeaderProps } from "./site-header"
+export { AppShell } from "./app-shell"
+export type { AppShellProps } from "./app-shell"
+export { CommandPalette, CommandSearchButton, buildAppSwitcherGroup } from "./command-palette"
+export type {
+  CommandPaletteProps,
+  CommandPaletteGroup,
+  CommandPaletteItem,
+  CommandSearchButtonProps,
+} from "./command-palette"
+export { CourseSwitcher } from "./course-switcher"
+export type { CourseSwitcherProps, CourseSwitcherOption, CourseSwitcherId } from "./course-switcher"
+export { AIServiceIndicators } from "./ai-service-indicators"
+export type { AIServiceIndicatorsProps, ServiceStatus, ServiceState } from "./ai-service-indicators"
+export { useAiServiceStatus } from "./hooks/use-ai-service-status"
+export type { AiServiceStatusPair, UseAiServiceStatusOptions, UseAiServiceStatusResult } from "./hooks/use-ai-service-status"
 export { AccessibilitySettings } from "./settings/accessibility-settings"
 export type { AccessibilitySettingsProps, UiDensity as AccessibilityUiDensity, UiTheme as AccessibilityUiTheme } from "./settings/accessibility-settings"
 export { ProvidersTable } from "./settings/providers-table"
 export type { ProvidersTableProps, AIProviderRow } from "./settings/providers-table"
 export { ProviderFormDialog } from "./settings/provider-form-dialog"
 export type { ProviderFormDialogProps, ProviderFormData, AIProviderRecord } from "./settings/provider-form-dialog"
+
+// ── Canonical academic-term model ──────────────────────────────────────────
+export {
+  TERM_CODES,
+  isTermCode,
+  termFromMonth,
+  normalizeTerm,
+  termName,
+  termLabel,
+  termLabelLong,
+  termSortKey,
+  compareByTerm,
+  groupCoursesByTerm,
+} from "./lib/term"
+export type { TermCode, TermInfo, CourseTermGroup } from "./lib/term"
 
 // ── Analytics charts ───────────────────────────────────────────────────────
 export { DonutChart } from "./charts/donut-chart"
@@ -99,6 +152,7 @@ export * from "./ui/aspect-ratio"
 // Avatar: export AvatarImage/AvatarFallback only — Avatar root conflicts with DS Avatar above
 export { AvatarImage, AvatarFallback } from "./ui/avatar"
 export * from "./ui/breadcrumb"
+export * from "./ui/button-group"
 export * from "./ui/calendar"
 export * from "./ui/carousel"
 export * from "./ui/chart"
@@ -113,6 +167,7 @@ export * from "./ui/drawer"
 export * from "./ui/dropdown-menu"
 export * from "./ui/form"
 export * from "./ui/hover-card"
+export * from "./ui/input-group"
 export * from "./ui/input-otp"
 export * from "./ui/label"
 export * from "./ui/loader"
