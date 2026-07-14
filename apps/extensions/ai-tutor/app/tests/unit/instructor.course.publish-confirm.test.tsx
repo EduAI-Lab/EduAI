@@ -36,30 +36,44 @@ vi.mock('~/lib/rbac/nav', () => ({
   getCourseDetailTabs: () => [{ id: 'content', label: 'Content' }],
 }));
 
-vi.mock('~/components/layout/AppShell', () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+// Redesign: the course page composes the shared shell via the layout route and
+// publishes its breadcrumb trail through the shell context; it also hosts a
+// course switcher and topic hero action. Stub those so the render is isolated.
+vi.mock('~/components/layout/ShellBreadcrumbContext', () => ({
+  useShellBreadcrumbs: () => {},
+  ShellBreadcrumbContext: {},
 }));
-
-vi.mock('~/components/layout/ShellBreadcrumbs', () => ({
-  ShellBreadcrumbs: () => null,
+vi.mock('~/components/layout/CourseSwitcher', () => ({ CourseSwitcher: () => null }));
+vi.mock('~/hooks/useCourseTopics', () => ({
+  useCourseTopics: () => ({ topics: [], loading: false, refresh: vi.fn() }),
 }));
+vi.mock('~/components/courses/CourseTopicsHeroAction', () => ({ CourseTopicsHeroAction: () => null }));
 
 vi.mock('~/components/rbac/PermissionGate', () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('~/components/courses/CourseAnalyticsPanel', () => ({ CourseAnalyticsPanel: () => null }));
-vi.mock('~/components/courses/CourseEnrollmentsPanel', () => ({ CourseEnrollmentsPanel: () => null }));
-vi.mock('~/components/courses/CourseStudentMetricsPanel', () => ({ CourseStudentMetricsPanel: () => null }));
 vi.mock('~/components/courses/CourseSubmissionsPanel', () => ({ CourseSubmissionsPanel: () => null }));
+
+// The redesign moved module actions into a PublishMenu kebab (Radix dropdown).
+// This test targets the ported #742 confirmation flow, not the menu mechanics,
+// so PublishMenu is reduced to the status button that fires onToggle.
+vi.mock('~/components/PublishMenu', () => ({
+  PublishMenu: ({ isPublished, onToggle }: { isPublished: boolean; onToggle?: () => void }) => (
+    <button type="button" onClick={() => onToggle?.()}>
+      {isPublished ? 'Published' : 'Unpublished'}
+    </button>
+  ),
+}));
 
 import InstructorCourseModules from '~/routes/instructor.course';
 
-const course = { id: 42, title: 'Test Course', isPublished: true };
-const module_ = { id: 10, title: 'Module 1', isPublished: false };
+const course = { id: 42, title: 'Test Course', code: 'COSC 101', isPublished: true };
+const module_ = { id: 10, title: 'Module 1', description: '', position: 0, isPublished: false };
 
 function wrap(modules = [module_]) {
-  const props = { loaderData: { course, modules } } as Route.ComponentProps;
+  const props = { loaderData: { course, modules } } as unknown as Route.ComponentProps;
   return render(
     <MemoryRouter>
       <InstructorCourseModules {...props} />
