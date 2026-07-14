@@ -40,10 +40,14 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom"],
     },
-    // Force React to be pre-bundled at startup so Vite never discovers it lazily during
-    // a first client-side navigation.
+    // Force React and the router runtime to be pre-bundled at startup so Vite never
+    // discovers them lazily during the first client-side navigation. `react-router` is
+    // included because otherwise it is found mid-load, triggering a dep re-optimization
+    // that leaves the page holding two optimizer generations (two browserHashes) of
+    // React → a null renderer dispatcher → "dispatcher is null" in useContext, cleared
+    // only by a manual refresh.
     optimizeDeps: {
-      include: ["react", "react-dom", "react-dom/client"],
+      include: ["react", "react-dom", "react-dom/client", "react-router"],
     },
     server: {
       port: 3000,
