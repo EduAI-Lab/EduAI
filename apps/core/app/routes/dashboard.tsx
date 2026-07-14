@@ -1,4 +1,3 @@
-import React from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import {
@@ -9,17 +8,15 @@ import {
   PageHeading,
 } from "@eduai/ui"
 
-import { AppSidebar } from "~/components/app-sidebar";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
 import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
 import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
 import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
 import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
-import { SiteHeader } from "~/components/site-header";
 import { ProductTour } from "~/components/tour/product-tour";
 import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/tour/tour-steps";
-import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
@@ -134,30 +131,20 @@ export default function Page() {
   const { user, isTA } = useLoaderData<typeof loader>();
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbPage>Home</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
+      tour={<ProductTour steps={DASHBOARD_TOUR_STEPS} storageKey={DASHBOARD_TOUR_STORAGE_KEY} />}
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Home</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <DashboardContent user={user} isTA={isTA} />
-      </SidebarInset>
-      <ProductTour steps={DASHBOARD_TOUR_STEPS} storageKey={DASHBOARD_TOUR_STORAGE_KEY} />
-    </SidebarProvider>
+      <DashboardContent user={user} isTA={isTA} />
+    </CoreAppShell>
   );
 }

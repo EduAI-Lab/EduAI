@@ -42,6 +42,12 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
+// #999: bound how long a single EduAI round-trip can hang — without this, a
+// slow/stuck upstream call leaves the student staring at an unbounded
+// "Thinking..." spinner with no way out.
+const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
+const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
+
 /**
  * Single round-trip to the EduAI chat completion endpoint.
  *
@@ -60,6 +66,7 @@ async function callEduAI({
   chatId = null,
   messageId = null,
   courseCode = null,
+  signal,
 }) {
   const endpoint = getEduAiChatUrl();
   const model = modelId || process.env.EDUAI_MODEL || 'google:gemini-2.5-flash';
@@ -113,6 +120,13 @@ async function callEduAI({
         cookie,
       },
       body: JSON.stringify(requestBody),
+      // #999 review: forward the caller's cancellation (client disconnect /
+      // Stop button, propagated from the Express route) alongside our own
+      // timeout, so either one actually stops the upstream request instead
+      // of it running to completion in the background.
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
+        : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -134,6 +148,20 @@ async function callEduAI({
     console.error('[aiGuidance] Unexpected response format:', data);
     throw new Error('Invalid response format from AI API');
   } catch (error) {
+    if (signal?.aborted) {
+      // The caller's own signal (not our timeout) fired — a genuine
+      // cancellation, not a timeout. Rethrow as-is so the route layer can
+      // detect `signal.aborted` and skip persistence/response-writing
+      // instead of mapping it to a 504.
+      throw error;
+    }
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      console.error('[aiGuidance] EduAI call timed out after', EDUAI_CALL_TIMEOUT_MS, 'ms');
+      const timeoutError = new Error(TIMEOUT_MESSAGE);
+      timeoutError.status = 504;
+      timeoutError.code = 'TIMEOUT';
+      throw timeoutError;
+    }
     console.error('[aiGuidance] Error calling eduAI:', error);
     throw error;
   }
@@ -195,6 +223,7 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  signal,
 }) {
   const template = await getPromptTemplateBySlug('supervisor-prompt');
   if (!template) {
@@ -229,6 +258,7 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      signal,
     });
 
     try {
@@ -486,6 +516,7 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.userApiKey,
+        signal: context.signal,
       });
 
       traceIteration.supervisorVerdict = verdict;
@@ -546,6 +577,7 @@ async function generateWithSupervisor({
   chatId,
   messageId,
   courseCode,
+  signal,
 }) {
   const context = {
     originalStudentMessage,
@@ -559,6 +591,7 @@ async function generateWithSupervisor({
     dualLoopEnabled,
     maxSupervisorIterations,
     lastFeedback: null,
+    signal,
   };
 
   const generateFn = async (currentChatId, isRevision, lastFeedback) => {
@@ -581,6 +614,7 @@ async function generateWithSupervisor({
       // the same turn; only the original turn reuses the caller's messageId.
       messageId: isRevision ? randomUUID() : messageId,
       courseCode,
+      signal,
     });
   };
 
@@ -607,6 +641,7 @@ export async function generateTeachResponse({
   messageId = null,
   courseCode = null,
   testableQuestions = [],
+  signal,
 }) {
   try {
     const template = await getPromptTemplateBySlug('learning-prompt');
@@ -644,6 +679,7 @@ export async function generateTeachResponse({
       chatId,
       messageId,
       courseCode,
+      signal,
     });
   } catch (error) {
     console.error('[aiGuidance] Failed to generate teach response:', error);
@@ -683,6 +719,7 @@ export async function generateGuideResponse({
   messageId = null,
   courseCode = null,
   testableQuestions = [],
+  signal,
 }) {
   try {
     const template = await getPromptTemplateBySlug('exercise-prompt');
@@ -718,6 +755,7 @@ export async function generateGuideResponse({
       chatId,
       messageId,
       courseCode,
+      signal,
     });
   } catch (error) {
     console.error('[aiGuidance] Failed to generate guide response:', error);
@@ -759,6 +797,7 @@ export async function generateCustomResponse({
   messageId = null,
   courseCode = null,
   testableQuestions = [],
+  signal,
 }) {
   try {
     if (!activity.customPrompt) {
@@ -794,6 +833,7 @@ export async function generateCustomResponse({
       chatId,
       messageId,
       courseCode,
+      signal,
     });
   } catch (error) {
     console.error('[aiGuidance] Failed to generate custom response:', error);
