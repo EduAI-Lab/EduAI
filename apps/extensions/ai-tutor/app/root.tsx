@@ -13,7 +13,16 @@ import { AuthProvider } from '~/hooks/useLocalUser';
 import { TourProvider } from '~/components/TourProvider';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
 import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
-import { ThemeProvider, ThemeSyncInitializer, Toaster, PageLoader } from '@eduai/ui';
+// Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
+// (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
+// even one named member from it forces Vite dev to crawl and transform the
+// whole shared UI library (recharts, shiki, markdown, every Radix primitive,
+// @tabler icons) on first load — for every user, before login. root renders
+// for everyone, so keep its UI imports minimal.
+import { ThemeProvider } from '@eduai/ui/theme-provider';
+import { ThemeSyncInitializer } from '@eduai/ui/theme-sync-initializer';
+import { Toaster } from '@eduai/ui/sonner';
+import { PageLoader } from '@eduai/ui/page-loader';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
