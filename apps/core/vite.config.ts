@@ -41,12 +41,15 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom"],
     },
-    // Pre-bundle React at startup and streamdown + CJS deps so lazy loads stay ESM.
+    // Pre-bundle React, the router runtime, and streamdown's CJS dependencies
+    // at startup so client navigation and lazy markdown loads stay on one
+    // optimizer generation and remain ESM-compatible.
     optimizeDeps: {
       include: [
         "react",
         "react-dom",
         "react-dom/client",
+        "react-router",
         "streamdown",
         "@streamdown/math",
         "style-to-js",

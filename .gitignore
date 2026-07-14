@@ -77,3 +77,4 @@ apps/core/scripts/research/research-api-keys.gemini.json
 apps/core/scripts/research/research-api-keys.openrouter.json
 
 .claude/memory
+.superpowers/

@@ -26,7 +26,9 @@ const {
   importEnrolledCoursesFromCore,
   userHasCoreTaEnrollment,
 } = await import('../../src/services/importTaughtCoursesService.js');
-const authRouter = (await import('../../src/routes/authentication.js')).default;
+const authModule = await import('../../src/routes/authentication.js');
+const authRouter = authModule.default;
+const { resetCoreMirrorThrottleForTests } = authModule;
 
 function appFor(user) {
   const app = express();
@@ -47,6 +49,9 @@ const coreCourses = [
 describe('GET /api/me effective TA role', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The course mirror is throttled per-user across calls; reset so each test
+    // starts unthrottled and its import-call assertions hold.
+    resetCoreMirrorThrottleForTests();
     listEduAiCourses.mockResolvedValue(coreCourses);
   });
 
