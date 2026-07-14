@@ -248,12 +248,12 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
-    // Serve the session from a short-lived signed cookie so getSession() does not
-    // hit Postgres on every call. A single logged-out nav previously ran up to 4
-    // serial session lookups (root → dashboard → redirect → root → login); with
-    // this they read the cookie instead. Tradeoff: role/isActive/ban changes take
-    // up to maxAge seconds to propagate (revalidated against the DB after that).
-    cookieCache: { enabled: true, maxAge: 60 },
+    // NOTE: do NOT enable `cookieCache` here. Serving getSession() from a signed
+    // cookie bypasses the DB-backed session guard that revokes a session the
+    // moment a user is deactivated (#971) and lets a logged-out session cookie
+    // keep returning 200 until the cache expires. Both are security regressions,
+    // so the cookie perf shortcut is deliberately off — getSession() stays
+    // authoritative against Postgres.
   },
   advanced: {
     useSecureCookies,
