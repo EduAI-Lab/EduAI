@@ -10,6 +10,7 @@ import { MultiSelect } from "./ui/combobox"
 import { Skeleton } from "./ui/skeleton"
 import {
   groupCoursesByTerm,
+  termFromMonth,
   termLabel,
   termSortKey,
   type TermInfo,
@@ -214,22 +215,48 @@ export function CourseListView<T>({
     () => groupCoursesByTerm(visible, getTermInfo),
     [visible, getTermInfo],
   )
-  // The current term is the most-recent one across ALL courses — not the top of
-  // the filtered view. Filtering down to a single past term must still label it
-  // "Previous term", so we key off the unfiltered ordering, not `groupIndex`.
-  const currentTermLabel = React.useMemo(
-    () => groupCoursesByTerm(courses, getTermInfo)[0]?.label,
-    [courses, getTermInfo],
-  )
+  // "Current term" reflects the real calendar date (UBC term calendar:
+  // Jan–Apr W2, May–Jun S1, Jul–Aug S2, Sep–Dec W1) — not whichever term
+  // happens to hold the most recently added course. A group chronologically
+  // after today is "Upcoming term"; before today, "Previous term".
+  const nowSortKey = React.useMemo(() => {
+    const now = new Date()
+    const term = termFromMonth(now.getMonth())
+    // `year` is the academic-session label (S1/S2/W1 share their calendar
+    // year; W2 belongs to the *previous* label, since it falls in Jan–Apr of
+    // the following calendar year — see lib/term.ts's TERM_RANK comment).
+    const year = term === "W2" ? now.getFullYear() - 1 : now.getFullYear()
+    return termSortKey({ term, year })
+  }, [])
+  const termRelative = React.useMemo(() => {
+    const map = new Map<string, "current" | "upcoming" | "previous">()
+    for (const group of termGroups) {
+      if (group.items.length === 0) continue
+      const sortKey = termSortKey(getTermInfo(group.items[0]))
+      map.set(
+        group.label,
+        sortKey === nowSortKey ? "current" : sortKey > nowSortKey ? "upcoming" : "previous",
+      )
+    }
+    return map
+  }, [termGroups, getTermInfo, nowSortKey])
+  // The current term always leads, even when a course has already been
+  // created for a future term (which would otherwise sort above it).
+  const orderedTermGroups = React.useMemo(() => {
+    const currentIndex = termGroups.findIndex((g) => termRelative.get(g.label) === "current")
+    if (currentIndex <= 0) return termGroups
+    const rest = termGroups.filter((_, i) => i !== currentIndex)
+    return [termGroups[currentIndex], ...rest]
+  }, [termGroups, termRelative])
   const sections = React.useMemo<CourseListSection<T>[]>(() => {
     if (groupSections) return groupSections(visible)
-    return termGroups.map((group) => ({
+    return orderedTermGroups.map((group) => ({
       key: group.label,
       title: group.label,
       headerVariant: "term" as const,
       items: group.items,
     }))
-  }, [groupSections, visible, termGroups])
+  }, [groupSections, visible, orderedTermGroups])
 
   const activeFilterCount =
     Object.values(selected).reduce((n, v) => n + (v?.length ?? 0), 0)
@@ -344,8 +371,12 @@ export function CourseListView<T>({
                         {section.title}
                       </h3>
                       <p className="text-xs text-muted-foreground">
-                        {section.title === currentTermLabel ? "Current term" : "Previous term"} ·{" "}
-                        {section.items.length}{" "}
+                        {section.title && termRelative.get(section.title) === "current"
+                          ? "Current term"
+                          : section.title && termRelative.get(section.title) === "upcoming"
+                            ? "Upcoming term"
+                            : "Previous term"}{" "}
+                        · {section.items.length}{" "}
                         {section.items.length === 1 ? "course" : "courses"}
                       </p>
                     </div>
