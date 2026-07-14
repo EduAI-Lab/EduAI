@@ -6,7 +6,7 @@
  * Core is the single identity provider.
  */
 
-const VALID_ROLES = new Set(['STUDENT', 'PROFESSOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN']);
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';
@@ -53,7 +53,7 @@ export async function requireAuth(req, res, next) {
  * Build a middleware that requires the caller's role to be in `allowed`.
  * Apply after requireAuth; the role is already normalized on req.user.
  *
- * Example: requireRole(['ADMIN', 'PROFESSOR'])
+ * Example: requireRole(['ADMIN', 'INSTRUCTOR'])
  */
 export function requireRole(allowed) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
