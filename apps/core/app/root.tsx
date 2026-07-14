@@ -18,12 +18,12 @@ import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
-import { Toaster } from "@eduai/ui";
+import { Toaster, PageLoader } from "@eduai/ui";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
-import { ThemeSyncInitializer } from "~/components/theme-sync-initializer";
+import { ThemeSyncInitializer } from "@eduai/ui";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -55,12 +55,16 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession({ headers: request.headers });
 
-  // Resolve policy flags server-side (in-memory cached) and hand them to the
+  // getSession and getPolicies are independent — run them in parallel so a policy
+  // cache-miss does not serialize behind the session lookup on every navigation.
+  // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
-  const policies = await getPolicies();
+  const [session, policies] = await Promise.all([
+    auth.api.getSession({ headers: request.headers }),
+    getPolicies(),
+  ]);
 
   if (!session?.user) {
     return { ...GUEST_ROOT_PREFERENCES, policies };
@@ -102,6 +106,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     canInvite,
     policies,
   };
+}
+
+export function HydrateFallback() {
+  return <PageLoader />;
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {

@@ -38,13 +38,34 @@ function isStaffAccess(access: AccessLevel): boolean {
 
 /**
  * Prisma `where` fragment that hides materials students shouldn't see yet:
- * explicitly hidden (`visibleToStudents: false`) or scheduled for a future
+ * Canvas-unpublished (`unpublishedAt`), selectively excluded Canvas files,
+ * explicitly hidden (`visibleToStudents: false`), or scheduled for a future
  * reveal (`availableAt` in the future). Staff callers must NOT apply this.
+ *
+ * When `excludedCanvasFileIds` is empty the availableAt clause stays a top-level
+ * `OR` so scheduling tests remain readable; with exclusions an `AND` wraps both
+ * OR groups so Prisma doesn't overwrite one with the other.
  */
-function studentVisibilityWhere(now: Date) {
-  return {
-    visibleToStudents: true,
+function studentVisibilityWhere(now: Date, excludedCanvasFileIds: string[] = []) {
+  const availableAtGate = {
     OR: [{ availableAt: null }, { availableAt: { lte: now } }],
+  };
+  const exclusionGate =
+    excludedCanvasFileIds.length > 0
+      ? {
+          OR: [
+            { externalId: null },
+            { externalId: { notIn: excludedCanvasFileIds } },
+          ],
+        }
+      : null;
+
+  return {
+    unpublishedAt: null,
+    visibleToStudents: true,
+    ...(exclusionGate
+      ? { AND: [availableAtGate, exclusionGate] }
+      : availableAtGate),
   };
 }
 
@@ -527,8 +548,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
+  const excludedCanvasFileIds =
+    access.level === 'student'
+      ? (
+          await prisma.canvasMaterialExclusion.findMany({
+            where: { courseId },
+            select: { canvasFileId: true },
+          })
+        ).map((row) => row.canvasFileId)
+      : [];
+
   const studentGate =
-    access.level === 'student' ? studentVisibilityWhere(new Date()) : {};
+    access.level === 'student'
+      ? studentVisibilityWhere(new Date(), excludedCanvasFileIds)
+      : {};
 
   if (materialId) {
     const material = await prisma.courseMaterial.findFirst({

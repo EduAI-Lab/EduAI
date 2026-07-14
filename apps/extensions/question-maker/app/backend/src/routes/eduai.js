@@ -10,6 +10,7 @@ import { Op } from 'sequelize';
 import { Course } from '../schema/Course.js';
 import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
 import { normalizeCourseCode } from '../services/courseCodeUtils.js';
+import { config } from '../config/settings.js';
 
 const router = express.Router();
 
@@ -119,6 +120,13 @@ router.post('/generate-questions', async (req, res) => {
       });
     }
 
+    const resolvedNumQuestions = parseInt(numQuestions, 10) || 5;
+    if (resolvedNumQuestions > config.maxQuestions) {
+      return res.status(400).json({
+        error: `numQuestions cannot exceed ${config.maxQuestions}`
+      });
+    }
+
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
     const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
@@ -147,7 +155,7 @@ router.post('/generate-questions', async (req, res) => {
       courseCode,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
-      numQuestions: numQuestions || 5,
+      numQuestions: resolvedNumQuestions,
       difficultyDistribution: difficultyDistribution || { easy: 1, medium: 2, hard: 2 },
       reasoningDistribution: reasoningDistribution || { factual: 40, analytical: 30, application: 30 },
       ...(mcqN != null ? { mcqRequiredChoiceCount: mcqN } : {})
@@ -226,13 +234,16 @@ router.get('/courses/:courseId/topics', async (req, res) => {
  * POST /api/eduai/test-api-key – validates AI connectivity. Accepts an optional
  * `apiKeys` body carrying the caller's browser-stored provider keys (e.g. Google)
  * so the check validates the cloud provider rather than the (possibly offline)
- * UBC-hosted provider. Echoes back `provider` so the UI can report which path is live.
+ * UBC-hosted provider. An optional `provider` pins the probe to a specific path
+ * (e.g. `'ollama'` for the independent UBC status chip). Echoes back `provider`
+ * so the UI can report which path is live.
  */
 router.post('/test-api-key', async (req, res) => {
   try {
     const result = await eduaiService.testApiKey({
       cookie: req.headers.cookie ?? '',
       apiKeys: req.body?.apiKeys ?? {},
+      forceProvider: req.body?.provider,
     });
 
     if (result.success) {

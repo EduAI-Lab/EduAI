@@ -3,7 +3,7 @@
  * Defines navigation for login, homepage, assessments, help, and an optional API test route.
  */
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router';
-import { Toaster, ThemeProvider } from '@eduai/ui';
+import { Toaster, ThemeProvider, ThemeSyncInitializer } from '@eduai/ui';
 import { AuthProvider } from './contexts/AuthContext';
 import { QmAppGate } from './components/auth/QmAppGate';
 import { QmAppLayout } from './components/layout/QmAppLayout';
@@ -20,7 +20,6 @@ import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
 import { GuidedTourProvider } from './contexts/GuidedTourContext';
 import { BugReportProvider } from './contexts/BugReportContext';
-import { ThemeSyncInitializer } from './components/ThemeSyncInitializer';
 
 /** Legacy `/home` route: redirect to the default course's course detail page, falling back to /courses */
 function RedirectHomeRoute() {
