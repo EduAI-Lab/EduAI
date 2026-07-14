@@ -676,13 +676,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   const canReorder = perms.canManageContent && oModules.length > 1;
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder} className="relative">
-                      {({ handleProps }) => (
+                      {({ handleProps, isDragging }) => (
                         <>
                           {canReorder && (
                             <DragHandle
                               handleProps={handleProps}
                               label={`Drag to reorder ${m.title}`}
-                              className="absolute left-2 top-2 z-20 bg-background/85 shadow-sm ring-1 ring-border backdrop-blur-sm"
+                              variant="bar"
+                              active={isDragging}
                             />
                           )}
                           <ModuleCard
