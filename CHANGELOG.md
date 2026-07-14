@@ -13,6 +13,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Server-side navigation slowness — warm the Prisma pool with `$connect()` at boot and parallelize independent loader queries in `root.tsx`/`courses.tsx`, eliminating the cold-connect stall on the first navigation. (#1036, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
+- [core] fix: Pre-bundle `react-router` in Vite `optimizeDeps` to stop the intermittent first-load "dispatcher is null" crash caused by a dep re-optimization race. (#1035, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
+- [ai-tutor] fix: Cut local dev startup/navigation slowness — repoint pre-login `@eduai/ui` barrel imports to narrow subpaths (213→37 first-load modules), add an `http()` fetch timeout and `/api/me` in-flight dedupe, and throttle + background the Core course mirror on `GET /api/me`. (#446, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
 
 ## [Week 10 — July 6–12, 2026]

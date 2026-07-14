@@ -83,12 +83,16 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession({ headers: request.headers });
 
-  // Resolve policy flags server-side (in-memory cached) and hand them to the
+  // getSession and getPolicies are independent — run them in parallel so a policy
+  // cache-miss does not serialize behind the session lookup on every navigation.
+  // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
-  const policies = await getPolicies();
+  const [session, policies] = await Promise.all([
+    auth.api.getSession({ headers: request.headers }),
+    getPolicies(),
+  ]);
 
   if (!session?.user) {
     return { ...GUEST_ROOT_PREFERENCES, policies };
