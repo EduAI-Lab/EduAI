@@ -2,8 +2,9 @@
  * Frontend wrapper around AI service endpoints for chat, question generation, course/topics, and model list.
  * Passes through provider API keys as needed and returns typed results.
  */
+import { termLabelLong } from '@eduai/ui';
 import api from './api';
-import { apiKeyStorage } from './apiKeyStorage';
+import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -127,8 +128,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
-    /** Which provider path was validated: 'google' (cloud) or 'ollama' (UBC-hosted). */
-    provider?: 'google' | 'ollama';
+    /** Which provider path was validated: a cloud provider (google/openai/deepseek/anthropic) or 'ollama' (UBC-hosted). */
+    provider?: AIProvider | 'ollama';
 }
 
 class EduAIService {
@@ -148,21 +149,40 @@ class EduAIService {
      * Tests AI connectivity. Sends the caller's browser-stored provider keys (e.g.
      * Google) so the backend can validate the cloud provider — which works with the
      * user's own key even when the UBC-hosted provider is offline.
+     *
+     * Pass `overrideApiKeys` to force which path is probed — a populated map
+     * forces the cloud provider. Pass `opts.forceProvider` to pin the probe to a
+     * specific path (e.g. `'ollama'` for the UBC-hosted provider) so the backend
+     * probes it regardless of any server-side cloud key — sending `{}` alone is
+     * not enough, since the server would fall back to its own Google key and the
+     * UBC chip would never be checked. Used to probe cloud and UBC independently
+     * for the status chips.
      */
-    async testApiKey(): Promise<EduAITestResponse> {
-        // Build the apiKeys payload the backend expects from any locally-stored keys.
+    async testApiKey(
+        overrideApiKeys?: Record<string, any>,
+        opts?: { forceProvider?: string },
+    ): Promise<EduAITestResponse> {
+        // Build the apiKeys payload the backend expects from any locally-stored keys,
+        // unless the caller supplied an explicit override.
         let apiKeys: Record<string, any> = {};
-        try {
-            const stored = await apiKeyStorage.getAllApiKeys();
-            apiKeys = Object.fromEntries(
-                Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
-            );
-        } catch {
-            // Ignore key-storage failures — fall back to server-side keys only.
+        if (overrideApiKeys) {
+            apiKeys = overrideApiKeys;
+        } else {
+            try {
+                const stored = await apiKeyStorage.getAllApiKeys();
+                apiKeys = Object.fromEntries(
+                    Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
+                );
+            } catch {
+                // Ignore key-storage failures — fall back to server-side keys only.
+            }
         }
 
+        const body: Record<string, any> = { apiKeys };
+        if (opts?.forceProvider) body.provider = opts.forceProvider;
+
         try {
-            const response = await api.post('/api/eduai/test-api-key', { apiKeys });
+            const response = await api.post('/api/eduai/test-api-key', body);
             return { ...response.data, configured: response.data.configured ?? true };
         } catch (err: any) {
             if (err.response?.status === 400 && err.response?.data) {
@@ -218,7 +238,7 @@ class EduAIService {
                     id: course.id,
                     code: course.code,
                     name: course.name,
-                    description: course.description || `${course.term} ${course.year}`,
+                    description: course.description || termLabelLong(course.term, course.year),
                     term: course.term,
                     year: course.year
                 }));

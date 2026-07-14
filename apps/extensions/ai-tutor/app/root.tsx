@@ -12,9 +12,17 @@ import './app.css';
 import { AuthProvider } from '~/hooks/useLocalUser';
 import { TourProvider } from '~/components/TourProvider';
 import { BugReportProvider } from '~/components/bug-report/BugReportProvider';
-import { ThemeProvider } from '~/components/theme-provider';
-import { ThemeSyncInitializer } from '~/components/theme-sync-initializer';
-import { Toaster } from '@eduai/ui';
+import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
+// Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
+// (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
+// even one named member from it forces Vite dev to crawl and transform the
+// whole shared UI library (recharts, shiki, markdown, every Radix primitive,
+// @tabler icons) on first load — for every user, before login. root renders
+// for everyone, so keep its UI imports minimal.
+import { ThemeProvider } from '@eduai/ui/theme-provider';
+import { ThemeSyncInitializer } from '@eduai/ui/theme-sync-initializer';
+import { Toaster } from '@eduai/ui/sonner';
+import { PageLoader } from '@eduai/ui/page-loader';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
@@ -30,11 +38,7 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function HydrateFallback() {
-  return (
-    <div className="min-h-dvh bg-background flex items-center justify-center">
-      <div className="text-sm text-muted-foreground">Loading…</div>
-    </div>
-  );
+  return <PageLoader />;
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -68,8 +72,10 @@ export default function App() {
     <AuthProvider initialUser={null}>
       <BugReportProvider>
         <TourProvider>
-          <ThemeSyncInitializer />
-          <Outlet />
+          <AssistiveModeProvider>
+            <ThemeSyncInitializer />
+            <Outlet />
+          </AssistiveModeProvider>
         </TourProvider>
       </BugReportProvider>
     </AuthProvider>

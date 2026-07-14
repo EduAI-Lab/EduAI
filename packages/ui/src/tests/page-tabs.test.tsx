@@ -106,4 +106,18 @@ describe("PageTabs", () => {
     const content = container.querySelector(".custom-content-class");
     expect(content).toBeInTheDocument();
   });
+
+  it("allows the tab list to scroll horizontally instead of overflowing the page", () => {
+    const { container } = render(
+      <PageTabs defaultValue="tab1">
+        <PageTabsList>
+          <PageTabsTrigger value="tab1">Tab 1</PageTabsTrigger>
+          <PageTabsTrigger value="tab2">Tab 2</PageTabsTrigger>
+        </PageTabsList>
+        <PageTabsContent value="tab1">Content 1</PageTabsContent>
+      </PageTabs>
+    );
+    const list = container.querySelector('[role="tablist"]');
+    expect(list).toHaveClass("overflow-x-auto");
+  });
 });
