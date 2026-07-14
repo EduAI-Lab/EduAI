@@ -43,14 +43,22 @@ cleanup() {
 trap cleanup EXIT
 
 # ── Build all images ──────────────────────────────────────────────────────────
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Building E2E images..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-df -h
-docker system df
-docker compose -f "$COMPOSE_FILE" build
-df -h
-docker system df
+# CI prebuilds the images with `docker buildx bake` (GitHub Actions layer cache) and
+# sets E2E_SKIP_BUILD=1 so this script reuses them instead of rebuilding uncached.
+if [ "${E2E_SKIP_BUILD:-}" = "1" ]; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Skipping image build (E2E_SKIP_BUILD=1 — images prebuilt)."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+else
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Building E2E images..."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  df -h
+  docker system df
+  docker compose -f "$COMPOSE_FILE" build
+  df -h
+  docker system df
+fi
 
 # ── Boot application stack ────────────────────────────────────────────────────
 echo ""
