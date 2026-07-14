@@ -33,23 +33,20 @@ export function DashboardUnitAdminView() {
   const quickActions: DashboardQuickAction[] = [
     {
       label: "Courses",
-      description: "Create and manage courses in your authorized departments.",
+      description: "Create and manage courses in your authorized course codes.",
       href: "/courses",
-      color: "var(--color-course-1)",
       icon: <IconBook2 size={16} stroke={1.75} />,
     },
     {
       label: "Course chat",
       description: "Chat within a course for unit-wide support and questions.",
       href: "/chat",
-      color: "var(--color-course-2)",
       icon: <IconMessageCircle size={16} stroke={1.75} />,
     },
     {
       label: "Settings",
       description: "Manage your API keys and provider preferences.",
       href: "/settings",
-      color: "var(--color-course-4)",
       icon: <IconSettings size={16} stroke={1.75} />,
     },
   ];

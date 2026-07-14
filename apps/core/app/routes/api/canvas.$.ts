@@ -16,6 +16,7 @@ import {
   deleteCanvasIntegration,
   getCanvasIntegrationPublic,
   saveCanvasIntegration,
+  CanvasStoredCredentialsError,
 } from "~/lib/canvas/integration.server";
 import { LinkRosterError, linkCanvasRoster } from "~/lib/canvas/link-roster.server";
 import { ConnectCanvasSchema, LinkRosterSchema, SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
@@ -244,6 +245,9 @@ async function handleCanvasRequest(request: Request): Promise<Response> {
     }
   } catch (error) {
     if (error instanceof CanvasNotConnectedError) {
+      return json({ success: false, error: error.message }, 400);
+    }
+    if (error instanceof CanvasStoredCredentialsError) {
       return json({ success: false, error: error.message }, 400);
     }
     if (error instanceof InvalidCanvasCourseAccessError) {

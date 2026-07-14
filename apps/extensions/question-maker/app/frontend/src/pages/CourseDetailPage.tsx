@@ -38,7 +38,7 @@ import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionModal } from '../components/questions/QuestionModal';
 import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
-import { CourseTopicsTab } from './course-detail/CourseTopicsTab';
+import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
 import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
 import type { QuestionAnalyticsProps } from '@eduai/ui';
 import {
@@ -64,9 +64,9 @@ import {
   slugifyAssessmentBasename,
 } from '../utils/assessmentExport';
 
-type ActiveTab = 'overview' | 'questions' | 'assessments' | 'topics' | 'canvas';
+type ActiveTab = 'overview' | 'questions' | 'assessments' | 'canvas';
 
-const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'assessments', 'topics', 'canvas'];
+const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'assessments', 'canvas'];
 
 const TYPE_COLORS: Record<string, string> = {
   MCQ: 'oklch(0.55 0.16 255)',
@@ -740,6 +740,16 @@ export const CourseDetailPage = () => {
           ...(writesDisabled ? ['Read-only'] : []),
         ]}
         accentColor={resolvePaletteAccent(String(course.id))}
+        topicsAction={
+          <CourseTopicsHeroAction
+            courseId={course.id}
+            isLinked={!!course.coreCourseId}
+            canManage={!writesDisabled}
+            onTopicsChange={() => {
+              void loadTopicsForCourse(course.id, { force: true });
+            }}
+          />
+        }
       />
 
       <PageTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
@@ -747,7 +757,6 @@ export const CourseDetailPage = () => {
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="questions">Questions</PageTabsTrigger>
           <PageTabsTrigger value="assessments">Assessments</PageTabsTrigger>
-          <PageTabsTrigger value="topics">Topics</PageTabsTrigger>
           <PageTabsTrigger value="canvas">Canvas</PageTabsTrigger>
         </PageTabsList>
 
@@ -802,15 +811,6 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={() => setIsCanvasImportOpen(true)}
-          />
-        </PageTabsContent>
-
-        <PageTabsContent value="topics" className="space-y-6">
-          <CourseTopicsTab
-            courseId={course.id}
-            topics={topicsByCourse[course.id] ?? []}
-            isLoading={isQuestionsLoading}
-            onTopicsChange={() => { void loadTopicsForCourse(course.id, { force: true }); }}
           />
         </PageTabsContent>
 

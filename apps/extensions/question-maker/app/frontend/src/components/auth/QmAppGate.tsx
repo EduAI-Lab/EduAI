@@ -3,7 +3,7 @@ import { PageLoader } from '@eduai/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessQm } from '@/lib/rbac/roles';
 import { AccessDeniedView } from '@/components/auth/AccessDeniedView';
-import { getCoreUrl } from '@/lib/coreUrl';
+import { getCoreLoginUrl } from '@/lib/coreUrl';
 import { QmAccessShell } from '@/components/layout/QmAppLayout';
 
 type QmAppGateProps = {
@@ -15,9 +15,7 @@ export function QmAppGate({ children }: QmAppGateProps) {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      const coreUrl = getCoreUrl();
-      const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
+      window.location.href = getCoreLoginUrl();
     }
   }, [isLoading, user]);
 

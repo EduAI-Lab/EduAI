@@ -1,16 +1,23 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
-import { ProgressBarFromData } from '../components/ProgressBar';
+import { Link } from 'react-router';
+import type { ReactNode } from 'react';
+import { IconBooks, IconSearch } from '@tabler/icons-react';
+import {
+  Card,
+  CardContent,
+  CourseCard,
+  CourseListView,
+  PageHeading,
+  buildTermFilterGroup,
+  type CourseFilterGroup,
+} from '@eduai/ui';
 import type { Course } from '../lib/types';
 import type { Route } from './+types/student';
-import { AtRoleBanner } from '../components/rbac/AtRoleBanner';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
-import { AppShell } from '~/components/layout/AppShell';
-import { ShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbs';
-import { RoleDashboard } from '~/components/dashboard/RoleDashboard';
-import { buildDashboardStats } from '~/lib/dashboard-stats';
+import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
@@ -18,64 +25,143 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   return { courses };
 }
 
+/** Time-of-day greeting for the page heading — mirrors EduAI Core's dashboard
+ *  hero (`apps/core/app/routes/dashboard.tsx`) so the two apps read as one
+ *  product rather than two differently-voiced tools. */
+function timeOfDayGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/** First name only, same "Dr. First Last" edge case Core's greeting handles. */
+function firstNameOf(name: string | undefined): string | null {
+  const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (parts.length === 0) return null;
+  return parts.length === 3 && parts[0]!.endsWith('.') ? parts[1]! : parts[0]!;
+}
+
+/** Progress surfaced as a single accent badge on the shared card, rather than a
+ *  bespoke body/footer the platform's other course cards don't have. */
+function progressBadges(course: Course): string[] {
+  const p = course.progress;
+  if (!p || p.total <= 0 || p.completed <= 0) return [];
+  if (p.completed >= p.total) return ['Completed'];
+  return [`${Math.round(p.percentage)}% complete`];
+}
+
+/** Bucket a course by how far the student has progressed through it. */
+const PROGRESS_FILTER: CourseFilterGroup<Course> = {
+  id: 'progress',
+  label: 'Progress',
+  getValue: (course) => {
+    const p = course.progress;
+    if (!p || p.total <= 0) return null;
+    if (p.completed <= 0) return 'not-started';
+    if (p.completed >= p.total) return 'completed';
+    return 'in-progress';
+  },
+  options: [
+    { value: 'not-started', label: 'Not started' },
+    { value: 'in-progress', label: 'In progress' },
+    { value: 'completed', label: 'Completed' },
+  ],
+};
+
+/** Shared centered empty/no-results card used by the course list. */
+function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
+  return (
+    <Card className="mx-auto max-w-lg">
+      <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          {icon}
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+          <p className="text-sm text-muted-foreground">{body}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
-  const navigate = useNavigate();
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
-  // Always the student stat shape here: TA is allowed on this route to preview
-  // the student experience, but courseList is the enrolled/progress list, not
-  // taught courses, so it must not be scored with instructor-shell stats.
-  const stats = useMemo(
-    () => buildDashboardStats('STUDENT', { courses: courseList }),
-    [courseList],
-  );
+
+  useShellBreadcrumbs([{ label: 'Courses' }]);
+
+  const firstName = firstNameOf(user?.name);
+  const heading = firstName ? `${timeOfDayGreeting()}, ${firstName}.` : 'My courses';
+  const subheading = 'Continue where you left off or explore your courses.';
 
   return (
-    <AppShell breadcrumbs={<ShellBreadcrumbs items={[{ label: 'Courses' }]} />}>
-      <RoleDashboard
-        banner={user ? <AtRoleBanner role={user.role} variant="student" /> : null}
-        heading="Courses"
-        subheading="Continue where you left off or explore new learning materials."
-        headingTourId="student-dashboard-header"
-        stats={stats}
-      >
-        {courseList.length === 0 ? (
-          <div className="mx-auto max-w-lg rounded-lg border bg-card p-12 text-center shadow-sm">
-            <h2 className="mb-2 text-xl font-bold text-foreground">No courses yet</h2>
-            <p className="text-sm text-muted-foreground">
-              You are not enrolled in any published courses yet. Enrollments sync automatically
-              from Core when you sign in.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {courseList.map((course) => (
-              <button
-                key={course.id}
-                type="button"
-                onClick={() => navigate(`/student/courses/${course.id}`)}
-                className="group rounded-lg border bg-card p-6 text-left shadow-sm transition hover:shadow-md"
-                data-tour={course.id === courseList[0]?.id ? 'student-course-card-first' : undefined}
-                data-tour-route={
-                  course.id === courseList[0]?.id ? `/student/courses/${course.id}` : undefined
-                }
-              >
-                <h3 className="mb-1 line-clamp-2 text-lg font-semibold text-foreground group-hover:text-primary">
-                  {course.title}
-                </h3>
-                {course.description ? (
-                  <p className="mb-4 line-clamp-2 text-sm text-muted-foreground">{course.description}</p>
-                ) : null}
-                {course.progress && course.progress.total > 0 ? (
-                  <div className="border-t border-border pt-4">
-                    <ProgressBarFromData progress={course.progress} size="sm" showLabel />
-                  </div>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        )}
-      </RoleDashboard>
-    </AppShell>
+    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
+      <div data-tour="student-dashboard-header">
+        <PageHeading heading={heading} subheading={subheading} />
+      </div>
+
+      <CourseListView<Course>
+        courses={courseList}
+        getKey={(course) => course.id}
+        getTermInfo={(course) => ({
+          term: courseTerm(course),
+          year: courseYear(course),
+          startDate: course.startDate ?? null,
+        })}
+        getSearchText={(course) => `${course.title} ${courseCode(course)}`}
+        filterGroups={[
+          buildTermFilterGroup<Course>((c) => ({
+            term: courseTerm(c),
+            year: courseYear(c),
+            startDate: c.startDate ?? null,
+          })),
+          PROGRESS_FILTER,
+        ]}
+        emptyState={
+          <EmptyCourseCard
+            icon={<IconBooks size={22} aria-hidden="true" />}
+            title="No courses yet"
+            body="You are not enrolled in any published courses yet. Enrollments sync automatically from Core when you sign in."
+          />
+        }
+        noResultsState={
+          <EmptyCourseCard
+            icon={<IconSearch size={22} aria-hidden="true" />}
+            title="No courses match"
+            body="Try a different title or course code."
+          />
+        }
+        renderCard={(course) => {
+          const card = (
+            <CourseCard
+              id={String(course.id)}
+              code={courseCode(course)}
+              name={courseName(course)}
+              description={course.description}
+              term={courseTerm(course)}
+              year={courseYear(course)}
+              isPublished={course.isPublished}
+              accentColor={accentForCourse(course)}
+              extraBadges={progressBadges(course)}
+              href={`/student/courses/${course.id}`}
+              LinkComponent={Link}
+            />
+          );
+          // Preserve the guided-tour target the old first-card carried.
+          return course.id === courseList[0]?.id ? (
+            <div
+              data-tour="student-course-card-first"
+              data-tour-route={`/student/courses/${course.id}`}
+            >
+              {card}
+            </div>
+          ) : (
+            card
+          );
+        }}
+      />
+    </div>
   );
 }
