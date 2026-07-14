@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
+import { Button, Input } from '@eduai/ui';
 import { useCourseTopicsContext } from '../hooks/useCourseTopics';
 
 type AddCourseTopicsButtonProps = {
@@ -50,31 +51,29 @@ export default function AddCourseTopicsButton({ disabled = false }: AddCourseTop
 
   return (
     <div className="space-y-2">
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
+        className="w-full"
         onClick={toggle}
         disabled={buttonDisabled}
-        className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
       >
-        {open ? 'Cancel' : 'Add Topic'}
-      </button>
+        {open ? 'Cancel' : 'Add topic'}
+      </Button>
       {open && (
         <form onSubmit={handleSubmit} className="space-y-2">
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="New topic name…"
-            className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-transparent"
+            autoFocus
           />
-          {error && <p className="text-xs text-rose-500">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={busy || !name.trim()}
-              className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold disabled:opacity-40"
-            >
-              {busy ? 'Adding…' : 'Save Topic'}
-            </button>
+            <Button type="submit" size="sm" disabled={busy || !name.trim()}>
+              {busy ? 'Adding…' : 'Save topic'}
+            </Button>
           </div>
         </form>
       )}

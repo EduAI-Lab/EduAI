@@ -13,7 +13,7 @@ export function PageTabs({ ...props }: PageTabsProps) {
 export function PageTabsList({ className, ...props }: PageTabsListProps) {
   return (
     <TabsPrimitive.List
-      className={`flex gap-0.5 border-b border-border mb-5 font-sans${className ? ` ${className}` : ""}`}
+      className={`flex gap-0.5 overflow-x-auto border-b border-border mb-5 font-sans${className ? ` ${className}` : ""}`}
       {...props}
     />
   )

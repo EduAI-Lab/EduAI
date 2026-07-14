@@ -5,13 +5,18 @@ import {
   Button,
   Card, CardContent,
   CourseCard,
+  CourseListView,
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
   Input,
   Label,
   PageHeading,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Textarea,
+  buildStatusFilterGroup,
+  buildTermFilterGroup,
+  buildDepartmentFilterGroup,
 } from '@eduai/ui'
+import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -36,7 +41,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [createDept, setCreateDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>('Fall')
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
   const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
@@ -76,7 +81,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
     setCreateDept('')
-    setSelectedTerm('Fall')
+    setSelectedTerm(termFromMonth(new Date().getMonth()))
     setSelectedInstructor('')
     setCreateOpen(false)
   }
@@ -117,7 +122,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                 <Input id="create-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-dept">Department</Label>
+                <Label htmlFor="create-dept">Course Code</Label>
                 <DepartmentCombobox
                   departments={departmentOptions}
                   value={createDept}
@@ -155,10 +160,9 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                   <Select value={selectedTerm} onValueChange={setSelectedTerm}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Fall">Fall</SelectItem>
-                      <SelectItem value="Spring">Spring</SelectItem>
-                      <SelectItem value="Summer">Summer</SelectItem>
-                      <SelectItem value="Winter">Winter</SelectItem>
+                      {TERM_CODES.map((code) => (
+                        <SelectItem key={code} value={code}>{termName(code)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -191,47 +195,65 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
         </Dialog>
       </div>
 
-      {courses.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No courses yet.</p>
-            <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-              <IconPlus className="w-4 h-4 mr-2" />
-              Create your first course
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {courses.map((course, index) => (
-            <CourseCard
-              key={course.id}
-              id={course.id}
-              code={course.code}
-              name={course.name}
-              description={course.description}
-              term={course.term}
-              year={course.year}
-              isPublished={course.isPublished}
-              department={course.department}
-              departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-              colorIndex={index}
-              href={`/courses/${course.id}`}
-              LinkComponent={Link}
-              actions={{
-                showPublish: true,
-                isPublished: course.isPublished,
-                onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
-                showEdit: true,
-                onEdit: () => setTimeout(() => setEditingCourse(course), 0),
-                showDelete: true,
-                onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <CourseListView<Course>
+        courses={courses}
+        gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        getKey={(course) => course.id}
+        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getSearchText={(course) => `${course.name} ${course.code}`}
+        filterGroups={[
+          buildStatusFilterGroup<Course>((c) => c.isPublished),
+          buildTermFilterGroup<Course>((c) => ({ term: c.term, year: c.year })),
+          buildDepartmentFilterGroup<Course>((c) => c.department, {
+            optionLabel: getDepartmentLabel,
+          }),
+        ]}
+        emptyState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses yet.</p>
+              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
+                <IconPlus className="w-4 h-4 mr-2" />
+                Create your first course
+              </Button>
+            </CardContent>
+          </Card>
+        }
+        noResultsState={
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-8">
+              <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No courses match your search.</p>
+            </CardContent>
+          </Card>
+        }
+        renderCard={(course, index) => (
+          <CourseCard
+            id={course.id}
+            code={course.code}
+            name={course.name}
+            description={course.description}
+            term={course.term}
+            year={course.year}
+            isPublished={course.isPublished}
+            department={course.department}
+            departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
+            colorIndex={index}
+            href={`/courses/${course.id}`}
+            LinkComponent={Link}
+            actions={{
+              showPublish: true,
+              isPublished: course.isPublished,
+              onPublishToggle: () => onPublishToggle(course.id, !course.isPublished),
+              showEdit: true,
+              onEdit: () => setTimeout(() => setEditingCourse(course), 0),
+              showDelete: true,
+              onDelete: () => setTimeout(() => setDeletingCourse(course), 0),
+            }}
+          />
+        )}
+      />
 
       {/* Delete confirmation */}
       <Dialog open={!!deletingCourse} onOpenChange={(open) => !open && setDeletingCourse(null)}>
@@ -274,12 +296,12 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                 <Input name="code" defaultValue={editingCourse.code} required />
               </div>
               <div className="grid gap-2">
-                <Label>Department</Label>
+                <Label>Course Code</Label>
                 <DepartmentCombobox
                   departments={departmentOptions}
                   value={editDept}
                   onValueChange={setEditDept}
-                  placeholder="No department"
+                  placeholder="No course code"
                   disabled={deptLoading}
                 />
               </div>

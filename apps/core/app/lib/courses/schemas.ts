@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RESPONSE_STYLE_TAG_IDS } from "~/lib/ai/response-style-tags";
+import { TERM_CODES } from "@eduai/ui/term";
 
 /**
  * Schema for creating a new course
@@ -19,11 +20,14 @@ export type UpdateCourseResponseStyleInput = z.infer<
   typeof UpdateCourseResponseStyleSchema
 >;
 
+// Canonical UBC term code — the single vocabulary shared across all EduAI apps.
+const TermCodeSchema = z.enum(TERM_CODES);
+
 export const CreateCourseSchema = z.object({
   name: z.string().min(1),
   code: z.string().min(1),
   section: z.string().min(1),
-  term: z.string().min(1),
+  term: TermCodeSchema,
   year: z.number().int(),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().optional(),
@@ -40,7 +44,7 @@ export const UpdateCourseSchema = z.object({
   name: z.string().min(1).optional(),
   code: z.string().min(1).optional(),
   section: z.string().min(1).optional(),
-  term: z.string().optional(),
+  term: TermCodeSchema.optional(),
   year: z.number().int().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional().nullable(),

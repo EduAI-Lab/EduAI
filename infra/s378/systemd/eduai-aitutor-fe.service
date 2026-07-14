@@ -1,0 +1,22 @@
+[Unit]
+Description=EduAI AI Tutor frontend (dev.aitutor.eduai.ok.ubc.ca → :3001)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
+After=network-online.target eduai-aitutor-server.service
+Wants=network-online.target
+PartOf=eduai-dev.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+EnvironmentFile=-%h/.config/systemd/user/eduai-dev.env
+Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=VOLTA_HOME=%h/.volta
+ExecStart=%h/.volta/bin/npm run dev -w ai-tutor
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+KillMode=control-group
+
+[Install]
+WantedBy=eduai-dev.target

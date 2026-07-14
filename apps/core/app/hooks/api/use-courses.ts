@@ -13,6 +13,8 @@ export interface Course {
   responseStyleTags?: string[]
   instructorId: string | null
   department: string | null
+  startDate: string
+  endDate: string | null
   createdAt: string
   updatedAt: string
 }
