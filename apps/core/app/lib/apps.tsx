@@ -1,5 +1,5 @@
-import { IconBooks, IconMessageChatbot, IconPuzzle, IconSchool } from '@tabler/icons-react'
-import { QUESTION_MAKER_ROLES, type LauncherApp } from '@eduai/ui'
+import { IconPuzzle } from '@tabler/icons-react'
+import { getLauncherApps as getSharedLauncherApps, type LauncherApp } from '@eduai/ui'
 import { getEduAiAppUrl, getAiTutorAppUrl } from '~/lib/extension-urls'
 import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
 
@@ -46,9 +46,10 @@ export function parseExtraExtensions(): LauncherApp[] {
 }
 
 /**
- * Every EduAI app/extension, for the sidebar app switcher. Role gating is
- * applied by AppLauncher from each entry's `roles`; Core and AI Tutor are open
- * to all roles, Question Maker only to instructors/admins (rbac-matrix §4).
+ * Every EduAI app/extension, for the sidebar app switcher. Names/icons/colors/
+ * role-gating for the three built-in apps live in the shared `@eduai/ui`
+ * registry (issue #764) so Core, AI Tutor, and Question Maker agree on one
+ * canonical list; this app resolves its own per-env URLs and injects them.
  *
  * Visibility is controlled by env vars: an extension only appears when its
  * corresponding VITE_*_URL variable is set. Omit the var in an environment
@@ -59,32 +60,17 @@ export function getLauncherApps(): LauncherApp[] {
   const aiTutorUrl = getAiTutorAppUrl()
   const questionMakerUrl = getQuestionMakerUrl()
 
-  return [
-    {
-      id: 'core',
-      name: 'EduAI Core',
-      url: getEduAiAppUrl(),
-      icon: <IconSchool className="size-4" />,
-      description: 'Courses, materials & class hub',
-      color: 'oklch(0.580 0.150 250)',
+  const apps = getSharedLauncherApps({
+    currentAppId: CURRENT_APP_ID,
+    urls: {
+      core: getEduAiAppUrl(),
+      aiTutor: aiTutorUrl ?? '',
+      questionMaker: questionMakerUrl ?? '',
     },
-    ...(aiTutorUrl ? [{
-      id: 'ai-tutor',
-      name: 'AI Tutor',
-      url: aiTutorUrl,
-      icon: <IconMessageChatbot className="size-4" />,
-      description: 'Chat-based study assistant',
-      color: 'oklch(0.560 0.130 165)',
-    }] : []),
-    ...(questionMakerUrl ? [{
-      id: 'question-maker',
-      name: 'Question Maker',
-      url: questionMakerUrl,
-      icon: <IconBooks className="size-4" />,
-      description: 'Build & manage assessments',
-      color: 'oklch(0.660 0.145 65)',
-      roles: QUESTION_MAKER_ROLES,
-    }] : []),
+  })
+
+  return [
+    ...apps.filter((app) => app.id === CURRENT_APP_ID || app.url),
     ...parseExtraExtensions(),
   ]
 }

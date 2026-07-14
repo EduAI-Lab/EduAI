@@ -5,14 +5,13 @@
  * first-run onboarding state when the user has no courses yet.
  */
 import { Link } from 'react-router';
-import type { ReactNode } from 'react';
 import {
   IconChevronRight,
   IconHistory,
   IconArrowRight,
   IconSparkles,
 } from '@tabler/icons-react';
-import { StatCard, COURSE_COLORS, Button, QuestionAnalytics, type DonutSegment } from '@eduai/ui';
+import { StatCard, COURSE_COLORS, Button, QuestionAnalytics, QuickActionsPanel, type QuickAction, type DonutSegment } from '@eduai/ui';
 
 export type QmDashboardStat = {
   label: string;
@@ -33,13 +32,8 @@ export type QmDashboardRecentItem = {
   updatedAt: string;
 };
 
-export type QmDashboardQuickAction = {
-  label: string;
-  description: string;
-  href: string;
-  color: string;
-  icon: ReactNode;
-};
+/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing imports. */
+export type QmDashboardQuickAction = QuickAction;
 
 export type QmDashboardAnalytics = {
   typeComposition: DonutSegment[];
@@ -168,31 +162,6 @@ function CourseListPanel({ courses, loading }: { courses: QmDashboardCourse[]; l
   );
 }
 
-function QuickActionsPanel({ actions }: { actions: QmDashboardQuickAction[] }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {actions.map((action) => (
-        <Link
-          key={action.href + action.label}
-          to={action.href}
-          className="flex items-start gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 text-left shadow-[var(--shadow-2xs)] transition-shadow hover:shadow-md"
-        >
-          <div
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg"
-            style={{ background: action.color + '22' }}
-          >
-            <span style={{ color: action.color }}>{action.icon}</span>
-          </div>
-          <div>
-            <div className="text-[13px] font-semibold text-foreground">{action.label}</div>
-            <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">{action.description}</div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 function RecentActivityPanel({ items, loading }: { items: QmDashboardRecentItem[]; loading: boolean }) {
   if (loading) {
     return (
@@ -277,7 +246,7 @@ export function QmDashboardView({
           <OnboardingCard hasCourses={courses.length > 0} />
           <div>
             <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
-            <QuickActionsPanel actions={quickActions} />
+            <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
           </div>
         </>
       ) : (
@@ -310,7 +279,7 @@ export function QmDashboardView({
 
               <div>
                 <h2 className="mb-3.5 text-[15px] font-semibold text-foreground">Quick actions</h2>
-                <QuickActionsPanel actions={quickActions} />
+                <QuickActionsPanel actions={quickActions} LinkComponent={Link} />
               </div>
             </div>
 
