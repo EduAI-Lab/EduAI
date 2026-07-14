@@ -288,6 +288,8 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
+    // Intentionally NO `cookieCache`: serving getSession() from a signed cookie
+    // bypasses immediate session invalidation on deactivation (#971) / logout.
   },
   advanced: {
     useSecureCookies,
