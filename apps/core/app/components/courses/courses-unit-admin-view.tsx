@@ -144,7 +144,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
             <DialogHeader>
               <DialogTitle>Create course</DialogTitle>
               <DialogDescription>
-                New courses will be assigned to one of your authorized departments.
+                New courses will be assigned to one of your authorized course codes.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreate} className="grid gap-4 py-4">
@@ -153,7 +153,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 <Input id="ua-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="ua-dept">Department</Label>
+                <Label htmlFor="ua-dept">Course Code</Label>
                 {authorizedDepts.length === 1 ? (
                   <>
                     <input type="hidden" name="department" value={authorizedDepts[0].code} />
@@ -169,7 +169,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                     departments={authorizedDepts}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    placeholder="Select department"
+                    placeholder="Select course code"
                   />
                 )}
               </div>
@@ -353,12 +353,12 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 <Input name="code" defaultValue={editingCourse.code} required />
               </div>
               <div className="grid gap-2">
-                <Label>Department</Label>
+                <Label>Course Code</Label>
                 <DepartmentCombobox
                   departments={authorizedDepts}
                   value={editDept}
                   onValueChange={setEditDept}
-                  placeholder="No department"
+                  placeholder="No course code"
                 />
               </div>
               <div className="grid gap-2">
