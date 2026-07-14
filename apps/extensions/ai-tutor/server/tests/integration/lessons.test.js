@@ -396,4 +396,69 @@ describe('Lessons routes', () => {
       expect(res.status).toBe(404);
     });
   });
+
+  // ── POST append order + PUT reorder (#1046 / #1047) ───────────────
+
+  describe('POST /api/modules/:moduleId/lessons (append order)', () => {
+    it('appends a new lesson to the end when no position is supplied', async () => {
+      // seedMinimalCourse creates one lesson at position 0.
+      const res = await request(profApp)
+        .post(`/api/modules/${seed.module.id}/lessons`)
+        .send({ title: 'Second Lesson' });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(1);
+    });
+
+    it('honors an explicit position when supplied', async () => {
+      const res = await request(profApp)
+        .post(`/api/modules/${seed.module.id}/lessons`)
+        .send({ title: 'Pinned', position: 7 });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(7);
+    });
+  });
+
+  describe('PUT /api/modules/:moduleId/lessons/order', () => {
+    async function seedThreeLessons() {
+      const b = await prisma.lesson.create({
+        data: { title: 'B', position: 1, moduleId: seed.module.id },
+      });
+      const c = await prisma.lesson.create({
+        data: { title: 'C', position: 2, moduleId: seed.module.id },
+      });
+      return { a: seed.lesson, b, c };
+    }
+
+    it('reassigns positions 0..n-1 from the ordered id list', async () => {
+      const { a, b, c } = await seedThreeLessons();
+      const res = await request(profApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [c.id, a.id, b.id] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
+      expect(res.body.map((l) => l.position)).toEqual([0, 1, 2]);
+
+      const list = await request(profApp).get(`/api/modules/${seed.module.id}/lessons`);
+      expect(list.body.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
+    });
+
+    it('rejects an id set that does not match the module lessons', async () => {
+      const { a, b } = await seedThreeLessons();
+      const res = await request(profApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [a.id, b.id] });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 403 for a TA', async () => {
+      const { a, b, c } = await seedThreeLessons();
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [c.id, b.id, a.id] });
+      expect(res.status).toBe(403);
+    });
+  });
 });
