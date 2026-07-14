@@ -209,12 +209,6 @@ export function formatCostTier(costTier: CostTier | null | undefined) {
   return 'Balanced cost';
 }
 
-export function costTierClassName(costTier: CostTier | null | undefined) {
-  if (costTier === 'LOW') return 'tag tag-accent';
-  if (costTier === 'HIGH') return 'tag tag-primary';
-  return 'tag';
-}
-
 export function clampIterations(value: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_POLICY.maxSupervisorIterations;
@@ -228,9 +222,9 @@ export function formatApiKeyUpdatedTime(value: string | null) {
   return date.toLocaleString();
 }
 
-export function getApiKeySourceTag(status: EduAiApiKeyStatus) {
-  if (!status.configured) return { label: 'Not configured', className: 'tag' };
-  if (status.source === 'ADMIN') return { label: 'Admin override', className: 'tag tag-primary' };
-  if (status.source === 'ENV') return { label: 'From .env', className: 'tag tag-accent' };
-  return { label: 'Configured', className: 'tag' };
+export function getApiKeySourceTag(status: EduAiApiKeyStatus): { label: string } {
+  if (!status.configured) return { label: 'Not configured' };
+  if (status.source === 'ADMIN') return { label: 'Admin override' };
+  if (status.source === 'ENV') return { label: 'From .env' };
+  return { label: 'Configured' };
 }
