@@ -12,6 +12,10 @@ import {
   extractTextFromFile,
   findEquationSpans,
   enrichExtractedDocumentContent,
+  assertZipWithinLimits,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES,
+  MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
 } from "~/lib/ai/file-processing";
 
 // ---------------------------------------------------------------------------
@@ -133,6 +137,89 @@ describe("validateFile", () => {
   it("accepts a file exactly at the 50 MB boundary", () => {
     const exactly50MB = 50 * 1024 * 1024;
     expect(validateFile(makeFile("text/plain", exactly50MB)).isValid).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assertZipWithinLimits (zip-bomb guard) — issue #978
+// ---------------------------------------------------------------------------
+
+describe("assertZipWithinLimits", () => {
+  // Mimics a JSZip instance loaded via loadAsync: entries carry a `_data`
+  // object whose `uncompressedSize` comes from the ZIP central directory.
+  const makeZip = (
+    entries: Array<{ name: string; uncompressedSize?: number; dir?: boolean }>,
+  ) => ({
+    files: Object.fromEntries(
+      entries.map((e) => [
+        e.name,
+        {
+          dir: e.dir ?? false,
+          _data:
+            e.uncompressedSize === undefined
+              ? undefined
+              : { uncompressedSize: e.uncompressedSize },
+        },
+      ]),
+    ),
+  });
+
+  it("accepts a normal small archive", () => {
+    const zip = makeZip([
+      { name: "ppt/slides/slide1.xml", uncompressedSize: 1024 },
+      { name: "ppt/slides/slide2.xml", uncompressedSize: 2048 },
+    ]);
+    expect(() => assertZipWithinLimits(zip, "PPTX")).not.toThrow();
+  });
+
+  it("accepts an empty archive", () => {
+    expect(() => assertZipWithinLimits(makeZip([]), "PPTX")).not.toThrow();
+  });
+
+  it("rejects an archive with too many entries", () => {
+    const entries = Array.from({ length: MAX_ZIP_ENTRIES + 1 }, (_, i) => ({
+      name: `entry${i}.xml`,
+      uncompressedSize: 10,
+    }));
+    expect(() => assertZipWithinLimits(makeZip(entries), "PPTX")).toThrow(
+      /exceeding the maximum of/,
+    );
+  });
+
+  it("rejects a single entry over the per-entry uncompressed cap (zip bomb)", () => {
+    const zip = makeZip([
+      { name: "bomb.xml", uncompressedSize: MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES + 1 },
+    ]);
+    expect(() => assertZipWithinLimits(zip, "PPTX")).toThrow(/per-entry limit/);
+  });
+
+  it("rejects an archive whose entries collectively exceed the total cap", () => {
+    const chunk = MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES; // 100MB each
+    const count = Math.ceil(MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES / chunk) + 1;
+    const entries = Array.from({ length: count }, (_, i) => ({
+      name: `part${i}.bin`,
+      uncompressedSize: chunk,
+    }));
+    expect(() => assertZipWithinLimits(makeZip(entries), "DOCX")).toThrow(
+      /possible zip bomb/,
+    );
+  });
+
+  it("ignores directory entries and entries with unknown size", () => {
+    const zip = makeZip([
+      { name: "ppt/", dir: true, uncompressedSize: 0 },
+      { name: "ppt/slides/", dir: true },
+      { name: "ppt/slides/slide1.xml", uncompressedSize: 512 },
+      { name: "unknown.bin" }, // no _data → deferred to jszip inflate-time probe
+    ]);
+    expect(() => assertZipWithinLimits(zip, "PPTX")).not.toThrow();
+  });
+
+  it("names the format in the rejection message", () => {
+    const zip = makeZip([
+      { name: "bomb.xml", uncompressedSize: MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES + 1 },
+    ]);
+    expect(() => assertZipWithinLimits(zip, "DOCX")).toThrow(/^DOCX rejected/);
   });
 });
 

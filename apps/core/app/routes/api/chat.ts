@@ -1070,21 +1070,28 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
       }
 
       if (!useToolCalling) {
-        if (courseRagInject) {
-          const systemWithRAG = courseRagContextText
-            ? `${defaultCourseSystemPrompt}
-
-${buildRagSystemBlock(courseRagContextText)}`
-            : `${defaultCourseSystemPrompt}
-
-${buildEmptyCourseRagBlock()}`;
-
+        if (courseRagInject && courseRagContextText) {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: systemWithRAG,
+            system: `${defaultCourseSystemPrompt}
+
+${buildRagSystemBlock(courseRagContextText)}`,
+          };
+        } else if (courseRagInject && !resolvedSystemPrompt) {
+          // Default tutor chat: tell the student materials were empty.
+          // Skip this refusal when a custom systemPrompt is set (extensions /
+          // structured generation) — otherwise JSON/variant generation fails.
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: `${defaultCourseSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`,
           };
         } else {
           streamConfig = {
@@ -1113,7 +1120,7 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}`;
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
-        } else if (courseRagInject) {
+        } else if (courseRagInject && !resolvedSystemPrompt) {
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildEmptyCourseRagBlock()}`;
