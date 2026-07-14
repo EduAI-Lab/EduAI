@@ -1,15 +1,100 @@
 name: PR Tests
 
+# Unit/integration tests run natively on the runner (Vitest via Turborepo) against
+# Postgres service containers — the Docker test images (docker-compose.test.yml) remain
+# available for local runs but are not used here, since remote runners get no BuildKit
+# layer cache and rebuilt every image (incl. a full `npm ci` per image) on every run.
+# E2E still runs the real dockerized stack, with image layers cached via the GitHub
+# Actions cache backend.
+
 on:
   pull_request:
     branches:
       - development
       - main
+  # Push runs seed the GitHub Actions caches (Turborepo tasks + Docker layers) that PR
+  # runs restore from — a fresh PR can only read caches created on its base branch.
+  push:
+    branches:
+      - development
+
+concurrency:
+  group: pr-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # "Unit & Integration Tests" and "E2E Tests" are required status checks, so they must
+  # report a conclusion on every PR. Docs-only changes therefore skip the test jobs via
+  # `if:` (skipped jobs satisfy required checks) rather than `paths-ignore` (which would
+  # leave the checks pending forever and block the merge).
+  changes:
+    name: Detect docs-only changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Check for non-docs changes
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+          echo "Changed files:"
+          echo "$files"
+          if echo "$files" | grep -qvE '\.(md|txt)$|^docs/|^LICENSE'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only change — skipping test jobs."
+          fi
+
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    # Same database layout as the Backend Coverage Report workflow: core's integration
+    # globalSetup reaches psql at the default port, so core-db must sit on 5432.
+    services:
+      core-db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      ai-tutor-db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aitutor_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      qm-db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: question_maker_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
 
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +105,66 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
-      - name: Run Docker test suite
-        run: npm run test:all
+      - name: Install dependencies
+        run: npm ci
+
+      # Each backend resolves its test database from committed env files / globalSetup.
+      # Write the CI-specific values so they point at the service containers above.
+      - name: Configure test environment
+        run: |
+          set -euo pipefail
+          # core: resolveIntegrationTestDatabaseUrl() merges apps/core/.env (host/port)
+          # with apps/core/.env.test (db name). Remove .env so .env.test is used verbatim.
+          rm -f apps/core/.env
+          cat > apps/core/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/eduai_test?schema=public"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:3000"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+          # ai-tutor-server: globalSetup loads .env.test with override:true.
+          cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/aitutor_test"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:4000/api/auth"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+
+      - name: Generate Prisma clients
+        run: |
+          set -euo pipefail
+          npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+
+      - name: Restore Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-
+
+      # --env-mode=loose: the suites read their config from process env / .env files
+      # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+          TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
+          JWT_SECRET: test-jwt-secret-for-ci
+          ENCRYPTION_KEY: test-encryption-key-32bytes!!
+        run: npx turbo run test --continue --env-mode=loose
 
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
 
       - name: Free runner disk space
         run: |
@@ -44,8 +174,58 @@ jobs:
           docker system prune --all --force --volumes
           df -h
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # BuildKit's gha cache backend needs the Actions runtime endpoint + token, which
+      # are only exposed to actions (not run steps). Export them for the bake calls below
+      # and force cache API v2; GitHub retired the legacy v1 API in April 2025.
+      - name: Expose GitHub Actions runtime for BuildKit cache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
+
+      # cache-from only, no cache-to: a GitHub Actions cache-service hiccup here can only
+      # slow the build down to an uncached one, never fail it. Cache writes happen in a
+      # separate best-effort step below so an outage there can't take the E2E check down
+      # (buildx bake aborts the whole graph on any target's failure, incl. mid-build
+      # targets that haven't been --load'ed yet, so cache-to must never share this step).
+      - name: Build and load E2E images
+        run: |
+          set -euo pipefail
+          : "${ACTIONS_RESULTS_URL:?GitHub Actions cache v2 URL is unavailable}"
+          : "${ACTIONS_RUNTIME_TOKEN:?GitHub Actions cache token is unavailable}"
+          args=()
+          for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
+            args+=(--set "${target}.cache-from=type=gha,scope=${target},version=2,timeout=30s")
+          done
+          docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}"
+
       - name: Run E2E tests
-        run: npm run test:e2e
+        env:
+          E2E_SKIP_BUILD: '1'
+        run: bash scripts/e2e-in-docker.sh
+
+      # Images are already built and loaded above; this re-solves against the same
+      # builder's local cache (near-instant, no rebuild) and pushes layers for future runs.
+      # It deliberately avoids cache-from: the current builder already has every layer,
+      # and repeating six remote lookups only adds cache-API traffic. A short timeout caps
+      # outage delay, while continue-on-error keeps cache failures from failing E2E.
+      - name: Warm E2E build cache (best-effort)
+        continue-on-error: true
+        env:
+          GHA_CACHE_GH_TOKEN: ${{ github.token }}
+          GHA_CACHE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          args=()
+          for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
+            args+=(--set "${target}.cache-to=type=gha,scope=${target},version=2,mode=max,timeout=2m,ignore-error=true,repository=${GHA_CACHE_REPOSITORY},ghtoken=${GHA_CACHE_GH_TOKEN}")
+          done
+          docker buildx bake -f docker-compose.e2e.yml "${args[@]}"
 
       - name: Upload Playwright report
         if: failure()
