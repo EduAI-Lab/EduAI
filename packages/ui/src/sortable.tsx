@@ -131,15 +131,61 @@ export interface DragHandleProps {
   /** Screen-reader label, e.g. "Drag to reorder module". */
   label?: string
   className?: string
+  /**
+   * `"button"` (default) — a compact standalone grip button.
+   * `"bar"` — a full-height rail pinned to the parent's left edge that widens
+   * on hover and widens further while `active`. The parent must be
+   * `position: relative` (e.g. `SortableItem` with `className="relative"`).
+   */
+  variant?: "button" | "bar"
+  /** When the item is being dragged, the bar expands further. */
+  active?: boolean
 }
 
-export function DragHandle({ handleProps, label = "Drag to reorder", className }: DragHandleProps) {
+export function DragHandle({
+  handleProps,
+  label = "Drag to reorder",
+  className,
+  variant = "button",
+  active = false,
+}: DragHandleProps) {
+  // Keep a click on the handle from bubbling to a clickable parent card.
+  const stopClick = (event: { stopPropagation: () => void }) => event.stopPropagation()
+
+  if (variant === "bar") {
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        onClick={stopClick}
+        className={cn(
+          "group/handle absolute inset-y-0 left-0 z-20 flex touch-none cursor-grab items-center " +
+            "justify-center overflow-hidden rounded-l-[var(--radius-lg)] border-r border-border/60 " +
+            "text-muted-foreground transition-[width,background-color] duration-150 " +
+            "hover:bg-muted hover:text-foreground focus-visible:outline-none " +
+            "focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
+          active ? "w-7 bg-muted text-foreground" : "w-2 bg-muted/50 hover:w-6",
+          className,
+        )}
+        {...handleProps}
+      >
+        <IconGripVertical
+          size={14}
+          aria-hidden="true"
+          className={cn(
+            "shrink-0 transition-opacity duration-150",
+            active ? "opacity-100" : "opacity-0 group-hover/handle:opacity-100",
+          )}
+        />
+      </button>
+    )
+  }
+
   return (
     <button
       type="button"
       aria-label={label}
-      // Keep a click on the handle from bubbling to a clickable parent card.
-      onClick={(event) => event.stopPropagation()}
+      onClick={stopClick}
       className={cn(
         "flex size-7 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground " +
           "transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none " +
