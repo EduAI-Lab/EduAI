@@ -113,11 +113,26 @@ router.post('/courses/:courseId/modules', requireRole(['INSTRUCTOR', 'UNIT_ADMIN
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
+    // When the client does not supply an explicit position, append the new
+    // module to the end of the list rather than defaulting to 0, which would
+    // push it to the top and shift every existing module down (issue #1046).
+    let resolvedPosition;
+    if (typeof position === 'number') {
+      resolvedPosition = position;
+    } else {
+      const last = await prisma.module.findFirst({
+        where: { courseOfferingId: courseId },
+        orderBy: { position: 'desc' },
+        select: { position: true },
+      });
+      resolvedPosition = last ? last.position + 1 : 0;
+    }
+
     const module = await prisma.module.create({
       data: {
         title,
         description,
-        position: typeof position === 'number' ? position : 0,
+        position: resolvedPosition,
         courseOfferingId: courseId,
       },
     });

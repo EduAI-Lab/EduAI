@@ -41,6 +41,43 @@ describe('Modules routes', () => {
     return ta;
   }
 
+  // ── POST /api/courses/:courseId/modules — ordering (#1046) ─────────
+
+  describe('POST /api/courses/:courseId/modules (append order, #1046)', () => {
+    it('appends a new module to the end when no position is supplied', async () => {
+      // seedMinimalCourse creates one module at position 0.
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Second Module' });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(1);
+
+      const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(list.body.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
+    });
+
+    it('does not shift existing modules to a lower position', async () => {
+      const before = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(before.body[0].position).toBe(0);
+
+      await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Appended' });
+
+      const after = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      const original = after.body.find((m) => m.id === seed.module.id);
+      expect(original.position).toBe(0);
+    });
+
+    it('honors an explicit position when supplied', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Pinned', position: 5 });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(5);
+    });
+  });
+
   // ── GET /api/courses/:courseId/modules ─────────────────────────────
 
   describe('GET /api/courses/:courseId/modules', () => {
