@@ -48,6 +48,16 @@ import { getCoreLoginUrl } from './coreUrl';
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
+ * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
+ * upstream Core `/api/sessions/validate` hangs, a bare `/api/me` would never
+ * settle — stranding loaders and leaving the "Initializing your workspace"
+ * spinner running forever. Applied opt-in via `timeoutMs` on that call (below),
+ * NOT globally: most of the API surface (imports, sync) may legitimately run
+ * longer and hasn't been audited against a blanket cutoff.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
+
+/**
  * Local response shapes for endpoints not yet modeled in `./types`. Kept here
  * (rather than in the shared types file, which this module does not own)
  * until the canonical types land; fields are optional wherever the server
@@ -214,8 +224,26 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   return res.json();
 }
 
+/**
+ * De-dupes concurrent `/api/me` calls. On a single navigation both the route
+ * guard (`requireClientUser`) and the `AuthProvider` mount effect call
+ * `api.me()` independently — without coalescing, that is two full round-trips
+ * to Core's `/api/sessions/validate` per page. While a request is in flight,
+ * additional callers share it; the slot clears as soon as it settles, so the
+ * result is never cached across navigations (auth state stays fresh).
+ */
+let meInFlight: Promise<{ user: User | null }> | null = null;
+
 export const api = {
-  me: () => http('/api/me') as Promise<{ user: User | null }>,
+  me: () => {
+    if (meInFlight) return meInFlight;
+    // #446: bound the session probe so a hung upstream can't strand the
+    // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
+    meInFlight = (http('/api/me', { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>).finally(() => {
+      meInFlight = null;
+    });
+    return meInFlight;
+  },
   aiStatus: () =>
     http('/api/ai-status') as Promise<{
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
