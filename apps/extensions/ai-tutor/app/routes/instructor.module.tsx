@@ -749,17 +749,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             const busy = publishingId === lesson.id;
             const canReorder = perms.canManageContent && oLessons.length > 1;
             return (
-              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder} className="relative">
-                {({ handleProps, isDragging }) => (
-                  <>
-                    {canReorder && (
-                      <DragHandle
-                        handleProps={handleProps}
-                        label={`Drag to reorder ${lesson.title}`}
-                        variant="bar"
-                        active={isDragging}
-                      />
-                    )}
+              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
+                {({ handleProps }) => (
                     <LessonCard
                       index={idx + 1}
                       orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
@@ -768,6 +759,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                       accentColor={accentColor}
                       onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                       isPublished={lesson.isPublished}
+                      leading={
+                        canReorder ? (
+                          <DragHandle handleProps={handleProps} label={`Drag to reorder ${lesson.title}`} />
+                        ) : undefined
+                      }
                       menuSlot={
                         perms.canPublishContent || perms.canManageContent ? (
                           <PublishMenu
@@ -793,7 +789,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                         ) : undefined
                       }
                     />
-                  </>
                 )}
               </SortableItem>
             );

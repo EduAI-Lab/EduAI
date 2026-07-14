@@ -773,22 +773,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   const promptError = promptErrors[activity.id];
                   const canReorderActivity = perms.canManageContent && oActivities.length > 1;
                   return (
-                    <SortableItem
-                      key={activity.id}
-                      id={activity.id}
-                      disabled={!canReorderActivity}
-                      className="relative"
-                    >
-                      {({ handleProps, isDragging }) => (
-                      <>
-                      {canReorderActivity && (
-                        <DragHandle
-                          handleProps={handleProps}
-                          label={`Drag to reorder ${activity.title ?? 'activity'}`}
-                          variant="bar"
-                          active={isDragging}
-                        />
-                      )}
+                    <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
+                      {({ handleProps }) => (
                       <Card
                         className="group relative overflow-hidden"
                         style={courseThemeVars(accentColor ?? 'var(--primary)')}
@@ -813,6 +799,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           {String(i + 1).padStart(2, '0')}
                         </span>
                         <div className="relative flex items-start gap-3 p-5">
+                          {canReorderActivity && (
+                            <DragHandle
+                              handleProps={handleProps}
+                              label={`Drag to reorder ${activity.title ?? 'activity'}`}
+                              className="mt-0.5"
+                            />
+                          )}
                           <span
                             className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
                             style={{
@@ -1153,7 +1146,6 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                         </div>
                       </Card>
-                      </>
                       )}
                     </SortableItem>
                   );
