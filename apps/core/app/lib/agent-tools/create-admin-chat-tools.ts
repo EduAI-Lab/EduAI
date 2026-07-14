@@ -309,8 +309,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             idempotencyKey,
             input,
             () => createAdminUser(user, input),
-          ),
-        ),
+          ), { idempotencyKey, ...input }),
     }),
 
     updateUser: tool({
@@ -336,7 +335,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             return target;
           }
           return updateAdminUser(user, target.userId, updates);
-        });
+        }, { ...updates, userId, userEmail });
       },
     }),
 
@@ -359,7 +358,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             return target;
           }
           return deleteAdminUser(user, target.userId);
-        });
+        }, { userId, userEmail });
       },
     }),
 
@@ -401,8 +400,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             idempotencyKey,
             input,
             () => createAdminEnrollment(user, input),
-          ),
-        );
+          ), { courseId, courseCode, userId, userEmail, role, idempotencyKey });
       },
     }),
 
@@ -423,8 +421,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             fallbackCourseId: effectiveCourseId,
             enrollmentId,
             role,
-          }),
-        ),
+          }), { courseId, courseCode, enrollmentId, role }),
     }),
 
     deactivateCourseEnrollment: tool({
@@ -442,8 +439,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             courseCode,
             fallbackCourseId: effectiveCourseId,
             enrollmentId,
-          }),
-        ),
+          }), { courseId, courseCode, enrollmentId }),
     }),
 
     updateBugReportStatus: tool({
@@ -455,8 +451,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, reportId, status }) =>
         runConfirmedAdminWriteTool("updateBugReportStatus", user, confirmed, () =>
-          updateAdminBugReportStatus(user, reportId, status),
-        ),
+          updateAdminBugReportStatus(user, reportId, status), { reportId, status }),
     }),
 
     createCourseTopic: tool({
@@ -474,8 +469,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             courseCode,
             fallbackCourseId: effectiveCourseId,
             name,
-          }),
-        ),
+          }), { courseId, courseCode, name }),
     }),
 
     updateCourseTopic: tool({
@@ -495,8 +489,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             fallbackCourseId: effectiveCourseId,
             topicId,
             name,
-          }),
-        ),
+          }), { courseId, courseCode, topicId, name }),
     }),
 
     deleteCourseTopic: tool({
@@ -516,8 +509,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             fallbackCourseId: effectiveCourseId,
             topicId,
             name,
-          }),
-        ),
+          }), { courseId, courseCode, topicId, name }),
     }),
 
     createInvitation: tool({
@@ -535,8 +527,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, email, name, role, authorizedUnits }) =>
         runConfirmedAdminWriteTool("createInvitation", user, confirmed, () =>
-          createAdminInvitationMutation(user, { email, name, role, authorizedUnits }),
-        ),
+          createAdminInvitationMutation(user, { email, name, role, authorizedUnits }), { email, name, role, authorizedUnits }),
     }),
 
     revokeInvitation: tool({
@@ -548,8 +539,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, invitationId }) =>
         runConfirmedAdminWriteTool("revokeInvitation", user, confirmed, () =>
-          revokeAdminInvitationMutation(user, invitationId),
-        ),
+          revokeAdminInvitationMutation(user, invitationId), { invitationId }),
     }),
 
     resendInvitation: tool({
@@ -561,8 +551,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, invitationId }) =>
         runConfirmedAdminWriteTool("resendInvitation", user, confirmed, () =>
-          resendAdminInvitationMutation(user, invitationId),
-        ),
+          resendAdminInvitationMutation(user, invitationId), { invitationId }),
     }),
 
     connectCanvas: tool({
@@ -590,8 +579,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             canvasUrl,
             apiKey,
             isTestMode,
-          }),
-        ),
+          }), { instructorUserId, instructorEmail, canvasUrl, apiKey, isTestMode }),
     }),
 
     syncCanvasCourses: tool({
@@ -613,8 +601,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             instructorUserId,
             instructorEmail,
             canvasCourseIds,
-          }),
-        ),
+          }), { instructorUserId, instructorEmail, canvasCourseIds }),
     }),
 
     disconnectCanvas: tool({
@@ -626,8 +613,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, instructorUserId, instructorEmail }) =>
         runConfirmedAdminWriteTool("disconnectCanvas", user, confirmed, () =>
-          disconnectAdminCanvas(user, { instructorUserId, instructorEmail }),
-        ),
+          disconnectAdminCanvas(user, { instructorUserId, instructorEmail }), { instructorUserId, instructorEmail }),
     }),
 
     linkCanvasRoster: tool({
@@ -644,8 +630,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           return userRefError;
         }
         return runConfirmedAdminWriteTool("linkCanvasRoster", user, confirmed, () =>
-          linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }),
-        );
+          linkAdminCanvasRoster(user, { userId, userEmail, studentNumber }), { userId, userEmail, studentNumber });
       },
     }),
 
@@ -669,8 +654,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, ...input }) =>
         runConfirmedAdminWriteTool("createCourse", user, confirmed, () =>
-          createAdminCourseMutation(user, input),
-        ),
+          createAdminCourseMutation(user, input), input),
     }),
 
     updateCourse: tool({
@@ -695,8 +679,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
         runConfirmedAdminWriteTool("updateCourse", user, confirmed, () =>
-          updateAdminCourseMutation(user, courseOpts(courseId, courseCode), input),
-        ),
+          updateAdminCourseMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
     }),
 
     deleteCourse: tool({
@@ -707,8 +690,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
         runConfirmedAdminWriteTool("deleteCourse", user, confirmed, () =>
-          deleteAdminCourseMutation(user, courseOpts(courseId, courseCode)),
-        ),
+          deleteAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
     }),
 
     publishCourse: tool({
@@ -719,8 +701,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
         runConfirmedAdminWriteTool("publishCourse", user, confirmed, () =>
-          publishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
-        ),
+          publishAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
     }),
 
     unpublishCourse: tool({
@@ -731,8 +712,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
         runConfirmedAdminWriteTool("unpublishCourse", user, confirmed, () =>
-          unpublishAdminCourseMutation(user, courseOpts(courseId, courseCode)),
-        ),
+          unpublishAdminCourseMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
     }),
 
     getCourseRagSettings: tool({
@@ -753,8 +733,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
         runConfirmedAdminWriteTool("updateCourseRagSettings", user, confirmed, () =>
-          updateAdminCourseRagSettingsMutation(user, courseOpts(courseId, courseCode), input),
-        ),
+          updateAdminCourseRagSettingsMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
     }),
 
     listCourseMaterials: tool({
@@ -779,8 +758,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
             ...courseOpts(courseId, courseCode),
             materialId,
             name,
-          }),
-        ),
+          }), { courseId, courseCode, materialId, name }),
     }),
 
     deleteCourseMaterial: tool({
@@ -796,8 +774,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           deleteAdminCourseMaterialMutation(user, {
             ...courseOpts(courseId, courseCode),
             materialId,
-          }),
-        ),
+          }), { courseId, courseCode, materialId }),
     }),
 
     listCanvasMaterials: tool({
@@ -820,8 +797,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           syncAdminCanvasMaterialsMutation(user, {
             ...courseOpts(courseId, courseCode),
             canvasFileIds,
-          }),
-        ),
+          }), { courseId, courseCode, canvasFileIds }),
     }),
 
     getCourseEmbeddingSettings: tool({
@@ -842,8 +818,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode, ...input }) =>
         runConfirmedAdminWriteTool("updateCourseEmbeddingSettings", user, confirmed, () =>
-          updateAdminCourseEmbeddingSettingsMutation(user, courseOpts(courseId, courseCode), input),
-        ),
+          updateAdminCourseEmbeddingSettingsMutation(user, courseOpts(courseId, courseCode), input), { courseId, courseCode, ...input }),
     }),
 
     startCourseReEmbed: tool({
@@ -855,8 +830,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode }) =>
         runConfirmedAdminWriteTool("startCourseReEmbed", user, confirmed, () =>
-          startAdminCourseReEmbedMutation(user, courseOpts(courseId, courseCode)),
-        ),
+          startAdminCourseReEmbedMutation(user, courseOpts(courseId, courseCode)), { courseId, courseCode }),
     }),
 
     getCourseReEmbedJob: tool({
@@ -886,8 +860,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode, userId }) =>
         runConfirmedAdminWriteTool("addCourseTA", user, confirmed, () =>
-          addAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
-        ),
+          addAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }), { courseId, courseCode, userId }),
     }),
 
     removeCourseTA: tool({
@@ -900,8 +873,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, courseId, courseCode, userId }) =>
         runConfirmedAdminWriteTool("removeCourseTA", user, confirmed, () =>
-          removeAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }),
-        ),
+          removeAdminCourseTAMutation(user, { ...courseOpts(courseId, courseCode), userId }), { courseId, courseCode, userId }),
     }),
 
     listCourseChats: tool({
@@ -939,8 +911,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, key, value }) =>
         runConfirmedAdminWriteTool("updatePolicy", user, confirmed, () =>
-          updateAdminPolicyMutation(user, key, value),
-        ),
+          updateAdminPolicyMutation(user, key, value), { key, value }),
     }),
 
     listAiProviders: tool({
@@ -964,8 +935,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, ...input }) =>
         runConfirmedAdminWriteTool("createAiProvider", user, confirmed, () =>
-          createAdminAiProviderMutation(user, input),
-        ),
+          createAdminAiProviderMutation(user, input), input),
     }),
 
     updateAiProvider: tool({
@@ -984,8 +954,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, providerId, ...input }) =>
         runConfirmedAdminWriteTool("updateAiProvider", user, confirmed, () =>
-          updateAdminAiProviderMutation(user, providerId, input),
-        ),
+          updateAdminAiProviderMutation(user, providerId, input), { providerId, ...input }),
     }),
 
     deleteAiProvider: tool({
@@ -997,8 +966,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, providerId }) =>
         runConfirmedAdminWriteTool("deleteAiProvider", user, confirmed, () =>
-          deleteAdminAiProviderMutation(user, providerId),
-        ),
+          deleteAdminAiProviderMutation(user, providerId), { providerId }),
     }),
 
     createAiModel: tool({
@@ -1020,8 +988,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, ...input }) =>
         runConfirmedAdminWriteTool("createAiModel", user, confirmed, () =>
-          createAdminAiModelMutation(user, input),
-        ),
+          createAdminAiModelMutation(user, input), input),
     }),
 
     updateAiModel: tool({
@@ -1044,8 +1011,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, id, ...input }) =>
         runConfirmedAdminWriteTool("updateAiModel", user, confirmed, () =>
-          updateAdminAiModelMutation(user, id, input),
-        ),
+          updateAdminAiModelMutation(user, id, input), { id, ...input }),
     }),
 
     deleteAiModel: tool({
@@ -1056,8 +1022,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ confirmed, id }) =>
         runConfirmedAdminWriteTool("deleteAiModel", user, confirmed, () =>
-          deleteAdminAiModelMutation(user, id),
-        ),
+          deleteAdminAiModelMutation(user, id), { id }),
     }),
 
     listOllamaModels: tool({
@@ -1082,14 +1047,26 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     triggerCronJob: tool({
       description:
-        "Manually trigger a cron job by name. Use confirmed=true only after admin confirms.",
+        "Manually trigger a cron job by name. Use confirmed=true only after admin confirms. Retries with the same idempotencyKey reuse an in-flight/completed trigger.",
       parameters: z.object({
         confirmed: confirmedWrite,
         jobName: z.string().min(1),
+        idempotencyKey: z.string().min(1),
       }),
-      execute: async ({ confirmed, jobName }) =>
-        runConfirmedAdminWriteTool("triggerCronJob", user, confirmed, () =>
-          triggerAdminCronJobMutation(user, jobName),
+      execute: async ({ confirmed, jobName, idempotencyKey }) =>
+        runConfirmedAdminWriteTool(
+          "triggerCronJob",
+          user,
+          confirmed,
+          () =>
+            runIdempotentAdminMutation(
+              user.id,
+              "POST /api/admin/cron-jobs",
+              idempotencyKey,
+              { jobName },
+              () => triggerAdminCronJobMutation(user, jobName),
+            ),
+          { jobName, idempotencyKey },
         ),
     }),
 

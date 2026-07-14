@@ -166,7 +166,46 @@ describe("createAdminChatTools write execute", () => {
 });
 
 describe("runConfirmedAdminWriteTool", () => {
-  it("delegates to mutation when confirmed", async () => {
+  beforeEach(async () => {
+    const { resetWritePreviewsForTests } = await import(
+      "~/lib/agent-tools/admin-write-confirmation.server"
+    );
+    resetWritePreviewsForTests();
+  });
+
+  it("registers a preview and does not mutate when confirmed is false", async () => {
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      run,
+      { email: "a@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
+
+  it("rejects confirmed=true without a matching preview", async () => {
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      true,
+      run,
+      { email: "a@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
+
+  it("runs the mutation after matching confirmed=false then confirmed=true", async () => {
     vi.mocked(createAdminUser).mockResolvedValue({
       writeSucceeded: true,
       ok: true,
@@ -174,6 +213,20 @@ describe("runConfirmedAdminWriteTool", () => {
       mutation: true,
       appliedAt: new Date().toISOString(),
     });
+
+    const payload = { name: "A", email: "a@test.com", role: "STUDENT" };
+    await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      () =>
+        createAdminUser(ADMIN, {
+          name: "A",
+          email: "a@test.com",
+          role: "STUDENT",
+        }),
+      payload,
+    );
 
     const result = await runConfirmedAdminWriteTool(
       "createUser",
@@ -185,8 +238,29 @@ describe("runConfirmedAdminWriteTool", () => {
           email: "a@test.com",
           role: "STUDENT",
         }),
+      payload,
     );
     expect(createAdminUser).toHaveBeenCalled();
     expect(result).toMatchObject({ writeSucceeded: true });
+  });
+
+  it("rejects confirmed=true when the payload differs from the preview", async () => {
+    await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      async () => ({ writeSucceeded: true }),
+      { email: "a@test.com" },
+    );
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      true,
+      run,
+      { email: "b@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ error: "CONFIRMATION_REQUIRED" });
   });
 });

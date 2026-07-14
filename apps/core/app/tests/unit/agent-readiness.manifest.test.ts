@@ -19,6 +19,9 @@ import { ADMIN_WRITE_TOOL_NAMES } from "~/lib/agent-tools/admin-mutations.server
 const ROUTES_TS_API_PATTERNS: Array<{ method: string; path: string }> = [
   { method: "GET", path: "/api/auth/*" },
   { method: "POST", path: "/api/auth/*" },
+  { method: "GET", path: "/api/health" },
+  { method: "GET", path: "/api/ai-status" },
+  { method: "GET", path: "/api/disciplines" },
   { method: "GET", path: "/api/courses" },
   { method: "POST", path: "/api/courses" },
   { method: "GET", path: "/api/canvas/integration" },
@@ -39,6 +42,8 @@ const ROUTES_TS_API_PATTERNS: Array<{ method: string; path: string }> = [
   { method: "DELETE", path: "/api/courses/:courseId/materials/:materialId" },
   { method: "GET", path: "/api/courses/:courseId/canvas-materials" },
   { method: "POST", path: "/api/courses/:courseId/canvas-materials" },
+  { method: "POST", path: "/api/courses/:courseId/canvas-materials/exclusions" },
+  { method: "DELETE", path: "/api/courses/:courseId/canvas-materials/exclusions" },
   { method: "POST", path: "/api/courses/:courseId/re-embed" },
   { method: "GET", path: "/api/courses/:courseId/re-embed/:jobId" },
   { method: "GET", path: "/api/courses/:courseId/embedding-settings" },

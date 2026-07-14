@@ -146,6 +146,48 @@ describe("claimIdempotency", () => {
     });
     expect(result).toEqual({ kind: "in_progress" });
   });
+
+  it("conditionally deleteMany expires before reclaim (no unscoped delete)", async () => {
+    prismaMock.idempotencyRecord.create
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("dup", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      )
+      .mockResolvedValueOnce({});
+    prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
+      key: "k1",
+      route: "POST /api/users",
+      actorId: "admin-1",
+      requestHash: "abc",
+      status: "COMPLETED",
+      statusCode: 201,
+      responseBody: { id: "old" },
+      expiresAt: new Date(Date.now() - 1_000),
+    });
+    prismaMock.idempotencyRecord.deleteMany.mockResolvedValue({ count: 1 });
+
+    const result = await claimIdempotency({
+      key: "k1",
+      route: "POST /api/users",
+      actorId: "admin-1",
+      requestHash: "abc",
+    });
+
+    expect(prismaMock.idempotencyRecord.delete).not.toHaveBeenCalled();
+    expect(prismaMock.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
+      where: {
+        key: "k1",
+        route: "POST /api/users",
+        actorId: "admin-1",
+        status: "COMPLETED",
+        requestHash: "abc",
+        expiresAt: { lte: expect.any(Date) },
+      },
+    });
+    expect(result).toEqual({ kind: "claimed" });
+  });
 });
 
 describe("withIdempotency", () => {

@@ -103,9 +103,18 @@ export async function claimIdempotency(opts: {
     return claimIdempotency(opts);
   }
 
-  if (existing.expiresAt < new Date()) {
-    await prisma.idempotencyRecord.delete({
-      where: { key_route_actorId: { key, route, actorId } },
+  const now = new Date();
+  if (existing.expiresAt < now) {
+    // Conditional delete avoids racing a newer replacement row (P2025 / wrong-row delete).
+    await prisma.idempotencyRecord.deleteMany({
+      where: {
+        key,
+        route,
+        actorId,
+        status: existing.status,
+        requestHash: existing.requestHash,
+        expiresAt: { lte: now },
+      },
     });
     return claimIdempotency(opts);
   }

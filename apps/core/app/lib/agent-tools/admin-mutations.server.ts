@@ -142,7 +142,7 @@ export function userRefValidationError(opts: {
   });
 }
 
-/** When the model calls a write tool before the admin confirmed in chat. */
+/** When the model calls a write tool before a matching preview was registered. */
 export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
   if (confirmed === true) {
     return null;
@@ -150,7 +150,7 @@ export function requireWriteConfirmation(confirmed: boolean): MutationResult | n
   return mutationFailure({
     error: "CONFIRMATION_REQUIRED",
     message:
-      "Write not applied — wait for the admin to explicitly confirm in chat, then call this tool again with confirmed: true.",
+      "Write not applied — call once with confirmed: false (same arguments) to register a preview, wait for the admin to explicitly confirm in chat, then call again with confirmed: true.",
   });
 }
 
@@ -180,22 +180,51 @@ export async function runAdminWriteTool(
   return result;
 }
 
+/**
+ * Gate admin write tools: confirmed=false registers a payload-bound preview;
+ * confirmed=true only proceeds if that preview was registered (not LLM-only attestation).
+ */
 export async function runConfirmedAdminWriteTool(
   toolName: string,
   actor: RbacUser,
   confirmed: boolean,
   run: () => Promise<MutationResult>,
+  payload: Record<string, unknown> = {},
 ): Promise<MutationResult> {
-  const gate = requireWriteConfirmation(confirmed);
-  if (gate) {
+  const {
+    registerWritePreview,
+    consumeWritePreview,
+  } = await import("./admin-write-confirmation.server");
+
+  // Always bind previews to tool name so confirmed=true cannot skip preview
+  // or reuse a preview from a different write tool.
+  const boundPayload = { __tool: toolName, ...payload };
+
+  if (confirmed !== true) {
+    registerWritePreview(actor.id, toolName, boundPayload);
     console.info("[admin-chat:write]", {
       tool: toolName,
       actorId: actor.id,
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
     });
-    return gate;
+    return requireWriteConfirmation(false)!;
   }
+
+  if (!consumeWritePreview(actor.id, toolName, boundPayload)) {
+    console.info("[admin-chat:write]", {
+      tool: toolName,
+      actorId: actor.id,
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+    return mutationFailure({
+      error: "CONFIRMATION_REQUIRED",
+      message:
+        "No matching preview for these arguments. Call with confirmed: false first (same args), wait for admin confirmation, then confirmed: true.",
+    });
+  }
+
   return runAdminWriteTool(toolName, actor, run);
 }
 

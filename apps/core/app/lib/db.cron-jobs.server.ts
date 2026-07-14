@@ -170,7 +170,26 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
   }));
 }
 
+export async function findRunningCronRun(
+  jobName: string,
+): Promise<{ id: string } | null> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id
+    FROM cron_job_runs
+    WHERE "jobName" = ${jobName}
+      AND status = 'RUNNING'::"CronJobStatus"
+    ORDER BY "startedAt" DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
 export async function startCronRun(jobName: string): Promise<string> {
+  const running = await findRunningCronRun(jobName);
+  if (running) {
+    return running.id;
+  }
+
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "createdAt")
     VALUES (
