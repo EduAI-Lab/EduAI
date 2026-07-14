@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { auth } from "~/lib/auth/server";
 import {
-  getUserProviderSettings,
   upsertUserProviderSetting,
   deleteUserProviderSetting,
 } from "~/lib/user-provider-settings.server";
