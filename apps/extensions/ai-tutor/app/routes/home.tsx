@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 import { useLocalUser } from '../hooks/useLocalUser';
 import { IconBrain } from '@tabler/icons-react';
 import { routeForRole } from '../lib/role-routing';
+import { getCoreLoginUrl } from '../lib/coreUrl';
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -26,9 +27,7 @@ export default function Home() {
     // api.ts 401 handler fires first and redirects to Core login, but redirect
     // here too as a safety net for any path that reaches this state without a
     // prior 401 (e.g. a null user returned with 200).
-    const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
-    const returnUrl = encodeURIComponent(window.location.href);
-    window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
+    window.location.href = getCoreLoginUrl();
   }, [isInitializing, user]);
 
   return (

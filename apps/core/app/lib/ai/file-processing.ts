@@ -6,6 +6,76 @@ export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
 /** Default character overlap between consecutive semantic upload chunks (matches generateChunks fallback). */
 export const DEFAULT_SEMANTIC_CHUNK_OVERLAP = 80;
 
+// ---------------------------------------------------------------------------
+// Decompression (zip-bomb) guardrails
+// ---------------------------------------------------------------------------
+// `validateFile` bounds only the *compressed* upload (50MB). PPTX/DOCX are ZIP
+// containers, so a crafted archive can declare gigabytes of uncompressed
+// entries and OOM the server when jszip/mammoth inflate them. These caps are
+// enforced against the entry sizes recorded in the ZIP central directory
+// (populated by `loadAsync` without decompressing anything). jszip's own
+// `DataLengthProbe` re-checks the declared size while inflating, so an archive
+// whose header lies about entry size throws rather than over-allocating.
+
+/** Maximum number of entries permitted in an uploaded ZIP container. */
+export const MAX_ZIP_ENTRIES = 5000;
+
+/** Maximum declared uncompressed size for any single ZIP entry (100MB). */
+export const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
+/** Maximum total declared uncompressed size across all ZIP entries (500MB). */
+export const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024;
+
+/** Maximum length of extracted text content, before chunking (defense-in-depth for all formats). */
+export const MAX_EXTRACTED_CONTENT_CHARS = 20_000_000;
+
+/**
+ * Reject a loaded ZIP whose entry count or declared uncompressed size exceeds
+ * the caps above, before any entry is inflated. `zip` is a JSZip instance.
+ */
+export function assertZipWithinLimits(zip: any, label: string): void {
+  const names = Object.keys(zip?.files ?? {});
+  if (names.length > MAX_ZIP_ENTRIES) {
+    throw new Error(
+      `${label} rejected: archive contains ${names.length} entries, exceeding the maximum of ${MAX_ZIP_ENTRIES}`,
+    );
+  }
+
+  let total = 0;
+  for (const name of names) {
+    const entry = zip.files[name];
+    if (!entry || entry.dir) continue;
+
+    // Declared uncompressed size from the central directory; no decompression.
+    const size: unknown = entry._data?.uncompressedSize;
+    if (typeof size !== 'number' || size < 0) continue; // unknown → jszip enforces at inflate time
+
+    if (size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `${label} rejected: entry "${name}" declares ${size} uncompressed bytes, exceeding the per-entry limit of ${MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES}`,
+      );
+    }
+
+    total += size;
+    if (total > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `${label} rejected: total uncompressed size exceeds the limit of ${MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES} bytes (possible zip bomb)`,
+      );
+    }
+  }
+}
+
+/**
+ * Load a ZIP archive and enforce the decompression caps before returning it.
+ * Used for both PPTX and (pre-mammoth) DOCX inputs.
+ */
+async function loadZipWithLimits(arrayBuffer: ArrayBuffer, label: string): Promise<any> {
+  const JSZip = await import('jszip');
+  const zip = await JSZip.default.loadAsync(arrayBuffer);
+  assertZipWithinLimits(zip, label);
+  return zip;
+}
+
 export function joinSemanticChunks(chunks: string[]): string {
   return chunks.join(`\n\n${SEMANTIC_CHUNK_SEPARATOR}\n\n`);
 }
@@ -580,6 +650,9 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
 
     const arrayBuffer = await file.arrayBuffer();
 
+    // DOCX is a ZIP container; bound decompression before mammoth inflates it.
+    await loadZipWithLimits(arrayBuffer, 'DOCX');
+
     // Extract as HTML first, then convert to markdown-like format for better RAG performance
     const result = await mammoth.convertToHtml({ arrayBuffer });
 
@@ -614,11 +687,8 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
     // In a production environment, you might want to use a server-side service
     // or a more robust client-side PPTX parser when available
 
-    const JSZip = await import('jszip');
-    const zip = new JSZip.default();
-
     const arrayBuffer = await file.arrayBuffer();
-    const zipContent = await zip.loadAsync(arrayBuffer);
+    const zipContent = await loadZipWithLimits(arrayBuffer, 'PPTX');
 
     const textContent: string[] = [];
     let slideCount = 0;
@@ -631,13 +701,13 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
     slideCount = slideFiles.length;
 
     for (const slideFile of slideFiles) {
-      const slideXml = await zipContent.files[slideFile].async('text');
+      const slideXml: string = await zipContent.files[slideFile].async('text');
 
       // Basic text extraction from XML (simplified approach)
-      const textMatches = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+      const textMatches: string[] = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
       const slideText = textMatches
-        .map(match => match.replace(/<[^>]*>/g, '').trim())
-        .filter(text => text.length > 0)
+        .map((match: string) => match.replace(/<[^>]*>/g, '').trim())
+        .filter((text: string) => text.length > 0)
         .join(' ');
 
       if (slideText) {
@@ -861,6 +931,15 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
 
       default:
         throw new Error(`Unsupported file type: ${file.type}`);
+    }
+
+    // Defense-in-depth: bound the extracted text length before chunking, so an
+    // archive that slips past the per-entry ZIP caps still can't flood the
+    // chunking/embedding path.
+    if (content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+      throw new Error(
+        `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+      );
     }
 
     content = enrichExtractedDocumentContent(content);
