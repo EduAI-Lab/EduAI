@@ -249,7 +249,7 @@ const ARTICLES: HelpArticle[] = [
         keywords: 'tips common issues drafts primary topic canvas course code',
         body: (
             <ul className="list-inside list-disc space-y-1">
-                <li>Primary topic is required for manual questions; add topics via the course Topics tab if missing.</li>
+                <li>Primary topic is required for manual questions; add or sync topics from the course overview hero if missing.</li>
                 <li>Drafts block exports; mark variants reviewed before exporting.</li>
                 <li>Canvas import requires a local course and topic destination; unsupported Canvas question types are skipped.</li>
                 <li>Course code helps AI relevance; generation still works without it but may be less accurate.</li>

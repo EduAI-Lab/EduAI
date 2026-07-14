@@ -5,14 +5,11 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
-import { AppSidebar } from '~/components/app-sidebar'
-import { SiteHeader } from '~/components/site-header'
-import { SidebarInset, SidebarProvider } from '@eduai/ui'
+import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
   Breadcrumb,
@@ -28,35 +25,36 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
-  // Fetch authorizedUnits directly from DB — Better Auth session may not include
-  // custom array fields reliably across all environments.
-  let authorizedUnits: string[] = []
-  if (session.user.role === 'UNIT_ADMIN') {
-    const dbUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { authorizedUnits: true },
-    })
-    authorizedUnits = dbUser?.authorizedUnits ?? []
-  }
-
-  // Fetch instructors for course creation forms (ADMIN and UNIT_ADMIN only)
-  let instructors: { id: string; name: string | null; email: string }[] = []
-  if (session.user.role === 'ADMIN' || session.user.role === 'UNIT_ADMIN') {
-    instructors = await prisma.user.findMany({
-      where: { role: 'INSTRUCTOR', isActive: true },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: 'asc' },
-    })
-  }
-
-  // Scope list to enrollment assignments (#499) — never hardcode course ids; read
-  // active Enrollment rows for this user and split by role (§5 list gate). A TA is
-  // an Enrollment with role=TA; STUDENT-platform users may hold both TA and STUDENT
-  // enrollments, so we split by enrollment role.
-  const enrollmentRows = await prisma.enrollment.findMany({
-    where: { userId: session.user.id, isActive: true },
-    select: { courseId: true, role: true },
-  })
+  // These three reads are independent — run them in parallel instead of serially.
+  //  - authorizedUnits: read directly from DB (Better Auth session may not include
+  //    custom array fields reliably across all environments); UNIT_ADMIN only.
+  //  - instructors: for course-creation forms; ADMIN and UNIT_ADMIN only.
+  //  - enrollmentRows: scope the list to enrollment assignments (#499) — never
+  //    hardcode course ids; read active Enrollment rows and split by role (§5 list
+  //    gate). A TA is an Enrollment with role=TA; STUDENT-platform users may hold
+  //    both TA and STUDENT enrollments, so we split by enrollment role.
+  const isUnitAdmin = session.user.role === 'UNIT_ADMIN'
+  const canListInstructors = session.user.role === 'ADMIN' || isUnitAdmin
+  const [dbUser, instructors, enrollmentRows] = await Promise.all([
+    isUnitAdmin
+      ? prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { authorizedUnits: true },
+        })
+      : Promise.resolve(null),
+    canListInstructors
+      ? prisma.user.findMany({
+          where: { role: 'INSTRUCTOR', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([] as { id: string; name: string | null; email: string }[]),
+    prisma.enrollment.findMany({
+      where: { userId: session.user.id, isActive: true },
+      select: { courseId: true, role: true },
+    }),
+  ])
+  const authorizedUnits = dbUser?.authorizedUnits ?? []
   const taCourseIds = enrollmentRows
     .filter((r) => r.role === 'TA')
     .map((r) => r.courseId)
@@ -156,15 +154,11 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggleRequest}
           />
-        ) : isTA ? (
-          <CoursesTaView
-            courses={courses.filter((c) => taCourseIds.includes(c.id))}
-          />
         ) : (
-          <CoursesStudentView
-            courses={courses.filter(
-              (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
-            )}
+          <CoursesMixedView
+            courses={courses}
+            taCourseIds={taCourseIds}
+            enrolledCourseIds={enrolledCourseIds}
           />
         )}
       </div>
@@ -199,37 +193,29 @@ export default function CoursesPage() {
 
 function Layout({ user, children }: { user: any; children: React.ReactNode }) {
   return (
-    <SidebarProvider
-      style={{
-        '--sidebar-width': 'calc(var(--spacing) * 72)',
-        '--header-height': 'calc(var(--spacing) * 12)',
-      } as React.CSSProperties}
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Courses</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Courses</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              {children}
-            </div>
+      <div className="flex flex-1 flex-col">
+        <div className="@container/main flex flex-1 flex-col gap-2">
+          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            {children}
           </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </CoreAppShell>
   )
 }

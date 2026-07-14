@@ -4,9 +4,8 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AdminChatView } from "~/components/chat/admin-chat-view";
-import { AppSidebar } from "~/components/app-sidebar";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
-import { SiteHeader } from "~/components/site-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -14,8 +13,6 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  SidebarInset,
-  SidebarProvider,
 } from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
 import { useApiKeys } from "~/hooks/use-api-keys";
@@ -174,58 +171,47 @@ export default function AdminChatPage() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      insetClassName="flex flex-col min-h-0"
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link to="/dashboard">Home</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
+          </BreadcrumbItem>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset className="flex flex-col min-h-0">
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <Link to="/dashboard">Home</Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <AdminChatView
-          chatModels={chatModels}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          selectedModelInfo={selectedModelInfo}
-          selectedCourseCode={null}
-          setSelectedCourseCode={() => {}}
-          availableCourses={[]}
-          messages={messages}
-          input={input}
-          isLoading={isLoading}
-          adhdAssist={adhdAssist}
-          assistive={assistive}
-          onAssistiveChange={handleAssistiveChange}
-          focusMode={focusMode}
-          onFocusModeChange={setFocusMode}
-          webToolsEnabled={webToolsEnabled}
-          systemPrompt={systemPrompt}
-          onSystemPromptSave={handleSystemPromptSave}
-          onInputChange={handleInputChange}
-          onSubmit={handleSubmit}
-          onStop={stop}
-          onSelectPrompt={handlePromptSelect}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+      <AdminChatView
+        chatModels={chatModels}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        selectedModelInfo={selectedModelInfo}
+        selectedCourseCode={null}
+        setSelectedCourseCode={() => {}}
+        availableCourses={[]}
+        messages={messages}
+        input={input}
+        isLoading={isLoading}
+        adhdAssist={adhdAssist}
+        assistive={assistive}
+        onAssistiveChange={handleAssistiveChange}
+        focusMode={focusMode}
+        onFocusModeChange={setFocusMode}
+        webToolsEnabled={webToolsEnabled}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={handleSystemPromptSave}
+        onInputChange={handleInputChange}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        onSelectPrompt={handlePromptSelect}
+      />
+    </CoreAppShell>
   );
 }

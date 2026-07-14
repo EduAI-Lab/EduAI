@@ -88,4 +88,14 @@ describe("SiteHeader", () => {
     );
     expect(leadingActionsDiv).not.toBeInTheDocument();
   });
+
+  it("lets the actions row scroll horizontally instead of overflowing the header", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <SiteHeader title="Page" actions={<button>Action</button>} />
+      </SidebarProvider>,
+    );
+    const actionsRow = container.querySelector(".ml-auto.flex.h-full.items-center");
+    expect(actionsRow).toHaveClass("overflow-x-auto");
+  });
 });

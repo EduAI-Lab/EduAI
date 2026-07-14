@@ -5,10 +5,8 @@ import { isPasswordExpired, getPasswordChangedAt } from "~/lib/auth/password-exp
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
-import { AppSidebar } from "~/components/app-sidebar";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { SettingsView } from "~/components/settings/settings-view";
-import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "@eduai/ui";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -37,23 +35,12 @@ export default function SettingsPage() {
   const { user, studentNumber, passwordExpired } = useLoaderData<typeof loader>();
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader />
-        <SettingsView
-          role={user.role ?? undefined}
-          studentNumber={studentNumber}
-          passwordExpired={passwordExpired}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+    <CoreAppShell user={user}>
+      <SettingsView
+        role={user.role ?? undefined}
+        studentNumber={studentNumber}
+        passwordExpired={passwordExpired}
+      />
+    </CoreAppShell>
   );
 }
