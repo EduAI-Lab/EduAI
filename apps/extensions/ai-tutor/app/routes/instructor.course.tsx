@@ -675,17 +675,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                   const busy = publishingId === m.id;
                   const canReorder = perms.canManageContent && oModules.length > 1;
                   return (
-                    <SortableItem key={m.id} id={m.id} disabled={!canReorder} className="relative">
-                      {({ handleProps, isDragging }) => (
-                        <>
-                          {canReorder && (
-                            <DragHandle
-                              handleProps={handleProps}
-                              label={`Drag to reorder ${m.title}`}
-                              variant="bar"
-                              active={isDragging}
-                            />
-                          )}
+                    <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
+                      {({ handleProps }) => (
                           <ModuleCard
                             index={idx}
                             title={m.title}
@@ -693,6 +684,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                             accentColor={accentColor}
                             isPublished={m.isPublished}
                             onClick={() => navigate(`/instructor/module/${m.id}`)}
+                            leading={
+                              canReorder ? (
+                                <DragHandle handleProps={handleProps} label={`Drag to reorder ${m.title}`} />
+                              ) : undefined
+                            }
                             actions={
                               perms.canPublishContent || perms.canManageContent ? (
                                 <PublishMenu
@@ -714,7 +710,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                               ) : undefined
                             }
                           />
-                        </>
                       )}
                     </SortableItem>
                   );
