@@ -64,6 +64,7 @@ describe("claimIdempotency", () => {
     const result = await claimIdempotency({
       key: "k1",
       route: "POST /api/users",
+      actorId: "admin-1",
       requestHash: "abc",
     });
     expect(result).toEqual({ kind: "claimed" });
@@ -79,6 +80,7 @@ describe("claimIdempotency", () => {
     prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
       key: "k1",
       route: "POST /api/users",
+      actorId: "admin-1",
       requestHash: "abc",
       status: "COMPLETED",
       statusCode: 201,
@@ -89,6 +91,7 @@ describe("claimIdempotency", () => {
     const result = await claimIdempotency({
       key: "k1",
       route: "POST /api/users",
+      actorId: "admin-1",
       requestHash: "abc",
     });
     expect(result).toEqual({
@@ -116,6 +119,7 @@ describe("claimIdempotency", () => {
     const result = await claimIdempotency({
       key: "k1",
       route: "POST /api/users",
+      actorId: "admin-1",
       requestHash: "abc",
     });
     expect(result).toEqual({ kind: "mismatch" });
@@ -137,6 +141,7 @@ describe("claimIdempotency", () => {
     const result = await claimIdempotency({
       key: "k1",
       route: "POST /api/users",
+      actorId: "admin-1",
       requestHash: "abc",
     });
     expect(result).toEqual({ kind: "in_progress" });
@@ -152,7 +157,10 @@ describe("withIdempotency", () => {
       body: JSON.stringify({ email: "a@b.c" }),
     });
 
-    const res = await withIdempotency({ request, route: "POST /api/users" }, handler);
+    const res = await withIdempotency(
+      { request, route: "POST /api/users", actorId: "admin-1" },
+      handler,
+    );
     expect(handler).toHaveBeenCalledOnce();
     expect(res.status).toBe(200);
     expect(prismaMock.idempotencyRecord.create).not.toHaveBeenCalled();
@@ -182,7 +190,10 @@ describe("withIdempotency", () => {
       body: JSON.stringify({ email: "a@b.c" }),
     });
 
-    const res = await withIdempotency({ request, route: "POST /api/users" }, vi.fn());
+    const res = await withIdempotency(
+      { request, route: "POST /api/users", actorId: "admin-1" },
+      vi.fn(),
+    );
     expect(res.status).toBe(422);
     const json = await res.json();
     expect(json.error).toBe("IDEMPOTENCY_KEY_MISMATCH");
@@ -208,7 +219,10 @@ describe("withIdempotency", () => {
       body: JSON.stringify({ email: "a@b.c", name: "A", role: "STUDENT" }),
     });
 
-    const res = await withIdempotency({ request, route: "POST /api/users" }, handler);
+    const res = await withIdempotency(
+      { request, route: "POST /api/users", actorId: "admin-1" },
+      handler,
+    );
     expect(res.status).toBe(201);
     expect(completeIdempotency).toBeDefined();
     expect(prismaMock.idempotencyRecord.update).toHaveBeenCalledWith(
@@ -230,11 +244,13 @@ describe("withIdempotency", () => {
     const courseOne = await claimIdempotency({
       key: "enroll-shared",
       route: "POST /api/courses/course-1/enrollments",
+      actorId: "admin-1",
       requestHash,
     });
     const courseTwo = await claimIdempotency({
       key: "enroll-shared",
       route: "POST /api/courses/course-2/enrollments",
+      actorId: "admin-1",
       requestHash,
     });
 
@@ -263,7 +279,70 @@ describe("withIdempotency", () => {
       body: JSON.stringify({}),
     });
 
-    await withIdempotency({ request, route: "POST /api/users" }, handler);
+    await withIdempotency(
+      { request, route: "POST /api/users", actorId: "admin-1" },
+      handler,
+    );
     expect(prismaMock.idempotencyRecord.deleteMany).toHaveBeenCalled();
+  });
+
+  it("does not replay another actor's response for the same key", async () => {
+    // Same key+route already completed for a different actor must not be reused.
+    prismaMock.idempotencyRecord.create.mockResolvedValue({});
+    const handler = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "new-row" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const request = new Request("http://localhost/api/questions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "shared-key",
+      },
+      body: JSON.stringify({ courseId: "course-1", text: "Question" }),
+    });
+
+    const response = await withIdempotency(
+      { request, route: "POST /api/questions", actorId: "instructor-2" },
+      handler,
+    );
+
+    expect(response.status).toBe(201);
+    expect(handler).toHaveBeenCalledOnce();
+    expect(prismaMock.idempotencyRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ actorId: "instructor-2", key: "shared-key" }),
+    });
+    // Never looks up another actor's completed record for replay.
+    expect(prismaMock.idempotencyRecord.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("keeps a successful mutation claimed when completion persistence fails", async () => {
+    prismaMock.idempotencyRecord.create.mockResolvedValue({});
+    prismaMock.idempotencyRecord.update.mockRejectedValue(new Error("database unavailable"));
+    const handler = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "q1" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const request = new Request("http://localhost/api/questions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "question-create",
+      },
+      body: JSON.stringify({ courseId: "course-1", text: "Question" }),
+    });
+
+    await expect(
+      withIdempotency(
+        { request, route: "POST /api/questions", actorId: "instructor-1" },
+        handler,
+      ),
+    ).rejects.toThrow("database unavailable");
+    expect(prismaMock.idempotencyRecord.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.idempotencyRecord.deleteMany).not.toHaveBeenCalled();
   });
 });

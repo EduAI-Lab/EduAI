@@ -107,7 +107,7 @@ export async function handleUsersApiRequest(request: Request) {
       }
 
       return withIdempotency(
-        { request, route: "POST /api/users" },
+        { request, route: "POST /api/users", actorId: session.user.id },
         async (body) => createUserFromBody(body, session.user, requestContext),
       );
     }

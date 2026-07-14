@@ -11,6 +11,10 @@ import {
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
 import {
+  InvalidOllamaBaseUrlError,
+  ollamaTagsUrl,
+} from "~/lib/ai/ollama-url.server";
+import {
   findActiveReEmbedJob,
   getReEmbedJobForCourse,
   serializeReEmbedJob,
@@ -456,7 +460,19 @@ export async function syncAdminCanvasMaterials(
   const courseId = await resolveCourseId(actor, opts);
   if (typeof courseId !== "string") return courseId;
 
-  const result = await syncSelectedCanvasMaterials(actor.id, courseId, opts.canvasFileIds);
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { instructorId: true },
+  });
+  if (!course?.instructorId) {
+    return { error: "COURSE_INSTRUCTOR_REQUIRED" };
+  }
+
+  const result = await syncSelectedCanvasMaterials(
+    course.instructorId,
+    courseId,
+    opts.canvasFileIds,
+  );
   return { ok: true, ...result };
 }
 
@@ -802,9 +818,15 @@ export async function listAdminOllamaModels(actor: RbacUser, baseUrl?: string) {
   const denied = requirePlatformAdmin(actor);
   if (denied) return denied;
 
-  const resolvedBase =
-    baseUrl?.trim() || process.env.OLLAMA_BASE_URL || "http://localhost:11434/api";
-  const ollamaUrl = resolvedBase.replace(/\/api$/, "") + "/api/tags";
+  let ollamaUrl: string;
+  try {
+    ollamaUrl = ollamaTagsUrl(baseUrl);
+  } catch (error) {
+    if (error instanceof InvalidOllamaBaseUrlError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 
   try {
     const response = await fetch(ollamaUrl, {

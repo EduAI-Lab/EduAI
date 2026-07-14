@@ -885,6 +885,7 @@ model IdempotencyRecord {
   id           String            @id @default(cuid())
   key          String
   route        String
+  actorId      String
   requestHash  String
   status       IdempotencyStatus
   statusCode   Int?
@@ -893,7 +894,7 @@ model IdempotencyRecord {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  @@unique([key, route])
+  @@unique([key, route, actorId])
   @@index([expiresAt])
   @@map("idempotency_records")
 }

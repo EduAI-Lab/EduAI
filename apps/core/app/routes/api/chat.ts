@@ -457,7 +457,10 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chatMode === "admin" && actingUser.role !== UserRole.ADMIN) {
+    if (
+      chatMode === "admin" &&
+      (isServiceKeyCaller || actingUser.role !== UserRole.ADMIN)
+    ) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },

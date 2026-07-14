@@ -130,6 +130,7 @@ describe("createAdminChatTools write execute", () => {
         name: "Test User",
         email: "test@example.com",
         role: "STUDENT",
+        idempotencyKey: "create-test-user",
       },
       { toolCallId: "test", messages: [] },
     );
