@@ -36,7 +36,7 @@ test.describe('Course deletion in Core cascades to QM and AI Tutor', () => {
           name: 'Cascade Delete Test Course',
           code: `CASC-${RUN_SUFFIX}`,
           section: '001',
-          term: 'Fall',
+          term: 'W1',
           year: '2026',
           startDate: '2026-08-15',
           department: 'COSC',
