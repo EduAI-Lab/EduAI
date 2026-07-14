@@ -1,4 +1,5 @@
 import axios, { AxiosResponse, AxiosError } from 'axios';
+import { getCoreLoginUrl } from '@/lib/coreUrl';
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || '/api';
 
@@ -22,9 +23,7 @@ api.interceptors.response.use(
           error.config.url.includes('/api/auth/me'));
 
       if (isSessionExpired) {
-        const coreUrl = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3000';
-        const returnUrl = encodeURIComponent(window.location.href);
-        window.location.href = `${coreUrl}/login?redirect=${returnUrl}`;
+        window.location.href = getCoreLoginUrl();
       }
     }
     return Promise.reject(error);
