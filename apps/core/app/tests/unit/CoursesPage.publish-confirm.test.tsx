@@ -21,9 +21,8 @@ vi.mock('~/components/courses/courses-unit-admin-view', () => ({
 vi.mock('~/components/courses/courses-instructor-view', () => ({
   CoursesInstructorView: () => null,
 }))
-vi.mock('~/components/courses/courses-ta-view', () => ({ CoursesTaView: () => null }))
-vi.mock('~/components/courses/courses-student-view', () => ({
-  CoursesStudentView: () => null,
+vi.mock('~/components/courses/courses-mixed-view', () => ({
+  CoursesMixedView: () => null,
 }))
 
 vi.mock('~/components/app-sidebar', () => ({ AppSidebar: () => null }))
