@@ -105,18 +105,18 @@ export function ChatConversationLayout({
             <div
               className={cn(
                 "mx-auto w-full max-w-3xl",
-                messages.length === 0
-                  ? "flex flex-1 flex-col justify-center pb-6"
-                  : "space-y-1",
+                messages.length === 0 ? "flex flex-1 flex-col pb-6" : "space-y-1",
               )}
             >
               {messages.length === 0 ? (
-                <WelcomeComponent
-                  selectedModelInfo={selectedModelInfo}
-                  selectedCourseCode={selectedCourseCode}
-                  onSelectPrompt={onSelectPrompt}
-                  disabled={!!disabledReason}
-                />
+                <div className="my-auto w-full">
+                  <WelcomeComponent
+                    selectedModelInfo={selectedModelInfo}
+                    selectedCourseCode={selectedCourseCode}
+                    onSelectPrompt={onSelectPrompt}
+                    disabled={!!disabledReason}
+                  />
+                </div>
               ) : (
                 <>
                   {messages.map((message, index) => {

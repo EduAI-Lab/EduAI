@@ -22,6 +22,7 @@ vi.mock("~/lib/canvas/materials.server", () => ({
 
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { CanvasStoredCredentialsError } from "~/lib/canvas/integration.server";
 import { discoverCanvasMaterialsForCourse } from "~/lib/canvas/materials.server";
 import { loader } from "~/routes/api/courses.canvas-materials.$";
 
@@ -86,5 +87,22 @@ describe("courses.canvas-materials loader", () => {
       undefined,
       { recheckPublishState: false },
     );
+  });
+
+  it("returns 400 with reconnect message when stored Canvas credentials cannot be decrypted", async () => {
+    vi.mocked(discoverCanvasMaterialsForCourse).mockRejectedValue(
+      new CanvasStoredCredentialsError(),
+    );
+
+    const res = await loader({
+      request: makeRequest("http://localhost/api/courses/core-course-1/canvas-materials"),
+      params: { courseId: "core-course-1" },
+    } as never);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      success: false,
+      error: "Stored Canvas credentials could not be decrypted. Reconnect Canvas in Settings.",
+    });
   });
 });
