@@ -6,14 +6,16 @@
       "outputs": ["dist/**", "build/**", ".next/**"]
     },
     "test": {
-      "dependsOn": ["build"],
+      "dependsOn": ["^build"],
       "inputs": [
         "src/**",
         "app/**",
         "server/**",
         "shared/**",
         "test/**",
+        "tests/**",
         "vitest.config.*",
+        "vitest.*.config.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
@@ -22,14 +24,16 @@
       ]
     },
     "test:all": {
-      "dependsOn": ["build"],
+      "dependsOn": ["^build"],
       "inputs": [
         "src/**",
         "app/**",
         "server/**",
         "shared/**",
         "test/**",
+        "tests/**",
         "vitest.config.*",
+        "vitest.*.config.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
@@ -38,14 +42,16 @@
       ]
     },
     "test:coverage": {
-      "dependsOn": ["build"],
+      "dependsOn": ["^build"],
       "inputs": [
         "src/**",
         "app/**",
         "server/**",
         "shared/**",
         "test/**",
+        "tests/**",
         "vitest.config.*",
+        "vitest.*.config.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
