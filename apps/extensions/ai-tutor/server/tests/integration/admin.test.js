@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, prisma } from '../helpers.js';
+import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
 vi.mock('../../src/services/eduaiClient.js', () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
@@ -835,6 +835,102 @@ describe('Admin routes', () => {
         where: { courseOfferingId_userId: { courseOfferingId: externalCourse.id, userId: student.id } },
       });
       expect(row.role).toBe('STUDENT');
+    });
+  });
+
+  // ── GET /api/admin/ai-traces (AI oversight) ──────────────────────
+
+  describe('GET /api/admin/ai-traces', () => {
+    let seed;
+    let activity;
+
+    async function seedTrace(userId = 'stu_1') {
+      return prisma.aiInteractionTrace.create({
+        data: {
+          mode: 'guide',
+          userMessage: 'help',
+          finalResponse: 'sure',
+          finalOutcome: 'completed',
+          iterationCount: 1,
+          trace: [],
+          userId,
+          activityId: activity.id,
+        },
+      });
+    }
+
+    beforeEach(async () => {
+      const prof = makeProfessor();
+      seed = await seedMinimalCourse(prof.id);
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { department: 'CPSC' },
+      });
+      activity = await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+          instructionsMd: 'x',
+          config: { question: 'q', questionType: 'MCQ', options: ['a'], answer: 0, hints: [] },
+        },
+      });
+    });
+
+    it('ADMIN gets recent traces (200)', async () => {
+      await seedTrace();
+      const res = await request(adminApp).get('/api/admin/ai-traces');
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBe(1);
+      expect(res.body[0].mode).toBe('guide');
+    });
+
+    it('STUDENT gets 403', async () => {
+      const app = await createApp({ mockUser: makeStudent() });
+      const res = await request(app).get('/api/admin/ai-traces');
+      expect(res.status).toBe(403);
+    });
+
+    it('INSTRUCTOR gets 403', async () => {
+      const app = await createApp({ mockUser: makeProfessor() });
+      const res = await request(app).get('/api/admin/ai-traces');
+      expect(res.status).toBe(403);
+    });
+
+    it('TA gets 403', async () => {
+      const app = await createApp({ mockUser: makeTA() });
+      const res = await request(app).get('/api/admin/ai-traces');
+      expect(res.status).toBe(403);
+    });
+
+    it('UNIT_ADMIN with no authorized units gets an empty list', async () => {
+      await seedTrace();
+      const app = await createApp({ mockUser: makeUnitAdmin([]) });
+      const res = await request(app).get('/api/admin/ai-traces');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('UNIT_ADMIN sees traces scoped to their authorized unit', async () => {
+      await seedTrace();
+      const app = await createApp({ mockUser: makeUnitAdmin(['CPSC']) });
+      const res = await request(app).get('/api/admin/ai-traces');
+
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+    });
+
+    it('UNIT_ADMIN requesting a unit they are not authorized for gets 403', async () => {
+      const app = await createApp({ mockUser: makeUnitAdmin(['CPSC']) });
+      const res = await request(app).get('/api/admin/ai-traces?unit=MATH');
+      expect(res.status).toBe(403);
+    });
+
+    it('400 when courseId is not a number', async () => {
+      const res = await request(adminApp).get('/api/admin/ai-traces?courseId=abc');
+      expect(res.status).toBe(400);
     });
   });
 });

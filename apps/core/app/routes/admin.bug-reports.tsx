@@ -2,9 +2,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "@eduai/ui";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useBugReports } from "~/hooks/api/use-bug-reports";
 import {
   Breadcrumb,
@@ -37,41 +35,31 @@ export default function BugReportsPage() {
   const { reports, isLoading, updateReportStatus } = useBugReports();
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Bug Reports</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Bug Reports</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <BugReportsAdminView
-          reports={reports}
-          isLoading={isLoading}
-          onUpdateStatus={updateReportStatus}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+      <BugReportsAdminView
+        reports={reports}
+        isLoading={isLoading}
+        onUpdateStatus={updateReportStatus}
+      />
+    </CoreAppShell>
   );
 }

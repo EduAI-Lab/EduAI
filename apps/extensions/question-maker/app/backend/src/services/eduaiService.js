@@ -21,6 +21,88 @@ const CLOUD_PROBE_MODELS = {
   anthropic: "anthropic:claude-3-5-haiku-latest",
 };
 
+/** Strip ```json ... ``` / ``` ... ``` fences if the model wrapped its answer. */
+function stripMarkdownJsonFence(raw) {
+  const text = String(raw ?? "").trim();
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : text;
+}
+
+/**
+ * Extract the first balanced JSON array or object from text (string-aware).
+ * Avoids the greedy /(\[[\s\S]*\]|\{[\s\S]*\})/ trap that matches markdown
+ * citations like `[mr68fk2hgh…]` and then throws SyntaxError on JSON.parse.
+ */
+function extractBalancedJsonValue(text, openChar) {
+  const closeChar = openChar === "[" ? "]" : "}";
+  const start = text.indexOf(openChar);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === openChar) depth += 1;
+    else if (c === closeChar) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function tryParseJson(s) {
+  if (!s || typeof s !== "string") return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    try {
+      return JSON.parse(s.replace(/,\s*([}\]])/g, "$1"));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Parse model output into a questions payload (array or wrapper object).
+ * Returns null when nothing valid can be extracted — never throws on bad matches.
+ */
+function parseQuestionsPayloadFromText(raw) {
+  const text = stripMarkdownJsonFence(raw);
+  if (!text) return null;
+
+  let parsed = tryParseJson(text);
+  if (parsed != null) return parsed;
+
+  // Scan every `[` / `{` start so CUID-like citations (`[mr68fk2hgh…]`) are
+  // skipped when they fail to parse, and a later real JSON array still wins.
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c !== "[" && c !== "{") continue;
+    const slice = extractBalancedJsonValue(text.slice(i), c);
+    if (!slice) continue;
+    parsed = tryParseJson(slice);
+    if (parsed == null) continue;
+    // Prefer question arrays; accept objects that wrap questions / error.
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return parsed;
+  }
+
+  return null;
+}
+
 class EduAIService {
   constructor() {
     this.baseURL = config.eduaiApiUrl;
@@ -172,7 +254,7 @@ class EduAIService {
         messages,
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
-        streaming: params.streaming || false,
+        streaming: params.streaming === true,
         ...(params.temperature != null ? { temperature: params.temperature } : {}),
         ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       };
@@ -185,6 +267,7 @@ class EduAIService {
         timeoutMs,
         model: requestPayload.model,
         messageCount: (requestPayload.messages || []).length,
+        hasSystemPrompt: Boolean(requestPayload.systemPrompt),
         systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
@@ -364,7 +447,11 @@ IMPORTANT:
 
     const defaultUserPrompt = `Generate questions about: ${prompt}
 
-Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.`;
+Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.
+
+OUTPUT RULES (mandatory):
+- Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}).
+- No markdown, no code fences, no headings, no commentary before or after the JSON.`;
 
     const systemPrompt = systemPromptOverride ?? defaultSystemPrompt;
     const userPrompt = userPromptOverride ?? defaultUserPrompt;
@@ -407,32 +494,55 @@ Please ensure the questions are appropriate for the course level and cover the k
         rawContentPreview: typeof rawContent === "string" ? rawContent.slice(0, 150) + (rawContent.length > 150 ? "..." : "") : String(rawContent).slice(0, 150),
       });
 
-      // Parse the response (EduAI may return string JSON or already-parsed array/object)
+      // Parse the response (EduAI may return string JSON, fenced markdown, or prose + JSON)
       const rawPayload = response?.content ?? response?.message ?? response;
       let parsedResponse;
       if (rawPayload !== null && typeof rawPayload === "object") {
-        // Already an object or array – use as-is to avoid JSON.parse(non-string) throwing (e.g. "array" / .match errors)
         parsedResponse = rawPayload;
         console.log(`${DEBUG_PREFIX} generateQuestions using pre-parsed response`, {
           isArray: Array.isArray(rawPayload),
           keys: Array.isArray(rawPayload) ? "array" : Object.keys(rawPayload || {}),
         });
       } else {
-        try {
-          const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload);
-          parsedResponse = JSON.parse(str);
-        } catch (parseError) {
-          const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload);
-          const jsonMatch = str.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
-          if (jsonMatch) {
-            parsedResponse = JSON.parse(jsonMatch[0]);
+        const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload ?? "");
+        parsedResponse = parseQuestionsPayloadFromText(str);
+        if (parsedResponse == null) {
+          console.warn(`${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`, {
+            rawPreview: str.slice(0, 300),
+          });
+          const repairSystem = `${systemPrompt}
+
+CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}). No markdown, no code fences, no prose before or after the JSON.`;
+          const repairResponse = await this.chat({
+            messages: [
+              { role: "system", content: repairSystem },
+              { role: "user", content: userPrompt },
+            ],
+            model,
+            apiKeys,
+            courseCode,
+            streaming: false,
+            timeoutMs: 180000,
+            cookie,
+          });
+          const repairRaw =
+            repairResponse?.content ?? repairResponse?.message ?? repairResponse;
+          if (repairRaw !== null && typeof repairRaw === "object") {
+            parsedResponse = repairRaw;
           } else {
-            console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed`, {
-              parseError: parseError?.message,
+            parsedResponse = parseQuestionsPayloadFromText(
+              typeof repairRaw === "string" ? repairRaw : String(repairRaw ?? ""),
+            );
+          }
+          if (parsedResponse == null) {
+            console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed after retry`, {
               rawType: typeof rawPayload,
-              rawPreview: str?.slice?.(0, 300),
+              rawPreview: str.slice(0, 300),
+              repairPreview: String(repairRaw ?? "").slice(0, 300),
             });
-            throw new Error("Could not parse response from EduAI");
+            throw new Error(
+              "Could not parse response from EduAI (expected a JSON array of questions)",
+            );
           }
         }
       }
@@ -850,14 +960,14 @@ Please ensure the questions are appropriate for the course level and cover the k
     if (!this.isConfigured()) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "EduAI base URL not configured (EDUAI_API_URL)",
       };
     }
 
-    if (!this.apiKey && !cookie?.trim()) {
+    if (!cookie?.trim() && !this.apiKey) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "Sign in via Core to use AI (session cookie required)",
       };
     }
 
@@ -874,7 +984,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
       return {
         success: true,
-        message: "API key is valid",
+        message: this.apiKey ? "Service key can reach AI" : "Core session can reach AI",
         provider,
         response: response,
       };
@@ -885,7 +995,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "Invalid EduAI API key - authentication failed",
+          error: "AI authentication failed — sign in via Core again",
         };
       } else if (
         error.message.includes("403") ||
@@ -893,7 +1003,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "EduAI API key access forbidden",
+          error: "AI access forbidden for this session",
         };
       } else if (
         error.message.includes("Invalid API key") ||
