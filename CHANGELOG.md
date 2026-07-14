@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [ai-tutor] feat: Drag-and-drop reordering for course content — instructors can drag modules (course page), lessons (module page), and activities (lesson page) into a new order via a six-dot grip handle, backed by new atomic bulk-reorder endpoints (`PUT /courses/:id/modules/order`, `PUT /modules/:id/lessons/order`, `PUT /lessons/:id/activities/order`) that reassign positions 0..n-1 in a single transaction. Drag primitives (`SortableProvider`/`SortableItem`/`DragHandle`, on @dnd-kit) live in shared `@eduai/ui` for reuse across apps. (#1047, @yta3216, 2026-07-14) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ai-tutor] feat: Drag-and-drop reordering for course content — instructors can drag modules (course page), lessons (module page), and activities (lesson page) into a new order via a six-dot grip handle, backed by new atomic bulk-reorder endpoints (`PUT /courses/:id/modules/order`, `PUT /modules/:id/lessons/order`, `PUT /lessons/:id/activities/order`) that reassign positions 0..n-1 in a single transaction. Drag primitives (`SortableProvider`/`SortableItem`/`DragHandle`, on @dnd-kit) live in shared `@eduai/ui` for reuse across apps. (#1047, @yta3216, 2026-07-14) — [#1048](https://github.com/EduAI-Lab/EduAI/pull/1048)
 
 ### Changed
 
@@ -17,7 +17,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [ai-tutor] fix: New modules, lessons, and activities now append to the end of their list instead of jumping to the top — create previously defaulted `position` to 0 (activities never set it at all), so each new item shifted every existing one down a slot. (#1046, @yta3216, 2026-07-14) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ai-tutor] fix: New modules, lessons, and activities now append to the end of their list instead of jumping to the top — create previously defaulted `position` to 0 (activities never set it at all), so each new item shifted every existing one down a slot. (#1046, @yta3216, 2026-07-14) — [#1048](https://github.com/EduAI-Lab/EduAI/pull/1048)
 - [core] fix: Server-side navigation slowness — warm the Prisma pool with `$connect()` at boot and parallelize independent loader queries in `root.tsx`/`courses.tsx`, eliminating the cold-connect stall on the first navigation. (#1036, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [core] fix: Pre-bundle `react-router` in Vite `optimizeDeps` to stop the intermittent first-load "dispatcher is null" crash caused by a dep re-optimization race. (#1035, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [ai-tutor] fix: Cut local dev startup/navigation slowness — repoint pre-login `@eduai/ui` barrel imports to narrow subpaths (213→37 first-load modules), add an `http()` fetch timeout and `/api/me` in-flight dedupe, and throttle + background the Core course mirror on `GET /api/me`. (#446, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
