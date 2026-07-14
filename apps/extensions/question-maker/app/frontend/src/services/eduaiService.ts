@@ -2,6 +2,7 @@
  * Frontend wrapper around AI service endpoints for chat, question generation, course/topics, and model list.
  * Passes through provider API keys as needed and returns typed results.
  */
+import { termLabelLong } from '@eduai/ui';
 import api from './api';
 import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
 
@@ -237,7 +238,7 @@ class EduAIService {
                     id: course.id,
                     code: course.code,
                     name: course.name,
-                    description: course.description || `${course.term} ${course.year}`,
+                    description: course.description || termLabelLong(course.term, course.year),
                     term: course.term,
                     year: course.year
                 }));
