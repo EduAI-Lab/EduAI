@@ -4,7 +4,11 @@ import { defineConfig } from 'vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  server: { port: 3001 },
+  server: {
+    port: 3001,
+    // Explicit hosts only — avoid `allowedHosts: true` (DNS rebinding risk).
+    allowedHosts: ['localhost', '127.0.0.1', 'dev.aitutor.eduai.ok.ubc.ca'],
+  },
   plugins: [tsconfigPaths(), tailwindcss(), reactRouter()],
   resolve: {
     // Import the flat icon barrel directly. The package root re-exports every
