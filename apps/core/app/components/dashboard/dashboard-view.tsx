@@ -11,12 +11,15 @@ import {
 import {
   StatCard,
   COURSE_COLORS,
+  QuickActionsPanel,
+  type QuickAction,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@eduai/ui";
+import { termLabel } from "@eduai/ui";
 import { ChatTranscriptViewer } from "~/components/chat/chat-transcript-viewer";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { fetchChatTranscript, type ChatTranscript } from "~/hooks/api/use-chat-history";
@@ -31,14 +34,8 @@ export type DashboardStatDef = {
   trendLabel?: string;
 };
 
-export type DashboardQuickAction = {
-  label: string;
-  description: string;
-  href: string;
-  /** Color used for the icon background swatch (CSS value) */
-  color: string;
-  icon: React.ReactNode;
-};
+/** @deprecated Use `QuickAction` from `@eduai/ui`. Kept as an alias for existing role-view imports. */
+export type DashboardQuickAction = QuickAction;
 
 export type DashboardCourse = {
   id: string;
@@ -146,7 +143,7 @@ function CourseListPanel({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">{course.code}</span>
-              <span className="text-[11px] text-muted-foreground">{course.term} {course.year}</span>
+              <span className="text-[11px] text-muted-foreground">{termLabel(course.term, course.year)}</span>
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">{course.name}</div>
           </div>
@@ -170,30 +167,6 @@ function CourseListPanel({
   );
 }
 
-function QuickActionsPanel({ actions }: { actions: DashboardQuickAction[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {actions.map((action) => (
-        <Link
-          key={action.href + action.label}
-          to={action.href}
-          className="flex items-start gap-3 p-4 bg-card border border-border rounded-[var(--radius-xl)] shadow-[var(--shadow-2xs)] hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-left"
-        >
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: action.color + "22" }}
-          >
-            <span style={{ color: action.color }}>{action.icon}</span>
-          </div>
-          <div>
-            <div className="text-[13px] font-semibold text-foreground">{action.label}</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5 leading-snug">{action.description}</div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
 
 function RecentChatsPanel({
   chats,
@@ -374,7 +347,7 @@ export function DashboardView({
             )}
           </div>
           {showQuickActions ? (
-            <QuickActionsPanel actions={quickActions!} />
+            <QuickActionsPanel actions={quickActions!} LinkComponent={Link} />
           ) : (
             <CourseListPanel
               courses={courses ?? []}

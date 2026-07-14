@@ -18,6 +18,7 @@ import {
   Avatar,
   courseThemeVars,
 } from '@eduai/ui'
+import { termLabel } from '@eduai/ui'
 import {
   CourseMaterialsUpload,
   type CourseMaterial,
@@ -111,6 +112,25 @@ export function CourseDetailStudentView({
 
   return (
     <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
+      {/* B2: Topics folded into hero; badges moved to top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={displayName}
+        description={course.description}
+        accentColor={accentColor}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+        headerAction={
+          <CourseCardCustomizePopover
+            courseName={course.name}
+            courseCode={course.code}
+            preference={cardPreference}
+            onApply={(update) => setCoursePreference(course.id, update)}
+          />
+        }
+      />
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -124,28 +144,6 @@ export function CourseDetailStudentView({
 
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* B2: Topics folded into hero; badges moved to top-right */}
-          <ScrollReveal index={0}>
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={displayName}
-            description={course.description}
-            accentColor={accentColor}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-            headerAction={
-              <CourseCardCustomizePopover
-                courseName={course.name}
-                courseCode={course.code}
-                preference={cardPreference}
-                onApply={(update) => setCoursePreference(course.id, update)}
-              />
-            }
-          />
-          </ScrollReveal>
-
           {/* B3: Enriched info card — always show; B1: no empty gaps */}
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             <ScrollReveal index={1}>
@@ -159,11 +157,11 @@ export function CourseDetailStudentView({
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Term</p>
-                    <p className="text-sm text-foreground">{course.term} {course.year}</p>
+                    <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
                   </div>
                   {course.department && (
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Department</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Course Code</p>
                       <p className="text-sm text-foreground">{course.department}</p>
                     </div>
                   )}

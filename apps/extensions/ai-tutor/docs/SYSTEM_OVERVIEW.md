@@ -735,12 +735,12 @@ Routes are flat rather than nested. The main paths are:
 | `/` | `home.tsx` | Public login |
 | `/student` | `student.tsx` | Student dashboard |
 | `/student/courses/:courseId` | `student.course.tsx` | Course view |
-| `/student/module/:moduleId` | `student.topic.tsx` | Module view |
-| `/student/lesson/:lessonId` | `student.list.tsx` | Lesson player |
+| `/student/module/:moduleId` | `student.module.tsx` | Module view |
+| `/student/lesson/:lessonId` | `student.lesson.tsx` | Lesson player |
 | `/instructor` | `instructor.tsx` | Instructor dashboard |
 | `/instructor/courses/:courseId` | `instructor.course.tsx` | Course editor |
-| `/instructor/module/:moduleId` | `instructor.topic.tsx` | Module editor |
-| `/instructor/lesson/:lessonId` | `instructor.list.tsx` | Lesson builder |
+| `/instructor/module/:moduleId` | `instructor.module.tsx` | Module editor |
+| `/instructor/lesson/:lessonId` | `instructor.lesson.tsx` | Lesson builder |
 | `/admin` | `admin.tsx` | Admin panel |
 
 Frontend state is intentionally simple: React context plus hooks. There is no Redux or Zustand.

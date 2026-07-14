@@ -31,6 +31,7 @@ import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { Assessments } from '../schema/index.js';
+import { config } from '../config/settings.js';
 
 const router = express.Router();
 
@@ -403,8 +404,16 @@ router.post('/generate', authenticateToken, requireRole(QM_AUTHORIZED), async (r
       });
     }
 
+    const resolvedNumQuestions = parseInt(numQuestions, 10) || 15;
+    if (resolvedNumQuestions > config.maxQuestions) {
+      return res.status(400).json({
+        success: false,
+        error: `numQuestions cannot exceed ${config.maxQuestions}`
+      });
+    }
+
     const params = {
-      numQuestions: parseInt(numQuestions) || 15,
+      numQuestions: resolvedNumQuestions,
       difficultyDistribution: difficultyDistribution || {
         easy: 5,
         medium: 5,
