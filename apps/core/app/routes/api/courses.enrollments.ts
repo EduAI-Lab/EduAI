@@ -144,34 +144,47 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
+  // Peek body before idempotency so RBAC/policy cannot be skipped on replay.
+  const peekedBody = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  const bodyPreview =
+    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
+      ? (peekedBody as Record<string, unknown>)
+      : null;
+  const requiredRank = bodyPreview?.role === "INSTRUCTOR" ? 3 : 2;
+  if (!access || access.rank < requiredRank) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
+  if (
+    enrollmentGate !== "always" &&
+    enrollmentGate !== "never" &&
+    !(await getPolicy(enrollmentGate))
+  ) {
+    return denyByPolicy({
+      request,
+      policyKey: enrollmentGate,
+      user: session.user,
+      action: "enrollment.add",
+      courseId,
+    });
+  }
+
   const requestContext = getRequestContext(request);
 
   return withIdempotency(
-    { request, route: `POST /api/courses/${courseId}/enrollments` },
+    {
+      request,
+      route: `POST /api/courses/${courseId}/enrollments`,
+      actorId: session.user.id,
+    },
     async (body) => {
-      const requiredRank = body?.role === "INSTRUCTOR" ? 3 : 2;
-      if (!access || access.rank < requiredRank) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      const enrollmentGate = resolvePolicyGate(access.level, "manageEnrollments");
-      if (
-        enrollmentGate !== "always" &&
-        enrollmentGate !== "never" &&
-        !(await getPolicy(enrollmentGate))
-      ) {
-        return denyByPolicy({
-          request,
-          policyKey: enrollmentGate,
-          user: session.user,
-          action: "enrollment.add",
-          courseId,
-        });
-      }
-
       const result = await addEnrollment(courseId, body ?? {});
 
       switch (result.status) {

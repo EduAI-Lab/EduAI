@@ -392,6 +392,26 @@ describe("POST /api/questions", () => {
     expect(await res.json()).toEqual({ id: QUESTION_ID });
     expect(db.$transaction).not.toHaveBeenCalled();
   });
+
+  it("does not replay another user's key before course RBAC", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "student-2", role: "STUDENT" } });
+    mockCourseAccess("STUDENT");
+    db.idempotencyRecord.create.mockResolvedValue({});
+    db.idempotencyRecord.deleteMany.mockResolvedValue({ count: 1 });
+
+    const res = await postAction(
+      makePostArgs(
+        { ...validPostBody, idempotencyKey: "idem-replay-test" },
+        "session=student",
+      ),
+    );
+
+    expect(res.status).toBe(403);
+    expect(db.idempotencyRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ actorId: "student-2" }),
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
 });
 
 // ─── GET /api/questions/:id ──────────────────────────────────────────────────

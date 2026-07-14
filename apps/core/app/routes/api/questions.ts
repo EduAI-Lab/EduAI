@@ -112,25 +112,43 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
-  return withIdempotency({ request, route: "POST /api/questions" }, async (body) => {
-    if (typeof body?.courseId === "string" && body.courseId) {
-      const { course, access } = await resolveCourseAccessWithCourse(session.user, body.courseId);
-      if (!course) {
-        return json(404, { error: "COURSE_NOT_FOUND" });
-      }
-      if (!access || access.rank < 1) {
-        return json(403, { error: "Forbidden" });
-      }
+  // Peek courseId before idempotency so course access cannot be skipped on replay.
+  const peekedBody = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  const bodyPreview =
+    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
+      ? (peekedBody as Record<string, unknown>)
+      : null;
+
+  if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
+    const { course, access } = await resolveCourseAccessWithCourse(
+      session.user,
+      bodyPreview.courseId,
+    );
+    if (!course) {
+      return json(404, { error: "COURSE_NOT_FOUND" });
     }
-
-    const result = await createQuestion(body, session.user.id);
-
-    if ("error" in result) {
-      const status =
-        result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
-      return json(status, result);
+    if (!access || access.rank < 1) {
+      return json(403, { error: "Forbidden" });
     }
+  }
 
-    return json(201, result);
-  });
+  return withIdempotency(
+    { request, route: "POST /api/questions", actorId: session.user.id },
+    async (body) => {
+      const result = await createQuestion(body, session.user.id);
+
+      if ("error" in result) {
+        const status =
+          result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND"
+            ? 404
+            : 422;
+        return json(status, result);
+      }
+
+      return json(201, result);
+    },
+  );
 }

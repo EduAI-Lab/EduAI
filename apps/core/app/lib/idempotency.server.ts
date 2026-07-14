@@ -69,10 +69,11 @@ function replayResponse(statusCode: number, responseBody: unknown): Response {
 export async function claimIdempotency(opts: {
   key: string;
   route: string;
+  actorId: string;
   requestHash: string;
   ttlMs?: number;
 }): Promise<IdempotencyClaimResult> {
-  const { key, route, requestHash, ttlMs = DEFAULT_TTL_MS } = opts;
+  const { key, route, actorId, requestHash, ttlMs = DEFAULT_TTL_MS } = opts;
   const expiresAt = expiresAtFromNow(ttlMs);
 
   try {
@@ -80,6 +81,7 @@ export async function claimIdempotency(opts: {
       data: {
         key,
         route,
+        actorId,
         requestHash,
         status: "PROCESSING",
         expiresAt,
@@ -95,7 +97,7 @@ export async function claimIdempotency(opts: {
   }
 
   const existing = await prisma.idempotencyRecord.findUnique({
-    where: { key_route: { key, route } },
+    where: { key_route_actorId: { key, route, actorId } },
   });
   if (!existing) {
     return claimIdempotency(opts);
@@ -103,7 +105,7 @@ export async function claimIdempotency(opts: {
 
   if (existing.expiresAt < new Date()) {
     await prisma.idempotencyRecord.delete({
-      where: { key_route: { key, route } },
+      where: { key_route_actorId: { key, route, actorId } },
     });
     return claimIdempotency(opts);
   }
@@ -126,7 +128,7 @@ export async function claimIdempotency(opts: {
 
   if (existing.status === "FAILED") {
     const reclaimed = await prisma.idempotencyRecord.updateMany({
-      where: { key, route, status: "FAILED", requestHash },
+      where: { key, route, actorId, status: "FAILED", requestHash },
       data: { status: "PROCESSING", expiresAt },
     });
     if (reclaimed.count === 1) {
@@ -141,11 +143,18 @@ export async function claimIdempotency(opts: {
 export async function completeIdempotency(opts: {
   key: string;
   route: string;
+  actorId: string;
   statusCode: number;
   responseBody: unknown;
 }): Promise<void> {
   await prisma.idempotencyRecord.update({
-    where: { key_route: { key: opts.key, route: opts.route } },
+    where: {
+      key_route_actorId: {
+        key: opts.key,
+        route: opts.route,
+        actorId: opts.actorId,
+      },
+    },
     data: {
       status: "COMPLETED",
       statusCode: opts.statusCode,
@@ -158,18 +167,30 @@ export async function completeIdempotency(opts: {
 export async function releaseIdempotency(opts: {
   key: string;
   route: string;
+  actorId: string;
 }): Promise<void> {
   await prisma.idempotencyRecord.deleteMany({
-    where: { key: opts.key, route: opts.route, status: "PROCESSING" },
+    where: {
+      key: opts.key,
+      route: opts.route,
+      actorId: opts.actorId,
+      status: "PROCESSING",
+    },
   });
 }
 
 export async function failIdempotency(opts: {
   key: string;
   route: string;
+  actorId: string;
 }): Promise<void> {
   await prisma.idempotencyRecord.updateMany({
-    where: { key: opts.key, route: opts.route, status: "PROCESSING" },
+    where: {
+      key: opts.key,
+      route: opts.route,
+      actorId: opts.actorId,
+      status: "PROCESSING",
+    },
     data: { status: "FAILED" },
   });
 }
@@ -178,6 +199,8 @@ export type WithIdempotencyOptions = {
   request: Request;
   /** Stable route identifier, e.g. `POST /api/users` */
   route: string;
+  /** Authenticated actor whose keys and cached responses are isolated. */
+  actorId: string;
   ttlMs?: number;
 };
 
@@ -207,6 +230,7 @@ export async function withIdempotency(
   const claim = await claimIdempotency({
     key,
     route: opts.route,
+    actorId: opts.actorId,
     requestHash,
     ttlMs: opts.ttlMs,
   });
@@ -221,25 +245,35 @@ export async function withIdempotency(
     return replayResponse(claim.statusCode, claim.responseBody);
   }
 
+  let response: Response;
   try {
-    const response = await handler(body);
-    const statusCode = response.status;
-    const responseBody = await response.clone().json().catch(() => null);
-
-    if (statusCode >= 200 && statusCode < 300) {
-      await completeIdempotency({
-        key,
-        route: opts.route,
-        statusCode,
-        responseBody,
-      });
-    } else {
-      await releaseIdempotency({ key, route: opts.route });
-    }
-
-    return response;
+    response = await handler(body);
   } catch (error) {
-    await failIdempotency({ key, route: opts.route });
+    await failIdempotency({ key, route: opts.route, actorId: opts.actorId });
     throw error;
   }
+
+  const statusCode = response.status;
+  const responseBody = await response.clone().json().catch(() => null);
+
+  if (statusCode >= 200 && statusCode < 300) {
+    // Do not release or mark FAILED if persistence fails after the mutation
+    // succeeded. Leaving PROCESSING makes retries fail closed instead of
+    // executing the create again and producing a duplicate row.
+    await completeIdempotency({
+      key,
+      route: opts.route,
+      actorId: opts.actorId,
+      statusCode,
+      responseBody,
+    });
+  } else {
+    await releaseIdempotency({
+      key,
+      route: opts.route,
+      actorId: opts.actorId,
+    });
+  }
+
+  return response;
 }
