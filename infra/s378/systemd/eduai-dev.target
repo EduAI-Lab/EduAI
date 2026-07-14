@@ -1,0 +1,8 @@
+[Unit]
+Description=EduAI s378 dev stack (Core + AI Tutor + Question Maker)
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/infra/s378/GO-LIVE.md
+Wants=eduai-core.service eduai-aitutor-server.service eduai-aitutor-fe.service eduai-qm-backend.service eduai-qm-frontend.service
+After=network-online.target
+
+[Install]
+WantedBy=default.target
