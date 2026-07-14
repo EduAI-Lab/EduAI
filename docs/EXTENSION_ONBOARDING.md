@@ -80,7 +80,7 @@ Both extensions implement the same `requireAuth` middleware. Copy this pattern e
 ```js
 // src/middleware/auth.js
 
-const VALID_ROLES = new Set(['STUDENT', 'PROFESSOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
+const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN']);
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';
@@ -128,7 +128,7 @@ Key points:
     "email": "user@example.com",
     "name": "User Name",
     "image": "https://...",
-    "role": "STUDENT | PROFESSOR | TA | ADMIN | UNIT_ADMIN",
+    "role": "STUDENT | INSTRUCTOR | ADMIN | UNIT_ADMIN",
     "authorizedUnits": []
   }
 }
@@ -183,7 +183,7 @@ Apply it after `requireAuth` on any route that requires a specific role:
 router.get('/admin/users', requireAuth, requireRole('ADMIN'), handler);
 
 // Multiple roles
-router.post('/courses', requireAuth, requireRole(['ADMIN', 'PROFESSOR']), handler);
+router.post('/courses', requireAuth, requireRole(['ADMIN', 'INSTRUCTOR']), handler);
 ```
 
 Role values from Core:
@@ -191,12 +191,11 @@ Role values from Core:
 | Role | Meaning |
 |---|---|
 | `STUDENT` | Enrolled student |
-| `PROFESSOR` | Course instructor (in AI Tutor, this role is called `INSTRUCTOR`) |
-| `TA` | Teaching assistant |
+| `INSTRUCTOR` | Course instructor |
 | `ADMIN` | Platform administrator |
 | `UNIT_ADMIN` | Department-level administrator scoped to authorized units |
 
-> **AI Tutor note:** AI Tutor maps `PROFESSOR` → `INSTRUCTOR` internally. If your extension uses different role names, apply the mapping inside `normalizeRole` before setting `req.user` — never after.
+> **Note:** `role` on `req.user` is the platform-level `UserRole` from Core, not a per-course enrollment role. `TA` is an enrollment-level role (see AI Tutor's `enrollment.role`), not a value of `user.role` — don't add it to `VALID_ROLES` or `requireRole` allow-lists.
 
 ---
 
