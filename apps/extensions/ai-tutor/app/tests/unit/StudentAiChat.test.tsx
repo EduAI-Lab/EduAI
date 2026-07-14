@@ -23,7 +23,7 @@ import type { Activity } from '~/lib/types';
 
 // ── useApiKeys: controllable mock ──────────────────────────────────────────
 const { mockGetKey, mockSetKey, mockValidateKey } = vi.hoisted(() => ({
-  mockGetKey: vi.fn((): string | undefined => 'test-provider-key'),
+  mockGetKey: vi.fn((): string => 'test-provider-key'),
   mockSetKey: vi.fn(),
   mockValidateKey: vi.fn().mockResolvedValue({ valid: true }),
 }));
@@ -304,27 +304,27 @@ describe('StudentAiChat — tab switching (#1003)', () => {
 
 describe('StudentAiChat — API key validation dialog (#1003)', () => {
   it('shows the "Add API key" CTA when no provider key is configured', async () => {
-    mockGetKey.mockReturnValue(undefined);
+    mockGetKey.mockReturnValue('');
     renderChat();
     expect(await screen.findByRole('button', { name: /add api key/i })).toBeInTheDocument();
   });
 
   it('opens the API key dialog when "Add API key" is clicked', async () => {
-    mockGetKey.mockReturnValue(undefined);
+    mockGetKey.mockReturnValue('');
     renderChat();
     fireEvent.click(await screen.findByRole('button', { name: /add api key/i }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('keeps the Save button disabled when the key input is empty', async () => {
-    mockGetKey.mockReturnValue(undefined);
+    mockGetKey.mockReturnValue('');
     renderChat();
     fireEvent.click(await screen.findByRole('button', { name: /add api key/i }));
     expect(await screen.findByRole('button', { name: /^save$/i })).toBeDisabled();
   });
 
   it('shows a validation error when the key is rejected by the provider', async () => {
-    mockGetKey.mockReturnValue(undefined);
+    mockGetKey.mockReturnValue('');
     mockValidateKey.mockResolvedValue({ valid: false, error: 'Invalid API key' });
     renderChat();
 
@@ -338,7 +338,7 @@ describe('StudentAiChat — API key validation dialog (#1003)', () => {
   });
 
   it('calls setKey and closes the dialog when a valid key is saved', async () => {
-    mockGetKey.mockReturnValue(undefined);
+    mockGetKey.mockReturnValue('');
     renderChat();
 
     fireEvent.click(await screen.findByRole('button', { name: /add api key/i }));
