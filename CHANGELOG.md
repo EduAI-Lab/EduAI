@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Server-side navigation slowness — warm the Prisma pool with `$connect()` at boot, enable better-auth `session.cookieCache` (≤60s), and parallelize independent loader queries in `root.tsx`/`courses.tsx`, eliminating the cold-connect stall and the up-to-4 serial `getSession` Postgres round-trips per navigation. (#1036, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
+- [core] fix: Server-side navigation slowness — warm the Prisma pool with `$connect()` at boot and parallelize independent loader queries in `root.tsx`/`courses.tsx`, eliminating the cold-connect stall on the first navigation. (#1036, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [core] fix: Pre-bundle `react-router` in Vite `optimizeDeps` to stop the intermittent first-load "dispatcher is null" crash caused by a dep re-optimization race. (#1035, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [ai-tutor] fix: Cut local dev startup/navigation slowness — repoint pre-login `@eduai/ui` barrel imports to narrow subpaths (213→37 first-load modules), add an `http()` fetch timeout and `/api/me` in-flight dedupe, and throttle + background the Core course mirror on `GET /api/me`. (#446, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 ## [Week 11 — July 13–19, 2026]
