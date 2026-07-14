@@ -58,6 +58,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
 | [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
@@ -84,6 +85,22 @@ node ./scripts/chat-latency-bench.mjs
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
+
+## Mobile responsiveness audit (`#805`)
+
+Playwright-driven screenshot audit of Core, AI Tutor, and Question Maker at mobile viewports, checking for horizontal overflow and sidebar `aria-expanded`/`aria-controls` wiring:
+
+```bash
+cd scripts/mobile-audit
+npm install
+node run.mjs
+```
+
+Requires Core, AI Tutor, and Question Maker dev servers already running locally (`npm run dev` in each, or the root `npm run dev`), plus a seeded instructor account (the default matches `apps/core`'s `npm run db:seed`). Results (JSON + per-page/viewport PNGs) are written to `docs/implementations/screenshots/mobile-audit/`.
+
+The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
+
+Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
 
 ## Getting started
 
@@ -252,7 +269,9 @@ exit
 
 ## Running Tests
 
-All test suites run inside Docker. This ensures every developer and CI run uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+Locally, all test suites run inside Docker. This ensures every developer uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+
+> **Note:** CI (`.github/workflows/pr-tests.yml`) runs the unit/integration suites natively on the runner via `turbo run test` against Postgres service containers instead — remote runners get no Docker layer cache, so the containerized suites rebuilt every image (including a full `npm ci` per image) on every run. E2E still runs the full dockerized stack, with image layers cached in the GitHub Actions cache.
 
 ### Prerequisites
 
