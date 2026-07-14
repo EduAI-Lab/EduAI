@@ -48,6 +48,7 @@ import {
   Textarea,
 } from '@eduai/ui';
 import { PublishMenu } from '../components/PublishMenu';
+import { ReorderControls } from '../components/common/ReorderControls';
 import { ModuleCard } from '../components/courses/ModuleCard';
 import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import api from '../lib/api';
@@ -124,6 +125,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     isPublished: boolean;
     title: string;
   } | null>(null);
+  const [reorderingModules, setReorderingModules] = useState(false);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -274,6 +276,34 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       );
     } finally {
       setPublishingId((current) => (current === moduleId ? null : current));
+    }
+  };
+
+  // Move a module one slot earlier (-1) or later (+1). Swaps with the
+  // neighbour, updates the list optimistically, then persists the full order
+  // via the bulk reorder endpoint; a failure rolls back to the prior order.
+  const moveModule = async (moduleId: number, direction: -1 | 1) => {
+    if (!numericCourseId) return;
+    const current = modules;
+    const idx = current.findIndex((m) => m.id === moduleId);
+    const target = idx + direction;
+    if (idx < 0 || target < 0 || target >= current.length) return;
+
+    const next = [...current];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setModules(next);
+    setReorderingModules(true);
+    try {
+      const updated = await api.reorderModules(
+        numericCourseId,
+        next.map((m) => m.id),
+      );
+      setModules(updated);
+    } catch (error) {
+      console.error('Failed to reorder modules', error);
+      setModules(current);
+    } finally {
+      setReorderingModules(false);
     }
   };
 
@@ -651,22 +681,34 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     onClick={() => navigate(`/instructor/module/${m.id}`)}
                     actions={
                       perms.canPublishContent || perms.canManageContent ? (
-                        <PublishMenu
-                          isPublished={m.isPublished}
-                          pending={busy}
-                          blockedReason={tooltipMessage}
-                          itemLabel="module"
-                          onToggle={
-                            perms.canPublishContent
-                              ? () => {
-                                  if (busy || blocked) return;
-                                  setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
-                                }
-                              : undefined
-                          }
-                          onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
-                          onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
-                        />
+                        <>
+                          {perms.canManageContent && oModules.length > 1 && (
+                            <ReorderControls
+                              isFirst={idx === 0}
+                              isLast={idx === oModules.length - 1}
+                              isBusy={reorderingModules}
+                              itemLabel="module"
+                              onMoveEarlier={() => moveModule(m.id, -1)}
+                              onMoveLater={() => moveModule(m.id, 1)}
+                            />
+                          )}
+                          <PublishMenu
+                            isPublished={m.isPublished}
+                            pending={busy}
+                            blockedReason={tooltipMessage}
+                            itemLabel="module"
+                            onToggle={
+                              perms.canPublishContent
+                                ? () => {
+                                    if (busy || blocked) return;
+                                    setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
+                                  }
+                                : undefined
+                            }
+                            onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
+                            onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
+                          />
+                        </>
                       ) : undefined
                     }
                   />

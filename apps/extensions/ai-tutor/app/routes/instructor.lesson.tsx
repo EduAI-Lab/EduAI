@@ -57,6 +57,7 @@ import ActivityDetailsCard from '../components/ActivityDetailsCard';
 import EditActivityPanel from '../components/EditActivityPanel';
 import { contentExcerpt } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
+import { ReorderControls } from '../components/common/ReorderControls';
 import { accentForCourse } from '~/lib/course-display';
 import api from '../lib/api';
 import type { ImportableActivity } from '../lib/api';
@@ -167,6 +168,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   const [updatingTopicsFor, setUpdatingTopicsFor] = useState<number | null>(null);
   const [updatingModesFor, setUpdatingModesFor] = useState<number | null>(null);
+  const [reorderingActivities, setReorderingActivities] = useState(false);
 
   const [showAddPanel, setShowAddPanel] = useState(false);
 
@@ -309,6 +311,34 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setActivities(activityData);
     } catch (error) {
       console.error('Failed to refresh activities', error);
+    }
+  };
+
+  // Move an activity one slot earlier (-1) or later (+1) within the lesson.
+  // Swaps with the neighbour, updates optimistically, then persists the full
+  // order; a failure rolls back to the prior order.
+  const moveActivity = async (activityId: number, direction: -1 | 1) => {
+    if (!numericLessonId) return;
+    const current = activities;
+    const idx = current.findIndex((a) => a.id === activityId);
+    const target = idx + direction;
+    if (idx < 0 || target < 0 || target >= current.length) return;
+
+    const next = [...current];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setActivities(next);
+    setReorderingActivities(true);
+    try {
+      const updated = await api.reorderActivities(
+        numericLessonId,
+        next.map((a) => a.id),
+      );
+      setActivities(updated);
+    } catch (error) {
+      console.error('Failed to reorder activities', error);
+      setActivities(current);
+    } finally {
+      setReorderingActivities(false);
     }
   };
 
@@ -801,6 +831,16 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                           <PermissionGate allow={perms.canManageContent}>
                             <div className="flex shrink-0 items-center gap-0.5">
+                              {!isEditing && oActivities.length > 1 && (
+                                <ReorderControls
+                                  isFirst={i === 0}
+                                  isLast={i === oActivities.length - 1}
+                                  isBusy={reorderingActivities}
+                                  itemLabel="activity"
+                                  onMoveEarlier={() => moveActivity(activity.id, -1)}
+                                  onMoveLater={() => moveActivity(activity.id, 1)}
+                                />
+                              )}
                               {isEditing ? (
                                 <Badge variant="secondary" size="sm">
                                   Editing…
