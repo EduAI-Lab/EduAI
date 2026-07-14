@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [ai-tutor] feat: Reorder UI for course content — instructors can move modules (course page), lessons (module page), and activities (lesson page) earlier or later via chevron controls, backed by new atomic bulk-reorder endpoints (`PUT /courses/:id/modules/order`, `PUT /modules/:id/lessons/order`, `PUT /lessons/:id/activities/order`) that reassign positions 0..n-1 in a single transaction. (#1047, @yta3216, 2026-07-14) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ai-tutor] feat: Drag-and-drop reordering for course content — instructors can drag modules (course page), lessons (module page), and activities (lesson page) into a new order via a six-dot grip handle, backed by new atomic bulk-reorder endpoints (`PUT /courses/:id/modules/order`, `PUT /modules/:id/lessons/order`, `PUT /lessons/:id/activities/order`) that reassign positions 0..n-1 in a single transaction. Drag primitives (`SortableProvider`/`SortableItem`/`DragHandle`, on @dnd-kit) live in shared `@eduai/ui` for reuse across apps. (#1047, @yta3216, 2026-07-14) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 
 ### Changed
 
