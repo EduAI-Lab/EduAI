@@ -9,6 +9,43 @@ import {
 
 const router = express.Router();
 
+// The Core course mirror (import taught + enrolled courses) is a background
+// side effect: it fetches Core's course list and writes local CourseOffering /
+// CourseEnrollment rows + per-offering topic/enrollment sub-syncs. The `/api/me`
+// response does NOT depend on its result. Previously it ran awaited on every
+// `/me`, and `/me` runs on every client navigation (via `requireClientUser`),
+// so each page paid a serial Core-fetch + DB-write waterfall — the main cause
+// of the multi-second per-page delay. We now (a) throttle it to at most once
+// per window per user, and (b) fire it without awaiting so navigation never
+// blocks on it.
+const MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
+const lastMirrorAtByUser = new Map();
+
+function runCoreMirror(authUser, cookie, sharedOptions) {
+  const now = Date.now();
+  const last = lastMirrorAtByUser.get(authUser.id) ?? 0;
+  if (now - last < MIRROR_THROTTLE_MS) return;
+  lastMirrorAtByUser.set(authUser.id, now);
+
+  // Invoke both synchronously (so callers/tests can observe the calls) but do
+  // not await — the mirror runs in the background. A user is either an
+  // INSTRUCTOR (taught) or a STUDENT/TA (enrolled), so only one actually does
+  // work; running them in parallel is safe.
+  void Promise.allSettled([
+    importTaughtCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
+      console.error('[eduai] Auto-import taught courses failed', err),
+    ),
+    importEnrolledCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
+      console.error('[eduai] Student enrollment mirror failed', err),
+    ),
+  ]);
+}
+
+/** Test-only: clears the per-user mirror throttle so each test starts fresh. */
+export function resetCoreMirrorThrottleForTests() {
+  lastMirrorAtByUser.clear();
+}
+
 router.get('/me', async (req, res) => {
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: 'Authentication required' });
@@ -25,17 +62,8 @@ router.get('/me', async (req, res) => {
 
   const sharedOptions = coreCourses != null ? { coreCourses } : {};
 
-  try {
-    await importTaughtCoursesFromCore(authUser, cookie, sharedOptions);
-  } catch (err) {
-    console.error('[eduai] Auto-import taught courses failed on login', err);
-  }
-
-  try {
-    await importEnrolledCoursesFromCore(authUser, cookie, sharedOptions);
-  } catch (err) {
-    console.error('[eduai] Student enrollment mirror failed on login', err);
-  }
+  // Fire-and-forget, throttled — does not block the /me response.
+  runCoreMirror(authUser, cookie, sharedOptions);
 
   const publicUser = toPublicUser(authUser);
   let effectiveUser = publicUser;
