@@ -84,7 +84,7 @@ beforeAll(async () => {
       name: "Integration Test Course",
       code: "INT 999",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2025,
       startDate: new Date("2025-09-01"),
     },
@@ -256,7 +256,7 @@ describe("GET /api/courses", () => {
         name: "Deleted Course",
         code: "DEL 999",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2025,
         startDate: new Date("2025-09-01"),
         deletedAt: new Date(),
@@ -286,7 +286,7 @@ describe("POST /api/courses", () => {
         name: "Forbidden Course",
         code: "FB 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2025,
         startDate: "2025-09-01",
         department: "COSC",
@@ -307,7 +307,7 @@ describe("POST /api/courses", () => {
     }));
     expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body).toHaveProperty("error");
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
   });
 
   it("returns 422 when instructorUserIds do not resolve to INSTRUCTOR users", async () => {
@@ -316,7 +316,7 @@ describe("POST /api/courses", () => {
       name: "Bad Instructor Course",
       code: "BI 001",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2025,
       startDate: "2025-09-01",
       department: "COSC",
@@ -333,7 +333,7 @@ describe("POST /api/courses", () => {
       name: "Transaction Test Course",
       code: "TX 001",
       section: "002",
-      term: "Winter",
+      term: "W2",
       year: 2026,
       startDate: "2026-01-01",
       department: "COSC",
@@ -358,12 +358,14 @@ describe("POST /api/courses", () => {
       name: "No Instructor Course",
       code: "NI 001",
       section: "001",
-      term: "Fall",
+      term: "W1",
       year: 2026,
       startDate: "2026-09-01",
     }));
     // Schema requires >= 1 instructor id → validation failure, nothing persisted.
     expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body).toHaveProperty("error", "VALIDATION_ERROR");
     const row = await prisma.course.findFirst({ where: { code: "NI 001" } });
     expect(row).toBeNull();
   });
@@ -376,7 +378,7 @@ describe("POST /api/courses", () => {
         name: "Wrong Unit Course",
         code: "WU 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",
@@ -397,7 +399,7 @@ describe("POST /api/courses", () => {
         name: "Unit Admin Course",
         code: "UA 001",
         section: "001",
-        term: "Fall",
+        term: "W1",
         year: 2026,
         startDate: "2026-09-01",
         department: "COSC",

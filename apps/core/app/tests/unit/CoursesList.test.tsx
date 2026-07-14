@@ -1,14 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { PolicyProvider, type PolicyValues } from '~/components/policy/policy-gate'
 import type { Course } from '~/hooks/api/use-courses'
-import { UiPreferencesProvider } from '~/components/assistive/ui-preferences-provider'
 
 // §541: department labels/options now come from the DB-backed useDisciplines
 // hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
@@ -42,6 +40,8 @@ const PUBLISHED_COURSE: Course = {
   aiInstructions: '',
   instructorId: 'prof-1',
   department: 'COSC',
+  startDate: '2025-09-01',
+  endDate: '2025-12-15',
   createdAt: '2025-01-01T00:00:00.000Z',
   updatedAt: '2025-01-01T00:00:00.000Z',
 }
@@ -62,14 +62,6 @@ const MATH_COURSE: Course = {
   department: 'MATH',
 }
 
-const SPRING_COURSE: Course = {
-  ...PUBLISHED_COURSE,
-  id: 'c4',
-  code: 'COSC 301',
-  name: 'Algorithms',
-  term: 'Spring',
-}
-
 const NOOP = async () => {}
 
 function wrap(ui: React.ReactElement, policies: PolicyValues = {}) {
@@ -80,15 +72,12 @@ function wrap(ui: React.ReactElement, policies: PolicyValues = {}) {
   )
 }
 
-function wrapStudent(ui: React.ReactElement) {
-  return render(
-    <MemoryRouter>
-      <UiPreferencesProvider initialMotionReduced initialDensity="comfortable">
-        {ui}
-      </UiPreferencesProvider>
-    </MemoryRouter>,
-  )
-}
+// Some tests below pin the system clock (fake timers) to make term-grouping
+// deterministic. Always restore real timers after each test so a fake clock
+// never leaks into unrelated tests.
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 // CoursesAdminView
 describe('CoursesAdminView', () => {
@@ -271,50 +260,180 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
+
+  it('groups older-term courses under "Previous Terms"', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', startDate: '2020-01-01', endDate: '2020-04-15' }
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE, oldCourse]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 999')).toBeInTheDocument()
+  })
+
+  it('groups not-yet-started courses under "Upcoming Terms"', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const futureCourse = { ...PUBLISHED_COURSE, id: 'future1', code: 'COSC 555', startDate: '2026-01-01', endDate: '2026-04-15' }
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE, futureCourse]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 555')).toBeInTheDocument()
+  })
+
+  it('labels the department field as "Course Code"', () => {
+    wrap(
+      <CoursesInstructorView
+        courses={[PUBLISHED_COURSE]}
+        onCreateCourse={NOOP}
+        onEditCourse={NOOP}
+        onDeleteCourse={NOOP}
+        onPublishToggle={NOOP}
+      />
+    )
+    // The label is only in the DOM once the create dialog is open.
+    fireEvent.click(screen.getByRole('button', { name: /create course/i }))
+    expect(screen.getByText('Course Code')).toBeInTheDocument()
+    expect(screen.queryByText('Department')).not.toBeInTheDocument()
+  })
 })
 
-// CoursesTaView
-describe('CoursesTaView', () => {
+// CoursesMixedView
+describe('CoursesMixedView', () => {
+  const TA_COURSE: Course = { ...PUBLISHED_COURSE, id: 'ta1', code: 'COSC 301', name: 'TA Course' }
+  const STUDENT_COURSE: Course = { ...PUBLISHED_COURSE, id: 'stu1', code: 'COSC 401', name: 'Student Course' }
+
   it('does NOT show "Create Course" button', () => {
-    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
     expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
   })
 
-  it('shows no action buttons', () => {
-    wrap(<CoursesTaView courses={[PUBLISHED_COURSE]} />)
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
-  })
-})
-
-// CoursesStudentView
-describe('CoursesStudentView', () => {
-  it('does NOT show "Create Course" button', () => {
-    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE]} />)
-    expect(screen.queryByRole('button', { name: /create course/i })).not.toBeInTheDocument()
-  })
-
-  it('hides draft (unpublished) courses', () => {
-    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE, DRAFT_COURSE]} />)
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.queryByText('COSC 201')).not.toBeInTheDocument()
-  })
-
-  it('shows empty state when no published courses', () => {
-    wrapStudent(<CoursesStudentView courses={[DRAFT_COURSE]} />)
-    expect(screen.getByText(/no published courses available/i)).toBeInTheDocument()
-  })
-
-  it('filters courses by term bucket', () => {
-    wrapStudent(<CoursesStudentView courses={[PUBLISHED_COURSE, SPRING_COURSE]} />)
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
+  it('shows only the "assisting" section when the user has TA courses only', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText(/assisting/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
+    expect(screen.queryByText(/enrolled/i)).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Term 1' }))
-    expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.queryByText('COSC 301')).not.toBeInTheDocument()
+  it('shows only the "enrolled" section when the user has student courses only', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[STUDENT_COURSE]}
+        taCourseIds={[]}
+        enrolledCourseIds={['stu1']}
+      />
+    )
+    expect(screen.getByRole('heading', { name: /courses you are enrolled in/i })).toBeInTheDocument()
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.getByText('Enrolled')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /courses you are assisting in/i })).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Term 2' }))
-    expect(screen.queryByText('COSC 101')).not.toBeInTheDocument()
+  it('shows both sections when the user has both TA and student courses', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, STUDENT_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={['stu1']}
+      />
+    )
+    expect(screen.getByRole('heading', { name: /courses you are assisting in/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /courses you are enrolled in/i })).toBeInTheDocument()
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.getByText('TA')).toBeInTheDocument()
+    expect(screen.getByText('Enrolled')).toBeInTheDocument()
+  })
+
+  it('hides draft (unpublished) courses from the enrolled section', () => {
+    wrap(
+      <CoursesMixedView
+        courses={[STUDENT_COURSE, { ...STUDENT_COURSE, id: 'stu2', code: 'COSC 402', isPublished: false }]}
+        taCourseIds={[]}
+        enrolledCourseIds={['stu1', 'stu2']}
+      />
+    )
+    expect(screen.getByText('COSC 401')).toBeInTheDocument()
+    expect(screen.queryByText('COSC 402')).not.toBeInTheDocument()
+  })
+
+  it('shows empty state when the user has neither TA nor enrolled courses', () => {
+    wrap(<CoursesMixedView courses={[]} taCourseIds={[]} enrolledCourseIds={[]} />)
+    expect(screen.getByText(/no courses/i)).toBeInTheDocument()
+  })
+
+  it('groups older-term courses under "Previous Terms" in the assisting section', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', startDate: '2020-01-01', endDate: '2020-04-15' }
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, oldTa]}
+        taCourseIds={['ta1', 'ta-old']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 300')).toBeInTheDocument()
+  })
+
+  it('groups not-yet-started courses under "Upcoming Terms" in the assisting section', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    const futureTa = { ...TA_COURSE, id: 'ta-future', code: 'COSC 305', startDate: '2026-01-01', endDate: '2026-04-15' }
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE, futureTa]}
+        taCourseIds={['ta1', 'ta-future']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.getByText('COSC 301')).toBeInTheDocument()
+    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText('COSC 305')).toBeInTheDocument()
+  })
+
+  it('does not show a "Previous Terms" or "Upcoming Terms" heading when all courses are current', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-10-15'))
+    wrap(
+      <CoursesMixedView
+        courses={[TA_COURSE]}
+        taCourseIds={['ta1']}
+        enrolledCourseIds={[]}
+      />
+    )
+    expect(screen.queryByText(/previous terms/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/upcoming terms/i)).not.toBeInTheDocument()
   })
 })

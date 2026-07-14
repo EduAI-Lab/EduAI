@@ -1,77 +1,94 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
-import { SiteHeader } from "~/components/site-header";
-import { SidebarProvider } from "@eduai/ui";
 
-function renderWithSidebar(ui: React.ReactElement, { path = "/" } = {}) {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <SidebarProvider>{ui}</SidebarProvider>
-    </MemoryRouter>
-  );
-}
+import { resolveCoreHeaderTitle, CoreHeaderActions } from "~/components/layout/core-app-shell";
+import { ThemeProvider } from "@eduai/ui";
 
-describe("SiteHeader — rendering", () => {
-  it("renders the default title as h1", () => {
-    renderWithSidebar(<SiteHeader />);
-    expect(screen.getByRole("heading", { level: 1, name: "EduAI" })).toBeInTheDocument();
+/**
+ * Core's bespoke `~/components/site-header` was retired in favor of composing
+ * the shared `@eduai/ui` `AppShell`/`SiteHeader` (issue #764 core-shell
+ * parity). The GENERIC header rendering behavior this file used to cover
+ * (title-as-h1, sr-only h1 alongside breadcrumbs, actions slot, breadcrumbs
+ * slot) now lives in and is tested by the shared package itself
+ * (`packages/ui/src/tests/site-header.test.tsx` and `app-shell.test.tsx`).
+ *
+ * What's left to cover HERE is Core-specific: the route → title fallback map
+ * `CoreAppShell` resolves before handing a title to the shared shell (ported
+ * verbatim from the old SiteHeader so no route's heading changed), and the
+ * fixed header action bundle (`CoreHeaderActions`) every Core page renders.
+ */
+describe("resolveCoreHeaderTitle", () => {
+  it("falls back to EduAI for an unmapped route with no explicit title", () => {
+    expect(resolveCoreHeaderTitle("/team")).toBe("EduAI");
   });
 
-  it("renders a custom title as h1 when provided", () => {
-    renderWithSidebar(<SiteHeader title="Courses" />);
-    expect(screen.getByRole("heading", { level: 1, name: "Courses" })).toBeInTheDocument();
+  it("uses an explicit title override regardless of route", () => {
+    expect(resolveCoreHeaderTitle("/", "Courses")).toBe("Courses");
   });
 
-  it("renders optional actions on the right side of the header", () => {
-    renderWithSidebar(
-      <SiteHeader
-        title="Chat"
-        actions={<button type="button">Test Action</button>}
-      />,
+  it("prefers an explicit title over the route-derived fallback", () => {
+    expect(resolveCoreHeaderTitle("/dashboard", "Custom")).toBe("Custom");
+  });
+
+  it("derives the title from the route when no title is passed", () => {
+    expect(resolveCoreHeaderTitle("/dashboard")).toBe("Dashboard");
+  });
+
+  it('derives "Course Chat" from the /chat route when no title prop is passed', () => {
+    expect(resolveCoreHeaderTitle("/chat")).toBe("Course Chat");
+  });
+
+  it("falls back to Settings for the bare /settings route (no breadcrumbs, no explicit title)", () => {
+    // #764 regression guard: settings.tsx renders `<CoreAppShell user={user}>`
+    // with neither `title` nor `breadcrumbs` — the visible heading depends
+    // entirely on this fallback resolving, unlike routes that pass breadcrumbs
+    // (where an unresolved title would only affect the sr-only heading).
+    expect(resolveCoreHeaderTitle("/settings")).toBe("Settings");
+  });
+
+  it("falls back to Course Detail for any /courses/:id route", () => {
+    expect(resolveCoreHeaderTitle("/courses/abc123")).toBe("Course Detail");
+  });
+});
+
+describe("CoreHeaderActions", () => {
+  it("renders the common action bundle: search, theme toggle, bug report", () => {
+    render(
+      <ThemeProvider>
+        <CoreHeaderActions />
+      </ThemeProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /switch to (dark|light) mode/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Report a bug" })).toBeInTheDocument();
+  });
+
+  it("carries the dashboard tour's theme-toggle anchor", () => {
+    const { container } = render(
+      <ThemeProvider>
+        <CoreHeaderActions />
+      </ThemeProvider>,
+    );
+    expect(container.querySelector('[data-tour="theme-toggle"]')).toBeInTheDocument();
+  });
+
+  it("carries the dashboard tour's AI-status anchor", () => {
+    const { container } = render(
+      <ThemeProvider>
+        <CoreHeaderActions />
+      </ThemeProvider>,
+    );
+    expect(container.querySelector('[data-tour="ai-status"]')).toBeInTheDocument();
+  });
+
+  it("renders route-specific extraActions before the common bundle (e.g. chat's history toggle)", () => {
+    render(
+      <ThemeProvider>
+        <CoreHeaderActions extraActions={<button type="button">Test Action</button>} />
+      </ThemeProvider>,
     );
     expect(screen.getByRole("button", { name: "Test Action" })).toBeInTheDocument();
-  });
-
-  it("derives title from route and renders as h1 when no title prop is passed", () => {
-    renderWithSidebar(<SiteHeader />, { path: "/dashboard" });
-    expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
-  });
-
-  it("renders breadcrumbs when breadcrumbs prop provided", () => {
-    renderWithSidebar(
-      <SiteHeader breadcrumbs={<nav aria-label="breadcrumb">Home</nav>} />,
-    );
-    expect(screen.getByRole("navigation", { name: "breadcrumb" })).toBeInTheDocument();
-  });
-
-  it("renders sr-only h1 for screen readers when breadcrumbs are shown", () => {
-    renderWithSidebar(
-      <SiteHeader breadcrumbs={<nav aria-label="breadcrumb">Home</nav>} />,
-    );
-    const heading = screen.getByRole("heading", { level: 1, name: "EduAI" });
-    expect(heading).toBeInTheDocument();
-    expect(heading).toHaveClass("sr-only");
-  });
-
-  it("uses custom title prop for sr-only h1 when both title and breadcrumbs are provided", () => {
-    renderWithSidebar(
-      <SiteHeader
-        title="Introduction to CS"
-        breadcrumbs={<nav aria-label="breadcrumb">Home &gt; Courses &gt; Introduction to CS</nav>}
-      />,
-    );
-    const heading = screen.getByRole("heading", { level: 1, name: "Introduction to CS" });
-    expect(heading).toBeInTheDocument();
-    expect(heading).toHaveClass("sr-only");
-  });
-
-  it("does not render visible h1 when breadcrumbs are shown", () => {
-    renderWithSidebar(
-      <SiteHeader breadcrumbs={<nav aria-label="breadcrumb">Home</nav>} />,
-    );
-    const headings = screen.getAllByRole("heading", { level: 1 });
-    const visibleHeadings = headings.filter((h) => !h.classList.contains("sr-only"));
-    expect(visibleHeadings).toHaveLength(0);
   });
 });

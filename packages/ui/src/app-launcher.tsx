@@ -231,3 +231,74 @@ export function BrandSwitcher({
     </SidebarMenu>
   )
 }
+
+export interface AppSwitcherProps {
+  apps: LauncherApp[]
+  /** Marks which entry is the app currently being viewed. */
+  currentAppId: string
+  /** Current user's platform role — used to hide apps they can't access. */
+  role?: string | null
+  /** Applied to the root SidebarMenu. */
+  className?: string
+}
+
+/**
+ * Sidebar-footer app switcher: a dedicated full-width "Switch app" button (waffle
+ * icon + label) that opens the colorful app grid upward. Unlike BrandSwitcher this
+ * carries no brand logo — it lives at the bottom of the sidebar next to the user
+ * menu, keeping the header brand a plain home link.
+ *
+ * Renders nothing when the current role can access fewer than two apps (nothing to
+ * switch to).
+ */
+export function AppSwitcher({
+  apps,
+  currentAppId,
+  role,
+  className,
+}: AppSwitcherProps) {
+  const accessible = visibleAppsForRole(apps, role)
+
+  if (accessible.length < 2) return null
+
+  // Match the NavSecondary rows above (Help, etc.) so the switcher reads as part
+  // of the same footer stack: same inset, icon size, type scale and hover tint.
+  return (
+    <SidebarMenu className={className}>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="relative flex w-full items-center gap-[10px] rounded-[7px] px-[14px] py-[9px] text-[13.5px] outline-none select-none data-[state=open]:!bg-[oklch(0.218_0.050_259)]"
+              style={{
+                paddingLeft: "16px",
+                color: "rgba(255,255,255,0.82)",
+                transition: "background 120ms",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "oklch(0.218 0.050 259)"
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent"
+              }}
+            >
+              <IconApps size={16} strokeWidth={1.75} />
+              <span className="flex-1 text-left">Switch app</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="top"
+            align="start"
+            sideOffset={8}
+            collisionPadding={12}
+            style={{ maxWidth: "calc(100vw - 1.5rem)" }}
+            className="w-80 rounded-xl p-2"
+          >
+            <AppSwitcherGrid apps={accessible} currentAppId={currentAppId} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  )
+}

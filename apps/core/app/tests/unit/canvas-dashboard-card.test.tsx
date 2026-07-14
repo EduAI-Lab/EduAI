@@ -8,7 +8,6 @@ import { getCanvasIntegration } from "~/lib/canvas/client";
 vi.mock("~/lib/canvas/client", () => ({
   getCanvasIntegration: vi.fn(),
   listCanvasCourses: vi.fn().mockResolvedValue([]),
-  syncCanvasCourses: vi.fn(),
 }));
 
 function renderCard(disabled = false) {
@@ -16,6 +15,7 @@ function renderCard(disabled = false) {
     [
       { path: "/", element: <CanvasDashboardCard disabled={disabled} /> },
       { path: "/settings", element: <div>Settings page</div> },
+      { path: "/courses/:id", element: <div>Course page</div> },
     ],
     { initialEntries: ["/"] },
   );
@@ -40,10 +40,12 @@ describe("CanvasDashboardCard", () => {
       "href",
       "/settings",
     );
-    expect(screen.queryByRole("button", { name: "Sync to Canvas" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Fetch from Canvas" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows Sync to Canvas when connected", async () => {
+  it("shows Fetch from Canvas button when connected", async () => {
     vi.mocked(getCanvasIntegration).mockResolvedValue({
       canvasUrl: "https://canvas.ubc.ca",
       isTestMode: false,
@@ -53,13 +55,15 @@ describe("CanvasDashboardCard", () => {
     renderCard();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Sync to Canvas" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Fetch from Canvas" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync to Canvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fetch from Canvas" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Sync Canvas courses" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Fetch from Canvas" }),
+      ).toBeInTheDocument();
     });
   });
 
