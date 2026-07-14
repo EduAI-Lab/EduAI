@@ -9,6 +9,8 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   resolve: {
     alias: {
+      // More specific subpath must precede the barrel alias (prefix match).
+      '@eduai/ui/term': path.resolve(coreDir, '../../packages/ui/src/lib/term.ts'),
       '@eduai/ui': path.resolve(coreDir, '../../packages/ui/src/index.ts'),
     },
   },

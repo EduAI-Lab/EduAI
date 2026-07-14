@@ -55,15 +55,19 @@ export function resolvePaletteAccent(
   return paletteColorAtIndex(defaultColorIndexForCourse(courseId))
 }
 
-/** CSS custom properties for a course accent — surfaces adapt via `var(--card)` / `var(--border)`. */
+/**
+ * CSS custom properties for a course accent. The card body stays a neutral
+ * surface (`var(--card)`) so it reads clean in light mode — the accent lives in
+ * the hero, the border, and a barely-there hover tint, not a full-body wash.
+ */
 export function courseThemeVars(accent: CourseAccentColor): React.CSSProperties {
   return {
     "--course-accent": accent,
-    "--course-surface": `color-mix(in oklch, ${accent} 8%, var(--card))`,
-    "--course-surface-strong": `color-mix(in oklch, ${accent} 14%, var(--card))`,
-    "--course-border": `color-mix(in oklch, ${accent} 26%, var(--border))`,
-    "--course-muted": `color-mix(in oklch, ${accent} 18%, transparent)`,
-    "--course-glow": `color-mix(in oklch, ${accent} 32%, transparent)`,
+    "--course-surface": `var(--card)`,
+    "--course-surface-strong": `color-mix(in oklch, var(--foreground) 4%, var(--card))`,
+    "--course-border": `color-mix(in oklch, ${accent} 16%, var(--border))`,
+    "--course-muted": `color-mix(in oklch, ${accent} 12%, transparent)`,
+    "--course-glow": `color-mix(in oklch, ${accent} 28%, transparent)`,
   } as React.CSSProperties
 }
 

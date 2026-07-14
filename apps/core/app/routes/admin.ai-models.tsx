@@ -3,9 +3,7 @@ import { Link, useLoaderData, redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
-import { AppSidebar } from "~/components/app-sidebar";
-import { SiteHeader } from "~/components/site-header";
-import { SidebarInset, SidebarProvider } from "@eduai/ui";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
 import {
@@ -84,50 +82,40 @@ export default function AIModelsPage() {
   );
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>AI Models</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>AI Models</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <AiModelsAdminView
-          providers={providers}
-          models={models}
-          isLoading={isLoading}
-          error={error}
-          onCreateProvider={createProvider}
-          onUpdateProvider={updateProvider}
-          onDeleteProvider={deleteProvider}
-          onToggleProviderActive={toggleProviderActive}
-          onCreateModel={handleCreateModel}
-          onUpdateModel={handleUpdateModel}
-          onDeleteModel={handleDeleteModel}
-          onToggleModelActive={toggleModelActive}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+      <AiModelsAdminView
+        providers={providers}
+        models={models}
+        isLoading={isLoading}
+        error={error}
+        onCreateProvider={createProvider}
+        onUpdateProvider={updateProvider}
+        onDeleteProvider={deleteProvider}
+        onToggleProviderActive={toggleProviderActive}
+        onCreateModel={handleCreateModel}
+        onUpdateModel={handleUpdateModel}
+        onDeleteModel={handleDeleteModel}
+        onToggleModelActive={toggleModelActive}
+      />
+    </CoreAppShell>
   );
 }
