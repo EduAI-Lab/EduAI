@@ -127,6 +127,7 @@ export function StudentChatHistoryPanel({
                   <button
                     key={session.chatId}
                     type="button"
+                    aria-current={isActive ? 'true' : undefined}
                     onClick={() => {
                       onSelect(session);
                       onOpenChange(false);
