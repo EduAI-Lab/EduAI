@@ -9,9 +9,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08)
-- [core] tests: `fleet-routing.test.ts` — job-type parsing, empty-model-list 503, interactive/background pool routing, round-robin, and background-pool fallback. (@ssaada08, 2026-07-08)
-- [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08)
+- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] tests: `fleet-routing.test.ts` — job-type parsing, empty-model-list 503, interactive/background pool routing, round-robin, and background-pool fallback. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
 ### Changed
 
 - [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
