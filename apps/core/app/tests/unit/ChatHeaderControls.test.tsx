@@ -69,16 +69,34 @@ describe("ChatHeaderControls", () => {
     expect(screen.getByRole("button", { name: /system prompt/i })).toBeInTheDocument();
   });
 
-  it("greys out and disables focus mode until assistive mode is on", () => {
-    const { rerender } = render(<ChatHeaderControls {...defaultProps} />);
-    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeDisabled();
-    expect(screen.getByTestId("focus-mode-disabled-icon")).toBeInTheDocument();
+  it("keeps focus mode enabled regardless of assistive mode state", () => {
+    const { rerender } = render(<ChatHeaderControls {...defaultProps} adhdAssist={false} />);
+    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeEnabled();
 
     rerender(<ChatHeaderControls {...defaultProps} adhdAssist={true} />);
     expect(screen.getByRole("switch", { name: "Focus mode" })).toBeEnabled();
   });
 
-  it("calls onFocusModeChange when focus mode is toggled", () => {
+  it("shows the active-state 'On' badge when focus mode is enabled", () => {
+    render(<ChatHeaderControls {...defaultProps} adhdAssist={false} focusMode={true} />);
+    expect(screen.getByRole("switch", { name: "Focus mode" })).toBeChecked();
+    expect(screen.getAllByText("On")).toHaveLength(1);
+  });
+
+  it("calls onFocusModeChange when focus mode is toggled with assistive mode off", () => {
+    const onFocusModeChange = vi.fn();
+    render(
+      <ChatHeaderControls
+        {...defaultProps}
+        adhdAssist={false}
+        onFocusModeChange={onFocusModeChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "Focus mode" }));
+    expect(onFocusModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it("calls onFocusModeChange when focus mode is toggled with assistive mode on", () => {
     const onFocusModeChange = vi.fn();
     render(
       <ChatHeaderControls

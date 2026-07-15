@@ -147,13 +147,14 @@ function AppLayoutInner() {
           LinkComponent: Link,
           onLogout: handleLogout,
         },
+        // Guide-tour control lives in the sidebar footer (#740 / #952), not header chrome.
+        footerLeading: <TourButton />,
       }}
       breadcrumbs={<HeaderBreadcrumbs />}
       headerActions={
         <>
           <CommandSearchButton eventName={AITUTOR_COMMAND_EVENT} />
           <AIServiceIndicators cloud={aiStatus.cloud} ubc={aiStatus.ubc} onRefresh={aiStatus.refresh} />
-          <TourButton />
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           <Button
             type="button"
