@@ -89,6 +89,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Decouple Focus mode from Assistive mode in chat — Focus mode is now toggleable independently in both the header switch and composer toolbar chip, no longer disabled/greyed-out while Assistive mode is off; removed the forced `focusMode` reset when Assistive mode is turned off. (#859, closes #838)
+
 - [core] fix: Show both "Courses You Are Assisting In" and "Courses You Are Enrolled In" sections on `/courses` for users with both TA and student enrollments — previously a dual-role user only ever saw their TA courses. (#832, @GlowyBlack, 2026-07-02) — [#848](https://github.com/EduAI-Lab/EduAICore/pull/848)
 - [ai-tutor] fix: Write through student enrollment removal to Core for EduAI-linked courses — `DELETE /admin/courses/:courseId/enrollments/:userId` previously only deleted the local `CourseEnrollment` mirror row, so Core still reported the enrollment active and a later `syncCourseEnrollments` re-imported the student. Now calls `deleteCoreEnrollment` (forwarding the acting user's session cookie) before removing the local row; Core errors are forwarded as the response status and the local row is left untouched on failure. (#812) — [#897](https://github.com/EduAI-Lab/EduAI/pull/897)
 - [core] fix: Material upload embedding insert — format pgvector literals as validated bracket strings before `prisma.$executeRaw`/`$queryRaw` (fixes intermittent `Couldn't serialize value` on `number[]`); sanitize upload failure messages so Prisma internals are not shown in the UI (#54, @ssaada08, 2026-07-02) — [#855](https://github.com/EduAI-Lab/EduAI/pull/855)
