@@ -416,19 +416,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  syncCourseTopics: (courseId: number) =>
-    http(`/api/courses/${courseId}/topics/sync`, {
-      method: 'POST',
-    }),
   syncCourseEnrollments: (courseId: number) =>
     http(`/api/courses/${courseId}/sync-enrollments`, {
       method: 'POST',
     }) as Promise<{ synced: number; created: number; updated: number; deleted: number; errors: [] }>,
-  remapCourseTopics: (courseId: number, mappings: { fromTopicId: number; toTopicId: number }[]) =>
-    http(`/api/courses/${courseId}/topics/remap`, {
-      method: 'POST',
-      body: JSON.stringify({ mappings }),
-    }),
   submitAnswer: (activityId: number, payload: any) =>
     http(`/api/questions/${activityId}/answer`, {
       method: 'POST',
