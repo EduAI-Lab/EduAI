@@ -91,6 +91,18 @@ export function resolveMaxOutputTokens(
   return Math.min(defaultOutput, envCeiling);
 }
 
+/**
+ * Rough token cost of OpenAI-style tool/function definitions on the wire.
+ * Admin tools with rich Zod schemas often land ~350–500 tokens each; the
+ * fixed envelope covers shared request framing.
+ */
+export function estimateToolDefinitionTokens(toolCount: number): number {
+  if (!Number.isFinite(toolCount) || toolCount <= 0) {
+    return 0;
+  }
+  return 256 + Math.floor(toolCount) * 420;
+}
+
 /** Fit completion tokens inside what remains after the prompt (+ safety buffer). */
 export function capMaxOutputTokensForPrompt(params: {
   contextWindow: number;
@@ -98,10 +110,21 @@ export function capMaxOutputTokensForPrompt(params: {
   desiredMaxOutput: number;
   minOutput?: number;
   safetyBuffer?: number;
+  /**
+   * Tokens reserved for tool JSON schemas. Prefer {@link estimateToolDefinitionTokens}
+   * when tools are present — the old flat 512 under-counts admin registries and
+   * caused ContextWindowExceededError on 16k models.
+   */
+  toolDefinitionTokens?: number;
+  toolCount?: number;
 }): number {
   const minOutput = params.minOutput ?? 256;
   const safetyBuffer = params.safetyBuffer ?? 384;
-  const toolDefinitionAllowance = 512;
+  const toolDefinitionAllowance =
+    params.toolDefinitionTokens ??
+    (params.toolCount != null
+      ? estimateToolDefinitionTokens(params.toolCount)
+      : 512);
   const headroom =
     params.contextWindow -
     params.estimatedInputTokens -
@@ -113,6 +136,20 @@ export function capMaxOutputTokensForPrompt(params: {
   }
 
   return Math.min(params.desiredMaxOutput, headroom);
+}
+
+/** True when input + completion (+ buffer) fit the model context window. */
+export function promptFitsContextWindow(params: {
+  contextWindow: number;
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  safetyBuffer?: number;
+}): boolean {
+  const safetyBuffer = params.safetyBuffer ?? 256;
+  return (
+    params.estimatedInputTokens + params.maxOutputTokens + safetyBuffer <=
+    params.contextWindow
+  );
 }
 
 export type ChatModelCapabilities = {
