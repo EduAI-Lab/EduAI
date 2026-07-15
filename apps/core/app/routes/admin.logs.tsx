@@ -8,9 +8,8 @@ import { useEffect } from "react";
 import { Link, redirect, useActionData, useLoaderData } from "react-router";
 import { toast } from "sonner";
 
-import { AppSidebar } from "~/components/app-sidebar";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { LogsAdminView, type LogsTab } from "~/components/admin/logs-admin-view";
-import { SiteHeader } from "~/components/site-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,7 +18,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@eduai/ui";
-import { SidebarInset, SidebarProvider } from "@eduai/ui";
 import { auth } from "~/lib/auth/server";
 import {
   listAuditLogs,
@@ -328,48 +326,38 @@ export default function AdminLogsRoute() {
   }, [actionData]);
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={data.user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Logs</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar user={data.user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <Link to="/dashboard">Home</Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Admin</BreadcrumbPage>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>Logs</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <LogsAdminView
-          tab={data.tab}
-          rows={data.rows}
-          total={data.total}
-          page={data.page}
-          pageSize={data.pageSize}
-          hasMore={data.hasMore}
-          query={data.query}
-          retentionPolicy={data.retentionPolicy}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+      <LogsAdminView
+        tab={data.tab}
+        rows={data.rows}
+        total={data.total}
+        page={data.page}
+        pageSize={data.pageSize}
+        hasMore={data.hasMore}
+        query={data.query}
+        retentionPolicy={data.retentionPolicy}
+      />
+    </CoreAppShell>
   );
 }

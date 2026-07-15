@@ -20,7 +20,7 @@ import prisma from "~/lib/prisma.server";
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const department = params.department;
   if (!department) {
-    return json({ error: "Department is required" }, 400);
+    return json({ error: "Course code is required" }, 400);
   }
 
   const session = await auth.api.getSession({ headers: request.headers });
