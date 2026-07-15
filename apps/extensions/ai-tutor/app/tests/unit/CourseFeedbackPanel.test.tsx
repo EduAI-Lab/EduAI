@@ -93,4 +93,52 @@ describe('CourseFeedbackPanel', () => {
 
     expect(await screen.findByText('Could not load feedback.')).toBeInTheDocument();
   });
+
+  it('ignores an older in-flight response when a newer filter request finishes first', async () => {
+    let resolveSlow!: (rows: ActivityFeedbackRow[]) => void;
+    const slowRequest = new Promise<ActivityFeedbackRow[]>((resolve) => {
+      resolveSlow = resolve;
+    });
+
+    const newerRow: ActivityFeedbackRow = {
+      ...sampleRow,
+      id: 2,
+      note: 'Filtered result',
+      activityId: 100,
+    };
+
+    mockListCourseFeedback
+      .mockResolvedValueOnce([sampleRow])
+      .mockImplementationOnce(() => slowRequest)
+      .mockResolvedValueOnce([newerRow]);
+
+    render(<CourseFeedbackPanel courseId={7} />);
+    expect(await screen.findByText('Helpful hints')).toBeInTheDocument();
+
+    // First filter change starts a slow request.
+    fireEvent.change(screen.getByLabelText('Activity ID'), { target: { value: '99' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    // Second filter change starts a faster request that wins the race.
+    fireEvent.change(screen.getByLabelText('Activity ID'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    expect(await screen.findByText('Filtered result')).toBeInTheDocument();
+
+    // Stale first filter response arrives late with outdated data.
+    resolveSlow([
+      {
+        ...sampleRow,
+        id: 3,
+        note: 'Stale filter result',
+        activityId: 99,
+      },
+    ]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Filtered result')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Stale filter result')).not.toBeInTheDocument();
+    expect(screen.queryByText('Helpful hints')).not.toBeInTheDocument();
+  });
 });

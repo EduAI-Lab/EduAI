@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '~/lib/api';
 import type { ActivityFeedbackRow } from '~/lib/types';
 
@@ -17,8 +17,11 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   const [appliedActivityId, setAppliedActivityId] = useState<number | undefined>();
   const [appliedStudentId, setAppliedStudentId] = useState<string | undefined>();
   const [skip, setSkip] = useState(0);
+  // Stale-response guard: only the latest in-flight load may write state (#784 review).
+  const requestIdRef = useRef(0);
 
   const loadFeedback = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -28,12 +31,16 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
         take: PAGE_SIZE,
         skip,
       });
+      if (requestId !== requestIdRef.current) return;
       setRows(data);
     } catch {
+      if (requestId !== requestIdRef.current) return;
       setError('Could not load feedback.');
       setRows([]);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [courseId, appliedActivityId, appliedStudentId, skip]);
 
@@ -42,9 +49,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
   }, [loadFeedback]);
 
   const applyFilters = () => {
-    const nextActivityId = activityIdFilter.trim()
-      ? Number(activityIdFilter.trim())
-      : undefined;
+    const nextActivityId = activityIdFilter.trim() ? Number(activityIdFilter.trim()) : undefined;
     if (activityIdFilter.trim() && !Number.isFinite(nextActivityId)) {
       setError('Activity ID must be a number.');
       return;
@@ -77,14 +82,15 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
     <div className="space-y-4 rounded-lg border bg-card p-6" data-testid="course-feedback-panel">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Feedback</h2>
-        <p className="text-sm text-muted-foreground">
-          Student activity feedback in this course.
-        </p>
+        <p className="text-sm text-muted-foreground">Student activity feedback in this course.</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label htmlFor="feedback-activity-id" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="feedback-activity-id"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Activity ID
           </label>
           <input
@@ -98,7 +104,10 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
           />
         </div>
         <div>
-          <label htmlFor="feedback-student-id" className="mb-1 block text-xs font-medium text-muted-foreground">
+          <label
+            htmlFor="feedback-student-id"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
             Student ID
           </label>
           <input
@@ -118,9 +127,7 @@ export function CourseFeedbackPanel({ courseId }: CourseFeedbackPanelProps) {
         </button>
       </div>
 
-      {error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading feedback…</p>
