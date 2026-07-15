@@ -142,22 +142,19 @@ export default function DashboardPage() {
         label: 'Browse courses',
         description: 'Open any of your courses',
         href: '/courses',
-        color: '#4F7BE5',
-        icon: <IconBooks size={18} />,
+        icon: <IconBooks size={16} stroke={1.75} />,
       },
       {
         label: 'Question Library',
         description: 'Search questions across courses',
         href: '/library',
-        color: '#2FA67A',
-        icon: <IconLibrary size={18} />,
+        icon: <IconLibrary size={16} stroke={1.75} />,
       },
       {
         label: 'Help & shortcuts',
         description: 'Tips, tours, and keyboard shortcuts',
         href: '/help',
-        color: '#D8902F',
-        icon: <IconHelpCircle size={18} />,
+        icon: <IconHelpCircle size={16} stroke={1.75} />,
       },
     ];
 
@@ -166,8 +163,7 @@ export default function DashboardPage() {
         label: 'Settings',
         description: 'Configure your workspace',
         href: '/settings',
-        color: '#8B5CF6',
-        icon: <IconSettings size={18} />,
+        icon: <IconSettings size={16} stroke={1.75} />,
       });
     }
 
