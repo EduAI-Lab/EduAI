@@ -103,6 +103,10 @@ OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
+# Multi-server fleet (optional) — see docs/DEPLOYMENT.md:
+# VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# npm run fleet:smoke  # from apps/core — pre-flight health check
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
