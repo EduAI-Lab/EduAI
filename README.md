@@ -56,6 +56,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
 | [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
@@ -265,7 +266,9 @@ exit
 
 ## Running Tests
 
-All test suites run inside Docker. This ensures every developer and CI run uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+Locally, all test suites run inside Docker. This ensures every developer uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+
+> **Note:** CI (`.github/workflows/pr-tests.yml`) runs the unit/integration suites natively on the runner via `turbo run test` against Postgres service containers instead — remote runners get no Docker layer cache, so the containerized suites rebuilt every image (including a full `npm ci` per image) on every run. E2E still runs the full dockerized stack, with image layers cached in the GitHub Actions cache.
 
 ### Prerequisites
 
