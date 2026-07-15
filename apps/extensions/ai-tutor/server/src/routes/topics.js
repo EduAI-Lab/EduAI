@@ -12,6 +12,8 @@
  *   - Sync is name-keyed and additive — it never deletes local topics that
  *     drift away upstream. Drift is surfaced via the `missingTopics` array so
  *     the instructor can act on it deliberately.
+ *   - GET auto-syncs from Core for imported courses (#1031); POST .../sync
+ *     is kept for compatibility but is no longer called by the UI.
  *   - Remap rewrites both `Activity.mainTopicId` and the
  *     `ActivitySecondaryTopic` join table inside a transaction, then drops the
  *     source topic. If the source is still referenced (e.g. another module),
@@ -53,8 +55,11 @@ async function ensureCourseAccess(courseId, user) {
  *
  * Auth: enrolled student or course instructor.
  *
- * Why: deliberately does NOT auto-sync from EduAI; sync is an explicit
- * instructor action so the topic list never changes underneath an active UI.
+ * Why: Core is the source of truth for topics. For EduAI-imported courses,
+ * this pulls the latest topic list from Core before responding, so the topic
+ * list is always current without a manual sync action. A failed pull (Core
+ * down, network blip) falls back to serving the local mirror rather than
+ * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
  */
 router.get('/courses/:courseId/topics', async (req, res) => {
   const courseId = Number(req.params.courseId);
@@ -74,8 +79,13 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // Do not auto-sync here to avoid surprising UI changes.
-    // Imported courses can be synced explicitly via the sync endpoint.
+    if (course.externalId) {
+      try {
+        await syncExternalCourseTopics(courseId);
+      } catch (e) {
+        console.warn(`[topics] Auto-sync failed for course ${courseId}, serving local mirror: ${e.message}`);
+      }
+    }
 
     const topics = await prisma.topic.findMany({
       where: { courseOfferingId: courseId },
@@ -144,6 +154,11 @@ export default router;
 
 /**
  * POST /courses/:courseId/topics/sync — pull EduAI topic list into local DB.
+ *
+ * Deprecated (#1031): the UI no longer calls this — GET .../topics now
+ * auto-syncs imported courses on every read. Kept unreachable-from-UI for API
+ * compatibility, same treatment as the old `POST /courses/import-external`
+ * (see docs/ARCHITECTURE.md §8).
  *
  * Auth: course admin (LEAD instructor / unit-admin / admin); course must be
  *   EduAI-imported.
