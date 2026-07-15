@@ -20,6 +20,15 @@ const PORT = process.env.PORT || 9000;
 const CORE_URL = process.env.CORE_URL || 'http://localhost:3000';
 const EDUAI_BASE_URL = process.env.EDUAI_BASE_URL || `${CORE_URL}/api`;
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 app.use(
   cors({
     origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'],
@@ -52,7 +61,7 @@ app.get('/', requireAuth, (req, res) => {
 </head>
 <body>
   <h1>Example Extension ✓</h1>
-  <h2>Logged in as <strong>${req.user.name}</strong> (${req.user.email})</h2>
+  <h2>Logged in as <strong>${escapeHtml(req.user.name)}</strong> (${escapeHtml(req.user.email)})</h2>
   <p>Role: <code>${req.user.role}</code></p>
   <pre>${JSON.stringify(req.user, null, 2)}</pre>
   <hr>
