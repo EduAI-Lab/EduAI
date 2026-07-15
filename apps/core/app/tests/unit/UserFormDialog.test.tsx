@@ -104,6 +104,7 @@ describe("UserFormDialog — form actions", () => {
       fireEvent.click(screen.getByRole("button", { name: /update user/i }));
     });
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("authorizedUnits");
   });
 
   it("calls onSubmit with correct data when creating a new user", async () => {
@@ -126,6 +127,29 @@ describe("UserFormDialog — form actions", () => {
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ name: "Bob Jones", email: "bob@example.com" })
       )
+    );
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("authorizedUnits");
+  });
+
+  it("includes authorizedUnits when updating a UNIT_ADMIN", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={{ ...baseUser, role: "UNIT_ADMIN", authorizedUnits: ["COSC"] }}
+        onSubmit={onSubmit}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+    });
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] }),
+      ),
     );
   });
 

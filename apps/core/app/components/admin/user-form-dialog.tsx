@@ -84,7 +84,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
   const handleSubmit = (data: FormData) => {
     const payload = {
       ...data,
-      authorizedUnits: data.role === "UNIT_ADMIN" ? selectedUnits : [],
+      ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
     };
 
     const schema = isEditing ? updateUserSchema : createUserSchema;

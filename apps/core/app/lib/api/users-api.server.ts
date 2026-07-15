@@ -119,10 +119,19 @@ export async function handleUsersApiRequest(request: Request) {
         if (unitGuard) return unitGuard;
       }
 
+      if (result.data.role !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
+        return apiError(422, "ROLE_MISMATCH");
+      }
+
       try {
+        const createData = {
+          ...result.data,
+          authorizedUnits:
+            result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
+        };
         const { _count, ...created } = await prisma.user.create({
           data: {
-            ...result.data,
+            ...createData,
             emailVerified: false,
           },
           select: {
@@ -216,6 +225,9 @@ export async function handleUsersApiRequest(request: Request) {
         // since code validity is independent of the target user.
         const unitGuard = await assertValidUnits(result.data.authorizedUnits);
         if (unitGuard) return unitGuard;
+      }
+
+      if (result.data.role !== undefined || result.data.authorizedUnits !== undefined) {
         const target = await prisma.user.findUnique({
           where: { id: userId },
           select: { role: true },
@@ -224,7 +236,7 @@ export async function handleUsersApiRequest(request: Request) {
           return apiError(404, "USER_NOT_FOUND");
         }
         const effectiveRole = result.data.role ?? target.role;
-        if (effectiveRole !== "UNIT_ADMIN") {
+        if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
@@ -232,6 +244,10 @@ export async function handleUsersApiRequest(request: Request) {
       try {
         const { studentId: studentIdInput, ...userUpdateFields } = result.data;
         const updateData: Record<string, unknown> = { ...userUpdateFields };
+
+        if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
+          updateData.authorizedUnits = [];
+        }
 
         if (studentIdInput !== undefined) {
           const normalizedStudentId = normalizeStudentId(studentIdInput);
