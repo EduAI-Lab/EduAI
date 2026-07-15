@@ -1,42 +1,62 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
-import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from '~/components/ai-elements/conversation';
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Link } from 'react-router';
 import {
-  PromptInput,
-  PromptInputBody,
-  PromptInputFooter,
-  PromptInputModelSelect,
-  PromptInputModelSelectContent,
-  PromptInputModelSelectItem,
-  PromptInputModelSelectTrigger,
-  PromptInputModelSelectValue,
-  PromptInputSubmit,
-  PromptInputTextarea,
-  PromptInputTools,
-  type PromptInputMessage,
-} from '~/components/ai-elements/prompt-input';
-import { Message, MessageContent, MessageResponse } from '~/components/ai-elements/message';
-import {
+  Badge,
+  Button,
+  ChatContainerContent,
+  ChatContainerRoot,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Button,
+  Input,
+  Loader,
+  Message,
+  MessageContent,
+  PromptInput,
+  PromptInputTextarea,
+  PromptSuggestion,
+  ScrollButton,
+  SegmentedControl,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from '@eduai/ui';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@eduai/ui';
-import { IconHistory, IconPencilPlus, IconRefresh } from '@tabler/icons-react';
-import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
 import {
-  loadSessionMessages,
-  type ApiChatSession,
-} from '~/lib/student-chat-history';
-import api from '../lib/api';
+  IconAlertCircle,
+  IconHistory,
+  IconKey,
+  IconLoader2,
+  IconMessageCircle,
+  IconPencilPlus,
+  IconPlayerStop,
+  IconSend,
+  IconSparkles,
+} from '@tabler/icons-react';
+import { StudentChatHistoryPanel } from '~/components/StudentChatHistoryPanel';
+import { KnowledgeLevelChips } from '~/components/chat/knowledge-level-chips';
+import { loadSessionMessages, type ApiChatSession } from '~/lib/student-chat-history';
+import { useApiKeys } from '~/hooks/use-api-keys';
+import { getProviderFromModelId, getProviderLabel, maskApiKey } from '~/lib/provider-keys';
+import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-levels';
+import { cn } from '~/lib/utils';
+import api, { ApiTimeoutError } from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
 
 type ChatTab = 'teach' | 'guide' | 'custom';
@@ -68,35 +88,35 @@ type StudentSelectableModel = AiModel & {
 
 /**
  * Imperative API exposed to parent routes via `forwardRef`.
- * - `sendGuidePrompt`: switch to Guide tab and submit either the typed input
- *   or a generic fallback. Used after a student answers a question to nudge
- *   the AI toward giving guidance on what they tried.
- * - `pushGuideMessage`: append an assistant message into Guide history without
- *   round-tripping the server (e.g., system-style nudges authored client-side).
+ * - `sendGuidePrompt`: switch to Guide and submit either the typed input or a
+ *   generic fallback. Used after a student answers to nudge the AI toward
+ *   guidance. If no provider key is set, it still switches to Guide so the
+ *   inline "add a key" notice is visible instead of silently doing nothing.
  */
 export type StudentAiChatHandle = {
   sendGuidePrompt: () => void;
-  pushGuideMessage: (content: string) => void;
 };
 
 type StudentAiChatProps = {
   activity: Activity | undefined;
   isUserReady: boolean;
   knowledgeLevel: string | null;
-  onRequestKnowledgeLevel: () => void;
+  /** Set the level directly (from the inline chips) — no dialog. */
+  onSelectKnowledgeLevel: (level: string) => void;
+  /** Open the parent's fuller level picker to change it. */
   onAdjustKnowledgeLevel: () => void;
   topicOptions: TopicOption[];
   currentTopicId: number | null;
   onSelectTopic: (topicId: number) => void;
   studentAnswer: number | string | null;
+  /** Extra classes on the root panel — e.g. `h-full` when docked in a
+   * resizable split rather than the standalone fixed-height default. */
+  className?: string;
 };
 
 const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
-const API_KEYS_STORAGE_KEY = 'ai-provider-keys';
-const PROVIDER_LABELS: Record<string, string> = { google: 'Gemini', openai: 'OpenAI' };
 
 // Detects whether the API has decorated this model with any student-policy field.
-// Presence of ANY policy field on ANY model flips the whole list into filtered mode.
 function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
   return (
     typeof model.studentSelectable === 'boolean' ||
@@ -107,7 +127,6 @@ function modelHasStudentPolicy(model: StudentSelectableModel): boolean {
   );
 }
 
-// Multiple legacy field names mean the same thing; check them in priority order.
 // Default to true when no policy field is present (admin hasn't restricted this model).
 function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   if (typeof model.studentSelectable === 'boolean') return model.studentSelectable;
@@ -116,40 +135,6 @@ function isStudentSelectableModel(model: StudentSelectableModel): boolean {
   if (typeof model.isAllowed === 'boolean') return model.isAllowed;
   if (typeof model.availability === 'string') return model.availability === 'allowed';
   return true;
-}
-
-function getProviderFromModelId(modelId: string): string {
-  return modelId.split(':')[0] || 'google';
-}
-
-function getProviderLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] || provider;
-}
-
-function maskApiKey(key: string): string {
-  if (key.length <= 8) return '••••••••';
-  return `••••••${key.slice(-4)}`;
-}
-
-// localStorage is the only persistence for provider API keys; the server never sees them at rest.
-// Read/write are wrapped to survive SSR-like envs and quota errors silently.
-function loadApiKeysFromStorage(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const stored = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveApiKeysToStorage(keys: Record<string, string>) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 function getInitialChatState(): ChatState {
@@ -165,16 +150,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     activity,
     isUserReady,
     knowledgeLevel,
-    onRequestKnowledgeLevel,
+    onSelectKnowledgeLevel,
     onAdjustKnowledgeLevel,
     topicOptions,
     currentTopicId,
     onSelectTopic,
     studentAnswer,
+    className,
   },
   ref,
 ) {
-  const [activeTab, setActiveTab] = useState<ChatTab>('teach');
+  const [activeTab, setActiveTab] = useState<ChatTab>('guide');
   const [chatState, setChatState] = useState<ChatState>(() => getInitialChatState());
   const [availableModels, setAvailableModels] = useState<AiModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID);
@@ -182,16 +168,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [modelLoadError, setModelLoadError] = useState(false);
   const [studentModelPolicyActive, setStudentModelPolicyActive] = useState(false);
 
-  // API key state
-  const [providerApiKeys, setProviderApiKeys] = useState<Record<string, string>>({});
-  const [apiKeysLoaded, setApiKeysLoaded] = useState(false);
+  // BYOK provider keys are owned by the shared hook (also drives Settings → Providers).
+  const { loaded: apiKeysLoaded, getKey, setKey, validateKey } = useApiKeys();
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const [tempApiKey, setTempApiKey] = useState('');
-  const [setupApiKeyInput, setSetupApiKeyInput] = useState('');
   const [apiKeyValidating, setApiKeyValidating] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
-  // Suggested prompts state
   const [suggestedPrompts, setSuggestedPrompts] = useState<SuggestedPrompt[]>([]);
   const [promptsDismissed, setPromptsDismissed] = useState<Record<ChatTab, boolean>>({
     teach: false,
@@ -201,14 +184,17 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const [historyOpen, setHistoryOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
-  // Load API keys from localStorage after hydration
-  useEffect(() => {
-    const stored = loadApiKeysFromStorage();
-    setProviderApiKeys(stored);
-    setApiKeysLoaded(true);
-  }, []);
+  // #999: one in-flight AbortController per tab so a "Stop generating" click
+  // (or a tab switch away mid-request) can cancel that tab's request without
+  // touching the others.
+  const abortControllersRef = useRef<Partial<Record<ChatTab, AbortController>>>({});
 
-  // Load suggested prompts
+  // Invalidates in-flight session restores (PR #1023 review): bumped by every
+  // new restore and by "New chat", so a stale completion — e.g. session A
+  // failing after session B already restored, or after the user started a
+  // fresh chat — can't overwrite the tab's newer state.
+  const restoreSeqRef = useRef(0);
+
   useEffect(() => {
     let isMounted = true;
     api
@@ -225,11 +211,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   }, []);
 
   const currentProvider = getProviderFromModelId(selectedModelId);
-  const currentApiKey = providerApiKeys[currentProvider] || '';
+  const currentApiKey = getKey(currentProvider);
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
-  const setupComplete = hasApiKey && Boolean(knowledgeLevel);
 
   const clearActiveTabChat = useCallback(() => {
+    restoreSeqRef.current += 1;
     setActiveChatId(null);
     setChatState((prev) => ({
       ...prev,
@@ -242,26 +228,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     clearActiveTabChat();
   }, [clearActiveTabChat]);
 
-  const handleRefreshChat = useCallback(() => {
-    clearActiveTabChat();
-  }, [clearActiveTabChat]);
-
-  const handleRestoreSession = useCallback(async (session: ApiChatSession) => {
-    setActiveTab(session.mode);
-    setActiveChatId(session.chatId);
-    setChatState((prev) => ({
-      ...prev,
-      [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
-    }));
-    const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
-    setChatState((prev) => ({
-      ...prev,
-      [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
-    }));
-  }, [activity?.id]);
-
-  // Track the active chatId from the current tab's state so the history panel
-  // can highlight the active session.
   useEffect(() => {
     const chatId = chatState[activeTab].chatId;
     if (chatId) setActiveChatId(chatId);
@@ -304,14 +270,13 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     (activeTab === 'guide' && isGuideEnabled) ||
     (activeTab === 'custom' && isCustomEnabled);
 
-  // Auto-correct the active tab during render when the activity's enabled modes change
-  // (e.g., instructor disables guide mode while a student is on it). React tolerates
-  // these setState calls during render because they converge in one extra pass.
+  // Auto-correct the active tab during render when enabled modes change. Prefer
+  // Guide (hints) as the pedagogical default, then Teach, then Custom.
   if (!currentTabEnabled) {
-    if (isTeachEnabled) setActiveTab('teach');
-    else if (isGuideEnabled) setActiveTab('guide');
+    if (isGuideEnabled) setActiveTab('guide');
+    else if (isTeachEnabled) setActiveTab('teach');
     else if (isCustomEnabled) setActiveTab('custom');
-    else if (activeTab !== 'teach') setActiveTab('teach');
+    else if (activeTab !== 'guide') setActiveTab('guide');
   }
 
   useEffect(() => {
@@ -320,7 +285,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       try {
         const models = (await api.listAiModels()) as StudentSelectableModel[];
         if (!isMounted) return;
-        // Filter only when at least one model declares a policy; otherwise show everything (back-compat).
         const policyActive = models.some(modelHasStudentPolicy);
         const selectableModels = policyActive ? models.filter(isStudentSelectableModel) : models;
         setAvailableModels(selectableModels);
@@ -347,13 +311,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     };
   }, []);
 
-  const ensureKnowledgeLevel = useCallback(() => {
-    if (!activity) return false;
-    if (knowledgeLevel) return true;
-    onRequestKnowledgeLevel();
-    return false;
-  }, [activity, knowledgeLevel, onRequestKnowledgeLevel]);
-
   const appendMessage = useCallback(
     (tab: ChatTab, role: ChatMessage['role'], content: string, id?: string) => {
       setChatState((prev) => ({
@@ -367,9 +324,53 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     [],
   );
 
+  const handleRestoreSession = useCallback(
+    async (session: ApiChatSession) => {
+      const seq = ++restoreSeqRef.current;
+      const tab = session.mode;
+      setActiveTab(tab);
+      setActiveChatId(session.chatId);
+      setChatState((prev) => ({
+        ...prev,
+        [tab]: { messages: [], input: '', loading: true, chatId: session.chatId },
+      }));
+      try {
+        const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+        if (seq !== restoreSeqRef.current) return;
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages, loading: false },
+        }));
+      } catch (error) {
+        if (seq !== restoreSeqRef.current) return;
+        console.error('Failed to restore chat session:', error);
+        // Drop the failed session's chatId too — otherwise the user could keep
+        // chatting into a history that never loaded.
+        setActiveChatId(null);
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages: [], loading: false, chatId: null },
+        }));
+        appendMessage(
+          tab,
+          'assistant',
+          "Couldn't load this conversation. Please open chat history and try again.",
+        );
+      }
+    },
+    [activity?.id, appendMessage],
+  );
+
   const sendChat = useCallback(
     async (tab: ChatTab, overrideMessage?: string) => {
       if (!activity || !isUserReady) return;
+
+      // #998: guard against duplicate concurrent requests for this tab. The
+      // manual submit path is already gated by `canSend` (which checks
+      // `loading`), but the imperative `sendGuidePrompt` handle exposed to
+      // the parent route bypasses that — this guard is the single choke
+      // point both paths funnel through.
+      if (chatState[tab].loading) return;
 
       const modeEnabled =
         (tab === 'teach' && activity.enableTeachMode) ||
@@ -382,18 +383,18 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       const message = (overrideMessage ?? chatState[tab].input).trim();
       if (!message) return;
-      if (!ensureKnowledgeLevel()) return;
 
-      const level = knowledgeLevel;
-      if (!level) return;
-
-      // The provider id is encoded as the prefix of the modelId ("google:gemini-..."); look up its key.
+      // Provider key is the only hard requirement; a missing knowledge level
+      // is filled with a sensible default (and remembered) rather than blocking.
       const provider = getProviderFromModelId(selectedModelId);
-      const apiKey = providerApiKeys[provider];
+      const apiKey = getKey(provider);
       if (!apiKey) {
-        console.warn('No API key for provider:', provider);
+        setActiveTab(tab);
         return;
       }
+
+      const level = knowledgeLevel ?? DEFAULT_KNOWLEDGE_LEVEL;
+      if (!knowledgeLevel) onSelectKnowledgeLevel(DEFAULT_KNOWLEDGE_LEVEL);
 
       const topicId = typeof currentTopicId === 'number' ? currentTopicId : undefined;
       const normalizedStudentAnswer =
@@ -405,65 +406,87 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
       const messageId = generateMessageId();
 
+      const controller = new AbortController();
+      abortControllersRef.current[tab] = controller;
+
       setChatState((prev) => ({
         ...prev,
         [tab]: { ...prev[tab], input: overrideMessage ? prev[tab].input : '', loading: true },
       }));
-
-      // Dismiss suggested prompts for this tab after first message
       setPromptsDismissed((prev) => ({ ...prev, [tab]: true }));
-
       appendMessage(tab, 'user', message, messageId);
 
       try {
         const modelId = selectedModelId || DEFAULT_MODEL_ID;
         let response;
         if (tab === 'teach') {
-          response = await api.sendTeachMessage(activity.id, {
-            knowledgeLevel: level,
-            topicId,
-            message,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendTeachMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              topicId,
+              message,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         } else if (tab === 'guide') {
-          response = await api.sendGuideMessage(activity.id, {
-            knowledgeLevel: level,
-            message,
-            studentAnswer: normalizedStudentAnswer,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendGuideMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              message,
+              studentAnswer: normalizedStudentAnswer,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         } else {
-          response = await api.sendCustomMessage(activity.id, {
-            knowledgeLevel: level,
-            topicId,
-            message,
-            modelId,
-            apiKey,
-            chatId: chatState[tab].chatId,
-            messageId,
-          });
+          response = await api.sendCustomMessage(
+            activity.id,
+            {
+              knowledgeLevel: level,
+              topicId,
+              message,
+              modelId,
+              apiKey,
+              chatId: chatState[tab].chatId,
+              messageId,
+            },
+            controller.signal,
+          );
         }
 
-        // Persist the chatId from the first response so subsequent turns thread into the same AiChatSession.
         const nextChatId = response.chatId ?? chatState[tab].chatId ?? null;
         if (nextChatId) {
           setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], chatId: nextChatId } }));
         }
         appendMessage(tab, 'assistant', response.message);
       } catch (error) {
-        console.error('AI chat failed:', error);
-        appendMessage(
-          tab,
-          'assistant',
-          'AI study buddy not available right now. Please try again later.',
-        );
+        if (controller.signal.aborted && !(error instanceof ApiTimeoutError)) {
+          // User clicked Stop — the in-progress turn is simply dropped, no
+          // error bubble (matches Core's stop-generating behavior).
+        } else if (error instanceof ApiTimeoutError) {
+          console.error('AI chat timed out:', error);
+          appendMessage(tab, 'assistant', 'That took too long to respond. Please try again.');
+        } else {
+          console.error('AI chat failed:', error);
+          appendMessage(
+            tab,
+            'assistant',
+            'AI study buddy not available right now. Please try again later.',
+          );
+        }
       } finally {
+        if (abortControllersRef.current[tab] === controller) {
+          delete abortControllersRef.current[tab];
+        }
         setChatState((prev) => ({ ...prev, [tab]: { ...prev[tab], loading: false } }));
       }
     },
@@ -472,10 +495,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       appendMessage,
       chatState,
       currentTopicId,
-      ensureKnowledgeLevel,
+      getKey,
       isUserReady,
       knowledgeLevel,
-      providerApiKeys,
+      onSelectKnowledgeLevel,
       selectedModelId,
       studentAnswer,
     ],
@@ -488,64 +511,51 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     () => ({
       sendGuidePrompt: () => {
         if (!activity || !activity.enableGuideMode) return;
-        const provider = getProviderFromModelId(selectedModelId);
-        if (!providerApiKeys[provider]) return;
-        const fallback = guideInput.trim() || 'I would like guidance on this question.';
         setActiveTab('guide');
+        const provider = getProviderFromModelId(selectedModelId);
+        if (!getKey(provider)) return; // notice is already visible in the Guide view
+        const fallback = guideInput.trim() || 'I would like guidance on this question.';
         void sendChat('guide', fallback);
       },
-      pushGuideMessage: (content: string) => {
-        if (!activity || !content || !activity.enableGuideMode) return;
-        appendMessage('guide', 'assistant', content);
-      },
     }),
-    [activity, appendMessage, guideInput, providerApiKeys, selectedModelId, sendChat],
+    [activity, getKey, guideInput, selectedModelId, sendChat],
   );
 
-  const chatDisabled = !activity || !knowledgeLevel || !hasApiKey || !isUserReady;
+  const chatDisabled = !activity || !hasApiKey || !isUserReady;
   const activeChat = chatState[activeTab];
-  const canSend =
-    !!activeChat && !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
+  const canSend = !activeChat.loading && !chatDisabled && Boolean(activeChat.input.trim());
 
-  // Filter suggested prompts for current tab (only teach/guide, not custom)
   const currentSuggestedPrompts = useMemo(() => {
     if (activeTab === 'custom') return [];
     return suggestedPrompts.filter((p) => p.mode === activeTab);
   }, [activeTab, suggestedPrompts]);
 
   const showSuggestedPrompts =
-    setupComplete &&
+    knowledgeLevel != null &&
     currentSuggestedPrompts.length > 0 &&
     chatState[activeTab].messages.length === 0 &&
     !promptsDismissed[activeTab];
 
-  const handlePromptInputChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
+  const handleValueChange = useCallback(
+    (value: string) => {
       setChatState((prev) => ({
         ...prev,
-        [activeTab]: { ...prev[activeTab], input: event.target.value },
+        [activeTab]: { ...prev[activeTab], input: value },
       }));
     },
     [activeTab],
   );
 
-  const handlePromptSubmit = useCallback(
-    (message: PromptInputMessage, event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (canSend && message?.text?.trim()) void sendChat(activeTab);
-    },
-    [activeTab, canSend, sendChat],
-  );
+  const submitInput = useCallback(() => {
+    if (canSend) void sendChat(activeTab);
+  }, [activeTab, canSend, sendChat]);
 
-  const handleTextareaKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === 'Enter' && !event.metaKey && !event.shiftKey) {
-        event.preventDefault();
-        if (canSend) void sendChat(activeTab);
-      }
-    },
-    [activeTab, canSend, sendChat],
-  );
+  // #999: lets the composer's stop control cancel the active tab's in-flight
+  // request (aborts the fetch in api.ts; sendChat's catch treats an
+  // already-aborted controller as a silent cancel, not an error).
+  const handleStop = useCallback(() => {
+    abortControllersRef.current[activeTab]?.abort();
+  }, [activeTab]);
 
   const handleSuggestedPromptClick = useCallback(
     (text: string) => {
@@ -557,29 +567,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
     [activeTab],
   );
 
-  const handleSetupSaveApiKey = useCallback(async () => {
-    if (!setupApiKeyInput.trim()) return;
-
-    setApiKeyValidating(true);
-    setApiKeyError(null);
-
-    try {
-      const result = await api.validateApiKey(currentProvider, setupApiKeyInput.trim());
-      if (!result.valid) {
-        setApiKeyError(result.error || 'Invalid API key');
-        return;
-      }
-      const newKeys = { ...providerApiKeys, [currentProvider]: setupApiKeyInput.trim() };
-      setProviderApiKeys(newKeys);
-      saveApiKeysToStorage(newKeys);
-      setSetupApiKeyInput('');
-    } catch (err) {
-      setApiKeyError('Could not validate API key');
-    } finally {
-      setApiKeyValidating(false);
-    }
-  }, [currentProvider, providerApiKeys, setupApiKeyInput]);
-
   const handleOpenApiKeyDialog = useCallback(() => {
     setTempApiKey(currentApiKey);
     setApiKeyError(null);
@@ -588,515 +575,353 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
 
   const handleSaveApiKeyDialog = useCallback(async () => {
     if (!tempApiKey.trim()) return;
-
     setApiKeyValidating(true);
     setApiKeyError(null);
-
     try {
-      const result = await api.validateApiKey(currentProvider, tempApiKey.trim());
+      const result = await validateKey(currentProvider, tempApiKey.trim());
       if (!result.valid) {
         setApiKeyError(result.error || 'Invalid API key');
         return;
       }
-      const newKeys = { ...providerApiKeys, [currentProvider]: tempApiKey.trim() };
-      setProviderApiKeys(newKeys);
-      saveApiKeysToStorage(newKeys);
+      setKey(currentProvider, tempApiKey.trim());
       setShowApiKeyDialog(false);
       setTempApiKey('');
-    } catch (err) {
+    } catch {
       setApiKeyError('Could not validate API key');
     } finally {
       setApiKeyValidating(false);
     }
-  }, [currentProvider, providerApiKeys, tempApiKey]);
+  }, [currentProvider, setKey, tempApiKey, validateKey]);
 
-  const renderMessages = (tab: ChatTab) => (
-    <div className="space-y-4">
-      {chatState[tab].messages.map((msg) => (
-        <Message from={msg.role} key={msg.id}>
-          <MessageContent
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              msg.role === 'user'
-                ? 'ml-auto bg-primary text-primary-foreground shadow-sm'
-                : 'bg-secondary text-secondary-foreground border border-border'
-            }`}
-          >
-            <MessageResponse>{msg.content}</MessageResponse>
+  const showTopicSelect =
+    (activeTab === 'teach' ||
+      (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
+    topicOptions.length > 1;
+
+  const renderMessages = (tab: ChatTab) =>
+    chatState[tab].messages.map((msg) =>
+      msg.role === 'user' ? (
+        <Message key={msg.id} className="justify-end">
+          <MessageContent className="max-w-[80%] bg-primary text-primary-foreground">
+            {msg.content}
           </MessageContent>
         </Message>
-      ))}
-    </div>
-  );
+      ) : (
+        <Message key={msg.id}>
+          {/* Match Core's chat: render AI markdown directly on the card (bg-transparent)
+              instead of the default bg-secondary bubble, which broke dark-mode contrast.
+              MessageContent applies `reading-surface` internally for Assistive Mode. */}
+          <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
+            {msg.content}
+          </MessageContent>
+        </Message>
+      ),
+    );
 
-  const renderSetupCard = () => (
-    <div className="mx-auto max-w-sm rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-5 animate-scale-in">
-      <div className="text-center">
-        <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-          <svg
-            className="w-7 h-7"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-            />
-          </svg>
-        </div>
-        <h3 className="text-lg font-bold text-foreground">
-          Set up your AI Study Buddy
-        </h3>
-        <p className="text-xs text-muted-foreground mt-1">Complete these steps to start chatting</p>
-      </div>
-
-      {/* Step 1: Knowledge Level */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-              knowledgeLevel
-                ? 'bg-accent text-accent-foreground'
-                : 'bg-secondary text-muted-foreground'
-            }`}
-          >
-            {knowledgeLevel ? (
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              '1'
-            )}
-          </span>
-          <span className="text-sm font-semibold text-foreground">Knowledge Level</span>
-        </div>
-        {knowledgeLevel ? (
-          <button
-            type="button"
-            onClick={onAdjustKnowledgeLevel}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-border bg-card text-sm text-left hover:border-primary/30 transition group"
-          >
-            <span className="font-medium text-foreground">{titleCase(knowledgeLevel)}</span>
-            <span className="text-xs text-muted-foreground group-hover:text-foreground transition">
-              Change
-            </span>
-          </button>
-        ) : (
-          <button type="button" onClick={onRequestKnowledgeLevel} className="btn-primary w-full">
-            Select your level
-          </button>
-        )}
-      </div>
-
-      {/* Step 2: API Key */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-              hasApiKey ? 'bg-accent text-accent-foreground' : 'bg-secondary text-muted-foreground'
-            }`}
-          >
-            {hasApiKey ? (
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={3}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              '2'
-            )}
-          </span>
-          <span className="text-sm font-semibold text-foreground">
-            {getProviderLabel(currentProvider)} API Key
-          </span>
-        </div>
-        {hasApiKey ? (
-          <button
-            type="button"
-            onClick={handleOpenApiKeyDialog}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-border bg-card text-sm text-left hover:border-primary/30 transition group"
-          >
-            <span className="font-mono text-foreground">{maskApiKey(currentApiKey)}</span>
-            <span className="text-xs text-muted-foreground group-hover:text-foreground transition">
-              Change
-            </span>
-          </button>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={setupApiKeyInput}
-                onChange={(e) => {
-                  setSetupApiKeyInput(e.target.value);
-                  setApiKeyError(null);
-                }}
-                placeholder="Enter API key"
-                className={`input-field flex-1 font-mono text-sm ${
-                  apiKeyError ? 'border-destructive' : ''
-                }`}
-                disabled={apiKeyValidating}
-              />
-              <button
-                type="button"
-                onClick={handleSetupSaveApiKey}
-                disabled={!setupApiKeyInput.trim() || apiKeyValidating}
-                className="btn-primary px-4"
-              >
-                {apiKeyValidating ? (
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                ) : (
-                  'Save'
-                )}
-              </button>
-            </div>
-            {apiKeyError && <p className="text-xs text-destructive pl-1">{apiKeyError}</p>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const activeTabInfo = availableTabs.find((tab) => tab.value === activeTab);
 
   return (
-    <aside className="flex h-[700px] flex-col rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden" data-tour="student-ai-chat">
+    <aside
+      className={cn(
+        'flex h-[700px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-border bg-card text-card-foreground shadow-[var(--shadow-2xs)]',
+        className,
+      )}
+      data-tour="student-ai-chat"
+    >
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border p-5">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <svg
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            aria-hidden
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-            />
-          </svg>
+      <div className="border-b border-border">
+        <div className="flex items-center gap-3 px-5 py-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <IconSparkles className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-foreground">AI study buddy</div>
+            <div className="text-xs text-muted-foreground">Hints, not answers</div>
+          </div>
+          {activity && hasApiKey && (
+            <TooltipProvider delayDuration={300}>
+              <div className="flex shrink-0 items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleNewChat}
+                      aria-label="New chat"
+                    >
+                      <IconPencilPlus className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">New chat</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setHistoryOpen((prev) => !prev)}
+                      aria-label="Chat history"
+                    >
+                      <IconHistory className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Chat history</TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          )}
         </div>
-        {setupComplete ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleNewChat}
-            aria-label="Clear and start new chat"
-            className="min-w-[44px] shrink-0"
-          >
-            <IconPencilPlus className="h-4 w-4 sm:mr-1.5" />
-            <span className="hidden sm:inline">New chat</span>
-          </Button>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-foreground">AI Study Buddy</div>
-          <div className="text-xs text-muted-foreground">Hints, not answers</div>
-        </div>
-        {setupComplete && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
+
+        {/* Compact control row: mode + knowledge level (progressive disclosure) */}
+        {activity && hasApiKey && (availableTabs.length > 0 || knowledgeLevel) && (
+          <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
+            {showTabToggle ? (
+              <SegmentedControl
+                ariaLabel="Chat mode"
+                value={activeTab}
+                onValueChange={(value) => setActiveTab(value as ChatTab)}
                 size="sm"
-                onClick={handleRefreshChat}
-                aria-label="Refresh chat"
-                className="min-w-[44px]"
-              >
-                <IconRefresh className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
+                options={availableTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+              />
+            ) : availableTabs.length === 1 ? (
+              <Badge variant="outline" size="lg">
+                {availableTabs[0].label}
+              </Badge>
+            ) : null}
+
+            {knowledgeLevel && (
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setHistoryOpen((prev) => !prev)}
-                aria-label="Open chat history"
-                className="min-w-[44px]"
+                className="ml-auto rounded-full"
+                onClick={onAdjustKnowledgeLevel}
+                aria-label="Change knowledge level"
               >
-                <IconHistory className="h-4 w-4 sm:mr-1.5" />
-                <span className="hidden sm:inline">History</span>
+                {knowledgeLevelLabel(knowledgeLevel)}
               </Button>
-            </div>
-            <button
-              type="button"
-              onClick={onAdjustKnowledgeLevel}
-              className="tag hover:bg-muted transition"
+            )}
+          </div>
+        )}
+
+        {activeTabInfo && activity && hasApiKey && (
+          <p className="px-5 pb-3 text-xs text-muted-foreground">{activeTabInfo.tooltip}</p>
+        )}
+
+        {/* Topic focus (teach / topic-templated custom) */}
+        {activity && hasApiKey && showTopicSelect && (
+          <div className="space-y-1.5 px-5 pb-4">
+            <label
+              className="block text-xs font-semibold text-muted-foreground"
+              htmlFor="ai-chat-topic"
             >
-              {titleCase(knowledgeLevel!)}
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenApiKeyDialog}
-              className="tag font-mono hover:bg-muted transition"
+              Focus topic
+            </label>
+            <Select
+              value={currentTopicId === null ? '' : String(currentTopicId)}
+              onValueChange={(value) => {
+                const numericValue = Number(value);
+                if (Number.isFinite(numericValue)) onSelectTopic(numericValue);
+              }}
             >
-              {maskApiKey(currentApiKey)}
-            </button>
+              <SelectTrigger id="ai-chat-topic" className="w-full">
+                <SelectValue placeholder="Select a topic" />
+              </SelectTrigger>
+              <SelectContent>
+                {topicOptions.map((topic) => (
+                  <SelectItem key={topic.value} value={String(topic.value)}>
+                    {topic.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>
+
       <StudentChatHistoryPanel
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         activityId={activity?.id}
         activeChatId={activeChatId}
-        onSelect={(session) => { void handleRestoreSession(session); }}
+        onSelect={(session) => {
+          void handleRestoreSession(session);
+        }}
         onNewChat={handleNewChat}
       />
 
-      {/* Tab toggle + topic selector */}
-      {setupComplete && (
-        <div className="px-5 pt-4 space-y-3">
-          <div className="flex items-center gap-3">
-            {showTabToggle ? (
-              <TooltipProvider delayDuration={300}>
-                <div className="flex rounded-xl bg-secondary p-1">
-                  {availableTabs.map((tab) => (
-                    <Tooltip key={tab.value}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => setActiveTab(tab.value)}
-                          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                            activeTab === tab.value
-                              ? 'bg-card text-foreground shadow-sm'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-[250px]">
-                        <p>{tab.tooltip}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </div>
-              </TooltipProvider>
-            ) : availableTabs.length === 1 ? (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="tag cursor-default">{availableTabs[0].label}</div>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[250px]">
-                    <p>{availableTabs[0].tooltip}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-          </div>
-
-          {/* Topic selector for teach mode and custom mode (when prompt uses topic placeholder) */}
-          {(activeTab === 'teach' ||
-            (activeTab === 'custom' && activity?.customPrompt?.includes('[INSERT TOPIC HERE]'))) &&
-            topicOptions.length > 1 && (
-              <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-                  Focus topic
-                </label>
-                <select
-                  value={currentTopicId ?? ''}
-                  onChange={(e) => {
-                    const value = Number(e.target.value);
-                    if (Number.isFinite(value)) onSelectTopic(value);
-                  }}
-                  disabled={topicOptions.length <= 1}
-                  className="input-field py-2 text-sm"
-                >
-                  {topicOptions.map((topic) => (
-                    <option key={topic.value} value={topic.value}>
-                      {topic.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-        </div>
-      )}
-
-      {/* Conversation area */}
-      <Conversation className="flex-1 min-h-0">
-        <ConversationContent className="px-5 py-4">
+      {/* Conversation */}
+      <ChatContainerRoot className="relative min-h-0 flex-1">
+        <ChatContainerContent className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-5 py-4">
           {!activity ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-12">
-              <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center mb-4">
-                <svg
-                  className="w-6 h-6 text-muted-foreground"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
-                  />
-                </svg>
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
+                <IconMessageCircle className="h-6 w-6" />
               </div>
               <p className="text-sm text-muted-foreground">Select an activity to begin.</p>
             </div>
-          ) : !setupComplete ? (
-            renderSetupCard()
+          ) : !hasApiKey ? (
+            apiKeysLoaded ? (
+              <div className="mx-auto flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+                  <IconKey className="h-7 w-7" aria-hidden />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold text-foreground">
+                    Connect an AI provider to start
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Add your {getProviderLabel(currentProvider)} API key to chat with your study
+                    buddy. It stays on this device.
+                  </p>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Button type="button" onClick={handleOpenApiKeyDialog}>
+                    <IconKey className="mr-1 h-4 w-4" /> Add API key
+                  </Button>
+                  <Link
+                    to="/settings"
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Manage in Settings → Providers
+                  </Link>
+                </div>
+              </div>
+            ) : null
           ) : (
             <>
               {renderMessages(activeTab)}
               {chatState[activeTab].loading && (
-                <div className="flex items-center gap-2 mt-4 text-muted-foreground animate-pulse-soft">
-                  <div className="flex gap-1">
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '0ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '150ms' }}
-                    />
-                    <div
-                      className="w-2 h-2 rounded-full bg-current animate-bounce"
-                      style={{ animationDelay: '300ms' }}
+                <Message>
+                  {/* Mirror Core's ChatTypingIndicator: subtle bg-muted/50 bubble + text-shimmer. */}
+                  <div className="max-w-none rounded-lg bg-muted/50 px-4 py-3 text-foreground">
+                    <Loader
+                      variant="text-shimmer"
+                      text="Thinking"
+                      size="sm"
+                      className="text-muted-foreground"
                     />
                   </div>
-                  <span className="text-xs">Thinking...</span>
-                </div>
+                </Message>
               )}
               {chatState[activeTab].messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <div className="w-12 h-12 rounded-xl bg-accent/50 flex items-center justify-center mb-4">
-                    <svg
-                      className="w-6 h-6 text-accent-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-                      />
-                    </svg>
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/50 text-accent-foreground">
+                    <IconSparkles className="h-6 w-6" />
                   </div>
-                  <p className="text-sm text-muted-foreground max-w-[200px] mb-4">
-                    Ask your study buddy anything about this topic!
-                  </p>
-
-                  {/* Suggested prompts */}
-                  {showSuggestedPrompts && (
-                    <div className="w-full max-w-sm space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground mb-2">Try asking:</p>
-                      <div className="flex flex-wrap gap-2 justify-center">
-                        {currentSuggestedPrompts.map((prompt) => (
-                          <button
-                            key={prompt.id}
-                            type="button"
-                            onClick={() => handleSuggestedPromptClick(prompt.text)}
-                            className="px-4 py-2.5 text-sm rounded-xl border border-border bg-card hover:bg-secondary hover:border-primary/30 transition-colors text-left"
-                          >
-                            {prompt.text}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  {knowledgeLevel == null ? (
+                    <KnowledgeLevelChips value={knowledgeLevel} onSelect={onSelectKnowledgeLevel} />
+                  ) : (
+                    <>
+                      <p className="max-w-[220px] text-sm text-muted-foreground">
+                        Ask your study buddy anything about this topic.
+                      </p>
+                      {showSuggestedPrompts && (
+                        <div className="w-full max-w-sm space-y-2">
+                          <p className="mb-1 text-xs font-medium text-muted-foreground">
+                            Try asking
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {currentSuggestedPrompts.map((prompt) => (
+                              <PromptSuggestion
+                                key={prompt.id}
+                                type="button"
+                                size="sm"
+                                onClick={() => handleSuggestedPromptClick(prompt.text)}
+                              >
+                                {prompt.text}
+                              </PromptSuggestion>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
             </>
           )}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
+        </ChatContainerContent>
+        <ScrollButton className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-[var(--shadow-sm)]" />
+      </ChatContainerRoot>
 
-      {/* Input area */}
-      <div className="border-t border-border p-4 space-y-3">
-        <PromptInput
-          onSubmit={handlePromptSubmit}
-          className="shadow-none [&_[data-slot=input-group]]:rounded-xl [&_[data-slot=input-group]]:border-2 [&_[data-slot=input-group]]:border-border [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:px-0 [&_[data-slot=input-group]]:py-0"
-        >
-          <PromptInputBody>
+      {/* Composer */}
+      <div className="space-y-2 border-t border-border p-4">
+        <div className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-ring">
+          <PromptInput
+            value={chatState[activeTab].input}
+            onValueChange={handleValueChange}
+            onSubmit={submitInput}
+            isLoading={activeChat.loading}
+            className="border-none bg-transparent p-0 shadow-none"
+          >
             <PromptInputTextarea
-              value={chatState[activeTab].input}
-              onChange={handlePromptInputChange}
-              onKeyDown={handleTextareaKeyDown}
               placeholder={
                 chatDisabled
-                  ? 'Complete setup above to start chatting'
+                  ? 'Connect a provider to start chatting'
                   : activeTab === 'teach'
-                    ? 'Ask about the topic...'
+                    ? 'Ask about the topic…'
                     : activeTab === 'guide'
-                      ? 'Describe where you need guidance...'
-                      : 'Ask a question...'
+                      ? 'Describe where you need guidance…'
+                      : 'Ask a question…'
               }
-              disabled={chatDisabled}
-              className="px-4 pb-3 pt-4 text-sm"
+              disabled={chatDisabled || activeChat.loading}
+              className="max-h-[140px] min-h-[52px] resize-none border-none bg-transparent px-4 py-3.5 text-sm focus-visible:ring-0"
             />
-          </PromptInputBody>
-          <PromptInputFooter className="flex-col gap-3 border-t border-border px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <PromptInputTools className="flex items-center gap-2">
-              <PromptInputModelSelect
-                value={selectedModelId}
-                onValueChange={setSelectedModelId}
-                disabled={!availableModels.length}
+          </PromptInput>
+
+          <div className="flex items-center gap-2 border-t border-border px-2 py-1.5">
+            <Select
+              value={selectedModelId}
+              onValueChange={setSelectedModelId}
+              disabled={!availableModels.length}
+            >
+              <SelectTrigger
+                className="h-8 w-auto gap-1 border-border/60 text-xs"
+                aria-label="Model"
               >
-                <PromptInputModelSelectTrigger className="min-w-[140px] h-8 text-xs">
-                  <PromptInputModelSelectValue placeholder="Select model" />
-                </PromptInputModelSelectTrigger>
-                <PromptInputModelSelectContent>
-                  {availableModels.map((model) => (
-                    <PromptInputModelSelectItem key={model.id} value={model.modelId}>
-                      {model.modelName}
-                    </PromptInputModelSelectItem>
-                  ))}
-                </PromptInputModelSelectContent>
-              </PromptInputModelSelect>
-            </PromptInputTools>
-            <PromptInputSubmit
-              disabled={!canSend}
-              status={activeChat.loading ? 'streaming' : 'ready'}
-            />
-          </PromptInputFooter>
-        </PromptInput>
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableModels.map((model) => (
+                  <SelectItem key={model.id} value={model.modelId}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex-1" />
+
+            {activeChat.loading ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleStop}
+                aria-label="Stop generating"
+              >
+                <IconPlayerStop className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon"
+                onClick={submitInput}
+                disabled={!canSend}
+                aria-label="Send message"
+              >
+                <IconSend className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
 
         {modelsFetched && modelLoadError && (
-          <div className="flex items-center gap-2 text-xs text-destructive">
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-              />
-            </svg>
+          <div className="flex items-center gap-1.5 text-xs text-destructive">
+            <IconAlertCircle className="h-3.5 w-3.5" />
             Unable to load AI models.
           </div>
         )}
@@ -1113,19 +938,18 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
           )}
       </div>
 
-      {/* API Key Edit Dialog */}
+      {/* Add / change provider key */}
       <Dialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
-        <DialogContent className="sm:max-w-md rounded-lg border bg-card text-card-foreground shadow-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-display">
-              {getProviderLabel(currentProvider)} API Key
-            </DialogTitle>
+            <DialogTitle>{getProviderLabel(currentProvider)} API key</DialogTitle>
             <DialogDescription>
-              Update your API key for {getProviderLabel(currentProvider)} models.
+              Stored only on this device and sent directly to {getProviderLabel(currentProvider)}.
+              You can also manage keys in Settings → Providers.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <input
+          <div className="space-y-2">
+            <Input
               type="password"
               value={tempApiKey}
               onChange={(e) => {
@@ -1133,53 +957,42 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                 setApiKeyError(null);
               }}
               placeholder={`Enter your ${getProviderLabel(currentProvider)} API key`}
-              className={`input-field font-mono text-sm ${apiKeyError ? 'border-destructive' : ''}`}
+              className="font-mono text-sm"
+              aria-invalid={!!apiKeyError}
               autoFocus
               disabled={apiKeyValidating}
             />
+            {currentApiKey && (
+              <p className="text-xs text-muted-foreground">Current: {maskApiKey(currentApiKey)}</p>
+            )}
             {apiKeyError && <p className="text-xs text-destructive">{apiKeyError}</p>}
           </div>
-          <DialogFooter className="gap-2 sm:gap-2">
-            <button
+          <DialogFooter>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 setShowApiKeyDialog(false);
                 setApiKeyError(null);
               }}
               disabled={apiKeyValidating}
-              className="btn-secondary"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              onClick={handleSaveApiKeyDialog}
+              onClick={() => void handleSaveApiKeyDialog()}
               disabled={!tempApiKey.trim() || apiKeyValidating}
-              className="btn-primary"
             >
               {apiKeyValidating ? (
                 <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Validating...
+                  <IconLoader2 className="h-4 w-4 animate-spin" />
+                  Validating…
                 </>
               ) : (
                 'Save'
               )}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1194,8 +1007,4 @@ function generateMessageId() {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function titleCase(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

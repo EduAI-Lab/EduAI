@@ -14,12 +14,12 @@ app/
     home.tsx                        # Landing page + EduAI OAuth sign-in
     student.tsx                     # Student dashboard (enrolled courses + progress)
     student.course.tsx              # Student course view (modules list)
-    student.topic.tsx               # Student module view (lessons list)
-    student.list.tsx                # Student lesson player (activities, Q&A, AI chat)
+    student.module.tsx               # Student module view (lessons list)
+    student.lesson.tsx                # Student lesson player (activities, Q&A, AI chat)
     instructor.tsx                  # Instructor dashboard (courses + EduAI import)
     instructor.course.tsx           # Instructor course editor (modules, import, topics)
-    instructor.topic.tsx            # Instructor module editor (lessons)
-    instructor.list.tsx             # Instructor lesson builder (activity CRUD)
+    instructor.module.tsx            # Instructor module editor (lessons)
+    instructor.lesson.tsx             # Instructor lesson builder (activity CRUD)
     admin.tsx                       # Admin panel (users, enrollments, settings, bugs)
     unsupported-role.tsx            # TA role rejection page
 
@@ -27,14 +27,15 @@ app/
     Nav.tsx                         # Global navigation bar
     ProgressBar.tsx                 # Progress bar with percentage label
     PublishStatusButton.tsx         # Publish/unpublish toggle with tooltip
-    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs)
+    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs, session restore)
+    StudentChatHistoryPanel.tsx     # Chat history sheet (list/restore sessions, retryable load errors)
     StudentActivityFeedbackCard.tsx # Post-submission difficulty rating form
     ActivityDetailsCard.tsx         # Collapsible activity detail view
     AddActivityPanel.tsx            # New activity creation form
     EditActivityPanel.tsx           # Activity editing form
     AddCourseTopicsButton.tsx       # Inline topic creation
     TopicSyncMappingDialog.tsx      # Topic remapping dialog for EduAI sync
-    TourButton.tsx                  # "Take Tour" button (student routes only)
+    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA; hidden for instructors/admins)
     TourProvider.tsx                # Guided tour state manager (driver.js)
     ai-elements/                    # AI chat UI primitives
       conversation.tsx              #   Chat scroll container (use-stick-to-bottom)
@@ -90,12 +91,12 @@ All routes are flat (no nested layouts). Each route module renders `<Nav />` ind
 | `/admin` | `admin.tsx` | ADMIN |
 | `/student` | `student.tsx` | STUDENT |
 | `/student/courses/:courseId` | `student.course.tsx` | STUDENT |
-| `/student/module/:moduleId` | `student.topic.tsx` | STUDENT |
-| `/student/lesson/:lessonId` | `student.list.tsx` | STUDENT |
+| `/student/module/:moduleId` | `student.module.tsx` | STUDENT |
+| `/student/lesson/:lessonId` | `student.lesson.tsx` | STUDENT |
 | `/instructor` | `instructor.tsx` | PROFESSOR |
 | `/instructor/courses/:courseId` | `instructor.course.tsx` | PROFESSOR |
-| `/instructor/module/:moduleId` | `instructor.topic.tsx` | PROFESSOR |
-| `/instructor/lesson/:lessonId` | `instructor.list.tsx` | PROFESSOR |
+| `/instructor/module/:moduleId` | `instructor.module.tsx` | PROFESSOR |
+| `/instructor/lesson/:lessonId` | `instructor.lesson.tsx` | PROFESSOR |
 | `/unsupported-role` | `unsupported-role.tsx` | Any |
 
 ## State Management
@@ -155,7 +156,7 @@ Custom "Neo-Academic" theme defined in `app.css`:
 | `@tanstack/react-table` | Table rendering (admin bug reports) |
 | `ai` (Vercel AI SDK) | AI chat message type definitions |
 | `cmdk` | Command palette (shadcn Command component) |
-| `lucide-react` | Icon library |
+| `@tabler/icons-react` | Icon library |
 
 ## Guided Tours
 
