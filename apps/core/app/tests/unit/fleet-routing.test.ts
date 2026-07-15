@@ -10,49 +10,22 @@ import {
   resetFleetRoundRobin,
   resolveFleetHost,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
-import {
-  featureToJobType,
-  parseWorkloadFeature,
-  resolveJobType,
-} from "~/lib/ai/routing/fleet/types";
+import { parseJobType } from "~/lib/ai/routing/fleet/types";
 
-describe("parseWorkloadFeature", () => {
-  it("defaults to chat when routingContext is missing", () => {
-    expect(parseWorkloadFeature(undefined)).toBe("chat");
+describe("parseJobType", () => {
+  it("defaults to interactive when routingContext is missing", () => {
+    expect(parseJobType(undefined)).toBe("interactive");
   });
 
-  it("parses known feature values", () => {
-    expect(parseWorkloadFeature({ feature: "tutor" })).toBe("tutor");
-    expect(parseWorkloadFeature({ feature: "chat" })).toBe("chat");
-    expect(parseWorkloadFeature({ feature: "background" })).toBe("background");
+  it("parses validated jobType values", () => {
+    expect(parseJobType({ jobType: "interactive" })).toBe("interactive");
+    expect(parseJobType({ jobType: "background" })).toBe("background");
   });
 
-  it("falls back to chat for unknown values", () => {
-    expect(parseWorkloadFeature({ feature: "unknown" })).toBe("chat");
-    expect(parseWorkloadFeature({ feature: "question-maker" })).toBe("chat");
-  });
-});
-
-describe("featureToJobType / resolveJobType", () => {
-  it("maps chat/tutor to interactive and background to background", () => {
-    expect(featureToJobType("chat")).toBe("interactive");
-    expect(featureToJobType("tutor")).toBe("interactive");
-    expect(featureToJobType("background")).toBe("background");
-  });
-
-  it("prefers explicit validated jobType over feature", () => {
-    expect(resolveJobType({ feature: "chat", jobType: "background" })).toBe("background");
-    expect(resolveJobType({ feature: "background", jobType: "interactive" })).toBe(
-      "interactive",
-    );
-  });
-
-  it("maps feature: background when jobType is omitted (#878)", () => {
-    expect(resolveJobType({ feature: "background" })).toBe("background");
-  });
-
-  it("ignores invalid jobType and falls back to feature mapping", () => {
-    expect(resolveJobType({ feature: "tutor", jobType: "heavy" })).toBe("interactive");
+  it("falls back to interactive for unknown or legacy feature tags", () => {
+    expect(parseJobType({ jobType: "heavy" })).toBe("interactive");
+    expect(parseJobType({ feature: "tutor" })).toBe("interactive");
+    expect(parseJobType({ feature: "background" })).toBe("interactive");
   });
 });
 
