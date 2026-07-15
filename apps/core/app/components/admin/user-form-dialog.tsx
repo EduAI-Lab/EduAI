@@ -12,6 +12,7 @@ import { useDisciplines } from "~/hooks/api/use-disciplines";
 import type { z } from "zod";
 
 import type { User } from "~/components/admin/users-table";
+import type { Course } from "~/hooks/api/use-courses";
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 type UpdateUserFormData = z.infer<typeof updateUserSchema>;
@@ -28,6 +29,8 @@ export interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user?: User | null;
+  courses?: Pick<Course, "id" | "code" | "name" | "term" | "year">[];
+  coursesLoading?: boolean;
   onSubmit: (data: CreateUserFormData | UpdateUserFormData) => Promise<void>;
 }
 
@@ -40,11 +43,19 @@ const roleOptions = [
   { value: "ADMIN", label: "Administrator" },
 ];
 
-export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormDialogProps) {
+export function UserFormDialog({
+  open,
+  onOpenChange,
+  user,
+  courses = [],
+  coursesLoading = false,
+  onSubmit,
+}: UserFormDialogProps) {
   const isEditing = !!user;
 
   // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+  const [selectedTACourseIds, setSelectedTACourseIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const submissionInFlightRef = useRef(false);
@@ -74,6 +85,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         emailVerified: user.emailVerified,
       });
       setSelectedUnits(user.authorizedUnits ?? []);
+      setSelectedTACourseIds(user.taCourseIds ?? []);
     } else {
       form.reset({
         name: "",
@@ -83,6 +95,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
         emailVerified: false,
       });
       setSelectedUnits([]);
+      setSelectedTACourseIds([]);
     }
     setSubmitError(null);
   }, [form, user]);
@@ -106,6 +119,9 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
     const payload = {
       ...data,
       ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
+      ...(isEditing
+        ? { taCourseIds: data.role === "STUDENT" ? selectedTACourseIds : [] }
+        : {}),
     };
 
     const schema = isEditing ? updateUserSchema : createUserSchema;
@@ -124,6 +140,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
       await onSubmit(result.data);
       form.reset();
       setSelectedUnits([]);
+      setSelectedTACourseIds([]);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to save user.");
     } finally {
@@ -260,6 +277,28 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
                   </FormItem>
                 )}
               />
+            )}
+
+            {isEditing && selectedRole === "STUDENT" && (
+              <FormItem>
+                <FormLabel>TA Courses</FormLabel>
+                <FormDescription>
+                  Select the courses where this student should be an active teaching assistant.
+                </FormDescription>
+                <MultiSelect
+                  options={courses.map((course) => ({
+                    value: course.id,
+                    label: course.code,
+                    description: `${course.name} · ${course.term} ${course.year}`,
+                  }))}
+                  value={selectedTACourseIds}
+                  onValueChange={setSelectedTACourseIds}
+                  placeholder={coursesLoading ? "Loading courses..." : "Select TA courses"}
+                  searchPlaceholder="Search courses..."
+                  emptyText="No courses found."
+                  disabled={coursesLoading || isSubmitting}
+                />
+              </FormItem>
             )}
 
             {submitError && (

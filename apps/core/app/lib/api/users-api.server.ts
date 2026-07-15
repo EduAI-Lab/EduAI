@@ -1,8 +1,10 @@
 import prisma from "~/lib/prisma.server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
+import { reconcileUserTACourses } from "~/lib/courses/tas.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
@@ -75,18 +77,23 @@ export async function handleUsersApiRequest(request: Request) {
         orderBy: { createdAt: "desc" },
       });
 
-      const taCounts = await prisma.enrollment.groupBy({
-        by: ["userId"],
+      const taEnrollments = await prisma.enrollment.findMany({
         where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
-        _count: { _all: true },
+        select: { userId: true, courseId: true },
       });
-      const taCountByUser = new Map(taCounts.map((t) => [t.userId, t._count._all]));
+      const taCourseIdsByUser = new Map<string, string[]>();
+      for (const enrollment of taEnrollments) {
+        const courseIds = taCourseIdsByUser.get(enrollment.userId) ?? [];
+        courseIds.push(enrollment.courseId);
+        taCourseIdsByUser.set(enrollment.userId, courseIds);
+      }
 
       const mapped = users.map(({ _count, ...u }) => ({
         ...u,
+        taCourseIds: taCourseIdsByUser.get(u.id) ?? [],
         _count: {
           enrolledCourses: _count.enrollments,
-          assistedCourses: taCountByUser.get(u.id) ?? 0,
+          assistedCourses: taCourseIdsByUser.get(u.id)?.length ?? 0,
           taughtCourses: _count.taughtCourses,
           aiInteractions: _count.aiInteractions,
         },
@@ -156,6 +163,7 @@ export async function handleUsersApiRequest(request: Request) {
 
         const user = {
           ...created,
+          taCourseIds: [],
           _count: {
             enrolledCourses: _count.enrollments,
             assistedCourses: 0,
@@ -227,7 +235,12 @@ export async function handleUsersApiRequest(request: Request) {
         if (unitGuard) return unitGuard;
       }
 
-      if (result.data.role !== undefined || result.data.authorizedUnits !== undefined) {
+      let effectiveRole = result.data.role;
+      if (
+        result.data.role !== undefined ||
+        result.data.authorizedUnits !== undefined ||
+        result.data.taCourseIds !== undefined
+      ) {
         const target = await prisma.user.findUnique({
           where: { id: userId },
           select: { role: true },
@@ -235,14 +248,18 @@ export async function handleUsersApiRequest(request: Request) {
         if (!target) {
           return apiError(404, "USER_NOT_FOUND");
         }
-        const effectiveRole = result.data.role ?? target.role;
+        effectiveRole = result.data.role ?? target.role;
         if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
 
       try {
-        const { studentId: studentIdInput, ...userUpdateFields } = result.data;
+        const {
+          studentId: studentIdInput,
+          taCourseIds,
+          ...userUpdateFields
+        } = result.data;
         const updateData: Record<string, unknown> = { ...userUpdateFields };
 
         if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
@@ -268,7 +285,7 @@ export async function handleUsersApiRequest(request: Request) {
           }
         }
 
-        const { _count, ...updated } = await prisma.user.update({
+        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) => client.user.update({
           where: { id: userId },
           data: updateData,
           select: {
@@ -293,20 +310,57 @@ export async function handleUsersApiRequest(request: Request) {
           },
         });
 
+        const shouldReconcileTACourses =
+          taCourseIds !== undefined ||
+          (result.data.role !== undefined && effectiveRole !== "STUDENT");
+
+        let updatedWithCount;
+        if (shouldReconcileTACourses) {
+          const transactionResult = await prisma.$transaction(async (tx) => {
+            const reconciliation = await reconcileUserTACourses(
+              tx,
+              userId,
+              effectiveRole!,
+              taCourseIds ?? [],
+            );
+            if (reconciliation.error) {
+              return { error: reconciliation.error } as const;
+            }
+            return { updated: await updateUser(tx) } as const;
+          });
+
+          if (transactionResult.error) {
+            const status =
+              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT"
+                ? 409
+                : transactionResult.error === "TA_COURSE_NOT_FOUND"
+                  ? 404
+                  : 422;
+            return apiError(status, transactionResult.error);
+          }
+          updatedWithCount = transactionResult.updated!;
+        } else {
+          updatedWithCount = await updateUser(prisma);
+        }
+
+        const { _count, ...updated } = updatedWithCount;
+
         if (studentIdInput !== undefined) {
           await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
-        const assistedCourses = await prisma.enrollment.count({
+        const activeTAEnrollments = await prisma.enrollment.findMany({
           where: { userId, role: "TA", isActive: true },
+          select: { courseId: true },
         });
 
         const user = {
           ...updated,
           studentId: readStoredStudentId(updated.studentId),
+          taCourseIds: activeTAEnrollments.map((enrollment) => enrollment.courseId),
           _count: {
             enrolledCourses: _count.enrollments,
-            assistedCourses,
+            assistedCourses: activeTAEnrollments.length,
             taughtCourses: _count.taughtCourses,
             aiInteractions: _count.aiInteractions,
           },
