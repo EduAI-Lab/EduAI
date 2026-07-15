@@ -81,7 +81,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
       const next = await api.setEduAiApiKey(apiKey);
       setStatus(next);
       setApiKey('');
-      toast.success('Saved. This overrides EDUAI_API_KEY from the environment.');
+      toast.success('Saved. This key will be used instead of the default one.');
     } catch {
       toast.error('Could not save key. Please try again.');
     } finally {
@@ -94,9 +94,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     try {
       const next = await api.clearEduAiApiKey();
       setStatus(next);
-      toast.success(
-        'Cleared admin override. The server will fall back to EDUAI_API_KEY from the environment.',
-      );
+      toast.success('Cleared admin override. The default key will be used instead.');
     } catch {
       toast.error('Could not clear override. Please try again.');
     } finally {
@@ -125,7 +123,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
 
   const saveAiPolicy = async () => {
     if (!aiPolicyAvailable || typeof settingsApi.setAdminAiModelPolicy !== 'function') {
-      toast.error('AI model settings are not wired into the client API yet.');
+      toast.error('AI model settings cannot be saved right now. Please try again later.');
       return;
     }
 
@@ -192,8 +190,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
 
           {!aiPolicyAvailable ? (
             <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-              AI model policy endpoints are not wired into the client API yet. This UI is ready for
-              the contract, but saving is temporarily disabled until the shared client layer lands.
+              AI model policy settings cannot be saved yet. This feature is coming soon.
             </div>
           ) : null}
 
