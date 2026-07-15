@@ -307,10 +307,11 @@ EduAI/
 │   └── extensions/
 │       ├── ai-tutor/                → React Router v7 SPA (app/) + Express/Prisma server (server/), own DB
 │       │                              Session validated via Core; service key for server-to-server
-│       └── question-maker/          → Question bank / assessments
-│           └── app/
-│               ├── backend/         → Express/Sequelize API, own DB
-│               └── frontend/        → Vite/React authoring UI
+│       ├── question-maker/          → Question bank / assessments
+│       │   └── app/
+│       │       ├── backend/         → Express/Sequelize API, own DB
+│       │       └── frontend/        → Vite/React authoring UI
+│       └── example-extension/       → Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
 │   ├── ui/                          → @eduai/ui — shared shadcn + design-system components
 │   └── types/                       → @eduai/types — UserRole, EnrollmentRole, canvas material types
