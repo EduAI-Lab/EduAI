@@ -1,10 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  IconAlertCircle,
-  IconLoader2,
-  IconMessageCircle,
-  IconPlus,
-} from '@tabler/icons-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { IconAlertCircle, IconLoader2, IconMessageCircle, IconPlus } from '@tabler/icons-react';
 import {
   Badge,
   Button,
@@ -15,10 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@eduai/ui';
-import {
-  listChatSessions,
-  type ApiChatSession,
-} from '~/lib/student-chat-history';
+import { listChatSessions, type ApiChatSession } from '~/lib/student-chat-history';
 import { cn } from '~/lib/utils';
 
 type StudentChatHistoryPanelProps = {
@@ -59,8 +51,13 @@ export function StudentChatHistoryPanel({
   const [sessions, setSessions] = useState<ApiChatSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // Guards against out-of-order completions: rapid Retry clicks, reopening the
+  // panel, or an activityId change can otherwise let an older rejection (or
+  // stale rows) overwrite the newest request's result.
+  const refreshSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeqRef.current;
     if (!activityId) {
       setSessions([]);
       setLoadError(false);
@@ -70,12 +67,14 @@ export function StudentChatHistoryPanel({
     setLoadError(false);
     try {
       const rows = await listChatSessions(activityId);
+      if (seq !== refreshSeqRef.current) return;
       setSessions(rows);
     } catch {
+      if (seq !== refreshSeqRef.current) return;
       setSessions([]);
       setLoadError(true);
     } finally {
-      setLoading(false);
+      if (seq === refreshSeqRef.current) setLoading(false);
     }
   }, [activityId]);
 
@@ -85,7 +84,11 @@ export function StudentChatHistoryPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-[340px] flex-col gap-0 p-0 sm:w-[380px]" onCloseAutoFocus={(e) => e.preventDefault()}>
+      <SheetContent
+        side="right"
+        className="flex w-[340px] flex-col gap-0 p-0 sm:w-[380px]"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <SheetHeader className="border-b border-border px-5 pb-3 pt-5">
           <SheetTitle className="text-[15px]">Chat history</SheetTitle>
           <SheetDescription className="text-[13px]">
@@ -121,7 +124,9 @@ export function StudentChatHistoryPanel({
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10">
                 <IconAlertCircle size={22} className="text-destructive" stroke={1.5} />
               </div>
-              <p className="mb-1 text-[14px] font-semibold text-foreground">Couldn&apos;t load history</p>
+              <p className="mb-1 text-[14px] font-semibold text-foreground">
+                Couldn&apos;t load history
+              </p>
               <p className="mb-4 text-[12px] text-muted-foreground">
                 Check your connection and try again.
               </p>
