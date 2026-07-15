@@ -57,6 +57,42 @@ describe("listAdminUsers", () => {
       expect(result.total).toBe(1);
     }
   });
+
+  it("filters by exact email", async () => {
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: "u9", email: "perf.pool-enroll-009@perf.local" },
+    ]);
+    prismaMock.user.count.mockResolvedValue(1);
+    const result = await listAdminUsers(ADMIN, {
+      email: "perf.pool-enroll-009@perf.local",
+    });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          email: { equals: "perf.pool-enroll-009@perf.local", mode: "insensitive" },
+        },
+      }),
+    );
+    if ("filter" in result) {
+      expect(result.filter).toEqual({ email: "perf.pool-enroll-009@perf.local" });
+    }
+  });
+
+  it("filters by query substring on email or name", async () => {
+    prismaMock.user.findMany.mockResolvedValue([]);
+    prismaMock.user.count.mockResolvedValue(0);
+    await listAdminUsers(ADMIN, { query: "enroll-009" });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { email: { contains: "enroll-009", mode: "insensitive" } },
+            { name: { contains: "enroll-009", mode: "insensitive" } },
+          ],
+        },
+      }),
+    );
+  });
 });
 
 describe("listAdminCourseEnrollments", () => {
