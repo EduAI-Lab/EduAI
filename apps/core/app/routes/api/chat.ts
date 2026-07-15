@@ -11,7 +11,9 @@ import {
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  estimateToolDefinitionTokens,
   getChatModelCapabilities,
+  promptFitsContextWindow,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
@@ -896,6 +898,9 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
     let courseRagInject = false;
+    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
+    let adminContextWindow: number | undefined;
+    let adminDesiredMaxOutput: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -924,15 +929,20 @@ export async function action({ request }: ActionFunctionArgs) {
         activeChatModel?.maxTokens,
         parsedModel.providerId,
       );
-      const desiredMaxOutput = resolveMaxOutputTokens(
-        activeChatModel?.maxTokens,
-        parsedModel.providerId,
+      // 16k windows need a smaller completion ask — tool schemas alone often
+      // consume ~8–10k tokens before any history.
+      const desiredMaxOutput = Math.min(
+        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
+        contextWindow <= 16_384 ? 1024 : Number.POSITIVE_INFINITY,
       );
 
+      // Leave room for the ~17 admin tool schemas on small context models.
       const adminSessionBudget =
-        contextWindow <= 32_768
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
-          : undefined;
+        contextWindow <= 16_384
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.18)
+          : contextWindow <= 32_768
+            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.3)
+            : undefined;
 
       modelMessages = prepareBoundedSessionContext(
         capToolResultsInMessages(trimmedMessages, 3000),
@@ -944,6 +954,9 @@ export async function action({ request }: ActionFunctionArgs) {
             }
           : undefined,
       );
+
+      adminContextWindow = contextWindow;
+      adminDesiredMaxOutput = desiredMaxOutput;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -970,6 +983,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
+      // Provisional maxTokens — final cap runs after composeSecurityPrompt below
+      // so the security block and tool schemas are included in the budget.
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
@@ -980,27 +995,6 @@ export async function action({ request }: ActionFunctionArgs) {
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
-
-      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
-      let messageChars = 0;
-      for (const message of modelMessages) {
-        messageChars += estimateMessageCharsForModel(message);
-      }
-      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-      });
-
-      chatApiTrace("max output tokens capped", {
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-        effectiveMaxTokens: streamConfig.maxTokens,
-        systemChars,
-        messageChars,
-      });
     } else {
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -1147,6 +1141,69 @@ ${buildEmptyCourseRagBlock()}`;
         profile: adhdProfile,
       }),
     );
+
+    // Re-cap after composeSecurityPrompt so the security block is included, and
+    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
+    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
+    if (
+      chatMode === "admin" &&
+      adminContextWindow != null &&
+      adminDesiredMaxOutput != null
+    ) {
+      const systemChars =
+        typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const toolCount =
+        streamConfig.tools && typeof streamConfig.tools === "object"
+          ? Object.keys(streamConfig.tools).length
+          : 0;
+      const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
+      const estimatedInputTokens =
+        estimateTokensFromChars(systemChars + messageChars) + toolDefinitionTokens;
+
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        toolDefinitionTokens: 0,
+        safetyBuffer: 512,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        toolCount,
+        toolDefinitionTokens,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+
+      if (
+        !promptFitsContextWindow({
+          contextWindow: adminContextWindow,
+          estimatedInputTokens,
+          maxOutputTokens: streamConfig.maxTokens,
+          safetyBuffer: 256,
+        })
+      ) {
+        return chatApiReject(
+          400,
+          {
+            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            code: "ADMIN_CONTEXT_TOO_LARGE",
+            estimatedInputTokens,
+            contextWindow: adminContextWindow,
+            toolCount,
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+    }
 
     const streamStartedAt = Date.now();
     // True when course material reached the model this turn: either a tool
