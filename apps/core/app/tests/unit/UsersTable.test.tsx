@@ -74,6 +74,26 @@ describe("UsersTable — rendering", () => {
     render(<UsersTable {...defaultProps} />);
     expect(screen.queryByRole("button", { name: /add user/i })).not.toBeInTheDocument();
   });
+
+  it("counts one assisted course once in the activity total", () => {
+    render(
+      <UsersTable
+        {...defaultProps}
+        users={[
+          {
+            ...baseUser,
+            _count: {
+              ...baseUser._count,
+              enrolledCourses: 0,
+              assistedCourses: 1,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Courses: 1")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

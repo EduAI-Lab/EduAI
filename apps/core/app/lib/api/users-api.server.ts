@@ -25,6 +25,11 @@ function userEntityLabel(
   return email ?? name ?? null;
 }
 
+const activeStudentEnrollmentWhere = {
+  role: "STUDENT",
+  isActive: true,
+} satisfies Prisma.EnrollmentWhereInput;
+
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
   const requestContext = getRequestContext(request);
@@ -68,7 +73,7 @@ export async function handleUsersApiRequest(request: Request) {
           updatedAt: true,
           _count: {
             select: {
-              enrollments: true,
+              enrollments: { where: activeStudentEnrollmentWhere },
               taughtCourses: true,
               aiInteractions: true,
             },
@@ -302,7 +307,7 @@ export async function handleUsersApiRequest(request: Request) {
             updatedAt: true,
             _count: {
               select: {
-                enrollments: true,
+                enrollments: { where: activeStudentEnrollmentWhere },
                 taughtCourses: true,
                 aiInteractions: true,
               },
