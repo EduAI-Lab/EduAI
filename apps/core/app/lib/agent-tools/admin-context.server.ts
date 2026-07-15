@@ -92,14 +92,36 @@ export async function resolveAdminCourseId(
   return { error: "courseId or courseCode required" };
 }
 
-/** ADMIN-only user directory (read-only). */
-export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT) {
+/** ADMIN-only user directory (read-only). Supports email / free-text search. */
+export async function listAdminUsers(
+  user: RbacUser,
+  opts: { limit?: number; email?: string; query?: string } | number = {},
+) {
   const denied = requirePlatformAdmin(user);
   if (denied) return denied;
 
-  const clampedLimit = Math.min(Math.max(Math.floor(limit), 1), MAX_LIST_LIMIT);
+  // Back-compat: older callers passed a bare limit number.
+  const normalized = typeof opts === "number" ? { limit: opts } : opts;
+  const clampedLimit = Math.min(
+    Math.max(Math.floor(normalized.limit ?? DEFAULT_LIST_LIMIT), 1),
+    MAX_LIST_LIMIT,
+  );
 
-  const where = {};
+  const email = normalized.email?.trim().toLowerCase();
+  const query = normalized.query?.trim();
+
+  const where =
+    email && email.length > 0
+      ? { email: { equals: email, mode: "insensitive" as const } }
+      : query && query.length > 0
+        ? {
+            OR: [
+              { email: { contains: query, mode: "insensitive" as const } },
+              { name: { contains: query, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where,
@@ -123,6 +145,7 @@ export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT)
     count: users.length,
     total,
     truncated: users.length < total,
+    filter: email ? { email } : query ? { query } : null,
   });
 }
 

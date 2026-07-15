@@ -153,11 +153,22 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     listUsers: tool({
       description:
-        "List platform users (ADMIN only) — not filtered by course. Returns up to 25 by default (max 50). For users in a specific course, use listCourseEnrollments instead.",
+        "List or search platform users (ADMIN only). Pass email for an exact lookup, or query to search email/name. Without filters returns the newest users (default 25, max 50). Never invent similar emails when a search returns empty — report not found. For course rosters use listCourseEnrollments.",
       parameters: z.object({
+        email: z
+          .string()
+          .email()
+          .optional()
+          .describe("Exact user email lookup (preferred when the admin names an email)"),
+        query: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Substring search on email or name when email is unknown"),
         limit: z.number().int().min(1).max(50).optional(),
       }),
-      execute: async ({ limit }) => listAdminUsers(user, limit),
+      execute: async ({ email, query, limit }) =>
+        listAdminUsers(user, { email, query, limit }),
     }),
 
     listBugReports: tool({

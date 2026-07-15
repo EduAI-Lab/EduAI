@@ -39,4 +39,11 @@ describe("buildAdminSystemPrompt", () => {
     const rules = formatAdminWriteSafetyRules();
     expect(defaultPrompt).toContain(rules);
   });
+
+  it("instructs exact email lookup and forbids similar-email guesses", () => {
+    const prompt = buildAdminSystemPrompt({ customPrompt: null });
+    expect(prompt).toContain("listUsers with email=");
+    expect(prompt).toContain("do NOT guess a different email");
+    expect(prompt).toContain("NEVER replace an admin-supplied email");
+  });
 });
