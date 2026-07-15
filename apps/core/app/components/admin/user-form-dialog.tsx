@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@eduai/ui";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@eduai/ui";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@eduai/ui";
@@ -28,7 +28,7 @@ export interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user?: User | null;
-  onSubmit: (data: CreateUserFormData | UpdateUserFormData) => void;
+  onSubmit: (data: CreateUserFormData | UpdateUserFormData) => Promise<void>;
 }
 
 // TA is a course-level Enrollment role assigned from a course's staff tab, not a
@@ -45,6 +45,11 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
 
   // Authorized units selection managed separately (not in RHF) to avoid string[] typing complexity
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submissionInFlightRef = useRef(false);
+  const wasOpenRef = useRef(false);
+  const previousUserIdRef = useRef<string | null>(null);
   const { options: departmentOptions } = useDisciplines();
 
   const form = useForm<FormData>({
@@ -59,7 +64,7 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
 
   const selectedRole = useWatch({ control: form.control, name: "role" });
 
-  useEffect(() => {
+  const resetLocalFormState = useCallback(() => {
     if (user) {
       form.reset({
         name: user.name,
@@ -79,9 +84,25 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
       });
       setSelectedUnits([]);
     }
-  }, [user, form]);
+    setSubmitError(null);
+  }, [form, user]);
 
-  const handleSubmit = (data: FormData) => {
+  useEffect(() => {
+    const currentUserId = user?.id ?? null;
+    const justOpened = open && !wasOpenRef.current;
+    const openedDifferentUser = open && previousUserIdRef.current !== currentUserId;
+
+    if (justOpened || openedDifferentUser) {
+      resetLocalFormState();
+    }
+
+    wasOpenRef.current = open;
+    previousUserIdRef.current = currentUserId;
+  }, [open, user, resetLocalFormState]);
+
+  const handleSubmit = async (data: FormData) => {
+    if (submissionInFlightRef.current) return;
+
     const payload = {
       ...data,
       ...(data.role === "UNIT_ADMIN" ? { authorizedUnits: selectedUnits } : {}),
@@ -90,15 +111,37 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
     const schema = isEditing ? updateUserSchema : createUserSchema;
     const result = schema.safeParse(payload);
 
-    if (result.success) {
-      onSubmit(result.data);
+    if (!result.success) {
+      setSubmitError(result.error.issues[0]?.message ?? "Please check the form and try again.");
+      return;
+    }
+
+    submissionInFlightRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      await onSubmit(result.data);
       form.reset();
       setSelectedUnits([]);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Failed to save user.");
+    } finally {
+      submissionInFlightRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (submissionInFlightRef.current) return;
+      resetLocalFormState();
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
@@ -219,12 +262,29 @@ export function UserFormDialog({ open, onOpenChange, user, onSubmit }: UserFormD
               />
             )}
 
+            {submitError && (
+              <p role="alert" className="text-sm text-destructive">
+                {submitError}
+              </p>
+            )}
+
             <div className="flex justify-end space-x-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+                disabled={isSubmitting}
+              >
                 Cancel
               </Button>
-              <Button type="submit">
-                {isEditing ? "Update User" : "Create User"}
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? isEditing
+                    ? "Updating User..."
+                    : "Creating User..."
+                  : isEditing
+                    ? "Update User"
+                    : "Create User"}
               </Button>
             </div>
           </form>
