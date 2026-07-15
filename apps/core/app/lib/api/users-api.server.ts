@@ -241,6 +241,7 @@ export async function handleUsersApiRequest(request: Request) {
       }
 
       let effectiveRole = result.data.role;
+      let previousRole: typeof effectiveRole;
       if (
         result.data.role !== undefined ||
         result.data.authorizedUnits !== undefined ||
@@ -253,11 +254,14 @@ export async function handleUsersApiRequest(request: Request) {
         if (!target) {
           return apiError(404, "USER_NOT_FOUND");
         }
+        previousRole = target.role;
         effectiveRole = result.data.role ?? target.role;
         if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
+      const platformRoleChanged =
+        result.data.role !== undefined && previousRole !== effectiveRole;
 
       try {
         const {
@@ -319,9 +323,14 @@ export async function handleUsersApiRequest(request: Request) {
           taCourseIds !== undefined ||
           (result.data.role !== undefined && effectiveRole !== "STUDENT");
 
+        let previousTACourseIds: string[] = [];
         let updatedWithCount;
         if (shouldReconcileTACourses) {
           const transactionResult = await prisma.$transaction(async (tx) => {
+            const previousTAEnrollments = await tx.enrollment.findMany({
+              where: { userId, role: "TA", isActive: true },
+              select: { courseId: true },
+            });
             const reconciliation = await reconcileUserTACourses(
               tx,
               userId,
@@ -331,7 +340,12 @@ export async function handleUsersApiRequest(request: Request) {
             if (reconciliation.error) {
               return { error: reconciliation.error } as const;
             }
-            return { updated: await updateUser(tx) } as const;
+            return {
+              updated: await updateUser(tx),
+              previousTACourseIds: previousTAEnrollments.map(
+                (enrollment) => enrollment.courseId,
+              ),
+            } as const;
           });
 
           if (transactionResult.error) {
@@ -344,6 +358,7 @@ export async function handleUsersApiRequest(request: Request) {
             return apiError(status, transactionResult.error);
           }
           updatedWithCount = transactionResult.updated!;
+          previousTACourseIds = transactionResult.previousTACourseIds!;
         } else {
           updatedWithCount = await updateUser(prisma);
         }
@@ -359,10 +374,20 @@ export async function handleUsersApiRequest(request: Request) {
           select: { courseId: true },
         });
 
+        const activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
+        const previousTACourseIdSet = new Set(previousTACourseIds);
+        const activeTACourseIdSet = new Set(activeTACourseIds);
+        const taCourseIdsAdded = activeTACourseIds.filter(
+          (courseId) => !previousTACourseIdSet.has(courseId),
+        );
+        const taCourseIdsRemoved = previousTACourseIds.filter(
+          (courseId) => !activeTACourseIdSet.has(courseId),
+        );
+
         const user = {
           ...updated,
           studentId: readStoredStudentId(updated.studentId),
-          taCourseIds: activeTAEnrollments.map((enrollment) => enrollment.courseId),
+          taCourseIds: activeTACourseIds,
           _count: {
             enrolledCourses: _count.enrollments,
             assistedCourses: activeTAEnrollments.length,
@@ -372,14 +397,16 @@ export async function handleUsersApiRequest(request: Request) {
         };
 
         const changedFields = Object.keys(result.data);
-        const actionCode =
-          result.data.role !== undefined
-            ? "USER_ROLE_CHANGED"
-            : result.data.isActive === false
-              ? "USER_DEACTIVATED"
-              : result.data.isActive === true
-                ? "USER_REACTIVATED"
-                : "USER_UPDATED";
+        let actionCode = "USER_UPDATED";
+        if (platformRoleChanged) {
+          actionCode = "USER_ROLE_CHANGED";
+        } else if (taCourseIds !== undefined) {
+          actionCode = "USER_TA_COURSES_CHANGED";
+        } else if (result.data.isActive === false) {
+          actionCode = "USER_DEACTIVATED";
+        } else if (result.data.isActive === true) {
+          actionCode = "USER_REACTIVATED";
+        }
         fireAndForget(
           logAuditAction({
             ...getActorContext(session.user),
@@ -392,7 +419,12 @@ export async function handleUsersApiRequest(request: Request) {
             details: {
               email: updated.email,
               changedFields,
-              ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
+              ...(platformRoleChanged
+                ? { previousRole, newRole: effectiveRole }
+                : {}),
+              ...(shouldReconcileTACourses
+                ? { taCourseIdsAdded, taCourseIdsRemoved }
+                : {}),
             },
           }),
         );

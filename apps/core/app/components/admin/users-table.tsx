@@ -93,26 +93,9 @@ import {
   TableRow,
 } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
+import type { PlatformUser } from "~/hooks/api/types";
 
-export type User = {
-  id: string;
-  email: string;
-  name: string;
-  image?: string;
-  role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
-  isActive: boolean;
-  emailVerified: boolean;
-  authorizedUnits: string[];
-  taCourseIds: string[];
-  createdAt: string;
-  updatedAt: string;
-  _count: {
-    enrolledCourses: number;
-    assistedCourses: number;
-    taughtCourses: number;
-    aiInteractions: number;
-  };
-};
+export type User = PlatformUser;
 
 export interface UsersTableProps {
   users: User[];
