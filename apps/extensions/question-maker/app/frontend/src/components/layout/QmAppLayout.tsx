@@ -1,11 +1,8 @@
-import { type CSSProperties, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { Outlet } from 'react-router';
 import {
-  AppSidebar,
-  SidebarProvider,
-  SidebarInset,
-  SiteHeader,
+  AppShell,
   ThemeToggle,
   Breadcrumb,
   BreadcrumbList,
@@ -142,19 +139,38 @@ function getNavSecondaryForUser(user: { role: string } | null): NavItem[] {
   // Settings lives in the navUser dropdown (like Core).
   // Bug reports is in the site-header top actions (like Core).
   // Cross-app navigation (EduAI Core + other extensions) lives in the
-  // header BrandSwitcher. Secondary nav only has Help.
+  // footer AppSwitcher. Secondary nav only has Help.
   return [
     { key: 'help', title: 'Help', href: '/help' },
   ];
 }
 
-function QmSiteHeader() {
+/** QM brand mark shown in the sidebar header (and the AppSidebar app switcher trigger). */
+const qmLogo = (
+  <>
+    <div
+      className="flex shrink-0 items-center justify-center"
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: 7,
+        background: 'var(--primary)',
+      }}
+    >
+      <IconBooks className="size-4 text-[var(--gold)]" strokeWidth={1.75} />
+    </div>
+    <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>Question Maker</span>
+  </>
+);
+
+function QmAppLayoutInner() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
+  const { user, logout } = useAuth();
+  const { profileOpen, closeProfile, guidedTourHandler } = useQmLayout();
+  const { courses, isLoading: isCoursesLoading, fetchCourses } = useCourses();
   const aiStatus = useAiServicesStatus();
   const { startTour } = useGuidedTour();
-  const { courses, isLoading: isCoursesLoading } = useCourses();
-  const { guidedTourHandler } = useQmLayout();
   const bugReport = useBugReport();
 
   const handleGuidedTourClick = () => {
@@ -165,13 +181,60 @@ function QmSiteHeader() {
     }
   };
 
-  const breadcrumbs = <WorkspaceBreadcrumb pathname={pathname} tab={searchParams.get('tab')} />;
+  const navMain = getNavForUser(user ? { role: user.role } : null).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
+  const navSecondary = getNavSecondaryForUser(user ? { role: user.role } : null).map((item) => ({
+    title: item.title,
+    url: item.href,
+    icon: NAV_ICONS[item.key],
+    external: item.external,
+  }));
+
+  // The question composer relies on a page-level sticky action bar. AppShell's
+  // default `<main>` is `overflow-auto`, which makes it the sticky containing
+  // block — but it never actually scrolls (the document does), so any sticky
+  // child is trapped and scrolls away instead of pinning below the header.
+  // Drop `overflow-auto` on the composer routes so the bar sticks to the
+  // viewport; main clips nothing here anyway.
+  const isComposerRoute =
+    pathname.endsWith('/questions/new') || /\/questions\/[^/]+\/edit$/.test(pathname);
 
   return (
-    <SiteHeader
+    <AppShell
+      mainClassName={isComposerRoute ? 'min-w-0 flex-1' : undefined}
+      sidebar={{
+        logo: qmLogo,
+        logoHref: '/dashboard',
+        navMain,
+        navSecondary,
+        currentPath: pathname,
+        LinkComponent: Link,
+        launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
+        user: user
+          ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
+          : { name: 'Guest', email: '', role: 'GUEST' },
+        navUser: user
+          ? {
+              items: [
+                {
+                  label: 'Settings',
+                  href: '/settings',
+                  icon: <IconSettings size={15} strokeWidth={1.75} />,
+                },
+              ],
+              LinkComponent: Link,
+              onLogout: logout,
+            }
+          : undefined,
+      }}
       title={resolveTitle(pathname)}
-      breadcrumbs={breadcrumbs}
-      actions={
+      breadcrumbs={<WorkspaceBreadcrumb pathname={pathname} tab={searchParams.get('tab')} />}
+      headerActions={
         <>
           <CommandSearchButton eventName="qm:open-command" />
           <div data-tour-id="eduai-status">
@@ -196,102 +259,32 @@ function QmSiteHeader() {
           </div>
           <ThemeToggle className="size-9 min-h-9 min-w-9" />
           {bugReport ? (
-            <Button variant="outline" size="sm" onClick={bugReport.openBugReport}>
-              <IconBug className="h-4 w-4 mr-1" />
-              Report a bug
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={bugReport.openBugReport}
+              aria-label="Report a bug"
+            >
+              <IconBug className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Report a bug</span>
             </Button>
           ) : null}
         </>
       }
-    />
-  );
-}
-
-function QmAppLayoutInner() {
-  const { pathname } = useLocation();
-  const { user, logout } = useAuth();
-  const { profileOpen, closeProfile } = useQmLayout();
-  const { courses, fetchCourses } = useCourses();
-
-  const navMain = getNavForUser(user ? { role: user.role } : null).map((item) => ({
-    title: item.title,
-    url: item.href,
-    icon: NAV_ICONS[item.key],
-    external: item.external,
-  }));
-
-  const navSecondary = getNavSecondaryForUser(user ? { role: user.role } : null).map((item) => ({
-    title: item.title,
-    url: item.href,
-    icon: NAV_ICONS[item.key],
-    external: item.external,
-  }));
-
-  const qmLogo = (
-    <>
-      <div
-        className="flex shrink-0 items-center justify-center"
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 7,
-          background: 'var(--primary)',
-        }}
-      >
-        <IconBooks className="size-4 text-[var(--gold)]" strokeWidth={1.75} />
-      </div>
-      <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>Question Maker</span>
-    </>
-  );
-
-  return (
-    <SidebarProvider
-      style={
-        {
-          '--sidebar-width': 'calc(var(--spacing) * 72)',
-          '--header-height': 'calc(var(--spacing) * 12)',
-        } as CSSProperties
+      commandPalette={
+        <>
+          <CommandPalette />
+          <ProfileCoursesDialog
+            open={profileOpen}
+            onClose={closeProfile}
+            existingCourses={courses}
+            onCoursesAdded={fetchCourses}
+          />
+        </>
       }
     >
-      <AppSidebar
-        logo={qmLogo}
-        logoHref="/dashboard"
-        navMain={navMain}
-        navSecondary={navSecondary}
-        currentPath={pathname}
-        LinkComponent={Link}
-        launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
-        user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
-        navUser={
-          user ? {
-            items: [
-              {
-                label: 'Settings',
-                href: '/settings',
-                icon: <IconSettings size={15} strokeWidth={1.75} />,
-              },
-            ],
-            LinkComponent: Link,
-            onLogout: logout,
-          } : undefined
-        }
-      />
-      <SidebarInset className="min-w-0">
-        <QmSiteHeader />
-        <main className="min-w-0 flex-1 overflow-auto">
-          <Outlet />
-        </main>
-      </SidebarInset>
-
-      <CommandPalette />
-
-      <ProfileCoursesDialog
-        open={profileOpen}
-        onClose={closeProfile}
-        existingCourses={courses}
-        onCoursesAdded={fetchCourses}
-      />
-    </SidebarProvider>
+      <Outlet />
+    </AppShell>
   );
 }
 
@@ -307,23 +300,6 @@ export function QmAppLayout() {
 export function QmAccessShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
 
-  const qmLogo = (
-    <>
-      <div
-        className="flex shrink-0 items-center justify-center"
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 7,
-          background: 'var(--primary)',
-        }}
-      >
-        <IconBooks className="size-4 text-[var(--gold)]" strokeWidth={1.75} />
-      </div>
-      <span className="text-base font-bold" style={{ letterSpacing: '-0.01em' }}>Question Maker</span>
-    </>
-  );
-
   const navMain = getNavForUser(user ? { role: user.role } : null).map((item) => ({
     title: item.title,
     url: item.href,
@@ -340,35 +316,24 @@ export function QmAccessShell({ children }: { children: ReactNode }) {
 
   return (
     <QmLayoutProvider>
-      <SidebarProvider
-        style={
-          {
-            '--sidebar-width': 'calc(var(--spacing) * 72)',
-            '--header-height': 'calc(var(--spacing) * 12)',
-          } as CSSProperties
-        }
+      <AppShell
+        sidebar={{
+          logo: qmLogo,
+          logoHref: '/dashboard',
+          navMain,
+          navSecondary,
+          currentPath: '/',
+          LinkComponent: Link,
+          launcher: { apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role },
+          user: user
+            ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role }
+            : { name: 'Guest', email: '', role: 'GUEST' },
+          navUser: user ? { items: [], onLogout: logout } : undefined,
+        }}
+        title="Question Maker"
       >
-        <AppSidebar
-          logo={qmLogo}
-          logoHref="/dashboard"
-          navMain={navMain}
-          navSecondary={navSecondary}
-          currentPath="/"
-          LinkComponent={Link}
-          launcher={{ apps: getLauncherApps(), currentAppId: CURRENT_APP_ID, role: user?.role }}
-          user={user ? { name: user.name ?? user.email, email: user.email, image: user.image, role: user.role } : { name: 'Guest', email: '', role: 'GUEST' }}
-          navUser={
-            user ? {
-              items: [],
-              onLogout: logout,
-            } : undefined
-          }
-        />
-        <SidebarInset>
-          <SiteHeader title="Question Maker" />
-          <main className="flex flex-1 items-center justify-center p-4">{children}</main>
-        </SidebarInset>
-      </SidebarProvider>
+        <div className="flex h-full items-center justify-center p-4">{children}</div>
+      </AppShell>
     </QmLayoutProvider>
   );
 }

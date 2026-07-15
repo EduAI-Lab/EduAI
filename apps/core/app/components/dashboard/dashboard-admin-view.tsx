@@ -18,28 +18,24 @@ const QUICK_ACTIONS: DashboardQuickAction[] = [
     label: "User management",
     description: "Create, edit, and deactivate platform accounts.",
     href: "/admin/users",
-    color: "var(--color-course-1)",
     icon: <IconUsers size={16} stroke={1.75} />,
   },
   {
     label: "AI management",
     description: "Configure providers and models for the platform.",
     href: "/admin/ai-models",
-    color: "var(--color-course-3)",
     icon: <IconBrain size={16} stroke={1.75} />,
   },
   {
     label: "Courses",
     description: "View and manage courses across the platform.",
     href: "/courses",
-    color: "var(--color-course-2)",
     icon: <IconBook2 size={16} stroke={1.75} />,
   },
   {
     label: "Bug reports",
     description: "Review and triage reports from all EduAI apps.",
     href: "/admin/bug-reports",
-    color: "var(--color-course-4)",
     icon: <IconBug size={16} stroke={1.75} />,
   },
 ];
