@@ -410,7 +410,9 @@ Core is the **authoritative source** for courses, topics, and enrollments. Exten
 
 **AI Tutor course import**
 
-Import is **automatic**. The server calls `GET /api/courses` on Core using the service key on every `GET /api/me` (login) and every `GET /api/courses` list fetch (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore` in `server/src/services/importTaughtCoursesService.js`), creating or reconciling a local `CourseOffering` row keyed by `externalId` = the Core course's CUID. Topics and enrollments are synced in the same flow, and publish state is reconciled against Core's `isPublished` flag. These calls are idempotent, so re-running them on every request is safe. The old manual `POST /courses/import-external` endpoint still exists in the API but is no longer reachable from the UI. A background job (`server/src/jobs/reconcile.js`) also reconciles offerings independently of any request.
+Import is **automatic**. The server calls `GET /api/courses` on Core using the service key on every `GET /api/me` (login) and every `GET /api/courses` list fetch (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore` in `server/src/services/importTaughtCoursesService.js`), creating or reconciling a local `CourseOffering` row keyed by `externalId` = the Core course's CUID. Enrollments are synced in the same flow, and publish state is reconciled against Core's `isPublished` flag. These calls are idempotent, so re-running them on every request is safe. The old manual `POST /courses/import-external` endpoint still exists in the API but is no longer reachable from the UI. A background job (`server/src/jobs/reconcile.js`) also reconciles offerings independently of any request.
+
+Topics for an imported course are pulled on every `GET /courses/:id/topics` read (`routes/topics.js`, `syncExternalCourseTopics`), not just on login/course-list — so the topic list is always current without a manual sync action (#1031). A failed pull falls back to serving the local mirror rather than failing the request. The old manual `POST /courses/:id/topics/sync` endpoint still exists in the API but is no longer reachable from the UI, same treatment as course import above.
 
 `CourseOffering.isPublished` is mirrored from Core's `Course.isPublished` on every reconcile pass (`reconcileOfferingFromCore`) — students only see a course in AI Tutor once the instructor publishes it in Core. 
 
@@ -438,7 +440,7 @@ All server-to-server calls from extensions to Core are authenticated with a shar
 Endpoints that accept the service key:
 
 - `GET /api/courses` — used by AI Tutor course import
-- `GET /api/courses/:id/topics` — used by AI Tutor topic sync
+- `GET /api/courses/:id/topics` — used by AI Tutor topic auto-sync (pulled on every topic-list read)
 - `GET /api/courses/:id/enrollments` — used by AI Tutor enrollment sync
 - `POST /api/bug-reports` — used by AI Tutor and QM bug report submission
 - `POST /api/questions` — used by QM variant push
