@@ -20,30 +20,22 @@ export type ApiChatSession = {
 };
 
 export async function listChatSessions(activityId: number): Promise<ApiChatSession[]> {
-  try {
-    const rows = await api.listChatSessions(activityId);
-    return rows.map((r) => ({ ...r, mode: r.mode as ChatTab }));
-  } catch {
-    return [];
-  }
+  const rows = await api.listChatSessions(activityId);
+  return rows.map((r) => ({ ...r, mode: r.mode as ChatTab }));
 }
 
 export async function loadSessionMessages(
   activityId: number,
   chatId: string,
 ): Promise<ChatMessage[]> {
-  try {
-    const data = await api.getChatMessages(activityId, chatId);
-    return data.messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({
-        id: m.messageId,
-        role: m.role as 'user' | 'assistant',
-        content: typeof m.content === 'string' ? m.content : extractText(m.content),
-      }));
-  } catch {
-    return [];
-  }
+  const data = await api.getChatMessages(activityId, chatId);
+  return data.messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({
+      id: m.messageId,
+      role: m.role as 'user' | 'assistant',
+      content: typeof m.content === 'string' ? m.content : extractText(m.content),
+    }));
 }
 
 function extractText(content: unknown): string {
