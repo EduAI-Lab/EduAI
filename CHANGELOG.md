@@ -5,12 +5,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
-## [Week 10 — July 6–12, 2026]
-
-### Changed
-
-- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
+
+### Added
+
+- [core] docs: Add ~70 technically-grounded use-case scenarios across 7 actor files (admin, unit-admin, instructor, TA, student, unauthenticated, service-caller) documenting how Core is used, misused, and attacked from every RBAC perspective â every cited file path/function name verified against the actual codebase. Scaffolds `docs/use-cases/qm/` and `docs/use-cases/ai-tutor/` as empty placeholders for future contributors. (#1056, @GlowyBlack, 2026-07-15) — [#1057](https://github.com/EduAI-Lab/EduAI/pull/1057)
 
 ### Changed
 
@@ -40,14 +39,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 - [core, ai-tutor, question-maker] feat: Shared-session auth across `*.eduai.ok.ubc.ca` — extensions redirect to Core login with `?force=1` to avoid cookie redirect loops; QM AI chat prefers the Core session cookie over the service key. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 - [monorepo] docs: Update `docs/rag-ai/HOW_TO_USE_DEV_SERVER.md` and `infra/s378/GO-LIVE.md` for systemd ops, public URLs, `COOKIE_DOMAIN`, and extension troubleshooting. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
-
 - [ai-tutor] refactor: Full design-system redesign — every screen rebuilt on the shared `@eduai/ui` shell, cards, chat primitives, tables, and chart primitives; new solid-accent `ModuleHero`; redesigned module/lesson cards (accent rail, `PublishMenu`), a ground-up activity editor (Dialog add + import, click-a-letter correct-answer editor), a `SubmissionCard` grid with a grading dialog, hero-card dashboard panels, and course topics folded into the hero. The course Enrollments tab was removed (roster management is owned by Core), and the client-authored "guide nudge" was dropped so tutor replies only come from real model round-trips. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 - [core, question-maker] refactor: Adopt the newly-extracted shared surface — dashboards on `QuickActionsPanel`, course lists on the shared filter groups. QM moved course topics out of the deleted Topics tab into the hero (`CourseTopicsHeroAction`) and restyled the question composer (Tabler icon steps, persistent sticky save bar, live preview dropped); Core repositioned the course hero above the detail tabs so it stays visible on every tab. (#965, #939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 
 ### Fixed
 - [question-maker, ai-tutor] fix: Forward Core session cookie on QM `/api/eduai/chat` and `/review-variant-ai` (through `reviewVariantExamWithAi` → `eduaiService.chat`) so cookie-first auth is not bypassed; restrict Vite `allowedHosts` to explicit s378 hostnames instead of `true`. (#936, @superbolt08, 2026-07-13) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 - [question-maker, core] fix: Question generation JSON parse (balanced extract instead of greedy regex) and Core `systemPrompt` handling so variant/generate-questions does not fall into tutor prose or refuse empty-RAG custom prompts. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
-
 - [core] security: Derive the logged client IP from the last (Apache-written) `x-forwarded-for` entry instead of the spoofable leftmost token, closing forged-IP poisoning of audit/security logs, the `/admin/logs` filter, and session rate limiting for our single-reverse-proxy deployment. (#981, @mochi_21, 2026-07-12)
 - [core] fix: Cap uncompressed size and entry count when decompressing uploaded/Canvas-imported PPTX/DOCX material (enforced from the ZIP central directory before any entry is inflated), closing a zip-bomb OOM where `validateFile` bounded only the 50MB compressed upload. (#978, @mochi_21, 2026-07-12) — [#1017](https://github.com/EduAI-Lab/EduAI/pull/1017)
 - [core, ui] fix: Mobile responsiveness fixes from the #805 audit — sidebar toggle now exposes `aria-expanded`/`aria-controls` (`packages/ui`); Settings account tabs scroll within their own strip instead of forcing page-wide horizontal scroll at 375px (`PageTabsList`); Question Maker's header actions row gets the same overflow safety net and its "Report a bug" button collapses to icon-only below `sm`, matching the existing search-button pattern; Core's chat welcome screen replaces `justify-center` with a `my-auto` safe-centering wrapper so the suggestion chips no longer clip behind the fixed input bar on short viewports. All four fixes re-verified via a live re-run of the audit tool against dev servers (30/30 page/viewport combinations pass). (#805, @GlowyBlack, 2026-07-09) — [#963](https://github.com/EduAI-Lab/EduAI/pull/963)
