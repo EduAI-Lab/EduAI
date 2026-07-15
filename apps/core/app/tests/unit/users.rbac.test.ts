@@ -103,7 +103,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/users — TA course assignments (#967)", () => {
-  it("returns active TA course ids and retains assistedCourses counts", async () => {
+  it("keeps active STUDENT and TA course counts role-exclusive", async () => {
     vi.mocked(prisma.user.findMany).mockResolvedValue([
       {
         id: "student-1",
@@ -111,25 +111,37 @@ describe("GET /api/users — TA course assignments (#967)", () => {
         name: "Student User",
         role: "STUDENT",
         authorizedUnits: [],
-        _count: { enrollments: 3, taughtCourses: 0, aiInteractions: 2 },
+        _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 2 },
       },
     ] as never);
     vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
       { userId: "student-1", courseId: "course-1" },
-      { userId: "student-1", courseId: "course-2" },
-    ] as never);
-    vi.mocked(prisma.enrollment.groupBy).mockResolvedValue([
-      { userId: "student-1", _count: { _all: 2 } },
     ] as never);
 
     const res = await loader(makeGet());
     const users = await res.json();
 
     expect(res.status).toBe(200);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          _count: {
+            select: expect.objectContaining({
+              enrollments: {
+                where: { role: "STUDENT", isActive: true },
+              },
+            }),
+          },
+        }),
+      }),
+    );
     expect(users[0]).toEqual(
       expect.objectContaining({
-        taCourseIds: ["course-1", "course-2"],
-        _count: expect.objectContaining({ assistedCourses: 2 }),
+        taCourseIds: ["course-1"],
+        _count: expect.objectContaining({
+          enrolledCourses: 0,
+          assistedCourses: 1,
+        }),
       }),
     );
   });
@@ -330,9 +342,10 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
     vi.mocked(prisma.enrollment.findMany)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ courseId: "course-1" }] as never);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -340,7 +353,21 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
       data: { courseId: "course-1", userId: "student-1", role: "TA", isActive: true },
     });
     expect(prisma.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "student-1" } }),
+      expect.objectContaining({
+        where: { id: "student-1" },
+        select: expect.objectContaining({
+          _count: {
+            select: expect.objectContaining({
+              enrollments: {
+                where: { role: "STUDENT", isActive: true },
+              },
+            }),
+          },
+        }),
+      }),
+    );
+    expect(body._count).toEqual(
+      expect.objectContaining({ enrolledCourses: 0, assistedCourses: 1 }),
     );
   });
 
