@@ -14,12 +14,12 @@ app/
     home.tsx                        # Landing page + EduAI OAuth sign-in
     student.tsx                     # Student dashboard (enrolled courses + progress)
     student.course.tsx              # Student course view (modules list)
-    student.topic.tsx               # Student module view (lessons list)
-    student.list.tsx                # Student lesson player (activities, Q&A, AI chat)
+    student.module.tsx               # Student module view (lessons list)
+    student.lesson.tsx                # Student lesson player (activities, Q&A, AI chat)
     instructor.tsx                  # Instructor dashboard (courses + EduAI import)
     instructor.course.tsx           # Instructor course editor (modules, import, topics)
-    instructor.topic.tsx            # Instructor module editor (lessons)
-    instructor.list.tsx             # Instructor lesson builder (activity CRUD)
+    instructor.module.tsx            # Instructor module editor (lessons)
+    instructor.lesson.tsx             # Instructor lesson builder (activity CRUD)
     admin.tsx                       # Admin panel (users, enrollments, settings, bugs)
     unsupported-role.tsx            # TA role rejection page
 
@@ -90,12 +90,12 @@ All routes are flat (no nested layouts). Each route module renders `<Nav />` ind
 | `/admin` | `admin.tsx` | ADMIN |
 | `/student` | `student.tsx` | STUDENT |
 | `/student/courses/:courseId` | `student.course.tsx` | STUDENT |
-| `/student/module/:moduleId` | `student.topic.tsx` | STUDENT |
-| `/student/lesson/:lessonId` | `student.list.tsx` | STUDENT |
+| `/student/module/:moduleId` | `student.module.tsx` | STUDENT |
+| `/student/lesson/:lessonId` | `student.lesson.tsx` | STUDENT |
 | `/instructor` | `instructor.tsx` | PROFESSOR |
 | `/instructor/courses/:courseId` | `instructor.course.tsx` | PROFESSOR |
-| `/instructor/module/:moduleId` | `instructor.topic.tsx` | PROFESSOR |
-| `/instructor/lesson/:lessonId` | `instructor.list.tsx` | PROFESSOR |
+| `/instructor/module/:moduleId` | `instructor.module.tsx` | PROFESSOR |
+| `/instructor/lesson/:lessonId` | `instructor.lesson.tsx` | PROFESSOR |
 | `/unsupported-role` | `unsupported-role.tsx` | Any |
 
 ## State Management
@@ -155,7 +155,7 @@ Custom "Neo-Academic" theme defined in `app.css`:
 | `@tanstack/react-table` | Table rendering (admin bug reports) |
 | `ai` (Vercel AI SDK) | AI chat message type definitions |
 | `cmdk` | Command palette (shadcn Command component) |
-| `lucide-react` | Icon library |
+| `@tabler/icons-react` | Icon library |
 
 ## Guided Tours
 

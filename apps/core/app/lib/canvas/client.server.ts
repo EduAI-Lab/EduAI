@@ -47,7 +47,28 @@ export type CanvasFileApi = {
   size: number;
   updated_at: string;
   url: string;
+  hidden?: boolean;
+  locked?: boolean;
+  lock_at?: string | null;
+  unlock_at?: string | null;
 };
+
+/** Computes whether a Canvas file is currently visible to students (not hidden/locked/outside its unlock-lock window). */
+export function computeCanvasFilePublishState(
+  file: Pick<CanvasFileApi, "hidden" | "locked" | "lock_at" | "unlock_at">,
+  now: Date = new Date(),
+): { isPublished: boolean } {
+  if (file.hidden || file.locked) {
+    return { isPublished: false };
+  }
+  if (file.unlock_at && new Date(file.unlock_at) > now) {
+    return { isPublished: false };
+  }
+  if (file.lock_at && new Date(file.lock_at) <= now) {
+    return { isPublished: false };
+  }
+  return { isPublished: true };
+}
 
 export type CanvasModuleItemApi = {
   id: number;
@@ -315,6 +336,38 @@ export async function listTeacherCanvasCourses(
     "/courses?enrollment_type=teacher&enrollment_role=TeacherEnrollment&include[]=term",
     fetchImpl,
   );
+}
+
+/**
+ * Fetches one course with `include[]=term`. Prefer this over the teacher list
+ * payload when resolving dates — Canvas often omits term `start_at` / `end_at`
+ * on the list endpoint even when the single-course GET includes them.
+ */
+export async function getCanvasCourseWithTerm(
+  credentials: CanvasIntegrationCredentials,
+  canvasCourseId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CanvasCourseApi | null> {
+  if (credentials.isTestMode) {
+    return (
+      MOCK_CANVAS_COURSES.find((course) => String(course.id) === canvasCourseId) ?? null
+    );
+  }
+
+  const url = buildCanvasApiUrl(
+    credentials.canvasUrl,
+    `/courses/${canvasCourseId}?include[]=term`,
+  );
+
+  try {
+    const { data } = await canvasFetchJson<CanvasCourseApi>(url, credentials.apiKey, fetchImpl);
+    return data;
+  } catch (error) {
+    if (error instanceof CanvasApiError && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /** Lists students enrolled in a Canvas course. */

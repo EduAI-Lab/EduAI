@@ -9,28 +9,33 @@ import {
   SidebarMenuItem,
   SidebarTrigger,
 } from "./ui/sidebar"
-import { NavMain, type NavMainItem } from "./nav-main"
+import { NavMain, type NavGroupItem, type NavMainItem } from "./nav-main"
 import { NavSecondary, type NavSecondaryItem } from "./nav-secondary"
 import { NavUser, type NavUserProps } from "./nav-user"
-import { BrandSwitcher, type BrandSwitcherProps } from "./app-launcher"
+import { AppSwitcher, type BrandSwitcherProps } from "./app-launcher"
 
 export interface AppSidebarProps
   extends React.ComponentProps<typeof Sidebar> {
   logo: React.ReactNode
   /** Destination the logo links to (default "/dashboard"). */
   logoHref?: string
-  navMain: NavMainItem[]
+  navMain: (NavMainItem | NavGroupItem)[]
   navSecondary?: NavSecondaryItem[]
   currentPath: string
   LinkComponent?: React.ElementType
   user: NavUserProps["user"]
   navUser?: Omit<NavUserProps, "user">
   /**
-   * When provided, the header brand becomes an app switcher (BrandSwitcher):
-   * clicking the logo opens a menu of the EduAI apps the current role can
-   * access. Omit to keep the brand a plain home link.
+   * When provided, a dedicated "Switch app" button is added to the sidebar
+   * footer (above the user menu): it opens a menu of the EduAI apps the current
+   * role can access. The header brand stays a plain home link either way.
    */
   launcher?: Pick<BrandSwitcherProps, "apps" | "currentAppId" | "role">
+  /**
+   * Optional leading content in the sidebar footer (above the app switcher /
+   * user menu) — e.g. AI Tutor's "Take Tour" control (#740).
+   */
+  footerLeading?: React.ReactNode
 }
 
 export function AppSidebar({
@@ -43,34 +48,25 @@ export function AppSidebar({
   user,
   navUser,
   launcher,
+  footerLeading,
   ...props
 }: AppSidebarProps) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
         <div className="flex items-center gap-1">
-          {launcher ? (
-            <BrandSwitcher
-              logo={logo}
-              logoHref={logoHref}
-              LinkComponent={LinkComponent}
-              className="flex-1 min-w-0"
-              {...launcher}
-            />
-          ) : (
-            <SidebarMenu className="flex-1 min-w-0">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  className="data-[slot=sidebar-menu-button]:!p-1.5"
-                >
-                  <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
-                    {logo}
-                  </LinkComponent>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          )}
+          <SidebarMenu className="flex-1 min-w-0">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                className="data-[slot=sidebar-menu-button]:!p-1.5"
+              >
+                <LinkComponent to={logoHref} href={logoHref} className="flex items-center gap-[9px]">
+                  {logo}
+                </LinkComponent>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           {/* Collapse toggle, visible while the sidebar is expanded (desktop).
               When collapsed/mobile the SiteHeader shows the expand trigger instead. */}
           <SidebarTrigger className="hidden shrink-0 md:inline-flex text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
@@ -92,6 +88,8 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter>
+        {footerLeading}
+        {launcher && <AppSwitcher {...launcher} />}
         <NavUser user={user} LinkComponent={LinkComponent} {...navUser} />
       </SidebarFooter>
     </Sidebar>

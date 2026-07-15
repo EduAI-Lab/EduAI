@@ -10,6 +10,7 @@ import {
   CanvasNotConnectedError,
   InvalidCanvasCourseAccessError,
 } from "~/lib/canvas/courses.server";
+import { CanvasStoredCredentialsError } from "~/lib/canvas/integration.server";
 import {
   CanvasMaterialSyncError,
   discoverCanvasMaterialsForCourse,
@@ -64,7 +65,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (resolved.response) return resolved.response;
 
   try {
-    const files = await discoverCanvasMaterialsForCourse(resolved.user.id, courseId);
+    const recheckPublishState = new URL(request.url).searchParams.get("recheck") === "true";
+    const files = await discoverCanvasMaterialsForCourse(
+      resolved.user.id,
+      courseId,
+      undefined,
+      { recheckPublishState },
+    );
     return json(200, { success: true, data: { files } });
   } catch (error) {
     return mapCanvasMaterialsError(error);
@@ -117,6 +124,9 @@ function mapCanvasMaterialsError(error: unknown): Response {
     return json(error.statusCode, { success: false, error: error.message });
   }
   if (error instanceof CanvasNotConnectedError) {
+    return json(400, { success: false, error: error.message });
+  }
+  if (error instanceof CanvasStoredCredentialsError) {
     return json(400, { success: false, error: error.message });
   }
   if (error instanceof InvalidCanvasCourseAccessError) {
