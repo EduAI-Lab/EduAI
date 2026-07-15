@@ -91,7 +91,7 @@ const fetchStatus = async () => {
             setState({
                 status: 'error',
                 provider: undefined,
-                message: 'AI service not configured on the server (EDUAI_API_KEY).'
+                message: 'AI needs a Core sign-in (shared session cookie). Sign in via Core and retry.'
             });
             clearHeartbeat();
         } else {
