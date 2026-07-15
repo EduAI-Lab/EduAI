@@ -15,8 +15,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Derive the IP once from the shared request-context helper so the rate-limit
-  // key, the logged `ipAddress`, and `details.ip` all agree (the helper also
-  // honors x-real-ip / cf-connecting-ip, not just x-forwarded-for).
+  // key, the logged `ipAddress`, and `details.ip` all agree (the helper takes the
+  // last, trusted-proxy-written x-forwarded-for entry).
   const requestContext = getRequestContext(request);
   const ip = requestContext.ipAddress ?? "unknown";
 
