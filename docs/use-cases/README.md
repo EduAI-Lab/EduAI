@@ -13,13 +13,13 @@ docs/use-cases/
 
 ### Core actors (`core/`)
 
-- `admin.md` — platform ADMIN
-- `unit-admin.md` — UNIT_ADMIN
-- `instructor.md` — INSTRUCTOR (course-level `instructor` access)
-- `ta.md` — TA (course-level `ta` access; platform role is STUDENT with a TA enrollment)
-- `student.md` — STUDENT
-- `unauthenticated.md` — no session: pre-login, expired/invalid session, anonymous probing
-- `service-caller.md` — AI Tutor/Question Maker calling Core via `EDUAI_API_KEY` + optional `proxyUser`
+- [`admin.md`](core/admin.md) — platform ADMIN
+- [`unit-admin.md`](core/unit-admin.md) — UNIT_ADMIN
+- [`instructor.md`](core/instructor.md) — INSTRUCTOR (course-level `instructor` access)
+- [`ta.md`](core/ta.md) — TA (course-level `ta` access; platform role is STUDENT with a TA enrollment)
+- [`student.md`](core/student.md) — STUDENT
+- [`unauthenticated.md`](core/unauthenticated.md) — no session: pre-login, expired/invalid session, anonymous probing
+- [`service-caller.md`](core/service-caller.md) — AI Tutor/Question Maker calling Core via `EDUAI_API_KEY` + optional `proxyUser`
 
 ## Scenario categories
 
