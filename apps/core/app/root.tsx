@@ -24,6 +24,34 @@ import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
 import { ThemeSyncInitializer } from "@eduai/ui";
+import { useNonce } from "~/lib/nonce";
+import { applySecurityHeaders } from "~/lib/security-headers.server";
+
+/**
+ * Root middleware — the single request chokepoint that every route matches.
+ *
+ * Document (HTML) responses already get their nonce-based CSP and the static
+ * headers from `entry.server.tsx`, so this only fills the responses that never
+ * reach the document entry: `/api/*` resource routes, redirects, and errors.
+ * Those get the static headers, prod HSTS, and a locked-down `default-src 'none'`
+ * CSP (no nonce needed). Skipping HTML here avoids clobbering the nonce'd CSP.
+ */
+export const middleware: Route.MiddlewareFunction[] = [
+  async (_args, next) => {
+    const response = await next();
+    const isHtml =
+      response.headers
+        .get("content-type")
+        ?.toLowerCase()
+        .includes("text/html") ?? false;
+    if (!isHtml) {
+      applySecurityHeaders(response.headers, {
+        isProd: process.env.NODE_ENV === "production",
+      });
+    }
+    return response;
+  },
+];
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -55,12 +83,16 @@ const GUEST_ROOT_PREFERENCES = {
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   ensureCronSchedulerRunning();
-  const session = await auth.api.getSession({ headers: request.headers });
 
-  // Resolve policy flags server-side (in-memory cached) and hand them to the
+  // getSession and getPolicies are independent — run them in parallel so a policy
+  // cache-miss does not serialize behind the session lookup on every navigation.
+  // Policy flags are resolved server-side (in-memory cached) and handed to the
   // client so gated controls render in their final enabled/disabled state from
   // the first paint — no client fetch, no enabled↔disabled flicker.
-  const policies = await getPolicies();
+  const [session, policies] = await Promise.all([
+    auth.api.getSession({ headers: request.headers }),
+    getPolicies(),
+  ]);
 
   if (!session?.user) {
     return { ...GUEST_ROOT_PREFERENCES, policies };
@@ -109,6 +141,7 @@ export function HydrateFallback() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const nonce = useNonce();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -118,6 +151,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         {/* Inline script: match next-themes class + color-scheme before hydration */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||((t==='system'||!t)&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;r.classList.add(d?'dark':'light');r.style.colorScheme=d?'dark':'light'}catch(e){}})()`,
           }}
@@ -128,8 +162,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           {children}
           <Toaster />
         </ThemeProvider>
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   );
