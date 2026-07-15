@@ -16,10 +16,14 @@ vi.mock("~/lib/courses/server", () => ({
   getCourse: vi.fn(),
 }));
 
-vi.mock("~/lib/courses/enrollments.server", () => ({
-  getCourseEnrollments: vi.fn(),
-  addEnrollment: vi.fn(),
-}));
+vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/courses/enrollments.server")>();
+  return {
+    ...actual,
+    getCourseEnrollments: vi.fn(),
+    addEnrollment: vi.fn(),
+  };
+});
 
 vi.mock("~/lib/idempotency.server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/idempotency.server")>();
@@ -317,7 +321,7 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
     mockAccess({ level: "instructor", rank: 2 });
     const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
     expect(res.status).toBe(201);
-    expect(addEnrollment).toHaveBeenCalledWith("course-1", { userId: "u9", role: "STUDENT" });
+    expect(addEnrollment).toHaveBeenCalledWith("course-1", { userId: "u9", role: "STUDENT" }, 2);
   });
 
   it("lets an INSTRUCTOR add a TA", async () => {
@@ -388,6 +392,7 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
       expect.objectContaining({
         route: "POST /api/courses/course-1/enrollments",
         actorId: "actor",
+        body: { userId: "u9", role: "STUDENT" },
       }),
       expect.any(Function),
     );

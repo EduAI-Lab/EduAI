@@ -136,7 +136,12 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   return withIdempotency(
-    { request, route: "POST /api/questions", actorId: session.user.id },
+    {
+      request,
+      route: "POST /api/questions",
+      actorId: session.user.id,
+      body: bodyPreview,
+    },
     async (body) => {
       const result = await createQuestion(body, session.user.id);
 

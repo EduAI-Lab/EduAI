@@ -211,6 +211,11 @@ export type WithIdempotencyOptions = {
   /** Authenticated actor whose keys and cached responses are isolated. */
   actorId: string;
   ttlMs?: number;
+  /**
+   * Pre-parsed JSON body from the route (e.g. after an RBAC peek).
+   * When set, skips cloning/parsing the request again.
+   */
+  body?: Record<string, unknown> | null;
 };
 
 /**
@@ -221,14 +226,19 @@ export async function withIdempotency(
   opts: WithIdempotencyOptions,
   handler: (body: Record<string, unknown> | null) => Promise<Response>,
 ): Promise<Response> {
-  const rawBody = await opts.request
-    .clone()
-    .json()
-    .catch(() => null);
-  const body =
-    rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
-      ? (rawBody as Record<string, unknown>)
-      : null;
+  let body: Record<string, unknown> | null;
+  if (opts.body !== undefined) {
+    body = opts.body;
+  } else {
+    const rawBody = await opts.request
+      .clone()
+      .json()
+      .catch(() => null);
+    body =
+      rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : null;
+  }
 
   const key = extractIdempotencyKey(opts.request, body);
   if (!key) {

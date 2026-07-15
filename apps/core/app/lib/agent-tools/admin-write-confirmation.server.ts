@@ -17,6 +17,12 @@ export function hashWritePayload(payload: Record<string, unknown>): string {
   return hashRequestBody(payload);
 }
 
+function pruneExpiredWritePreviews(now = Date.now()): void {
+  for (const [key, pending] of pendingPreviews) {
+    if (pending.expiresAt < now) pendingPreviews.delete(key);
+  }
+}
+
 /** Record a confirmed=false preview so a later confirmed=true can proceed. */
 export function registerWritePreview(
   actorId: string,
@@ -24,6 +30,7 @@ export function registerWritePreview(
   payload: Record<string, unknown>,
   ttlMs = DEFAULT_TTL_MS,
 ): void {
+  pruneExpiredWritePreviews();
   const payloadHash = hashWritePayload(payload);
   pendingPreviews.set(previewKey(actorId, toolName, payloadHash), {
     expiresAt: Date.now() + ttlMs,

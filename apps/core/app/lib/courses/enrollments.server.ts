@@ -69,12 +69,33 @@ export type AddEnrollmentPayload = {
 };
 
 /**
+ * §6 — manage enrollments requires rank >= 2; adding an INSTRUCTOR requires
+ * rank >= 3 (ADMIN / UNIT_ADMIN). Single source of truth for REST + service.
+ */
+export function requiredRankForEnrollmentRole(role: unknown): number {
+  return role === "INSTRUCTOR" ? 3 : 2;
+}
+
+export function canAddEnrollmentRole(actorRank: number, role: unknown): boolean {
+  return actorRank >= requiredRankForEnrollmentRole(role);
+}
+
+/**
  * POST /api/courses/:id/enrollments — add a user to a course with a role.
  * Idempotency is handled by the route wrapper (#828).
+ * `actorRank` is the authority for who may add which roles (§6).
  */
-export async function addEnrollment(courseId: string, payload: AddEnrollmentPayload) {
+export async function addEnrollment(
+  courseId: string,
+  payload: AddEnrollmentPayload,
+  actorRank: number,
+) {
   if (typeof payload.userId !== "string" || !payload.userId || !isEnrollmentRole(payload.role)) {
     return { status: "422", error: "VALIDATION_ERROR", fields: { body: "userId and role required" } } as const;
+  }
+
+  if (!canAddEnrollmentRole(actorRank, payload.role)) {
+    return { status: "403", error: "Forbidden" } as const;
   }
 
   const user = await prisma.user.findUnique({

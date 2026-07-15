@@ -26,7 +26,7 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
-import { addEnrollment, getCourseEnrollments } from "~/lib/courses/enrollments.server";
+import { addEnrollment, getCourseEnrollments, requiredRankForEnrollmentRole } from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { withIdempotency } from "~/lib/idempotency.server";
@@ -153,7 +153,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
       ? (peekedBody as Record<string, unknown>)
       : null;
-  const requiredRank = bodyPreview?.role === "INSTRUCTOR" ? 3 : 2;
+  // Rank authority lives in enrollments.server; route defers to the same helper.
+  const requiredRank = requiredRankForEnrollmentRole(bodyPreview?.role);
   if (!access || access.rank < requiredRank) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
       status: 403,
@@ -177,15 +178,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const requestContext = getRequestContext(request);
+  const actorRank = access.rank;
 
   return withIdempotency(
     {
       request,
       route: `POST /api/courses/${courseId}/enrollments`,
       actorId: session.user.id,
+      body: bodyPreview,
     },
     async (body) => {
-      const result = await addEnrollment(courseId, body ?? {});
+      const result = await addEnrollment(courseId, body ?? {}, actorRank);
 
       switch (result.status) {
         case "201":
@@ -207,6 +210,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         case "409":
           return new Response(JSON.stringify({ error: result.error }), {
             status: 409,
+            headers: { "Content-Type": "application/json" },
+          });
+        case "403":
+          return new Response(JSON.stringify({ error: result.error }), {
+            status: 403,
             headers: { "Content-Type": "application/json" },
           });
         case "422":

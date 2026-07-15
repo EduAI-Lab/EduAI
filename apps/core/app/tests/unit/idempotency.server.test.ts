@@ -208,6 +208,22 @@ describe("withIdempotency", () => {
     expect(prismaMock.idempotencyRecord.create).not.toHaveBeenCalled();
   });
 
+  it("uses a pre-parsed body when provided (no second request parse)", async () => {
+    const handler = vi.fn().mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    const request = new Request("http://localhost/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "ignored@x.y" }),
+    });
+    const peeked = { email: "peeked@x.y" };
+
+    await withIdempotency(
+      { request, route: "POST /api/users", actorId: "admin-1", body: peeked },
+      handler,
+    );
+    expect(handler).toHaveBeenCalledWith(peeked);
+  });
+
   it("returns IDEMPOTENCY_KEY_MISMATCH on body hash conflict", async () => {
     prismaMock.idempotencyRecord.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("dup", {
