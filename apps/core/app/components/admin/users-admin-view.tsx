@@ -35,6 +35,11 @@ export function UsersAdminView({
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
 
+  const handleUserDialogOpenChange = (open: boolean) => {
+    setUserDialogOpen(open);
+    if (!open) setEditingUser(null);
+  };
+
   const handleSubmit = async (data: CreateUserInput | UpdateUserInput) => {
     try {
       if (editingUser) {
@@ -42,10 +47,10 @@ export function UsersAdminView({
       } else {
         await onCreateUser(data as CreateUserInput);
       }
-      setUserDialogOpen(false);
-      setEditingUser(null);
+      handleUserDialogOpenChange(false);
     } catch (err) {
       console.error("Failed to save user:", err);
+      throw err;
     }
   };
 
@@ -139,7 +144,7 @@ export function UsersAdminView({
 
       <UserFormDialog
         open={userDialogOpen}
-        onOpenChange={setUserDialogOpen}
+        onOpenChange={handleUserDialogOpenChange}
         user={editingUser}
         onSubmit={handleSubmit}
       />

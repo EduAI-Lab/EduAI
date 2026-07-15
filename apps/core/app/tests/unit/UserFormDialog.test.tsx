@@ -21,6 +21,13 @@ const baseUser: User = {
   },
 };
 
+const otherUser: User = {
+  ...baseUser,
+  id: "u2",
+  email: "bob@example.com",
+  name: "Bob Jones",
+};
+
 // ---------------------------------------------------------------------------
 // Title
 // ---------------------------------------------------------------------------
@@ -91,8 +98,12 @@ describe("UserFormDialog — form actions", () => {
     render(
       <UserFormDialog open={true} onOpenChange={onOpenChange} onSubmit={vi.fn()} />
     );
+    fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
+      target: { value: "Unsaved Name" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("");
   });
 
   it("calls onSubmit when the form is submitted with a valid pre-filled user", async () => {
@@ -176,5 +187,66 @@ describe("UserFormDialog — form actions", () => {
     expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("Alice Updated");
     expect(screen.getByPlaceholderText("Enter email address")).toHaveValue("alice@example.com");
     expect(await screen.findByText("Unable to save user")).toBeVisible();
+    expect(screen.getByRole("button", { name: /update user/i })).toBeEnabled();
+  });
+
+  it("disables submission, prevents duplicates, and leaves closing to the parent", async () => {
+    let resolveSave: (() => void) | undefined;
+    const savePromise = new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    });
+    const onSubmit = vi.fn(() => savePromise);
+    const onOpenChange = vi.fn();
+    render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={onOpenChange}
+        user={baseUser}
+        onSubmit={onSubmit}
+      />
+    );
+
+    const updateButton = screen.getByRole("button", { name: /update user/i });
+    const form = updateButton.closest("form");
+    expect(form).not.toBeNull();
+
+    fireEvent.click(updateButton);
+    await waitFor(() => expect(screen.getByRole("button", { name: /updating user/i })).toBeDisabled());
+    fireEvent.submit(form!);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSave?.();
+      await savePromise;
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: /update user/i })).toBeEnabled());
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("resets entered values when a different user is opened", () => {
+    const { rerender } = render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={baseUser}
+        onSubmit={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
+      target: { value: "Unsaved Alice" },
+    });
+
+    rerender(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={otherUser}
+        onSubmit={vi.fn()}
+      />
+    );
+
+    expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("Bob Jones");
+    expect(screen.getByPlaceholderText("Enter email address")).toHaveValue("bob@example.com");
   });
 });
