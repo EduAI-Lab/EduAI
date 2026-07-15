@@ -189,6 +189,12 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   // touching the others.
   const abortControllersRef = useRef<Partial<Record<ChatTab, AbortController>>>({});
 
+  // Invalidates in-flight session restores (PR #1023 review): bumped by every
+  // new restore and by "New chat", so a stale completion — e.g. session A
+  // failing after session B already restored, or after the user started a
+  // fresh chat — can't overwrite the tab's newer state.
+  const restoreSeqRef = useRef(0);
+
   useEffect(() => {
     let isMounted = true;
     api
@@ -209,6 +215,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const hasApiKey = apiKeysLoaded && Boolean(currentApiKey);
 
   const clearActiveTabChat = useCallback(() => {
+    restoreSeqRef.current += 1;
     setActiveChatId(null);
     setChatState((prev) => ({
       ...prev,
@@ -220,23 +227,6 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
   const handleNewChat = useCallback(() => {
     clearActiveTabChat();
   }, [clearActiveTabChat]);
-
-  const handleRestoreSession = useCallback(
-    async (session: ApiChatSession) => {
-      setActiveTab(session.mode);
-      setActiveChatId(session.chatId);
-      setChatState((prev) => ({
-        ...prev,
-        [session.mode]: { messages: [], input: '', loading: true, chatId: session.chatId },
-      }));
-      const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
-      setChatState((prev) => ({
-        ...prev,
-        [session.mode]: { ...prev[session.mode as ChatTab], messages, loading: false },
-      }));
-    },
-    [activity?.id],
-  );
 
   useEffect(() => {
     const chatId = chatState[activeTab].chatId;
@@ -332,6 +322,43 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
       }));
     },
     [],
+  );
+
+  const handleRestoreSession = useCallback(
+    async (session: ApiChatSession) => {
+      const seq = ++restoreSeqRef.current;
+      const tab = session.mode;
+      setActiveTab(tab);
+      setActiveChatId(session.chatId);
+      setChatState((prev) => ({
+        ...prev,
+        [tab]: { messages: [], input: '', loading: true, chatId: session.chatId },
+      }));
+      try {
+        const messages = await loadSessionMessages(activity?.id ?? 0, session.chatId);
+        if (seq !== restoreSeqRef.current) return;
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages, loading: false },
+        }));
+      } catch (error) {
+        if (seq !== restoreSeqRef.current) return;
+        console.error('Failed to restore chat session:', error);
+        // Drop the failed session's chatId too — otherwise the user could keep
+        // chatting into a history that never loaded.
+        setActiveChatId(null);
+        setChatState((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], messages: [], loading: false, chatId: null },
+        }));
+        appendMessage(
+          tab,
+          'assistant',
+          "Couldn't load this conversation. Please open chat history and try again.",
+        );
+      }
+    },
+    [activity?.id, appendMessage],
   );
 
   const sendChat = useCallback(
@@ -686,7 +713,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         {/* Topic focus (teach / topic-templated custom) */}
         {activity && hasApiKey && showTopicSelect && (
           <div className="space-y-1.5 px-5 pb-4">
-            <label className="block text-xs font-semibold text-muted-foreground" htmlFor="ai-chat-topic">
+            <label
+              className="block text-xs font-semibold text-muted-foreground"
+              htmlFor="ai-chat-topic"
+            >
               Focus topic
             </label>
             <Select
@@ -790,7 +820,9 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
                       </p>
                       {showSuggestedPrompts && (
                         <div className="w-full max-w-sm space-y-2">
-                          <p className="mb-1 text-xs font-medium text-muted-foreground">Try asking</p>
+                          <p className="mb-1 text-xs font-medium text-muted-foreground">
+                            Try asking
+                          </p>
                           <div className="flex flex-wrap justify-center gap-2">
                             {currentSuggestedPrompts.map((prompt) => (
                               <PromptSuggestion
@@ -846,7 +878,10 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               onValueChange={setSelectedModelId}
               disabled={!availableModels.length}
             >
-              <SelectTrigger className="h-8 w-auto gap-1 border-border/60 text-xs" aria-label="Model">
+              <SelectTrigger
+                className="h-8 w-auto gap-1 border-border/60 text-xs"
+                aria-label="Model"
+              >
                 <SelectValue placeholder="Model" />
               </SelectTrigger>
               <SelectContent>
