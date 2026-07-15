@@ -8,6 +8,23 @@ interface ProgressBarProps {
   className?: string;
 }
 
+// Track heights on the same 3-step scale MeterBar's fixed track approximates —
+// keeping ProgressBar's size variants means call sites that need a compact
+// (list-row) or roomy (course-detail) bar still can, which MeterBar's fixed
+// h-2 track can't do.
+const TRACK_HEIGHTS: Record<NonNullable<ProgressBarProps['size']>, string> = {
+  sm: 'h-1.5',
+  md: 'h-2.5',
+  lg: 'h-3.5',
+};
+
+/**
+ * DS-token progress bar: muted track (`bg-muted`, matches `@eduai/ui`'s
+ * `MeterBar`) + primary fill. Same visual language as MeterBar, kept as a
+ * separate small component (rather than delegating to MeterBar) because
+ * MeterBar has no `size` variant — several call sites rely on the compact
+ * `sm` track for dense lists.
+ */
 export function ProgressBar({
   completed,
   total,
@@ -16,38 +33,22 @@ export function ProgressBar({
   className = '',
 }: ProgressBarProps) {
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const isComplete = percentage === 100;
-
-  const heights = {
-    sm: 'h-1.5',
-    md: 'h-2.5',
-    lg: 'h-3.5',
-  };
 
   return (
     <div className={`space-y-2 ${className}`}>
       {showLabel && (
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-muted-foreground font-medium">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-medium text-muted-foreground">
             {completed} of {total} completed
           </span>
           <span className="font-bold tabular-nums text-foreground">{percentage}%</span>
         </div>
       )}
-      <div className={`relative w-full bg-secondary rounded-full overflow-hidden ${heights[size]}`}>
-        {/* Track glow on completion */}
-        {isComplete && <div className="absolute inset-0 bg-primary/30 animate-pulse-soft" />}
-
-        {/* Progress fill */}
+      <div className={`w-full overflow-hidden rounded-full bg-muted ${TRACK_HEIGHTS[size]}`}>
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out relative bg-primary"
+          className="h-full rounded-full bg-primary-text transition-[width] duration-500 ease-out"
           style={{ width: `${percentage}%` }}
-        >
-          {/* Shimmer effect for in-progress */}
-          {!isComplete && percentage > 0 && percentage < 100 && (
-            <div className="absolute inset-0 animate-shimmer" />
-          )}
-        </div>
+        />
       </div>
     </div>
   );

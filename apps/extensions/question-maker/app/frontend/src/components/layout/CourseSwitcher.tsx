@@ -40,6 +40,7 @@ export function CourseSwitcher({ courseId }: CourseSwitcherProps) {
       courses={options}
       currentId={courseId}
       onSelect={(id) => navigate(`/courses/${id}?tab=${targetTab}`)}
+      onOpenCurrent={() => navigate(`/courses/${courseId}?tab=overview`)}
       onViewAll={() => navigate('/courses')}
     />
   );
