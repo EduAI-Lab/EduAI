@@ -5,11 +5,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
-## [Week 10 — July 6–10, 2026]
-
-### Added
-
-- [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. (#784, @Ayyhab, 2026-07-08) — [#959](https://github.com/EduAI-Lab/EduAI/pull/959)
 ## [Week 10 — July 6–12, 2026]
 
 ### Changed
@@ -34,6 +29,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. In-flight loads use a request-id guard so an older filter/page response cannot overwrite a newer result. (#784, @Ayyhab, 2026-07-08) — [#959](https://github.com/EduAI-Lab/EduAI/pull/959)
 - [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 - [infra] feat: Add Redis (`redis:7-alpine`) to `docker-compose.dev.yml` plus `bullmq`/`ioredis` and a hot-reload-safe connection module (`app/lib/queue/connection.server.ts`) for the async AI-job queue. (#913, @abdullahmoh21, 2026-07-07) — [#934](https://github.com/EduAI-Lab/EduAI/pull/934)
 - [core] feat: Add global HTTP security headers to every response — pages via the server entry and `/api/*` responses via root-route middleware — with `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` in all environments, plus prod-only HSTS and CSP (nonce-based for pages, locked-down `default-src 'none'` for API). (#982, @mochi_21, 2026-07-12) — [#1016](https://github.com/EduAI-Lab/EduAI/pull/1016)
