@@ -24,6 +24,8 @@ function parseHttpUrl(raw: string): URL {
 /**
  * Restricts user-supplied Ollama endpoints to loopback or the hostname
  * explicitly configured by the deployment.
+ * Hostname matching only — DNS rebind to link-local IPs is a known follow-up
+ * (#849 review); main unconstrained-URL SSRF is closed here.
  */
 export function resolveAllowedOllamaBaseUrl(raw?: string | null): string {
   const configuredRaw = process.env.OLLAMA_BASE_URL?.trim() || DEFAULT_OLLAMA_BASE_URL;

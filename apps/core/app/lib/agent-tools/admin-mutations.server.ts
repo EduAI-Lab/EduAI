@@ -248,6 +248,9 @@ function mapEnrollmentResult(
           : {}),
       });
     }
+    if (result.status === "403" && "error" in result) {
+      return mutationFailure({ error: result.error });
+    }
     if (result.status === "404") {
       return mutationFailure({ error: "NOT_FOUND" });
     }
@@ -466,10 +469,15 @@ export async function createAdminEnrollment(
   }
 
   const mapped = mapEnrollmentResult(
-    await addEnrollment(resolved.courseId, {
-      userId: resolvedUser.userId,
-      role: opts.role,
-    }),
+    await addEnrollment(
+      resolved.courseId,
+      {
+        userId: resolvedUser.userId,
+        role: opts.role,
+      },
+      // Admin chat write tools are ADMIN-gated; platform admins are always rank 4.
+      4,
+    ),
   );
   if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
     return mapped;

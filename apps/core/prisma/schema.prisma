@@ -862,6 +862,8 @@ model CronJobRun {
   createdAt  DateTime      @default(now())
 
   @@index([jobName, startedAt])
+  /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
+  /// Prisma cannot express WHERE status = 'RUNNING' in schema.
   @@map("cron_job_runs")
 }
 
