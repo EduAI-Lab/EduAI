@@ -13,6 +13,12 @@ vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
 }));
 
+vi.mock("~/lib/logging.server", () => ({
+  fireAndForget: vi.fn(),
+  logAuditAction: vi.fn().mockResolvedValue(undefined),
+  logSecurityEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $transaction: vi.fn(),
@@ -40,6 +46,7 @@ vi.mock("~/lib/disciplines/server", () => {
 
 import { action, loader } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
+import { logAuditAction } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 
 const ADMIN = { id: "admin-1", role: "ADMIN" };
@@ -342,6 +349,7 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
     vi.mocked(prisma.enrollment.findMany)
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ courseId: "course-1" }] as never);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
@@ -401,14 +409,63 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
   it("rejects assigning a course with an existing INSTRUCTOR enrollment", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
-    vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([
-      { id: "enrollment-1", courseId: "course-1", role: "INSTRUCTOR", isActive: true },
-    ] as never);
+    vi.mocked(prisma.enrollment.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: "enrollment-1", courseId: "course-1", role: "INSTRUCTOR", isActive: true },
+      ] as never);
 
     const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
 
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" });
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("audit-logs TA course assignments and removals with affected course IDs", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-new" }] as never);
+    vi.mocked(prisma.enrollment.findMany)
+      .mockResolvedValueOnce([{ courseId: "course-old" }] as never)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ courseId: "course-new" }] as never);
+
+    const res = await action(
+      makePatch("student-1", { role: "STUDENT", taCourseIds: ["course-new"] }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "USER_TA_COURSES_CHANGED",
+        entityId: "target",
+        details: expect.objectContaining({
+          taCourseIdsAdded: ["course-new"],
+          taCourseIdsRemoved: ["course-old"],
+        }),
+      }),
+    );
+  });
+
+  it("audit-logs the previous and new platform roles plus TA courses cleared by demotion", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
+    vi.mocked(prisma.enrollment.findMany)
+      .mockResolvedValueOnce([{ courseId: "course-1" }] as never)
+      .mockResolvedValueOnce([]);
+
+    const res = await action(makePatch("student-1", { role: "INSTRUCTOR" }));
+
+    expect(res.status).toBe(200);
+    expect(logAuditAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: "USER_ROLE_CHANGED",
+        details: expect.objectContaining({
+          previousRole: "STUDENT",
+          newRole: "INSTRUCTOR",
+          taCourseIdsAdded: [],
+          taCourseIdsRemoved: ["course-1"],
+        }),
+      }),
+    );
   });
 });
