@@ -128,4 +128,29 @@ describe("UserFormDialog — form actions", () => {
       )
     );
   });
+
+  it("keeps the dialog values and shows an error when an update rejects (#967)", async () => {
+    const onOpenChange = vi.fn();
+    const onSubmit = vi.fn().mockRejectedValue(new Error("Unable to save user"));
+    render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={onOpenChange}
+        user={baseUser}
+        onSubmit={onSubmit}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Enter full name"), {
+      target: { value: "Alice Updated" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(screen.getByRole("heading", { name: "Edit User" })).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByPlaceholderText("Enter full name")).toHaveValue("Alice Updated");
+    expect(screen.getByPlaceholderText("Enter email address")).toHaveValue("alice@example.com");
+    expect(await screen.findByText("Unable to save user")).toBeVisible();
+  });
 });

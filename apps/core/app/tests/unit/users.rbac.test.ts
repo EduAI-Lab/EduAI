@@ -98,6 +98,30 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
 });
 
 describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
+  it.each(["STUDENT", "INSTRUCTOR", "ADMIN"] as const)(
+    "allows an ordinary %s edit with an empty authorizedUnits array (#967)",
+    async (role) => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ role } as never);
+
+      const res = await action(
+        makePatch(`${role.toLowerCase()}-1`, {
+          name: `Updated ${role}`,
+          authorizedUnits: [],
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            name: `Updated ${role}`,
+            authorizedUnits: [],
+          },
+        }),
+      );
+    },
+  );
+
   it("accepts valid units on a UNIT_ADMIN target", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "UNIT_ADMIN" } as never);
     const res = await action(makePatch("ua-1", { authorizedUnits: ["COSC", "MATH"] }));
@@ -129,6 +153,40 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
       makePatch("u-promote", { role: "UNIT_ADMIN", authorizedUnits: ["COSC"] }),
     );
     expect(res.status).toBe(200);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { role: "UNIT_ADMIN", authorizedUnits: ["COSC"] },
+      }),
+    );
+  });
+
+  it.each(["STUDENT", "INSTRUCTOR", "ADMIN"] as const)(
+    "clears stale units when demoting a UNIT_ADMIN to %s (#967)",
+    async (role) => {
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "UNIT_ADMIN" } as never);
+
+      const res = await action(makePatch("ua-demote", { role }));
+
+      expect(res.status).toBe(200);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { role, authorizedUnits: [] },
+        }),
+      );
+    },
+  );
+
+  it("updates the authorized units of an existing UNIT_ADMIN (#967)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "UNIT_ADMIN" } as never);
+
+    const res = await action(makePatch("ua-1", { authorizedUnits: ["STAT", "DATA"] }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { authorizedUnits: ["STAT", "DATA"] },
+      }),
+    );
   });
 
   it("returns 404 when the target user does not exist", async () => {
