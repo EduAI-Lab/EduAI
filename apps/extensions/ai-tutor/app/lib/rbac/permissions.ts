@@ -62,7 +62,7 @@ export function canPublishContent(user: AtUser | null | undefined): boolean {
 }
 
 export function canManageTopics(user: AtUser | null | undefined): boolean {
-  return user?.role === 'INSTRUCTOR';
+  return canManageContent(user);
 }
 
 export function canManageEnrollments(user: AtUser | null | undefined): boolean {
@@ -83,9 +83,22 @@ export function canViewCourseSubmissions(user: AtUser | null | undefined): boole
   return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
 }
 
+/**
+ * Grading is available to the same course-staff set as submission viewing
+ * (instructors, TAs, unit admins, platform admins). Accepts an optional
+ * pre-resolved `access` so callers that already computed it (e.g. a route
+ * loader) don't need to recompute it.
+ */
+export function canGradeSubmissions(
+  user: AtUser | null | undefined,
+  access: AtCourseAccess = resolvePlatformCourseAccess(user),
+): boolean {
+  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
+}
+
 export function canViewCourseAnalytics(user: AtUser | null | undefined): boolean {
   const access = resolvePlatformCourseAccess(user);
-  return access === 'admin' || access === 'unit' || access === 'instructor';
+  return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
 }
 
 export function canViewCourseStudentMetrics(user: AtUser | null | undefined): boolean {
@@ -97,8 +110,8 @@ export function canAccessAdminConsole(user: AtUser | null | undefined): boolean 
 }
 
 export function canSubmitBugReport(user: AtUser | null | undefined): boolean {
-  if (!user?.role) return false;
-  return user.role === 'STUDENT' || user.role === 'INSTRUCTOR';
+  // The server accepts a bug report from any authenticated role.
+  return !!user?.role;
 }
 
 export function getRoleViewLabel(role: Role | string | undefined): string {

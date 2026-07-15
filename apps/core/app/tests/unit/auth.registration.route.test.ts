@@ -34,7 +34,7 @@ function registerFormArgs(fields: Record<string, string>) {
     request: new Request("http://localhost/auth/register", { method: "POST", body }),
     params: {},
     context: {} as never,
-  };
+  } as any;
 }
 
 beforeEach(() => {
@@ -62,13 +62,23 @@ describe("auth.allowPublicRegistration — route loaders (§6b)", () => {
   it("login loader passes allowRegistration=false through when off", async () => {
     vi.mocked(getPolicy).mockResolvedValue(false);
     const res = await loginLoader(args("http://localhost/auth/login"));
-    expect(res).toMatchObject({ allowRegistration: false });
+    expect(res).toMatchObject({ allowRegistration: false, forceReauth: false });
   });
 
   it("login loader passes allowRegistration=true through when on", async () => {
     vi.mocked(getPolicy).mockResolvedValue(true);
     const res = await loginLoader(args("http://localhost/auth/login"));
-    expect(res).toMatchObject({ allowRegistration: true });
+    expect(res).toMatchObject({ allowRegistration: true, forceReauth: false });
+  });
+
+  it("login loader skips redirect when force=1 even with a session", async () => {
+    vi.mocked(getPolicy).mockResolvedValue(false);
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "u1", email: "ada@ubc.ca" },
+    } as never);
+    const res = await loginLoader(args("http://localhost/auth/login?force=1&redirect=/dashboard"));
+    expect(res).not.toBeInstanceOf(Response);
+    expect(res).toMatchObject({ forceReauth: true });
   });
 });
 

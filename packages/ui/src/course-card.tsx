@@ -12,6 +12,7 @@ import {
 import { CourseCardHero } from "./course-color-bar"
 import { courseThemeVars, paletteColorAtIndex, type CourseAccentColor } from "./course-theme"
 import { StatusBadge } from "./status-badge"
+import { termLabel } from "./lib/term"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -284,7 +285,7 @@ export function CourseCard({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
               <IconCalendar size={13} />
-              {term} {year ?? ""}
+              {termLabel(term, year)}
             </span>
             <StatusBadge
               active={isPublished}
