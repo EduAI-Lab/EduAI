@@ -65,17 +65,16 @@ Fleet routing uses two **job types**. They describe how long the user can wait, 
 | **`interactive`** | User is waiting on screen (seconds) | `VLLM_FLEET_CHAT_URLS` |
 | **`background`** | Minutes are OK (generation, extraction) | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool if unset) |
 
-Extensions still send a **feature** tag for telemetry and debugging. Slice 1 features are interactive; background is selected by explicit `JobType` (not a feature tag):
-
-| `routingContext.feature` | Maps to `JobType` | Apps |
-|--------------------------|-------------------|------|
-| `chat` (default) | `interactive` | EduAI chat |
-| `tutor` | `interactive` | AI Tutor |
+Apps select the pool with **`routingContext.jobType`** only (no per-app feature tags):
 
 ```typescript
 type JobType = "interactive" | "background";
-type WorkloadFeature = "chat" | "tutor";
 ```
+
+| `routingContext.jobType` | Apps | Pool |
+|--------------------------|------|------|
+| `interactive` (default) | EduAI chat, AI Tutor | `VLLM_FLEET_CHAT_URLS` |
+| `background` | Question Maker | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool) |
 
 Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs 32B) is chosen by Auto routing before the fleet step.
 
@@ -84,7 +83,7 @@ Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs
 | Job type | Who uses it | How fast should it feel? | Send to |
 |----------|-------------|--------------------------|---------|
 | **`interactive`** | EduAI chat, AI Tutor, tool-heavy chat | Seconds | cmps01 + cmps02 (chat pool) |
-| **`background`** | Explicit `JobType: "background"` callers | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
+| **`background`** | Question Maker (`jobType: "background"`) | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
 | *(not fleet)* | Embeddings / RAG index | Not user-visible | Ollama on cmps01 |
 
 **Why this matters:** Background jobs must not block interactive traffic on the same GPU host.
@@ -111,7 +110,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, fleet routing is **on**; otherwise the app u
 
 ```text
 POST /api/chat
-  → parse routingContext.feature → JobType
+  → parse routingContext.jobType → JobType (default interactive)
   → RAG prefetch (unchanged — EduAI + Postgres)
   → resolve model id (Auto or explicit)
   → resolveFleetHost()          ← pick server from job-type pool
@@ -128,7 +127,7 @@ Server pick happens **after** the model id is known. Hosts that do not serve tha
 
 | File | Purpose |
 |------|---------|
-| `types.ts` | `JobType`, `WorkloadFeature`, feature → job type, telemetry helpers |
+| `types.ts` | `JobType`, `parseJobType` |
 | `registry.ts` | Load chat / heavy pools from env |
 | `health.ts` | Ping `/v1/models`, 30 s cache |
 | `resolve-fleet.ts` | Pick healthy host (round-robin) |
@@ -148,11 +147,11 @@ VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 {
   "messages": [ ... ],
   "model": "vllm:qwen2.5-32b-instruct",
-  "routingContext": { "feature": "tutor" }
+  "routingContext": { "jobType": "interactive" }
 }
 ```
 
-Omit `routingContext` → `feature: chat` → `JobType: interactive`.
+Omit `routingContext` → `JobType: interactive`.
 
 ---
 
