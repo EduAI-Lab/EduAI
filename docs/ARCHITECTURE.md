@@ -1,6 +1,6 @@
 # EduAI — Architecture guide
 
-**Last updated:** 2026-07-10
+**Last updated:** 2026-07-15
 
 This document explains **what runs inside this repo (Core)** versus **what lives outside it (hosted services & integrations)**, how **AI providers and keys** work (including `OPENROUTER_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` for embeddings), and how the **codebase fits together**. Use it as the single place to orient yourself; export to PDF when you want a printable copy (see [Saving as PDF](#10-saving-as-pdf)).
 
@@ -296,21 +296,36 @@ flowchart LR
 
 ## 7. Codebase walkthrough (where to look)
 
+This section is the **source of truth for repository layout**. The root [`README.md`](../README.md) keeps only a skim-level tree and links here for detail.
+
 Monorepo layout (Turborepo, npm workspaces):
 
-```
-apps/
-  core/                        → EduAI (this section's walkthrough below)
-  extensions/
-    ai-tutor/                  → React Router v7 SPA (app/) + Express server (server/), own DB
-    question-maker/app/
-      backend/                 → Express/Sequelize API, own DB
-      frontend/                → Vite/React authoring UI
-packages/
-  types/                       → @eduai/types — shared UserRole, EnrollmentRole, canvas material types
+```text
+EduAI/
+├── apps/
+│   ├── core/                        → EduAI Core (walkthrough below): RAG chat, auth, central API + Postgres
+│   └── extensions/
+│       ├── ai-tutor/                → React Router v7 SPA (app/) + Express/Prisma server (server/), own DB
+│       │                              Session validated via Core; service key for server-to-server
+│       └── question-maker/          → Question bank / assessments
+│           └── app/
+│               ├── backend/         → Express/Sequelize API, own DB
+│               └── frontend/        → Vite/React authoring UI
+├── packages/
+│   ├── ui/                          → @eduai/ui — shared shadcn + design-system components
+│   └── types/                       → @eduai/types — UserRole, EnrollmentRole, canvas material types
+├── eduai-design-system/             → Tokens, guidelines, Figma kit exports
+├── infra/
+│   └── cron/                        → Backup / data-lifecycle scripts + cron.env
+├── scripts/                         → Repo-level setup and audit utilities (e.g. mobile-audit)
+├── docs/                            → Architecture and planning (this file, rag-ai/, implementations/, …)
+├── turbo.json                       → Turborepo task pipeline
+├── docker-compose.dev.yml           → Dev-only Postgres containers (apps run on the host)
+├── CHANGELOG.md                     → Unified changelog across apps
+└── TESTS.md                         → Canonical test inventory across apps
 ```
 
-Core's high-level layout:
+Core's high-level layout (`apps/core`):
 
 ```
 app/
