@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import {
@@ -10,6 +10,16 @@ import {
   prisma,
 } from '../helpers.js';
 
+const listEduAiCourseTopics = vi.fn();
+
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    listEduAiCourseTopics: (...args) => listEduAiCourseTopics(...args),
+  };
+});
+
 describe('Topics routes', () => {
   let prof;
   let seed;
@@ -17,6 +27,7 @@ describe('Topics routes', () => {
 
   beforeEach(async () => {
     await truncateAll();
+    listEduAiCourseTopics.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     app = await createApp({ mockUser: prof });
@@ -60,6 +71,42 @@ describe('Topics routes', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
+    });
+
+    it('auto-pulls the latest topics from Core for an imported course (#1031)', async () => {
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { externalId: 'ext-123', externalSource: 'eduai' },
+      });
+      listEduAiCourseTopics.mockResolvedValue([{ id: 'core-1', name: 'Core-only Topic' }]);
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(listEduAiCourseTopics).toHaveBeenCalledWith('ext-123');
+      const names = res.body.map((t) => t.name);
+      expect(names).toContain('Test Topic');
+      expect(names).toContain('Core-only Topic');
+    });
+
+    it('does not call Core for a locally-authored course', async () => {
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(listEduAiCourseTopics).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the local mirror when Core is unreachable', async () => {
+      await prisma.courseOffering.update({
+        where: { id: seed.course.id },
+        data: { externalId: 'ext-123', externalSource: 'eduai' },
+      });
+      listEduAiCourseTopics.mockRejectedValue(new Error('Core unavailable'));
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject([{ id: seed.topic.id, name: 'Test Topic' }]);
     });
   });
 
