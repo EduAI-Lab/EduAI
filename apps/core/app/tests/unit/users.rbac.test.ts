@@ -47,6 +47,18 @@ function makePatch(userId: string, body: unknown) {
   } as any;
 }
 
+function makePost(body: unknown) {
+  return {
+    request: new Request("http://localhost/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+    params: { "*": undefined },
+    context: {} as never,
+  } as any;
+}
+
 function mockUser(user: { id: string; role: string } | null) {
   vi.mocked(auth.api.getSession).mockResolvedValue((user ? { user } : null) as never);
 }
@@ -58,7 +70,67 @@ beforeEach(() => {
     id: "target",
     _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
+  vi.mocked(prisma.user.create).mockResolvedValue({
+    id: "created-user",
+    name: "Created User",
+    email: "created@example.com",
+    role: "STUDENT",
+    _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
+  } as never);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
+});
+
+describe("POST /api/users — authorizedUnits assignment (#967)", () => {
+  it("persists validated units for a UNIT_ADMIN", async () => {
+    const res = await action(
+      makePost({
+        name: "Unit Admin",
+        email: "unit-admin@example.com",
+        role: "UNIT_ADMIN",
+        authorizedUnits: ["COSC", "MATH"],
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    expect(prisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: "UNIT_ADMIN",
+          authorizedUnits: ["COSC", "MATH"],
+        }),
+      }),
+    );
+  });
+
+  it("rejects a non-unit role with a non-empty unit assignment", async () => {
+    const res = await action(
+      makePost({
+        name: "Student User",
+        email: "student@example.com",
+        role: "STUDENT",
+        authorizedUnits: ["COSC"],
+      }),
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "ROLE_MISMATCH" });
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("preserves the duplicate-email guard", async () => {
+    vi.mocked(prisma.user.create).mockRejectedValueOnce({ code: "P2002" });
+
+    const res = await action(
+      makePost({
+        name: "Duplicate User",
+        email: "duplicate@example.com",
+        role: "STUDENT",
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "EMAIL_ALREADY_EXISTS" });
+  });
 });
 
 describe("PATCH /api/users/:id — self guards (#297)", () => {
@@ -86,12 +158,13 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
   });
 
   it("allows an admin role-change on ANOTHER user", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
     const res = await action(makePatch("other-user", { role: "INSTRUCTOR" }));
     expect(res.status).toBe(200);
     expect(prisma.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "other-user" },
-        data: { role: "INSTRUCTOR" },
+        data: { role: "INSTRUCTOR", authorizedUnits: [] },
       }),
     );
   });
