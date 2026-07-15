@@ -13,6 +13,7 @@ import {
 import {
   featureToJobType,
   parseWorkloadFeature,
+  resolveJobType,
 } from "~/lib/ai/routing/fleet/types";
 
 describe("parseWorkloadFeature", () => {
@@ -23,6 +24,7 @@ describe("parseWorkloadFeature", () => {
   it("parses known feature values", () => {
     expect(parseWorkloadFeature({ feature: "tutor" })).toBe("tutor");
     expect(parseWorkloadFeature({ feature: "chat" })).toBe("chat");
+    expect(parseWorkloadFeature({ feature: "background" })).toBe("background");
   });
 
   it("falls back to chat for unknown values", () => {
@@ -31,10 +33,26 @@ describe("parseWorkloadFeature", () => {
   });
 });
 
-describe("featureToJobType", () => {
-  it("maps known features to interactive jobs", () => {
+describe("featureToJobType / resolveJobType", () => {
+  it("maps chat/tutor to interactive and background to background", () => {
     expect(featureToJobType("chat")).toBe("interactive");
     expect(featureToJobType("tutor")).toBe("interactive");
+    expect(featureToJobType("background")).toBe("background");
+  });
+
+  it("prefers explicit validated jobType over feature", () => {
+    expect(resolveJobType({ feature: "chat", jobType: "background" })).toBe("background");
+    expect(resolveJobType({ feature: "background", jobType: "interactive" })).toBe(
+      "interactive",
+    );
+  });
+
+  it("maps feature: background when jobType is omitted (#878)", () => {
+    expect(resolveJobType({ feature: "background" })).toBe("background");
+  });
+
+  it("ignores invalid jobType and falls back to feature mapping", () => {
+    expect(resolveJobType({ feature: "tutor", jobType: "heavy" })).toBe("interactive");
   });
 });
 
@@ -134,6 +152,22 @@ describe("resolveFleetHost", () => {
       new Response(JSON.stringify({ data: [{ id: "qwen2.5-32b-instruct" }] }), {
         status: 200,
       }),
+    );
+
+    await expect(
+      resolveFleetHost({
+        jobType: "interactive",
+        resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      }),
+    ).rejects.toBeInstanceOf(FleetUnavailableError);
+  });
+
+  it("throws when /v1/models returns an empty list (no configured-model fallback)", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
     );
 
     await expect(

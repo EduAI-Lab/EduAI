@@ -11,6 +11,11 @@ function vllmAuthHeader(): string {
   return process.env.VLLM_API_KEY?.trim() || "vllm-local";
 }
 
+/**
+ * Parse `/v1/models` payload.
+ * - `null`: response shape unusable → caller may fall back to configured defaults
+ * - `[]`: endpoint is healthy but hosts no models → do not fall back
+ */
 function parseModelIds(payload: unknown): string[] | null {
   if (!payload || typeof payload !== "object") return null;
   const data = payload as { data?: unknown };
@@ -21,7 +26,7 @@ function parseModelIds(payload: unknown): string[] | null {
       ids.push((entry as { id: string }).id);
     }
   }
-  return ids.length > 0 ? ids : null;
+  return ids;
 }
 
 /** Clear health cache (unit tests). */
@@ -78,7 +83,8 @@ export function serverHostsModel(
   configuredModels: string[],
 ): boolean {
   const needle = modelId.toLowerCase();
-  if (healthModelIds && healthModelIds.length > 0) {
+  // Explicit empty list means the host reported zero models — do not use defaults.
+  if (healthModelIds !== null) {
     return healthModelIds.some((id) => id.toLowerCase() === needle);
   }
   return configuredModels.some((id) => id.toLowerCase() === needle);

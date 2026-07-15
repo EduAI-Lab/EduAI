@@ -22,7 +22,7 @@ import {
   resolveFleetHost,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
-import { featureToJobType, parseWorkloadFeature } from "~/lib/ai/routing/fleet/types";
+import { parseWorkloadFeature, resolveJobType } from "~/lib/ai/routing/fleet/types";
 import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
@@ -411,7 +411,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const workloadFeature = parseWorkloadFeature(body.routingContext);
-    const jobType = featureToJobType(workloadFeature);
+    const jobType = resolveJobType(body.routingContext);
 
     chatApiTrace("request received", {
       chatMode,
@@ -796,6 +796,15 @@ export async function action({ request }: ActionFunctionArgs) {
           jobType,
           resolvedModelId: model,
         });
+        if (fleetPick) {
+          chatApiTrace("fleet host selected", {
+            fleetServerId: fleetPick.serverId,
+            fleetReason: fleetPick.reason,
+            jobType,
+            feature: workloadFeature,
+            model,
+          });
+        }
       } catch (err) {
         if (err instanceof FleetUnavailableError) {
           return new Response(

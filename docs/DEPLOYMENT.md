@@ -196,7 +196,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat request
 | Variable | Purpose |
 | -------- | ------- |
 | `VLLM_FLEET_CHAT_URLS` | Comma-separated chat/interactive pool (e.g. cmps01 + cmps02 `:8001`) |
-| `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.feature: question-maker`); falls back to chat pool when unset |
+| `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.feature: background` or `jobType: background`); falls back to chat pool when unset |
 | `VLLM_FLEET_DEFAULT_MODELS` | Expected model ids for health checks and smoke script (default: `qwen2.5-7b-instruct,qwen2.5-32b-instruct`) |
 | `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
 
