@@ -10,9 +10,11 @@ export function isLessonRoute(pathname: string) {
   return /^\/student\/lesson\/\d+$/.test(pathname);
 }
 
-/** Student routes, plus TA on the instructor shell (TAs can also use student flows). */
+/** STUDENT/TA on student routes, plus TA on the instructor shell (TAs can also use student flows). */
 export function canAccessStudentTour(role: Role | undefined, pathname: string) {
-  if (pathname.startsWith('/student')) return true;
+  if (pathname.startsWith('/student')) {
+    return role === 'STUDENT' || role === 'TA';
+  }
   if (role === 'TA' && pathname.startsWith('/instructor')) return true;
   return false;
 }

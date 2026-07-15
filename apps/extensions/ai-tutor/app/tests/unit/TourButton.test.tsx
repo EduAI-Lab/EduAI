@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { SidebarProvider } from '@eduai/ui';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '~/hooks/useLocalUser';
 import TourButton from '~/components/TourButton';
 
@@ -29,6 +29,10 @@ function renderAt(path: string) {
 }
 
 describe('TourButton', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders an accessible, labelled tour control on student routes', () => {
     isRunning = false;
     mockUser = { id: '1', name: 'Student', role: 'STUDENT' };

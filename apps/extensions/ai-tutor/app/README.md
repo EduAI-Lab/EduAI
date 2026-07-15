@@ -34,7 +34,7 @@ app/
     EditActivityPanel.tsx           # Activity editing form
     AddCourseTopicsButton.tsx       # Inline topic creation
     TopicSyncMappingDialog.tsx      # Topic remapping dialog for EduAI sync
-    TourButton.tsx                  # "Take Tour" button (student routes only)
+    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA; hidden for instructors/admins)
     TourProvider.tsx                # Guided tour state manager (driver.js)
     ai-elements/                    # AI chat UI primitives
       conversation.tsx              #   Chat scroll container (use-stick-to-bottom)
