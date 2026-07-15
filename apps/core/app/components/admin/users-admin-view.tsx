@@ -9,6 +9,7 @@ import type {
   PlatformUser,
   UpdateUserInput,
 } from "~/hooks/api/types";
+import { useCourses } from "~/hooks/api/use-courses";
 
 export type UsersAdminViewProps = {
   users: PlatformUser[];
@@ -34,6 +35,7 @@ export function UsersAdminView({
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
+  const { courses, loading: coursesLoading } = useCourses();
 
   const handleUserDialogOpenChange = (open: boolean) => {
     setUserDialogOpen(open);
@@ -146,6 +148,8 @@ export function UsersAdminView({
         open={userDialogOpen}
         onOpenChange={handleUserDialogOpenChange}
         user={editingUser}
+        courses={courses}
+        coursesLoading={coursesLoading}
         onSubmit={handleSubmit}
       />
 

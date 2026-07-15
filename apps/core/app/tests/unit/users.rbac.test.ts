@@ -15,8 +15,17 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
+    $transaction: vi.fn(),
     user: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-    enrollment: { count: vi.fn() },
+    course: { findMany: vi.fn() },
+    enrollment: {
+      count: vi.fn(),
+      findMany: vi.fn(),
+      groupBy: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
   },
 }));
 
@@ -29,7 +38,7 @@ vi.mock("~/lib/disciplines/server", () => {
   };
 });
 
-import { action } from "~/routes/api/users.$";
+import { action, loader } from "~/routes/api/users.$";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 
@@ -59,6 +68,14 @@ function makePost(body: unknown) {
   } as any;
 }
 
+function makeGet() {
+  return {
+    request: new Request("http://localhost/api/users", { method: "GET" }),
+    params: { "*": undefined },
+    context: {} as never,
+  } as any;
+}
+
 function mockUser(user: { id: string; role: string } | null) {
   vi.mocked(auth.api.getSession).mockResolvedValue((user ? { user } : null) as never);
 }
@@ -68,6 +85,7 @@ beforeEach(() => {
   mockUser(ADMIN);
   vi.mocked(prisma.user.update).mockResolvedValue({
     id: "target",
+    enrollments: [],
     _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
   vi.mocked(prisma.user.create).mockResolvedValue({
@@ -78,6 +96,43 @@ beforeEach(() => {
     _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
+  vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.enrollment.groupBy).mockResolvedValue([] as never);
+  vi.mocked(prisma.course.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => callback(prisma));
+});
+
+describe("GET /api/users — TA course assignments (#967)", () => {
+  it("returns active TA course ids and retains assistedCourses counts", async () => {
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      {
+        id: "student-1",
+        email: "student@example.com",
+        name: "Student User",
+        role: "STUDENT",
+        authorizedUnits: [],
+        _count: { enrollments: 3, taughtCourses: 0, aiInteractions: 2 },
+      },
+    ] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValue([
+      { userId: "student-1", courseId: "course-1" },
+      { userId: "student-1", courseId: "course-2" },
+    ] as never);
+    vi.mocked(prisma.enrollment.groupBy).mockResolvedValue([
+      { userId: "student-1", _count: { _all: 2 } },
+    ] as never);
+
+    const res = await loader(makeGet());
+    const users = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(users[0]).toEqual(
+      expect.objectContaining({
+        taCourseIds: ["course-1", "course-2"],
+        _count: expect.objectContaining({ assistedCourses: 2 }),
+      }),
+    );
+  });
 });
 
 describe("POST /api/users — authorizedUnits assignment (#967)", () => {
@@ -266,5 +321,67 @@ describe("PATCH /api/users/:id — authorizedUnits assignment (#297)", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     const res = await action(makePatch("ghost", { authorizedUnits: ["COSC"] }));
     expect(res.status).toBe(404);
+  });
+});
+
+describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
+  it("assigns selected courses to an effective STUDENT in the user update transaction", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
+    vi.mocked(prisma.enrollment.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.enrollment.create).toHaveBeenCalledWith({
+      data: { courseId: "course-1", userId: "student-1", role: "TA", isActive: true },
+    });
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "student-1" } }),
+    );
+  });
+
+  it("rejects non-empty TA courses when the effective platform role is not STUDENT", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "INSTRUCTOR" } as never);
+
+    const res = await action(makePatch("instructor-1", { taCourseIds: ["course-1"] }));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: "TA_ROLE_MISMATCH" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("clears active TA assignments when changing away from STUDENT", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
+
+    const res = await action(makePatch("student-1", { role: "INSTRUCTOR" }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.enrollment.updateMany).toHaveBeenCalledWith({
+      where: { userId: "student-1", role: "TA", isActive: true },
+      data: { isActive: false },
+    });
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ role: "INSTRUCTOR" }),
+      }),
+    );
+  });
+
+  it("rejects assigning a course with an existing INSTRUCTOR enrollment", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ role: "STUDENT" } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValue([{ id: "course-1" }] as never);
+    vi.mocked(prisma.enrollment.findMany).mockResolvedValueOnce([
+      { id: "enrollment-1", courseId: "course-1", role: "INSTRUCTOR", isActive: true },
+    ] as never);
+
+    const res = await action(makePatch("student-1", { taCourseIds: ["course-1"] }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

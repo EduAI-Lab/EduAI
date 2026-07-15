@@ -1,3 +1,4 @@
+import type { Prisma, UserRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { AddTASchema, RemoveTASchema, type AddTAInput, type RemoveTAInput } from "./schemas";
 
@@ -9,6 +10,102 @@ function shapeTA(enrollment: {
   user: { id: string; name: string; email: string };
 }) {
   return { id: enrollment.id, user: enrollment.user };
+}
+
+type ExistingCourseEnrollment = {
+  id: string;
+  courseId: string;
+  role: "STUDENT" | "TA" | "INSTRUCTOR";
+  isActive: boolean;
+};
+
+function isInstructorEnrollment(
+  enrollment: Pick<ExistingCourseEnrollment, "role"> | null | undefined,
+) {
+  return enrollment?.role === "INSTRUCTOR";
+}
+
+/**
+ * Reconcile a user's active TA enrollments to an exact desired course set.
+ *
+ * The caller supplies a transaction client so a platform-role update and its
+ * enrollment changes commit or roll back together. All validation completes
+ * before the first write, including course existence and INSTRUCTOR conflicts.
+ */
+export async function reconcileUserTACourses(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  effectiveRole: UserRole,
+  requestedCourseIds: string[],
+) {
+  const taCourseIds = [...new Set(requestedCourseIds)];
+
+  if (effectiveRole !== "STUDENT") {
+    if (taCourseIds.length > 0) {
+      return { error: "TA_ROLE_MISMATCH" } as const;
+    }
+
+    await tx.enrollment.updateMany({
+      where: { userId, role: "TA", isActive: true },
+      data: { isActive: false },
+    });
+    return { ok: true } as const;
+  }
+
+  if (taCourseIds.length === 0) {
+    await tx.enrollment.updateMany({
+      where: { userId, role: "TA", isActive: true },
+      data: { isActive: false },
+    });
+    return { ok: true } as const;
+  }
+
+  const courses = await tx.course.findMany({
+    where: { id: { in: taCourseIds }, deletedAt: null },
+    select: { id: true },
+  });
+  if (courses.length !== taCourseIds.length) {
+    return { error: "TA_COURSE_NOT_FOUND" } as const;
+  }
+
+  const existingEnrollments = await tx.enrollment.findMany({
+    where: { userId, courseId: { in: taCourseIds } },
+    select: { id: true, courseId: true, role: true, isActive: true },
+  });
+
+  if (existingEnrollments.some(isInstructorEnrollment)) {
+    return { error: "TA_INSTRUCTOR_ENROLLMENT_CONFLICT" } as const;
+  }
+
+  const enrollmentByCourseId = new Map(
+    existingEnrollments.map((enrollment) => [enrollment.courseId, enrollment]),
+  );
+
+  for (const courseId of taCourseIds) {
+    const existing = enrollmentByCourseId.get(courseId);
+    if (!existing) {
+      await tx.enrollment.create({
+        data: { courseId, userId, role: "TA", isActive: true },
+      });
+    } else if (existing.role !== "TA" || !existing.isActive) {
+      await tx.enrollment.update({
+        where: { id: existing.id },
+        data: { role: "TA", isActive: true },
+      });
+    }
+  }
+
+  await tx.enrollment.updateMany({
+    where: {
+      userId,
+      role: "TA",
+      isActive: true,
+      courseId: { notIn: taCourseIds },
+    },
+    data: { isActive: false },
+  });
+
+  return { ok: true } as const;
 }
 
 export async function getCourseTA(courseId: string) {
@@ -49,7 +146,7 @@ export async function addCourseTA(courseId: string, payload: AddTAInput) {
   // Never silently overwrite an existing INSTRUCTOR enrollment with a TA role —
   // the upsert's `update` branch would otherwise demote a course instructor.
   // (A plain STUDENT enrollment may still be promoted to TA.)
-  if (existing?.role === "INSTRUCTOR") {
+  if (isInstructorEnrollment(existing)) {
     return {
       error: "User is an instructor for this course and cannot be made a TA",
     } as const;

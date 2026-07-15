@@ -11,6 +11,7 @@ const baseUser: User = {
   isActive: true,
   emailVerified: true,
   authorizedUnits: [] as string[],
+  taCourseIds: [],
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   _count: {
@@ -20,6 +21,23 @@ const baseUser: User = {
     aiInteractions: 10,
   },
 };
+
+const courses = [
+  {
+    id: "course-1",
+    code: "COSC 111",
+    name: "Computer Programming I",
+    term: "Fall",
+    year: 2026,
+  },
+  {
+    id: "course-2",
+    code: "MATH 100",
+    name: "Differential Calculus",
+    term: "Winter",
+    year: 2027,
+  },
+];
 
 const otherUser: User = {
   ...baseUser,
@@ -85,6 +103,48 @@ describe("UserFormDialog — conditional fields", () => {
       <UserFormDialog open={true} onOpenChange={vi.fn()} user={baseUser} onSubmit={vi.fn()} />
     );
     expect(screen.getByText("Email Verified")).toBeInTheDocument();
+  });
+
+  it("shows TA courses only for an existing STUDENT and preselects active assignments", async () => {
+    const { unmount } = render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={{ ...baseUser, taCourseIds: ["course-1"] }}
+        courses={courses}
+        onSubmit={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("TA Courses")).toBeInTheDocument();
+    expect(screen.getByText("COSC 111")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("COSC 111").closest("button")!);
+    expect(
+      await screen.findByText("Computer Programming I · Fall 2026"),
+    ).toBeVisible();
+
+    unmount();
+    const { unmount: unmountInstructor } = render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={{ ...baseUser, role: "INSTRUCTOR" }}
+        courses={courses}
+        onSubmit={vi.fn()}
+      />
+    );
+    expect(screen.queryByText("TA Courses")).not.toBeInTheDocument();
+
+    unmountInstructor();
+    render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        courses={courses}
+        onSubmit={vi.fn()}
+      />
+    );
+    expect(screen.queryByText("TA Courses")).not.toBeInTheDocument();
   });
 });
 
@@ -160,6 +220,37 @@ describe("UserFormDialog — form actions", () => {
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ role: "UNIT_ADMIN", authorizedUnits: ["COSC"] }),
+      ),
+    );
+  });
+
+  it("assigns TA courses through the multi-select label dropdown", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <UserFormDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        user={{ ...baseUser, taCourseIds: ["course-1"] }}
+        courses={courses}
+        onSubmit={onSubmit}
+      />
+    );
+
+    const comboboxes = screen.getAllByRole("combobox");
+    fireEvent.click(comboboxes[comboboxes.length - 1]!);
+    fireEvent.click(await screen.findByText("MATH 100"));
+    const existingCourseOption = screen
+      .getAllByText("COSC 111")
+      .find((element) => element.closest("[cmdk-item]"));
+    fireEvent.click(existingCourseOption!);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /update user/i }));
+    });
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "STUDENT", taCourseIds: ["course-2"] }),
       ),
     );
   });
