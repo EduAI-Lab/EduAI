@@ -1,17 +1,36 @@
-import type { NavItem, NavUser } from '~/lib/rbac/types'
+import type { NavItem, NavGroupItem, NavUser } from '~/lib/rbac/types'
+import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
+import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
-  { key: 'chat', title: 'Course Chat', url: '/chat' },
 ]
+
+const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Course Chat', url: '/chat' }
+
+const QM_NAV_ITEM: NavItem = {
+  key: 'question-maker',
+  title: 'Question Maker',
+  url: getQuestionMakerUrl(),
+  external: true,
+}
+
+const AI_TUTOR_NAV_ITEM: NavItem = {
+  key: 'ai-tutor',
+  title: 'AI Tutor',
+  url: getAiTutorAppUrl(),
+  external: true,
+}
+
+const QM_NAV_ROLES = new Set(['INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN'])
 
 const ADMIN_NAV: NavItem[] = [
   { key: 'admin-users', title: 'User Management', url: '/admin/users' },
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
-  { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
+  { key: 'admin-settings', title: 'Settings', url: '/admin/settings' },
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
   { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
 ]
@@ -36,12 +55,15 @@ export type NavOptions = {
 }
 
 /** Main sidebar links per rbac-matrix §4, §10–13 shell rules. */
-export function getNavForUser(user: NavUser, opts: NavOptions = {}): NavItem[] {
+export function getNavForUser(user: NavUser, opts: NavOptions = {}): (NavItem | NavGroupItem)[] {
   const role = user.role ?? 'STUDENT'
   const nav = [...CORE_NAV]
 
   if (role === 'ADMIN') {
-    return [...nav, ...ADMIN_NAV]
+    return [
+      ...nav,
+      { key: 'admin-group' as const, title: 'Administration', children: ADMIN_NAV },
+    ]
   }
 
   if (role === 'UNIT_ADMIN') {
@@ -73,11 +95,14 @@ export function usesGlobalChat(user: NavUser): boolean {
  */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
-  const items: NavItem[] = []
+  const items: NavItem[] = [CHATBOT_NAV_ITEM]
 
   if (role === 'ADMIN') {
     items.push(...ADMIN_SECONDARY_NAV)
   }
+
+  // In-app user guide — available to everyone (issue #764).
+  items.push({ key: 'help', title: 'Help & guide', url: '/help' })
 
   return items
 }

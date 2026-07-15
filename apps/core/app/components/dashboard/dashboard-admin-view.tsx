@@ -10,6 +10,7 @@ import { useUsers } from "~/hooks/api/use-users";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
+import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
 
 const QUICK_ACTIONS: DashboardQuickAction[] = [
@@ -17,28 +18,24 @@ const QUICK_ACTIONS: DashboardQuickAction[] = [
     label: "User management",
     description: "Create, edit, and deactivate platform accounts.",
     href: "/admin/users",
-    color: "var(--color-course-1)",
     icon: <IconUsers size={16} stroke={1.75} />,
   },
   {
     label: "AI management",
     description: "Configure providers and models for the platform.",
     href: "/admin/ai-models",
-    color: "var(--color-course-3)",
     icon: <IconBrain size={16} stroke={1.75} />,
   },
   {
     label: "Courses",
     description: "View and manage courses across the platform.",
     href: "/courses",
-    color: "var(--color-course-2)",
     icon: <IconBook2 size={16} stroke={1.75} />,
   },
   {
     label: "Bug reports",
     description: "Review and triage reports from all EduAI apps.",
     href: "/admin/bug-reports",
-    color: "var(--color-course-4)",
     icon: <IconBug size={16} stroke={1.75} />,
   },
 ];
@@ -68,6 +65,7 @@ export function DashboardAdminView() {
       leftPanelTitle="Quick actions"
       recentChats={chats}
       recentChatsLoading={chatsLoading}
+      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
     />
   );
 }

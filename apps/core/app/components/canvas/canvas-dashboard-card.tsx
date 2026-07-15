@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { IconLoader, IconRefresh } from "@tabler/icons-react";
 
-import { CanvasCourseSyncDialog } from "~/components/canvas/canvas-course-sync-dialog";
+import { CanvasFetchDialog } from "~/components/canvas/canvas-fetch-dialog";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { getCanvasIntegration, type CanvasIntegrationPublic } from "~/lib/canvas/client";
@@ -18,7 +18,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
   const [integration, setIntegration] = useState<CanvasIntegrationPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
 
   useEffect(() => {
     // Policy-off: the Canvas API 403s ("Forbidden: instructors only"). Skip the
@@ -55,10 +55,10 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Canvas course sync</CardTitle>
+          <CardTitle>Canvas courses</CardTitle>
           <CardDescription>
-            Sync your Canvas courses and rosters into EduAI. Connect your Canvas token in Settings
-            first, then choose which courses to sync here.
+            View courses you have fetched from Canvas into EduAI. Connect your Canvas token in
+            Settings first, then fetch courses here.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -76,10 +76,10 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
               <DisabledTooltip disabled={disabled}>
                 <Button
                   type="button"
-                  onClick={disabled ? undefined : () => setSyncDialogOpen(true)}
+                  onClick={disabled ? undefined : () => setFetchDialogOpen(true)}
                 >
                   <IconRefresh className="mr-2 h-4 w-4" />
-                  Sync to Canvas
+                  Fetch from Canvas
                 </Button>
               </DisabledTooltip>
             </>
@@ -87,7 +87,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
             <>
               <p className="text-sm text-muted-foreground">
                 Canvas is not connected yet. Add your personal access token in Settings before
-                syncing courses.
+                fetching courses.
               </p>
               <DisabledTooltip disabled={disabled}>
                 <Button asChild variant="outline">
@@ -101,7 +101,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
         </CardContent>
       </Card>
 
-      <CanvasCourseSyncDialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen} />
+      <CanvasFetchDialog open={fetchDialogOpen} onOpenChange={setFetchDialogOpen} />
     </>
   );
 }

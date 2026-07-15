@@ -1,12 +1,25 @@
 import type { CanvasIntegration } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
-import { decrypt, encrypt, isEncrypted } from "~/lib/canvas/encryption";
+import {
+  CanvasCredentialDecryptError,
+  decrypt,
+  encrypt,
+  isEncrypted,
+} from "~/lib/canvas/encryption";
 import type { CanvasIntegrationPublic, ConnectCanvasInput } from "~/lib/canvas/schemas";
 import { parseAndValidateCanvasUrl, verifyCanvasCredentials } from "~/lib/canvas/client.server";
 
 const TEST_MODE_API_KEY_PLACEHOLDER = "test-key";
 
 export { canManageCanvasIntegration } from "~/lib/canvas/guards.server";
+
+/** Raised when stored Canvas credentials cannot be decrypted (e.g. after key rotation). */
+export class CanvasStoredCredentialsError extends Error {
+  constructor() {
+    super("Stored Canvas credentials could not be decrypted. Reconnect Canvas in Settings.");
+    this.name = "CanvasStoredCredentialsError";
+  }
+}
 
 export function toCanvasIntegrationPublic(
   integration: Pick<CanvasIntegration, "canvasUrl" | "isTestMode">,
@@ -46,11 +59,21 @@ export async function getCanvasIntegrationWithDecryptedKey(userId: string) {
     return null;
   }
 
+  let apiKey: string;
+  try {
+    apiKey = decrypt(integration.apiKey);
+  } catch (error) {
+    if (error instanceof CanvasCredentialDecryptError) {
+      throw new CanvasStoredCredentialsError();
+    }
+    throw error;
+  }
+
   return {
     ...toCanvasIntegrationPublic(integration),
     id: integration.id,
     userId: integration.userId,
-    apiKey: decrypt(integration.apiKey),
+    apiKey,
   };
 }
 

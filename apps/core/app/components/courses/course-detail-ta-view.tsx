@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react'
 import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
+import { termLabel } from '@eduai/ui'
 import { Input } from '@eduai/ui'
 import { Textarea } from '@eduai/ui'
 import {
@@ -354,6 +355,18 @@ export function CourseDetailTaView({
         </Dialog>
       )}
 
+      {/* B2: Topics in hero, badges top-right */}
+      <CourseHeroCard
+        code={course.code}
+        term={course.term}
+        year={course.year}
+        name={course.name}
+        description={course.description}
+        accentColor={resolvePaletteAccent(course.id)}
+        topRightBadges={topRightBadges}
+        topics={topics.map((t) => t.name)}
+      />
+
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -364,18 +377,6 @@ export function CourseDetailTaView({
 
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* B2: Topics in hero, badges top-right */}
-          <CourseHeroCard
-            code={course.code}
-            term={course.term}
-            year={course.year}
-            name={course.name}
-            description={course.description}
-            accentColor={resolvePaletteAccent(course.id)}
-            topRightBadges={topRightBadges}
-            topics={topics.map((t) => t.name)}
-          />
-
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             {/* B3: Enriched info card */}
             <Card>
@@ -388,11 +389,11 @@ export function CourseDetailTaView({
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Term</p>
-                    <p className="text-sm text-foreground">{course.term} {course.year}</p>
+                    <p className="text-sm text-foreground">{termLabel(course.term, course.year)}</p>
                   </div>
                   {course.department && (
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Department</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Course Code</p>
                       <p className="text-sm text-foreground">{course.department}</p>
                     </div>
                   )}
