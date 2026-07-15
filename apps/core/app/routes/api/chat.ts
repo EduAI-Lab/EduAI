@@ -12,6 +12,7 @@ import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
   estimateToolDefinitionTokens,
+  estimateAdminToolStepReserve,
   getChatModelCapabilities,
   promptFitsContextWindow,
   resolveActiveChatModel,
@@ -929,28 +930,30 @@ export async function action({ request }: ActionFunctionArgs) {
         activeChatModel?.maxTokens,
         parsedModel.providerId,
       );
-      // 16k windows need a smaller completion ask — tool schemas alone often
-      // consume ~8–10k tokens before any history.
+      // 16k windows: tool schemas + multi-step list payloads leave little room.
+      // Cap completion aggressively; mid-turn tool results are reserved separately.
       const desiredMaxOutput = Math.min(
         resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
-        contextWindow <= 16_384 ? 1024 : Number.POSITIVE_INFINITY,
+        contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
       // Leave room for the ~17 admin tool schemas on small context models.
       const adminSessionBudget =
         contextWindow <= 16_384
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.18)
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
           : contextWindow <= 32_768
-            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.3)
+            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
             : undefined;
 
+      const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
+
       modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, 3000),
+        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
         adminSessionBudget
           ? {
               charBudget: adminSessionBudget,
-              recentCount: 4,
-              digestMaxChars: 3000,
+              recentCount: 3,
+              digestMaxChars: toolResultCapChars,
             }
           : undefined,
       );
@@ -983,6 +986,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
+      const adminMaxSteps =
+        contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
+
       // Provisional maxTokens — final cap runs after composeSecurityPrompt below
       // so the security block and tool schemas are included in the budget.
       streamConfig = {
@@ -990,7 +996,7 @@ export async function action({ request }: ActionFunctionArgs) {
         messages: modelMessages,
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
-        maxSteps: TOOL_MAX_STEPS,
+        maxSteps: adminMaxSteps,
         tools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
@@ -1161,8 +1167,11 @@ ${buildEmptyCourseRagBlock()}`;
           ? Object.keys(streamConfig.tools).length
           : 0;
       const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
+      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
       const estimatedInputTokens =
-        estimateTokensFromChars(systemChars + messageChars) + toolDefinitionTokens;
+        estimateTokensFromChars(systemChars + messageChars) +
+        toolDefinitionTokens +
+        toolStepReserve;
 
       streamConfig.maxTokens = capMaxOutputTokensForPrompt({
         contextWindow: adminContextWindow,
@@ -1170,6 +1179,7 @@ ${buildEmptyCourseRagBlock()}`;
         desiredMaxOutput: adminDesiredMaxOutput,
         toolDefinitionTokens: 0,
         safetyBuffer: 512,
+        minOutput: 256,
       });
 
       chatApiTrace("max output tokens capped", {
@@ -1177,6 +1187,7 @@ ${buildEmptyCourseRagBlock()}`;
         estimatedInputTokens,
         toolCount,
         toolDefinitionTokens,
+        toolStepReserve,
         desiredMaxOutput: adminDesiredMaxOutput,
         effectiveMaxTokens: streamConfig.maxTokens,
         systemChars,

@@ -103,6 +103,21 @@ export function estimateToolDefinitionTokens(toolCount: number): number {
   return 256 + Math.floor(toolCount) * 420;
 }
 
+/**
+ * Reserve headroom for mid-turn tool results on multi-step admin calls
+ * (e.g. deleteUser then listUsers). Pre-flight estimates only see the user
+ * message — not the JSON payloads injected on later streamText steps.
+ */
+export function estimateAdminToolStepReserve(contextWindow: number): number {
+  if (contextWindow <= 16_384) {
+    return 3_500;
+  }
+  if (contextWindow <= 32_768) {
+    return 2_000;
+  }
+  return 0;
+}
+
 /** Fit completion tokens inside what remains after the prompt (+ safety buffer). */
 export function capMaxOutputTokensForPrompt(params: {
   contextWindow: number;

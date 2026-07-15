@@ -88,6 +88,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         "List users enrolled in a course (roster). Requires courseId or courseCode. Filter by enrolledAt window for time-range questions.",
       parameters: z.object({
         ...courseScope,
+        limit: z.number().int().min(1).max(50).optional(),
         enrolledSince: z
           .string()
           .optional()
@@ -97,7 +98,6 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           .optional()
           .describe("ISO date — include enrollments on or before this time"),
         isActive: z.boolean().optional().describe("Filter by active enrollment status"),
-        limit: z.number().int().min(1).max(200).optional(),
       }),
       execute: async ({
         courseId,
@@ -153,9 +153,9 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     listUsers: tool({
       description:
-        "List all platform users (ADMIN only) — not filtered by course. For users in a specific course, use listCourseEnrollments instead.",
+        "List platform users (ADMIN only) — not filtered by course. Returns up to 25 by default (max 50). For users in a specific course, use listCourseEnrollments instead.",
       parameters: z.object({
-        limit: z.number().int().min(1).max(200).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async ({ limit }) => listAdminUsers(user, limit),
     }),
@@ -165,7 +165,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       parameters: z.object({
         status: z.enum(["UNHANDLED", "IN_PROGRESS", "RESOLVED"]).optional(),
         source: z.enum(["CORE", "AI_TUTOR", "QUESTION_MAKER"]).optional(),
-        limit: z.number().int().min(1).max(200).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: async ({ status, source, limit }) =>
         listAdminBugReportsForChat(user, { status, source, limit }),
