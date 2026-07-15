@@ -6,11 +6,22 @@
  *   - #999: no stop-generating control and no request timeout in the chat
  *     send path.
  *   - #1002: chat input textarea stays enabled while a response is loading.
+ * Plus the #1000 (PR #1023) session-restore error paths:
+ *   - a failed restore surfaces an assistant error message and drops the
+ *     failed session's chatId instead of leaving it sticky;
+ *   - stale restore completions (after "New chat" or a newer restore) are
+ *     ignored instead of clobbering the tab's current state.
  */
-import { createRef } from 'react';
+import { act, createRef } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import StudentAiChat, { type StudentAiChatHandle } from '~/components/StudentAiChat';
+import type { ApiChatSession } from '~/lib/student-chat-history';
 import type { Activity } from '~/lib/types';
+
+type HistoryPanelProps = {
+  onSelect: (session: ApiChatSession) => void;
+  onNewChat: () => void;
+};
 
 vi.mock('~/hooks/use-api-keys', () => ({
   useApiKeys: () => ({
@@ -21,13 +32,27 @@ vi.mock('~/hooks/use-api-keys', () => ({
   }),
 }));
 
+const { historyPanelProps, loadSessionMessages } = vi.hoisted(() => ({
+  // Captures the live props StudentAiChat passes to the (mocked) history
+  // panel so tests can trigger onSelect (session restore) directly.
+  historyPanelProps: { current: null as unknown },
+  loadSessionMessages: vi.fn(),
+}));
+
 vi.mock('~/components/StudentChatHistoryPanel', () => ({
-  StudentChatHistoryPanel: () => null,
+  StudentChatHistoryPanel: (props: unknown) => {
+    historyPanelProps.current = props;
+    return null;
+  },
 }));
 
 vi.mock('~/lib/student-chat-history', () => ({
-  loadSessionMessages: vi.fn().mockResolvedValue([]),
+  loadSessionMessages,
 }));
+
+function restoreSession(session: ApiChatSession) {
+  (historyPanelProps.current as HistoryPanelProps).onSelect(session);
+}
 
 const {
   sendGuideMessage,
@@ -48,9 +73,11 @@ const {
     sendTeachMessage: vi.fn(),
     sendCustomMessage: vi.fn(),
     listSuggestedPrompts: vi.fn().mockResolvedValue([]),
-    listAiModels: vi.fn().mockResolvedValue([
-      { id: 'm1', modelId: 'google:gemini-2.5-flash', modelName: 'Gemini 2.5 Flash' },
-    ]),
+    listAiModels: vi
+      .fn()
+      .mockResolvedValue([
+        { id: 'm1', modelId: 'google:gemini-2.5-flash', modelName: 'Gemini 2.5 Flash' },
+      ]),
     ApiTimeoutError,
   };
 });
@@ -132,6 +159,7 @@ beforeEach(() => {
   listAiModels.mockResolvedValue([
     { id: 'm1', modelId: 'google:gemini-2.5-flash', modelName: 'Gemini 2.5 Flash' },
   ]);
+  loadSessionMessages.mockResolvedValue([]);
 });
 
 describe('StudentAiChat — in-flight guard (#998)', () => {
@@ -175,7 +203,9 @@ describe('StudentAiChat — stop control and timeout (#999)', () => {
 
     fireEvent.click(stopBtn);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument(),
+    );
     // A user-cancelled turn should not append an error bubble.
     expect(screen.queryByText(/not available right now/i)).not.toBeInTheDocument();
   });
@@ -190,7 +220,9 @@ describe('StudentAiChat — stop control and timeout (#999)', () => {
     reject(new ApiTimeoutError());
 
     await waitFor(() =>
-      expect(screen.getByText('That took too long to respond. Please try again.')).toBeInTheDocument(),
+      expect(
+        screen.getByText('That took too long to respond. Please try again.'),
+      ).toBeInTheDocument(),
     );
   });
 });
@@ -208,5 +240,89 @@ describe('StudentAiChat — textarea disabled while loading (#1002)', () => {
     await waitFor(() =>
       expect(screen.getByPlaceholderText('Describe where you need guidance…')).toBeDisabled(),
     );
+  });
+});
+
+/** A pending loadSessionMessages call the test resolves/rejects on demand. */
+function deferredRestoreCall() {
+  type RestoredMessages = { id: string; role: 'user' | 'assistant'; content: string }[];
+  let resolve!: (value: RestoredMessages) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<RestoredMessages>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  loadSessionMessages.mockReturnValueOnce(promise);
+  return { resolve, reject };
+}
+
+function makeSession(chatId: string): ApiChatSession {
+  return {
+    id: 1,
+    chatId,
+    mode: 'guide',
+    modelId: null,
+    createdAt: '2026-07-01T00:00:00Z',
+    updatedAt: '2026-07-02T00:00:00Z',
+  };
+}
+
+const RESTORE_ERROR_TEXT = /Couldn't load this conversation/i;
+
+describe('StudentAiChat — session restore failures (#1000 / PR #1023)', () => {
+  it('shows an error message on restore failure and drops the failed chatId from the next send', async () => {
+    loadSessionMessages.mockRejectedValueOnce(new Error('server error'));
+    renderChat();
+
+    act(() => restoreSession(makeSession('failed-session')));
+
+    await waitFor(() => expect(screen.getByText(RESTORE_ERROR_TEXT)).toBeInTheDocument());
+
+    // The failed session's chatId must not be threaded into the next send —
+    // the user would otherwise chat into a history that never loaded.
+    const { resolve } = deferredGuideCall();
+    await typeAndSend('I need a hint');
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1].chatId).toBeNull();
+    resolve({ message: 'Here is a hint.' });
+    await waitFor(() => screen.getByText('Here is a hint.'));
+  });
+
+  it('ignores a stale restore failure after the user starts a new chat', async () => {
+    const { reject } = deferredRestoreCall();
+    renderChat();
+
+    act(() => restoreSession(makeSession('slow-session')));
+
+    // User abandons the pending restore with "New chat", then the old
+    // request fails — the failure must not leak into the fresh chat.
+    fireEvent.click(await screen.findByRole('button', { name: /new chat/i }));
+    await act(async () => {
+      reject(new Error('too late'));
+    });
+
+    expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Describe where you need guidance…')).not.toBeDisabled();
+  });
+
+  it('ignores a stale restore failure after a newer restore already succeeded', async () => {
+    const { reject: rejectFirst } = deferredRestoreCall();
+    loadSessionMessages.mockResolvedValueOnce([
+      { id: 'm1', role: 'assistant', content: 'Restored conversation B' },
+    ]);
+    renderChat();
+
+    act(() => restoreSession(makeSession('session-a')));
+    act(() => restoreSession(makeSession('session-b')));
+
+    await waitFor(() => expect(screen.getByText('Restored conversation B')).toBeInTheDocument());
+
+    // Session A's late failure must not clear B's restored messages.
+    await act(async () => {
+      rejectFirst(new Error('late failure for A'));
+    });
+
+    expect(screen.getByText('Restored conversation B')).toBeInTheDocument();
+    expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
   });
 });
