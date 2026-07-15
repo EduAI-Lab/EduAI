@@ -91,7 +91,7 @@ Each row may contain:
 | Field | Personal data? | Notes |
 | --- | --- | --- |
 | `actorUserId`, `actorRole` | Yes (pseudonymous) | The acting user's ID and role. The **name** is shown in the UI via a live join to the user table, not stored on the log row. |
-| `ipAddress` | Yes | Origin IP, when provided by an upstream proxy header. Often null in local/dev. |
+| `ipAddress` | Yes | Client IP derived from `x-forwarded-for` using a trusted-proxy hop count (see **Client IP derivation** below). Often null in local/dev. |
 | `userAgent` | Yes | Browser/client string. |
 | `entityId` / `entityLabel` | Sometimes | The affected record (e.g. a user or course ID). For identity-related events `entityLabel` holds the subject's **email** (for user events, formatted as `name <email>` so users who share a display name stay distinguishable). |
 | `details` (JSON) | Minimized | Free-form context, **sanitized before write** (see below). |
@@ -101,6 +101,12 @@ Each row may contain:
 **Email addresses are stored** for identity-relevant events — login success/failure, logout, user created/updated/deleted, and invitation created/resent/revoked/accepted — so an admin can answer *who* without a fragile join (and, on a failed login, the attempted email is the only available subject identifier). This is a deliberate product decision recorded in `logging.server.ts`; `email` is intentionally **not** in the redaction deny-list. Re-adding `email` to that list restores full email redaction if a future privacy decision requires it.
 
 **Actor attribution.** If an actor's user record is later deleted, the log's `actorUserId` is nulled (`ON DELETE SET NULL`) but the `actorRole` captured at write time is retained, so the event remains attributable by role without retaining a foreign key to a deleted person.
+
+**Client IP derivation (trusted proxy).** `ipAddress` is derived in `app/lib/request-context.server.ts` from the **last** `x-forwarded-for` (XFF) entry. XFF is appended left-to-right, so the **leftmost** token is client-controlled and forgeable while the **rightmost** token is the one our own reverse proxy wrote. The deployment runs behind exactly one trusted proxy — Apache `ProxyPass` to Node on `localhost`, no Cloudflare or second proxy, Node not directly reachable (see [DEPLOYMENT.md](./DEPLOYMENT.md)). Apache's mod_proxy appends the real socket-peer address as the last entry, so a spoofed `X-Forwarded-For: 1.2.3.4` arrives as `1.2.3.4, <real-client>` and we record the real client.
+
+- `x-real-ip` and `cf-connecting-ip` are **not** honored — Apache never sets them, so trusting them would only add a client-forgeable spoof vector.
+- With no proxy in front (local dev), XFF is absent and `ipAddress` is `null`. The socket peer IP is not recoverable under `react-router-serve`, so a trusted proxy is a **hard requirement** for reliable IP attribution in production.
+- **If a second proxy is ever added**, the rightmost entry would become that proxy's IP rather than the client; the selection here (and its tests) must be updated as part of that deployment change.
 
 ---
 
