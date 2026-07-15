@@ -5,7 +5,12 @@ import { listBugReports } from "~/lib/bug-reports/server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
-const DEFAULT_LIST_LIMIT = 200;
+/**
+ * Keep list/tool payloads small enough for 16k-context admin chat multi-step
+ * turns (delete → listUsers previously returned 200 rows and blew the window).
+ */
+const DEFAULT_LIST_LIMIT = 25;
+const MAX_LIST_LIMIT = 50;
 
 function requirePlatformAdmin(user: RbacUser): ToolError | null {
   if (user.role !== "ADMIN") {
@@ -92,7 +97,7 @@ export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT)
   const denied = requirePlatformAdmin(user);
   if (denied) return denied;
 
-  const clampedLimit = Math.min(Math.max(Math.floor(limit), 1), DEFAULT_LIST_LIMIT);
+  const clampedLimit = Math.min(Math.max(Math.floor(limit), 1), MAX_LIST_LIMIT);
 
   const where = {};
   const [users, total] = await Promise.all([
@@ -151,7 +156,10 @@ export async function listAdminCourseEnrollments(
     return gate;
   }
 
-  const clampedLimit = Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), DEFAULT_LIST_LIMIT);
+  const clampedLimit = Math.min(
+    Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1),
+    MAX_LIST_LIMIT,
+  );
 
   const enrolledAtFilter =
     enrolledSince instanceof Date || enrolledBefore instanceof Date
