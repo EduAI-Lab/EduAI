@@ -13,6 +13,12 @@
  *   - Send/receive round trip
  *   - ChatId threading across consecutive messages
  *   - History restoration from a saved session
+ *
+ * Plus #1000 (PR #1023) session-restore error paths:
+ *   - a failed restore surfaces an assistant error message and drops the
+ *     failed session's chatId instead of leaving it sticky;
+ *   - stale restore completions (after "New chat" or a newer restore) are
+ *     ignored instead of clobbering the tab's current state.
  */
 import { createRef } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -436,5 +442,99 @@ describe('StudentAiChat — history restoration (#1003)', () => {
       expect(loadSessionMessages).toHaveBeenCalledWith(ACTIVITY.id, 'chat-restored'),
     );
     await waitFor(() => expect(screen.getByText('Old answer')).toBeInTheDocument());
+  });
+});
+
+// ── #1000 / PR #1023: session restore failures ────────────────────────────
+
+/** A pending loadSessionMessages call the test resolves/rejects on demand. */
+function deferredRestoreCall() {
+  type RestoredMessages = { id: string; role: 'user' | 'assistant'; content: string }[];
+  let resolve!: (value: RestoredMessages) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<RestoredMessages>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  vi.mocked(loadSessionMessages).mockReturnValueOnce(promise);
+  return { resolve, reject };
+}
+
+function makeSession(chatId: string): ApiChatSession {
+  return {
+    id: 1,
+    chatId,
+    mode: 'guide',
+    modelId: null,
+    createdAt: '2026-07-01T00:00:00Z',
+    updatedAt: '2026-07-02T00:00:00Z',
+  };
+}
+
+const RESTORE_ERROR_TEXT = /Couldn't load this conversation/i;
+
+describe('StudentAiChat — session restore failures (#1000 / PR #1023)', () => {
+  it('shows an error message on restore failure and drops the failed chatId from the next send', async () => {
+    vi.mocked(loadSessionMessages).mockRejectedValueOnce(new Error('server error'));
+    renderChat();
+
+    await act(async () => {
+      capturedHistoryOnSelect?.(makeSession('failed-session'));
+    });
+
+    await waitFor(() => expect(screen.getByText(RESTORE_ERROR_TEXT)).toBeInTheDocument());
+
+    // The failed session's chatId must not be threaded into the next send —
+    // the user would otherwise chat into a history that never loaded.
+    const { resolve } = deferredGuideCall();
+    await typeAndSend('I need a hint');
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+    expect(sendGuideMessage.mock.calls[0][1].chatId).toBeNull();
+    resolve({ message: 'Here is a hint.' });
+    await waitFor(() => screen.getByText('Here is a hint.'));
+  });
+
+  it('ignores a stale restore failure after the user starts a new chat', async () => {
+    const { reject } = deferredRestoreCall();
+    renderChat();
+
+    await act(async () => {
+      capturedHistoryOnSelect?.(makeSession('slow-session'));
+    });
+
+    // User abandons the pending restore with "New chat", then the old
+    // request fails — the failure must not leak into the fresh chat.
+    fireEvent.click(await screen.findByRole('button', { name: /new chat/i }));
+    await act(async () => {
+      reject(new Error('too late'));
+    });
+
+    expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Describe where you need guidance…')).not.toBeDisabled();
+  });
+
+  it('ignores a stale restore failure after a newer restore already succeeded', async () => {
+    const { reject: rejectFirst } = deferredRestoreCall();
+    vi.mocked(loadSessionMessages).mockResolvedValueOnce([
+      { id: 'm1', role: 'assistant', content: 'Restored conversation B' },
+    ]);
+    renderChat();
+
+    await act(async () => {
+      capturedHistoryOnSelect?.(makeSession('session-a'));
+    });
+    await act(async () => {
+      capturedHistoryOnSelect?.(makeSession('session-b'));
+    });
+
+    await waitFor(() => expect(screen.getByText('Restored conversation B')).toBeInTheDocument());
+
+    // Session A's late failure must not clear B's restored messages.
+    await act(async () => {
+      rejectFirst(new Error('late failure for A'));
+    });
+
+    expect(screen.getByText('Restored conversation B')).toBeInTheDocument();
+    expect(screen.queryByText(RESTORE_ERROR_TEXT)).not.toBeInTheDocument();
   });
 });
