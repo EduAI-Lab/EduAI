@@ -27,7 +27,8 @@ app/
     Nav.tsx                         # Global navigation bar
     ProgressBar.tsx                 # Progress bar with percentage label
     PublishStatusButton.tsx         # Publish/unpublish toggle with tooltip
-    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs)
+    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs, session restore)
+    StudentChatHistoryPanel.tsx     # Chat history sheet (list/restore sessions, retryable load errors)
     StudentActivityFeedbackCard.tsx # Post-submission difficulty rating form
     ActivityDetailsCard.tsx         # Collapsible activity detail view
     AddActivityPanel.tsx            # New activity creation form
