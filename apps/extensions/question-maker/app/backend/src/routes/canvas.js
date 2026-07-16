@@ -11,7 +11,10 @@ import {
   getCanvasCourseMapping,
   getCanvasQuizzes,
   getCanvasQuizQuestions,
-  importQuizFromCanvas
+  importQuizFromCanvas,
+  getCanvasQuestionBanks,
+  getCanvasQuestionBankQuestions,
+  importQuestionBankFromCanvas
 } from '../services/canvasService.js';
 import { authenticateToken } from '../middleware/auth.js';
 
@@ -243,5 +246,76 @@ router.post('/import/:canvasCourseId/quizzes/:quizId', authenticateToken, async 
     next(error);
   }
 });
+
+/** GET /api/canvas/courses/:canvasCourseId/banks – lists Canvas Assessment Question Banks. */
+router.get('/courses/:canvasCourseId/banks', authenticateToken, async (req, res, next) => {
+  try {
+    const banks = await getCanvasQuestionBanks(req.user.id, req.params.canvasCourseId);
+    res.json({ success: true, data: banks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** GET /api/canvas/courses/:canvasCourseId/banks/:canvasBankId/questions – lists bank questions. */
+router.get(
+  '/courses/:canvasCourseId/banks/:canvasBankId/questions',
+  authenticateToken,
+  async (req, res, next) => {
+    try {
+      const questions = await getCanvasQuestionBankQuestions(
+        req.user.id,
+        req.params.canvasBankId
+      );
+      res.json({ success: true, data: questions });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/** POST /api/canvas/import/:canvasCourseId/banks/:canvasBankId – sync Canvas bank into local course. */
+router.post(
+  '/import/:canvasCourseId/banks/:canvasBankId',
+  authenticateToken,
+  async (req, res, next) => {
+    try {
+      const { canvasCourseId, canvasBankId } = req.params;
+      const { localCourseId, primaryTopicId, targetBankId } = req.body;
+
+      if (!localCourseId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Local course ID is required'
+        });
+      }
+      if (!primaryTopicId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Primary topic ID is required for importing questions'
+        });
+      }
+
+      const result = await importQuestionBankFromCanvas(
+        req.user.id,
+        canvasCourseId,
+        canvasBankId,
+        localCourseId,
+        { primaryTopicId, targetBankId }
+      );
+
+      res.json({
+        success: true,
+        message: 'Question bank synced from Canvas successfully',
+        data: result
+      });
+    } catch (error) {
+      if (error.status === 404 || error.status === 400) {
+        return res.status(error.status).json({ success: false, error: error.message });
+      }
+      next(error);
+    }
+  }
+);
 
 export default router;

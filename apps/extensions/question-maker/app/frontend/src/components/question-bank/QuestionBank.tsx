@@ -22,6 +22,12 @@ interface QuestionBankProps {
   disableAdd?: boolean;
   disableUpload?: boolean;
   onOpenProfile?: () => void;
+  banks?: import('../../services/questionBankService').QuestionBank[];
+  selectedBankId?: number | null;
+  onBankChange?: (bankId: number | null) => void;
+  onCreateBank?: (name: string) => Promise<void> | void;
+  onSyncFromCanvas?: () => void;
+  disableBankControls?: boolean;
 }
 
 export const QuestionBank = ({
@@ -35,7 +41,13 @@ export const QuestionBank = ({
   emptyMessage,
   disableAdd = false,
   disableUpload = false,
-  onOpenProfile
+  onOpenProfile,
+  banks = [],
+  selectedBankId = null,
+  onBankChange,
+  onCreateBank,
+  onSyncFromCanvas,
+  disableBankControls = false
 }: QuestionBankProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'type'>('newest');
@@ -130,6 +142,12 @@ export const QuestionBank = ({
         onUploadQuestions={onUploadQuestions}
         disableAdd={disableAdd}
         disableUpload={disableUpload}
+        banks={banks}
+        selectedBankId={selectedBankId}
+        onBankChange={onBankChange}
+        onCreateBank={onCreateBank}
+        onSyncFromCanvas={onSyncFromCanvas}
+        disableBankControls={disableBankControls}
       />
 
       {variants.length > 0 && (

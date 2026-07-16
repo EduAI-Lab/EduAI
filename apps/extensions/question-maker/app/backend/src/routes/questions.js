@@ -66,7 +66,9 @@ router.post('/', authenticateToken, async (req, res, next) => {
       type,
       questionOrder,
       isAiGenerated,
-      isDraft
+      isDraft,
+      questionBankId: req.body.questionBankId,
+      questionBankIds: req.body.questionBankIds
     });
 
     res.status(201).json({
@@ -75,6 +77,9 @@ router.post('/', authenticateToken, async (req, res, next) => {
       data: question
     });
   } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
     next(error);
   }
 });
@@ -82,12 +87,13 @@ router.post('/', authenticateToken, async (req, res, next) => {
 /** GET /api/questions – paginated list of questions scoped to the authenticated user. */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
-    const { courseId, classId, search, limit, offset } = req.query;
+    const { courseId, classId, questionBankId, search, limit, offset } = req.query;
     const requestedCourseId = courseId ?? classId;
     const normalizedCourseId = requestedCourseId === undefined || requestedCourseId === '' ? undefined : requestedCourseId;
 
     const questions = await getQuestionsByUser(req.user.id, {
       courseId: normalizedCourseId,
+      questionBankId,
       search,
       limit,
       offset

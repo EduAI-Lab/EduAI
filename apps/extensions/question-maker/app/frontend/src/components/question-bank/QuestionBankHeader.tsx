@@ -4,7 +4,9 @@
  */
 import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
-import { Plus, Upload } from 'lucide-react';
+import { Plus, Upload, RefreshCw } from 'lucide-react';
+import { BankSelector } from './BankSelector';
+import { QuestionBank as QuestionBankModel } from '../../services/questionBankService';
 
 interface QuestionBankHeaderProps {
   questionCount: number;
@@ -13,6 +15,12 @@ interface QuestionBankHeaderProps {
   courseName?: string;
   disableAdd?: boolean;
   disableUpload?: boolean;
+  banks?: QuestionBankModel[];
+  selectedBankId?: number | null;
+  onBankChange?: (bankId: number | null) => void;
+  onCreateBank?: (name: string) => Promise<void> | void;
+  onSyncFromCanvas?: () => void;
+  disableBankControls?: boolean;
 }
 
 export const QuestionBankHeader = ({
@@ -21,11 +29,16 @@ export const QuestionBankHeader = ({
   onUploadQuestions,
   courseName,
   disableAdd = false,
-  disableUpload = false
+  disableUpload = false,
+  banks = [],
+  selectedBankId = null,
+  onBankChange,
+  onCreateBank,
+  onSyncFromCanvas,
+  disableBankControls = false
 }: QuestionBankHeaderProps) => {
   return (
     <div className="space-y-4">
-      {/* Main Header */}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
@@ -34,6 +47,20 @@ export const QuestionBankHeader = ({
           <p className="text-sm text-gray-600">Question Bank</p>
         </div>
         <div className="flex items-center gap-2">
+          {onSyncFromCanvas && (
+            <Tooltip content="Sync a Classic Canvas question bank into this course (one-way)" side="bottom">
+              <Button
+                variant="outline"
+                onClick={onSyncFromCanvas}
+                className="flex items-center space-x-2"
+                disabled={disableBankControls}
+                data-tour-id="sync-canvas-bank-btn"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Sync from Canvas</span>
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip content="Upload a document of your questions to have it added to your question bank" side="bottom">
             <Button
               variant="outline"
@@ -60,7 +87,16 @@ export const QuestionBankHeader = ({
         </div>
       </div>
 
-      {/* Question Count and Filter Status */}
+      {onBankChange && onCreateBank && (
+        <BankSelector
+          banks={banks}
+          selectedBankId={selectedBankId}
+          onBankChange={onBankChange}
+          onCreateBank={onCreateBank}
+          disabled={disableBankControls}
+        />
+      )}
+
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">
           Questions ({questionCount})

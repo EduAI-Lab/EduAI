@@ -4,6 +4,7 @@
  */
 import { Course, Topics, Question_Metadata, Assessments, Variants } from '../schema/index.js';
 import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scripts/seedData.js';
+import { ensureDefaultBank, attachQuestionToBanks } from './questionBankService.js';
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
@@ -38,6 +39,8 @@ export async function seedCoursesForNewUser(userId) {
     const topicNames = TOPIC_NAMES_BY_TEMPLATE[templateIndex];
     const questions = SEED_QUESTIONS_BY_TEMPLATE[templateIndex];
 
+    await ensureDefaultBank(course.id);
+
     const courseTopics = [];
     for (const name of topicNames) {
       const topic = await Topics.create({ name, courseId: course.id });
@@ -68,6 +71,7 @@ export async function seedCoursesForNewUser(userId) {
         primaryTopicId: primaryTopic.id,
         questionOrder: order
       });
+      await attachQuestionToBanks(course.id, meta.id);
       questionsCreated++;
 
       const variantPayload = {

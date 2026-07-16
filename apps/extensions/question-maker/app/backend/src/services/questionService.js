@@ -2,8 +2,9 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
-import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
+import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants, QuestionBank } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
+import { attachQuestionToBanks } from './questionBankService.js';
 
 /** Normalizes any acceptable topic input (array/string/number) into an array of integers. */
 const normalizeSecondaryTopics = (value) => {
@@ -124,7 +125,9 @@ export const createQuestion = async (userId, questionData) => {
       courseId,
       primaryTopicId,
       type = 'MCQ',
-      questionOrder = {}
+      questionOrder = {},
+      questionBankId,
+      questionBankIds
     } = questionData;
 
     const normalizedDescription = typeof description === 'string' && description.trim()
@@ -161,6 +164,11 @@ export const createQuestion = async (userId, questionData) => {
       questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {}
     });
 
+    await attachQuestionToBanks(parsedCourseId, question.id, {
+      questionBankId,
+      questionBankIds
+    });
+
     return question;
   } catch (error) {
     throw error;
@@ -170,7 +178,7 @@ export const createQuestion = async (userId, questionData) => {
 /** Returns questions (with course + variant associations) scoped to the requesting user. */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
-    const { courseId, search, limit = 50, offset = 0 } = options;
+    const { courseId, questionBankId, search, limit = 50, offset = 0 } = options;
     
     // Build where clause for Question_Metadata
     const whereClause = {};
@@ -182,38 +190,63 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       }
     }
 
+    const include = [
+      {
+        model: Course,
+        as: 'course',
+        attributes: ['id', 'name', 'code'],
+        where: { userId: userId } // Filter by user through course relationship
+      },
+      {
+        model: Variants,
+        as: 'variants',
+        attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
+        include: [
+          {
+            model: Assessments,
+            as: 'assessment',
+            attributes: ['id', 'name', 'type', 'semester']
+          }
+        ]
+      }
+    ];
+
+    const parsedBankId = questionBankId !== undefined && questionBankId !== ''
+      ? Number(questionBankId)
+      : null;
+    if (Number.isInteger(parsedBankId)) {
+      include.push({
+        model: QuestionBank,
+        as: 'banks',
+        attributes: ['id', 'name', 'isDefault'],
+        where: { id: parsedBankId },
+        through: { attributes: [] },
+        required: true
+      });
+    } else {
+      include.push({
+        model: QuestionBank,
+        as: 'banks',
+        attributes: ['id', 'name', 'isDefault'],
+        through: { attributes: [] },
+        required: false
+      });
+    }
+
     const questions = await Question_Metadata.findAll({
       where: whereClause,
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          attributes: ['id', 'name', 'code'],
-          where: { userId: userId } // Filter by user through course relationship
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
-          include: [
-            {
-              model: Assessments,
-              as: 'assessment',
-              attributes: ['id', 'name', 'type', 'semester']
-            }
-          ]
-        }
-      ],
+      include,
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
-      offset: parseInt(offset)
+      offset: parseInt(offset),
+      distinct: true
     });
 
     // Apply search filter if provided
     let filteredQuestions = questions;
     if (search) {
       filteredQuestions = questions.filter(q => 
-        q.description.toLowerCase().includes(search.toLowerCase())
+        q.description?.toLowerCase().includes(search.toLowerCase())
       );
     }
 
@@ -394,7 +427,16 @@ export const createMultipleQuestions = async (userId, questionsData) => {
 
 /** Persists extracted questions/variants and optionally creates assessments/sections for them. */
 export const saveExtractedQuestions = async (userId, payload) => {
-  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false } = payload;
+  const {
+    courseId,
+    primaryTopicId,
+    topicName,
+    questions,
+    assessment,
+    isAiGenerated = false,
+    questionBankId,
+    questionBankIds
+  } = payload;
 
   if (!courseId) {
     throw new Error('courseId is required');
@@ -608,6 +650,13 @@ export const saveExtractedQuestions = async (userId, payload) => {
     }
 
     await transaction.commit();
+
+    for (const metadataId of createdIds) {
+      await attachQuestionToBanks(Number(courseId), metadataId, {
+        questionBankId,
+        questionBankIds
+      });
+    }
 
     const savedQuestions = await Question_Metadata.findAll({
       where: { id: createdIds },

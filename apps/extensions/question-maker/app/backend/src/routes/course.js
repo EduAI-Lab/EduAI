@@ -5,6 +5,15 @@
 import express from 'express';
 import { Course, Question_Metadata, Topics } from '../schema/index.js';
 import { authenticateToken } from '../middleware/auth.js';
+import {
+  ensureDefaultBank,
+  listBanks,
+  createBank,
+  updateBank,
+  deleteBank,
+  addQuestionToBank,
+  removeQuestionFromBank
+} from '../services/questionBankService.js';
 
 const router = express.Router();
 
@@ -25,6 +34,8 @@ router.post('/', authenticateToken, async (req, res, next) => {
       name: name.trim(),
       code: courseCode || null
     });
+
+    await ensureDefaultBank(courseData.id);
 
     res.status(201).json({
       success: true,
@@ -266,5 +277,171 @@ router.post('/:id/topics', authenticateToken, async (req, res, next) => {
     next(error);
   }
 });
+
+/** GET /api/course/:id/banks – lists question banks for an owned course. */
+router.get('/:id/banks', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    await ensureDefaultBank(course.id);
+    const banks = await listBanks(course.id);
+    res.json({ success: true, data: banks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/banks – creates a named question bank. */
+router.post('/:id/banks', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    const bank = await createBank(course.id, {
+      name: req.body.name,
+      description: req.body.description
+    });
+    res.status(201).json({
+      success: true,
+      message: 'Question bank created successfully',
+      data: bank
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
+    next(error);
+  }
+});
+
+/** PUT /api/course/:id/banks/:bankId – renames/updates a bank. */
+router.put('/:id/banks/:bankId', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    const bank = await updateBank(course.id, Number(req.params.bankId), {
+      name: req.body.name,
+      description: req.body.description
+    });
+    res.json({
+      success: true,
+      message: 'Question bank updated successfully',
+      data: bank
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
+    next(error);
+  }
+});
+
+/** DELETE /api/course/:id/banks/:bankId – deletes a non-default bank. */
+router.delete('/:id/banks/:bankId', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    const result = await deleteBank(course.id, Number(req.params.bankId), {
+      moveMembershipsToBankId: req.body?.moveMembershipsToBankId
+        ? Number(req.body.moveMembershipsToBankId)
+        : undefined
+    });
+    res.json({
+      success: true,
+      message: 'Question bank deleted successfully',
+      data: result
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
+    next(error);
+  }
+});
+
+/** POST /api/course/:id/banks/:bankId/questions – add question membership to a bank. */
+router.post('/:id/banks/:bankId/questions', authenticateToken, async (req, res, next) => {
+  try {
+    const course = await Course.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!course) {
+      return res.status(404).json({ success: false, error: 'Course not found' });
+    }
+    const { QuestionBank } = await import('../schema/index.js');
+    const bank = await QuestionBank.findOne({
+      where: { id: Number(req.params.bankId), courseId: course.id }
+    });
+    if (!bank) {
+      return res.status(404).json({ success: false, error: 'Question bank not found' });
+    }
+    const questionMetadataId = Number(req.body.questionMetadataId);
+    if (!Number.isInteger(questionMetadataId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'questionMetadataId is required'
+      });
+    }
+    const result = await addQuestionToBank(bank.id, questionMetadataId);
+    res.status(result.created ? 201 : 200).json({
+      success: true,
+      message: result.created ? 'Question added to bank' : 'Question already in bank',
+      data: result.membership
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
+    next(error);
+  }
+});
+
+/** DELETE /api/course/:id/banks/:bankId/questions/:questionMetadataId – remove membership. */
+router.delete(
+  '/:id/banks/:bankId/questions/:questionMetadataId',
+  authenticateToken,
+  async (req, res, next) => {
+    try {
+      const course = await Course.findOne({
+        where: { id: req.params.id, userId: req.user.id }
+      });
+      if (!course) {
+        return res.status(404).json({ success: false, error: 'Course not found' });
+      }
+      const result = await removeQuestionFromBank(
+        course.id,
+        Number(req.params.bankId),
+        Number(req.params.questionMetadataId)
+      );
+      res.json({
+        success: true,
+        message: result.reassignedToDefault
+          ? 'Removed from bank; reassigned to default bank'
+          : 'Removed from bank',
+        data: result
+      });
+    } catch (error) {
+      if (error.status) {
+        return res.status(error.status).json({ success: false, error: error.message });
+      }
+      next(error);
+    }
+  }
+);
 
 export default router;

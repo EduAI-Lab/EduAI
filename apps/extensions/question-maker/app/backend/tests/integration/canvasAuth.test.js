@@ -30,6 +30,16 @@ describe('GET /api/canvas/* without token', () => {
     expect401(res);
   });
 
+  it('rejects /courses/:id/banks', async () => {
+    const res = await request(app).get('/api/canvas/courses/1/banks');
+    expect401(res);
+  });
+
+  it('rejects /courses/.../banks/.../questions', async () => {
+    const res = await request(app).get('/api/canvas/courses/1/banks/10/questions');
+    expect401(res);
+  });
+
   it('rejects /courses/.../questions', async () => {
     const res = await request(app).get('/api/canvas/courses/1/quizzes/2/questions');
     expect401(res);
@@ -55,6 +65,13 @@ describe('POST /api/canvas/* without token', () => {
     const res = await request(app)
       .post('/api/canvas/import/1/quizzes/2')
       .send({ localCourseId: 1 });
+    expect401(res);
+  });
+
+  it('rejects /import/.../banks/...', async () => {
+    const res = await request(app)
+      .post('/api/canvas/import/1/banks/10')
+      .send({ localCourseId: 1, primaryTopicId: 1 });
     expect401(res);
   });
 });

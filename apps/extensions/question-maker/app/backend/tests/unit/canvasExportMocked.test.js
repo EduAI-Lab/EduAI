@@ -35,6 +35,17 @@ vi.mock('../../src/schema/index.js', () => ({
   AssessmentSections: {},
   SectionVariants: {},
   Course: {},
+  CanvasBankMapping: {},
+  CanvasBankQuestionMapping: {}
+}));
+
+vi.mock('../../src/services/questionBankService.js', () => ({
+  createBank: vi.fn(),
+  addQuestionToBank: vi.fn()
+}));
+
+vi.mock('../../src/schema/QuestionBank.js', () => ({
+  QuestionBank: { findOne: vi.fn() }
 }));
 
 const { exportAssessmentToCanvas } = await import('../../src/services/canvasService.js');

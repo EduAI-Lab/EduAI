@@ -3,10 +3,25 @@
  * Supports both real Canvas API calls and a mock test mode for development/demo flows.
  */
 import axios from 'axios';
-import { CanvasIntegration, CanvasCourseMapping, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course } from '../schema/index.js';
+import {
+  CanvasIntegration,
+  CanvasCourseMapping,
+  Question_Metadata,
+  Variants,
+  AssessmentSections,
+  SectionVariants,
+  Course,
+  CanvasBankMapping,
+  CanvasBankQuestionMapping
+} from '../schema/index.js';
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
+import {
+  createBank,
+  addQuestionToBank
+} from './questionBankService.js';
+import { QuestionBank } from '../schema/QuestionBank.js';
 
 /**
  * Canvas LMS API Service
@@ -84,7 +99,7 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     if (endpoint.includes('/questions') && method === 'POST') {
       return { data: { id: Math.floor(Math.random() * 1000) } };
     }
-    if (endpoint.includes('/questions') && method === 'GET') {
+    if (endpoint.includes('/questions') && method === 'GET' && !endpoint.includes('/question_banks')) {
       const singleQuestionMatch = endpoint.match(/\/questions\/(\d+)$/);
       const singleQuestion = {
         id: 1,
@@ -109,6 +124,53 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
       // Single quiz details
       const quizId = endpoint.match(/\/quizzes\/(\d+)$/)?.[1];
       return { data: { id: parseInt(quizId), title: 'Test Quiz', quiz_type: 'assignment', published: false } };
+    }
+    // Assessment Question Banks (Classic Canvas)
+    if (endpoint.startsWith('/question_banks') && method === 'GET') {
+      const bankQuestionsMatch = endpoint.match(/^\/question_banks\/(\d+)\/questions/);
+      if (bankQuestionsMatch) {
+        return {
+          data: [
+            {
+              id: 101,
+              question_name: '1. Bank MCQ',
+              question_text: 'What is 2+2?\nA) 3\nB) 4\nC) 5\nD) 6',
+              question_type: 'multiple_choice_question',
+              position: 1,
+              answers: [
+                { id: 1, answer_text: '3', answer_weight: 0 },
+                { id: 2, answer_text: '4', answer_weight: 100 },
+                { id: 3, answer_text: '5', answer_weight: 0 },
+                { id: 4, answer_text: '6', answer_weight: 0 }
+              ]
+            },
+            {
+              id: 102,
+              question_name: '2. Bank Essay',
+              question_text: 'Explain polymorphism.',
+              question_type: 'essay_question',
+              position: 2,
+              answers: []
+            }
+          ]
+        };
+      }
+      const singleBankMatch = endpoint.match(/^\/question_banks\/(\d+)(?:\?|$)/);
+      if (singleBankMatch) {
+        return {
+          data: {
+            id: parseInt(singleBankMatch[1], 10),
+            title: 'Mock Question Bank',
+            question_count: 2
+          }
+        };
+      }
+      return {
+        data: [
+          { id: 10, title: 'Chapter 1 Bank', question_count: 2 },
+          { id: 11, title: 'Chapter 2 Bank', question_count: 0 }
+        ]
+      };
     }
     return { data: { success: true } };
   }
@@ -870,4 +932,241 @@ export const importQuizFromCanvas = async (userId, canvasCourseId, quizId, local
   }
 };
 
-export { convertVariantToCanvasQuestion, parseMCQOptions };
+export { convertVariantToCanvasQuestion, parseMCQOptions, convertCanvasQuestionToVariant };
+
+/** Lists Classic Canvas Assessment Question Banks for a course. */
+export const getCanvasQuestionBanks = async (userId, canvasCourseId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks?context_type=Course&context_id=${canvasCourseId}&include_question_count=true`
+  );
+  const banks = Array.isArray(response.data) ? response.data : [response.data];
+  return banks.filter(Boolean);
+};
+
+/** Fetches a single Canvas question bank. */
+export const getCanvasQuestionBank = async (userId, canvasBankId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks/${canvasBankId}?include_question_count=true`
+  );
+  return response.data;
+};
+
+/**
+ * Lists assessment questions in a Canvas question bank (follows page query when provided).
+ * @param {number} userId
+ * @param {number|string} canvasBankId
+ * @param {{ page?: number, perPage?: number }} [opts]
+ */
+export const getCanvasQuestionBankQuestions = async (userId, canvasBankId, opts = {}) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const page = opts.page || 1;
+  const perPage = opts.perPage || 100;
+  const all = [];
+  let currentPage = page;
+
+  // In test mode there is no Link pagination; fetch once.
+  // For real API, walk pages until an empty page or short page.
+  for (;;) {
+    const response = await makeCanvasRequest(
+      integration,
+      'GET',
+      `/question_banks/${canvasBankId}/questions?per_page=${perPage}&page=${currentPage}`
+    );
+    const batch = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
+    all.push(...batch);
+    if (integration.isTestMode || batch.length < perPage) {
+      break;
+    }
+    currentPage += 1;
+    if (currentPage > 50) {
+      break;
+    }
+  }
+
+  return all;
+};
+
+/**
+ * Imports / re-syncs a Canvas Assessment Question Bank into a local course bank.
+ * Upserts by (userId, canvasAssessmentQuestionId); ensures destination bank membership.
+ */
+export const importQuestionBankFromCanvas = async (
+  userId,
+  canvasCourseId,
+  canvasBankId,
+  localCourseId,
+  options = {}
+) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const course = await Course.findOne({
+    where: { id: localCourseId, userId },
+    attributes: ['id', 'name']
+  });
+  if (!course) {
+    const err = new Error('Local course not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const primaryTopicId = options.primaryTopicId ? Number(options.primaryTopicId) : null;
+  if (!Number.isInteger(primaryTopicId)) {
+    throw new Error('Primary topic ID is required for importing questions. Please select a topic.');
+  }
+
+  const remoteBank = await getCanvasQuestionBank(userId, canvasBankId);
+  const remoteQuestions = await getCanvasQuestionBankQuestions(userId, canvasBankId);
+
+  let localBank = null;
+  const existingMapping = await CanvasBankMapping.findOne({
+    where: { userId, canvasBankId: Number(canvasBankId) }
+  });
+
+  if (options.targetBankId) {
+    localBank = await QuestionBank.findOne({
+      where: { id: Number(options.targetBankId), courseId: localCourseId }
+    });
+    if (!localBank) {
+      const err = new Error('Target bank not found in this course');
+      err.status = 400;
+      throw err;
+    }
+  } else if (existingMapping) {
+    localBank = await QuestionBank.findOne({
+      where: { id: existingMapping.localBankId, courseId: localCourseId }
+    });
+  }
+
+  if (!localBank) {
+    const title =
+      (remoteBank && (remoteBank.title || remoteBank.name)) ||
+      `Canvas bank ${canvasBankId}`;
+    localBank = await createBank(localCourseId, { name: String(title).trim() || 'Imported bank' });
+  }
+
+  const [bankMapping] = await CanvasBankMapping.findOrCreate({
+    where: { userId, canvasBankId: Number(canvasBankId) },
+    defaults: {
+      userId,
+      localBankId: localBank.id,
+      canvasCourseId: Number(canvasCourseId),
+      canvasBankId: Number(canvasBankId),
+      lastSyncedAt: null
+    }
+  });
+  if (bankMapping.localBankId !== localBank.id) {
+    await bankMapping.update({ localBankId: localBank.id, canvasCourseId: Number(canvasCourseId) });
+  }
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const remote of remoteQuestions) {
+    const canvasAssessmentQuestionId = remote?.id;
+    if (canvasAssessmentQuestionId == null) {
+      skipped += 1;
+      continue;
+    }
+
+    let converted;
+    try {
+      converted = convertCanvasQuestionToVariant(remote);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+
+    const existingQMap = await CanvasBankQuestionMapping.findOne({
+      where: {
+        userId,
+        canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId)
+      }
+    });
+
+    if (existingQMap) {
+      const metadata = await Question_Metadata.findByPk(existingQMap.localQuestionMetadataId);
+      if (metadata) {
+        await metadata.update({
+          description: converted.description || metadata.description,
+          type: converted.type || metadata.type
+        });
+        const variants = await Variants.findAll({
+          where: { questionMetadataId: metadata.id },
+          order: [['createdAt', 'ASC']],
+          limit: 1
+        });
+        if (variants[0]) {
+          await variants[0].update({
+            questionText: converted.questionText,
+            answer: converted.answer,
+            choices: converted.choices
+          });
+        }
+        await addQuestionToBank(localBank.id, metadata.id);
+        await existingQMap.update({ localBankId: localBank.id });
+        updated += 1;
+      } else {
+        skipped += 1;
+      }
+      continue;
+    }
+
+    const question = await createQuestion(userId, {
+      description: converted.description,
+      courseId: localCourseId,
+      primaryTopicId,
+      type: converted.type,
+      questionBankId: localBank.id
+    });
+
+    await Variants.create({
+      questionMetadataId: question.id,
+      questionText: converted.questionText,
+      difficulty: 'medium',
+      answer: converted.answer,
+      choices: converted.choices,
+      isDraft: false,
+      isAiGenerated: false
+    });
+
+    await CanvasBankQuestionMapping.create({
+      userId,
+      localQuestionMetadataId: question.id,
+      canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
+      localBankId: localBank.id
+    });
+    created += 1;
+  }
+
+  await bankMapping.update({ lastSyncedAt: new Date() });
+
+  return {
+    bankId: localBank.id,
+    created,
+    updated,
+    skipped,
+    lastSyncedAt: bankMapping.lastSyncedAt
+  };
+};

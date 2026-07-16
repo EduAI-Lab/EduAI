@@ -124,6 +124,8 @@ export interface QuestionCreate {
     primaryTopicId: number;
     type: QuestionType;
     questionOrder?: Record<number, number> | null;
+    questionBankId?: number;
+    questionBankIds?: number[];
 }
 
 export interface QuestionGenerationParams {

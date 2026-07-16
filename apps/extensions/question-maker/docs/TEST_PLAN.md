@@ -98,14 +98,18 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 | G1 | Encryption | Done | [encryption.test.js](../app/backend/tests/encryption.test.js) |
 | G2 | Canvas question payload helpers | Done | [canvasExport.test.js](../app/backend/tests/canvasExport.test.js) |
 | G3 | Export flow mocked | Done | [canvasExportMocked.test.js](../app/backend/tests/canvasExportMocked.test.js) |
-| G4 | Canvas `401` | Done | [canvasAuth.test.js](../app/backend/tests/canvasAuth.test.js) |
-| H1 | `scoreMetadataMatch` | Done | [assessmentVariantMetadataScoring.test.js](../app/backend/tests/assessmentVariantMetadataScoring.test.js) |
-| H2 | Assessment-variant `400` | Done | [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) |
-| H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
-| I1 | Health / root | Done | [health.test.js](../app/backend/tests/health.test.js) |
-| I2 | 404 JSON | Done | [health.test.js](../app/backend/tests/health.test.js) |
+| G4 | Canvas `401` | Done | [canvasAuth.test.js](../app/backend/tests/integration/canvasAuth.test.js) |
+| G5 | Canvas question bank client (test mode) | Done | [canvasBankClient.test.js](../app/backend/tests/unit/canvasBankClient.test.js) |
+| G6 | Question banks M2M + Canvas bank sync | Done | [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) |
+| H1 | `scoreMetadataMatch` | Done | [assessmentVariantMetadataScoring.test.js](../app/backend/tests/unit/assessmentVariantMetadataScoring.test.js) |
+| H2 | Assessment-variant `400` | Done | [assessmentVariantHttp.integration.test.js](../app/backend/tests/integration/assessmentVariantHttp.integration.test.js) |
+| H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/integration/planCoverage.integration.test.js) |
+| I1 | Health / root | Done | [health.test.js](../app/backend/tests/integration/health.test.js) |
+| I2 | 404 JSON | Done | [health.test.js](../app/backend/tests/integration/health.test.js) |
 | J1 | Frontend `api` client | Done | [api.test.ts](../app/frontend/src/services/api.test.ts) |
 | J2 | `LoginPage` | Done | [LoginPage.test.tsx](../app/frontend/src/pages/LoginPage.test.tsx) |
+| J3 | Bank selector UI | Done | [BankSelector.test.tsx](../app/frontend/src/components/question-bank/BankSelector.test.tsx) |
+| J4 | Canvas bank sync dialog | Done | [CanvasBankSyncDialog.test.tsx](../app/frontend/src/components/canvas/CanvasBankSyncDialog.test.tsx) |
 
 **Intentional gaps (future work):** F1 “reorder” endpoints; E2E (Playwright/Cypress); full EduAI/Canvas E2E against sandboxes. Add new rows here when you add tests.
 

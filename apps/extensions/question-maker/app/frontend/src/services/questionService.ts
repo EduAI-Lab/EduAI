@@ -71,12 +71,14 @@ export const questionService = {
   /** Fetches questions with optional filters and maps them to frontend shape. */
   async getQuestions(options: {
     courseId?: number;
+    questionBankId?: number;
     search?: string;
     limit?: number;
     offset?: number;
   } = {}): Promise<Question[]> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
+    if (options.questionBankId !== undefined) params.questionBankId = options.questionBankId;
     if (options.search !== undefined) params.search = options.search;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;

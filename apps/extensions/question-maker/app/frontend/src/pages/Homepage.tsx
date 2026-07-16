@@ -20,9 +20,11 @@ import { ToastAction } from '../components/ui/toast';
 import { ProfileCoursesDialog } from '../components/profile/ProfileCoursesDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
+import { CanvasBankSyncDialog } from '../components/canvas/CanvasBankSyncDialog';
 import { useToast } from '../components/ui/use-toast';
 import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
+import { questionBankService, QuestionBank as QuestionBankModel } from '../services/questionBankService';
 import {
     assessmentBlocksToDocxBlob,
     assessmentBlocksToPlainText,
@@ -32,6 +34,7 @@ import {
 
 export const Homepage = () => {
   const LAST_SELECTED_COURSE_KEY = 'home:last-selected-course';
+  const bankStorageKey = (courseId: number) => `home:last-selected-bank:${courseId}`;
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -47,6 +50,9 @@ export const Homepage = () => {
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [banks, setBanks] = useState<QuestionBankModel[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
+  const [isBankSyncOpen, setIsBankSyncOpen] = useState(false);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [isAssessmentsLoading, setIsAssessmentsLoading] = useState(false);
   const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
@@ -612,6 +618,8 @@ export const Homepage = () => {
       if (!selectedCourse) {
         setQuestions([]);
         setSelectedVariant(null);
+        setBanks([]);
+        setSelectedBankId(null);
         return;
       }
 
@@ -619,7 +627,21 @@ export const Homepage = () => {
       setQuestionsError(null);
 
       try {
-        const data = await questionService.getQuestions({ courseId: selectedCourse.id });
+        const bankList = await questionBankService.listBanks(selectedCourse.id);
+        setBanks(bankList);
+
+        const stored = localStorage.getItem(bankStorageKey(selectedCourse.id));
+        const storedId = stored ? Number(stored) : NaN;
+        const restored =
+          Number.isInteger(storedId) && bankList.some((b) => b.id === storedId)
+            ? storedId
+            : null;
+        setSelectedBankId(restored);
+
+        const data = await questionService.getQuestions({
+          courseId: selectedCourse.id,
+          ...(restored != null ? { questionBankId: restored } : {})
+        });
         setQuestions(data);
       } catch (error: any) {
         setQuestions([]);
@@ -631,6 +653,53 @@ export const Homepage = () => {
 
     fetchQuestions();
   }, [selectedCourse]);
+
+  useEffect(() => {
+    if (!selectedCourse) return;
+    if (selectedBankId == null) {
+      localStorage.removeItem(bankStorageKey(selectedCourse.id));
+    } else {
+      localStorage.setItem(bankStorageKey(selectedCourse.id), String(selectedBankId));
+    }
+  }, [selectedCourse, selectedBankId]);
+
+  const reloadQuestionsForBank = useCallback(
+    async (bankId: number | null) => {
+      if (!selectedCourse) return;
+      setIsQuestionsLoading(true);
+      try {
+        const data = await questionService.getQuestions({
+          courseId: selectedCourse.id,
+          ...(bankId != null ? { questionBankId: bankId } : {})
+        });
+        setQuestions(data);
+      } catch (error: any) {
+        setQuestionsError(error?.response?.data?.error || 'Failed to load questions');
+      } finally {
+        setIsQuestionsLoading(false);
+      }
+    },
+    [selectedCourse]
+  );
+
+  const handleBankChange = useCallback(
+    (bankId: number | null) => {
+      setSelectedBankId(bankId);
+      void reloadQuestionsForBank(bankId);
+    },
+    [reloadQuestionsForBank]
+  );
+
+  const handleCreateBank = useCallback(
+    async (name: string) => {
+      if (!selectedCourse) return;
+      const bank = await questionBankService.createBank(selectedCourse.id, { name });
+      setBanks((prev) => [...prev, bank]);
+      setSelectedBankId(bank.id);
+      await reloadQuestionsForBank(bank.id);
+    },
+    [selectedCourse, reloadQuestionsForBank]
+  );
 
   useEffect(() => {
     if (!selectedVariant) {
@@ -846,6 +915,12 @@ export const Homepage = () => {
             disableAdd={!selectedCourse}
             disableUpload={!selectedCourse}
             onOpenProfile={() => startTour('main')}
+            banks={banks}
+            selectedBankId={selectedBankId}
+            onBankChange={handleBankChange}
+            onCreateBank={handleCreateBank}
+            onSyncFromCanvas={() => setIsBankSyncOpen(true)}
+            disableBankControls={!selectedCourse}
           />
         ) : (
         <AssessmentSection
@@ -961,6 +1036,22 @@ export const Homepage = () => {
           });
         }}
       />
+
+      <CanvasBankSyncDialog
+        open={isBankSyncOpen}
+        onClose={() => setIsBankSyncOpen(false)}
+        localCourseId={selectedCourse?.id ?? null}
+        selectedLocalBankId={selectedBankId}
+        onSyncSuccess={async (result) => {
+          const bankList = selectedCourse
+            ? await questionBankService.listBanks(selectedCourse.id)
+            : [];
+          setBanks(bankList);
+          setSelectedBankId(result.bankId);
+          await reloadQuestionsForBank(result.bankId);
+        }}
+      />
+
       <DeleteConfirmationModal
         open={deleteVariantModalOpen}
         onOpenChange={setDeleteVariantModalOpen}
