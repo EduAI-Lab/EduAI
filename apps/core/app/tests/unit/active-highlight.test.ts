@@ -68,6 +68,14 @@ describe("assistive-active-highlight.css", () => {
     expect(css).not.toContain(`[data-sidebar="trigger"]`);
   });
 
+  it("hides the sidebar and chat history rail in focus mode independent of assistive mode", () => {
+    expect(css).not.toMatch(/\[data-assistive\]\[data-assistive-focus-mode\]/);
+    expect(css).toMatch(/\[data-assistive-focus-mode\]\s*\[data-sidebar="sidebar"\]/);
+    expect(css).toMatch(
+      new RegExp(`\\[data-assistive-focus-mode\\]\\s*\\.${CHAT_HISTORY_RAIL_CLASS}`),
+    );
+  });
+
   it("exports hook classes referenced by components", () => {
     expect(css).toContain(`.${CHAT_MESSAGE_ACTIVE_CLASS}`);
     expect(css).toContain(`.${CHAT_MESSAGE_INACTIVE_CLASS}`);
