@@ -1097,7 +1097,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url, opts) => {
-        if (typeof url === 'string' && url.includes('/chat')) {
+        if (typeof url === 'string' && url.includes('/completion')) {
           onFetchCalled();
           return new Promise((_resolve, reject) => {
             opts.signal.addEventListener('abort', () => {
