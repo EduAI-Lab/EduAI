@@ -49,7 +49,7 @@ export async function reconcileUserTACourses(
       where: { userId, role: "TA", isActive: true },
       data: { isActive: false },
     });
-    return { ok: true } as const;
+    return { ok: true, activeTACourseIds: [] as string[] } as const;
   }
 
   if (taCourseIds.length === 0) {
@@ -57,7 +57,7 @@ export async function reconcileUserTACourses(
       where: { userId, role: "TA", isActive: true },
       data: { isActive: false },
     });
-    return { ok: true } as const;
+    return { ok: true, activeTACourseIds: [] as string[] } as const;
   }
 
   const courses = await tx.course.findMany({
@@ -105,7 +105,7 @@ export async function reconcileUserTACourses(
     data: { isActive: false },
   });
 
-  return { ok: true } as const;
+  return { ok: true, activeTACourseIds: taCourseIds } as const;
 }
 
 export async function getCourseTA(courseId: string) {

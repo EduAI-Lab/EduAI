@@ -324,6 +324,7 @@ export async function handleUsersApiRequest(request: Request) {
           (result.data.role !== undefined && effectiveRole !== "STUDENT");
 
         let previousTACourseIds: string[] = [];
+        let activeTACourseIds: string[];
         let updatedWithCount;
         if (shouldReconcileTACourses) {
           const transactionResult = await prisma.$transaction(async (tx) => {
@@ -342,6 +343,7 @@ export async function handleUsersApiRequest(request: Request) {
             }
             return {
               updated: await updateUser(tx),
+              activeTACourseIds: reconciliation.activeTACourseIds,
               previousTACourseIds: previousTAEnrollments.map(
                 (enrollment) => enrollment.courseId,
               ),
@@ -358,9 +360,17 @@ export async function handleUsersApiRequest(request: Request) {
             return apiError(status, transactionResult.error);
           }
           updatedWithCount = transactionResult.updated!;
+          activeTACourseIds = transactionResult.activeTACourseIds!;
           previousTACourseIds = transactionResult.previousTACourseIds!;
         } else {
           updatedWithCount = await updateUser(prisma);
+          const activeTAEnrollments = await prisma.enrollment.findMany({
+            where: { userId, role: "TA", isActive: true },
+            select: { courseId: true },
+          });
+          activeTACourseIds = activeTAEnrollments.map(
+            (enrollment) => enrollment.courseId,
+          );
         }
 
         const { _count, ...updated } = updatedWithCount;
@@ -369,12 +379,6 @@ export async function handleUsersApiRequest(request: Request) {
           await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
-        const activeTAEnrollments = await prisma.enrollment.findMany({
-          where: { userId, role: "TA", isActive: true },
-          select: { courseId: true },
-        });
-
-        const activeTACourseIds = activeTAEnrollments.map((enrollment) => enrollment.courseId);
         const previousTACourseIdSet = new Set(previousTACourseIds);
         const activeTACourseIdSet = new Set(activeTACourseIds);
         const taCourseIdsAdded = activeTACourseIds.filter(
@@ -390,7 +394,7 @@ export async function handleUsersApiRequest(request: Request) {
           taCourseIds: activeTACourseIds,
           _count: {
             enrolledCourses: _count.enrollments,
-            assistedCourses: activeTAEnrollments.length,
+            assistedCourses: activeTACourseIds.length,
             taughtCourses: _count.taughtCourses,
             aiInteractions: _count.aiInteractions,
           },
