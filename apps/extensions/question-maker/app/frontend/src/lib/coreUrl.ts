@@ -3,6 +3,12 @@ export function getCoreUrl(): string {
   return import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
 }
 
+/** Core login URL that breaks the cross-subdomain session redirect loop. */
+export function getCoreLoginUrl(returnUrl = window.location.href): string {
+  const coreUrl = getCoreUrl();
+  return `${coreUrl}/login?force=1&redirect=${encodeURIComponent(returnUrl)}`;
+}
+
 export function getCoreDashboardUrl(): string {
   return `${getCoreUrl()}/dashboard`;
 }

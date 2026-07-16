@@ -4,32 +4,21 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 
 ## Repository structure
 
+Quick map of the monorepo. For the full layout, Core internals, routes, schema, and RBAC, see [`docs/ARCHITECTURE.md` §7](docs/ARCHITECTURE.md#7-codebase-walkthrough-where-to-look).
+
 ```text
 EduAI/
-├── apps/
-│   ├── core/                        # EduAI — RAG chat platform and central API
-│   └── extensions/
-│       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
-│       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
-│       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
-│           └── app/
-│               ├── backend/         # Question Maker Express/Sequelize API
-│               └── frontend/        # Question Maker Vite/React frontend
-├── packages/
-│   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
-│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
-├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
-├── infra/
-│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
-├── scripts/                         # Repo-level setup and dev utilities
-├── docs/                            # System-wide architecture and planning docs
-│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
-│   └── implementations/           # schema-design, planned-core-tests, …
-├── turbo.json                       # Turborepo task pipeline configuration
-├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
-├── CHANGELOG.md                     # Unified changelog across all apps
-├── TESTS.md                         # Canonical test inventory across all apps
-└── .gitignore
+├── apps/core/                       # EduAI Core — RAG chat, auth, central API
+├── apps/extensions/ai-tutor/        # AI Tutor (SPA + Express server)
+├── apps/extensions/question-maker/  # Question Maker (Vite frontend + Express API)
+├── apps/extensions/example-extension/ # Minimal Express extension demonstrating Core auth patterns (dev reference)
+├── packages/ui/                     # @eduai/ui — shared design system components
+├── packages/types/                  # @eduai/types — shared role / Canvas types
+├── docs/                            # Architecture and planning (start with ARCHITECTURE.md)
+├── infra/ · scripts/                # Ops scripts and repo utilities
+├── turbo.json · docker-compose.dev.yml
+├── CHANGELOG.md · TESTS.md
+└── …
 ```
 
 ## Apps
@@ -56,9 +45,11 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`auth-pipeline-centralization-plan.md`](docs/implementations/auth-pipeline-centralization-plan.md) | Auth pipeline centralization — migrating all extensions to Core as the sole OAuth/OIDC provider |
 | [`user-management-and-roles-architecture-plan.md`](docs/user-management-and-roles-architecture-plan.md) | Role hierarchy, permissions, and naming decisions across the platform — **on hold pending Canvas integration** |
 | [`rag-ai/README.md`](docs/rag-ai/README.md) | Index for EduAI chat/RAG docs — pipeline, embeddings, latency sprint (#203), routing (#197), dev server runbook |
+| [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
@@ -265,7 +256,9 @@ exit
 
 ## Running Tests
 
-All test suites run inside Docker. This ensures every developer and CI run uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+Locally, all test suites run inside Docker. This ensures every developer uses an identical Node version, dependency tree, and database state regardless of what is installed locally.
+
+> **Note:** CI (`.github/workflows/pr-tests.yml`) runs the unit/integration suites natively on the runner via `turbo run test` against Postgres service containers instead — remote runners get no Docker layer cache, so the containerized suites rebuilt every image (including a full `npm ci` per image) on every run. E2E still runs the full dockerized stack, with image layers cached in the GitHub Actions cache.
 
 ### Prerequisites
 

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   CourseListView,
@@ -32,15 +32,37 @@ function renderList(props: Partial<React.ComponentProps<typeof CourseListView<Co
 }
 
 describe("CourseListView", () => {
-  it("groups courses by term with compact headings, most recent first", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("puts the current term first, even though a later term is chronologically newer", () => {
+    // Today (mocked) is Oct 2026, inside the W1/2026 course's window — that
+    // group reads "Current" and leads the list, ahead of the chronologically
+    // newer W2/2026 ("Upcoming"); the earlier W1/2025 group is "Previous".
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T00:00:00Z"));
+
     renderList();
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    // 3 distinct terms -> 3 sections, newest first, shown as UBC codes.
-    expect(headings).toEqual(["2026W2", "2026W1", "2025W1"]);
+    // Current term leads; the rest keep their normal most-recent-first order.
+    expect(headings).toEqual(["2026W1", "2026W2", "2025W1"]);
     expect(screen.getAllByTestId("card")).toHaveLength(3);
-    // Newest section reads as the current term, the rest as prior ones.
+    // "Current term" reflects real calendar date, not just the newest group.
     expect(screen.getByText(/Current term · 1 course/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Previous term ·/)).toHaveLength(2);
+    expect(screen.getByText(/Upcoming term · 1 course/)).toBeInTheDocument();
+    expect(screen.getByText(/Previous term · 1 course/)).toBeInTheDocument();
+  });
+
+  it("labels every group 'Previous term' when today is after the newest course's term", () => {
+    // Regression: today being past the newest course's term must not make that
+    // group read as "Current term" just because it's the most recent one added
+    // (the reported bug — July, real UBC term S2, was showing "Currently W2").
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2028-01-15T00:00:00Z")); // years past every course above
+    renderList();
+    expect(screen.queryByText(/Current term ·/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Previous term ·/)).toHaveLength(3);
   });
 
   it("filters by search across title and code", () => {
