@@ -63,4 +63,19 @@ describe('makeCanvasRequest — SSRF re-validation at request time (#991)', () =
     await expect(getCanvasCourses(42)).resolves.toEqual([]);
     expect(axiosRequest).toHaveBeenCalled();
   });
+
+  it('pins the DNS lookup and disables redirects, so a resolved/redirected private address cannot be reached', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+
+    await getCanvasCourses(42);
+
+    const requestConfig = axiosRequest.mock.calls[0][0];
+    expect(requestConfig.maxRedirects).toBe(0);
+    expect(typeof requestConfig.lookup).toBe('function');
+  });
 });
