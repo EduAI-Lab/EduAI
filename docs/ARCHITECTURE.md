@@ -307,10 +307,11 @@ EduAI/
 │   └── extensions/
 │       ├── ai-tutor/                → React Router v7 SPA (app/) + Express/Prisma server (server/), own DB
 │       │                              Session validated via Core; service key for server-to-server
-│       └── question-maker/          → Question bank / assessments
-│           └── app/
-│               ├── backend/         → Express/Sequelize API, own DB
-│               └── frontend/        → Vite/React authoring UI
+│       ├── question-maker/          → Question bank / assessments
+│       │   └── app/
+│       │       ├── backend/         → Express/Sequelize API, own DB
+│       │       └── frontend/        → Vite/React authoring UI
+│       └── example-extension/       → Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
 │   ├── ui/                          → @eduai/ui — shared shadcn + design-system components
 │   └── types/                       → @eduai/types — UserRole, EnrollmentRole, canvas material types
@@ -504,6 +505,8 @@ QM maintains a thin local `users` table (CUID string PK, no password) solely for
 
 
 For the full migration plan and rationale see `[docs/implementations/auth-pipeline-centralization-plan.md](implementations/auth-pipeline-centralization-plan.md)`.
+
+**Onboarding a new extension?** See [`docs/EXTENSION_ONBOARDING.md`](EXTENSION_ONBOARDING.md) for the step-by-step guide covering middleware setup, login redirect, role enforcement, and API connectivity.
 
 ---
 
