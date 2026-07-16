@@ -445,6 +445,15 @@ describe("PATCH /api/users/:id — TA course reconciliation (#967)", () => {
         }),
       }),
     );
+    expect(prisma.enrollment.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: "student-1",
+        role: "TA",
+        isActive: true,
+        courseId: { notIn: ["course-new"] },
+      },
+      data: { role: "STUDENT", isActive: true },
+    });
     expect(prisma.enrollment.findMany).toHaveBeenCalledTimes(2);
   });
 

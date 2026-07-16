@@ -31,6 +31,8 @@ function isInstructorEnrollment(
  * The caller supplies a transaction client so a platform-role update and its
  * enrollment changes commit or roll back together. All validation completes
  * before the first write, including course existence and INSTRUCTOR conflicts.
+ * TA assignments removed from a STUDENT user's desired set are demoted back to
+ * STUDENT enrollments, matching the one-role-per-course RBAC contract.
  */
 export async function reconcileUserTACourses(
   tx: Prisma.TransactionClient,
@@ -55,7 +57,7 @@ export async function reconcileUserTACourses(
   if (taCourseIds.length === 0) {
     await tx.enrollment.updateMany({
       where: { userId, role: "TA", isActive: true },
-      data: { isActive: false },
+      data: { role: "STUDENT", isActive: true },
     });
     return { ok: true, activeTACourseIds: [] as string[] } as const;
   }
@@ -102,7 +104,7 @@ export async function reconcileUserTACourses(
       isActive: true,
       courseId: { notIn: taCourseIds },
     },
-    data: { isActive: false },
+    data: { role: "STUDENT", isActive: true },
   });
 
   return { ok: true, activeTACourseIds: taCourseIds } as const;
