@@ -11,6 +11,7 @@ EduAI/
 ├── apps/core/                       # EduAI Core — RAG chat, auth, central API
 ├── apps/extensions/ai-tutor/        # AI Tutor (SPA + Express server)
 ├── apps/extensions/question-maker/  # Question Maker (Vite frontend + Express API)
+├── apps/extensions/example-extension/ # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/ui/                     # @eduai/ui — shared design system components
 ├── packages/types/                  # @eduai/types — shared role / Canvas types
 ├── docs/                            # Architecture and planning (start with ARCHITECTURE.md)
@@ -48,6 +49,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
