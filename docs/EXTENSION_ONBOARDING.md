@@ -105,7 +105,7 @@ export async function requireAuth(req, res, next) {
     req.user = { ...user, role: normalizeRole(user.role) };
     next();
   } catch {
-    res.status(401).json({ error: 'Authentication required' });
+    res.status(503).json({ error: 'Auth service unavailable — is Core running?' });
   }
 }
 ```
@@ -116,6 +116,7 @@ Key points:
 - **API routes (`/api/*`) return 401.** These are called by fetch, not browser navigation. Let the client handle it.
 - **All other routes redirect to Core login.** The `?redirect=` param tells Core where to send the user after authentication.
 - **Unknown roles normalize to `STUDENT`.** This is the least-privilege default and guards against future roles that the extension hasn't been updated to recognize.
+- **The `catch` block returns 503, not 401.** It only runs when the `fetch` to Core itself fails (network error, Core down) — a distinct failure mode from Core responding with an invalid session. `401` means "you're not authenticated"; `503` means "we couldn't even ask."
 
 ### Core response shape
 

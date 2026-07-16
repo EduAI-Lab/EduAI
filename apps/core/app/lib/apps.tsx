@@ -38,7 +38,7 @@ export function parseExtraExtensions(): LauncherApp[] {
         url: e.url,
         icon: <IconPuzzle className="size-4" />,
         description: e.description,
-        color: e.color ?? 'oklch(0.580 0.150 300)',
+        color: e.color || 'oklch(0.580 0.150 300)',
       }))
   } catch {
     return []
