@@ -7,6 +7,7 @@
  */
 import { findOrCreateUser } from '../services/authService.js';
 import { VALID_ROLES } from './roles.js';
+import { config } from '../config/settings.js';
 
 function normalizeRole(role) {
   return VALID_ROLES.has(role) ? role : 'STUDENT';
@@ -19,7 +20,7 @@ function normalizeRole(role) {
  */
 export async function requireAuth(req, res, next) {
   try {
-    const response = await fetch(`${process.env.CORE_URL || 'http://localhost:3000'}/api/sessions/validate`, {
+    const response = await fetch(`${config.coreUrl}/api/sessions/validate`, {
       method: 'POST',
       headers: { cookie: req.headers.cookie ?? '' },
     });

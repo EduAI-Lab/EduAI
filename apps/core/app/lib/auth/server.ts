@@ -116,6 +116,29 @@ export const auth = betterAuth({
         }
       }
 
+      // #971: reject credential sign-in for deactivated users. Checked here
+      // (before the endpoint's own credential verification) so a deactivated
+      // account never gets a session in the first place — the get-session
+      // after-hook below only covers sessions that already exist. A dummy
+      // password hash keeps the timing profile identical to the "user not
+      // found" branch in better-auth's own sign-in handler, so this check
+      // can't be used to distinguish "wrong password" from "deactivated" by
+      // response latency.
+      if (ctx.path === "/sign-in/email") {
+        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+        const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
+        if (email) {
+          const targetUser = await prisma.user.findUnique({
+            where: { email },
+            select: { isActive: true },
+          });
+          if (targetUser && !targetUser.isActive) {
+            await ctx.context.password.hash(password);
+            throw new APIError("UNAUTHORIZED", { message: "Invalid email or password" });
+          }
+        }
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
       if (!(await getPolicy("auth.allowPublicRegistration"))) {
@@ -136,6 +159,27 @@ export const auth = betterAuth({
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
+    }),
+    // #971: shared session-resolution guard. `/get-session` is the endpoint
+    // every `auth.api.getSession()` call in the app resolves to (they all run
+    // through this same hook pipeline, not just HTTP requests), so gating
+    // here closes the guard for every caller at once instead of patching
+    // each route individually. Handles the case where a user is deactivated
+    // *after* already holding a valid session: the next request treats them
+    // as signed out and the now-orphaned session row is deleted so a leaked
+    // or cached cookie can't be replayed later.
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/get-session") return;
+      const returned = ctx.context.returned as
+        | { session?: { token?: string }; user?: { isActive?: boolean } }
+        | null
+        | undefined;
+      if (!returned?.user || returned.user.isActive !== false) return;
+      const token = returned.session?.token;
+      if (token) {
+        await prisma.session.deleteMany({ where: { token } }).catch(() => {});
+      }
+      return null;
     }),
   },
   databaseHooks: {
@@ -204,6 +248,8 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
+    // Intentionally NO `cookieCache`: serving getSession() from a signed cookie
+    // bypasses immediate session invalidation on deactivation (#971) / logout.
   },
   advanced: {
     useSecureCookies,
