@@ -118,3 +118,45 @@ describe("ChatInput — stop button", () => {
     expect(onStop).toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Focus mode toolbar chip
+// ---------------------------------------------------------------------------
+
+describe("ChatInput — focus mode chip", () => {
+  it("is enabled and toggleable when adhdAssist is false", () => {
+    const onFocusModeChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange: vi.fn(),
+          focusMode: false,
+          onFocusModeChange,
+        })}
+      />,
+    );
+    const focusChip = screen.getByRole("button", { name: /focus mode/i });
+    expect(focusChip).not.toBeDisabled();
+    fireEvent.click(focusChip);
+    expect(onFocusModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it("is enabled and toggleable when adhdAssist is true", () => {
+    const onFocusModeChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: true,
+          onAdhdAssistChange: vi.fn(),
+          focusMode: false,
+          onFocusModeChange,
+        })}
+      />,
+    );
+    const focusChip = screen.getByRole("button", { name: /focus mode/i });
+    expect(focusChip).not.toBeDisabled();
+    fireEvent.click(focusChip);
+    expect(onFocusModeChange).toHaveBeenCalledWith(true);
+  });
+});

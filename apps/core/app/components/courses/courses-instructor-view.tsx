@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
 import { IconBook, IconPlus } from '@tabler/icons-react'
 import {
@@ -31,6 +31,7 @@ import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
+import { buildDateListSections } from '~/lib/courses/date-list-sections'
 import {
   PolicyTooltip,
   usePolicyGate,
@@ -55,14 +56,14 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
 
   const { isEnabled } = usePolicyGate()
   // Mirror the backend policy gates. Instead of hiding controls an admin turned
-  // off (which reads as a bug — issue #807), we keep them visible but greyed-out
+  // off (which reads as a bug ΓÇö issue #807), we keep them visible but greyed-out
   // with a tooltip. While policies load these report enabled, so an admin-on
   // control never flickers to disabled.
   const canCreate = isEnabled('instructors.canCreateCourses')
   const canPublish = isEnabled('instructors.canPublishCourses')
   const canDelete = isEnabled('instructors.canDeleteCourses')
 
-  // Safety cleanup: if the Radix DropdownMenu→Dialog lifecycle race left
+  // Safety cleanup: if the Radix DropdownMenuΓåÆDialog lifecycle race left
   // pointer-events:none on <body>, clear it once no dialog is open.
   useEffect(() => {
     if (!editingCourse && !deletingCourse) {
@@ -137,12 +138,12 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   <Input id="ins-name" name="name" placeholder="Introduction to Computer Science" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="ins-dept">Department</Label>
+                  <Label htmlFor="ins-dept">Course Code</Label>
                   <DepartmentCombobox
                     departments={departmentOptions}
                     value={selectedDept}
                     onValueChange={setSelectedDept}
-                    placeholder="No department"
+                    placeholder="No course code"
                     disabled={deptLoading}
                   />
                 </div>
@@ -150,7 +151,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   <Label htmlFor="ins-code">Course number</Label>
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 rounded-md border bg-muted px-3 py-2 text-sm font-mono text-muted-foreground">
-                      {selectedDept || '—'}
+                      {selectedDept || 'ΓÇö'}
                     </span>
                     <Input
                       id="ins-code"
@@ -206,7 +207,8 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
         courses={courses}
         gridClassName="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         getKey={(course) => course.id}
-        getTermInfo={(course) => ({ term: course.term, year: course.year })}
+        getTermInfo={(course) => ({ term: course.term, year: course.year, startDate: course.startDate })}
+        groupSections={buildDateListSections}
         getSearchText={(course) => `${course.name} ${course.code}`}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
@@ -256,7 +258,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
             href={`/courses/${course.id}`}
             LinkComponent={Link}
             actions={{
-              // §2 / issue #807: keep publish & delete visible but greyed-out
+              // ┬º2 / issue #807: keep publish & delete visible but greyed-out
               // when the instructor's policy flag is off, so the missing action
               // reads as "admin turned this off", not a bug.
               showPublish: true,
@@ -281,7 +283,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
           <DialogHeader>
             <DialogTitle>Delete course</DialogTitle>
             <DialogDescription>
-              Delete <strong>{deletingCourse?.code} — {deletingCourse?.name}</strong>? This cannot be undone.
+              Delete <strong>{deletingCourse?.code} ΓÇö {deletingCourse?.name}</strong>? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

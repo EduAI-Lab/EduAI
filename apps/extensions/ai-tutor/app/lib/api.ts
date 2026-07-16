@@ -43,8 +43,19 @@ import type {
   SuggestedPrompt,
   User,
 } from './types';
+import { getCoreLoginUrl } from './coreUrl';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+/**
+ * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
+ * upstream Core `/api/sessions/validate` hangs, a bare `/api/me` would never
+ * settle — stranding loaders and leaving the "Initializing your workspace"
+ * spinner running forever. Applied opt-in via `timeoutMs` on that call (below),
+ * NOT globally: most of the API surface (imports, sync) may legitimately run
+ * longer and hasn't been audited against a blanket cutoff.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
 
 /**
  * Local response shapes for endpoints not yet modeled in `./types`. Kept here
@@ -112,29 +123,76 @@ export class ApiNetworkError extends Error {
   }
 }
 
+/** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
+export class ApiTimeoutError extends Error {
+  constructor(message = 'Request timed out') {
+    super(message);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+// #999: the chat send path has no bound on how long a hung upstream call can
+// leave the UI showing "Thinking...". This is the client-side half of that
+// fix — the AI Tutor server also bounds its own EduAI round-trip
+// (EDUAI_CALL_TIMEOUT_MS, default 45s) so this should normally see a clean
+// 504 response (mapped to ApiTimeoutError below) before ever firing; it
+// exists as a backstop. Opt-in via `timeoutMs` — deliberately NOT a global
+// default, since most of the API surface (imports, sync operations, etc.)
+// may legitimately take longer than a chat turn and hasn't been audited
+// against a blanket cutoff.
+export const CHAT_TIMEOUT_MS = 60_000;
+
 /**
  * Single fetch wrapper for the entire API surface. Every caller goes through
  * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
  * (e.g. sign-out) should bypass this helper intentionally.
+ *
+ * `init.signal`, if provided, lets the caller cancel the request directly
+ * (e.g. a "Stop generating" button) — it's merged with the internal timeout
+ * controller (when `init.timeoutMs` is also set) rather than passed straight
+ * through, so both can independently abort the same underlying fetch.
+ * Without `timeoutMs`, only `init.signal` (if provided) can abort — there is
+ * no default timeout.
  */
-async function http(path: string, init?: RequestInit) {
+async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
+  const { signal: callerSignal, timeoutMs, ...rest } = init ?? {};
+  const controller = new AbortController();
+  const TIMEOUT_REASON = Symbol('http-timeout');
+  const timeoutId =
+    timeoutMs != null ? setTimeout(() => controller.abort(TIMEOUT_REASON), timeoutMs) : undefined;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', () => controller.abort(callerSignal.reason), { once: true });
+  }
+
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
-      ...init,
+      ...rest,
       credentials: 'include',
       headers: {
         ...headers,
         ...init?.headers,
       },
+      signal: controller.signal,
     });
-  } catch {
+  } catch (err) {
+    if (controller.signal.reason === TIMEOUT_REASON) {
+      throw new ApiTimeoutError();
+    }
+    if (controller.signal.aborted) {
+      // Caller-initiated cancellation (e.g. Stop button) — rethrow as-is so
+      // callers can distinguish it from a real failure via `error.name`.
+      throw err;
+    }
     throw new ApiNetworkError();
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
@@ -145,9 +203,17 @@ async function http(path: string, init?: RequestInit) {
     // lesson outside their unit). Surface 403 as a normal error instead so the
     // route's error boundary can render it.
     if (res.status === 401) {
-      const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
-      window.location.href = `${coreUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+      window.location.href = getCoreLoginUrl();
       throw new Error('Authentication required');
+    }
+    // 504 = the AI Tutor server's own upstream call timed out (see
+    // EDUAI_CALL_TIMEOUT_MS in callEduAI()) — this is the common case in
+    // practice, since the server's 45s bound fires well before this client's
+    // own timeoutMs backstop. Map it to the same ApiTimeoutError callers
+    // already handle for a client-side timeout, so "took too long" is shown
+    // either way.
+    if (res.status === 504) {
+      throw new ApiTimeoutError();
     }
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
@@ -158,8 +224,26 @@ async function http(path: string, init?: RequestInit) {
   return res.json();
 }
 
+/**
+ * De-dupes concurrent `/api/me` calls. On a single navigation both the route
+ * guard (`requireClientUser`) and the `AuthProvider` mount effect call
+ * `api.me()` independently — without coalescing, that is two full round-trips
+ * to Core's `/api/sessions/validate` per page. While a request is in flight,
+ * additional callers share it; the slot clears as soon as it settles, so the
+ * result is never cached across navigations (auth state stays fresh).
+ */
+let meInFlight: Promise<{ user: User | null }> | null = null;
+
 export const api = {
-  me: () => http('/api/me') as Promise<{ user: User | null }>,
+  me: () => {
+    if (meInFlight) return meInFlight;
+    // #446: bound the session probe so a hung upstream can't strand the
+    // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
+    meInFlight = (http('/api/me', { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>).finally(() => {
+      meInFlight = null;
+    });
+    return meInFlight;
+  },
   aiStatus: () =>
     http('/api/ai-status') as Promise<{
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
@@ -366,10 +450,13 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/teach`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
   sendGuideMessage: (
     activityId: number,
@@ -382,10 +469,13 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/guide`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
   sendCustomMessage: (
     activityId: number,
@@ -399,10 +489,13 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/custom`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
   listChatSessions: (activityId: number) =>
     http(`/api/activities/${activityId}/chat-sessions`) as Promise<

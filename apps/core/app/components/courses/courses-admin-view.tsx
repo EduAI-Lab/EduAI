@@ -122,7 +122,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                 <Input id="create-name" name="name" placeholder="Introduction to Computer Science" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-dept">Department</Label>
+                <Label htmlFor="create-dept">Course Code</Label>
                 <DepartmentCombobox
                   departments={departmentOptions}
                   value={createDept}
@@ -296,12 +296,12 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
                 <Input name="code" defaultValue={editingCourse.code} required />
               </div>
               <div className="grid gap-2">
-                <Label>Department</Label>
+                <Label>Course Code</Label>
                 <DepartmentCombobox
                   departments={departmentOptions}
                   value={editDept}
                   onValueChange={setEditDept}
-                  placeholder="No department"
+                  placeholder="No course code"
                   disabled={deptLoading}
                 />
               </div>
