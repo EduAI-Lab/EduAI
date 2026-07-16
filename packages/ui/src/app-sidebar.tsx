@@ -31,6 +31,11 @@ export interface AppSidebarProps
    * role can access. The header brand stays a plain home link either way.
    */
   launcher?: Pick<BrandSwitcherProps, "apps" | "currentAppId" | "role">
+  /**
+   * Optional leading content in the sidebar footer (above the app switcher /
+   * user menu) — e.g. AI Tutor's "Take Tour" control (#740).
+   */
+  footerLeading?: React.ReactNode
 }
 
 export function AppSidebar({
@@ -43,6 +48,7 @@ export function AppSidebar({
   user,
   navUser,
   launcher,
+  footerLeading,
   ...props
 }: AppSidebarProps) {
   return (
@@ -82,6 +88,7 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter>
+        {footerLeading}
         {launcher && <AppSwitcher {...launcher} />}
         <NavUser user={user} LinkComponent={LinkComponent} {...navUser} />
       </SidebarFooter>
