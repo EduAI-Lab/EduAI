@@ -137,7 +137,7 @@ describe("removeCourseTA", () => {
 });
 
 describe("reconcileUserTACourses", () => {
-  it("creates, reactivates, promotes, and deactivates TA enrollments as one desired set", async () => {
+  it("creates, reactivates, promotes, and demotes TA enrollments as one desired set", async () => {
     prismaMock.course.findMany.mockResolvedValue([
       { id: "course-1" },
       { id: "course-2" },
@@ -178,7 +178,22 @@ describe("reconcileUserTACourses", () => {
         isActive: true,
         courseId: { notIn: ["course-1", "course-2", "course-3"] },
       },
-      data: { isActive: false },
+      data: { role: "STUDENT", isActive: true },
+    });
+  });
+
+  it("demotes all TA assignments when a STUDENT has no desired TA courses", async () => {
+    const result = await reconcileUserTACourses(
+      prismaMock as never,
+      USER.id,
+      "STUDENT",
+      [],
+    );
+
+    expect(result).toEqual({ ok: true, activeTACourseIds: [] });
+    expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
+      where: { userId: USER.id, role: "TA", isActive: true },
+      data: { role: "STUDENT", isActive: true },
     });
   });
 
