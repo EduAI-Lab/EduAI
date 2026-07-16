@@ -156,7 +156,10 @@ describe("reconcileUserTACourses", () => {
       ["course-1", "course-2", "course-3"],
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({
+      ok: true,
+      activeTACourseIds: ["course-1", "course-2", "course-3"],
+    });
     expect(prismaMock.enrollment.update).toHaveBeenCalledWith({
       where: { id: "student-enrollment" },
       data: { role: "TA", isActive: true },
@@ -215,7 +218,7 @@ describe("reconcileUserTACourses", () => {
       [],
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, activeTACourseIds: [] });
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
       where: { userId: USER.id, role: "TA", isActive: true },
       data: { isActive: false },
