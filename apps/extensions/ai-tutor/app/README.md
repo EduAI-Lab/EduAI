@@ -27,14 +27,15 @@ app/
     Nav.tsx                         # Global navigation bar
     ProgressBar.tsx                 # Progress bar with percentage label
     PublishStatusButton.tsx         # Publish/unpublish toggle with tooltip
-    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs)
+    StudentAiChat.tsx               # AI chat sidebar (teach/guide/custom tabs, session restore)
+    StudentChatHistoryPanel.tsx     # Chat history sheet (list/restore sessions, retryable load errors)
     StudentActivityFeedbackCard.tsx # Post-submission difficulty rating form
     ActivityDetailsCard.tsx         # Collapsible activity detail view
     AddActivityPanel.tsx            # New activity creation form
     EditActivityPanel.tsx           # Activity editing form
     AddCourseTopicsButton.tsx       # Inline topic creation
     TopicSyncMappingDialog.tsx      # Topic remapping dialog for EduAI sync
-    TourButton.tsx                  # "Take Tour" button (student routes only)
+    TourButton.tsx                  # "Take Tour" sidebar control (STUDENT/TA; hidden for instructors/admins)
     TourProvider.tsx                # Guided tour state manager (driver.js)
     ai-elements/                    # AI chat UI primitives
       conversation.tsx              #   Chat scroll container (use-stick-to-bottom)

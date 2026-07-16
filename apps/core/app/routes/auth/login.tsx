@@ -15,9 +15,13 @@ import { getActorContext, getRequestContext } from "~/lib/request-context.server
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = validateRedirectUrl(url.searchParams.get("redirect"));
+  const forceReauth = url.searchParams.get("force") === "1";
   const session = await auth.api.getSession({ headers: request.headers });
 
-  if (session?.user) {
+  // Extensions redirect here with force=1 when Core has a host-only session cookie
+  // that is not sent to other *.eduai.ok.ubc.ca subdomains. Skip auto-redirect so
+  // the user can sign in again and receive a cross-subdomain cookie.
+  if (session?.user && !forceReauth) {
     return redirect(redirectTo);
   }
 
@@ -25,7 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // so usePolicies() is unavailable here).
   const allowRegistration = await getPolicy("auth.allowPublicRegistration");
 
-  return { redirectTo, allowRegistration };
+  return { redirectTo, allowRegistration, forceReauth };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -161,9 +165,10 @@ export default function LoginPage() {
     fieldErrors?: Partial<Record<keyof SignInInput, string>>;
     formError?: string;
   } | undefined;
-  const { redirectTo, allowRegistration } = useLoaderData() as {
+  const { redirectTo, allowRegistration, forceReauth } = useLoaderData() as {
     redirectTo: string;
     allowRegistration: boolean;
+    forceReauth: boolean;
   };
 
   return (
@@ -189,6 +194,11 @@ export default function LoginPage() {
 
       {/* Card */}
       <div className="w-full max-w-[440px] mx-4 bg-card border rounded-[var(--radius-xl)] p-9 shadow-lg" style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
+        {forceReauth && (
+          <p className="text-sm text-muted-foreground mb-4 text-center">
+            Sign in again so your session works across EduAI apps on this server.
+          </p>
+        )}
         <Form method="post">
           <input type="hidden" name="redirectTo" value={redirectTo} />
           {actionData?.formError && (

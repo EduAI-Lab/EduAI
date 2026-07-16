@@ -1079,6 +1079,63 @@ describe('Tutoring-flow: question consumption via Core', () => {
 
     expect(res.status).toBe(200);
   });
+
+  // #999 PR review: a client abort (Stop button) must actually cancel the
+  // upstream EduAI call, not just the browser fetch — otherwise the model
+  // request keeps running server-side and can still persist a session/trace
+  // for a turn the student already cancelled.
+  it('a client abort (Stop button) cancels the upstream EduAI call and skips persistence', async () => {
+    let onFetchCalled;
+    const fetchCalled = new Promise((resolve) => {
+      onFetchCalled = resolve;
+    });
+    let onSignalAborted;
+    const signalAborted = new Promise((resolve) => {
+      onSignalAborted = resolve;
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url, opts) => {
+        if (typeof url === 'string' && url.includes('/chat')) {
+          onFetchCalled();
+          return new Promise((_resolve, reject) => {
+            opts.signal.addEventListener('abort', () => {
+              onSignalAborted();
+              const err = new Error('This operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+        });
+      }),
+    );
+
+    const pendingRequest = request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    // Swallow the client-side rejection from aborting below — this test only
+    // cares about server-side behavior after the abort.
+    pendingRequest.catch(() => {});
+
+    // Wait until the server has actually reached the EduAI fetch call, then
+    // abort the client request (simulates clicking Stop) and wait for the
+    // forwarded AbortSignal to actually fire server-side.
+    await fetchCalled;
+    pendingRequest.abort();
+    await signalAborted;
+
+    // Let handleAiInteraction's catch/finally run after the fetch rejection.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const sessions = await prisma.aiChatSession.findMany({ where: { activityId: activity.id } });
+    expect(sessions).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

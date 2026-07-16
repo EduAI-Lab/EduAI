@@ -9,8 +9,7 @@ import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesAdminView } from '~/components/courses/courses-admin-view'
 import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesTaView } from '~/components/courses/courses-ta-view'
-import { CoursesStudentView } from '~/components/courses/courses-student-view'
+import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
   Breadcrumb,
@@ -26,35 +25,36 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await auth.api.getSession({ headers: request.headers })
   if (!session?.user) return redirect('/auth/login')
 
-  // Fetch authorizedUnits directly from DB — Better Auth session may not include
-  // custom array fields reliably across all environments.
-  let authorizedUnits: string[] = []
-  if (session.user.role === 'UNIT_ADMIN') {
-    const dbUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { authorizedUnits: true },
-    })
-    authorizedUnits = dbUser?.authorizedUnits ?? []
-  }
-
-  // Fetch instructors for course creation forms (ADMIN and UNIT_ADMIN only)
-  let instructors: { id: string; name: string | null; email: string }[] = []
-  if (session.user.role === 'ADMIN' || session.user.role === 'UNIT_ADMIN') {
-    instructors = await prisma.user.findMany({
-      where: { role: 'INSTRUCTOR', isActive: true },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: 'asc' },
-    })
-  }
-
-  // Scope list to enrollment assignments (#499) — never hardcode course ids; read
-  // active Enrollment rows for this user and split by role (§5 list gate). A TA is
-  // an Enrollment with role=TA; STUDENT-platform users may hold both TA and STUDENT
-  // enrollments, so we split by enrollment role.
-  const enrollmentRows = await prisma.enrollment.findMany({
-    where: { userId: session.user.id, isActive: true },
-    select: { courseId: true, role: true },
-  })
+  // These three reads are independent — run them in parallel instead of serially.
+  //  - authorizedUnits: read directly from DB (Better Auth session may not include
+  //    custom array fields reliably across all environments); UNIT_ADMIN only.
+  //  - instructors: for course-creation forms; ADMIN and UNIT_ADMIN only.
+  //  - enrollmentRows: scope the list to enrollment assignments (#499) — never
+  //    hardcode course ids; read active Enrollment rows and split by role (§5 list
+  //    gate). A TA is an Enrollment with role=TA; STUDENT-platform users may hold
+  //    both TA and STUDENT enrollments, so we split by enrollment role.
+  const isUnitAdmin = session.user.role === 'UNIT_ADMIN'
+  const canListInstructors = session.user.role === 'ADMIN' || isUnitAdmin
+  const [dbUser, instructors, enrollmentRows] = await Promise.all([
+    isUnitAdmin
+      ? prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { authorizedUnits: true },
+        })
+      : Promise.resolve(null),
+    canListInstructors
+      ? prisma.user.findMany({
+          where: { role: 'INSTRUCTOR', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([] as { id: string; name: string | null; email: string }[]),
+    prisma.enrollment.findMany({
+      where: { userId: session.user.id, isActive: true },
+      select: { courseId: true, role: true },
+    }),
+  ])
+  const authorizedUnits = dbUser?.authorizedUnits ?? []
   const taCourseIds = enrollmentRows
     .filter((r) => r.role === 'TA')
     .map((r) => r.courseId)
@@ -154,15 +154,11 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggleRequest}
           />
-        ) : isTA ? (
-          <CoursesTaView
-            courses={courses.filter((c) => taCourseIds.includes(c.id))}
-          />
         ) : (
-          <CoursesStudentView
-            courses={courses.filter(
-              (c) => enrolledCourseIds.includes(c.id) && c.isPublished,
-            )}
+          <CoursesMixedView
+            courses={courses}
+            taCourseIds={taCourseIds}
+            enrolledCourseIds={enrolledCourseIds}
           />
         )}
       </div>

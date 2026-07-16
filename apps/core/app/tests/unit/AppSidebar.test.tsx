@@ -85,10 +85,14 @@ describe("AppSidebar — rendering", () => {
     // the footer app switcher (AppSwitcher). Its popover contents aren't
     // rendered under happy-dom (Radix), so assert the trigger is present; the
     // RBAC gate on the popover is covered in @eduai/ui's app-launcher.test.tsx.
+    // The switcher only appears when 2+ apps are accessible (#636 env-var-gated
+    // visibility), so stub AI Tutor's URL as configured for this assertion.
+    vi.stubEnv("VITE_AI_TUTOR_URL", "http://localhost:4100");
     renderSidebar("STUDENT");
     expect(
       screen.getByRole("button", { name: "Switch app" }),
     ).toBeInTheDocument();
+    vi.unstubAllEnvs();
   });
 });
 
