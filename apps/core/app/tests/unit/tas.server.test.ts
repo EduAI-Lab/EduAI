@@ -114,7 +114,7 @@ describe("addCourseTA", () => {
 });
 
 describe("removeCourseTA", () => {
-  it("deactivates the TA enrollment and returns audit fields", async () => {
+  it("demotes the TA enrollment to STUDENT and returns audit fields", async () => {
     prismaMock.enrollment.findFirst.mockResolvedValue({
       id: "enr-1",
       user: { name: USER.name },
@@ -123,7 +123,7 @@ describe("removeCourseTA", () => {
     const result = await removeCourseTA(COURSE_ID, { userId: USER.id });
     expect(prismaMock.enrollment.updateMany).toHaveBeenCalledWith({
       where: { courseId: COURSE_ID, userId: USER.id, role: "TA", isActive: true },
-      data: { isActive: false },
+      data: { role: "STUDENT", isActive: true },
     });
     expect(result).toEqual({ success: true, taId: "enr-1", taName: USER.name });
   });

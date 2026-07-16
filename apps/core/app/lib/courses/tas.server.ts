@@ -171,8 +171,8 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
   }
 
   // A TA is an Enrollment with role = "TA"; there is no CourseTA table.
-  // Capture the enrollment before deactivation so the audit log can record the
-  // enrollment id and the TA's name (both unavailable once the row is inactive).
+  // Capture the enrollment before demotion so the audit log can record the
+  // enrollment id and the TA's name after the row becomes a STUDENT enrollment.
   const existing = await prisma.enrollment.findFirst({
     where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
     select: { id: true, user: { select: { name: true } } },
@@ -181,7 +181,7 @@ export async function removeCourseTA(courseId: string, payload: RemoveTAInput) {
 
   await prisma.enrollment.updateMany({
     where: { courseId, userId: parsed.data.userId, role: "TA", isActive: true },
-    data: { isActive: false },
+    data: { role: "STUDENT", isActive: true },
   });
 
   return {
