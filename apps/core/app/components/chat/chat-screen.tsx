@@ -94,7 +94,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(
     initialTranscript && !initialTranscript.canEdit ? initialTranscript : null,
   );
-  const [focusMode, setFocusMode] = useState(false);
+  // Carried across the /chat -> /chat/:chatId replace-navigation that fires once
+  // the first message in a new chat creates its chatId (that route swap remounts
+  // ChatScreen — see chat.$chatId.tsx's `key={transcript.chat.id}` — which would
+  // otherwise silently drop focus mode back to its default).
+  const [focusMode, setFocusMode] = useState(
+    Boolean((location.state as { focusMode?: boolean } | null)?.focusMode),
+  );
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   const wasLoadingRef = useRef(false);
@@ -119,9 +125,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) {
-        setFocusMode(false);
-      }
       // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
       setAssistive(checked);
     },
@@ -161,13 +164,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   useEffect(() => {
     const el = document.documentElement;
-    if (assistive && focusMode) {
+    if (focusMode) {
       el.setAttribute("data-assistive-focus-mode", "true");
     } else {
       el.removeAttribute("data-assistive-focus-mode");
     }
     return () => el.removeAttribute("data-assistive-focus-mode");
-  }, [assistive, focusMode]);
+  }, [focusMode]);
 
   useAssistiveReorientation({
     enabled: assistive && reorientationEpoch > 0,
@@ -244,7 +247,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         const id = pendingNavigateChatId.current;
         if (id && location.pathname === "/chat") {
           pendingNavigateChatId.current = null;
-          navigate(`/chat/${id}`, { replace: true });
+          navigate(`/chat/${id}`, { replace: true, state: { focusMode } });
         }
       },
       onError: (error) => logChatUseChatError(error, "learning-chat"),
@@ -343,7 +346,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       if (data.chatId && !chatId) {
         setChatId(data.chatId);
         if (location.pathname === "/chat") {
-          navigate(`/chat/${data.chatId}`, { replace: true });
+          navigate(`/chat/${data.chatId}`, { replace: true, state: { focusMode } });
         }
       }
     } catch (error) {
