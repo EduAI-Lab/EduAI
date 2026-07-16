@@ -5,10 +5,14 @@
  * metadata endpoint (e.g. http://169.254.169.254/). Validates scheme and rejects
  * IP-literal hostnames in private/loopback/link-local/reserved ranges.
  *
- * This does not resolve hostnames via DNS, so a public domain that later resolves
- * to a private address (DNS rebinding) is not caught — only IP-literal targeting.
+ * `validateCanvasUrl` alone only catches IP-literal targeting — a public hostname
+ * that resolves (or later rebinds) to a private address would sail through. Real
+ * requests must also use `createPinnedLookup()` as the request's DNS `lookup` and
+ * disable redirects (`maxRedirects: 0`), so the resolved address is re-validated
+ * at connection time and a permitted host can't redirect the request elsewhere.
  */
 import net from 'node:net';
+import dns from 'node:dns';
 
 export class CanvasUrlValidationError extends Error {
   constructor(message) {
@@ -33,12 +37,35 @@ function isPrivateIPv4(address) {
   return false;
 }
 
-/** True for ::1 (loopback), fe80::/10 (link-local), fc00::/7 (unique local), and IPv4-mapped private addresses. */
+/**
+ * Expands a normalized IPv6 address (as returned by `URL.hostname`) into its
+ * 8 constituent 16-bit groups, resolving `::` compression. Returns null if
+ * the address can't be parsed as 8 groups (should not happen for a value
+ * `net.isIP` has already confirmed is a valid IPv6 literal).
+ */
+function expandIPv6Groups(address) {
+  const [head, tail] = address.split('::');
+  const headGroups = head ? head.split(':') : [];
+  const tailGroups = tail ? tail.split(':') : [];
+  if (tail === undefined) {
+    // No '::' compression present.
+    return headGroups.length === 8 ? headGroups.map((g) => parseInt(g, 16)) : null;
+  }
+  const missing = 8 - headGroups.length - tailGroups.length;
+  if (missing < 0) return null;
+  const groups = [...headGroups, ...Array(missing).fill('0'), ...tailGroups];
+  return groups.map((g) => parseInt(g, 16));
+}
+
+/**
+ * True for ::1 (loopback), :: (unspecified), fe80::/10 (link-local, the full
+ * range — fe80 through febf in the first group, not just the fe80 prefix),
+ * fc00::/7 (unique local), and IPv4-mapped private addresses.
+ */
 function isPrivateIPv6(address) {
   const normalized = address.toLowerCase();
-  if (normalized === '::1') return true;
-  if (normalized.startsWith('fe80:')) return true;
-  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized === '::1' || normalized === '::') return true;
+
   if (normalized.startsWith('::ffff:')) {
     // Node's URL parser normalizes an IPv4-mapped literal to hex groups
     // (e.g. `::ffff:127.0.0.1` -> `::ffff:7f00:1`), so handle both forms.
@@ -53,6 +80,14 @@ function isPrivateIPv6(address) {
     }
     return false;
   }
+
+  const groups = expandIPv6Groups(normalized);
+  if (!groups || groups.some((g) => !Number.isInteger(g))) return false;
+  const first = groups[0];
+  // fe80::/10: top 10 bits fixed => first group in [0xfe80, 0xfebf].
+  if (first >= 0xfe80 && first <= 0xfebf) return true;
+  // fc00::/7: top 7 bits fixed => first group in [0xfc00, 0xfdff].
+  if (first >= 0xfc00 && first <= 0xfdff) return true;
   return false;
 }
 
@@ -83,4 +118,31 @@ export function validateCanvasUrl(rawUrl) {
   }
 
   return parsed;
+}
+
+/**
+ * Returns a Node-`dns.lookup`-compatible function for use as an HTTP request's
+ * `lookup` option. It resolves the hostname, rejects any result in a private/
+ * reserved range (closing the DNS-rebinding gap `validateCanvasUrl` leaves open),
+ * and hands back the validated address — pinning the connection to it so nothing
+ * can re-resolve to a different (unvalidated) address between check and use.
+ */
+export function createPinnedLookup() {
+  return (hostname, options, callback) => {
+    dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
+      if (err) return callback(err);
+      for (const { address, family } of addresses) {
+        const isPrivate = family === 4 ? isPrivateIPv4(address) : isPrivateIPv6(address);
+        if (isPrivate) {
+          return callback(
+            new CanvasUrlValidationError(
+              `Canvas hostname resolved to a private or reserved address (${address})`
+            )
+          );
+        }
+      }
+      const [{ address, family }] = addresses;
+      callback(null, address, family);
+    });
+  };
 }

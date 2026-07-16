@@ -7,7 +7,7 @@ import { CanvasIntegration, CanvasCourseMapping, Question_Metadata, Variants, As
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
-import { validateCanvasUrl } from '../utils/canvasUrlGuard.js';
+import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
 
 /**
  * Canvas LMS API Service
@@ -126,7 +126,14 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     headers: {
       'Authorization': `Bearer ${integration.apiKey}`,
       'Content-Type': 'application/json'
-    }
+    },
+    // A hostname that passed validateCanvasUrl's IP-literal check can still
+    // resolve (or later rebind) to a private address — pin the DNS lookup so
+    // the resolved address is re-validated at connection time, and refuse to
+    // follow redirects so a permitted host can't hand the request off to an
+    // unvalidated one.
+    lookup: createPinnedLookup(),
+    maxRedirects: 0
   };
 
   if (data) {
