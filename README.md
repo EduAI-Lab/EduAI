@@ -4,32 +4,21 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 
 ## Repository structure
 
+Quick map of the monorepo. For the full layout, Core internals, routes, schema, and RBAC, see [`docs/ARCHITECTURE.md` §7](docs/ARCHITECTURE.md#7-codebase-walkthrough-where-to-look).
+
 ```text
 EduAI/
-├── apps/
-│   ├── core/                        # EduAI — RAG chat platform and central API
-│   └── extensions/
-│       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
-│       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
-│       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
-│           └── app/
-│               ├── backend/         # Question Maker Express/Sequelize API
-│               └── frontend/        # Question Maker Vite/React frontend
-├── packages/
-│   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
-│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
-├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
-├── infra/
-│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
-├── scripts/                         # Repo-level setup and dev utilities
-├── docs/                            # System-wide architecture and planning docs
-│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
-│   └── implementations/           # schema-design, planned-core-tests, …
-├── turbo.json                       # Turborepo task pipeline configuration
-├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
-├── CHANGELOG.md                     # Unified changelog across all apps
-├── TESTS.md                         # Canonical test inventory across all apps
-└── .gitignore
+├── apps/core/                       # EduAI Core — RAG chat, auth, central API
+├── apps/extensions/ai-tutor/        # AI Tutor (SPA + Express server)
+├── apps/extensions/question-maker/  # Question Maker (Vite frontend + Express API)
+├── apps/extensions/example-extension/ # Minimal Express extension demonstrating Core auth patterns (dev reference)
+├── packages/ui/                     # @eduai/ui — shared design system components
+├── packages/types/                  # @eduai/types — shared role / Canvas types
+├── docs/                            # Architecture and planning (start with ARCHITECTURE.md)
+├── infra/ · scripts/                # Ops scripts and repo utilities
+├── turbo.json · docker-compose.dev.yml
+├── CHANGELOG.md · TESTS.md
+└── …
 ```
 
 ## Apps
@@ -60,7 +49,8 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
 | [`AGENT_READINESS.md`](docs/AGENT_READINESS.md) | Agent-ready REST endpoints and admin/learning chat tool coverage snapshot ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
