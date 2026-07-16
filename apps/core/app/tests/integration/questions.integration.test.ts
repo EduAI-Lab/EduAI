@@ -393,11 +393,20 @@ describe("POST /api/questions", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it("does not replay another user's key before course RBAC", async () => {
+  it("rejects course RBAC before touching idempotency records", async () => {
     mockGetSession.mockResolvedValue({ user: { id: "student-2", role: "STUDENT" } });
     mockCourseAccess("STUDENT");
     db.idempotencyRecord.create.mockResolvedValue({});
-    db.idempotencyRecord.deleteMany.mockResolvedValue({ count: 1 });
+    db.idempotencyRecord.findUnique.mockResolvedValue({
+      key: "idem-replay-test",
+      route: "POST /api/questions",
+      actorId: "u1",
+      requestHash: "other-user-hash",
+      status: "COMPLETED",
+      statusCode: 201,
+      responseBody: { id: QUESTION_ID },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
 
     const res = await postAction(
       makePostArgs(
@@ -407,9 +416,11 @@ describe("POST /api/questions", () => {
     );
 
     expect(res.status).toBe(403);
-    expect(db.idempotencyRecord.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ actorId: "student-2" }),
-    });
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+    // Course access runs before withIdempotency, so a forbidden caller never
+    // creates or replays an idempotency record (including another user's key).
+    expect(db.idempotencyRecord.create).not.toHaveBeenCalled();
+    expect(db.idempotencyRecord.findUnique).not.toHaveBeenCalled();
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 });
