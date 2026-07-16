@@ -1,6 +1,4 @@
 import type { NavItem, NavGroupItem, NavUser } from '~/lib/rbac/types'
-import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
-import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
@@ -9,28 +7,12 @@ const CORE_NAV: NavItem[] = [
 
 const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Course Chat', url: '/chat' }
 
-const QM_NAV_ITEM: NavItem = {
-  key: 'question-maker',
-  title: 'Question Maker',
-  url: getQuestionMakerUrl(),
-  external: true,
-}
-
-const AI_TUTOR_NAV_ITEM: NavItem = {
-  key: 'ai-tutor',
-  title: 'AI Tutor',
-  url: getAiTutorAppUrl(),
-  external: true,
-}
-
-const QM_NAV_ROLES = new Set(['INSTRUCTOR', 'ADMIN', 'UNIT_ADMIN'])
-
 const ADMIN_NAV: NavItem[] = [
   { key: 'admin-users', title: 'User Management', url: '/admin/users' },
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
-  { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
+  { key: 'admin-settings', title: 'Settings', url: '/admin/settings' },
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
   { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
 ]

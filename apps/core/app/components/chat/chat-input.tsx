@@ -313,7 +313,7 @@ export function ChatInput({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          disabled={!adhdAssist || controlsDisabled}
+                          disabled={controlsDisabled}
                           aria-pressed={focusMode}
                           aria-label="Focus mode"
                           onClick={() => onFocusModeChange(!focusMode)}
@@ -321,8 +321,6 @@ export function ChatInput({
                             TOOLBAR_CHIP,
                             chipPress,
                             focusMode && TOOLBAR_TOGGLE_ACTIVE,
-                            !adhdAssist &&
-                              "pointer-events-none opacity-35 grayscale",
                           )}
                         >
                           <IconFocusCentered size={12} stroke={2} />
