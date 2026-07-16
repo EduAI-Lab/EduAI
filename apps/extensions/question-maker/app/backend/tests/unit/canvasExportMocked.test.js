@@ -40,12 +40,9 @@ vi.mock('../../src/schema/index.js', () => ({
 }));
 
 vi.mock('../../src/services/questionBankService.js', () => ({
+  listBanks: vi.fn(),
   createBank: vi.fn(),
   addQuestionToBank: vi.fn()
-}));
-
-vi.mock('../../src/schema/QuestionBank.js', () => ({
-  QuestionBank: { findOne: vi.fn() }
 }));
 
 const { exportAssessmentToCanvas } = await import('../../src/services/canvasService.js');

@@ -1,10 +1,11 @@
 /**
  * API client for per-course question banks and membership.
+ * Bank ids are Core CUIDs (strings); QM proxies to EduAI Core.
  */
 import api from './api';
 
 export interface QuestionBank {
-  id: number;
+  id: string;
   courseId: number;
   name: string;
   description?: string | null;
@@ -29,7 +30,7 @@ export const questionBankService = {
 
   async updateBank(
     courseId: number,
-    bankId: number,
+    bankId: string,
     payload: { name?: string; description?: string | null }
   ): Promise<QuestionBank> {
     const response = await api.put(`/api/course/${courseId}/banks/${bankId}`, payload);
@@ -38,8 +39,8 @@ export const questionBankService = {
 
   async deleteBank(
     courseId: number,
-    bankId: number,
-    moveMembershipsToBankId?: number
+    bankId: string,
+    moveMembershipsToBankId?: string
   ): Promise<void> {
     await api.delete(`/api/course/${courseId}/banks/${bankId}`, {
       data: moveMembershipsToBankId ? { moveMembershipsToBankId } : undefined
@@ -48,7 +49,7 @@ export const questionBankService = {
 
   async addQuestionToBank(
     courseId: number,
-    bankId: number,
+    bankId: string,
     questionMetadataId: number
   ): Promise<void> {
     await api.post(`/api/course/${courseId}/banks/${bankId}/questions`, {
@@ -58,7 +59,7 @@ export const questionBankService = {
 
   async removeQuestionFromBank(
     courseId: number,
-    bankId: number,
+    bankId: string,
     questionMetadataId: number
   ): Promise<void> {
     await api.delete(

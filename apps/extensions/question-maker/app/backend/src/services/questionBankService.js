@@ -1,329 +1,239 @@
 /**
- * Question bank CRUD, default-bank ensure/backfill, and multi-bank membership helpers.
+ * Question bank operations proxied to EduAI Core.
+ * Local QM courses are resolved to Core courses by matching `code`.
+ * Membership stores QM Question_Metadata ids as externalQuestionId on Core.
  */
-import {
-  Course,
-  QuestionBank,
-  QuestionBankMembership,
-  Question_Metadata
-} from '../schema/index.js';
+import { Course, Question_Metadata } from '../schema/index.js';
+import eduaiService from './eduaiService.js';
 
 export const DEFAULT_BANK_NAME = 'Course bank';
+const SOURCE = 'question-maker';
 
-/**
- * Returns the default bank for a course, creating one if missing.
- * @param {number} courseId
- * @param {{ transaction?: import('sequelize').Transaction }} [options]
- */
-export async function ensureDefaultBank(courseId, options = {}) {
-  const { transaction } = options;
-  let bank = await QuestionBank.findOne({
-    where: { courseId, isDefault: true },
-    transaction
-  });
-  if (bank) {
-    return bank;
+const normalizeCode = (value) =>
+  value == null ? '' : String(value).replace(/\s+/g, '').toLowerCase();
+
+function coreError(message, status = 400) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+async function callCore(fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error.status) throw error;
+    const status = error.response?.status || 502;
+    const message =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      error.message ||
+      'EduAI Core request failed';
+    throw coreError(message, status);
   }
-  bank = await QuestionBank.create(
-    {
-      courseId,
-      name: DEFAULT_BANK_NAME,
-      isDefault: true
-    },
-    { transaction }
-  );
-  return bank;
 }
 
 /**
- * Idempotent backfill: ensure every course has a default bank and every question
- * has at least one membership (on that course's default bank).
- * @returns {Promise<{ coursesProcessed: number, banksCreated: number, membershipsCreated: number }>}
+ * Resolve a local QM course to a Core course CUID via course code.
+ * @param {number} localCourseId
+ * @param {number} userId
+ * @returns {Promise<{ localCourse: object, coreCourseId: string }>}
  */
-export async function backfillDefaultBanks() {
-  const courses = await Course.findAll({ attributes: ['id'] });
-  let banksCreated = 0;
-  let membershipsCreated = 0;
-
-  for (const course of courses) {
-    const existingDefault = await QuestionBank.findOne({
-      where: { courseId: course.id, isDefault: true }
-    });
-    if (!existingDefault) {
-      banksCreated += 1;
-    }
-    const defaultBank = await ensureDefaultBank(course.id);
-
-    const questions = await Question_Metadata.findAll({
-      where: { courseId: course.id },
-      attributes: ['id'],
-      include: [
-        {
-          model: QuestionBankMembership,
-          as: 'bankMemberships',
-          required: false,
-          attributes: ['id']
-        }
-      ]
-    });
-
-    for (const question of questions) {
-      const memberships = question.bankMemberships || [];
-      if (memberships.length === 0) {
-        await QuestionBankMembership.findOrCreate({
-          where: {
-            questionBankId: defaultBank.id,
-            questionMetadataId: question.id
-          },
-          defaults: {
-            questionBankId: defaultBank.id,
-            questionMetadataId: question.id
-          }
-        });
-        membershipsCreated += 1;
-      }
-    }
+export async function resolveCoreCourse(localCourseId, userId) {
+  const localCourse = await Course.findOne({
+    where: { id: localCourseId, userId }
+  });
+  if (!localCourse) {
+    throw coreError('Course not found', 404);
+  }
+  if (!localCourse.code?.trim()) {
+    throw coreError(
+      'Course code is required to sync question banks with EduAI Core',
+      400
+    );
   }
 
+  if (!eduaiService.isConfigured()) {
+    throw coreError(
+      'EduAI Core is not configured. Set EDUAI_API_URL and EDUAI_API_KEY.',
+      503
+    );
+  }
+
+  const listed = await callCore(() => eduaiService.listCourses());
+  const courses = Array.isArray(listed)
+    ? listed
+    : Array.isArray(listed?.courses)
+      ? listed.courses
+      : [];
+  const match = courses.find(
+    (c) => normalizeCode(c.code) === normalizeCode(localCourse.code)
+  );
+  if (!match?.id) {
+    throw coreError(
+      `No EduAI Core course found with code "${localCourse.code}"`,
+      404
+    );
+  }
+
+  return { localCourse, coreCourseId: String(match.id) };
+}
+
+/** Map Core bank JSON to the shape the QM frontend expects. */
+function mapBank(bank, localCourseId) {
   return {
-    coursesProcessed: courses.length,
-    banksCreated,
-    membershipsCreated
+    id: bank.id,
+    courseId: localCourseId,
+    name: bank.name,
+    description: bank.description ?? null,
+    isDefault: Boolean(bank.isDefault),
+    createdAt: bank.createdAt,
+    updatedAt: bank.updatedAt
   };
 }
 
-/**
- * Lists banks for a course (caller must verify ownership).
- * @param {number} courseId
- */
-export async function listBanks(courseId) {
-  return QuestionBank.findAll({
-    where: { courseId },
-    order: [
-      ['isDefault', 'DESC'],
-      ['createdAt', 'ASC']
-    ]
-  });
+export async function ensureDefaultBank(localCourseId, userId) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const banks = await callCore(() =>
+    eduaiService.listQuestionBanks(coreCourseId)
+  );
+  const list = Array.isArray(banks?.banks) ? banks.banks : [];
+  let defaultBank = list.find((b) => b.isDefault);
+  if (!defaultBank) {
+    // Core listQuestionBanks already ensures default; refetch
+    const again = await callCore(() =>
+      eduaiService.listQuestionBanks(coreCourseId)
+    );
+    defaultBank =
+      (again?.banks || []).find((b) => b.isDefault) || again?.banks?.[0];
+  }
+  if (!defaultBank) {
+    throw coreError('Failed to ensure default question bank in Core', 500);
+  }
+  return mapBank(defaultBank, localCourseId);
 }
 
-/**
- * Creates a non-default bank on a course.
- * @param {number} courseId
- * @param {{ name: string, description?: string|null }} payload
- */
-export async function createBank(courseId, { name, description = null }) {
+export async function listBanks(localCourseId, userId) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const payload = await callCore(() =>
+    eduaiService.listQuestionBanks(coreCourseId)
+  );
+  const banks = Array.isArray(payload?.banks) ? payload.banks : [];
+  return banks.map((b) => mapBank(b, localCourseId));
+}
+
+export async function createBank(localCourseId, userId, { name, description = null }) {
   const trimmed = typeof name === 'string' ? name.trim() : '';
   if (!trimmed) {
-    const err = new Error('Bank name is required');
-    err.status = 400;
-    throw err;
+    throw coreError('Bank name is required', 400);
   }
-  return QuestionBank.create({
-    courseId,
-    name: trimmed,
-    description: description ?? null,
-    isDefault: false
-  });
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const bank = await callCore(() =>
+    eduaiService.createQuestionBank(coreCourseId, {
+      name: trimmed,
+      description
+    })
+  );
+  return mapBank(bank, localCourseId);
 }
 
-/**
- * Updates bank name/description. Rejects clearing default flag via this path.
- * @param {number} courseId
- * @param {number} bankId
- * @param {{ name?: string, description?: string|null }} payload
- */
-export async function updateBank(courseId, bankId, payload) {
-  const bank = await QuestionBank.findOne({ where: { id: bankId, courseId } });
-  if (!bank) {
-    const err = new Error('Question bank not found');
-    err.status = 404;
-    throw err;
-  }
-  const updates = {};
-  if (payload.name !== undefined) {
-    const trimmed = typeof payload.name === 'string' ? payload.name.trim() : '';
-    if (!trimmed) {
-      const err = new Error('Bank name is required');
-      err.status = 400;
-      throw err;
-    }
-    updates.name = trimmed;
-  }
-  if (payload.description !== undefined) {
-    updates.description = payload.description;
-  }
-  await bank.update(updates);
-  return bank;
+export async function updateBank(localCourseId, userId, bankId, payload) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const bank = await callCore(() =>
+    eduaiService.updateQuestionBank(coreCourseId, bankId, payload)
+  );
+  return mapBank(bank, localCourseId);
 }
 
-/**
- * Deletes a non-default bank. Moves memberships when moveMembershipsToBankId is set,
- * or requires the bank to be empty.
- * @param {number} courseId
- * @param {number} bankId
- * @param {{ moveMembershipsToBankId?: number }} [options]
- */
-export async function deleteBank(courseId, bankId, options = {}) {
-  const bank = await QuestionBank.findOne({ where: { id: bankId, courseId } });
-  if (!bank) {
-    const err = new Error('Question bank not found');
-    err.status = 404;
-    throw err;
-  }
-  if (bank.isDefault) {
-    const err = new Error('Cannot delete the default question bank');
-    err.status = 400;
-    throw err;
-  }
-
-  const membershipCount = await QuestionBankMembership.count({
-    where: { questionBankId: bankId }
-  });
-
-  if (membershipCount > 0) {
-    const moveTo = options.moveMembershipsToBankId;
-    if (!moveTo) {
-      const err = new Error(
-        'Bank has questions; provide moveMembershipsToBankId to reassign memberships'
-      );
-      err.status = 400;
-      throw err;
-    }
-    const target = await QuestionBank.findOne({
-      where: { id: moveTo, courseId }
-    });
-    if (!target) {
-      const err = new Error('Target bank not found in this course');
-      err.status = 400;
-      throw err;
-    }
-    if (target.id === bank.id) {
-      const err = new Error('moveMembershipsToBankId must differ from the bank being deleted');
-      err.status = 400;
-      throw err;
-    }
-
-    const memberships = await QuestionBankMembership.findAll({
-      where: { questionBankId: bankId }
-    });
-    for (const membership of memberships) {
-      await QuestionBankMembership.findOrCreate({
-        where: {
-          questionBankId: target.id,
-          questionMetadataId: membership.questionMetadataId
-        },
-        defaults: {
-          questionBankId: target.id,
-          questionMetadataId: membership.questionMetadataId
-        }
-      });
-      await membership.destroy();
-    }
-  }
-
-  await bank.destroy();
-  return { deleted: true };
+export async function deleteBank(localCourseId, userId, bankId, options = {}) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  return callCore(() =>
+    eduaiService.deleteQuestionBank(coreCourseId, bankId, {
+      moveMembershipsToBankId: options.moveMembershipsToBankId
+    })
+  );
 }
 
-/**
- * Ensures a question is a member of a bank (same course). Idempotent.
- * @param {number} questionBankId
- * @param {number} questionMetadataId
- */
-export async function addQuestionToBank(questionBankId, questionMetadataId) {
-  const bank = await QuestionBank.findByPk(questionBankId);
-  if (!bank) {
-    const err = new Error('Question bank not found');
-    err.status = 404;
-    throw err;
-  }
+export async function addQuestionToBank(localCourseId, userId, bankId, questionMetadataId) {
   const question = await Question_Metadata.findByPk(questionMetadataId);
   if (!question) {
-    const err = new Error('Question not found');
-    err.status = 404;
-    throw err;
+    throw coreError('Question not found', 404);
   }
-  if (question.courseId !== bank.courseId) {
-    const err = new Error('Question and bank must belong to the same course');
-    err.status = 400;
-    throw err;
+  if (Number(question.courseId) !== Number(localCourseId)) {
+    throw coreError('Question and bank must belong to the same course', 400);
   }
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const membership = await callCore(() =>
+    eduaiService.addQuestionBankMembership(coreCourseId, bankId, {
+      externalQuestionId: String(questionMetadataId),
+      source: SOURCE
+    })
+  );
+  return { membership, created: true };
+}
 
-  const [membership, created] = await QuestionBankMembership.findOrCreate({
-    where: { questionBankId, questionMetadataId },
-    defaults: { questionBankId, questionMetadataId }
-  });
-  return { membership, created };
+export async function removeQuestionFromBank(
+  localCourseId,
+  userId,
+  bankId,
+  questionMetadataId
+) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  return callCore(() =>
+    eduaiService.removeQuestionBankMembership(
+      coreCourseId,
+      bankId,
+      String(questionMetadataId),
+      SOURCE
+    )
+  );
 }
 
 /**
- * Removes membership from a bank. If it was the last membership, reassigns to the default bank.
- * @param {number} courseId
- * @param {number} questionBankId
- * @param {number} questionMetadataId
+ * Attach a newly created local question to one or more Core banks.
  */
-export async function removeQuestionFromBank(courseId, questionBankId, questionMetadataId) {
-  const bank = await QuestionBank.findOne({ where: { id: questionBankId, courseId } });
-  if (!bank) {
-    const err = new Error('Question bank not found');
-    err.status = 404;
-    throw err;
-  }
-
-  const membership = await QuestionBankMembership.findOne({
-    where: { questionBankId, questionMetadataId }
-  });
-  if (!membership) {
-    const err = new Error('Question is not a member of this bank');
-    err.status = 404;
-    throw err;
-  }
-
-  await membership.destroy();
-
-  const remaining = await QuestionBankMembership.count({
-    where: { questionMetadataId }
-  });
-  if (remaining === 0) {
-    const defaultBank = await ensureDefaultBank(courseId);
-    await QuestionBankMembership.create({
-      questionBankId: defaultBank.id,
-      questionMetadataId
-    });
-    return { removed: true, reassignedToDefault: true, defaultBankId: defaultBank.id };
-  }
-
-  return { removed: true, reassignedToDefault: false };
-}
-
-/**
- * Attach a newly created question to one or more banks (default bank if none given).
- * @param {number} courseId
- * @param {number} questionMetadataId
- * @param {{ questionBankId?: number, questionBankIds?: number[] }} [opts]
- */
-export async function attachQuestionToBanks(courseId, questionMetadataId, opts = {}) {
+export async function attachQuestionToBanks(
+  localCourseId,
+  userId,
+  questionMetadataId,
+  opts = {}
+) {
   let bankIds = [];
   if (Array.isArray(opts.questionBankIds) && opts.questionBankIds.length > 0) {
-    bankIds = opts.questionBankIds.map(Number).filter((id) => Number.isInteger(id));
-  } else if (opts.questionBankId != null) {
-    bankIds = [Number(opts.questionBankId)];
+    bankIds = opts.questionBankIds.map(String).filter(Boolean);
+  } else if (opts.questionBankId != null && opts.questionBankId !== '') {
+    bankIds = [String(opts.questionBankId)];
   }
 
   if (bankIds.length === 0) {
-    const defaultBank = await ensureDefaultBank(courseId);
-    bankIds = [defaultBank.id];
+    const defaultBank = await ensureDefaultBank(localCourseId, userId);
+    bankIds = [String(defaultBank.id)];
   }
 
   for (const bankId of bankIds) {
-    const bank = await QuestionBank.findOne({ where: { id: bankId, courseId } });
-    if (!bank) {
-      const err = new Error('Question bank not found for this course');
-      err.status = 400;
-      throw err;
-    }
-    await addQuestionToBank(bankId, questionMetadataId);
+    await addQuestionToBank(localCourseId, userId, bankId, questionMetadataId);
   }
-
   return bankIds;
+}
+
+/**
+ * External question ids that belong to a Core bank (for filtering local QM questions).
+ */
+export async function listExternalQuestionIdsForBank(localCourseId, userId, bankId) {
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  const payload = await callCore(() =>
+    eduaiService.listQuestionBankMemberships(coreCourseId, bankId)
+  );
+  const memberships = Array.isArray(payload?.memberships)
+    ? payload.memberships
+    : [];
+  return memberships
+    .filter((m) => (m.source || SOURCE) === SOURCE)
+    .map((m) => Number(m.externalQuestionId))
+    .filter((id) => Number.isInteger(id));
+}
+
+/** @deprecated local backfill — Core ensures default banks; no-op for API compatibility */
+export async function backfillDefaultBanks() {
+  return { coursesProcessed: 0, banksCreated: 0, membershipsCreated: 0 };
 }

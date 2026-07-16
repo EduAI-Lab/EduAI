@@ -35,15 +35,12 @@ export const CanvasBankQuestionMapping = sequelize.define('CanvasBankQuestionMap
     allowNull: false,
     field: 'canvas_assessment_question_id'
   },
+  // Core QuestionBank id (cuid string) — banks live in EduAI Core
   localBankId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING(64),
     allowNull: true,
     field: 'local_bank_id',
-    references: {
-      model: 'question_banks',
-      key: 'id'
-    },
-    comment: 'Bank that last synced this remote question'
+    comment: 'Core bank that last synced this remote question'
   },
   createdAt: {
     type: DataTypes.DATE,

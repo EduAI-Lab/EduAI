@@ -71,7 +71,7 @@ export const questionService = {
   /** Fetches questions with optional filters and maps them to frontend shape. */
   async getQuestions(options: {
     courseId?: number;
-    questionBankId?: number;
+    questionBankId?: string | number;
     search?: string;
     limit?: number;
     offset?: number;

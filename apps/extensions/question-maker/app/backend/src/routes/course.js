@@ -35,7 +35,12 @@ router.post('/', authenticateToken, async (req, res, next) => {
       code: courseCode || null
     });
 
-    await ensureDefaultBank(courseData.id);
+    // Soft-fail: Core banks require matching Core course + API key
+    await ensureDefaultBank(courseData.id, req.user.id).catch((err) => {
+      console.warn(
+        `ensureDefaultBank skipped for new course ${courseData.id}: ${err.message}`
+      );
+    });
 
     res.status(201).json({
       success: true,
@@ -287,15 +292,18 @@ router.get('/:id/banks', authenticateToken, async (req, res, next) => {
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    await ensureDefaultBank(course.id);
-    const banks = await listBanks(course.id);
+    await ensureDefaultBank(course.id, req.user.id);
+    const banks = await listBanks(course.id, req.user.id);
     res.json({ success: true, data: banks });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
     next(error);
   }
 });
 
-/** POST /api/course/:id/banks – creates a named question bank. */
+/** POST /api/course/:id/banks – creates a named question bank (via EduAI Core). */
 router.post('/:id/banks', authenticateToken, async (req, res, next) => {
   try {
     const course = await Course.findOne({
@@ -304,7 +312,7 @@ router.post('/:id/banks', authenticateToken, async (req, res, next) => {
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    const bank = await createBank(course.id, {
+    const bank = await createBank(course.id, req.user.id, {
       name: req.body.name,
       description: req.body.description
     });
@@ -330,7 +338,7 @@ router.put('/:id/banks/:bankId', authenticateToken, async (req, res, next) => {
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    const bank = await updateBank(course.id, Number(req.params.bankId), {
+    const bank = await updateBank(course.id, req.user.id, req.params.bankId, {
       name: req.body.name,
       description: req.body.description
     });
@@ -356,9 +364,9 @@ router.delete('/:id/banks/:bankId', authenticateToken, async (req, res, next) =>
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    const result = await deleteBank(course.id, Number(req.params.bankId), {
+    const result = await deleteBank(course.id, req.user.id, req.params.bankId, {
       moveMembershipsToBankId: req.body?.moveMembershipsToBankId
-        ? Number(req.body.moveMembershipsToBankId)
+        ? String(req.body.moveMembershipsToBankId)
         : undefined
     });
     res.json({
@@ -383,13 +391,6 @@ router.post('/:id/banks/:bankId/questions', authenticateToken, async (req, res, 
     if (!course) {
       return res.status(404).json({ success: false, error: 'Course not found' });
     }
-    const { QuestionBank } = await import('../schema/index.js');
-    const bank = await QuestionBank.findOne({
-      where: { id: Number(req.params.bankId), courseId: course.id }
-    });
-    if (!bank) {
-      return res.status(404).json({ success: false, error: 'Question bank not found' });
-    }
     const questionMetadataId = Number(req.body.questionMetadataId);
     if (!Number.isInteger(questionMetadataId)) {
       return res.status(400).json({
@@ -397,10 +398,15 @@ router.post('/:id/banks/:bankId/questions', authenticateToken, async (req, res, 
         error: 'questionMetadataId is required'
       });
     }
-    const result = await addQuestionToBank(bank.id, questionMetadataId);
-    res.status(result.created ? 201 : 200).json({
+    const result = await addQuestionToBank(
+      course.id,
+      req.user.id,
+      req.params.bankId,
+      questionMetadataId
+    );
+    res.status(201).json({
       success: true,
-      message: result.created ? 'Question added to bank' : 'Question already in bank',
+      message: 'Question added to bank',
       data: result.membership
     });
   } catch (error) {
@@ -425,7 +431,8 @@ router.delete(
       }
       const result = await removeQuestionFromBank(
         course.id,
-        Number(req.params.bankId),
+        req.user.id,
+        req.params.bankId,
         Number(req.params.questionMetadataId)
       );
       res.json({

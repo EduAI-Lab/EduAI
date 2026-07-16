@@ -51,7 +51,7 @@ export const Homepage = () => {
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [banks, setBanks] = useState<QuestionBankModel[]>([]);
-  const [selectedBankId, setSelectedBankId] = useState<number | null>(null);
+  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
   const [isBankSyncOpen, setIsBankSyncOpen] = useState(false);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [isAssessmentsLoading, setIsAssessmentsLoading] = useState(false);
@@ -631,11 +631,8 @@ export const Homepage = () => {
         setBanks(bankList);
 
         const stored = localStorage.getItem(bankStorageKey(selectedCourse.id));
-        const storedId = stored ? Number(stored) : NaN;
         const restored =
-          Number.isInteger(storedId) && bankList.some((b) => b.id === storedId)
-            ? storedId
-            : null;
+          stored && bankList.some((b) => b.id === stored) ? stored : null;
         setSelectedBankId(restored);
 
         const data = await questionService.getQuestions({
@@ -664,7 +661,7 @@ export const Homepage = () => {
   }, [selectedCourse, selectedBankId]);
 
   const reloadQuestionsForBank = useCallback(
-    async (bankId: number | null) => {
+    async (bankId: string | null) => {
       if (!selectedCourse) return;
       setIsQuestionsLoading(true);
       try {
@@ -683,7 +680,7 @@ export const Homepage = () => {
   );
 
   const handleBankChange = useCallback(
-    (bankId: number | null) => {
+    (bankId: string | null) => {
       setSelectedBankId(bankId);
       void reloadQuestionsForBank(bankId);
     },

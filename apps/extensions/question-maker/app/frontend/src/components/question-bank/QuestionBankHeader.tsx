@@ -16,8 +16,8 @@ interface QuestionBankHeaderProps {
   disableAdd?: boolean;
   disableUpload?: boolean;
   banks?: QuestionBankModel[];
-  selectedBankId?: number | null;
-  onBankChange?: (bankId: number | null) => void;
+  selectedBankId?: string | null;
+  onBankChange?: (bankId: string | null) => void;
   onCreateBank?: (name: string) => Promise<void> | void;
   onSyncFromCanvas?: () => void;
   disableBankControls?: boolean;

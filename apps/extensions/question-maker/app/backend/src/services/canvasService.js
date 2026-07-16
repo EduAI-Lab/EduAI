@@ -18,10 +18,10 @@ import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
 import {
+  listBanks,
   createBank,
   addQuestionToBank
 } from './questionBankService.js';
-import { QuestionBank } from '../schema/QuestionBank.js';
 
 /**
  * Canvas LMS API Service
@@ -1038,45 +1038,48 @@ export const importQuestionBankFromCanvas = async (
   const remoteBank = await getCanvasQuestionBank(userId, canvasBankId);
   const remoteQuestions = await getCanvasQuestionBankQuestions(userId, canvasBankId);
 
+  const banks = await listBanks(localCourseId, userId);
   let localBank = null;
   const existingMapping = await CanvasBankMapping.findOne({
     where: { userId, canvasBankId: Number(canvasBankId) }
   });
 
   if (options.targetBankId) {
-    localBank = await QuestionBank.findOne({
-      where: { id: Number(options.targetBankId), courseId: localCourseId }
-    });
+    const targetId = String(options.targetBankId);
+    localBank = banks.find((b) => b.id === targetId) || null;
     if (!localBank) {
       const err = new Error('Target bank not found in this course');
       err.status = 400;
       throw err;
     }
   } else if (existingMapping) {
-    localBank = await QuestionBank.findOne({
-      where: { id: existingMapping.localBankId, courseId: localCourseId }
-    });
+    localBank = banks.find((b) => b.id === String(existingMapping.localBankId)) || null;
   }
 
   if (!localBank) {
     const title =
       (remoteBank && (remoteBank.title || remoteBank.name)) ||
       `Canvas bank ${canvasBankId}`;
-    localBank = await createBank(localCourseId, { name: String(title).trim() || 'Imported bank' });
+    localBank = await createBank(localCourseId, userId, {
+      name: String(title).trim() || 'Imported bank'
+    });
   }
 
   const [bankMapping] = await CanvasBankMapping.findOrCreate({
     where: { userId, canvasBankId: Number(canvasBankId) },
     defaults: {
       userId,
-      localBankId: localBank.id,
+      localBankId: String(localBank.id),
       canvasCourseId: Number(canvasCourseId),
       canvasBankId: Number(canvasBankId),
       lastSyncedAt: null
     }
   });
-  if (bankMapping.localBankId !== localBank.id) {
-    await bankMapping.update({ localBankId: localBank.id, canvasCourseId: Number(canvasCourseId) });
+  if (String(bankMapping.localBankId) !== String(localBank.id)) {
+    await bankMapping.update({
+      localBankId: String(localBank.id),
+      canvasCourseId: Number(canvasCourseId)
+    });
   }
 
   let created = 0;
@@ -1124,8 +1127,13 @@ export const importQuestionBankFromCanvas = async (
             choices: converted.choices
           });
         }
-        await addQuestionToBank(localBank.id, metadata.id);
-        await existingQMap.update({ localBankId: localBank.id });
+        await addQuestionToBank(
+          localCourseId,
+          userId,
+          localBank.id,
+          metadata.id
+        );
+        await existingQMap.update({ localBankId: String(localBank.id) });
         updated += 1;
       } else {
         skipped += 1;
@@ -1155,7 +1163,7 @@ export const importQuestionBankFromCanvas = async (
       userId,
       localQuestionMetadataId: question.id,
       canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
-      localBankId: localBank.id
+      localBankId: String(localBank.id)
     });
     created += 1;
   }

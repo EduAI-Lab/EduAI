@@ -649,6 +649,97 @@ Please ensure the questions are appropriate for the course level and cover the k
     }
   }
 
+  _coreHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "x-api-key": this.apiKey,
+    };
+  }
+
+  _assertConfigured() {
+    if (!this.isConfigured()) {
+      throw new Error(
+        "EduAI service is not configured. Please set EDUAI_API_KEY environment variable."
+      );
+    }
+  }
+
+  async listQuestionBanks(coreCourseId) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks`;
+    const response = await axios.get(url, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async createQuestionBank(coreCourseId, payload) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks`;
+    const response = await axios.post(url, payload, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async updateQuestionBank(coreCourseId, bankId, payload) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}`;
+    const response = await axios.put(url, payload, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async deleteQuestionBank(coreCourseId, bankId, payload = {}) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}`;
+    const response = await axios.delete(url, {
+      headers: this._coreHeaders(),
+      data: payload,
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async listQuestionBankMemberships(coreCourseId, bankId) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}/questions`;
+    const response = await axios.get(url, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async addQuestionBankMembership(coreCourseId, bankId, payload) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}/questions`;
+    const response = await axios.post(url, payload, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
+  async removeQuestionBankMembership(
+    coreCourseId,
+    bankId,
+    externalQuestionId,
+    source = "question-maker"
+  ) {
+    this._assertConfigured();
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}/questions/${externalQuestionId}?source=${encodeURIComponent(source)}`;
+    const response = await axios.delete(url, {
+      headers: this._coreHeaders(),
+      timeout: 60000,
+    });
+    return response.data;
+  }
+
   /** Retrieves the list of AI models supported by EduAI for display in pickers. */
   async listAIModels() {
     if (!this.isConfigured()) {

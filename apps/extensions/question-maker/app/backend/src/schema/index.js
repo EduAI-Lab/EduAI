@@ -15,8 +15,6 @@ import { CanvasIntegration } from './CanvasIntegration.js';
 import { CanvasCourseMapping } from './CanvasCourseMapping.js';
 import { BugReport } from './BugReport.js';
 import { VariantSelectionCursor } from './VariantSelectionCursor.js';
-import { QuestionBank } from './QuestionBank.js';
-import { QuestionBankMembership } from './QuestionBankMembership.js';
 import { CanvasBankMapping } from './CanvasBankMapping.js';
 import { CanvasBankQuestionMapping } from './CanvasBankQuestionMapping.js';
 
@@ -83,32 +81,9 @@ VariantSelectionCursor.belongsTo(Question_Metadata, { foreignKey: 'questionMetad
 Variants.hasMany(VariantSelectionCursor, { foreignKey: 'lastVariantId', as: 'selectionCursorLastPicked' });
 VariantSelectionCursor.belongsTo(Variants, { foreignKey: 'lastVariantId', as: 'lastVariant' });
 
-// Question banks (many-to-many with Question_Metadata via memberships)
-Course.hasMany(QuestionBank, { foreignKey: 'courseId', as: 'questionBanks' });
-QuestionBank.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
-
-QuestionBank.belongsToMany(Question_Metadata, {
-  through: QuestionBankMembership,
-  foreignKey: 'questionBankId',
-  otherKey: 'questionMetadataId',
-  as: 'questions'
-});
-Question_Metadata.belongsToMany(QuestionBank, {
-  through: QuestionBankMembership,
-  foreignKey: 'questionMetadataId',
-  otherKey: 'questionBankId',
-  as: 'banks'
-});
-
-QuestionBank.hasMany(QuestionBankMembership, { foreignKey: 'questionBankId', as: 'memberships' });
-QuestionBankMembership.belongsTo(QuestionBank, { foreignKey: 'questionBankId', as: 'bank' });
-Question_Metadata.hasMany(QuestionBankMembership, { foreignKey: 'questionMetadataId', as: 'bankMemberships' });
-QuestionBankMembership.belongsTo(Question_Metadata, { foreignKey: 'questionMetadataId', as: 'question' });
-
+// Canvas bank sync mappings (localBankId stores Core QuestionBank cuid)
 User.hasMany(CanvasBankMapping, { foreignKey: 'userId', as: 'canvasBankMappings' });
 CanvasBankMapping.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-QuestionBank.hasMany(CanvasBankMapping, { foreignKey: 'localBankId', as: 'canvasMappings' });
-CanvasBankMapping.belongsTo(QuestionBank, { foreignKey: 'localBankId', as: 'localBank' });
 
 User.hasMany(CanvasBankQuestionMapping, { foreignKey: 'userId', as: 'canvasBankQuestionMappings' });
 CanvasBankQuestionMapping.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -120,7 +95,6 @@ CanvasBankQuestionMapping.belongsTo(Question_Metadata, {
   foreignKey: 'localQuestionMetadataId',
   as: 'localQuestion'
 });
-CanvasBankQuestionMapping.belongsTo(QuestionBank, { foreignKey: 'localBankId', as: 'lastSyncedBank' });
 
 export {
   sequelize,
@@ -136,8 +110,6 @@ export {
   CanvasCourseMapping,
   BugReport,
   VariantSelectionCursor,
-  QuestionBank,
-  QuestionBankMembership,
   CanvasBankMapping,
   CanvasBankQuestionMapping
 };

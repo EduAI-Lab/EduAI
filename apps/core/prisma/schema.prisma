@@ -99,6 +99,7 @@ model Course {
   materials      CourseMaterial[]
   tas            CourseTA[]
   topics         CourseTopic[]
+  questionBanks  QuestionBank[]
   professor      User               @relation("ProfessorCourses", fields: [professorId], references: [id])
   documents      Document[]
 
@@ -265,6 +266,39 @@ model CourseTopic {
 
   @@unique([courseId, name])
   @@map("course_topics")
+}
+
+/// Named question bank scoped to a Core course (Canvas-modeled).
+/// Questions from extensions (e.g. Question Maker) join via QuestionBankMembership.externalQuestionId.
+model QuestionBank {
+  id           String                   @id @default(cuid())
+  courseId     String
+  name         String
+  description  String?
+  isDefault    Boolean                  @default(false)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  course       Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  memberships  QuestionBankMembership[]
+
+  @@index([courseId, isDefault])
+  @@map("question_banks")
+}
+
+model QuestionBankMembership {
+  id                 String       @id @default(cuid())
+  questionBankId     String
+  /// Extension-local question id (e.g. QM Question_Metadata.id as string)
+  externalQuestionId String
+  /// Source system that owns the question row
+  source             String       @default("question-maker")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  questionBank       QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  @@unique([questionBankId, source, externalQuestionId])
+  @@index([source, externalQuestionId])
+  @@map("question_bank_memberships")
 }
 
 model MaterialChunk {

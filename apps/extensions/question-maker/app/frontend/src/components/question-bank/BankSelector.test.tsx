@@ -15,10 +15,10 @@ describe('BankSelector', () => {
     render(
       <BankSelector
         banks={[
-          { id: 1, courseId: 9, name: 'Course bank', isDefault: true },
-          { id: 2, courseId: 9, name: 'Extra', isDefault: false }
+          { id: 'bank_default', courseId: 9, name: 'Course bank', isDefault: true },
+          { id: 'bank_extra', courseId: 9, name: 'Extra', isDefault: false }
         ]}
-        selectedBankId={1}
+        selectedBankId="bank_default"
         onBankChange={onBankChange}
         onCreateBank={vi.fn()}
       />
@@ -33,8 +33,8 @@ describe('BankSelector', () => {
     const onCreateBank = vi.fn().mockResolvedValue(undefined);
     render(
       <BankSelector
-        banks={[{ id: 1, courseId: 9, name: 'Course bank', isDefault: true }]}
-        selectedBankId={1}
+        banks={[{ id: 'bank_default', courseId: 9, name: 'Course bank', isDefault: true }]}
+        selectedBankId="bank_default"
         onBankChange={vi.fn()}
         onCreateBank={onCreateBank}
       />

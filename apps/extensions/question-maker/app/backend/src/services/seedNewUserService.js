@@ -39,7 +39,11 @@ export async function seedCoursesForNewUser(userId) {
     const topicNames = TOPIC_NAMES_BY_TEMPLATE[templateIndex];
     const questions = SEED_QUESTIONS_BY_TEMPLATE[templateIndex];
 
-    await ensureDefaultBank(course.id);
+    await ensureDefaultBank(course.id, userId).catch((err) => {
+      console.warn(
+        `ensureDefaultBank skipped for course ${course.id}: ${err.message}`
+      );
+    });
 
     const courseTopics = [];
     for (const name of topicNames) {
@@ -71,7 +75,11 @@ export async function seedCoursesForNewUser(userId) {
         primaryTopicId: primaryTopic.id,
         questionOrder: order
       });
-      await attachQuestionToBanks(course.id, meta.id);
+      await attachQuestionToBanks(course.id, userId, meta.id).catch((err) => {
+        console.warn(
+          `attachQuestionToBanks skipped for question ${meta.id}: ${err.message}`
+        );
+      });
       questionsCreated++;
 
       const variantPayload = {

@@ -18,9 +18,9 @@ const ALL_QUESTIONS_VALUE = '__all__';
 
 interface BankSelectorProps {
   banks: QuestionBank[];
-  selectedBankId: number | null;
+  selectedBankId: string | null;
   /** null = all questions in the course */
-  onBankChange: (bankId: number | null) => void;
+  onBankChange: (bankId: string | null) => void;
   onCreateBank: (name: string) => Promise<void> | void;
   disabled?: boolean;
 }
@@ -37,7 +37,7 @@ export const BankSelector = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const selectValue =
-    selectedBankId == null ? ALL_QUESTIONS_VALUE : String(selectedBankId);
+    selectedBankId == null ? ALL_QUESTIONS_VALUE : selectedBankId;
 
   const handleCreate = async () => {
     const trimmed = newName.trim();
@@ -61,7 +61,7 @@ export const BankSelector = ({
             if (value === ALL_QUESTIONS_VALUE) {
               onBankChange(null);
             } else {
-              onBankChange(Number(value));
+              onBankChange(value);
             }
           }}
           disabled={disabled}

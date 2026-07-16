@@ -2,9 +2,10 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
-import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants, QuestionBank } from '../schema/index.js';
+import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
-import { attachQuestionToBanks } from './questionBankService.js';
+import { attachQuestionToBanks, listExternalQuestionIdsForBank } from './questionBankService.js';
+import { Op } from 'sequelize';
 
 /** Normalizes any acceptable topic input (array/string/number) into an array of integers. */
 const normalizeSecondaryTopics = (value) => {
@@ -164,7 +165,7 @@ export const createQuestion = async (userId, questionData) => {
       questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {}
     });
 
-    await attachQuestionToBanks(parsedCourseId, question.id, {
+    await attachQuestionToBanks(parsedCourseId, userId, question.id, {
       questionBankId,
       questionBankIds
     });
@@ -190,12 +191,26 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       }
     }
 
+    const parsedBankId =
+      questionBankId !== undefined && questionBankId !== '' && questionBankId !== null
+        ? String(questionBankId)
+        : null;
+
+    if (parsedBankId && whereClause.courseId) {
+      const memberIds = await listExternalQuestionIdsForBank(
+        whereClause.courseId,
+        userId,
+        parsedBankId
+      );
+      whereClause.id = { [Op.in]: memberIds.length ? memberIds : [-1] };
+    }
+
     const include = [
       {
         model: Course,
         as: 'course',
         attributes: ['id', 'name', 'code'],
-        where: { userId: userId } // Filter by user through course relationship
+        where: { userId: userId }
       },
       {
         model: Variants,
@@ -211,28 +226,6 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       }
     ];
 
-    const parsedBankId = questionBankId !== undefined && questionBankId !== ''
-      ? Number(questionBankId)
-      : null;
-    if (Number.isInteger(parsedBankId)) {
-      include.push({
-        model: QuestionBank,
-        as: 'banks',
-        attributes: ['id', 'name', 'isDefault'],
-        where: { id: parsedBankId },
-        through: { attributes: [] },
-        required: true
-      });
-    } else {
-      include.push({
-        model: QuestionBank,
-        as: 'banks',
-        attributes: ['id', 'name', 'isDefault'],
-        through: { attributes: [] },
-        required: false
-      });
-    }
-
     const questions = await Question_Metadata.findAll({
       where: whereClause,
       include,
@@ -242,7 +235,6 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       distinct: true
     });
 
-    // Apply search filter if provided
     let filteredQuestions = questions;
     if (search) {
       filteredQuestions = questions.filter(q => 
@@ -652,7 +644,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
     await transaction.commit();
 
     for (const metadataId of createdIds) {
-      await attachQuestionToBanks(Number(courseId), metadataId, {
+      await attachQuestionToBanks(Number(courseId), userId, metadataId, {
         questionBankId,
         questionBankIds
       });

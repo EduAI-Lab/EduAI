@@ -35,9 +35,9 @@ interface CanvasBankSyncDialogProps {
   open: boolean;
   onClose: () => void;
   localCourseId: number | null;
-  selectedLocalBankId?: number | null;
+  selectedLocalBankId?: string | null;
   onSyncSuccess?: (result: {
-    bankId: number;
+    bankId: string;
     created: number;
     updated: number;
     skipped: number;
@@ -159,7 +159,7 @@ export const CanvasBankSyncDialog = ({
         localCourseId,
         {
           primaryTopicId: Number(selectedTopicId),
-          targetBankId: targetBankId === '__new__' ? undefined : Number(targetBankId)
+          targetBankId: targetBankId === '__new__' ? undefined : targetBankId
         }
       );
       toast({

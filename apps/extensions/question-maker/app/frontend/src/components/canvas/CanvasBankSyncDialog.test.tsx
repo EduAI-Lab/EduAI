@@ -56,7 +56,7 @@ describe('CanvasBankSyncDialog', () => {
       { id: 10, title: 'Chapter 1', question_count: 2 }
     ]);
     vi.mocked(canvasService.syncCanvasBank).mockResolvedValue({
-      bankId: 5,
+      bankId: 'core_bank_1',
       created: 2,
       updated: 0,
       skipped: 0
@@ -65,7 +65,7 @@ describe('CanvasBankSyncDialog', () => {
       { id: 3, name: 'Topic A', courseId: 9 }
     ] as any);
     vi.mocked(questionBankService.listBanks).mockResolvedValue([
-      { id: 5, courseId: 9, name: 'Course bank', isDefault: true }
+      { id: 'core_bank_1', courseId: 9, name: 'Course bank', isDefault: true }
     ]);
   });
 

@@ -100,7 +100,7 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 | G3 | Export flow mocked | Done | [canvasExportMocked.test.js](../app/backend/tests/canvasExportMocked.test.js) |
 | G4 | Canvas `401` | Done | [canvasAuth.test.js](../app/backend/tests/integration/canvasAuth.test.js) |
 | G5 | Canvas question bank client (test mode) | Done | [canvasBankClient.test.js](../app/backend/tests/unit/canvasBankClient.test.js) |
-| G6 | Question banks M2M + Canvas bank sync | Done | [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) |
+| G6 | Question banks (Core-backed) + Canvas bank sync | Done | [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) (Core mocked) |
 | H1 | `scoreMetadataMatch` | Done | [assessmentVariantMetadataScoring.test.js](../app/backend/tests/unit/assessmentVariantMetadataScoring.test.js) |
 | H2 | Assessment-variant `400` | Done | [assessmentVariantHttp.integration.test.js](../app/backend/tests/integration/assessmentVariantHttp.integration.test.js) |
 | H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/integration/planCoverage.integration.test.js) |

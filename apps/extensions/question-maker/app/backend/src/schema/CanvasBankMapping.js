@@ -19,14 +19,11 @@ export const CanvasBankMapping = sequelize.define('CanvasBankMapping', {
       key: 'id'
     }
   },
+  // Core QuestionBank id (cuid string) — banks live in EduAI Core
   localBankId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING(64),
     allowNull: false,
-    field: 'local_bank_id',
-    references: {
-      model: 'question_banks',
-      key: 'id'
-    }
+    field: 'local_bank_id'
   },
   canvasCourseId: {
     type: DataTypes.INTEGER,

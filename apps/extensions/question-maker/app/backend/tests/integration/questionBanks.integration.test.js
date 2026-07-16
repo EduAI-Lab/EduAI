@@ -1,11 +1,186 @@
 /**
- * DB-backed tests for question banks (M2M membership) and Canvas bank sync.
+ * Integration tests for question banks (proxied to EduAI Core) and Canvas bank sync.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md.
+ *
+ * EduAI Core is mocked in-memory so banks live “in Core” without a running Core instance.
  */
+import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 
 const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
+
+const SEED_CODES = [
+  'COSC 211',
+  'COSC 121',
+  'STUDY1',
+  'STUDY3',
+  'STUDY2',
+  'STUDY4',
+  'STUDY5'
+];
+
+const normalizeCode = (value) =>
+  value == null ? '' : String(value).replace(/\s+/g, '').toLowerCase();
+
+/** @type {Map<string, Array<object>>} */
+const banksByCourse = new Map();
+/** @type {Map<string, Array<object>>} */
+const membershipsByBank = new Map();
+let bankSeq = 0;
+let membershipSeq = 0;
+
+function coreCourseIdForCode(code) {
+  return `core_${normalizeCode(code)}`;
+}
+
+function ensureDefaultBank(coreCourseId) {
+  let banks = banksByCourse.get(coreCourseId);
+  if (!banks) {
+    banks = [];
+    banksByCourse.set(coreCourseId, banks);
+  }
+  let def = banks.find((b) => b.isDefault);
+  if (!def) {
+    def = {
+      id: `bank_default_${++bankSeq}`,
+      courseId: coreCourseId,
+      name: 'Course bank',
+      description: null,
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    banks.push(def);
+  }
+  return def;
+}
+
+vi.mock('../../src/services/eduaiService.js', () => ({
+  default: {
+    isConfigured: () => true,
+    listCourses: async () =>
+      SEED_CODES.map((code) => ({
+        id: coreCourseIdForCode(code),
+        code,
+        name: code
+      })),
+    listQuestionBanks: async (coreCourseId) => {
+      ensureDefaultBank(coreCourseId);
+      return { banks: banksByCourse.get(coreCourseId) || [] };
+    },
+    createQuestionBank: async (coreCourseId, payload) => {
+      ensureDefaultBank(coreCourseId);
+      const bank = {
+        id: `bank_${++bankSeq}`,
+        courseId: coreCourseId,
+        name: String(payload.name).trim(),
+        description: payload.description ?? null,
+        isDefault: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      banksByCourse.get(coreCourseId).push(bank);
+      return bank;
+    },
+    updateQuestionBank: async (coreCourseId, bankId, payload) => {
+      const banks = banksByCourse.get(coreCourseId) || [];
+      const bank = banks.find((b) => b.id === bankId);
+      if (!bank) {
+        const err = new Error('Question bank not found');
+        err.response = { status: 404, data: { error: 'Question bank not found' } };
+        throw err;
+      }
+      if (payload.name !== undefined) bank.name = String(payload.name).trim();
+      if (payload.description !== undefined) bank.description = payload.description;
+      bank.updatedAt = new Date().toISOString();
+      return bank;
+    },
+    deleteQuestionBank: async (coreCourseId, bankId) => {
+      const banks = banksByCourse.get(coreCourseId) || [];
+      const bank = banks.find((b) => b.id === bankId);
+      if (!bank) {
+        const err = new Error('Question bank not found');
+        err.response = { status: 404, data: { error: 'Question bank not found' } };
+        throw err;
+      }
+      if (bank.isDefault) {
+        const err = new Error('Cannot delete the default question bank');
+        err.status = 400;
+        throw err;
+      }
+      banksByCourse.set(
+        coreCourseId,
+        banks.filter((b) => b.id !== bankId)
+      );
+      membershipsByBank.delete(bankId);
+      return { success: true };
+    },
+    listQuestionBankMemberships: async (_coreCourseId, bankId) => ({
+      memberships: membershipsByBank.get(bankId) || []
+    }),
+    addQuestionBankMembership: async (_coreCourseId, bankId, payload) => {
+      const list = membershipsByBank.get(bankId) || [];
+      const existing = list.find(
+        (m) =>
+          m.externalQuestionId === String(payload.externalQuestionId) &&
+          m.source === (payload.source || 'question-maker')
+      );
+      if (existing) return existing;
+      const membership = {
+        id: `mem_${++membershipSeq}`,
+        questionBankId: bankId,
+        externalQuestionId: String(payload.externalQuestionId),
+        source: payload.source || 'question-maker',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      list.push(membership);
+      membershipsByBank.set(bankId, list);
+      return membership;
+    },
+    removeQuestionBankMembership: async (
+      coreCourseId,
+      bankId,
+      externalQuestionId,
+      source = 'question-maker'
+    ) => {
+      const list = membershipsByBank.get(bankId) || [];
+      membershipsByBank.set(
+        bankId,
+        list.filter(
+          (m) =>
+            !(
+              m.externalQuestionId === String(externalQuestionId) &&
+              m.source === source
+            )
+        )
+      );
+      const remaining = [...membershipsByBank.values()]
+        .flat()
+        .filter(
+          (m) =>
+            m.externalQuestionId === String(externalQuestionId) &&
+            m.source === source
+        );
+      if (remaining.length === 0) {
+        const def = ensureDefaultBank(coreCourseId);
+        const defList = membershipsByBank.get(def.id) || [];
+        defList.push({
+          id: `mem_${++membershipSeq}`,
+          questionBankId: def.id,
+          externalQuestionId: String(externalQuestionId),
+          source,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        membershipsByBank.set(def.id, defList);
+        return { removed: true, reassignedToDefault: true, defaultBankId: def.id };
+      }
+      return { removed: true, reassignedToDefault: false };
+    }
+  }
+}));
 
 describeDb('Question banks + Canvas bank sync (integration)', () => {
   let app;
@@ -29,6 +204,10 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
 
   beforeEach(async () => {
     if (!hasTestDb) return;
+    banksByCourse.clear();
+    membershipsByBank.clear();
+    bankSeq = 0;
+    membershipSeq = 0;
     await truncateTestDatabase();
 
     const reg = await request(app)
@@ -62,6 +241,7 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
     expect(res.body.data.some((b) => b.isDefault)).toBe(true);
+    expect(typeof res.body.data[0].id).toBe('string');
   });
 
   it('supports multi-bank membership for the same question', async () => {
@@ -76,6 +256,7 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
       .send({ name: 'Extra bank' });
     expect(createBank.status).toBe(201);
     const extraBankId = createBank.body.data.id;
+    expect(typeof extraBankId).toBe('string');
 
     const createQ = await request(app)
       .post('/api/questions')
@@ -144,6 +325,7 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(first.status).toBe(200);
     expect(first.body.data.created).toBeGreaterThan(0);
     const bankId = first.body.data.bankId;
+    expect(typeof bankId).toBe('string');
     const created = first.body.data.created;
 
     const second = await request(app)

@@ -68,7 +68,7 @@ export interface CanvasQuestionBank {
 }
 
 export interface CanvasBankSyncResult {
-  bankId: number;
+  bankId: string;
   created: number;
   updated: number;
   skipped: number;
@@ -182,7 +182,7 @@ export const canvasService = {
     canvasCourseId: number,
     canvasBankId: number,
     localCourseId: number,
-    options: { primaryTopicId: number; targetBankId?: number }
+    options: { primaryTopicId: number; targetBankId?: string }
   ): Promise<CanvasBankSyncResult> {
     const response = await api.post(
       `/api/canvas/import/${canvasCourseId}/banks/${canvasBankId}`,

@@ -23,8 +23,8 @@ interface QuestionBankProps {
   disableUpload?: boolean;
   onOpenProfile?: () => void;
   banks?: import('../../services/questionBankService').QuestionBank[];
-  selectedBankId?: number | null;
-  onBankChange?: (bankId: number | null) => void;
+  selectedBankId?: string | null;
+  onBankChange?: (bankId: string | null) => void;
   onCreateBank?: (name: string) => Promise<void> | void;
   onSyncFromCanvas?: () => void;
   disableBankControls?: boolean;
