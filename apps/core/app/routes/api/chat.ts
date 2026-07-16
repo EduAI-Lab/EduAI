@@ -49,7 +49,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
-import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
@@ -473,8 +473,8 @@ export async function action({ request }: ActionFunctionArgs) {
     // caller id. Pure server-to-server calls with no proxyUser stay
     // unmetered here — they're already gated by the EDUAI_API_KEY secret.
     if (actingUser.id !== "service") {
-      const chatRateLimit = Number(process.env.CHAT_RATE_LIMIT ?? 20);
-      const chatRateWindowMs = Number(process.env.CHAT_RATE_WINDOW_MS ?? 60_000);
+      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
+      const chatRateWindowMs = parseEnvInt(process.env.CHAT_RATE_WINDOW_MS, 60_000);
       if (isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)) {
         const requestContext = getRequestContext(request);
         fireAndForget(

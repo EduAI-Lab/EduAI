@@ -225,4 +225,14 @@ describe("POST /api/chat — per-user rate limit (#987)", () => {
       expect(res.status).not.toBe(429);
     }
   });
+
+  it("falls back to the default limit/window when CHAT_RATE_LIMIT/CHAT_RATE_WINDOW_MS are empty strings", async () => {
+    // A blank env value (e.g. a templated config resolving to "") must not
+    // parse to 0 and throttle every request.
+    process.env.CHAT_RATE_LIMIT = "";
+    process.env.CHAT_RATE_WINDOW_MS = "";
+
+    const res = await action(makeRequest(baseBody()));
+    expect(res.status).not.toBe(429);
+  });
 });

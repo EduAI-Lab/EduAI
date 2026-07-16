@@ -1,10 +1,30 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isRateLimited, resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
+import { isRateLimited, parseEnvInt, resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   resetRateLimitsForTests();
+});
+
+describe("parseEnvInt", () => {
+  it("returns the fallback when the value is undefined", () => {
+    expect(parseEnvInt(undefined, 20)).toBe(20);
+  });
+
+  it("returns the fallback — not 0 — when the value is an empty string", () => {
+    // Number(process.env.X ?? fallback) only guards null/undefined; an
+    // empty string skips the fallback and parses to 0.
+    expect(parseEnvInt("", 20)).toBe(20);
+  });
+
+  it("returns the fallback when the value is not a finite number", () => {
+    expect(parseEnvInt("not-a-number", 20)).toBe(20);
+  });
+
+  it("parses a valid numeric string", () => {
+    expect(parseEnvInt("42", 20)).toBe(42);
+  });
 });
 
 describe("isRateLimited", () => {
@@ -98,5 +118,37 @@ describe("isRateLimited — bounded store (#990)", () => {
     // hot-1's hit count was dropped by the fallback eviction, so it now reads
     // as a fresh key even though its most recent hit is still in-window.
     expect(isRateLimitedBounded("hot-1", 1, 60_000)).toBe(false);
+  });
+
+  it("does not treat RATE_LIMIT_MAX_KEYS='' as a cap of 0", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    // A cap of 0 would trigger eviction on every single insert. With the
+    // empty string falling back to the 50k default, a handful of keys
+    // should coexist untouched.
+    isRateLimitedBounded("k1", 5, 60_000);
+    isRateLimitedBounded("k2", 5, 60_000);
+    expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
+  });
+
+  it("evicts below the cap (not just back to it) so a sweep isn't re-triggered on the very next insert", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    // Fill past the cap once, forcing the oldest-key fallback eviction.
+    for (let i = 0; i < 11; i++) {
+      isRateLimitedBounded(`hot-${i}`, 5, 60_000);
+    }
+
+    // The most recently inserted keys should have survived the eviction and
+    // still be tracked as repeat callers (not reset to fresh).
+    expect(isRateLimitedBounded("hot-10", 1, 60_000)).toBe(true);
   });
 });
