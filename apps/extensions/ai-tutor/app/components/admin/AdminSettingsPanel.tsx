@@ -94,9 +94,9 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
     try {
       const next = await api.clearEduAiApiKey();
       setStatus(next);
-      toast.success('Cleared admin override. The default key will be used instead.');
+      toast.success('Cleared. The default key will be used instead.');
     } catch {
-      toast.error('Could not clear override. Please try again.');
+      toast.error('Could not clear the key. Please try again.');
     } finally {
       setClearing(false);
     }
@@ -431,17 +431,11 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
             <p className="text-sm text-muted-foreground max-w-2xl">
               {status.envConfigured ? (
                 <>
-                  <span className="font-mono">EDUAI_API_KEY</span> is already configured in your
-                  server environment (for example via <span className="font-mono">.env</span>).
-                  Saving a key here will override it. Clear the override to fall back to the
-                  environment value.
+                  A default key is already set up for this server. Saving a key here will use it
+                  instead. Clear it to go back to the default key.
                 </>
               ) : (
-                <>
-                  No <span className="font-mono">EDUAI_API_KEY</span> is configured in your server
-                  environment (for example via <span className="font-mono">.env</span>). You can set
-                  one here.
-                </>
+                <>No default key is set up for this server yet. You can set one here.</>
               )}
             </p>
             {updatedLabel && status.hasAdminOverride && (
@@ -477,9 +471,9 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
               onClick={clear}
               disabled={clearing || !status.hasAdminOverride}
               variant="secondary"
-              title={!status.hasAdminOverride ? 'No admin override to clear' : undefined}
+              title={!status.hasAdminOverride ? 'No key to clear' : undefined}
             >
-              {clearing ? 'Clearing…' : 'Clear override'}
+              {clearing ? 'Clearing…' : 'Clear key'}
             </Button>
           </div>
         </div>
