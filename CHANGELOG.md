@@ -4,12 +4,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-
-## [Week 10 — July 6–12, 2026]
-
-### Changed
-
-- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
@@ -38,9 +32,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] feat: Feature-gap endpoints (no schema change) — manual grade override (`PATCH /activities/:id/submissions/:submissionId`), module editing (`PATCH /modules/:id`, role- and ownership-gated), content reuse (activity duplicate/import), and a cross-course `GET /me/dashboard-stats` rollup; submissions are enriched server-side with student names (resolved from Core via the service key) and human answer labels. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 
 ### Changed
+- [monorepo] docs: Update `docs/ARCHITECTURE.md` to reflect the centralized/monorepo repo layout, the RBAC permission model (`resolveCourseAccess`, `UserRole`/`EnrollmentRole` split), the unified `Enrollment`/`Discipline` schema, and the current AI Tutor/Question Maker course-import flow — now fully automatic on login and course-list fetch, replacing the old manual "Import from EduAI" button. (#274, @GlowyBlack, 2026-07-10) — #PR
 - [core, ai-tutor, question-maker] feat: Shared-session auth across `*.eduai.ok.ubc.ca` — extensions redirect to Core login with `?force=1` to avoid cookie redirect loops; QM AI chat prefers the Core session cookie over the service key. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 - [monorepo] docs: Update `docs/rag-ai/HOW_TO_USE_DEV_SERVER.md` and `infra/s378/GO-LIVE.md` for systemd ops, public URLs, `COOKIE_DOMAIN`, and extension troubleshooting. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
-
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 - [ai-tutor] refactor: Full design-system redesign — every screen rebuilt on the shared `@eduai/ui` shell, cards, chat primitives, tables, and chart primitives; new solid-accent `ModuleHero`; redesigned module/lesson cards (accent rail, `PublishMenu`), a ground-up activity editor (Dialog add + import, click-a-letter correct-answer editor), a `SubmissionCard` grid with a grading dialog, hero-card dashboard panels, and course topics folded into the hero. The course Enrollments tab was removed (roster management is owned by Core), and the client-authored "guide nudge" was dropped so tutor replies only come from real model round-trips. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 - [core, question-maker] refactor: Adopt the newly-extracted shared surface — dashboards on `QuickActionsPanel`, course lists on the shared filter groups. QM moved course topics out of the deleted Topics tab into the hero (`CourseTopicsHeroAction`) and restyled the question composer (Tabler icon steps, persistent sticky save bar, live preview dropped); Core repositioned the course hero above the detail tabs so it stays visible on every tab. (#965, #939, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 
@@ -59,6 +54,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] fix: Chat send UX hardening in `StudentAiChat` — `sendChat` now guards against duplicate concurrent requests per tab (the imperative "Guide me" trigger previously bypassed the manual submit path's `loading` check, letting two in-flight turns race and corrupt which `chatId` a session threaded into); a Stop button replaces Send while a response is loading and cancels the request via `AbortController` (wired through `api.ts`'s `http()`, which also now applies a 60s client-side timeout as a backstop for the AI Tutor server's own 45s `EDUAI_CALL_TIMEOUT_MS` bound on `callEduAI()`); and the composer textarea is now disabled while loading instead of silently swallowing keystrokes. (#998, #999, #1002, @GlowyBlack, 2026-07-12) — [#1014](https://github.com/EduAI-Lab/EduAI/pull/1014)
 
 
+
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] docs: Add `docs/implementations/async-ai-job-queue-contract.md` — frozen contract (`JobType`, job payload Zod schema, `AiJob` model, BullMQ topology, enqueue/dequeue interface) for the async AI-job queue, unblocking Saad's dispatch worker. (#912, @abdullahmoh21)
 
 ## [Week 9 — June 29–July 5, 2026]
 
