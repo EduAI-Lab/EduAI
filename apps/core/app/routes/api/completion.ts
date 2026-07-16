@@ -19,13 +19,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
   if (apiKeyGuard) return apiKeyGuard;
 
-  let session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
-  if (!session?.user) {
-    const serviceKeyError = await requireServiceKey(request);
-    if (serviceKeyError) return serviceKeyError;
-    session = {
-      user: { id: "service", name: "Service", role: "ADMIN", email: "service@eduai.local" },
-    } as typeof session;
+  // Auth only — completion is stateless; no user identity is needed past this gate.
+  if (!apiKeySession?.user) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user) {
+      const serviceKeyError = await requireServiceKey(request);
+      if (serviceKeyError) return serviceKeyError;
+    }
   }
 
   let body: unknown;
