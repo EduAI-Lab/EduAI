@@ -5,6 +5,7 @@ import {
   groupCoursesByTerm,
   isTermCode,
   normalizeTerm,
+  termFromDate,
   termFromMonth,
   termLabel,
   termLabelLong,
@@ -12,6 +13,7 @@ import {
   termSortKey,
   TERM_CODES,
 } from "../lib/term";
+import { UBC_TERM_BOUNDARY_CASES } from "../lib/term-boundary-fixtures";
 
 describe("term codes", () => {
   it("exposes the four UBC codes", () => {
@@ -36,11 +38,26 @@ describe("termFromMonth", () => {
   });
 });
 
+describe("termFromDate", () => {
+  it.each(UBC_TERM_BOUNDARY_CASES)(
+    "maps %s to %s in America/Vancouver, not UTC (#1010)",
+    (iso, expected) => {
+      expect(termFromDate(new Date(iso))).toBe(expected);
+    },
+  );
+});
+
 describe("normalizeTerm", () => {
   it("prefers start date when present (authoritative)", () => {
     expect(normalizeTerm("Fall", "2026-09-05")).toBe("W1");
     // Date wins even if the string disagrees.
     expect(normalizeTerm("Summer", "2026-01-10")).toBe("W2");
+  });
+
+  it("buckets a midnight-UTC month-boundary start date by Vancouver time, not UTC", () => {
+    // 2026-09-01T00:00:00Z is still 2026-08-31 evening in Vancouver (S2),
+    // not September (W1) — the exact divergence fixed in #1010.
+    expect(normalizeTerm(null, "2026-09-01T00:00:00Z")).toBe("S2");
   });
 
   it("passes through canonical codes", () => {

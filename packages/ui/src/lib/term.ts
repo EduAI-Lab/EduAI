@@ -38,6 +38,31 @@ export function termFromMonth(month: number): TermCode {
   return "W2" // Jan–Apr
 }
 
+// Terms are UBC-local (Vancouver), not UTC. `Date#getMonth()` reads the
+// JS runtime's local timezone, which differs by environment (server process
+// TZ, or a browser's OS setting) and can bucket a date near a month
+// boundary into the wrong term. Always derive a term from a real Date via
+// this timezone, mirroring Core's `ubcTermFromDate` in term.server.ts.
+const UBC_TIME_ZONE = "America/Vancouver"
+
+function monthInUbcTimeZone(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: UBC_TIME_ZONE,
+      month: "numeric",
+    }).format(date),
+  )
+}
+
+/**
+ * Map a calendar date to its UBC term code using the America/Vancouver
+ * timezone boundary. This is the authoritative date→term derivation —
+ * prefer it over `termFromMonth` whenever a real `Date` is available.
+ */
+export function termFromDate(date: Date): TermCode {
+  return termFromMonth(monthInUbcTimeZone(date) - 1)
+}
+
 /**
  * Best-effort normalization of a legacy free-form term value to a canonical
  * `TermCode`. When a start date is available it is authoritative (unambiguous);
@@ -49,7 +74,7 @@ export function normalizeTerm(
 ): TermCode | null {
   if (startDate != null) {
     const date = startDate instanceof Date ? startDate : new Date(startDate)
-    if (!Number.isNaN(date.getTime())) return termFromMonth(date.getMonth())
+    if (!Number.isNaN(date.getTime())) return termFromDate(date)
   }
   if (typeof raw !== "string") return null
   const s = raw.trim().toUpperCase()
