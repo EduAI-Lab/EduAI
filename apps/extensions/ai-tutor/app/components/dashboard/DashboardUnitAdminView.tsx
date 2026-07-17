@@ -24,7 +24,7 @@ export function DashboardUnitAdminView({ courses, dashboardStats }: DashboardUni
     { label: 'Unit courses', value: dashboardStats?.totalCourses ?? courses.length },
     { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
     { label: 'Drafts', value: dashboardStats?.draftCourses ?? drafts.length },
-    { label: 'Synced from Core', value: synced.length },
+    { label: 'Synced from EduAI', value: synced.length },
   ];
 
   const statusSegments: DonutSegment[] = [
