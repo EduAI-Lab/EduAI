@@ -9,6 +9,7 @@ import type {
   PlatformUser,
   UpdateUserInput,
 } from "~/hooks/api/types";
+import { useCourses } from "~/hooks/api/use-courses";
 
 export type UsersAdminViewProps = {
   users: PlatformUser[];
@@ -34,6 +35,12 @@ export function UsersAdminView({
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
+  const { courses, loading: coursesLoading } = useCourses();
+
+  const handleUserDialogOpenChange = (open: boolean) => {
+    setUserDialogOpen(open);
+    if (!open) setEditingUser(null);
+  };
 
   const handleSubmit = async (data: CreateUserInput | UpdateUserInput) => {
     try {
@@ -42,10 +49,10 @@ export function UsersAdminView({
       } else {
         await onCreateUser(data as CreateUserInput);
       }
-      setUserDialogOpen(false);
-      setEditingUser(null);
+      handleUserDialogOpenChange(false);
     } catch (err) {
       console.error("Failed to save user:", err);
+      throw err;
     }
   };
 
@@ -139,8 +146,10 @@ export function UsersAdminView({
 
       <UserFormDialog
         open={userDialogOpen}
-        onOpenChange={setUserDialogOpen}
+        onOpenChange={handleUserDialogOpenChange}
         user={editingUser}
+        courses={courses}
+        coursesLoading={coursesLoading}
         onSubmit={handleSubmit}
       />
 
