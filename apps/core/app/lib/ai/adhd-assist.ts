@@ -1,13 +1,28 @@
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
+import { buildEduaiDiagramFence } from "~/lib/ai/eduai-diagram-payload";
+import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
 
 /**
  * Version stamp for the ADHD Assist response-format policy. Logged on every
  * Assist turn so study cohorts before/after a policy change stay separable
- * (no pooling across policy_version without PI signoff). v1.1 layers the
+ * (no pooling across policy_version without PI signoff). v1.1 layered
  * anti-urgency, citation, progressive-disclosure, exec-cue, connections and
- * gated-diagram rules on top of the turn-profile system.
+ * gated-diagram rules. v1.2 moves diagrams to end-of-reply when useful
+ * (spatial/structural), not only when the learner explicitly asks.
+ * v1.3: diagram asks force full_tutoring (not brief) + required fenced block.
+ * v1.4: prefer animated `eduai-diagram` catalog fences over ASCII sketches.
+ * v1.5: multi-type catalog (process-flow default, plus gradient-descent,
+ * hierarchy, compare) so diagram asks work for any topic.
+ * v1.6: labeled, tappable stages in eduai-diagram fences; Top summary /
+ * Step ladder must reuse the same stage names.
+ * v1.7: diagram replies use concise Top summary (display TLDR) that maps
+ * 1:1 to diagram stages; display order is Step ladder → diagram → TLDR → Continue.
+ * v1.8: when a diagram is present, Step ladder must list EVERY diagram stage
+ * (the "first step only" progressive-disclosure rule applies only without a diagram).
+ * v1.9: every catalog type (including gradient-descent) uses the same labeled
+ * stage contract for Step ladder / TLDR; only the visual widget may be specialized.
  */
-export const ADHD_ASSIST_POLICY_VERSION = "1.1";
+export const ADHD_ASSIST_POLICY_VERSION = "1.9";
 
 export const ADHD_ASSIST_POLICY_BLOCK = `=== ADHD ASSIST MODE ===
 You are responding to a learner who benefits from low cognitive load and
@@ -17,17 +32,28 @@ RESPONSE SHAPE:
 1) Open with a 1-3 bullet "Top summary" that fully answers the most
    likely first question. Lead concept-first: the core idea in plain
    words before smaller chunks. Number multi-item lists; bold key terms.
+   When a diagram is included (see DIAGRAMS), Top summary MUST be a concise
+   1-line-per-stage recap using the SAME stage names as the diagram (this
+   becomes the learner-facing TLDR). Do not write a freeform intro paragraph
+   or a second bullet list outside Top summary / Step ladder.
 2) If the topic has steps, follow with a numbered "Step ladder" of at
    most 5 steps. One step = one action, each with a short "why it matters"
    clause. Begin with a "Start here:" line naming the first concrete action
-   and a small time-box (e.g. "~5 min"). Do not write the whole plan for
-   them; invite them to take the first step.
+   and a small time-box (e.g. "~5 min").
+   WITHOUT a diagram: you may keep the ladder short and invite the learner
+   to take the first step (do not dump a huge plan).
+   WITH a diagram: list EVERY diagram stage as a numbered step (same names,
+   same order). Do not stop after step 1 — the ladder must match the diagram.
+   Put Step ladder immediately after Top summary (before the diagram fence).
 3) When listing categories or terms, show the label, then a one-line plain
    hint in *italics* to prepare the reader, then the full definition under
    it. Do not dump the full definition cold.
-4) End with one clear "Next?" line offering exactly one continuation
+4) Optional diagram (see DIAGRAMS): if included, place it AFTER the
+   Step ladder and BEFORE the "Next?" line (Top summary stays first in
+   stored text for metrics; the UI shows Step ladder → diagram → TLDR → Continue).
+5) End with one clear "Next?" line offering exactly one continuation
    (e.g. "Want me to expand step 2?" or "Ready to try one yourself?").
-5) Optional: include a single "Quick check" question only if it confirms
+6) Optional: include a single "Quick check" question only if it confirms
    understanding of the just-given step, not a new tangent.
 
 LENGTH:
@@ -55,8 +81,42 @@ EXAMPLES & DETAIL:
   expand via the "Next?" line.
 
 DIAGRAMS:
-- Only include a simple text/ASCII diagram when the concept is spatial or
-  structural AND the learner asked for one. Never add diagrams by default.
+- When the learner asks to draw / diagram / show visually / sketch / animate:
+  a diagram is REQUIRED in that reply (not optional).
+- Prefer an animated catalog diagram over ASCII. Emit exactly ONE fenced
+  block tagged eduai-diagram.
+  Known type ids: process-flow (default for any topic), gradient-descent,
+  hierarchy, compare.
+- Place it AFTER Step ladder and BEFORE the "Next?" line (never before
+  Step ladder; never after Next?).
+- For ALL catalog types (process-flow, gradient-descent, hierarchy, compare):
+  include a short title and 3-5 topic-specific stages as "Label: short
+  explanation" lines (compare: exactly 2 sides; hierarchy: root then up to
+  3 parts). Labels ≤4 words. gradient-descent uses the same stage format —
+  do not emit a bare type-id-only fence.
+- Top summary bullets AND Step ladder MUST use the SAME stage names in the
+  SAME order (one bullet AND one numbered step per stage — never omit later
+  stages from the Step ladder). Top summary lines stay short (label + gist)
+  so they work as a TLDR under the diagram.
+- Do NOT add intro prose like "Here's a sketch…" or duplicate stage bullets
+  outside Top summary / Step ladder.
+- REQUIRED SHAPE (copy this structure; change type, title, and stage lines):
+
+\`\`\`eduai-diagram
+process-flow
+title: How a bill becomes law
+Introduce bill: Member files the proposal in Congress
+Committee review: Experts study and amend
+Floor vote: Full chamber decides yes or no
+Become law: President signs, or it becomes law after 10 days
+\`\`\`
+
+- Do NOT describe what a diagram would look like in prose. Do NOT use a
+  plain text/ASCII code fence when an eduai-diagram type fits.
+- If no catalog type fits, you may use one short ASCII text fence as a
+  last resort (≤12 lines), still before "Next?".
+- Keep the whole reply under the word cap; shorten prose before dropping
+  the diagram fence.
 
 STYLE:
 - Markdown headings, bold key terms, short paragraphs.
@@ -177,4 +237,61 @@ export function resolveEffectiveAdhdAssist(opts: {
   chatValue: boolean;
 }): boolean {
   return opts.hasField ? opts.bodyValue : opts.chatValue;
+}
+
+/** True when assistant text includes an animated eduai-diagram catalog fence. */
+export function hasEduaiDiagramFence(text: string): boolean {
+  return /```eduai-diagram\b/i.test(text ?? "");
+}
+
+/**
+ * True when assistant text includes an eduai-diagram fence or any markdown
+ * code fence (ASCII fallback). Prefer hasEduaiDiagramFence for inject gates.
+ */
+export function hasDiagramBlock(text: string): boolean {
+  return hasEduaiDiagramFence(text) || /```[\s\S]*?```/.test(text ?? "");
+}
+
+/** @deprecated Use hasDiagramBlock */
+export function hasFencedDiagram(text: string): boolean {
+  return hasDiagramBlock(text);
+}
+
+/**
+ * Insert an animated eduai-diagram fence before **Next?** (or at end) when the
+ * learner asked for a diagram and the draft has none. Type and stage labels
+ * are chosen from user/draft text (default: process-flow with stages pulled
+ * from Step ladder / Top summary when present).
+ */
+export function ensureDiagramBeforeNext(
+  text: string,
+  options?: { userText?: string; typeId?: string },
+): string {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed || hasEduaiDiagramFence(trimmed)) return trimmed;
+
+  const typeId = resolveEduaiDiagramTypeId({
+    userText: options?.userText,
+    draftText: trimmed,
+    explicitTypeId: options?.typeId,
+  });
+  const fence = buildEduaiDiagramFence({
+    typeId,
+    userText: options?.userText,
+    draftText: trimmed,
+  });
+
+  const nextIdx = trimmed.search(/\*\*Next\?\*\*/);
+  if (nextIdx >= 0) {
+    const before = trimmed.slice(0, nextIdx).replace(/\n+$/, "");
+    const after = trimmed.slice(nextIdx);
+    return `${before}\n\n${fence}\n\n${after}`.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  return `${trimmed}\n\n${fence}`.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** @deprecated Use ensureDiagramBeforeNext */
+export function ensureAsciiDiagramBeforeNext(text: string): string {
+  return ensureDiagramBeforeNext(text);
 }
