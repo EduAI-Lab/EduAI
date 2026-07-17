@@ -69,6 +69,12 @@ vi.mock("~/lib/policy.server", () => ({
   invalidatePolicyCache: vi.fn(),
 }));
 
+// Chat resolves per-user provider keys before streamText; without this mock the
+// action throws on prisma.userProviderSettings and never wires onError (#989).
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
