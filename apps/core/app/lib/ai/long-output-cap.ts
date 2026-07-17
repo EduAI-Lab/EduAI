@@ -9,15 +9,13 @@ function resolvePositiveInteger(
   value: string | undefined,
   fallback: number,
 ): number {
-  if (!value) {
+  if (!value || !/^[1-9]\d*$/.test(value)) {
     return fallback;
   }
 
-  const parsed = Number.parseInt(value, 10);
+  const parsed = Number(value);
 
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : fallback;
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
 export function resolveLongOutputMaxTokens(

@@ -285,7 +285,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     });
 
   const onSubmit = useCallback(
-    (e: React.FormEvent<HTMLFormElement>) => {
+    (
+      e: React.FormEvent<HTMLFormElement>,
+      explicitPrompt?: string,
+    ) => {
       if (!chatId) {
         postAssistiveClientEvent({
           eventType: "task_initiation",
@@ -308,7 +311,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         });
       }
       pendingLongOutputIntentRef.current =
-        isLongOutputIntent(input);
+        isLongOutputIntent(explicitPrompt ?? input);
 
       handleSubmit(e);
     },
@@ -417,15 +420,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     handleInputChange(inputEvent);
 
     requestAnimationFrame(() => {
-      pendingLongOutputIntentRef.current =
-        isLongOutputIntent(prompt);
-
       const formEvent = {
         preventDefault: () => {},
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
 
-      handleSubmit(formEvent);
+      onSubmit(formEvent, prompt);
     });
   };
 

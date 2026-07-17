@@ -73,6 +73,8 @@ describe("resolveLongOutputMaxTokens", () => {
     "0",
     "-1",
     "not-a-number",
+    "600junk",
+    "1.5",
   ])(
     "falls back when the normal env value is invalid: %s",
     (value) => {
@@ -90,6 +92,8 @@ describe("resolveLongOutputMaxTokens", () => {
     "0",
     "-1",
     "not-a-number",
+    "600junk",
+    "1.5",
   ])(
     "falls back when the ADHD env value is invalid: %s",
     (value) => {

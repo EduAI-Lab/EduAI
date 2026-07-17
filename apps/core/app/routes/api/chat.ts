@@ -1284,6 +1284,8 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
+              if (!streaming) return;
+
               const assistantText =
                 text || extractAssistantText(response?.messages);
 

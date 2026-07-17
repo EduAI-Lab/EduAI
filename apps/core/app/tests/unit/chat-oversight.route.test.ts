@@ -203,10 +203,19 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(body.content).toContain("**Next?**");
 
     expect(prisma.chatMessage.createMany).toHaveBeenCalled();
+
+    expect(prisma.chatMessage.createMany).toHaveBeenCalledTimes(2);
+
     const persisted = lastPersistedRows();
     expect(persisted).toHaveLength(2);
-    expect(persisted[0]).toMatchObject({ messageId: "tool-step", role: "assistant" });
-    expect(persisted[1]).toMatchObject({ messageId: "final-step", role: "assistant" });
+    expect(persisted[0]).toMatchObject({
+      messageId: "tool-step",
+      role: "assistant",
+    });
+    expect(persisted[1]).toMatchObject({
+      messageId: "final-step",
+      role: "assistant",
+    });
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Top summary**");
   });
 

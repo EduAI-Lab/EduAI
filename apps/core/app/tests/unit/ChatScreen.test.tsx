@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import {  fireEvent, render, screen, waitFor} from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -7,15 +7,29 @@ import { PolicyProvider } from "~/components/policy/policy-gate";
 import { SidebarProvider } from "@eduai/ui";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 
+const {
+  handleSubmitMock,
+  handleInputChangeMock,
+  postAssistiveClientEventMock,
+} = vi.hoisted(() => ({
+  handleSubmitMock: vi.fn(),
+  handleInputChangeMock: vi.fn(),
+  postAssistiveClientEventMock: vi.fn(),
+}));
+
 vi.mock("@ai-sdk/react", () => ({
   useChat: () => ({
     messages: [],
     input: "",
-    handleInputChange: vi.fn(),
-    handleSubmit: vi.fn(),
+    handleInputChange: handleInputChangeMock,
+    handleSubmit: handleSubmitMock,
     isLoading: false,
     stop: vi.fn(),
   }),
+}));
+
+vi.mock("~/lib/assistive-events.client", () => ({
+  postAssistiveClientEvent: postAssistiveClientEventMock,
 }));
 
 vi.mock("~/hooks/api/use-courses", () => ({
@@ -52,7 +66,18 @@ vi.mock("~/components/assistive/assistive-ui-provider", () => ({
 }));
 
 vi.mock("~/components/chat/chat-course-scoped-view", () => ({
-  ChatCourseScopedView: () => <div data-testid="chat-course-scoped-view" />,
+  ChatCourseScopedView: ({
+    onSelectPrompt,
+  }: {
+    onSelectPrompt: (prompt: string) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onSelectPrompt("Summarize this whole chat")}
+    >
+      Select suggested prompt
+    </button>
+  ),
 }));
 
 const baseData: ChatBaseData = {
@@ -82,6 +107,8 @@ const baseData: ChatBaseData = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
+
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -124,4 +151,31 @@ describe("ChatScreen — header", () => {
       screen.getByRole("heading", { level: 1, name: "Course Chat" }),
     ).toBeInTheDocument();
   });
+  it("submits suggested prompts through the shared submit handler", async () => {
+  renderChatScreen();
+
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Select suggested prompt",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(handleInputChangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({
+          value: "Summarize this whole chat",
+        }),
+      }),
+    );
+
+    expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "task_initiation",
+      }),
+    );
+
+    expect(handleSubmitMock).toHaveBeenCalledTimes(1);
+  });
+});
 });
