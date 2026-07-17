@@ -349,7 +349,6 @@ async function uploadMaterial(
 ) {
   const formData = await request.formData();
   const file = formData.get('file') as File;
-  const apiKeys = JSON.parse(formData.get('apiKeys') as string);
 
   if (!file) {
     return json(400, { error: 'No file provided' });

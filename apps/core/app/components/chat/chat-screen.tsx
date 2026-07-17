@@ -34,7 +34,6 @@ import {
 } from "@eduai/ui";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
-import { useApiKeys } from "~/hooks/use-api-keys";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 import {
   acknowledgeChatPrivacyNotice,
@@ -107,7 +106,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
-  const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
@@ -206,7 +204,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const requestMetadata = {
     chatMode: "learning" as const,
     model: selectedModel,
-    apiKeys: getValidApiKeys(),
     courseCode: selectedCourseCode || undefined,
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
@@ -340,7 +337,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
           courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
