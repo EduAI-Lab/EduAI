@@ -119,6 +119,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Configurable required API key expiration in Settings (30d–1y) with status labels on the key list. Email reminders deferred to #747. (#46, @superbolt08, 2026-06-23) — [#754](https://github.com/EduAI-Lab/EduAI/pull/754)
 - [core] feat: Collapsible "Administration" group in sidebar — 7 admin nav items grouped under an accordion, collapsed by default, auto-expands on active child route; add service key Bearer auth to AI models endpoint and AI Tutor client. (#792, @GlowyBlack, 2026-06-26)
 - [core] feat: Soft-delete transparency audit — ADMIN-only `?includeDeleted=true` forensics opt-in on course/question/material/topic reads, surfacing soft-deleted records that every API response otherwise filters out (§19). (#315, @abdullahmoh21, 2026-06-28)
 - [core,ai-tutor,question-maker] tests: Soft-delete coverage — Core unit/integration assert audited reads exclude soft-deleted fixtures by default and include them only for ADMIN with `?includeDeleted=true`; AI Tutor reconcile and QM topic-sync verify soft-deleted Core records never resurface downstream. (#315, @abdullahmoh21, 2026-06-28)
