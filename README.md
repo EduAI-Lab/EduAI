@@ -46,6 +46,8 @@ AI tutoring platform with a two-agent supervisor system (primary tutor + pedagog
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
 
+Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+
 ## Docs
 
 System-wide architecture and planning documents live in [`docs/`](docs/). App-specific docs live alongside each app under their own `docs/` directory.

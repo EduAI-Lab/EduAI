@@ -948,6 +948,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   }
 
   /**
+   * Course context for connectivity probes. Prefer configured Core `courseId`,
+   * then `courseCode`. When neither is set, omit course so service-key probes
+   * can use Core's course-free API-key path instead of hardcoding a seed course
+   * that may not exist on every environment.
+   */
+  getConnectivityProbeCourse() {
+    const courseId = config.eduaiProbeCourseId || "";
+    const courseCode = config.eduaiProbeCourseCode || "";
+    if (courseId) return { courseId };
+    if (courseCode) return { courseCode };
+    return {};
+  }
+
+  /**
    * Issues a lightweight chat call to validate Core AI connectivity.
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
@@ -984,12 +998,13 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       forceProvider,
       campusModels,
     );
+    const probeCourse = this.getConnectivityProbeCourse();
     try {
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],
         model,
         apiKeys,
-        courseCode: "COSC 121",
+        ...probeCourse,
         streaming: false,
         // Status chips should fail fast — full extract uses a longer timeout.
         timeoutMs: 20000,

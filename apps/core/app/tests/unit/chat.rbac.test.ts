@@ -34,6 +34,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import prisma from "~/lib/prisma.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
@@ -126,6 +127,41 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     const res = await action(makeArgs({ messages: [] }));
     expect(res.status).toBe(200);
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("resolves compact courseCode via spaced candidate (COSC121 → COSC 121)", async () => {
+    vi.mocked(prisma.course.findFirst)
+      .mockResolvedValueOnce(null) // exact compact miss
+      .mockResolvedValueOnce({ id: "c1", code: "COSC 121" } as never); // spaced hit
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "COSC121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findFirst).toHaveBeenNthCalledWith(1, {
+      where: { code: "COSC121", deletedAt: null },
+    });
+    expect(prisma.course.findFirst).toHaveBeenNthCalledWith(2, {
+      where: { code: "COSC 121", deletedAt: null },
+    });
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "c1",
+    );
+  });
+
+  it("resolves an already-spaced courseCode on the first candidate", async () => {
+    vi.mocked(prisma.course.findFirst).mockResolvedValueOnce({
+      id: "c1",
+      code: "COSC 121",
+    } as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "COSC 121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.course.findFirst).toHaveBeenCalledWith({
+      where: { code: "COSC 121", deletedAt: null },
+    });
   });
 });
 
