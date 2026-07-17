@@ -34,6 +34,7 @@ import { useQmLayout } from '../components/layout/QmLayoutContext';
 import { questionService } from '../services/questionService';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
+import { questionBankService, type QuestionBank as QuestionBankModel } from '../services/questionBankService';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
 import { QuestionModal } from '../components/questions/QuestionModal';
@@ -53,6 +54,7 @@ import { Topic } from '../types/topic';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
+import { CanvasBankSyncDialog } from '../components/canvas/CanvasBankSyncDialog';
 import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
 import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
 import { ToastAction } from '../components/ui/use-toast';
@@ -67,6 +69,8 @@ import {
 type ActiveTab = 'overview' | 'questions' | 'assessments' | 'canvas';
 
 const VALID_TABS: ActiveTab[] = ['overview', 'questions', 'assessments', 'canvas'];
+
+const BANK_STORAGE_PREFIX = 'course:last-selected-bank:';
 
 const TYPE_COLORS: Record<string, string> = {
   MCQ: 'oklch(0.55 0.16 255)',
@@ -118,6 +122,9 @@ export const CourseDetailPage = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
+  const [banks, setBanks] = useState<QuestionBankModel[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<string | null>(null);
+  const [isBankSyncOpen, setIsBankSyncOpen] = useState(false);
 
   // ── Assessment state ────────────────────────────────────────────────────────
   const [assessments, setAssessments] = useState<Assessment[]>([]);
@@ -152,7 +159,71 @@ export const CourseDetailPage = () => {
     [topicsByCourse],
   );
 
-  // Load questions whenever the route course changes.
+  // Load banks and restore last-selected bank when the route course changes.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!courseId) {
+      setBanks([]);
+      setSelectedBankId(null);
+      return;
+    }
+
+    const stored = localStorage.getItem(`${BANK_STORAGE_PREFIX}${courseId}`);
+    const restoredBankId = stored === 'null' || !stored ? null : stored;
+    setSelectedBankId(restoredBankId);
+
+    const fetchBanks = async () => {
+      try {
+        const data = await questionBankService.listBanks(courseId);
+        if (cancelled) return;
+        setBanks(data);
+        if (restoredBankId && !data.some((bank) => bank.id === restoredBankId)) {
+          setSelectedBankId(null);
+          localStorage.setItem(`${BANK_STORAGE_PREFIX}${courseId}`, 'null');
+        }
+      } catch (error) {
+        console.error('Failed to load question banks for course', courseId, error);
+        if (!cancelled) setBanks([]);
+      }
+    };
+
+    void fetchBanks();
+    return () => { cancelled = true; };
+  }, [courseId]);
+
+  const handleBankChange = useCallback(
+    (bankId: string | null) => {
+      setSelectedBankId(bankId);
+      if (courseId) {
+        localStorage.setItem(`${BANK_STORAGE_PREFIX}${courseId}`, bankId ?? 'null');
+      }
+    },
+    [courseId],
+  );
+
+  const handleCreateBank = useCallback(
+    async (name: string) => {
+      if (!courseId) return;
+      const bank = await questionBankService.createBank(courseId, { name });
+      setBanks((prev) => [...prev, bank]);
+      handleBankChange(bank.id);
+      toast({ title: 'Bank created', description: `"${bank.name}" is ready to use.` });
+    },
+    [courseId, handleBankChange, toast],
+  );
+
+  const reloadBanks = useCallback(async () => {
+    if (!courseId) return;
+    try {
+      const data = await questionBankService.listBanks(courseId);
+      setBanks(data);
+    } catch (error) {
+      console.error('Failed to reload question banks', error);
+    }
+  }, [courseId]);
+
+  // Load questions whenever the route course or selected bank changes.
   useEffect(() => {
     let cancelled = false;
     const fetchQuestions = async () => {
@@ -164,7 +235,10 @@ export const CourseDetailPage = () => {
       setIsQuestionsLoading(true);
       setQuestionsError(null);
       try {
-        const data = await questionService.getQuestions({ courseId });
+        const data = await questionService.getQuestions({
+          courseId,
+          ...(selectedBankId ? { questionBankId: selectedBankId } : {}),
+        });
         if (!cancelled) setQuestions(data);
       } catch (error: any) {
         if (!cancelled) {
@@ -177,7 +251,7 @@ export const CourseDetailPage = () => {
     };
     void fetchQuestions();
     return () => { cancelled = true; };
-  }, [courseId]);
+  }, [courseId, selectedBankId]);
 
   // Load assessments for the route course.
   const fetchAssessments = useCallback(async () => {
@@ -263,6 +337,18 @@ export const CourseDetailPage = () => {
     if (!selectedVariant) return [];
     return variantEntries.filter((entry) => entry.questionId === selectedVariant.questionId);
   }, [variantEntries, selectedVariant]);
+
+  const pendingQuestionIds = useMemo(() => {
+    if (!selectedBankId) return undefined;
+    const ids = questions
+      .filter(
+        (question) =>
+          !question.coreQuestionId &&
+          !question.variants?.some((variant) => variant.coreQuestionId),
+      )
+      .map((question) => question.id);
+    return new Set(ids);
+  }, [questions, selectedBankId]);
 
   // Course-scoped analytics for the Overview tab (type/difficulty/authoring/coverage).
   const courseAnalytics = useMemo<QuestionAnalyticsProps>(() => {
@@ -791,6 +877,13 @@ export const CourseDetailPage = () => {
             disableAdd={writesDisabled}
             disableUpload={writesDisabled}
             onOpenProfile={() => startTour('main')}
+            banks={banks}
+            selectedBankId={selectedBankId}
+            onBankChange={handleBankChange}
+            onCreateBank={handleCreateBank}
+            onSyncFromCanvas={() => setIsBankSyncOpen(true)}
+            pendingQuestionIds={pendingQuestionIds}
+            disableBankControls={writesDisabled}
           />
         </PageTabsContent>
 
@@ -873,6 +966,26 @@ export const CourseDetailPage = () => {
             onImportSuccess={async () => {
               await fetchAssessments();
               toast({ title: 'Import successful', description: 'Assessment imported from Canvas.' });
+            }}
+          />
+
+          <CanvasBankSyncDialog
+            open={isBankSyncOpen}
+            onClose={() => setIsBankSyncOpen(false)}
+            localCourseId={courseId}
+            selectedLocalBankId={selectedBankId}
+            onSyncSuccess={async (result) => {
+              await reloadBanks();
+              handleBankChange(result.bankId);
+              try {
+                const data = await questionService.getQuestions({
+                  courseId,
+                  questionBankId: result.bankId,
+                });
+                setQuestions(data);
+              } catch (error) {
+                console.error('Failed to reload questions after bank sync', error);
+              }
             }}
           />
         </>

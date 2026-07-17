@@ -51,24 +51,34 @@ const mapVariant = (variant: any): QuestionVariant => ({
 });
 
 /** Normalizes backend question payload into frontend Question shape. */
-const mapQuestion = (item: any): Question => ({
-  id: item.id,
-  description: item.description ?? null,
-  type: item.type,
-  courseId: item.courseId,
-  primaryTopicId: item.primaryTopicId,
-  questionOrder: item.questionOrder ?? null,
-  createdAt: item.createdAt,
-  updatedAt: item.updatedAt,
-  course: item.course
-    ? {
-        id: item.course.id,
-        name: item.course.name,
-        code: item.course.code
-      }
-    : undefined,
-  variants: Array.isArray(item.variants) ? item.variants.map(mapVariant) : []
-});
+const mapQuestion = (item: any): Question => {
+  const variants = Array.isArray(item.variants) ? item.variants.map(mapVariant) : [];
+  const coreQuestionId =
+    item.coreQuestionId ??
+    item.core_question_id ??
+    variants.find((variant) => variant.coreQuestionId)?.coreQuestionId ??
+    null;
+
+  return {
+    id: item.id,
+    description: item.description ?? null,
+    type: item.type,
+    courseId: item.courseId,
+    primaryTopicId: item.primaryTopicId,
+    questionOrder: item.questionOrder ?? null,
+    coreQuestionId,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    course: item.course
+      ? {
+          id: item.course.id,
+          name: item.course.name,
+          code: item.course.code
+        }
+      : undefined,
+    variants
+  };
+};
 
 export const questionService = {
   /** Fetches questions with optional filters and maps them to frontend shape. */

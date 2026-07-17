@@ -15,9 +15,12 @@ import {
   IconUpload,
   IconLayoutGrid,
   IconLayoutList,
+  IconRefresh,
 } from '@tabler/icons-react';
 import { QuestionVariantEntry } from '../../types/question';
 import { QuestionCard } from './QuestionCard';
+import { BankSelector } from './BankSelector';
+import type { QuestionBank as QuestionBankModel } from '../../services/questionBankService';
 import {
   QuestionFilterToolbar,
   EMPTY_QUESTION_FILTERS,
@@ -41,6 +44,13 @@ interface QuestionBankProps {
   onOpenProfile?: () => void;
   /** Render cards in compact (dense) mode — used by the standalone Question Bank page. */
   compact?: boolean;
+  banks?: QuestionBankModel[];
+  selectedBankId?: string | null;
+  onBankChange?: (id: string | null) => void;
+  onCreateBank?: (name: string) => void | Promise<void>;
+  onSyncFromCanvas?: () => void;
+  pendingQuestionIds?: Set<number> | number[];
+  disableBankControls?: boolean;
 }
 
 const timeValue = (entry: QuestionVariantEntry) =>
@@ -61,11 +71,27 @@ export const QuestionBank = ({
   disableUpload = false,
   onOpenProfile,
   compact = false,
+  banks = [],
+  selectedBankId = null,
+  onBankChange,
+  onCreateBank,
+  onSyncFromCanvas,
+  pendingQuestionIds,
+  disableBankControls = false,
 }: QuestionBankProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<QuestionSort>('newest');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
+
+  const pendingIds = useMemo(() => {
+    if (!pendingQuestionIds) return null;
+    return pendingQuestionIds instanceof Set
+      ? pendingQuestionIds
+      : new Set(pendingQuestionIds);
+  }, [pendingQuestionIds]);
+
+  const showBankControls = Boolean(onBankChange && onCreateBank);
 
   // Every variant shares its base question's id, so a card needs an ordinal — "Variant 2
   // of #4" — to be distinguishable. Number the non-base variants of each question (a base
@@ -190,6 +216,32 @@ export const QuestionBank = ({
         </div>
       </div>
 
+      {showBankControls && (
+        <div className="flex flex-wrap items-center gap-3">
+          <BankSelector
+            banks={banks}
+            selectedBankId={selectedBankId}
+            onBankChange={onBankChange!}
+            onCreateBank={onCreateBank!}
+            disabled={disableBankControls}
+          />
+          {onSyncFromCanvas && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={disableBankControls}
+              onClick={onSyncFromCanvas}
+              data-testid="sync-bank-from-canvas"
+            >
+              <IconRefresh className="size-4" />
+              Sync from Canvas
+            </Button>
+          )}
+        </div>
+      )}
+
       {variants.length > 0 && (
         <QuestionFilterToolbar
           searchTerm={searchTerm}
@@ -288,6 +340,7 @@ export const QuestionBank = ({
               onView={onViewVariant}
               onCreateVariant={onCreateVariant}
               compact={dense}
+              isPending={pendingIds?.has(entry.questionId) ?? false}
             />
           ))}
         </div>

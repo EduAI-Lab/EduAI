@@ -30,6 +30,8 @@ export interface QuestionMetadata {
     courseId: number;
     primaryTopicId: string;
     questionOrder: Record<number, number> | null; // Maps assessment IDs to order numbers
+    /** Core Question CUID when any variant has been pushed to Core. */
+    coreQuestionId?: string | null;
     createdAt: string;
     updatedAt: string;
     // Relations

@@ -33,6 +33,8 @@ interface QuestionCardProps {
   variantNumber?: number;
   /** Dense single-column variant for the cross-course Question Bank page. */
   compact?: boolean;
+  /** Canvas-imported shell awaiting Core approval push. */
+  isPending?: boolean;
 }
 
 const TYPE_LABELS: Record<QuestionType, string> = {
@@ -57,6 +59,7 @@ export const QuestionCard = ({
   onCreateVariant,
   variantNumber,
   compact = false,
+  isPending = false,
 }: QuestionCardProps) => {
   const { canCreateQuestion, access, accessLoading, hasCourseAccess } = useQmPermissionsForCourse(
     entry.courseId ?? null,
@@ -117,7 +120,11 @@ export const QuestionCard = ({
       difficultyLevel={difficulty as UiDifficulty}
       ai={isAi}
       identity={identity}
-      status={questionStatus(!!entry.isDraft)}
+      status={
+        isPending
+          ? { label: 'Pending approval', variant: 'warning' }
+          : questionStatus(!!entry.isDraft)
+      }
       question={variant.questionText}
       choices={choices}
       answer={choices ? undefined : variant.answer ?? undefined}

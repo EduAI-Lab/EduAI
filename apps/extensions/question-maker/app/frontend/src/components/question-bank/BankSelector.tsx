@@ -3,16 +3,16 @@
  */
 import { useState } from 'react';
 import {
+  Button,
+  Input,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../ui/select';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+} from '@eduai/ui';
+import { IconPlus } from '@tabler/icons-react';
 import { QuestionBank } from '../../services/questionBankService';
-import { Plus } from 'lucide-react';
 
 const ALL_QUESTIONS_VALUE = '__all__';
 
@@ -89,7 +89,7 @@ export const BankSelector = ({
           disabled={disabled}
           onClick={() => setIsCreating(true)}
         >
-          <Plus className="h-4 w-4 mr-1" />
+          <IconPlus className="size-4" />
           New bank
         </Button>
       ) : (
