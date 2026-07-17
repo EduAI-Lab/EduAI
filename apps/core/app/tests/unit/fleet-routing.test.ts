@@ -190,4 +190,55 @@ describe("resolveFleetHost", () => {
     expect(pick?.serverId).toBe("cmps03");
     expect(pick?.reason).toBe("background-round-robin");
   });
+
+  it("keeps independent round-robin cursors per pool", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    process.env.VLLM_FLEET_HEAVY_URL = "http://cmps03.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "qwen2.5-7b-instruct" }, { id: "qwen2.5-32b-instruct" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const firstInteractive = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+    const background = await resolveFleetHost({
+      jobType: "background",
+      resolvedModelId: "vllm:qwen2.5-32b-instruct",
+    });
+    const secondInteractive = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+
+    expect(firstInteractive?.serverId).toBe("cmps01");
+    expect(background?.serverId).toBe("cmps03");
+    expect(secondInteractive?.serverId).toBe("cmps02");
+  });
+
+  it("treats HTTP 200 without a valid data array as unhealthy (no configured-model fallback)", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ models: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    await expect(
+      resolveFleetHost({
+        jobType: "interactive",
+        resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      }),
+    ).rejects.toBeInstanceOf(FleetUnavailableError);
+  });
 });

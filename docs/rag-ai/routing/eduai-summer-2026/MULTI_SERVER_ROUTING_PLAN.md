@@ -205,7 +205,7 @@ Run from **`apps/core`**. Host checks must run on a machine that can reach cmps 
 npx vitest run app/tests/unit/fleet-routing.test.ts
 ```
 
-Covers workload feature parsing, round-robin, 503 when no healthy host, and provider URL override.
+Covers `routingContext.jobType` parsing, round-robin, 503 when no healthy host, and provider URL override.
 
 ### 2. Pre-flight — health-check every fleet host
 
@@ -255,8 +255,8 @@ Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (
 
 | Slice | Status | What |
 |-------|--------|------|
-| **1** | **Done** (`feat/fleet-slice1`) | Env pools, health cache, round-robin, 503 at pick time, extension feature tags |
-| **2** | Planned | Inference failure → cache invalidate + one retry; extension feature tags |
+| **1** | **Done** (`feat/fleet-slice1`) | Env pools, health cache, per-pool round-robin, 503 at pick time, `routingContext.jobType` pool selection |
+| **2** | Planned | Inference failure → cache invalidate + one retry |
 | **3** | Planned | Per-host energy sidecar URL; classroom load test |
 | **4** | Planned | Bedrock overflow (PIA) |
 

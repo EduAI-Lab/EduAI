@@ -15,11 +15,26 @@ export class FleetUnavailableError extends Error {
   }
 }
 
-let roundRobinIndex = 0;
+/** Independent round-robin cursor per pool (chat vs heavy). */
+const roundRobinByPool = new Map<"interactive" | "background", number>();
 
-/** Reset round-robin counter (unit tests). */
+/** Reset round-robin counters (unit tests). */
 export function resetFleetRoundRobin(): void {
-  roundRobinIndex = 0;
+  roundRobinByPool.clear();
+}
+
+/** Pool key for the server list actually used (not raw jobType when background falls back to chat). */
+function poolCursorKey(jobType: JobType): "interactive" | "background" {
+  if (jobType === "background" && heavyFleetConfigured()) {
+    return "background";
+  }
+  return "interactive";
+}
+
+function nextRoundRobinIndex(pool: "interactive" | "background"): number {
+  const current = roundRobinByPool.get(pool) ?? 0;
+  roundRobinByPool.set(pool, current + 1);
+  return current;
 }
 
 function pickReason(jobType: JobType): string {
@@ -58,8 +73,8 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     );
   }
 
-  const server = eligible[roundRobinIndex % eligible.length]!;
-  roundRobinIndex += 1;
+  const pool = poolCursorKey(input.jobType);
+  const server = eligible[nextRoundRobinIndex(pool) % eligible.length]!;
 
   return {
     serverId: server.id,
