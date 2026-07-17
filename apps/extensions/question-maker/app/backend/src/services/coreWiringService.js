@@ -2,7 +2,7 @@
  * Orchestration helpers that bridge QM's local data model and Core API calls.
  * Handles topic resolution (push-if-missing) before pushing a variant as a Core Question.
  */
-import { Topics } from '../schema/index.js';
+import { Topics, CanvasBankQuestionMapping } from '../schema/index.js';
 import { pushTopicToCore, pushQuestionToCore, patchQuestionTestableOnCore } from './coreApiService.js';
 
 /** Allowed enum values, validated before persisting/pushing (mirrors the Variants model + questionService). */
@@ -63,6 +63,10 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
     );
   }
 
+  const canvasMap = await CanvasBankQuestionMapping.findOne({
+    where: { localQuestionMetadataId: qm.id },
+  });
+
   const payload = {
     courseId: course.coreCourseId,
     topicId: primaryCoreTopicId,
@@ -75,6 +79,13 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
     testable: false,
     secondaryTopicIds: coreSecondaryTopicIds,
     idempotencyKey: `qm-variant-${variant.id}`,
+    source: 'question-maker',
+    ...(canvasMap
+      ? {
+          externalSource: 'CANVAS',
+          externalId: String(canvasMap.canvasAssessmentQuestionId),
+        }
+      : {}),
   };
 
   // Idempotency (#2): if this variant already links to a Core question, do not

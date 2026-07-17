@@ -16,6 +16,9 @@ vi.mock('../../src/schema/index.js', () => ({
     findOne: vi.fn(),
     findAll: vi.fn(),
   },
+  CanvasBankQuestionMapping: {
+    findOne: vi.fn().mockResolvedValue(null),
+  },
 }));
 
 // ---------------------------------------------------------------------------

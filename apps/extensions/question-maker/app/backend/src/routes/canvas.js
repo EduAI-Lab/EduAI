@@ -338,7 +338,7 @@ router.post(
         canvasCourseId,
         canvasBankId,
         localCourseId,
-        { primaryTopicId, targetBankId }
+        { primaryTopicId, targetBankId, cookieHeader: req.headers.cookie }
       );
 
       res.json({

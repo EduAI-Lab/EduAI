@@ -15,13 +15,13 @@ import {
   CanvasBankQuestionMapping
 } from '../schema/index.js';
 import { getAssessmentById, createAssessment } from './assessmentService.js';
-import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
 import {
   listBanks,
   createBank,
   addQuestionToBank
 } from './questionBankService.js';
+import { pushVariantToCore } from './coreWiringService.js';
 
 /**
  * Canvas LMS API Service
@@ -1036,9 +1036,11 @@ export const importQuestionBankFromCanvas = async (
     throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
   }
 
+  const cookieHeader = options.cookieHeader;
+
   const course = await Course.findOne({
     where: { id: localCourseId, userId },
-    attributes: ['id', 'name']
+    attributes: ['id', 'name', 'coreCourseId']
   });
   if (!course) {
     const err = new Error('Local course not found');
@@ -1059,6 +1061,27 @@ export const importQuestionBankFromCanvas = async (
   const existingMapping = await CanvasBankMapping.findOne({
     where: { userId, canvasBankId: Number(canvasBankId) }
   });
+  const isResync = Boolean(existingMapping || options.targetBankId);
+
+  if (isResync) {
+    if (!course.coreCourseId) {
+      const err = new Error('Course must be linked to Core before syncing Canvas bank membership');
+      err.status = 400;
+      throw err;
+    }
+    if (!cookieHeader) {
+      const err = new Error('Session cookie is required for Core question push during bank sync');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  async function pushAndAddToBank(metadata, variant) {
+    variant.questionMetadata = metadata;
+    const pushResult = await pushVariantToCore(variant, course, cookieHeader);
+    await variant.update({ coreQuestionId: pushResult.coreQuestionId });
+    await addQuestionToBank(localCourseId, userId, localBank.id, metadata.id);
+  }
 
   if (options.targetBankId) {
     const targetId = String(options.targetBankId);
@@ -1143,12 +1166,9 @@ export const importQuestionBankFromCanvas = async (
             choices: converted.choices
           });
         }
-        await addQuestionToBank(
-          localCourseId,
-          userId,
-          localBank.id,
-          metadata.id
-        );
+        if (isResync && variants[0]) {
+          await pushAndAddToBank(metadata, variants[0]);
+        }
         await existingQMap.update({ localBankId: String(localBank.id) });
         updated += 1;
       } else {
@@ -1157,16 +1177,17 @@ export const importQuestionBankFromCanvas = async (
       continue;
     }
 
-    const question = await createQuestion(userId, {
-      description: converted.description,
+    const metadata = await Question_Metadata.create({
       courseId: localCourseId,
       primaryTopicId,
       type: converted.type,
-      questionBankId: localBank.id
+      description: converted.description,
+      questionOrder: {},
+      createdBy: userId
     });
 
-    await Variants.create({
-      questionMetadataId: question.id,
+    const variant = await Variants.create({
+      questionMetadataId: metadata.id,
       questionText: converted.questionText,
       difficulty: 'medium',
       answer: converted.answer,
@@ -1177,10 +1198,14 @@ export const importQuestionBankFromCanvas = async (
 
     await CanvasBankQuestionMapping.create({
       userId,
-      localQuestionMetadataId: question.id,
+      localQuestionMetadataId: metadata.id,
       canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
       localBankId: String(localBank.id)
     });
+
+    if (isResync) {
+      await pushAndAddToBank(metadata, variant);
+    }
     created += 1;
   }
 
