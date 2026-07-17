@@ -375,7 +375,6 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
@@ -434,7 +433,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let actingUser = session.user;
     if (proxyUserPayload) {
-      if (!apiKeyHeader) {
+      if (!apiKeySession) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
