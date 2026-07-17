@@ -4,6 +4,7 @@
  */
 import { Assessments, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course, sequelize } from '../schema/index.js';
 import { Op } from 'sequelize';
+import { enrichRowsWithCourse, enrichRowWithCourse } from './courseListService.js';
 
 /** Creates an assessment blueprint for the given user/course after validating inputs. */
 export const createAssessment = async (userId, assessmentData) => {
@@ -58,7 +59,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          attributes: ['id', 'name', 'code', 'coreCourseId'],
           where: courseWhere,
           required: true
         },
@@ -122,7 +123,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       offset: parseInt(offset)
     });
 
-    return assessments;
+    return enrichRowsWithCourse(assessments);
   } catch (error) {
     throw error;
   }
@@ -137,7 +138,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          attributes: ['id', 'name', 'code', 'coreCourseId'],
           where: { userId },
           required: true
         },
@@ -201,7 +202,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
       throw new Error('Assessment not found');
     }
 
-    return assessment;
+    return enrichRowWithCourse(assessment);
   } catch (error) {
     throw error;
   }
@@ -265,7 +266,7 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     };
 
     await assessment.update(normalizedUpdates);
-    return assessment;
+    return enrichRowWithCourse(assessment);
   } catch (error) {
     throw error;
   }

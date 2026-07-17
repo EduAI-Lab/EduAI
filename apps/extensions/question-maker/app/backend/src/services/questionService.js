@@ -4,6 +4,7 @@
  */
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
+import { enrichRowsWithCourse, enrichRowWithCourse } from './courseListService.js';
 
 /**
  * Normalizes a primary topic id into a non-empty CUID string, or null if absent/invalid.
@@ -206,7 +207,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          attributes: ['id', 'name', 'code', 'coreCourseId'],
           where: { userId: userId } // Filter by user through course relationship
         },
         {
@@ -230,12 +231,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
     // Apply search filter if provided
     let filteredQuestions = questions;
     if (search) {
-      filteredQuestions = questions.filter(q => 
+      filteredQuestions = questions.filter(q =>
         q.description.toLowerCase().includes(search.toLowerCase())
       );
     }
 
-    return filteredQuestions;
+    return enrichRowsWithCourse(filteredQuestions);
   } catch (error) {
     throw error;
   }
@@ -250,7 +251,7 @@ export const getQuestionById = async (questionId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          attributes: ['id', 'name', 'code', 'coreCourseId'],
           where: { userId: userId } // Ensure user owns the course
         },
         {
@@ -272,7 +273,7 @@ export const getQuestionById = async (questionId, userId) => {
       throw new Error('Question not found');
     }
 
-    return question;
+    return enrichRowWithCourse(question);
   } catch (error) {
     throw error;
   }
@@ -636,7 +637,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          attributes: ['id', 'name', 'code', 'coreCourseId'],
           where: { userId }
         },
         {
@@ -648,7 +649,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
     });
 
     return {
-      questions: savedQuestions.map((question) => question.toJSON()),
+      questions: await enrichRowsWithCourse(savedQuestions),
       assessmentId: createdAssessment ? createdAssessment.id : null
     };
   } catch (error) {

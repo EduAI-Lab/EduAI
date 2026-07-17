@@ -16,7 +16,7 @@ import {
   isCoreCourseInScopedList,
   getCourseEnrollmentsFromCore,
 } from '../services/coreApiService.js';
-import { listCoursesForUser } from '../services/courseListService.js';
+import { listCoursesForUser, enrichCourseDetail } from '../services/courseListService.js';
 import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
@@ -54,7 +54,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Course created successfully',
-      data: courseData
+      data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
     });
   } catch (error) {
     next(error);
@@ -169,9 +169,13 @@ router.get(
   async (req, res, next) => {
     try {
       const { includeDetails = false } = req.query;
+      const cookie = req.headers.cookie;
 
       if (includeDetails !== 'true') {
-        return res.json({ success: true, data: req.qmCourse });
+        return res.json({
+          success: true,
+          data: await enrichCourseDetail(req.qmCourse, { cookie }),
+        });
       }
 
       const courseData = await Course.findOne({
@@ -197,7 +201,7 @@ router.get(
         ]
       });
 
-      res.json({ success: true, data: courseData });
+      res.json({ success: true, data: await enrichCourseDetail(courseData, { cookie }) });
     } catch (error) {
       next(error);
     }
@@ -222,7 +226,7 @@ router.put(
       res.json({
         success: true,
         message: 'Course updated successfully',
-        data: courseData
+        data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
       });
     } catch (error) {
       next(error);
@@ -395,7 +399,10 @@ router.patch(
 
     await course.update({ coreCourseId });
 
-    res.json({ success: true, data: course });
+    res.json({
+      success: true,
+      data: await enrichCourseDetail(course, { cookie }),
+    });
   } catch (error) {
     next(error);
   }
