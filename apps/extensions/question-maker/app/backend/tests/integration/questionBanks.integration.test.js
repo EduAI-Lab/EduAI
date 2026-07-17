@@ -3,6 +3,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md.
  *
  * EduAI Core is mocked in-memory so banks live “in Core” without a running Core instance.
+ * Canvas re-sync push is mocked via coreWiringService.pushVariantToCore.
  */
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
@@ -30,6 +31,10 @@ const membershipsByBank = new Map();
 let bankSeq = 0;
 let membershipSeq = 0;
 
+const { mockPushVariantToCore } = vi.hoisted(() => ({
+  mockPushVariantToCore: vi.fn()
+}));
+
 function coreCourseIdForCode(code) {
   return `core_${normalizeCode(code)}`;
 }
@@ -55,6 +60,14 @@ function ensureDefaultBank(coreCourseId) {
   }
   return def;
 }
+
+function coreMembershipsForBank(bankId) {
+  return membershipsByBank.get(String(bankId)) || [];
+}
+
+vi.mock('../../src/services/coreWiringService.js', () => ({
+  pushVariantToCore: (...args) => mockPushVariantToCore(...args)
+}));
 
 vi.mock('../../src/services/eduaiService.js', () => ({
   default: {
@@ -153,6 +166,7 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
   let courseId;
   let topicId;
   let Variants;
+  let Course;
   let CanvasBankQuestionMapping;
 
   async function seedApprovedVariant(questionMetadataId, coreQuestionId) {
@@ -177,6 +191,7 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     const testDb = await import('../helpers/testDb.js');
     const schema = await import('../../src/schema/index.js');
     Variants = schema.Variants;
+    Course = schema.Course;
     CanvasBankQuestionMapping = schema.CanvasBankQuestionMapping;
     app = appMod;
     connectTestDatabase = testDb.connectTestDatabase;
@@ -191,6 +206,10 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     membershipsByBank.clear();
     bankSeq = 0;
     membershipSeq = 0;
+    mockPushVariantToCore.mockReset();
+    mockPushVariantToCore.mockImplementation(async (variant) => ({
+      coreQuestionId: `core_canvas_${variant.id}`
+    }));
     await truncateTestDatabase();
 
     const reg = await request(app)
@@ -227,7 +246,41 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(typeof res.body.data[0].id).toBe('string');
   });
 
-  it('supports multi-bank membership for the same question', async () => {
+  it('does not Core-member a new question until coreQuestionId exists', async () => {
+    const banksRes = await request(app)
+      .get(`/api/course/${courseId}/banks`)
+      .set('Authorization', `Bearer ${authToken}`);
+    const defaultBank = banksRes.body.data.find((b) => b.isDefault);
+
+    const createQ = await request(app)
+      .post('/api/questions')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        description: 'Unapproved question',
+        courseId,
+        primaryTopicId: topicId,
+        type: 'SA'
+      });
+    expect(createQ.status).toBe(201);
+    const qid = createQ.body.data.id;
+
+    expect(coreMembershipsForBank(defaultBank.id)).toHaveLength(0);
+
+    const add = await request(app)
+      .post(`/api/course/${courseId}/banks/${defaultBank.id}/questions`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ questionMetadataId: qid });
+    expect(add.status).toBe(409);
+    expect(coreMembershipsForBank(defaultBank.id)).toHaveLength(0);
+
+    const bankList = await request(app)
+      .get('/api/questions')
+      .query({ courseId, questionBankId: defaultBank.id })
+      .set('Authorization', `Bearer ${authToken}`);
+    expect(bankList.body.data.some((q) => q.id === qid)).toBe(false);
+  });
+
+  it('supports multi-bank membership for the same question via Core questionId', async () => {
     const banksRes = await request(app)
       .get(`/api/course/${courseId}/banks`)
       .set('Authorization', `Bearer ${authToken}`);
@@ -266,6 +319,11 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
       .set('Authorization', `Bearer ${authToken}`)
       .send({ questionMetadataId: qid });
     expect([200, 201]).toContain(add.status);
+
+    const defaultMembers = coreMembershipsForBank(defaultBank.id);
+    const extraMembers = coreMembershipsForBank(extraBankId);
+    expect(defaultMembers.every((m) => m.questionId === coreQuestionId)).toBe(true);
+    expect(extraMembers.every((m) => m.questionId === coreQuestionId)).toBe(true);
 
     const inDefault = await request(app)
       .get('/api/questions')
@@ -323,7 +381,12 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(add.status).toBe(409);
   });
 
-  it('syncs a Canvas bank in test mode and re-syncs without duplicates', async () => {
+  it('Canvas first import creates pending mappings without Core membership; re-sync pushes then members', async () => {
+    await Course.update(
+      { coreCourseId: coreCourseIdForCode('COSC 211') },
+      { where: { id: courseId } }
+    );
+
     await request(app)
       .post('/api/canvas/connect')
       .set('Authorization', `Bearer ${authToken}`)
@@ -342,28 +405,40 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(typeof bankId).toBe('string');
     const created = first.body.data.created;
 
+    expect(coreMembershipsForBank(bankId)).toHaveLength(0);
+    expect(mockPushVariantToCore).not.toHaveBeenCalled();
+
     const mappings = await CanvasBankQuestionMapping.findAll({
       where: { localBankId: String(bankId) }
     });
-    for (const mapping of mappings) {
-      await seedApprovedVariant(
-        mapping.localQuestionMetadataId,
-        `core_canvas_${mapping.localQuestionMetadataId}`
-      );
-    }
+    expect(mappings.length).toBe(created);
+
+    const pendingList = await request(app)
+      .get('/api/questions')
+      .query({ courseId, questionBankId: bankId })
+      .set('Authorization', `Bearer ${authToken}`);
+    expect(pendingList.body.data.length).toBe(created);
 
     const second = await request(app)
       .post('/api/canvas/import/1/banks/10')
       .set('Authorization', `Bearer ${authToken}`)
+      .set('Cookie', 'session=test-integration')
       .send({ localCourseId: courseId, primaryTopicId: topicId, targetBankId: bankId });
     expect(second.status).toBe(200);
     expect(second.body.data.created).toBe(0);
     expect(second.body.data.updated).toBe(created);
+    expect(mockPushVariantToCore.mock.calls.length).toBe(created);
 
-    const list = await request(app)
+    const members = coreMembershipsForBank(bankId);
+    expect(members.length).toBe(created);
+    expect(members.every((m) => typeof m.questionId === 'string' && m.questionId.startsWith('core_canvas_'))).toBe(
+      true
+    );
+
+    const memberList = await request(app)
       .get('/api/questions')
       .query({ courseId, questionBankId: bankId })
       .set('Authorization', `Bearer ${authToken}`);
-    expect(list.body.data.length).toBe(created);
+    expect(memberList.body.data.length).toBe(created);
   });
 });

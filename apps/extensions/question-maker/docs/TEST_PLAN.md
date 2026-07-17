@@ -47,6 +47,9 @@ Create the empty database once (`CREATE DATABASE eduquery_test;`). The app will 
 - [assessmentsAuth.test.js](../app/backend/tests/assessmentsAuth.test.js) — `401` on `/api/assessments`.
 - [courseAuth.test.js](../app/backend/tests/courseAuth.test.js) — `401` on `/api/course`.
 - [canvasAuth.test.js](../app/backend/tests/canvasAuth.test.js) — `401` on Canvas routes.
+- [questionBankService.coreId.test.js](../app/backend/tests/unit/questionBankService.coreId.test.js) — Core `{ questionId }` membership, 409 without `coreQuestionId`, pending merge.
+- [canvasBankImportHybrid.test.js](../app/backend/tests/unit/canvasBankImportHybrid.test.js) — Canvas first import (mapping only) vs re-sync (push + membership).
+- [pushVariantOrigin.test.js](../app/backend/tests/unit/pushVariantOrigin.test.js) — `pushVariantToCore` origin / Canvas external-id payload.
 
 **Express split:** [app.js](../app/backend/src/app.js) exports the app for supertest; [index.js](../app/backend/src/index.js) only listens and connects the DB.
 
@@ -60,6 +63,7 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 - [eduaiHttpValidation.integration.test.js](../app/backend/tests/eduaiHttpValidation.integration.test.js) — EduAI `400` for missing `messages` / `courseCode` / `prompt` (E1).
 - [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) — assessment-variant `400` bodies (H2).
 - [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) — **cross-user** `GET /api/course/:id` → `404` (B1); **POST extract/save** success (D3); **POST assemble-variants** for Practice Exam with one label (H3).
+- [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) — Core bank CRUD/membership (`questionId`), 409 without approval, Canvas hybrid (pending first import, re-sync push+membership; Core mocked).
 
 ### Frontend — unit (Vitest + Testing Library)
 
@@ -102,8 +106,8 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 | G2 | Canvas question payload helpers | Done | [canvasExport.test.js](../app/backend/tests/canvasExport.test.js) |
 | G3 | Export flow mocked | Done | [canvasExportMocked.test.js](../app/backend/tests/canvasExportMocked.test.js) |
 | G4 | Canvas `401` | Done | [canvasAuth.test.js](../app/backend/tests/canvasAuth.test.js) |
-| G5 | Canvas question bank client (test mode) | Done | [canvasBankClient.test.js](../app/backend/tests/unit/canvasBankClient.test.js) |
-| G6 | Question banks (Core-backed) + Canvas bank sync | Done | [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) (Core mocked) |
+| G5 | Canvas question bank client + hybrid import unit | Done | [canvasBankClient.test.js](../app/backend/tests/unit/canvasBankClient.test.js), [canvasBankImportHybrid.test.js](../app/backend/tests/unit/canvasBankImportHybrid.test.js), [pushVariantOrigin.test.js](../app/backend/tests/unit/pushVariantOrigin.test.js) |
+| G6 | Question banks (Core `questionId` membership) + Canvas hybrid sync | Done | [questionBankService.coreId.test.js](../app/backend/tests/unit/questionBankService.coreId.test.js), [questionBanks.integration.test.js](../app/backend/tests/integration/questionBanks.integration.test.js) (Core mocked; first import pending-only, re-sync push+membership) |
 | H1 | `scoreMetadataMatch` | Done | [assessmentVariantMetadataScoring.test.js](../app/backend/tests/assessmentVariantMetadataScoring.test.js) |
 | H2 | Assessment-variant `400` | Done | [assessmentVariantHttp.integration.test.js](../app/backend/tests/assessmentVariantHttp.integration.test.js) |
 | H3 | `assembleEquivalentExamVariants` (single exam label) | Done | [planCoverage.integration.test.js](../app/backend/tests/planCoverage.integration.test.js) |
@@ -111,8 +115,8 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 | I2 | 404 JSON | Done | [health.test.js](../app/backend/tests/health.test.js) |
 | J1 | Frontend `api` client | Done | [api.test.ts](../app/frontend/src/tests/integration/api.test.ts) |
 | J2 | `LoginPage` | Done | [LoginPage.test.tsx](../app/frontend/src/tests/unit/LoginPage.test.tsx) |
-| J3 | Bank selector UI | Done | [BankSelector.test.tsx](../app/frontend/src/components/question-bank/BankSelector.test.tsx) |
-| J4 | Canvas bank sync dialog | Done | [CanvasBankSyncDialog.test.tsx](../app/frontend/src/components/canvas/CanvasBankSyncDialog.test.tsx) |
+| J3 | Bank selector UI (CourseDetailPage wiring) | Done | [BankSelector.test.tsx](../app/frontend/src/components/question-bank/BankSelector.test.tsx) |
+| J4 | Canvas bank sync dialog + pending overlay handoff | Done | [CanvasBankSyncDialog.test.tsx](../app/frontend/src/components/canvas/CanvasBankSyncDialog.test.tsx); pending rows surfaced via [CourseDetailPage.tsx](../app/frontend/src/pages/CourseDetailPage.tsx) + bank-filtered question list |
 
 **Intentional gaps (future work):** F1 “reorder” endpoints; E2E (Playwright/Cypress); full EduAI/Canvas E2E against sandboxes. Add new rows here when you add tests.
 
@@ -131,4 +135,4 @@ Skipped when unset (exit 0). [testDb.js](../app/backend/tests/helpers/testDb.js)
 
 ---
 
-*Last updated: feature coverage matrix completed; [feature-ci.yml](../.github/workflows/feature-ci.yml) and Vitest `run` mode reflected.*
+*Last updated: Core Question bank membership + Canvas hybrid tests (G5/G6/J3/J4); Vitest `run` mode reflected.*
