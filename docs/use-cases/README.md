@@ -21,6 +21,16 @@ docs/use-cases/
 - [`unauthenticated.md`](core/unauthenticated.md) — no session: pre-login, expired/invalid session, anonymous probing
 - [`service-caller.md`](core/service-caller.md) — AI Tutor/Question Maker calling Core via `EDUAI_API_KEY` + optional `proxyUser`
 
+### AI Tutor actors (`ai-tutor/`)
+
+- [`student.md`](ai-tutor/student.md) — STUDENT (the dual-loop tutor/supervisor chat pipeline, answer submission)
+- [`instructor.md`](ai-tutor/instructor.md) — INSTRUCTOR (course/module/lesson/activity authoring, cloning, analytics)
+- [`admin.md`](ai-tutor/admin.md) — ADMIN (admin console, system settings, AI model policy, cross-course trace oversight)
+- [`unit-admin.md`](ai-tutor/unit-admin.md) — UNIT_ADMIN (department-scoped course authoring and trace oversight)
+- [`ta.md`](ai-tutor/ta.md) — TA (course-scoped grading/oversight; platform-role vs. enrollment-role TA distinction)
+- [`unauthenticated.md`](ai-tutor/unauthenticated.md) — no session: missing/expired cookie, Core-outage failure mode, internal-route separation
+- [`service-caller.md`](ai-tutor/service-caller.md) — Core↔AI Tutor server-to-server: cookie-forwarding vs. service-key call patterns, inbound cascade-delete
+
 ## Scenario categories
 
 Every actor file groups scenarios under these headings:
