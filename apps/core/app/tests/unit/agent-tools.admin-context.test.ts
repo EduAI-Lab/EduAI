@@ -57,6 +57,42 @@ describe("listAdminUsers", () => {
       expect(result.total).toBe(1);
     }
   });
+
+  it("filters by exact email", async () => {
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: "u9", email: "perf.pool-enroll-009@perf.local" },
+    ]);
+    prismaMock.user.count.mockResolvedValue(1);
+    const result = await listAdminUsers(ADMIN, {
+      email: "perf.pool-enroll-009@perf.local",
+    });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          email: { equals: "perf.pool-enroll-009@perf.local", mode: "insensitive" },
+        },
+      }),
+    );
+    if ("filter" in result) {
+      expect(result.filter).toEqual({ email: "perf.pool-enroll-009@perf.local" });
+    }
+  });
+
+  it("filters by query substring on email or name", async () => {
+    prismaMock.user.findMany.mockResolvedValue([]);
+    prismaMock.user.count.mockResolvedValue(0);
+    await listAdminUsers(ADMIN, { query: "enroll-009" });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { email: { contains: "enroll-009", mode: "insensitive" } },
+            { name: { contains: "enroll-009", mode: "insensitive" } },
+          ],
+        },
+      }),
+    );
+  });
 });
 
 describe("listAdminCourseEnrollments", () => {
@@ -115,6 +151,61 @@ describe("listAdminCourseEnrollments", () => {
             lte: new Date("2026-06-15T00:00:00.000Z"),
           },
         },
+      }),
+    );
+  });
+
+  it("filters by exact userId regardless of the page-size limit", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([
+      {
+        id: "e1",
+        userId: "u1",
+        role: "STUDENT",
+        isActive: true,
+        enrolledAt: new Date("2020-01-01"),
+        user: { email: "old@test.com", name: "Old Student" },
+      },
+    ]);
+    prismaMock.enrollment.count.mockResolvedValue(1);
+
+    // limit is small but should be irrelevant once an exact userId is given —
+    // the row could otherwise be outside the newest page and unreachable.
+    const result = await listAdminCourseEnrollments(ADMIN, "c1", { userId: "u1", limit: 1 });
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ courseId: "c1", userId: "u1" }) }),
+    );
+    expect("count" in result && result.count).toBe(1);
+  });
+
+  it("filters by exact userEmail (case-insensitive), independent of limit", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([
+      {
+        id: "e1",
+        userId: "u1",
+        role: "STUDENT",
+        isActive: true,
+        enrolledAt: new Date("2020-01-01"),
+        user: { email: "old@test.com", name: "Old Student" },
+      },
+    ]);
+    prismaMock.enrollment.count.mockResolvedValue(1);
+
+    await listAdminCourseEnrollments(ADMIN, "c1", { userEmail: "OLD@test.com" });
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          courseId: "c1",
+          user: { email: { equals: "OLD@test.com", mode: "insensitive" } },
+        }),
+        take: 1,
       }),
     );
   });
