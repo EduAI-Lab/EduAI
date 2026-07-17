@@ -16,6 +16,8 @@ vi.mock('../../src/config/settings.js', () => ({
     eduaiApiUrl: 'http://eduai.test',
     eduaiApiKey: 'test-key-123456',
     eduaiIgnoredCourseCodes: [],
+    eduaiProbeCourseId: '',
+    eduaiProbeCourseCode: '',
   },
 }));
 
@@ -43,6 +45,8 @@ function requestError({ code, message = 'no response' } = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   config.eduaiIgnoredCourseCodes = [];
+  config.eduaiProbeCourseId = '';
+  config.eduaiProbeCourseCode = '';
   eduaiService.apiKey = 'test-key-123456';
   eduaiService.baseURL = 'http://eduai.test';
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -498,6 +502,38 @@ describe('testApiKey', () => {
     expect(out.success).toBe(true);
     expect(out.message).toMatch(/Service key can reach AI/i);
     expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
+    // No hardcoded seed course — service-key probes are course-free by default.
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
+    expect(axios.post.mock.calls[0][1].courseId).toBeUndefined();
+  });
+
+  it('sends configured probe courseId when set', async () => {
+    config.eduaiProbeCourseId = 'cuid-probe-1';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey();
+    expect(out.success).toBe(true);
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-probe-1');
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
+  });
+
+  it('sends configured probe courseCode when courseId is unset', async () => {
+    config.eduaiProbeCourseCode = 'MATH 100';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey({
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+    expect(out.success).toBe(true);
+    expect(axios.post.mock.calls[0][1].courseCode).toBe('MATH 100');
+    expect(axios.post.mock.calls[0][1].courseId).toBeUndefined();
+  });
+
+  it('prefers probe courseId over courseCode', async () => {
+    config.eduaiProbeCourseId = 'cuid-preferred';
+    config.eduaiProbeCourseCode = 'COSC 121';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    await eduaiService.testApiKey();
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-preferred');
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
   });
 
   it('prefers the session cookie when both cookie and service key are present', async () => {
