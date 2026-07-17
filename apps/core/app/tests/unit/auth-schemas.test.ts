@@ -220,6 +220,23 @@ describe("updateUserSchema", () => {
     expect(updateUserSchema.safeParse({ role: "BAD" }).success).toBe(false);
   });
 
+  it("keeps TA out of the platform role contract", () => {
+    expect(updateUserSchema.safeParse({ role: "TA" }).success).toBe(false);
+  });
+
+  it("accepts TA course IDs as a course-level assignment", () => {
+    const result = updateUserSchema.safeParse({ taCourseIds: ["course-1", "course-2"] });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.taCourseIds).toEqual(["course-1", "course-2"]);
+    }
+  });
+
+  it("rejects empty TA course IDs", () => {
+    expect(updateUserSchema.safeParse({ taCourseIds: [""] }).success).toBe(false);
+  });
+
   it("rejects an empty name when provided", () => {
     expect(updateUserSchema.safeParse({ name: "A" }).success).toBe(false);
   });
