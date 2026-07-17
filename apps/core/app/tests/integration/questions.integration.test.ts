@@ -359,6 +359,33 @@ describe("POST /api/questions", () => {
     expect(await res.json()).toEqual({ id: QUESTION_ID });
     expect(db.$transaction).not.toHaveBeenCalled();
   });
+
+  it("persists source and LMS external origin on POST", async () => {
+    mockGetSession.mockResolvedValue({ user: { id: "u1", role: "INSTRUCTOR" } });
+    mockCourseAccess("INSTRUCTOR");
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+      db.question.create.mockResolvedValue({ id: QUESTION_ID });
+      return fn(db);
+    });
+    const res = await postAction(
+      makePostArgs(
+        {
+          ...validPostBody,
+          source: "question-maker",
+          externalSource: "CANVAS",
+          externalId: "99",
+        },
+        "session=abc"
+      )
+    );
+    expect(res.status).toBe(201);
+    const createData = db.question.create.mock.calls[0][0].data;
+    expect(createData.source).toBe("question-maker");
+    expect(createData.externalSource).toBe("CANVAS");
+    expect(createData.externalId).toBe("99");
+  });
 });
 
 // ─── GET /api/questions/:id ──────────────────────────────────────────────────

@@ -216,6 +216,47 @@ describe("createQuestion", () => {
     expect(db.$transaction).toHaveBeenCalledOnce();
     expect(db.questionSecondaryTopic.createMany).not.toHaveBeenCalled();
   });
+
+  it("persists source and external origin when provided", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+      db.question.create.mockResolvedValue({ id: QUESTION_ID });
+      return fn(db);
+    });
+
+    const result = await createQuestion(
+      {
+        ...baseBody,
+        source: "question-maker",
+        externalSource: "CANVAS",
+        externalId: "99",
+      },
+      CREATOR
+    );
+
+    expect(result).toEqual({ id: QUESTION_ID });
+    const createData = db.question.create.mock.calls[0][0].data;
+    expect(createData.source).toBe("question-maker");
+    expect(createData.externalSource).toBe("CANVAS");
+    expect(createData.externalId).toBe("99");
+  });
+
+  it("defaults source to question-maker when omitted", async () => {
+    db.course.findUnique.mockResolvedValue({ id: COURSE_ID });
+    db.courseTopic.findUnique.mockResolvedValue({ id: TOPIC_ID, deletedAt: null });
+    db.$transaction.mockImplementation(async (fn: (tx: typeof db) => unknown) => {
+      db.question.create.mockResolvedValue({ id: QUESTION_ID });
+      return fn(db);
+    });
+
+    await createQuestion(baseBody, CREATOR);
+
+    const createData = db.question.create.mock.calls[0][0].data;
+    expect(createData.source).toBe("question-maker");
+    expect(createData.externalId).toBeNull();
+    expect(createData.externalSource).toBeNull();
+  });
 });
 
 // ─── listQuestions ───────────────────────────────────────────────────────────

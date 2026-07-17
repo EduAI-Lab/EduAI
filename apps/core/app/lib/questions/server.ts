@@ -14,6 +14,9 @@ export type CreateQuestionBody = {
   testable?: boolean;
   secondaryTopicIds?: string[];
   idempotencyKey?: string;
+  source?: string;
+  externalId?: string;
+  externalSource?: string;
 };
 
 /**
@@ -33,6 +36,9 @@ const CreateQuestionSchema = z.object({
   testable: z.boolean().optional(),
   secondaryTopicIds: z.array(z.string().min(1)).optional(),
   idempotencyKey: z.string().min(1).optional(),
+  source: z.string().min(1).optional(),
+  externalId: z.string().min(1).optional(),
+  externalSource: z.string().min(1).optional(),
 });
 
 type CreateQuestionError =
@@ -70,6 +76,9 @@ export async function createQuestion(
     testable = false,
     secondaryTopicIds = [],
     idempotencyKey,
+    source,
+    externalId,
+    externalSource,
   } = parsed.data;
 
   const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true } });
@@ -128,6 +137,9 @@ export async function createQuestion(
           answer,
           testable,
           idempotencyKey,
+          source: source ?? "question-maker",
+          externalId: externalId ?? null,
+          externalSource: externalSource ?? null,
         },
       });
       if (secondaryTopicIds.length > 0) {
