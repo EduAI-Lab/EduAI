@@ -55,8 +55,12 @@ import {
   TeachRequestSchema,
 } from '../../../shared/schemas/aiGuidance.js';
 import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
+import { getCoreCourseId } from '../utils/coreCourseId.js';
 
 const router = express.Router();
+
+// Re-export for unit tests that assert the activities → EduAI wiring helper.
+export { getCoreCourseId };
 
 const normalizeCustomPrompt = (value) => {
   if (typeof value !== 'string') return null;
@@ -78,12 +82,6 @@ function getCourseCode(course) {
       course.externalMetadata.code) ||
     (typeof course.externalId === 'string' ? course.externalId : null)
   );
-}
-
-/** Core Course CUID when the offering is linked; omit when unlinked (#1021). */
-function getCoreCourseId(course) {
-  const id = course?.coreOfferingId;
-  return typeof id === 'string' && id.trim() ? id.trim() : null;
 }
 
 function getActivityAccess(course, authUser) {
