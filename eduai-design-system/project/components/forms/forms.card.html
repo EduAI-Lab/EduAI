@@ -1,0 +1,57 @@
+<!-- @dsCard group="Components" viewport="700x340" name="Input" subtitle="Labeled input — default, focus, error, disabled, prefix/suffix" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>
+  body { margin: 0; padding: 20px 24px; font-family: var(--font-sans); background: var(--background); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { Input } = window.EduAIDesignSystem_4b4b4d;
+
+function App() {
+  return (
+    <div className="grid">
+      <Input id="email" label="Email" type="email" placeholder="you@ubc.ca" required />
+      <Input id="password" label="Password" type="password" placeholder="••••••••" />
+      <Input
+        id="canvas"
+        label="Canvas URL"
+        placeholder="canvas.ubc.ca"
+        prefix="https://"
+        helperText="Your institution's Canvas base URL"
+      />
+      <Input
+        id="error-eg"
+        label="Student ID"
+        defaultValue="abc"
+        error="Student ID must be 8 digits"
+      />
+      <Input
+        id="search"
+        label="Search courses"
+        type="search"
+        placeholder="CPSC 110…"
+        suffix={
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        }
+      />
+      <Input id="disabled" label="Institution" defaultValue="University of British Columbia" disabled />
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

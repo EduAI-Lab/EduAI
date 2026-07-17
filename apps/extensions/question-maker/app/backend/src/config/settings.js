@@ -6,8 +6,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Get the project root directory (4 levels up from app/backend/src/config/settings.js)
-// app/backend/src/config -> app/backend/src -> app/backend -> app -> root
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '../../../../');
@@ -24,10 +22,12 @@ export const config = {
   // Database
   databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/eduquery',
   
+  // Core integration
+  coreUrl: process.env.CORE_URL || 'http://localhost:3000',
+  corePublicOrigin: process.env.CORE_PUBLIC_ORIGIN || process.env.CORE_URL || 'http://localhost:3000',
+  extensionUrl: process.env.EXTENSION_URL || 'http://localhost:8000',
+
   // Security
-  jwtSecret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
-  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS) || 12,
   encryptionKey: process.env.ENCRYPTION_KEY || (() => {
     // Generate a random key for development if not set
     // WARNING: This should NEVER be used in production
@@ -45,6 +45,7 @@ export const config = {
   groqApiKey: process.env.GROQ_API_KEY || '',
   openaiApiKey: process.env.OPENAI_API_KEY || '',
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+  googleGenerativeAiApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
   
   // EduAI API Configuration
   eduaiApiUrl: process.env.EDUAI_API_URL || 'https://eduai.ok.ubc.ca',
@@ -64,7 +65,13 @@ export const config = {
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
   
   // Logging
-  logLevel: process.env.LOG_LEVEL || 'info'
+  logLevel: process.env.LOG_LEVEL || 'info',
+
+  // Bug report admin access (emails that may access the bug-report triage UI)
+  bugReportAdminEmails: (process.env.BUG_REPORT_ADMIN_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 };
 
 export default config;

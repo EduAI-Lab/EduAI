@@ -1,8 +1,10 @@
 import {
   Message as BasicMessage,
   MessageAvatar
-} from "~/components/ui/message";
-import { Loader } from "~/components/ui/loader";
+} from "@eduai/ui";
+import { Loader } from "@eduai/ui";
+
+export type ChatTypingIndicatorProps = Record<string, never>;
 
 export function ChatTypingIndicator() {
   return (

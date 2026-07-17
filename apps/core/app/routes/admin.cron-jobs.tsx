@@ -1,0 +1,60 @@
+import { Link, redirect, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+
+import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { CronJobsAdminView } from "~/components/admin/cron-jobs-admin-view";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@eduai/ui";
+import { auth } from "~/lib/auth/server";
+import { listCronJobStatuses } from "~/lib/db.cron-jobs.server";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await auth.api.getSession({ headers: request.headers });
+
+  if (!session?.user) {
+    return redirect("/auth/login");
+  }
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
+  }
+
+  const jobs = await listCronJobStatuses();
+  return { user: session.user, jobs };
+}
+
+export default function AdminCronJobsRoute() {
+  const { user, jobs } = useLoaderData<typeof loader>();
+
+  return (
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Home</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Cron Jobs</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
+    >
+      <CronJobsAdminView jobs={jobs} />
+    </CoreAppShell>
+  );
+}

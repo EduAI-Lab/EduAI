@@ -29,6 +29,11 @@ describe('GET /api/course without token', () => {
     const res = await request(app).get('/api/course/1/banks');
     expect401(res);
   });
+
+  it('rejects access sub-route', async () => {
+    const res = await request(app).get('/api/course/1/access');
+    expect401(res);
+  });
 });
 
 describe('POST /api/course without token', () => {

@@ -58,9 +58,9 @@ describe('api methods', () => {
     expect(result).toEqual(mockData);
   });
 
-  it('401 response redirects to / when not already at /', async () => {
+  it('401 response redirects to Core login with force=1 and a ?redirect= param', async () => {
     window.location.pathname = '/dashboard';
-    window.location.href = '/dashboard';
+    window.location.href = 'http://localhost:3001/dashboard';
 
     mockFetch.mockResolvedValue({
       ok: false,
@@ -71,7 +71,27 @@ describe('api methods', () => {
     const { api } = await import('~/lib/api');
 
     await expect(api.listCourses()).rejects.toThrow('Authentication required');
-    expect(window.location.href).toBe('/');
+    expect(window.location.href).toMatch(
+      /^http:\/\/localhost:3000\/login\?force=1&redirect=/,
+    );
+  });
+
+  it('403 response throws without redirecting to login (no infinite loop)', async () => {
+    window.location.pathname = '/instructor/lesson/3';
+    window.location.href = 'http://localhost:3001/instructor/lesson/3';
+
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: () => Promise.resolve('Not authorized for this lesson'),
+    });
+
+    const { api } = await import('~/lib/api');
+
+    await expect(api.lessonById(3)).rejects.toThrow('Not authorized for this lesson');
+    // An authenticated-but-forbidden caller must NOT be bounced to Core login
+    // (doing so would loop straight back to the same 403).
+    expect(window.location.href).toBe('http://localhost:3001/instructor/lesson/3');
   });
 
   it('500 response throws with error text', async () => {
@@ -86,6 +106,20 @@ describe('api methods', () => {
     await expect(api.listCourses()).rejects.toThrow('Internal server error');
   });
 
+  it('a fetch-level failure (e.g. API not listening yet) throws ApiNetworkError without redirecting', async () => {
+    window.location.pathname = '/dashboard';
+    window.location.href = 'http://localhost:3001/dashboard';
+
+    mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const { api, ApiNetworkError } = await import('~/lib/api');
+
+    await expect(api.me()).rejects.toThrow(ApiNetworkError);
+    // Unlike a 401, a connection failure must not bounce the user to login —
+    // the caller decides whether to retry.
+    expect(window.location.href).toBe('http://localhost:3001/dashboard');
+  });
+
   it('all expected API methods exist', async () => {
     const { api } = await import('~/lib/api');
 
@@ -93,7 +127,6 @@ describe('api methods', () => {
       'me',
       'listCourses',
       'courseById',
-      'createCourse',
       'updateCourse',
       'modulesForCourse',
       'moduleById',
@@ -118,7 +151,86 @@ describe('api methods', () => {
     }
   });
 
-  it('api.logout calls the sign-out endpoint with POST and credentials', async () => {
+  it('a caller-aborted request rejects with the AbortError as-is (Stop button, #999)', async () => {
+    const controller = new AbortController();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(
+      1,
+      { knowledgeLevel: 'beginner', message: 'hi', modelId: 'm', apiKey: 'k' },
+      controller.signal,
+    );
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('a chat send method\'s opt-in client-side timeout rejects with ApiTimeoutError, distinct from a caller abort', async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    );
+
+    const { api, ApiTimeoutError } = await import('~/lib/api');
+    const pending = api.sendGuideMessage(1, {
+      knowledgeLevel: 'beginner',
+      message: 'hi',
+      modelId: 'm',
+      apiKey: 'k',
+    });
+    const assertion = expect(pending).rejects.toThrow(ApiTimeoutError);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await assertion;
+    vi.useRealTimers();
+  });
+
+  it('a 504 response (server-side EDUAI_CALL_TIMEOUT_MS bound) maps to ApiTimeoutError', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 504,
+      text: () => Promise.resolve('{"error":"The AI study buddy took too long to respond. Please try again."}'),
+    });
+
+    const { api, ApiTimeoutError } = await import('~/lib/api');
+
+    await expect(
+      api.sendGuideMessage(1, { knowledgeLevel: 'beginner', message: 'hi', modelId: 'm', apiKey: 'k' }),
+    ).rejects.toThrow(ApiTimeoutError);
+  });
+
+  it('http() applies no timeout unless a caller opts in via timeoutMs (#999 review scope)', async () => {
+    vi.useFakeTimers();
+    // A call that never resolves and is never aborted — if a global timeout
+    // existed, this would reject once fake time advances past it.
+    mockFetch.mockImplementation(() => new Promise(() => {}));
+
+    const { api } = await import('~/lib/api');
+    const pending = api.listCourses();
+    let settled = false;
+    pending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(settled).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('api.logout proxies sign-out through the AT backend with POST and credentials', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -130,7 +242,7 @@ describe('api methods', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://localhost:4000/api/auth/sign-out');
+    expect(url).toBe('http://localhost:4000/api/logout');
     expect(options.method).toBe('POST');
     expect(options.credentials).toBe('include');
     expect(result).toEqual({ ok: true });

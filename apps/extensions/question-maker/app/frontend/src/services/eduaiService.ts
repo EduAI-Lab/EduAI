@@ -2,7 +2,9 @@
  * Frontend wrapper around AI service endpoints for chat, question generation, course/topics, and model list.
  * Passes through provider API keys as needed and returns typed results.
  */
+import { termLabelLong } from '@eduai/ui';
 import api from './api';
+import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -93,44 +95,32 @@ export interface EduAITopicOption {
     name: string;
 }
 
-export interface EduAITopicOption {
-    id: string;
-    name: string;
-}
-
-const MOCK_COURSE_OPTIONS: EduAICourseOption[] = [
+/** Shown when Core course list is unreachable (offline / auth). */
+const FALLBACK_COURSE_OPTIONS: EduAICourseOption[] = [
     {
-        id: 'COSC211',
+        id: 'fallback-cosc211',
         code: 'COSC 211',
         name: 'Machine Architecture',
-        description: 'Computer organization, performance, and instruction set design.'
+        description: 'Offline fallback — link courses from your profile when Core is available.',
     },
     {
-        id: 'COSC121',
+        id: 'fallback-cosc121',
         code: 'COSC 121',
         name: 'Computer Programming II',
-        description: 'Intermediate programming with data structures and software design.'
-    }
+        description: 'Offline fallback — link courses from your profile when Core is available.',
+    },
 ];
 
-// Mock topics mapped by course code (without spaces)
-const MOCK_COURSE_TOPICS_BY_CODE: Record<string, EduAITopicOption[]> = {
-    'COSC211': [
-        { id: 'cosc211-1', name: 'Instruction Set Architectures' },
-        { id: 'cosc211-2', name: 'Pipeline Design' },
-        { id: 'cosc211-3', name: 'Cache Coherence Strategies' },
-        { id: 'cosc211-4', name: 'Memory Hierarchy' },
-        { id: 'cosc211-5', name: 'Parallel Execution Models' },
-        { id: 'cosc211-6', name: 'Performance Benchmarking' }
+/** Legacy mock topics — only used when Core topic fetch fails. */
+const FALLBACK_TOPICS_BY_CODE: Record<string, EduAITopicOption[]> = {
+    COSC211: [
+        { id: 'fallback-1', name: 'Instruction Set Architectures' },
+        { id: 'fallback-2', name: 'Pipeline Design' },
     ],
-    'COSC121': [
-        { id: 'cosc121-1', name: 'Object-Oriented Design' },
-        { id: 'cosc121-2', name: 'Data Structures Fundamentals' },
-        { id: 'cosc121-3', name: 'Algorithm Analysis' },
-        { id: 'cosc121-4', name: 'Testing and Debugging' },
-        { id: 'cosc121-5', name: 'File I/O and Persistence' },
-        { id: 'cosc121-6', name: 'Recursion Patterns' }
-    ]
+    COSC121: [
+        { id: 'fallback-1', name: 'Object-Oriented Design' },
+        { id: 'fallback-2', name: 'Data Structures Fundamentals' },
+    ],
 };
 
 export interface EduAITestResponse {
@@ -138,6 +128,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
+    /** Which provider path was validated: a cloud provider (google/openai/deepseek/anthropic) or 'ollama' (UBC-hosted). */
+    provider?: AIProvider | 'ollama';
 }
 
 class EduAIService {
@@ -153,10 +145,54 @@ class EduAIService {
         return response.data;
     }
 
-    /** Tests configured AI service credentials by calling the backend validation endpoint. */
-    async testApiKey(): Promise<EduAITestResponse> {
-        const response = await api.get('/api/eduai/test-api-key');
-        return response.data;
+    /**
+     * Tests AI connectivity. Sends the caller's browser-stored provider keys (e.g.
+     * Google) so the backend can validate the cloud provider — which works with the
+     * user's own key even when the UBC-hosted provider is offline.
+     *
+     * Pass `overrideApiKeys` to force which path is probed — a populated map
+     * forces the cloud provider. Pass `opts.forceProvider` to pin the probe to a
+     * specific path (e.g. `'ollama'` for the UBC-hosted provider) so the backend
+     * probes it regardless of any server-side cloud key — sending `{}` alone is
+     * not enough, since the server would fall back to its own Google key and the
+     * UBC chip would never be checked. Used to probe cloud and UBC independently
+     * for the status chips.
+     */
+    async testApiKey(
+        overrideApiKeys?: Record<string, any>,
+        opts?: { forceProvider?: string },
+    ): Promise<EduAITestResponse> {
+        // Build the apiKeys payload the backend expects from any locally-stored keys,
+        // unless the caller supplied an explicit override.
+        let apiKeys: Record<string, any> = {};
+        if (overrideApiKeys) {
+            apiKeys = overrideApiKeys;
+        } else {
+            try {
+                const stored = await apiKeyStorage.getAllApiKeys();
+                apiKeys = Object.fromEntries(
+                    Object.entries(stored).map(([provider, apiKey]) => [provider, { apiKey, isEnabled: true }])
+                );
+            } catch {
+                // Ignore key-storage failures — fall back to server-side keys only.
+            }
+        }
+
+        const body: Record<string, any> = { apiKeys };
+        if (opts?.forceProvider) body.provider = opts.forceProvider;
+
+        try {
+            const response = await api.post('/api/eduai/test-api-key', body);
+            return { ...response.data, configured: response.data.configured ?? true };
+        } catch (err: any) {
+            if (err.response?.status === 400 && err.response?.data) {
+                return {
+                    ...err.response.data,
+                    configured: err.response.data.configured ?? true
+                };
+            }
+            throw err;
+        }
     }
 
     /**
@@ -167,15 +203,19 @@ class EduAIService {
             const response = await api.get('/api/eduai/ai-models');
             const models = response.data;
 
-            // Transform API response to our format
+            if (!Array.isArray(models) || models.length === 0) {
+                console.warn('AI model list empty — check Core session or EDUAI_API_KEY');
+                return [];
+            }
+
             return models
-                .filter((model: any) => model.isActive)
+                .filter((model: any) => model.isActive !== false)
                 .map((model: any) => ({
-                    id: `${model.provider.name}:${model.modelId}`,
-                    label: model.name,
-                    provider: model.provider.name,
+                    id: `${model.provider?.name ?? model.provider}:${model.modelId}`,
+                    label: model.name ?? model.modelId,
+                    provider: model.provider?.name ?? String(model.provider ?? 'unknown'),
                     description: model.description,
-                    isDefault: model.modelId === 'gpt-oss:120b' // Default to ollama model
+                    isDefault: model.modelId === 'gpt-oss:120b' || model.modelId === 'gemini-2.5-flash',
                 }));
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
@@ -198,7 +238,7 @@ class EduAIService {
                     id: course.id,
                     code: course.code,
                     name: course.name,
-                    description: course.description || `${course.term} ${course.year}`,
+                    description: course.description || termLabelLong(course.term, course.year),
                     term: course.term,
                     year: course.year
                 }));
@@ -207,36 +247,63 @@ class EduAIService {
             return [];
         } catch (error) {
             console.error('Failed to fetch courses from the AI service:', error);
-            throw error;
+            return import.meta.env.DEV ? FALLBACK_COURSE_OPTIONS : [];
         }
     }
 
-    /**
-     * Mock: Return topic list for a course.
-     * Topics are looked up by course code (e.g., "COSC 211" -> "COSC211")
-     * courseIdOrCode can be either the AI service course UUID or the course code
-     * Replace with live API call when endpoint is available.
-     */
-    async listCourseTopics(courseIdOrCode: string, courseCode?: string): Promise<EduAITopicOption[]> {
-        // For now, skip the live endpoint since it doesn't work yet
-        // Use mock topics based on course code
+    private fallbackTopicsForCode(courseIdOrCode: string, courseCode?: string): EduAITopicOption[] {
+        if (!import.meta.env.DEV) {
+            return [];
+        }
         const codeToMatch = courseCode || courseIdOrCode;
         const normalizedCode = codeToMatch.replace(/\s+/g, '').toUpperCase();
+        return FALLBACK_TOPICS_BY_CODE[normalizedCode] ?? [];
+    }
 
-        // Try exact match first (e.g., "COSC211")
-        if (MOCK_COURSE_TOPICS_BY_CODE[normalizedCode]) {
-            return MOCK_COURSE_TOPICS_BY_CODE[normalizedCode];
+    /**
+     * Fetch topics for a course — tries Core API first, then code-based fallback.
+     */
+    async listCourseTopics(courseIdOrCode: string, courseCode?: string): Promise<EduAITopicOption[]> {
+        const looksLikeCoreId = courseIdOrCode.length > 12 && !courseIdOrCode.includes(' ');
+        if (looksLikeCoreId) {
+            const coreTopics = await this.listCoreCourseTopics(courseIdOrCode);
+            if (coreTopics.length > 0) return coreTopics;
         }
 
-        // Try with space variations (e.g., "COSC 211" -> "COSC211")
-        for (const [code, topics] of Object.entries(MOCK_COURSE_TOPICS_BY_CODE)) {
-            const normalizedMockCode = code.replace(/\s+/g, '');
-            if (normalizedCode === normalizedMockCode) {
-                return topics;
+        try {
+            const response = await api.get(`/api/eduai/courses/${encodeURIComponent(courseIdOrCode)}/topics`);
+            const topics = response.data?.data?.topics ?? [];
+            if (Array.isArray(topics) && topics.length > 0) {
+                return topics.map((topic: { id: string; name: string }) => ({
+                    id: topic.id,
+                    name: topic.name,
+                }));
             }
+        } catch (error) {
+            console.warn('Live topic fetch failed, using fallback topics if available:', error);
         }
 
-        return [];
+        return this.fallbackTopicsForCode(courseIdOrCode, courseCode);
+    }
+
+    /**
+     * Fetch course topics from Core via backend proxy (courseId is a Core CUID).
+     */
+    async listCoreCourseTopics(coreCourseId: string): Promise<EduAITopicOption[]> {
+        try {
+            const response = await api.get(`/api/eduai/courses/${coreCourseId}/topics`);
+            const topics = response.data?.data?.topics ?? [];
+            if (!Array.isArray(topics)) {
+                return [];
+            }
+            return topics.map((topic: { id: string; name: string }) => ({
+                id: topic.id,
+                name: topic.name
+            }));
+        } catch (error) {
+            console.error('Failed to fetch Core course topics:', error);
+            return this.fallbackTopicsForCode(coreCourseId);
+        }
     }
 
     /**

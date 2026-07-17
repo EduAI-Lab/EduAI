@@ -22,18 +22,38 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+    ssr: {
+      // Server bundle is ESM (react-router default). Two packages need bundling:
+      //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
+      //                         to honour the alias during SSR tree-shaking.
+      //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+    },
+    define: {
+      __dirname: "import.meta.dirname",
+      __filename: "import.meta.filename",
+    },
     resolve: {
       alias: {
         "@tabler/icons-react": "@tabler/icons-react/dist/esm/icons/index.mjs",
       },
-      // Monorepo hoists better-auth 1.2.x for core and 1.5+ for ai-tutor; dedupe to root 1.2.8.
-      dedupe: ["better-auth"],
+      // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
+      dedupe: ["react", "react-dom"],
+    },
+    // Force React and the router runtime to be pre-bundled at startup so Vite never
+    // discovers them lazily during the first client-side navigation. `react-router` is
+    // included because otherwise it is found mid-load, triggering a dep re-optimization
+    // that leaves the page holding two optimizer generations (two browserHashes) of
+    // React → a null renderer dispatcher → "dispatcher is null" in useContext, cleared
+    // only by a manual refresh.
+    optimizeDeps: {
+      include: ["react", "react-dom", "react-dom/client", "react-router"],
     },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
-      allowedHosts: true,
+      allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
       fs: {
         allow: [monorepoRoot],
       },

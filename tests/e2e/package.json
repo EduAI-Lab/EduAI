@@ -1,0 +1,16 @@
+{
+  "name": "eduai-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end tests spanning EduAI Core and all extensions",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@types/node": "^25.9.1"
+  }
+}

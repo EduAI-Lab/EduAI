@@ -21,13 +21,13 @@
 
 import express from 'express';
 import { prisma } from '../config/database.js';
-import { requireRole } from '../middleware/auth.js';
-import { getEduAiAccessTokenForUser } from '../services/eduaiAuth.js';
+import { requireRole, isCourseAdmin } from '../middleware/auth.js';
 import { syncExternalCourseTopics } from '../services/topicSync.js';
 
 const router = express.Router();
 
-async function ensureCourseAccess(courseId, userId) {
+async function ensureCourseAccess(courseId, user) {
+  const userId = user?.id;
   const course = await prisma.courseOffering.findUnique({
     where: { id: courseId },
     include: {
@@ -42,8 +42,10 @@ async function ensureCourseAccess(courseId, userId) {
 
   const isInstructor = course.instructors.some((assignment) => assignment.userId === userId);
   const isStudent = course.enrollments.some((enrollment) => enrollment.userId === userId);
+  // Platform admins can read any course's topics (admin ⊇ instructor).
+  const isAdmin = user?.role === 'ADMIN';
 
-  return { course, authorized: isInstructor || isStudent, isInstructor };
+  return { course, authorized: isAdmin || isInstructor || isStudent, isInstructor };
 }
 
 /**
@@ -64,7 +66,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
   }
 
   try {
-    const { course, authorized } = await ensureCourseAccess(courseId, req.user.id);
+    const { course, authorized } = await ensureCourseAccess(courseId, req.user);
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
@@ -88,13 +90,13 @@ router.get('/courses/:courseId/topics', async (req, res) => {
 /**
  * POST /courses/:courseId/topics — create a topic on a native course.
  *
- * Auth: instructor on the course.
+ * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Side effects: inserts a Topic row; 409 on unique-name collision.
  *
  * Why: blocked for imported courses — those topics are owned by EduAI and a
  * manual addition would be wiped on next sync (or worse, drift silently).
  */
-router.post('/courses/:courseId/topics', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -107,11 +109,11 @@ router.post('/courses/:courseId/topics', requireRole('PROFESSOR'), async (req, r
   }
 
   try {
-    const { course, isInstructor } = await ensureCourseAccess(courseId, instructor.id);
+    const { course } = await ensureCourseAccess(courseId, instructor);
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isInstructor) {
+    if (!isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -143,7 +145,8 @@ export default router;
 /**
  * POST /courses/:courseId/topics/sync — pull EduAI topic list into local DB.
  *
- * Auth: instructor on the course; course must be EduAI-imported.
+ * Auth: course admin (LEAD instructor / unit-admin / admin); course must be
+ *   EduAI-imported.
  * Returns: `{ ok, topics, missingTopics }` — `missingTopics` are local topics
  *   no longer present upstream (informational; nothing is deleted).
  * Side effects: upserts Topic rows by name within the course scope.
@@ -151,7 +154,7 @@ export default router;
  * Why: name-keyed additive sync preserves activity references even if a topic
  * is renamed upstream — the instructor can use `/topics/remap` to consolidate.
  */
-router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -166,8 +169,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    const isInstructor = course.instructors.some((i) => i.userId === instructor.id);
-    if (!isInstructor) {
+    if (!isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -177,10 +179,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
 
     let upstreamNames = [];
     try {
-      const eduAiAccessToken = await getEduAiAccessTokenForUser(instructor.id);
-      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId, {
-        accessToken: eduAiAccessToken,
-      });
+      const { topics: synced, upstreamNames: upstream } = await syncExternalCourseTopics(courseId);
       upstreamNames = upstream || [];
     } catch (e) {
       const status = Number.isInteger(e?.status) ? e.status : 502;
@@ -202,7 +201,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
 /**
  * POST /courses/:courseId/topics/remap — move activities between topics.
  *
- * Auth: instructor on the course.
+ * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Body: `{ mappings: [{ fromTopicId, toTopicId }, ...] }`
  * Side effects: in a single transaction, reassigns `Activity.mainTopicId`,
  *   migrates `ActivitySecondaryTopic` rows (creating missing target rows,
@@ -212,7 +211,7 @@ router.post('/courses/:courseId/topics/sync', requireRole('PROFESSOR'), async (r
  * instructor uses this to consolidate the orphaned local topic into the new
  * upstream-synced one without losing activity associations.
  */
-router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (req, res) => {
+router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
@@ -221,11 +220,11 @@ router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (
 
   const mappings = Array.isArray(req.body?.mappings) ? req.body.mappings : [];
   const normalized = mappings
-    .map((m) => ({ fromTopicId: Number(m?.fromTopicId), toTopicId: Number(m?.toTopicId) }))
+    .map((m) => ({ fromTopicId: String(m?.fromTopicId ?? ''), toTopicId: String(m?.toTopicId ?? '') }))
     .filter(
       (m) =>
-        Number.isFinite(m.fromTopicId) &&
-        Number.isFinite(m.toTopicId) &&
+        m.fromTopicId.length > 0 &&
+        m.toTopicId.length > 0 &&
         m.fromTopicId !== m.toTopicId,
     );
 
@@ -239,8 +238,9 @@ router.post('/courses/:courseId/topics/remap', requireRole('PROFESSOR'), async (
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    const isInstructor = course.instructors.some((i) => i.userId === instructor.id);
-    if (!isInstructor) return res.status(403).json({ error: 'Not authorized for this course' });
+    if (!isCourseAdmin(instructor, course)) {
+      return res.status(403).json({ error: 'Not authorized for this course' });
+    }
 
     await prisma.$transaction(async (tx) => {
       for (const { fromTopicId, toTopicId } of normalized) {

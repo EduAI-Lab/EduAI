@@ -185,19 +185,19 @@ async function getSelectionCursorForUpdate({ questionMetadataId, courseId, trans
     return cursor;
   }
 
+  // Use a savepoint so that a unique-key race with a concurrent transaction does not abort the
+  // parent transaction. Without this, the failed INSERT leaves the transaction in PostgreSQL's
+  // aborted state and every subsequent query in the same transaction fails.
+  const sp = `sp_vsc_${questionMetadataId}_${courseId}`;
+  await sequelize.query(`SAVEPOINT "${sp}"`, { transaction });
   try {
     cursor = await VariantSelectionCursor.create(
-      {
-        questionMetadataId,
-        courseId,
-        nextOffset: 0,
-        lastVariantId: null
-      },
+      { questionMetadataId, courseId, nextOffset: 0, lastVariantId: null },
       { transaction }
     );
     return cursor;
   } catch (error) {
-    // Another transaction may create this row first due to unique key race.
+    await sequelize.query(`ROLLBACK TO SAVEPOINT "${sp}"`, { transaction });
     cursor = await VariantSelectionCursor.findOne({
       where: { questionMetadataId, courseId },
       transaction,
@@ -647,7 +647,8 @@ export async function generateBankVariantsForQuestions(userId, params) {
     model = 'ollama:gpt-oss:120b',
     apiKeys = {},
     variantsToAdd = 1,
-    variantPromptInstructions = null
+    variantPromptInstructions = null,
+    cookie = '',
   } = params;
 
   let extraInstructions = '';
@@ -709,6 +710,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
     await primaryVariant.update({ isDraft: false });
 
     const createdVariantIds = [];
+    const createdVariants = [];
 
     for (let n = 0; n < variantsToAdd; n++) {
       const difficultyDistribution = {
@@ -756,6 +758,7 @@ Return exactly one question in the required JSON format.`;
             numQuestions: 1,
             difficultyDistribution,
             reasoningDistribution,
+            cookie,
             ...(expectedMcqChoiceCount != null ? { mcqRequiredChoiceCount: expectedMcqChoiceCount } : {})
           });
 
@@ -805,10 +808,26 @@ Return exactly one question in the required JSON format.`;
             : [],
           referenceId: primaryVariant.id,
           isAiGenerated: true,
-          isDraft: false
+          // Generated variants land as drafts (NOT auto-approved). The instructor
+          // reviews them in the UI and explicitly approves (isDraft:false) the ones
+          // they want before the question counts toward assembly readiness.
+          isDraft: true
         });
 
         createdVariantIds.push(v.id);
+        // Return the full variant payload so the UI can show generated questions
+        // for review without a round-trip to the question bank.
+        createdVariants.push({
+          id: v.id,
+          questionMetadataId: meta.id,
+          questionText: v.questionText,
+          difficulty: v.difficulty,
+          reasoningLevel: v.reasoningLevel,
+          answer: v.answer,
+          choices: v.choices,
+          isAiGenerated: true,
+          isDraft: true
+        });
       } catch (err) {
         errors.push({ questionId: qid, iteration: n + 1, error: err.message || String(err) });
         break;
@@ -817,8 +836,11 @@ Return exactly one question in the required JSON format.`;
 
     results.push({
       questionId: qid,
+      questionDescription: meta.description ?? null,
+      questionType: meta.type ?? null,
       promotedVariantId: primaryVariant.id,
-      createdVariantIds
+      createdVariantIds,
+      createdVariants
     });
   }
 
@@ -954,7 +976,9 @@ export async function reviewVariantExamWithAi(userId, params) {
     // If true, penalize low-usability slots when computing the overall score.
     applyUsabilityPenalty = true,
     // If true, ask the LLM for a short strengths/weaknesses summary.
-    includeOverallSummary = true
+    includeOverallSummary = true,
+    // Core session cookie — preferred auth for eduaiService.chat (user-scoped).
+    cookie = '',
   } = params;
 
   const reviewStartMs = Date.now();
@@ -1062,7 +1086,8 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
         { role: 'user', content: userPrompt }
       ],
       streaming: false,
-      timeoutMs: 120000
+      timeoutMs: 120000,
+      cookie,
     });
 
     let content = response?.content ?? response?.message ?? '';
@@ -1086,7 +1111,8 @@ Rules: no markdown, no code fences, no text before { or after }. Use double quot
           { role: 'user', content: repairUser }
         ],
         streaming: false,
-        timeoutMs: 120000
+        timeoutMs: 120000,
+        cookie,
       });
       content = retryResponse?.content ?? retryResponse?.message ?? '';
       parsed = parseJsonObjectFromText(content);
@@ -1327,7 +1353,8 @@ Do not include markdown fences. Keep strings concise.`;
           { role: 'user', content: summaryUserPrompt }
         ],
         streaming: false,
-        timeoutMs: 60000
+        timeoutMs: 60000,
+        cookie,
       });
 
       const content = response?.content ?? response?.message ?? '';

@@ -45,7 +45,10 @@ export const createAssessment = async (userId, assessmentData) => {
 /** Lists assessments owned by a user with optional filters and eager-loaded relations. */
 export const getAssessmentsByUser = async (userId, options = {}) => {
   try {
-    const { limit = 50, offset = 0, courseId } = options;
+    const { limit = 50, offset = 0, courseId, isAdmin = false } = options;
+
+    // If user is admin without a courseId constraint, allow all assessments; otherwise scope to owner
+    const courseWhere = isAdmin ? {} : { userId };
 
     const assessments = await Assessments.findAll({
       where: {
@@ -56,7 +59,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
           model: Course,
           as: 'course',
           attributes: ['id', 'name', 'code'],
-          where: { userId },
+          where: courseWhere,
           required: true
         },
         {
@@ -352,6 +355,12 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
       throw new Error('Assessment not found');
     }
 
+    // The question and assessment must live in the same course — owner scoping alone
+    // would let a question from another course the user owns be linked here (#1).
+    if (question.courseId !== assessment.courseId) {
+      throw new Error('Question not found');
+    }
+
     // Update question order
     const currentOrder = question.questionOrder || {};
     currentOrder[assessmentId] = orderNumber;
@@ -400,6 +409,11 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
       throw new Error('Assessment not found');
     }
 
+    // The question and assessment must live in the same course (#1).
+    if (question.courseId !== assessment.courseId) {
+      throw new Error('Question not found');
+    }
+
     // Remove from question order
     const currentOrder = question.questionOrder || {};
     delete currentOrder[assessmentId];
@@ -433,11 +447,13 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
 
     // Get all questions that have this assessment in their questionOrder
     const questions = await Question_Metadata.findAll({
-      where: {
-        questionOrder: {
-          [Op.contains]: { [assessmentId]: { [Op.ne]: null } }
-        }
-      },
+      // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
+      // operator is unavailable. Use `->>` key extraction, which works on `json`
+      // and mirrors the ORDER BY clause below.
+      where: sequelize.where(
+        sequelize.literal(`question_order ->> '${assessmentId}'`),
+        { [Op.ne]: null }
+      ),
       include: [
         {
           model: Course,

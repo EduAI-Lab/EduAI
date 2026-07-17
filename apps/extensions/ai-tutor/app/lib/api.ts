@@ -10,9 +10,10 @@
  *   - Every request sets `credentials: 'include'` so Better Auth session
  *     cookies are attached. Do not switch to a bearer/JWT flow without
  *     updating the entire stack.
- *   - The shared `http()` helper turns ANY 401/403 (when not already at `/`)
- *     into a hard `window.location.href = '/'` redirect. This is the
- *     codebase-wide auth-failure convention; route guards rely on it.
+ *   - The shared `http()` helper turns a 401 into a hard redirect to Core's
+ *     login page (`VITE_CORE_URL/login?redirect=<current-url>`). Route guards
+ *     rely on this behavior. A 403 is surfaced as a thrown error (NOT a
+ *     redirect) — the caller is already authenticated, so re-login would loop.
  *   - `logout` deliberately bypasses `http()` to avoid the redirect loop
  *     that would otherwise fire on the post-sign-out 401.
  *   - `updateActivity` accepts three legal `options` shapes for caller
@@ -26,70 +27,230 @@ import type {
   AdminEnrollmentData,
   AdminAiModelPolicy,
   AdminUser,
+  Activity,
   ActivityAnswerResult,
+  ActivityAnalyticsRow,
+  ActivityFeedbackRow,
   ActivityFeedbackResult,
   AiModel,
   BugReportCreatePayload,
   BugReportStatus,
   Course,
   EduAiApiKeyStatus,
-  EduAiCourse,
+  EnrollmentRole,
+  StudentMetricRow,
+  SubmissionRow,
   SuggestedPrompt,
   User,
 } from './types';
+import { getCoreLoginUrl } from './coreUrl';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 /**
+ * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
+ * upstream Core `/api/sessions/validate` hangs, a bare `/api/me` would never
+ * settle — stranding loaders and leaving the "Initializing your workspace"
+ * spinner running forever. Applied opt-in via `timeoutMs` on that call (below),
+ * NOT globally: most of the API surface (imports, sync) may legitimately run
+ * longer and hasn't been audited against a blanket cutoff.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
+
+/**
+ * Local response shapes for endpoints not yet modeled in `./types`. Kept here
+ * (rather than in the shared types file, which this module does not own)
+ * until the canonical types land; fields are optional wherever the server
+ * response shape isn't locked down yet, to avoid fabricating a contract.
+ */
+export interface GradedSubmission extends SubmissionRow {
+  score?: number | null;
+  feedback?: string | null;
+}
+
+export interface ImportableActivity {
+  id: number;
+  title?: string | null;
+  question: string;
+  type?: 'MCQ' | 'SHORT_TEXT';
+  lessonId?: number;
+  lessonTitle?: string | null;
+  moduleTitle?: string | null;
+  courseId?: number;
+  courseTitle?: string | null;
+}
+
+export interface DashboardStats {
+  enrolledCourses?: number;
+  coursesInProgress?: number;
+  coursesCompleted?: number;
+  yourCourses?: number;
+  publishedCourses?: number;
+  draftCourses?: number;
+  totalUsers?: number;
+  totalCourses?: number;
+  openBugReports?: number;
+  totalBugReports?: number;
+  pendingSubmissions?: number;
+  [key: string]: unknown;
+}
+
+export interface AiTraceRow {
+  id: number;
+  mode?: string | null;
+  knowledgeLevel?: string | null;
+  tutorModelId?: string | null;
+  supervisorModelId?: string | null;
+  iterationCount?: number | null;
+  finalOutcome?: string | null;
+  createdAt?: string;
+  user?: { id: string; name?: string | null } | null;
+  activity?: { id: number; title?: string | null } | null;
+  courseId?: number | null;
+  courseTitle?: string | null;
+}
+
+/**
+ * Thrown when the request never reached the server (e.g. connection refused
+ * because the API is still booting on a fresh dev-stack start). Distinct from
+ * an authenticated-but-rejected response so callers can retry instead of
+ * treating it as "logged out".
+ */
+export class ApiNetworkError extends Error {
+  constructor(message = 'Network request failed') {
+    super(message);
+    this.name = 'ApiNetworkError';
+  }
+}
+
+/** Thrown when a request is aborted by `http()`'s own timeout, not by a caller-supplied signal. */
+export class ApiTimeoutError extends Error {
+  constructor(message = 'Request timed out') {
+    super(message);
+    this.name = 'ApiTimeoutError';
+  }
+}
+
+// #999: the chat send path has no bound on how long a hung upstream call can
+// leave the UI showing "Thinking...". This is the client-side half of that
+// fix — the AI Tutor server also bounds its own EduAI round-trip
+// (EDUAI_CALL_TIMEOUT_MS, default 45s) so this should normally see a clean
+// 504 response (mapped to ApiTimeoutError below) before ever firing; it
+// exists as a backstop. Opt-in via `timeoutMs` — deliberately NOT a global
+// default, since most of the API surface (imports, sync operations, etc.)
+// may legitimately take longer than a chat turn and hasn't been audited
+// against a blanket cutoff.
+export const CHAT_TIMEOUT_MS = 60_000;
+
+/**
  * Single fetch wrapper for the entire API surface. Every caller goes through
- * here so the cookie-credential semantics and the 401/403 redirect-to-root
+ * here so the cookie-credential semantics and the 401/403 redirect-to-Core-login
  * behavior remain consistent. Callers that must NOT trigger the redirect
  * (e.g. sign-out) should bypass this helper intentionally.
+ *
+ * `init.signal`, if provided, lets the caller cancel the request directly
+ * (e.g. a "Stop generating" button) — it's merged with the internal timeout
+ * controller (when `init.timeoutMs` is also set) rather than passed straight
+ * through, so both can independently abort the same underlying fetch.
+ * Without `timeoutMs`, only `init.signal` (if provided) can abort — there is
+ * no default timeout.
  */
-async function http(path: string, init?: RequestInit) {
+async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...headers,
-      ...init?.headers,
-    },
-  });
+  const { signal: callerSignal, timeoutMs, ...rest } = init ?? {};
+  const controller = new AbortController();
+  const TIMEOUT_REASON = Symbol('http-timeout');
+  const timeoutId =
+    timeoutMs != null ? setTimeout(() => controller.abort(TIMEOUT_REASON), timeoutMs) : undefined;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', () => controller.abort(callerSignal.reason), { once: true });
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      credentials: 'include',
+      headers: {
+        ...headers,
+        ...init?.headers,
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.reason === TIMEOUT_REASON) {
+      throw new ApiTimeoutError();
+    }
+    if (controller.signal.aborted) {
+      // Caller-initiated cancellation (e.g. Stop button) — rethrow as-is so
+      // callers can distinguish it from a real failure via `error.name`.
+      throw err;
+    }
+    throw new ApiNetworkError();
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      // Only redirect if we are NOT already at the root
-      if (window.location.pathname !== '/') {
-        window.location.href = '/';
-      }
+    // 401 = unauthenticated → bounce to Core login so a session can be
+    // established. 403 = authenticated but not authorized for THIS resource;
+    // redirecting to login would just bounce an already-signed-in user
+    // straight back here and loop forever (e.g. a UNIT_ADMIN deep-linking to a
+    // lesson outside their unit). Surface 403 as a normal error instead so the
+    // route's error boundary can render it.
+    if (res.status === 401) {
+      window.location.href = getCoreLoginUrl();
       throw new Error('Authentication required');
+    }
+    // 504 = the AI Tutor server's own upstream call timed out (see
+    // EDUAI_CALL_TIMEOUT_MS in callEduAI()) — this is the common case in
+    // practice, since the server's 45s bound fires well before this client's
+    // own timeoutMs backstop. Map it to the same ApiTimeoutError callers
+    // already handle for a client-side timeout, so "took too long" is shown
+    // either way.
+    if (res.status === 504) {
+      throw new ApiTimeoutError();
     }
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
   }
+  // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
+  // empty payload, so short-circuit to null.
+  if (res.status === 204) return null;
   return res.json();
 }
 
+/**
+ * De-dupes concurrent `/api/me` calls. On a single navigation both the route
+ * guard (`requireClientUser`) and the `AuthProvider` mount effect call
+ * `api.me()` independently — without coalescing, that is two full round-trips
+ * to Core's `/api/sessions/validate` per page. While a request is in flight,
+ * additional callers share it; the slot clears as soon as it settles, so the
+ * result is never cached across navigations (auth state stays fresh).
+ */
+let meInFlight: Promise<{ user: User | null }> | null = null;
+
 export const api = {
-  me: () => http('/api/me') as Promise<{ user: User | null }>,
+  me: () => {
+    if (meInFlight) return meInFlight;
+    // #446: bound the session probe so a hung upstream can't strand the
+    // "Initializing your workspace" spinner forever (surfaced as ApiTimeoutError).
+    meInFlight = (http('/api/me', { timeoutMs: REQUEST_TIMEOUT_MS }) as Promise<{ user: User | null }>).finally(() => {
+      meInFlight = null;
+    });
+    return meInFlight;
+  },
+  aiStatus: () =>
+    http('/api/ai-status') as Promise<{
+      cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+      ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
+    }>,
   listCourses: () => http('/api/courses'),
-  listEduAiCourses: () => http('/api/eduai/courses') as Promise<EduAiCourse[]>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
-  createCourse: (payload: {
-    title: string;
-    description?: string;
-    sourceCourseId?: number;
-    startDate?: string;
-    endDate?: string;
-  }) =>
-    http('/api/courses', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   updateCourse: (
     courseId: number,
     payload: {
@@ -124,11 +285,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  importEduAiCourse: (payload: { externalCourseId: string }) =>
-    http('/api/courses/import-external', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
   modulesForCourse: (courseId: number) => http(`/api/courses/${courseId}/modules`),
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (
@@ -147,6 +303,18 @@ export const api = {
     http(`/api/modules/${moduleId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateModule: (
+    moduleId: number,
+    payload: { title?: string; description?: string | null; position?: number },
+  ) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteModule: (moduleId: number) =>
+    http(`/api/modules/${moduleId}`, {
+      method: 'DELETE',
+    }),
   lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
   createLesson: (
     moduleId: number,
@@ -164,6 +332,18 @@ export const api = {
     http(`/api/lessons/${lessonId}/unpublish`, {
       method: 'PATCH',
     }),
+  updateLesson: (
+    lessonId: number,
+    payload: { title?: string; contentMd?: string | null; position?: number },
+  ) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteLesson: (lessonId: number) =>
+    http(`/api/lessons/${lessonId}`, {
+      method: 'DELETE',
+    }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
   createActivity: (
@@ -179,8 +359,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId: number;
-      secondaryTopicIds?: number[];
+      mainTopicId: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
@@ -203,8 +383,8 @@ export const api = {
       promptTemplateId?: number | null;
       customPrompt?: string | null;
       customPromptTitle?: string | null;
-      mainTopicId?: number;
-      secondaryTopicIds?: number[];
+      mainTopicId?: string | number;
+      secondaryTopicIds?: (string | number)[];
       enableTeachMode?: boolean;
       enableGuideMode?: boolean;
       enableCustomMode?: boolean;
@@ -240,6 +420,10 @@ export const api = {
     http(`/api/courses/${courseId}/topics/sync`, {
       method: 'POST',
     }),
+  syncCourseEnrollments: (courseId: number) =>
+    http(`/api/courses/${courseId}/sync-enrollments`, {
+      method: 'POST',
+    }) as Promise<{ synced: number; created: number; updated: number; deleted: number; errors: [] }>,
   remapCourseTopics: (courseId: number, mappings: { fromTopicId: number; toTopicId: number }[]) =>
     http(`/api/courses/${courseId}/topics/remap`, {
       method: 'POST',
@@ -266,10 +450,13 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/teach`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
   sendGuideMessage: (
     activityId: number,
@@ -282,10 +469,13 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/guide`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
   sendCustomMessage: (
     activityId: number,
@@ -299,11 +489,23 @@ export const api = {
       chatId?: string | null;
       messageId?: string;
     },
+    signal?: AbortSignal,
   ) =>
     http(`/api/activities/${activityId}/custom`, {
       method: 'POST',
       body: JSON.stringify(params),
+      signal,
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
+  listChatSessions: (activityId: number) =>
+    http(`/api/activities/${activityId}/chat-sessions`) as Promise<
+      Array<{ id: number; chatId: string; mode: string; modelId: string | null; createdAt: string; updatedAt: string }>
+    >,
+  getChatMessages: (activityId: number, chatId: string) =>
+    http(`/api/activities/${activityId}/chat-sessions/${chatId}/messages`) as Promise<{
+      chat: { id: string; title: string | null };
+      messages: Array<{ messageId: string; role: string; content: unknown }>;
+    }>,
   listAiModels: () => http('/api/ai-models') as Promise<AiModel[]>,
   validateApiKey: (provider: string, apiKey: string) =>
     http('/api/ai-models/validate-key', {
@@ -327,15 +529,39 @@ export const api = {
   listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
   getAdminCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/enrollments`) as Promise<AdminEnrollmentData>,
-  enrollStudentInCourse: (courseId: number, userId: string) =>
-    http(`/api/admin/courses/${courseId}/enrollments`, {
-      method: 'POST',
-      body: JSON.stringify({ userId }),
-    }) as Promise<{ ok: true }>,
   removeStudentFromCourse: (courseId: number, userId: string) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
       method: 'DELETE',
     }) as Promise<{ ok: true }>,
+  updateEnrollmentRole: (courseId: number, userId: string, role: EnrollmentRole) =>
+    http(`/api/admin/courses/${courseId}/enrollments/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }) as Promise<{ ok: true; role: EnrollmentRole }>,
+  courseSubmissions: (
+    courseId: number,
+    params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.activityId != null) search.set('activityId', String(params.activityId));
+    if (params?.studentId) search.set('studentId', params.studentId);
+    if (params?.take != null) search.set('take', String(params.take));
+    if (params?.skip != null) search.set('skip', String(params.skip));
+    const qs = search.toString();
+    return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ''}`) as Promise<
+      SubmissionRow[]
+    >;
+  },
+  courseStudentMetrics: (courseId: number) =>
+    http(`/api/courses/${courseId}/student-metrics`) as Promise<StudentMetricRow[]>,
+  courseAnalytics: (courseId: number) =>
+    http(`/api/courses/${courseId}/analytics`) as Promise<ActivityAnalyticsRow[]>,
+  activitySubmissions: (activityId: number) =>
+    http(`/api/activities/${activityId}/submissions`) as Promise<SubmissionRow[]>,
+  listActivityFeedback: (activityId: number) =>
+    http(`/api/activities/${activityId}/feedback`) as Promise<ActivityFeedbackRow[]>,
+  mySubmissions: () => http('/api/me/submissions') as Promise<SubmissionRow[]>,
+  myFeedback: () => http('/api/me/feedback') as Promise<ActivityFeedbackRow[]>,
   submitBugReport: (payload: BugReportCreatePayload) =>
     http('/api/bug-reports', {
       method: 'POST',
@@ -368,17 +594,50 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  gradeSubmission: (
+    activityId: number,
+    submissionId: number,
+    body: { score?: number; isCorrect?: boolean },
+  ) =>
+    http(`/api/activities/${activityId}/submissions/${submissionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }) as Promise<GradedSubmission>,
+  duplicateActivity: (activityId: number) =>
+    http(`/api/activities/${activityId}/duplicate`, {
+      method: 'POST',
+    }) as Promise<Activity>,
+  importActivity: (lessonId: number, sourceActivityId: number) =>
+    http(`/api/lessons/${lessonId}/activities/import`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceActivityId }),
+    }) as Promise<Activity>,
+  listImportableActivities: (courseId?: number) => {
+    const search = new URLSearchParams();
+    if (courseId != null) search.set('courseId', String(courseId));
+    const qs = search.toString();
+    return http(`/api/activities/importable${qs ? `?${qs}` : ''}`) as Promise<ImportableActivity[]>;
+  },
+  dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
+  adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.unit) search.set('unit', params.unit);
+    if (params?.courseId != null) search.set('courseId', String(params.courseId));
+    if (params?.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return http(`/api/admin/ai-traces${qs ? `?${qs}` : ''}`) as Promise<AiTraceRow[]>;
+  },
   /**
-   * Bypasses `http()` on purpose: sign-out responses can be 401-ish in some
-   * race conditions, and routing the call through `http()` would trigger the
-   * redirect-to-`/` convention before the caller can clean up local state.
-   * We also do not care about the body — best-effort POST is sufficient.
+   * Proxies sign-out through the AT backend (server-to-server to Core) so the
+   * browser avoids CORS restrictions on Core's sign-out endpoint.
+   * Bypasses `http()` to avoid the 401-redirect loop that would fire if the
+   * session is already stale by the time logout is called.
    */
   logout: async () => {
-    await fetch(`${API_BASE}/api/auth/sign-out`, {
+    await fetch(`${API_BASE}/api/logout`, {
       method: 'POST',
       credentials: 'include',
-    });
+    }).catch(() => {});
     return { ok: true } as const;
   },
 };

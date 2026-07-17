@@ -4,13 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.integration.config.js",
     "test:watch": "vitest",
-    "test:unit": "vitest run tests/unit/",
-    "test:integration": "vitest run tests/integration/",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.js",
+    "test:coverage": "vitest run --coverage --config vitest.coverage.config.js",
     "start": "npx prisma generate && node src/index.js",
-    "dev": "npx prisma migrate deploy && npx prisma generate && nodemon src/index.js",
-    "seed": "prisma generate && tsx prisma/seed.ts",
+    "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
+    "seed": "tsx prisma/seed.ts",
+    "seed:if-empty": "tsx prisma/seed-if-empty.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -18,21 +20,18 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@better-auth/oauth-provider": "1.5.4",
     "@prisma/client": "^6.19.3",
-    "better-auth": "1.5.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "zod": "^3.23.8"
+    "node-cron": "^4.2.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10",
+    "@vitest/coverage-v8": "^4.1.7",
     "oxlint": "^1.56.0",
     "prisma": "^6.16.1",
     "supertest": "^7.2.2",
-    "vitest": "^4.1.0",
-    "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "vitest": "^4.1.9"
   }
 }

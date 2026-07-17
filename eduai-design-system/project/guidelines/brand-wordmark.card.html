@@ -1,0 +1,65 @@
+<!-- @dsCard group="Brand" viewport="700x200" name="Wordmark & Mark" subtitle="EduAI logotype, icon mark, and sidebar treatment" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 0; font-family: var(--font-sans); background: var(--background); display: flex; height: 200px; }
+  .panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; }
+  .panel-dark { background: var(--primary); }
+  .panel-light { background: var(--background); border-right: 1px solid var(--border); }
+  .panel-gold { background: var(--color-gold-50); border-left: 1px solid var(--border); }
+  .wordmark { display: flex; align-items: center; gap: 10px; }
+  .icon { width: 32px; height: 32px; }
+  .name { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .tagline { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.65; }
+  .gold-bar { width: 120px; height: 4px; background: var(--gold); border-radius: 2px; }
+  .note { font-size: 10px; color: var(--muted-foreground); text-align: center; }
+</style>
+</head>
+<body>
+  <!-- Light version -->
+  <div class="panel panel-light">
+    <div class="wordmark">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3a9 9 0 0 1 0 18"/>
+        <path d="M3 12h18"/>
+        <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+      </svg>
+      <span class="name" style="color:var(--primary)">EduAI</span>
+    </div>
+    <div class="tagline" style="color:var(--muted-foreground)">Course-Aware AI Tutoring</div>
+    <div class="note">Light / on-white</div>
+  </div>
+  <!-- Dark sidebar version -->
+  <div class="panel panel-dark">
+    <div class="wordmark">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3a9 9 0 0 1 0 18"/>
+        <path d="M3 12h18"/>
+        <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+      </svg>
+      <span class="name" style="color:#fff">EduAI</span>
+    </div>
+    <div class="tagline" style="color:rgba(255,255,255,0.55)">Course-Aware AI Tutoring</div>
+    <div class="note" style="color:rgba(255,255,255,0.4)">Dark sidebar / on-navy</div>
+  </div>
+  <!-- Gold accent version -->
+  <div class="panel panel-gold">
+    <div class="wordmark">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 3a9 9 0 0 1 0 18"/>
+        <path d="M3 12h18"/>
+        <path d="M12 3c2 2 3.5 5.5 3.5 9s-1.5 7-3.5 9"/>
+      </svg>
+      <span class="name" style="color:var(--primary)">EduAI</span>
+    </div>
+    <div class="gold-bar"></div>
+    <div class="note">Gold accent stripe — decorative</div>
+  </div>
+</body>
+</html>

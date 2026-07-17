@@ -3,27 +3,19 @@
  * Lets users select courses from the AI service, skip ones already added, and persist them via courseService.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import { Loader2, LogOut, Plus } from 'lucide-react';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
+import { Button, Badge } from '@eduai/ui';
+import { useToast } from '@/components/ui/use-toast';
+import { IconLoader2, IconLogout } from '@tabler/icons-react';
 import { Class } from '../../types/class';
 import { eduaiService, EduAICourseOption, EduAITopicOption } from '../../services/eduaiService';
 import { courseService } from '../../services/courseService';
 import { assessmentService } from '../../services/assessmentService';
-import { useToast } from '../ui/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
-import { EduAIStatusBadge } from '../eduai/EduAIStatusBadge';
-import { useGuidedTour } from '../../contexts/GuidedTourContext';
+import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
+import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface ProfileCoursesDialogProps {
     open: boolean;
@@ -31,9 +23,6 @@ interface ProfileCoursesDialogProps {
     existingCourses: Class[];
     onCoursesAdded?: () => Promise<void> | void;
 }
-
-const normalizeCourseCode = (value: string | null | undefined) =>
-    value ? value.replace(/\s+/g, '').toLowerCase() : '';
 
 export const ProfileCoursesDialog = ({
     open,
@@ -46,12 +35,11 @@ export const ProfileCoursesDialog = ({
     const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [resyncingCoreId, setResyncingCoreId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
     const { logout, user } = useAuth();
-    const navigate = useNavigate();
     const eduaiStatus = useEduAIStatus();
-    const { startTour } = useGuidedTour();
 
     const existingCourseCodeSet = useMemo(() => {
         const codes = new Set<string>();
@@ -90,17 +78,6 @@ export const ProfileCoursesDialog = ({
                 const options = await eduaiService.listCourses();
                 if (!isMounted) return;
                 setCourseOptions(options);
-
-                const entries = await Promise.all(
-                    options.map(async (option) => {
-                        // Pass both the course ID and code to help with topic lookup
-                        const topics = await eduaiService.listCourseTopics(option.id, option.code);
-                        return [option.id, topics] as const;
-                    })
-                );
-
-                if (!isMounted) return;
-                setTopicsByCourse(Object.fromEntries(entries));
             } catch (err) {
                 console.error('Failed to load AI service courses', err);
                 if (isMounted) {
@@ -120,6 +97,13 @@ export const ProfileCoursesDialog = ({
         };
     }, [open]);
 
+    useEffect(() => {
+        if (!open || selectedCourseIds.length === 0) return;
+        for (const coreCourseId of selectedCourseIds) {
+            void loadTopicsForCourse(coreCourseId);
+        }
+    }, [open, selectedCourseIds]);
+
     const toggleCourse = (courseId: string) => {
         setSelectedCourseIds((prev) =>
             prev.includes(courseId) ? prev.filter((id) => id !== courseId) : [...prev, courseId]
@@ -127,87 +111,61 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleDialogChange = (value: boolean) => {
-        if (!value && !isSaving) {
+        if (!value && !isSaving && !resyncingCoreId) {
             onClose();
+        }
+    };
+
+    const findLocalCourseByCode = (code: string | null | undefined) => {
+        const normalized = normalizeCourseCode(code);
+        if (!normalized) return undefined;
+        return existingCourses.find((course) => {
+            const candidates = [course.code, course.courseCode, course.subject, course.name];
+            return candidates.some(
+                (candidate) => normalizeCourseCode(candidate ?? '') === normalized
+            );
+        });
+    };
+
+    const loadTopicsForCourse = async (coreCourseId: string) => {
+        if (topicsByCourse[coreCourseId]) return;
+        const topics = await eduaiService.listCoreCourseTopics(coreCourseId);
+        setTopicsByCourse((prev) => ({ ...prev, [coreCourseId]: topics }));
+    };
+
+    const handleResyncCourse = async (option: EduAICourseOption) => {
+        const localCourse = findLocalCourseByCode(option.code);
+        if (!localCourse?.id) {
+            toast({
+                title: 'Local course not found',
+                description: 'Could not match this Core course to a Question Maker course by code.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        setResyncingCoreId(option.id);
+        setError(null);
+        try {
+            await courseService.linkAndSyncFromCore(localCourse.id, option.id);
+            if (onCoursesAdded) {
+                await onCoursesAdded();
+            }
+            toast({
+                title: 'Course re-synced',
+                description: `${option.code} is linked to Core and topics are updated.`
+            });
+        } catch (err) {
+            console.error('Failed to re-sync course from Core', err);
+            setError('Unable to re-sync this course from Core. Check EDUAI_API_KEY and try again.');
+        } finally {
+            setResyncingCoreId(null);
         }
     };
 
     const handleLogout = () => {
-        logout();
         onClose();
-        navigate('/login');
-        toast({
-            title: 'Logged out',
-            description: 'You have been successfully logged out.'
-        });
-    };
-
-    const handleCreateTestCourse = async () => {
-        setIsSaving(true);
-        setError(null);
-        try {
-            // Generate a unique test course code (only after confirming no test course exists)
-            const testCourseCode = 'TEST';
-            const testCourseName = 'Test Course';
-            const normalizedTestCourseName = normalizeCourseCode(testCourseName);
-
-            // Check if a test course already exists by checking:
-            // 1. Any course with a code starting with "test-"
-            // 2. Any course with the name "TEST- - Test Course"
-            const hasTestCourse = existingCourses.some((course) => {
-                const courseCode = normalizeCourseCode(course.courseCode || course.code || '');
-                const courseName = normalizeCourseCode(course.name || '');
-                return (
-                    courseCode.startsWith('test-') ||
-                    courseName === normalizedTestCourseName
-                );
-            });
-
-            if (hasTestCourse) {
-                toast({
-                    title: 'Test course already exists',
-                    description: 'You already have a test course. You can use it to create questions and assessments.',
-                    variant: 'default'
-                });
-                setIsSaving(false);
-                return;
-            }
-
-            const createdCourse = await courseService.createCourse({
-                name: testCourseName,
-                courseCode: testCourseCode
-            });
-
-            // Create a default topic so users can immediately start creating questions
-            try {
-                await courseService.createTopic(createdCourse.id, 'General');
-            } catch (topicError) {
-                console.warn('Failed to create default topic for test course', topicError);
-                // Continue even if topic creation fails - users can add topics manually
-            }
-
-            try {
-                await assessmentService.createPracticeExamForCourse(createdCourse.id);
-            } catch (practiceExamError) {
-                console.warn('Failed to create Practice Exam for test course', practiceExamError);
-            }
-
-            if (onCoursesAdded) {
-                await onCoursesAdded();
-            }
-
-            toast({
-                title: 'Test course created',
-                description: 'You can now use this course to create questions and assessments without connecting to the AI service.'
-            });
-
-            onClose();
-        } catch (err) {
-            console.error('Failed to create test course', err);
-            setError('Unable to create test course. Please try again.');
-        } finally {
-            setIsSaving(false);
-        }
+        logout();
     };
 
     const handleSave = async () => {
@@ -247,13 +205,21 @@ export const ProfileCoursesDialog = ({
                     courseCode: option.code
                 });
 
+                try {
+                    await courseService.linkAndSyncFromCore(createdCourse.id, courseId);
+                } catch (linkError) {
+                    await courseService.deleteCourse(createdCourse.id).catch(() => undefined);
+                    throw linkError;
+                }
+
                 if (normalizedCode) {
                     updatedCodes.add(normalizedCode);
                 }
 
-                const topics = topicsByCourse[courseId] ?? [];
-                for (const topic of topics) {
-                    await courseService.createTopic(createdCourse.id, topic.name);
+                try {
+                    await assessmentService.createPracticeExamForCourse(createdCourse.id);
+                } catch (practiceExamError) {
+                    console.warn('Failed to create Practice Exam for linked course', practiceExamError);
                 }
 
                 createdCount += 1;
@@ -265,7 +231,7 @@ export const ProfileCoursesDialog = ({
                 }
                 toast({
                     title: `Added ${createdCount} course${createdCount > 1 ? 's' : ''}`,
-                    description: 'Courses and topics have been synced from the AI service.'
+                    description: 'Courses linked to Core and topics synced.'
                 });
             } else {
                 toast({
@@ -291,15 +257,15 @@ export const ProfileCoursesDialog = ({
                         <div>
                             <DialogTitle>Add Courses</DialogTitle>
                             <DialogDescription>
-                                Link courses from the AI service or create a test course to get started without connecting to it.
+                                Link courses from the AI service to your question bank.
                             </DialogDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                            <EduAIStatusBadge
+                            <AIServiceIndicators
                                 status={eduaiStatus.status}
                                 message={eduaiStatus.message}
+                                provider={eduaiStatus.provider}
                                 onRefresh={eduaiStatus.refresh}
-                                questionGenerationPhase={eduaiStatus.questionGenerationPhase}
                                 className="z-50"
                             />
                         </div>
@@ -313,51 +279,10 @@ export const ProfileCoursesDialog = ({
                 )}
 
                 <div className="mt-4 space-y-4">
-                    {/* Test Course Option - Always visible */}
-                    <div className="rounded-md border-2 border-dashed border-blue-300 bg-blue-50/50 p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-semibold text-foreground">Sandbox Course</span>
-                                    <Badge variant="outline" className="text-xs">No AI service required</Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Create a test course to start making questions and assessments without connecting to the AI service.
-                                </p>
-                            </div>
-                            <Button
-                                onClick={handleCreateTestCourse}
-                                disabled={isSaving || isLoading}
-                                variant="default"
-                                className="ml-4"
-                            >
-                                {isSaving ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Creating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Plus className="mr-2 h-4 w-4" />
-                                        Create Test Course
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* AI service courses section */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                            <div className="h-px flex-1 bg-border"></div>
-                            <span className="text-xs text-muted-foreground font-medium">OR LINK FROM AI SERVICE</span>
-                            <div className="h-px flex-1 bg-border"></div>
-                        </div>
-                    </div>
 
                     {isLoading ? (
                         <div className="flex items-center justify-center py-12 text-muted-foreground">
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            <IconLoader2 className="mr-2 h-5 w-5 animate-spin" />
                             Loading courses from AI service...
                         </div>
                     ) : (
@@ -367,54 +292,90 @@ export const ProfileCoursesDialog = ({
                                 const isAdded = normalized ? existingCourseCodeSet.has(normalized) : false;
                                 const isSelected = selectedCourseIds.includes(option.id);
                                 const topics = topicsByCourse[option.id] ?? [];
+                                const isResyncing = resyncingCoreId === option.id;
 
                                 return (
-                                    <label
+                                    <div
                                         key={option.id}
-                                        className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 shadow-sm transition ${
+                                        className={`flex items-start gap-3 rounded-md border p-4 shadow-sm transition ${
                                             isAdded
-                                                ? 'cursor-not-allowed border-muted bg-muted/40 opacity-80'
+                                                ? 'border-muted bg-muted/40'
                                                 : isSelected
-                                                    ? 'border-blue-500 bg-blue-50'
-                                                    : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/40'
+                                                    ? 'border-primary bg-primary/10'
+                                                    : 'border-border hover:border-primary/40 hover:bg-primary/10'
                                         }`}
                                     >
-                                        <input
-                                            type="checkbox"
-                                            className="mt-1 h-4 w-4"
-                                            checked={isSelected}
-                                            onChange={() => toggleCourse(option.id)}
-                                            disabled={isAdded || isSaving}
-                                        />
-                                        <div className="flex-1 space-y-2">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="text-sm font-semibold text-foreground">
-                                                    {option.code} · {option.name}
-                                                </span>
-                                                {option.term && option.year && (
-                                                    <Badge variant="outline" className="text-xs">
-                                                        {option.term} {option.year}
-                                                    </Badge>
-                                                )}
-                                                {isAdded && <Badge variant="outline" data-tour-id="profile-added-badge">Already added</Badge>}
-                                                {isSelected && !isAdded && !isSaving && (
-                                                    <Badge variant="secondary">Selected</Badge>
-                                                )}
-                                            </div>
-                                            {option.description && (
-                                                <p className="text-xs text-muted-foreground">{option.description}</p>
-                                            )}
-                                            {topics.length > 0 && (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {topics.map((topic) => (
-                                                        <Badge key={topic.id} variant="outline" className="text-xs">
-                                                            {topic.name}
-                                                        </Badge>
-                                                    ))}
+                                        {!isAdded ? (
+                                            <label className="flex cursor-pointer items-start gap-3 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mt-1 h-4 w-4"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleCourse(option.id)}
+                                                    disabled={isSaving || !!resyncingCoreId}
+                                                />
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-sm font-semibold text-foreground">
+                                                            {option.code} · {option.name}
+                                                        </span>
+                                                        {option.term && option.year && (
+                                                            <Badge variant="outline" className="text-xs">
+                                                                {option.term} {option.year}
+                                                            </Badge>
+                                                        )}
+                                                        {isSelected && !isSaving && (
+                                                            <Badge variant="secondary">Selected</Badge>
+                                                        )}
+                                                    </div>
+                                                    {option.description && (
+                                                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                                                    )}
+                                                    {topics.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {topics.map((topic) => (
+                                                                <Badge key={topic.id} variant="outline" className="text-xs">
+                                                                    {topic.name}
+                                                                </Badge>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </div>
-                                    </label>
+                                            </label>
+                                        ) : (
+                                            <div className="flex flex-1 items-start justify-between gap-3">
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-sm font-semibold text-foreground">
+                                                            {option.code} · {option.name}
+                                                        </span>
+                                                        <Badge variant="outline" data-tour-id="profile-added-badge">
+                                                            Already added
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Re-sync to link this QM course to Core and refresh topics.
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={isSaving || !!resyncingCoreId}
+                                                    onClick={() => void handleResyncCourse(option)}
+                                                >
+                                                    {isResyncing ? (
+                                                        <>
+                                                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            Syncing…
+                                                        </>
+                                                    ) : (
+                                                        'Re-sync from Core'
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 );
                             })}
 
@@ -429,36 +390,20 @@ export const ProfileCoursesDialog = ({
                     )}
                 </div>
 
-                {user?.isBugReportAdmin && (
-                    <div className="border-t px-6 py-2">
-                        <Button
-                            type="button"
-                            variant="link"
-                            className="h-auto p-0 text-sm text-blue-700"
-                            onClick={() => {
-                                navigate('/admin/bug-reports');
-                                onClose();
-                            }}
-                        >
-                            Bug reports (admin)
-                        </Button>
-                    </div>
-                )}
-
-                <DialogFooter className="flex items-center justify-between">
+<DialogFooter className="flex items-center justify-between">
                     <Button
                         variant="outline"
                         onClick={handleLogout}
                         className="flex items-center gap-2 text-destructive hover:text-destructive"
                     >
-                        <LogOut className="h-4 w-4" />
+                        <IconLogout className="h-4 w-4" />
                         <span>Logout</span>
                     </Button>
                     <div className="flex gap-2">
-                        <Button variant="ghost" onClick={onClose} disabled={isSaving}>
+                        <Button variant="ghost" onClick={onClose} disabled={isSaving || !!resyncingCoreId}>
                             Cancel
                         </Button>
-                        <Button onClick={handleSave} disabled={isSaving || isLoading} data-tour-id="profile-add-button">
+                        <Button onClick={handleSave} disabled={isSaving || isLoading || !!resyncingCoreId} data-tour-id="profile-add-button">
                             {isSaving ? 'Linking…' : 'Add selected courses'}
                         </Button>
                     </div>

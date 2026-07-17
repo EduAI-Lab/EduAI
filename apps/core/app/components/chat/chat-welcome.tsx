@@ -1,98 +1,51 @@
-import { Bot } from "lucide-react";
-import { PromptSuggestion } from "~/components/ui/prompt-suggestion";
+import { cn } from "@eduai/ui";
 
-interface ChatWelcomeProps {
+import { ScrollReveal } from "~/components/motion/scroll-reveal";
+import { SuggestedPrompts } from "./suggested-prompts";
+
+export interface ChatWelcomeProps {
   selectedModelInfo?: {
     name: string;
     description?: string;
   };
+  selectedCourseCode?: string | null;
   onSelectPrompt: (prompt: string) => void;
+  disabled?: boolean;
 }
 
-const suggestedPrompts = [
-  {
-    title: "Creative Ideas",
-    description: "Brainstorm innovative solutions and concepts",
-    prompt: "Help me brainstorm creative solutions for organizing a virtual team building event"
-  },
-  {
-    title: "Code Review",
-    description: "Get help with programming and development",
-    prompt: "Review my React component and suggest improvements for performance and readability"
-  },
-  {
-    title: "Learning Path",
-    description: "Create personalized learning curricula",
-    prompt: "Create a 30-day learning plan for mastering TypeScript from beginner to intermediate level"
-  },
-  {
-    title: "Problem Solving",
-    description: "Solve complex analytical problems",
-    prompt: "Walk me through solving this step-by-step: How to optimize database queries for better performance"
-  },
-  {
-    title: "Design Ideas",
-    description: "UI/UX and visual design concepts",
-    prompt: "Suggest modern design patterns for a dashboard interface with great user experience"
-  },
-  {
-    title: "Research & Analysis",
-    description: "Deep dive into topics and trends",
-    prompt: "Analyze the current trends in AI development and their potential impact on software engineering"
-  }
-];
+export function ChatWelcome({
+  selectedModelInfo,
+  selectedCourseCode,
+  onSelectPrompt,
+  disabled,
+}: ChatWelcomeProps) {
+  const courseHint = selectedCourseCode?.trim();
 
-export function ChatWelcome({ selectedModelInfo, onSelectPrompt }: ChatWelcomeProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] text-center space-y-12 px-4">
-      <div className="space-y-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-center mb-6">
-            <div className="bg-gradient-to-r from-primary to-primary/80 rounded-2xl p-4 shadow-lg">
-              <Bot className="h-8 w-8 text-primary-foreground" />
-            </div>
-          </div>
+    <div className="flex w-full flex-col items-center justify-center px-4 py-10 text-center md:py-16">
+      <ScrollReveal index={0} parallax={false}>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-[1.75rem]">
+          Course Chat
+        </h1>
+      </ScrollReveal>
 
-          <div className="space-y-4">
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">
-              Welcome to EduAI
-            </h1>
-            {selectedModelInfo && (
-              <p className="text-lg text-muted-foreground">
-                Powered by {selectedModelInfo.name}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
+      <ScrollReveal index={1} parallax={false}>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+          {courseHint
+            ? `Ask about ${courseHint} — grounded in your course materials.`
+            : "Pick a course, then ask a question about its materials."}
+        </p>
 
-      <div className="w-full max-w-4xl">
-        <div className="text-center space-y-6 mb-8">
-          <h3 className="text-lg font-medium">Quick Start</h3>
-          <p className="text-sm text-muted-foreground">
-            Choose a category to begin, or type your own question below
+        {selectedModelInfo && (
+          <p className="mt-1.5 text-xs text-muted-foreground/70">
+            {selectedModelInfo.name}
           </p>
-        </div>
+        )}
+      </ScrollReveal>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {suggestedPrompts.map((item, index) => (
-            <PromptSuggestion
-              key={index}
-              onClick={() => onSelectPrompt(item.prompt)}
-              className="h-auto p-4 text-left"
-            >
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm">
-                  {item.title}
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {item.description}
-                </p>
-              </div>
-            </PromptSuggestion>
-          ))}
-        </div>
-      </div>
+      <ScrollReveal index={2} parallax={false} className={cn("flex w-full justify-center")}>
+        <SuggestedPrompts onSelectPrompt={onSelectPrompt} disabled={disabled} />
+      </ScrollReveal>
     </div>
   );
 }

@@ -4,6 +4,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import eduaiService from '../services/eduaiService';
+import { apiKeyStorage, isCloudProvider } from '../services/apiKeyStorage';
 
 type Status = 'loading' | 'ok' | 'error';
 
@@ -13,10 +14,22 @@ export type QuestionGenerationPhase = 'generating' | 'review' | null;
 type EduAIState = {
     status: Status;
     message?: string;
+    /** Which provider path is live when status==='ok': 'google' (cloud) or 'ollama' (UBC-hosted). */
+    provider?: 'google' | 'ollama';
     questionGenerationPhase: QuestionGenerationPhase;
 };
 
 let state: EduAIState = { status: 'loading', message: 'Checking AI service status', questionGenerationPhase: null };
+
+/** True when the user has saved at least one cloud provider key in this browser. */
+const hasCloudKey = async (): Promise<boolean> => {
+    try {
+        const keys = await apiKeyStorage.getAllApiKeys();
+        return Object.keys(keys).length > 0;
+    } catch {
+        return false;
+    }
+};
 const listeners = new Set<() => void>();
 let inflight: Promise<void> | null = null;
 let heartbeatTimeout: number | null = null;
@@ -41,15 +54,14 @@ const scheduleHeartbeatIfNeeded = () => {
     if (typeof window === 'undefined') return;
     if (heartbeatTimeout !== null) return;
 
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
     const seconds = Math.min(8, Math.pow(2, backoffStep));
     const delayMs = seconds * 1000;
 
     heartbeatTimeout = window.setTimeout(() => {
         heartbeatTimeout = null;
-        void refreshEduAIStatus();
+        // Silent re-check: keep the current status visible so the badge/banner
+        // don't flicker to "Checking…" on every background poll.
+        void refreshEduAIStatus({ silent: true });
         if (backoffStep < 3) {
             backoffStep += 1;
         }
@@ -66,19 +78,43 @@ const fetchStatus = async () => {
         ])) as any;
 
         if (result?.success) {
-            setState({ status: 'ok', message: 'AI service is online' });
+            const provider = result.provider;
+            setState({
+                status: 'ok',
+                provider,
+                message: isCloudProvider(provider)
+                    ? 'AI online via your cloud provider key.'
+                    : 'AI online via the UBC-hosted model.',
+            });
             clearHeartbeat();
-        } else {
+        } else if (result?.configured === false) {
             setState({
                 status: 'error',
-                message: 'AI service not available. Connect to UBC wifi or VPN.'
+                provider: undefined,
+                message: 'AI needs a Core sign-in (shared session cookie). Sign in via Core and retry.'
             });
+            clearHeartbeat();
+        } else {
+            // Service unreachable. Tailor the guidance: if the user has a cloud key
+            // saved it failed (bad key / network); if not, point them to Settings —
+            // the UBC-hosted model is the only path and it requires UBC network/VPN.
+            const cloudKey = await hasCloudKey();
+            const provider = result?.provider;
+            const message = cloudKey
+                ? result?.error ||
+                  'Your cloud provider key could not be validated. Check the key in Settings or your network.'
+                : 'UBC-hosted AI is unavailable (needs UBC wifi/VPN). Add a cloud provider API key in Settings to use AI off-network.';
+            setState({ status: 'error', provider, message });
             scheduleHeartbeatIfNeeded();
         }
     } catch {
+        const cloudKey = await hasCloudKey();
         setState({
             status: 'error',
-            message: 'AI service not available. Connect to UBC wifi or VPN.'
+            provider: undefined,
+            message: cloudKey
+                ? 'Could not reach the AI service. Check your network and try again.'
+                : 'AI service unavailable. Connect to UBC wifi/VPN, or add a cloud provider API key in Settings.',
         });
         scheduleHeartbeatIfNeeded();
     }
@@ -90,24 +126,19 @@ export const setQuestionGenerationPhase = (phase: QuestionGenerationPhase) => {
     notify();
 };
 
-export const refreshEduAIStatus = async () => {
+export const refreshEduAIStatus = async (opts?: { silent?: boolean }) => {
     if (inflight) return inflight;
-    setState({ status: 'loading', message: 'Checking AI service status. Connect to UBC wifi or VPN.' });
+    // Background polls pass { silent } to avoid flipping the UI back to "loading".
+    if (!opts?.silent) {
+        setState({ status: 'loading', message: 'Checking AI service status. Connect to UBC wifi or VPN.' });
+    }
     inflight = fetchStatus().finally(() => {
         inflight = null;
     });
     return inflight;
 };
 
-// Kick off an initial check once at module load, but only if user is authenticated
-// This prevents 401 errors and infinite redirect loops on the login page
-const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-if (token) {
-  void refreshEduAIStatus();
-} else {
-  // Set initial state to error if not authenticated
-  setState({ status: 'error', message: 'AI service not available. Connect to UBC wifi or VPN.' });
-}
+void refreshEduAIStatus();
 
 export const useEduAIStatus = () => {
     const subscribe = (callback: () => void) => {
@@ -117,11 +148,12 @@ export const useEduAIStatus = () => {
 
     const getSnapshot = () => state;
 
-    const { status, message, questionGenerationPhase } = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    const { status, message, provider, questionGenerationPhase } = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
     return {
         status,
         message,
+        provider,
         questionGenerationPhase,
         setQuestionGenerationPhase,
         refresh: refreshEduAIStatus,

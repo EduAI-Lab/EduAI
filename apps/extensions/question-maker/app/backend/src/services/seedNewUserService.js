@@ -2,7 +2,7 @@
  * Seeds a newly registered user with default courses, topics, and sample questions.
  * Uses the same seed data as development (populateDatabase) and production (seedProductionQuestions).
  */
-import { Course, Topics, Question_Metadata, Assessments, Variants } from '../schema/index.js';
+import { Course, Topics, Question_Metadata, Assessments, AssessmentSections, Variants, SectionVariants } from '../schema/index.js';
 import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scripts/seedData.js';
 import { ensureDefaultBank, attachQuestionToBanks } from './questionBankService.js';
 
@@ -59,6 +59,13 @@ export async function seedCoursesForNewUser(userId) {
       semester: 'Fall 2026'
     });
 
+    const section = await AssessmentSections.create({
+      assessmentId: assessment.id,
+      name: 'Exam',
+      description: null,
+      position: 0
+    });
+
     const difficulties = ['easy', 'medium', 'hard'];
     const reasoningLevels = ['factual', 'analytical', 'application'];
 
@@ -95,8 +102,14 @@ export async function seedCoursesForNewUser(userId) {
       if (q.type === 'MCQ' && Array.isArray(q.choices) && q.correctAnswer) {
         variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
       }
-      await Variants.create(variantPayload);
+      const variant = await Variants.create(variantPayload);
       variantsCreated++;
+
+      await SectionVariants.create({
+        sectionId: section.id,
+        variantId: variant.id,
+        displayOrder: i
+      });
     }
   }
 

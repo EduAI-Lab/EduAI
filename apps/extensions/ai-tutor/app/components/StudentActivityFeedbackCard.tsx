@@ -1,3 +1,15 @@
+import { IconLoader2 } from '@tabler/icons-react';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Textarea,
+} from '@eduai/ui';
+
 type StudentActivityFeedbackCardProps = {
   rating: number | null;
   note: string;
@@ -23,50 +35,48 @@ export default function StudentActivityFeedbackCard({
 }: StudentActivityFeedbackCardProps) {
   if (submitted) {
     return (
-      <div className="rounded-2xl border border-accent/30 bg-accent/10 p-4 text-sm text-accent-foreground animate-scale-in">
-        Thanks for the feedback. We use it to improve future activities.
-      </div>
+      <Card
+        style={{
+          borderColor: 'var(--color-success-500)',
+          background: 'var(--color-success-100)',
+        }}
+      >
+        <CardContent className="text-sm text-[var(--color-success-700)]">
+          Thanks for the feedback. We use it to improve future activities.
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="rounded-3xl border border-border bg-card/90 p-5 shadow-sm animate-scale-in">
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-display text-lg font-bold text-foreground">Quick feedback</h3>
-            <p className="text-sm text-muted-foreground">
-              How did this activity feel after your first attempt?
-            </p>
+            <CardTitle>Quick feedback</CardTitle>
+            <CardDescription>How did this activity feel after your first attempt?</CardDescription>
           </div>
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground transition"
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={onDismiss} className="shrink-0">
             Maybe later
-          </button>
+          </Button>
         </div>
-      </div>
+      </CardHeader>
 
-      <div className="mt-4 space-y-4">
+      <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="text-sm font-medium text-foreground">Rate the difficulty</div>
           <div className="grid grid-cols-5 gap-2">
             {[1, 2, 3, 4, 5].map((value) => (
-              <button
+              <Button
                 key={value}
                 type="button"
+                variant={rating === value ? 'primary' : 'outline'}
                 onClick={() => onSelectRating(value)}
-                className={`rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
-                  rating === value
-                    ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                    : 'border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5'
-                }`}
                 aria-pressed={rating === value}
+                className="w-full"
               >
                 {value}
-              </button>
+              </Button>
             ))}
           </div>
           <p className="text-xs text-muted-foreground">1 = very easy, 5 = very difficult</p>
@@ -79,35 +89,37 @@ export default function StudentActivityFeedbackCard({
           >
             Optional note
           </label>
-          <textarea
+          <Textarea
             id="activity-feedback-note"
             value={note}
             onChange={(event) => onNoteChange(event.target.value)}
             placeholder="What made this question easy or difficult?"
-            className="input-field min-h-24 resize-y text-sm"
+            className="min-h-24 resize-y text-sm"
           />
         </div>
 
         {error && (
-          <div className="rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-[var(--radius-lg)] border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         )}
+      </CardContent>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={!rating || saving}
-            className="btn-primary"
-          >
-            {saving ? 'Saving...' : 'Send feedback'}
-          </button>
-          <p className="text-xs text-muted-foreground">
-            Your response stays internal and helps us tune the course.
-          </p>
-        </div>
-      </div>
-    </div>
+      <CardFooter className="flex items-center gap-3">
+        <Button type="button" variant="primary" onClick={onSubmit} disabled={!rating || saving}>
+          {saving ? (
+            <>
+              <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
+              Saving...
+            </>
+          ) : (
+            'Send feedback'
+          )}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Your response stays internal and helps us tune the course.
+        </p>
+      </CardFooter>
+    </Card>
   );
 }

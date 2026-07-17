@@ -1,0 +1,65 @@
+import { Link, redirect, useLoaderData } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+
+import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
+import { useBugReports } from "~/hooks/api/use-bug-reports";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@eduai/ui";
+import { auth } from "~/lib/auth/server";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const session = await auth.api.getSession({ headers: request.headers });
+
+  if (!session?.user) {
+    return redirect("/auth/login");
+  }
+
+  if (session.user.role !== "ADMIN") {
+    return redirect("/dashboard");
+  }
+
+  return {
+    user: session.user,
+  };
+}
+
+export default function BugReportsPage() {
+  const { user } = useLoaderData<typeof loader>();
+  const { reports, isLoading, updateReportStatus } = useBugReports();
+
+  return (
+    <CoreAppShell
+      user={user}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Admin</BreadcrumbPage>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Bug Reports</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
+    >
+      <BugReportsAdminView
+        reports={reports}
+        isLoading={isLoading}
+        onUpdateStatus={updateReportStatus}
+      />
+    </CoreAppShell>
+  );
+}

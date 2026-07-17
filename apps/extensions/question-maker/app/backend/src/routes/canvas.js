@@ -1,6 +1,14 @@
 /**
- * Canvas router exposing endpoints for connecting accounts, exporting assessments, and importing quizzes.
- * Wraps canvasService calls with authentication and payload validation for Canvas integration workflows.
+ * Canvas router: connect/get/disconnect a personal Canvas integration, browse
+ * Canvas content, and export/import assessments.
+ *
+ * RBAC (rbac-matrix.md §18, issue #314):
+ *  - canvas_integrations are PERSONAL (own-only, `O`): role-gated to
+ *    ADMIN / UNIT_ADMIN / INSTRUCTOR and always scoped to `req.user.id`.
+ *  - canvas_course_mappings + export/import are course-scoped (`C`/`D`):
+ *    instructor-and-up access to the local course; mappings are keyed to the
+ *    course owner (`req.qmCourse.userId`) while the personal Canvas creds remain
+ *    the caller's (`req.user.id`). TA / STUDENT are rejected.
  */
 import express from 'express';
 import {
@@ -16,12 +24,16 @@ import {
   getCanvasQuestionBankQuestions,
   importQuestionBankFromCanvas
 } from '../services/canvasService.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { CANVAS_ROLES } from '../middleware/roles.js';
+import { requireCourseAccess } from '../middleware/courseAccess.js';
+import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
+import { Topics } from '../schema/index.js';
 
 const router = express.Router();
 
-/** GET /api/canvas/integration – returns whether the user has Canvas configured (without exposing the API key). */
-router.get('/integration', authenticateToken, async (req, res, next) => {
+/** GET /api/canvas/integration – returns whether the caller has Canvas configured (own, no key exposed). */
+router.get('/integration', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const integration = await getCanvasIntegration(req.user.id);
 
@@ -47,8 +59,8 @@ router.get('/integration', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** POST /api/canvas/connect – stores Canvas credentials/test-mode flag after validating payload. */
-router.post('/connect', authenticateToken, async (req, res, next) => {
+/** POST /api/canvas/connect – stores the caller's Canvas credentials/test-mode flag. */
+router.post('/connect', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const { canvasUrl, apiKey, isTestMode } = req.body;
 
@@ -85,7 +97,7 @@ router.post('/connect', authenticateToken, async (req, res, next) => {
 
     res.json({
       success: true,
-      message: isTestMode 
+      message: isTestMode
         ? 'Canvas test mode enabled. You can test exports without a real Canvas account.'
         : 'Canvas integration connected successfully',
       data: {
@@ -98,8 +110,8 @@ router.post('/connect', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** DELETE /api/canvas/disconnect – removes the saved Canvas integration for the user. */
-router.delete('/disconnect', authenticateToken, async (req, res, next) => {
+/** DELETE /api/canvas/disconnect – removes the caller's saved Canvas integration. */
+router.delete('/disconnect', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const integration = await getCanvasIntegration(req.user.id);
 
@@ -116,8 +128,8 @@ router.delete('/disconnect', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** GET /api/canvas/courses – lists Canvas courses available via the integration helper. */
-router.get('/courses', authenticateToken, async (req, res, next) => {
+/** GET /api/canvas/courses – lists Canvas courses via the caller's integration. */
+router.get('/courses', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const courses = await getCanvasCourses(req.user.id);
 
@@ -130,52 +142,64 @@ router.get('/courses', authenticateToken, async (req, res, next) => {
   }
 });
 
-/** POST /api/canvas/export/:assessmentId – exports an assessment's questions to the specified Canvas course. */
-router.post('/export/:assessmentId', authenticateToken, async (req, res, next) => {
-  try {
-    const { assessmentId } = req.params;
-    const { canvasCourseId } = req.body;
+/** POST /api/canvas/export/:assessmentId – exports an assessment to Canvas (course-scoped, instructor-only). */
+router.post(
+  '/export/:assessmentId',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  requireAssessmentAccess({ min: 'instructor', param: 'assessmentId' }),
+  async (req, res, next) => {
+    try {
+      const { assessmentId } = req.params;
+      const { canvasCourseId } = req.body;
 
-    if (!canvasCourseId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Canvas course ID is required'
+      if (!canvasCourseId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Canvas course ID is required'
+        });
+      }
+
+      const result = await exportAssessmentToCanvas(
+        req.user.id,
+        assessmentId,
+        canvasCourseId,
+        req.qmCourse.userId
+      );
+
+      res.json({
+        success: true,
+        message: 'Assessment exported to Canvas successfully',
+        data: result
       });
+    } catch (error) {
+      next(error);
     }
-
-    const result = await exportAssessmentToCanvas(
-      req.user.id,
-      assessmentId,
-      canvasCourseId
-    );
-
-    res.json({
-      success: true,
-      message: 'Assessment exported to Canvas successfully',
-      data: result
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
-/** GET /api/canvas/mapping/:courseId – returns stored mapping between a local course and Canvas course. */
-router.get('/mapping/:courseId', authenticateToken, async (req, res, next) => {
-  try {
-    const { courseId } = req.params;
-    const mapping = await getCanvasCourseMapping(req.user.id, courseId);
+/** GET /api/canvas/mapping/:courseId – returns the stored mapping (course-scoped, instructor-only). */
+router.get(
+  '/mapping/:courseId',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.params.courseId }),
+  async (req, res, next) => {
+    try {
+      const mapping = await getCanvasCourseMapping(req.qmCourse.userId, req.qmCourse.id);
 
-    res.json({
-      success: true,
-      data: mapping
-    });
-  } catch (error) {
-    next(error);
+      res.json({
+        success: true,
+        data: mapping
+      });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-/** GET /api/canvas/courses/:canvasCourseId/quizzes – fetches quizzes from a Canvas course via the API. */
-router.get('/courses/:canvasCourseId/quizzes', authenticateToken, async (req, res, next) => {
+/** GET /api/canvas/courses/:canvasCourseId/quizzes – fetches quizzes from a Canvas course. */
+router.get('/courses/:canvasCourseId/quizzes', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const { canvasCourseId } = req.params;
     const quizzes = await getCanvasQuizzes(req.user.id, canvasCourseId);
@@ -189,8 +213,8 @@ router.get('/courses/:canvasCourseId/quizzes', authenticateToken, async (req, re
   }
 });
 
-/** GET /api/canvas/courses/:canvasCourseId/quizzes/:quizId/questions – lists Canvas quiz questions for review/import. */
-router.get('/courses/:canvasCourseId/quizzes/:quizId/questions', authenticateToken, async (req, res, next) => {
+/** GET /api/canvas/courses/:canvasCourseId/quizzes/:quizId/questions – lists Canvas quiz questions. */
+router.get('/courses/:canvasCourseId/quizzes/:quizId/questions', authenticateToken, requireRole(CANVAS_ROLES), async (req, res, next) => {
   try {
     const { canvasCourseId, quizId } = req.params;
     const questions = await getCanvasQuizQuestions(req.user.id, canvasCourseId, quizId);
@@ -204,48 +228,61 @@ router.get('/courses/:canvasCourseId/quizzes/:quizId/questions', authenticateTok
   }
 });
 
-/** POST /api/canvas/import/:canvasCourseId/quizzes/:quizId – imports a Canvas quiz into a local assessment and course. */
-router.post('/import/:canvasCourseId/quizzes/:quizId', authenticateToken, async (req, res, next) => {
-  try {
-    const { canvasCourseId, quizId } = req.params;
-    const { localCourseId, assessmentType, assessmentName, semester, primaryTopicId } = req.body;
+/** POST /api/canvas/import/:canvasCourseId/quizzes/:quizId – imports a Canvas quiz (course-scoped, instructor-only). */
+router.post(
+  '/import/:canvasCourseId/quizzes/:quizId',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.localCourseId }),
+  async (req, res, next) => {
+    try {
+      const { canvasCourseId, quizId } = req.params;
+      const { assessmentType, assessmentName, semester, primaryTopicId } = req.body;
 
-    if (!localCourseId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Local course ID is required'
-      });
-    }
-
-    if (!primaryTopicId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Primary topic ID is required for importing questions'
-      });
-    }
-
-    const result = await importQuizFromCanvas(
-      req.user.id,
-      canvasCourseId,
-      quizId,
-      localCourseId,
-      {
-        assessmentType,
-        assessmentName,
-        semester,
-        primaryTopicId
+      if (!primaryTopicId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Primary topic ID is required for importing questions'
+        });
       }
-    );
 
-    res.json({
-      success: true,
-      message: 'Quiz imported from Canvas successfully',
-      data: result
-    });
-  } catch (error) {
-    next(error);
+      // Eagerly confirm the topic exists and belongs to this course before
+      // creating questions — otherwise the FK insert crashes mid-import (#7). A
+      // supplied-but-nonexistent topic is a missing resource, so 404 (#3).
+      const topic = await Topics.findOne({
+        where: { id: primaryTopicId, courseId: req.qmCourse.id }
+      });
+      if (!topic) {
+        return res.status(404).json({
+          success: false,
+          error: 'Primary topic not found in this course'
+        });
+      }
+
+      const result = await importQuizFromCanvas(
+        req.user.id,
+        canvasCourseId,
+        quizId,
+        req.qmCourse.id,
+        {
+          assessmentType,
+          assessmentName,
+          semester,
+          primaryTopicId
+        },
+        req.qmCourse.userId
+      );
+
+      res.json({
+        success: true,
+        message: 'Quiz imported from Canvas successfully',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 /** GET /api/canvas/courses/:canvasCourseId/banks – lists Canvas Assessment Question Banks. */
 router.get('/courses/:canvasCourseId/banks', authenticateToken, async (req, res, next) => {

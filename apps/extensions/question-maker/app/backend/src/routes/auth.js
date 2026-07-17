@@ -1,80 +1,54 @@
-/**
- * Auth router handling registration, login, and profile endpoints for the Question Maker backend.
- * Validates incoming payloads, delegates to authService, and applies authentication middleware where required.
- */
 import express from 'express';
-import { registerUser, loginUser, getUserById } from '../services/authService.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
+import { config } from '../config/settings.js';
+import { getMyProfileFromCore } from '../services/coreApiService.js';
 
 const router = express.Router();
 
-/** POST /api/auth/register – creates a user after validating email/password requirements. */
-router.post('/register', async (req, res, next) => {
+// §11: bug-report triage is ADMIN-only (role-based, replacing the prior email allowlist).
+router.get('/auth/me', requireAuth, async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const isBugReportAdmin = req.user.role === 'ADMIN';
+    let authorizedUnits;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email and password are required'
-      });
+    if (req.user.role === 'UNIT_ADMIN') {
+      const profile = await getMyProfileFromCore(req.headers.cookie).catch(() => null);
+      authorizedUnits = Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        error: 'Password must be at least 6 characters long'
-      });
-    }
-
-    const result = await registerUser({ email, password });
-
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: result
+    res.json({
+      user: {
+        ...req.user,
+        isBugReportAdmin,
+        ...(authorizedUnits !== undefined ? { authorizedUnits } : {}),
+      },
     });
   } catch (error) {
     next(error);
   }
 });
 
-/** POST /api/auth/login – verifies credentials and returns JWT/user payload on success. */
-router.post('/login', async (req, res, next) => {
+// Proxy sign-out to Core server-to-server, avoiding browser CORS restrictions.
+// No requireAuth — signing out an invalid session is a no-op, not an error.
+router.post('/auth/logout', async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email and password are required'
-      });
+    const coreRes = await fetch(`${config.coreUrl}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: {
+        cookie: req.headers.cookie ?? '',
+        origin: config.corePublicOrigin,
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    });
+    if (!coreRes.ok) {
+      console.error('[question-maker] Core sign-out failed', coreRes.status);
     }
-
-    const result = await loginUser({ email, password });
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      data: result
-    });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    console.error('[question-maker] Core sign-out request failed', err);
+    // Proceed even if Core is unreachable.
   }
-});
-
-/** GET /api/auth/me – fetches the authenticated user profile using the JWT on the request. */
-router.get('/me', authenticateToken, async (req, res, next) => {
-  try {
-    const user = await getUserById(req.user.id);
-
-    res.json({
-      success: true,
-      data: user
-    });
-  } catch (error) {
-    next(error);
-  }
+  res.json({ ok: true });
 });
 
 export default router;

@@ -84,7 +84,7 @@ jobs:
         if: steps.schedule_gate.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Resolve report inputs
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name != 'pull_request' }}
@@ -233,6 +233,9 @@ jobs:
           mkdir -p /tmp/team-time-report-commit
           cp eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md /tmp/team-time-report-commit/
           rm -f eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md
+          # base-time.csv is written to repo root during the report step; remove it
+          # before branch checkout or git aborts with "untracked working tree" errors.
+          rm -f base-time.csv
           git checkout HEAD -- eduai-summer-2026/reports/team-time-report.csv eduai-summer-2026/reports/team-time-report.md 2>/dev/null || true
 
           git fetch origin "$REPORT_BRANCH" 2>/dev/null || true

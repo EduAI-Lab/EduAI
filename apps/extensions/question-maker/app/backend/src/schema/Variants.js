@@ -1,6 +1,9 @@
 /**
  * Sequelize model for individual question variants (question text, difficulty, answer, review status).
  * Links back to `Question_Metadata`, optional assessments/sections, and tracks AI/draft flags.
+ * `secondaryTopicsId` stores local topics.id CUIDs (QM-internal references, not Core IDs).
+ *   At push time the server translates each ID to its topics.coreTopicId for the Core API call.
+ * `coreQuestionId` stores the Core Question CUID once this variant is approved and pushed.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
@@ -49,10 +52,11 @@ export const Variants = sequelize.define('Variants', {
     }
   },
   secondaryTopicsId: {
-    type: DataTypes.ARRAY(DataTypes.INTEGER),
+    type: DataTypes.ARRAY(DataTypes.STRING),
     allowNull: true,
     defaultValue: [],
-    field: 'secondary_topics_id'
+    field: 'secondary_topics_id',
+    comment: 'Array of local topics.id CUIDs; translated to coreTopicId at push time'
   },
   referenceId: {
     type: DataTypes.INTEGER,
@@ -88,6 +92,22 @@ export const Variants = sequelize.define('Variants', {
     field: 'choices',
     comment: 'Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]'
   },
+  coreQuestionId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'core_question_id',
+    comment: 'Core Question CUID; null until variant is approved and pushed to Core'
+  },
+  createdBy: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'created_by',
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    comment: 'users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.'
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
@@ -103,5 +123,6 @@ export const Variants = sequelize.define('Variants', {
 }, {
   tableName: 'variants',
   timestamps: true,
-  underscored: true
+  underscored: true,
+  indexes: [{ unique: true, fields: ['core_question_id'] }]
 });

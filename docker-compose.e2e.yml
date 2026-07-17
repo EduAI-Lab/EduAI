@@ -1,0 +1,225 @@
+name: eduai-e2e
+
+services:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Databases
+  # ──────────────────────────────────────────────────────────────────────
+
+  e2e-eduai-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eduai_e2e
+    volumes:
+      - e2e_eduai_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  e2e-ai-tutor-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aitutor_e2e
+    volumes:
+      - e2e_ai_tutor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  e2e-qm-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: question_maker_e2e
+    volumes:
+      - e2e_qm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Application services
+  # ──────────────────────────────────────────────────────────────────────
+
+  # Explicit image names so CI can prebuild these with `docker buildx bake` (GHA layer
+  # cache) and `docker compose up` reuses the loaded images instead of rebuilding.
+  e2e-eduai-app:
+    image: eduai-e2e/eduai-app
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.eduai
+      target: serve
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@e2e-eduai-db:5432/eduai_e2e
+      BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_DISABLE_RATE_LIMIT: "1"
+      GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+      NODE_ENV: test
+      PORT: "3000"
+      E2E_SEED_SECRET: e2e-seed-secret
+      EDUAI_API_KEY: test-service-key-not-for-production
+      QM_BACKEND_URL: http://e2e-qm-server:8000
+      AI_TUTOR_SERVER_URL: http://e2e-ai-tutor-server:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      e2e-eduai-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  e2e-ai-tutor-server:
+    image: eduai-e2e/ai-tutor-server
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-server
+      target: serve
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@e2e-ai-tutor-db:5432/aitutor_e2e
+      BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
+      BETTER_AUTH_URL: http://e2e-ai-tutor-server:4000/api/auth
+      COOKIE_DOMAIN: localhost
+      PORT: "4000"
+      CORE_URL: http://e2e-eduai-app:3000
+      CORE_PUBLIC_ORIGIN: http://localhost:3000
+      EDUAI_DISCOVERY_URL: http://e2e-eduai-app:3000/api/auth/.well-known/openid-configuration
+      EDUAI_CLIENT_ID: e2e-client-id
+      EDUAI_CLIENT_SECRET: e2e-client-secret
+      EDUAI_BASE_URL: http://e2e-eduai-app:3000/api
+      EDUAI_API_KEY: test-service-key-not-for-production
+      AI_SUPERVISOR_ENABLED: "false"
+    ports:
+      - "4000:4000"
+    depends_on:
+      e2e-ai-tutor-db:
+        condition: service_healthy
+      e2e-eduai-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  e2e-ai-tutor-app:
+    image: eduai-e2e/ai-tutor-app
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.ai-tutor-app
+      target: serve
+    environment:
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    depends_on:
+      e2e-ai-tutor-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  e2e-qm-server:
+    image: eduai-e2e/qm-server
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-server
+      target: serve
+    environment:
+      DATABASE_URL: postgresql://postgres:password@e2e-qm-db:5432/question_maker_e2e
+      JWT_SECRET: e2e-test-jwt-secret
+      ENCRYPTION_KEY: e2e-test-encryption-key-32bytes!
+      NODE_ENV: production
+      PORT: "8000"
+      CORE_URL: http://e2e-eduai-app:3000
+      # See e2e-ai-tutor-server's CORE_PUBLIC_ORIGIN comment above.
+      CORE_PUBLIC_ORIGIN: http://localhost:3000
+      CORS_ORIGINS: http://localhost:5173
+      EDUAI_API_KEY: test-service-key-not-for-production
+    ports:
+      - "8000:8000"
+    depends_on:
+      e2e-qm-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  e2e-qm-app:
+    image: eduai-e2e/qm-app
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.qm-app
+      target: serve
+    environment:
+      PORT: "5173"
+    ports:
+      - "5173:5173"
+    depends_on:
+      e2e-qm-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  e2e-runner:
+    image: eduai-e2e/runner
+    build:
+      context: .
+      dockerfile: docker/tests/Dockerfile.playwright
+    network_mode: host
+    environment:
+      CORE_URL: http://localhost:3000
+      AI_TUTOR_URL: http://localhost:3001
+      AI_TUTOR_SERVER_URL: http://localhost:4000
+      QM_BACKEND_URL: http://localhost:8000
+      QM_FRONTEND_URL: http://localhost:5173
+      BASE_URL: http://localhost:3000
+      CI: "true"
+    volumes:
+      - ./playwright-report:/e2e/playwright-report
+    depends_on:
+      e2e-eduai-app:
+        condition: service_healthy
+      e2e-ai-tutor-server:
+        condition: service_healthy
+      e2e-ai-tutor-app:
+        condition: service_healthy
+      e2e-qm-server:
+        condition: service_healthy
+      e2e-qm-app:
+        condition: service_healthy
+
+volumes:
+  e2e_eduai_db_data:
+  e2e_ai_tutor_db_data:
+  e2e_qm_db_data:
+
+networks:
+  default:
+    name: eduai-e2e-network

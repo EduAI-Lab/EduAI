@@ -1,66 +1,63 @@
 /**
- * Express middleware utilities for authenticating requests via JWT and issuing tokens.
- * Ensures downstream routes have `req.user` populated and provides a helper for generating signed tokens.
+ * Session validation and RBAC middleware for Question Maker API routes.
+ *
+ * Validates the incoming session cookie via Core's POST /api/sessions/validate,
+ * ensures a local user row exists for FK integrity (creating it on first login),
+ * and populates `req.user` with the Core user shape.
  */
-import jwt from 'jsonwebtoken';
-import { User } from '../schema/User.js';
+import { findOrCreateUser } from '../services/authService.js';
+import { VALID_ROLES } from './roles.js';
 import { config } from '../config/settings.js';
 
+function normalizeRole(role) {
+  return VALID_ROLES.has(role) ? role : 'STUDENT';
+}
+
 /**
- * Validates the Bearer token, loads the corresponding user, and attaches it to the request.
- * Rejects missing/expired/invalid tokens with appropriate 401 responses before hitting protected routes.
+ * Validate the request's session cookie against Core and populate `req.user`.
+ * API routes (path starts with /api/) return 401 on failure; other routes
+ * redirect to Core login with a ?redirect= param so the user lands back here.
  */
-export const authenticateToken = async (req, res, next) => {
+export async function requireAuth(req, res, next) {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: 'Access token required'
-      });
-    }
-
-    const decoded = jwt.verify(token, config.jwtSecret);
-    const user = await User.findByPk(decoded.userId);
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid token - user not found'
-      });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid token'
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        error: 'Token expired'
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: 'Authentication failed'
+    const response = await fetch(`${config.coreUrl}/api/sessions/validate`, {
+      method: 'POST',
+      headers: { cookie: req.headers.cookie ?? '' },
     });
-  }
-};
 
-/** Generates a signed JWT for the given user ID using the configured secret and expiry. */
-export const generateToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
-  );
-};
+    if (!response.ok) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const { user: coreUser } = await response.json();
+    const normalizedUser = { ...coreUser, role: normalizeRole(coreUser.role) };
+    await findOrCreateUser(normalizedUser);
+    req.user = normalizedUser;
+    next();
+  } catch {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+}
+
+/**
+ * Build a middleware that requires the caller's role to be in `allowed`.
+ * Pass a single role string or an array.
+ */
+export function requireRole(allowed) {
+  const roles = Array.isArray(allowed) ? allowed : [allowed];
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: `One of the following roles required: ${roles.join(', ')}`,
+      });
+    }
+    next();
+  };
+}
+
+// Backward-compat alias: existing route files import authenticateToken.
+export { requireAuth as authenticateToken };

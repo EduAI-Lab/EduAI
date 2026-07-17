@@ -1,80 +1,93 @@
 /**
- * DB-backed tests for 400 responses on /api/assessment-variant (validation before heavy work).
- * Run: npm run test:integration (requires TEST_DATABASE_URL).
+ * HTTP validation tests for /api/assessment-variant routes.
+ *
+ * These routes are instructor-gated (§17), so authorization runs before payload
+ * validation: an enrolled INSTRUCTOR with an accessible course still hits the
+ * 400 payload guards, while a request that omits courseId 404s at the gate
+ * (no course to authorize). Schema + Core reads are mocked so the gate resolves
+ * without a DB.
  */
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 
-const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
-const describeDb = hasTestDb ? describe : describe.skip;
+const { mockCourseFindOne, mockAssessmentFindOne, mockEnrollments } = vi.hoisted(() => ({
+  mockCourseFindOne: vi.fn(),
+  mockAssessmentFindOne: vi.fn(),
+  mockEnrollments: vi.fn(),
+}));
 
-describeDb('Assessment variant API validation (integration)', () => {
-  let app;
-  let connectTestDatabase;
-  let truncateTestDatabase;
-  let sequelize;
+vi.mock('../../src/services/authService.js', () => ({
+  findOrCreateUser: vi.fn().mockResolvedValue({}),
+}));
 
-  let token;
+vi.mock('../../src/config/settings.js', () => {
+  const cfg = { coreUrl: 'http://core.test', eduaiApiKey: 'k', corsOrigins: ['*'], nodeEnv: 'test', logLevel: 'silent' };
+  return { config: cfg, default: cfg };
+});
 
-  beforeAll(async () => {
-    if (!hasTestDb) {
-      return;
-    }
-    const { default: appMod } = await import('../../src/app.js');
-    const testDb = await import('../helpers/testDb.js');
-    app = appMod;
-    connectTestDatabase = testDb.connectTestDatabase;
-    truncateTestDatabase = testDb.truncateTestDatabase;
-    ({ sequelize } = testDb);
-    await connectTestDatabase();
+vi.mock('../../src/services/coreApiService.js', () => ({
+  getCourseEnrollmentsFromCore: mockEnrollments,
+  getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
+  getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
+}));
+
+vi.mock('../../src/schema/index.js', () => ({
+  Course: { findOne: mockCourseFindOne },
+  Assessments: { findOne: mockAssessmentFindOne },
+  Question_Metadata: {},
+  Variants: {},
+  AssessmentSections: {},
+  Topics: {},
+  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+}));
+
+const { default: app } = await import('../../src/app.js');
+
+const TEST_USER = { id: 'cuid-test-user', email: 'test@test.com', role: 'INSTRUCTOR', name: 'Test User' };
+const COURSE = { id: 1, userId: 'cuid-test-user', coreCourseId: 'cuid-core-course' };
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve({ user: TEST_USER }),
+  }));
+  mockCourseFindOne.mockResolvedValue(COURSE);
+  mockAssessmentFindOne.mockResolvedValue({ id: 1, course: COURSE });
+  mockEnrollments.mockResolvedValue({
+    enrollments: [{ studentId: TEST_USER.id, role: 'INSTRUCTOR', isActive: true }],
   });
+});
 
-  beforeEach(async () => {
-    if (!hasTestDb) {
-      return;
-    }
-    await truncateTestDatabase();
-    const reg = await request(app)
-      .post('/api/auth/register')
-      .send({ email: `av-val-${Date.now()}@local.test`, password: 'secret12' });
-    expect(reg.status).toBe(201);
-    token = reg.body.data.token;
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
 
-  afterAll(async () => {
-    if (sequelize) {
-      await sequelize.close();
-    }
-  });
-
+describe('Assessment variant API validation (integration)', () => {
   it('returns 400 when PATCH /role has no studyRole in body', async () => {
     const res = await request(app)
       .patch('/api/assessment-variant/assessments/1/role')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', 'session=valid')
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
 
-  it('returns 400 when GET variant-readiness is missing courseId', async () => {
-    const res = await request(app)
-      .get('/api/assessment-variant/assessments/1/variant-readiness')
-      .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(400);
-    expect(String(res.body.error || '')).toMatch(/courseId/i);
-  });
+  // variant-readiness derives courseId from the authorized assessment (req.qmCourse),
+  // so there is no client-supplied courseId to validate here — see variantReadinessScope.test.js.
 
-  it('returns 400 when POST assemble-variants is missing required ids', async () => {
+  it('returns 404 when POST assemble-variants omits courseId (no course to authorize)', async () => {
     const res = await request(app)
       .post('/api/assessment-variant/assemble-variants')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', 'session=valid')
       .send({ referenceAssessmentId: 1 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
 
   it('returns 400 when POST assemble-by-metadata is missing required ids', async () => {
     const res = await request(app)
       .post('/api/assessment-variant/assemble-by-metadata')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', 'session=valid')
       .send({ courseId: 1 });
     expect(res.status).toBe(400);
   });
@@ -82,7 +95,7 @@ describeDb('Assessment variant API validation (integration)', () => {
   it('returns 400 when POST generate-bank-variants has empty questionIds', async () => {
     const res = await request(app)
       .post('/api/assessment-variant/generate-bank-variants')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', 'session=valid')
       .send({ courseId: 1, questionIds: [] });
     expect(res.status).toBe(400);
   });
@@ -90,7 +103,7 @@ describeDb('Assessment variant API validation (integration)', () => {
   it('returns 400 when POST review-variant-ai is missing required ids', async () => {
     const res = await request(app)
       .post('/api/assessment-variant/review-variant-ai')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', 'session=valid')
       .send({ baselineAssessmentId: 1, courseId: 1 });
     expect(res.status).toBe(400);
   });

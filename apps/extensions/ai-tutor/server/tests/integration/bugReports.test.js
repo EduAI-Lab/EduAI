@@ -1,120 +1,45 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
-import { makeAdmin, makeProfessor, makeStudent, prisma, truncateAll } from '../helpers.js';
+import { makeAdmin, makeProfessor, makeStudent, makeTA } from '../helpers.js';
 
-async function createCourseContext({ professorId, titlePrefix }) {
-  const course = await prisma.courseOffering.create({
-    data: {
-      title: `${titlePrefix} Course`,
-      isPublished: true,
-    },
-  });
+// Mock the Core client so tests don't require a live Core instance.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    postCoreBugReport: vi.fn().mockResolvedValue(null),
+    listCoreAdminBugReports: vi.fn().mockResolvedValue({ reports: [], total: 0 }),
+    patchCoreAdminBugReportStatus: vi.fn().mockResolvedValue({ id: 'br-1', status: 'IN_PROGRESS' }),
+  };
+});
 
-  await prisma.courseInstructor.create({
-    data: {
-      courseOfferingId: course.id,
-      userId: professorId,
-      role: 'LEAD',
-    },
-  });
-
-  const module = await prisma.module.create({
-    data: {
-      title: `${titlePrefix} Module`,
-      position: 0,
-      isPublished: true,
-      courseOfferingId: course.id,
-    },
-  });
-
-  const lesson = await prisma.lesson.create({
-    data: {
-      title: `${titlePrefix} Lesson`,
-      position: 0,
-      isPublished: true,
-      moduleId: module.id,
-    },
-  });
-
-  const topic = await prisma.topic.create({
-    data: {
-      name: `${titlePrefix} Topic`,
-      courseOfferingId: course.id,
-    },
-  });
-
-  const activity = await prisma.activity.create({
-    data: {
-      title: `${titlePrefix} Activity`,
-      instructionsMd: 'Test instructions',
-      lessonId: lesson.id,
-      mainTopicId: topic.id,
-    },
-  });
-
-  return { course, module, lesson, topic, activity };
-}
+const { postCoreBugReport, listCoreAdminBugReports, patchCoreAdminBugReportStatus } =
+  await import('../../src/services/eduaiClient.js');
 
 describe('Bug report routes', () => {
   let student;
   let professor;
   let admin;
+  let ta;
   let studentApp;
   let professorApp;
   let adminApp;
-  let primaryContext;
-  let secondaryContext;
+  let taApp;
 
   beforeEach(async () => {
-    await truncateAll();
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
 
     student = makeStudent();
     professor = makeProfessor();
     admin = makeAdmin();
-
-    await prisma.user.createMany({
-      data: [
-        {
-          id: student.id,
-          name: student.name,
-          email: student.email,
-          role: 'STUDENT',
-        },
-        {
-          id: professor.id,
-          name: professor.name,
-          email: professor.email,
-          role: 'PROFESSOR',
-        },
-        {
-          id: admin.id,
-          name: admin.name,
-          email: admin.email,
-          role: 'ADMIN',
-        },
-      ],
-    });
-
-    primaryContext = await createCourseContext({
-      professorId: professor.id,
-      titlePrefix: 'Primary',
-    });
-    secondaryContext = await createCourseContext({
-      professorId: professor.id,
-      titlePrefix: 'Secondary',
-    });
-
-    await prisma.courseEnrollment.create({
-      data: {
-        courseOfferingId: primaryContext.course.id,
-        userId: student.id,
-      },
-    });
+    ta = makeTA();
 
     studentApp = await createApp({ mockUser: student });
     professorApp = await createApp({ mockUser: professor });
     adminApp = await createApp({ mockUser: admin });
+    taApp = await createApp({ mockUser: ta });
   });
 
   it('student can submit a page-level bug report', async () => {
@@ -125,13 +50,12 @@ describe('Bug report routes', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('unhandled');
-    expect(res.body.context).toEqual({
-      courseOfferingId: null,
-      moduleId: null,
-      lessonId: null,
-      activityId: null,
-    });
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
+    expect(postCoreBugReport).toHaveBeenCalledWith(
+      student.id,
+      expect.objectContaining({ description: 'The lesson page froze after I clicked submit twice.' }),
+    );
   });
 
   it('professor can submit a page-level bug report', async () => {
@@ -140,24 +64,40 @@ describe('Bug report routes', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('unhandled');
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
+    expect(postCoreBugReport).toHaveBeenCalledWith(professor.id, expect.any(Object));
   });
 
-  it('admin cannot submit to /api/bug-reports', async () => {
+  it('admin can submit a bug report (#309)', async () => {
     const res = await request(adminApp).post('/api/bug-reports').send({
-      description: 'Should not be allowed for admins.',
+      description: 'Admin-reported rendering glitch on the dashboard.',
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
+  });
+
+  it('TA can submit a bug report (#309)', async () => {
+    const res = await request(taApp).post('/api/bug-reports').send({
+      description: 'TA found a broken activity link on the lesson page.',
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
   });
 
   it('unauthenticated requests are rejected with 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const app = await createApp();
     const res = await request(app).post('/api/bug-reports').send({
       description: 'Unauthenticated submission should fail.',
     });
 
     expect(res.status).toBe(401);
+    expect(postCoreBugReport).not.toHaveBeenCalled();
   });
 
   it('rejects descriptions that are too short or too long', async () => {
@@ -170,182 +110,83 @@ describe('Bug report routes', () => {
       .post('/api/bug-reports')
       .send({ description: 'x'.repeat(2001) });
     expect(longRes.status).toBe(400);
+
+    expect(postCoreBugReport).not.toHaveBeenCalled();
   });
 
-  it('allows contextual report for valid enrolled student', async () => {
+  it('passes userId to Core even when isAnonymous is true', async () => {
     const res = await request(studentApp).post('/api/bug-reports').send({
-      description: 'Activity content loaded with stale answers.',
-      context: {
-        courseOfferingId: primaryContext.course.id,
-        moduleId: primaryContext.module.id,
-        lessonId: primaryContext.lesson.id,
-        activityId: primaryContext.activity.id,
-      },
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.context).toEqual({
-      courseOfferingId: primaryContext.course.id,
-      moduleId: primaryContext.module.id,
-      lessonId: primaryContext.lesson.id,
-      activityId: primaryContext.activity.id,
-    });
-  });
-
-  it('rejects contextual report when student lacks enrollment', async () => {
-    const res = await request(studentApp).post('/api/bug-reports').send({
-      description: 'I should not be able to report against this course context.',
-      context: {
-        courseOfferingId: secondaryContext.course.id,
-        moduleId: secondaryContext.module.id,
-        lessonId: secondaryContext.lesson.id,
-        activityId: secondaryContext.activity.id,
-      },
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('allows contextual report for valid professor assignment', async () => {
-    const res = await request(professorApp).post('/api/bug-reports').send({
-      description: 'Lesson editor did not save latest draft.',
-      context: {
-        courseOfferingId: primaryContext.course.id,
-        moduleId: primaryContext.module.id,
-        lessonId: primaryContext.lesson.id,
-      },
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.context.lessonId).toBe(primaryContext.lesson.id);
-  });
-
-  it('rejects contextual report when professor is not assigned to course', async () => {
-    const otherProfessor = makeProfessor();
-    await prisma.user.create({
-      data: {
-        id: otherProfessor.id,
-        name: otherProfessor.name,
-        email: otherProfessor.email,
-        role: 'PROFESSOR',
-      },
-    });
-    const otherProfessorApp = await createApp({ mockUser: otherProfessor });
-
-    const res = await request(otherProfessorApp).post('/api/bug-reports').send({
-      description: 'Unauthorized professor context report.',
-      context: {
-        courseOfferingId: primaryContext.course.id,
-        moduleId: primaryContext.module.id,
-      },
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('admin can list reports and non-admin cannot', async () => {
-    await request(studentApp).post('/api/bug-reports').send({
-      description: 'Admin listing should include this report.',
-      context: {
-        courseOfferingId: primaryContext.course.id,
-        moduleId: primaryContext.module.id,
-        lessonId: primaryContext.lesson.id,
-        activityId: primaryContext.activity.id,
-      },
-      pageUrl: 'http://localhost:5173/student/lessons/1',
-    });
-
-    const adminRes = await request(adminApp).get('/api/admin/bug-reports');
-    expect(adminRes.status).toBe(200);
-    expect(Array.isArray(adminRes.body)).toBe(true);
-    expect(adminRes.body.length).toBeGreaterThanOrEqual(1);
-    expect(adminRes.body[0]).toEqual(
-      expect.objectContaining({
-        courseTitle: primaryContext.course.title,
-        moduleTitle: primaryContext.module.title,
-        lessonTitle: primaryContext.lesson.title,
-        activityTitle: primaryContext.activity.title,
-      }),
-    );
-
-    const studentRes = await request(studentApp).get('/api/admin/bug-reports');
-    expect(studentRes.status).toBe(403);
-  });
-
-  it('admin can update report status and invalid status is rejected', async () => {
-    const createRes = await request(studentApp).post('/api/bug-reports').send({
-      description: 'Status workflow test report payload.',
-    });
-    const bugId = createRes.body.id;
-
-    const patchRes = await request(adminApp).patch(`/api/admin/bug-reports/${bugId}`).send({
-      status: 'in progress',
-    });
-    expect(patchRes.status).toBe(200);
-    expect(patchRes.body.status).toBe('in progress');
-
-    const invalidRes = await request(adminApp).patch(`/api/admin/bug-reports/${bugId}`).send({
-      status: 'not-a-valid-status',
-    });
-    expect(invalidRes.status).toBe(400);
-  });
-
-  it('anonymous report keeps real userId but admin response masks identity', async () => {
-    const createRes = await request(studentApp).post('/api/bug-reports').send({
       description: 'Anonymous report identity masking test.',
       isAnonymous: true,
     });
-    expect(createRes.status).toBe(201);
 
-    const row = await prisma.bugReport.findUnique({
-      where: { id: createRes.body.id },
-    });
-    expect(row?.userId).toBe(student.id);
-    expect(row?.isAnonymous).toBe(true);
-
-    const listRes = await request(adminApp).get('/api/admin/bug-reports');
-    expect(listRes.status).toBe(200);
-    const created = listRes.body.find((item) => item.id === createRes.body.id);
-    expect(created).toBeDefined();
-    expect(created.userId).toBe(student.id);
-    expect(created.reporterName).toBe('Anonymous');
-    expect(created.reporterEmail).toBeNull();
-    expect(created.user.email).toBeNull();
+    expect(res.status).toBe(201);
+    expect(postCoreBugReport).toHaveBeenCalledOnce();
+    const [calledUserId, calledPayload] = postCoreBugReport.mock.calls[0];
+    expect(calledUserId).toBe(student.id);
+    expect(calledPayload.isAnonymous).toBe(true);
   });
 
-  it('persists base64 screenshot and context IDs with round-trip admin data', async () => {
-    const screenshot = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ';
+  it('Core errors surface as 500', async () => {
+    postCoreBugReport.mockRejectedValueOnce(
+      Object.assign(new Error('Core unavailable'), { status: 503 }),
+    );
 
-    const createRes = await request(studentApp).post('/api/bug-reports').send({
-      description: 'Screenshot persistence test with context.',
-      screenshot,
-      consoleLogs: '[{\"level\":\"error\",\"message\":\"boom\"}]',
-      networkLogs: '[{\"url\":\"/api/test\",\"status\":500}]',
-      context: {
-        courseOfferingId: primaryContext.course.id,
-        moduleId: primaryContext.module.id,
-        lessonId: primaryContext.lesson.id,
-      },
+    const res = await request(studentApp).post('/api/bug-reports').send({
+      description: 'Core is down, what happens here.',
     });
 
-    expect(createRes.status).toBe(201);
+    expect(res.status).toBe(500);
+  });
 
-    const dbRow = await prisma.bugReport.findUnique({
-      where: { id: createRes.body.id },
+  it('admin list returns only AI Tutor reports proxied from Core (#648)', async () => {
+    listCoreAdminBugReports.mockResolvedValueOnce({
+      reports: [
+        {
+          id: 'br-ai-1',
+          source: 'AI_TUTOR',
+          status: 'UNHANDLED',
+          description: 'Chat panel froze on mobile.',
+          isAnonymous: false,
+          userId: student.id,
+          userEmail: 'student@test.com',
+          userName: 'Student',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          context: { courseOfferingId: 42 },
+        },
+      ],
+      total: 1,
     });
-    expect(dbRow?.screenshot).toBe(screenshot);
-    expect(dbRow?.courseOfferingId).toBe(primaryContext.course.id);
-    expect(dbRow?.moduleId).toBe(primaryContext.module.id);
-    expect(dbRow?.lessonId).toBe(primaryContext.lesson.id);
-    expect(dbRow?.activityId).toBeNull();
 
-    const listRes = await request(adminApp).get('/api/admin/bug-reports');
-    const adminRow = listRes.body.find((item) => item.id === createRes.body.id);
-    expect(adminRow).toBeDefined();
-    expect(adminRow.screenshot).toBe(screenshot);
-    expect(adminRow.courseTitle).toBe(primaryContext.course.title);
-    expect(adminRow.moduleTitle).toBe(primaryContext.module.title);
-    expect(adminRow.lessonTitle).toBe(primaryContext.lesson.title);
-    expect(adminRow.activityTitle).toBeNull();
+    const res = await request(adminApp).get('/api/admin/bug-reports');
+
+    expect(res.status).toBe(200);
+    expect(listCoreAdminBugReports).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ source: 'AI_TUTOR' }),
+    );
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].status).toBe('unhandled');
+    expect(res.body[0].description).toMatch(/Chat panel froze/);
+  });
+
+  it('admin can patch triage status via Core (#648)', async () => {
+    patchCoreAdminBugReportStatus.mockResolvedValueOnce({
+      id: 'br-ai-1',
+      status: 'RESOLVED',
+    });
+
+    const res = await request(adminApp)
+      .patch('/api/admin/bug-reports/br-ai-1')
+      .send({ status: 'resolved' });
+
+    expect(res.status).toBe(200);
+    expect(patchCoreAdminBugReportStatus).toHaveBeenCalledWith(
+      expect.any(String),
+      'br-ai-1',
+      'RESOLVED',
+    );
+    expect(res.body.status).toBe('resolved');
   });
 });

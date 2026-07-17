@@ -13,7 +13,6 @@ import { AssessmentSections } from './AssessmentSections.js';
 import { SectionVariants } from './SectionVariants.js';
 import { CanvasIntegration } from './CanvasIntegration.js';
 import { CanvasCourseMapping } from './CanvasCourseMapping.js';
-import { BugReport } from './BugReport.js';
 import { VariantSelectionCursor } from './VariantSelectionCursor.js';
 import { CanvasBankMapping } from './CanvasBankMapping.js';
 import { CanvasBankQuestionMapping } from './CanvasBankQuestionMapping.js';
@@ -23,6 +22,13 @@ import { CanvasBankQuestionMapping } from './CanvasBankQuestionMapping.js';
 // User associations
 User.hasMany(Course, { foreignKey: 'userId', as: 'courses' });
 Course.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// Creator (RBAC §16/§19 TA own-only) associations
+User.hasMany(Question_Metadata, { foreignKey: 'createdBy', as: 'createdQuestions' });
+Question_Metadata.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+
+User.hasMany(Variants, { foreignKey: 'createdBy', as: 'createdVariants' });
+Variants.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
 
 // Course associations
 Course.hasMany(Topics, { foreignKey: 'courseId', as: 'topics' });
@@ -35,9 +41,12 @@ Question_Metadata.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 Topics.hasMany(Question_Metadata, { foreignKey: 'primaryTopicId', as: 'primaryQuestions' });
 Question_Metadata.belongsTo(Topics, { foreignKey: 'primaryTopicId', as: 'primaryTopic' });
 
-// Assessment and course associations
-Course.hasMany(Assessments, { foreignKey: 'courseId', as: 'assessments' });
-Assessments.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+// Assessment and course associations. courseId is nullable (an assessment can be
+// created before the course is linked to Core), so Sequelize's implicit onDelete
+// default would be SET NULL — explicit CASCADE here matches Topics/Question_Metadata
+// so deleting a course never leaves an orphaned Assessments row (§802).
+Course.hasMany(Assessments, { foreignKey: 'courseId', as: 'assessments', onDelete: 'CASCADE' });
+Assessments.belongsTo(Course, { foreignKey: 'courseId', as: 'course', onDelete: 'CASCADE' });
 
 Question_Metadata.hasMany(Variants, { foreignKey: 'questionMetadataId', as: 'variants' });
 Variants.belongsTo(Question_Metadata, { foreignKey: 'questionMetadataId', as: 'questionMetadata' });
@@ -52,8 +61,12 @@ AssessmentSections.belongsTo(Assessments, { foreignKey: 'assessmentId', as: 'ass
 AssessmentSections.hasMany(SectionVariants, { foreignKey: 'sectionId', as: 'sectionVariants' });
 SectionVariants.belongsTo(AssessmentSections, { foreignKey: 'sectionId', as: 'section' });
 
-SectionVariants.belongsTo(Variants, { foreignKey: 'variantId', as: 'variant' });
-Variants.hasMany(SectionVariants, { foreignKey: 'variantId', as: 'sectionLinks' });
+// Sequelize's implicit onDelete inference does not reliably resolve to CASCADE for
+// every NOT NULL belongsTo (verified empirically: this pair defaulted to NO ACTION,
+// which blocks a course-delete cascade the moment Postgres tries to remove the
+// Variant while a SectionVariants row still references it) — declared explicitly.
+SectionVariants.belongsTo(Variants, { foreignKey: 'variantId', as: 'variant', onDelete: 'CASCADE' });
+Variants.hasMany(SectionVariants, { foreignKey: 'variantId', as: 'sectionLinks', onDelete: 'CASCADE' });
 
 // Variants self-reference for referenceId
 Variants.hasMany(Variants, { foreignKey: 'referenceId', as: 'referencedVariants' });
@@ -68,9 +81,6 @@ CanvasCourseMapping.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Course.hasOne(CanvasCourseMapping, { foreignKey: 'localCourseId', as: 'canvasMapping' });
 CanvasCourseMapping.belongsTo(Course, { foreignKey: 'localCourseId', as: 'localCourse' });
-
-User.hasMany(BugReport, { foreignKey: 'userId', as: 'bugReports' });
-BugReport.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 Course.hasMany(VariantSelectionCursor, { foreignKey: 'courseId', as: 'variantSelectionCursors' });
 VariantSelectionCursor.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
@@ -108,7 +118,6 @@ export {
   SectionVariants,
   CanvasIntegration,
   CanvasCourseMapping,
-  BugReport,
   VariantSelectionCursor,
   CanvasBankMapping,
   CanvasBankQuestionMapping

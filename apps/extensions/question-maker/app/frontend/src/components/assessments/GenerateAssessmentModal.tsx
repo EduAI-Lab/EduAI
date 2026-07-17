@@ -2,13 +2,28 @@
  * Modal for creating or editing an assessment blueprint (name, type, semester).
  * Returns collected params to parent callbacks.
  */
+import {
+    Button,
+    Input,
+    Label,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+    TERM_CODES,
+    termFromMonth,
+    termLabel,
+    termLabelLong,
+    termSortKey,
+} from '@eduai/ui';
+import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '../ui/card';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Tooltip } from '../ui/tooltip';
 import { AssessmentGenerationParams, AssessmentType } from '../../types/question';
 
 interface GenerateAssessmentModalProps {
@@ -21,20 +36,37 @@ interface GenerateAssessmentModalProps {
   courseId: number;
 }
 
-function getSemesterOptions(initialSemester?: string): string[] {
-  const options: string[] = [];
+/** Canonical current-term value, e.g. "2026W1", from today's date. */
+function defaultSemester(): string {
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const seasons = ['Winter', 'Spring', 'Summer', 'Fall'] as const;
+  return termLabel(termFromMonth(now.getMonth()), now.getFullYear());
+}
+
+/**
+ * Semester picker options using the canonical UBC term model. `value` is the
+ * compact code ("2026W1") stored on the assessment; `label` is the readable
+ * heading ("Winter Term 1 2026"). Any pre-existing legacy value (e.g. a saved
+ * "Fall 2026") is preserved at the top so editing an old assessment still works.
+ */
+function getSemesterOptions(initialSemester?: string): { value: string; label: string }[] {
+  const currentYear = new Date().getFullYear();
+  const opts: { value: string; label: string; sort: number }[] = [];
   for (let y = currentYear - 1; y <= currentYear + 2; y++) {
-    for (const season of seasons) {
-      options.push(`${season} ${y}`);
+    for (const code of TERM_CODES) {
+      opts.push({
+        value: termLabel(code, y),
+        label: termLabelLong(code, y),
+        sort: termSortKey({ term: code, year: y }),
+      });
     }
   }
-  if (initialSemester?.trim() && !options.includes(initialSemester.trim())) {
-    options.unshift(initialSemester.trim());
+  const legacy = initialSemester?.trim();
+  if (legacy && !opts.some((o) => o.value === legacy)) {
+    opts.push({ value: legacy, label: legacy, sort: Number.POSITIVE_INFINITY });
   }
-  return options;
+  return opts
+    .sort((a, b) => b.sort - a.sort)
+    .map(({ value, label }) => ({ value, label }));
 }
 
 export const GenerateAssessmentModal = ({
@@ -49,17 +81,15 @@ export const GenerateAssessmentModal = ({
   const isEdit = mode === 'edit';
   const [assessmentName, setAssessmentName] = React.useState(initialValues?.name ?? '');
   const [assessmentType, setAssessmentType] = React.useState<AssessmentType>(initialValues?.type ?? 'Assignment');
-  const [assessmentSemester, setAssessmentSemester] = React.useState(() => {
-    if (initialValues?.semester) return initialValues.semester;
-    const now = new Date();
-    return `Fall ${now.getFullYear()}`;
-  });
+  const [assessmentSemester, setAssessmentSemester] = React.useState(
+    () => initialValues?.semester ?? defaultSemester(),
+  );
 
   React.useEffect(() => {
     if (!open) return;
     setAssessmentName(initialValues?.name ?? '');
     setAssessmentType(initialValues?.type ?? 'Assignment');
-    setAssessmentSemester(initialValues?.semester ?? `Fall ${new Date().getFullYear()}`);
+    setAssessmentSemester(initialValues?.semester ?? defaultSemester());
   }, [open, initialValues?.name, initialValues?.type, initialValues?.semester]);
 
   const semesterOptions = React.useMemo(
@@ -87,38 +117,13 @@ export const GenerateAssessmentModal = ({
 
   const disabledReason = getDisabledReason();
 
-  if (!open) return null;
-
   const handleGenerate = () => {
-    // Provide default values for removed difficulty matrix fields
-    const difficultyDistribution = {
-      easy: 0,
-      medium: 0,
-      hard: 0
-    };
-
-    const reasoningDistribution = {
-      factual: 0,
-      analytical: 0,
-      application: 0
-    };
-
+    const difficultyDistribution = { easy: 0, medium: 0, hard: 0 };
+    const reasoningDistribution = { factual: 0, analytical: 0, application: 0 };
     const reasoningData = {
-      factual: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      },
-      analytical: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      },
-      application: {
-        total: 0,
-        easyBoundary: 0,
-        hardBoundary: 0
-      }
+      factual: { total: 0, easyBoundary: 0, hardBoundary: 0 },
+      analytical: { total: 0, easyBoundary: 0, hardBoundary: 0 },
+      application: { total: 0, easyBoundary: 0, hardBoundary: 0 },
     };
 
     const payload: AssessmentGenerationParams = {
@@ -144,23 +149,29 @@ export const GenerateAssessmentModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <Card className="relative flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden">
-        <CardHeader className="border-b">
-          <CardTitle>{isEdit ? 'Edit Assessment Blueprint' : 'Create Assessment Blueprint'}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1 space-y-6 overflow-y-auto py-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="assessmentName">Assessment name</Label>
-              <Input
-                id="assessmentName"
-                value={assessmentName}
-                onChange={(e) => setAssessmentName(e.target.value)}
-                placeholder="e.g. Midterm 1"
-              />
-            </div>
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {isEdit ? 'Edit assessment details' : 'New assessment'}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="assessmentName">
+              Assessment name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="assessmentName"
+              value={assessmentName}
+              onChange={(e) => setAssessmentName(e.target.value)}
+              placeholder="e.g. Midterm 1"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="assessmentType">Assessment type</Label>
               <Select value={assessmentType} onValueChange={(value) => setAssessmentType(value as AssessmentType)}>
@@ -176,6 +187,7 @@ export const GenerateAssessmentModal = ({
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="assessmentSemester">Semester</Label>
               <Select value={assessmentSemester} onValueChange={setAssessmentSemester}>
@@ -184,33 +196,34 @@ export const GenerateAssessmentModal = ({
                 </SelectTrigger>
                 <SelectContent>
                   {semesterOptions.map((sem) => (
-                    <SelectItem key={sem} value={sem}>
-                      {sem}
+                    <SelectItem key={sem.value} value={sem.value}>
+                      {sem.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-        </CardContent>
-        <CardFooter className="flex justify-end gap-3 border-t bg-muted/40 py-4">
+        </div>
+
+        <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           {disabledReason ? (
             <Tooltip content={disabledReason} multiline>
               <span className="inline-block">
                 <Button onClick={handleGenerate} disabled={!canGenerate}>
-                  Save Blueprint
+                  {isEdit ? 'Save changes' : 'Create assessment'}
                 </Button>
               </span>
             </Tooltip>
           ) : (
             <Button onClick={handleGenerate} disabled={!canGenerate}>
-              Save Blueprint
+              {isEdit ? 'Save Changes' : 'Create Blueprint'}
             </Button>
           )}
-        </CardFooter>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 

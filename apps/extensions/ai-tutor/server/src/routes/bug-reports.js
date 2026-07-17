@@ -1,19 +1,21 @@
 import express from 'express';
-import { requireRole, requireRoles } from '../middleware/auth.js';
+import { requireRole } from '../middleware/auth.js';
+import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   BugReportError,
   createBugReport,
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
-import { mapAdminBugReportRow, mapBugReportSummary } from '../utils/bugReportMappers.js';
 
 const router = express.Router();
 
-router.post('/bug-reports', requireRoles(['STUDENT', 'PROFESSOR']), async (req, res) => {
+router.post('/bug-reports', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) return res.status(401).json({ error: 'Authentication required' });
   try {
-    const report = await createBugReport(req.user, req.body || {});
-    res.status(201).json(mapBugReportSummary(report));
+    await createBugReport(authUser, req.body || {});
+    res.status(201).json({ ok: true });
   } catch (error) {
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });
@@ -22,19 +24,26 @@ router.post('/bug-reports', requireRoles(['STUDENT', 'PROFESSOR']), async (req, 
   }
 });
 
-router.get('/admin/bug-reports', requireRole('ADMIN'), async (_req, res) => {
+router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
   try {
-    const rows = await listAdminBugReports();
-    res.json(rows.map(mapAdminBugReportRow));
+    const cookie = getEduAiCookieForRequest(req);
+    const rows = await listAdminBugReports(cookie);
+    res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    const status = typeof error?.status === 'number' ? error.status : 500;
+    res.status(status).json({ error: String(error.message ?? error) });
   }
 });
 
 router.patch('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
   try {
-    const updated = await updateBugReportStatus(req.params.bugReportId, req.body?.status);
-    res.json(mapAdminBugReportRow(updated));
+    const cookie = getEduAiCookieForRequest(req);
+    const updated = await updateBugReportStatus(
+      req.params.bugReportId,
+      req.body?.status,
+      cookie,
+    );
+    res.json(updated);
   } catch (error) {
     if (error instanceof BugReportError) {
       return res.status(error.status).json({ error: error.message });

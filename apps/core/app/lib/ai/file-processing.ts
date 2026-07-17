@@ -1,6 +1,414 @@
 import { createHash } from 'crypto';
 
+/** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
+export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
 
+/** Default character overlap between consecutive semantic upload chunks (matches generateChunks fallback). */
+export const DEFAULT_SEMANTIC_CHUNK_OVERLAP = 80;
+
+// ---------------------------------------------------------------------------
+// Decompression (zip-bomb) guardrails
+// ---------------------------------------------------------------------------
+// `validateFile` bounds only the *compressed* upload (50MB). PPTX/DOCX are ZIP
+// containers, so a crafted archive can declare gigabytes of uncompressed
+// entries and OOM the server when jszip/mammoth inflate them. These caps are
+// enforced against the entry sizes recorded in the ZIP central directory
+// (populated by `loadAsync` without decompressing anything). jszip's own
+// `DataLengthProbe` re-checks the declared size while inflating, so an archive
+// whose header lies about entry size throws rather than over-allocating.
+
+/** Maximum number of entries permitted in an uploaded ZIP container. */
+export const MAX_ZIP_ENTRIES = 5000;
+
+/** Maximum declared uncompressed size for any single ZIP entry (100MB). */
+export const MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
+/** Maximum total declared uncompressed size across all ZIP entries (500MB). */
+export const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024;
+
+/** Maximum length of extracted text content, before chunking (defense-in-depth for all formats). */
+export const MAX_EXTRACTED_CONTENT_CHARS = 20_000_000;
+
+/**
+ * Reject a loaded ZIP whose entry count or declared uncompressed size exceeds
+ * the caps above, before any entry is inflated. `zip` is a JSZip instance.
+ */
+export function assertZipWithinLimits(zip: any, label: string): void {
+  const names = Object.keys(zip?.files ?? {});
+  if (names.length > MAX_ZIP_ENTRIES) {
+    throw new Error(
+      `${label} rejected: archive contains ${names.length} entries, exceeding the maximum of ${MAX_ZIP_ENTRIES}`,
+    );
+  }
+
+  let total = 0;
+  for (const name of names) {
+    const entry = zip.files[name];
+    if (!entry || entry.dir) continue;
+
+    // Declared uncompressed size from the central directory; no decompression.
+    const size: unknown = entry._data?.uncompressedSize;
+    if (typeof size !== 'number' || size < 0) continue; // unknown → jszip enforces at inflate time
+
+    if (size > MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `${label} rejected: entry "${name}" declares ${size} uncompressed bytes, exceeding the per-entry limit of ${MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES}`,
+      );
+    }
+
+    total += size;
+    if (total > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `${label} rejected: total uncompressed size exceeds the limit of ${MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES} bytes (possible zip bomb)`,
+      );
+    }
+  }
+}
+
+/**
+ * Load a ZIP archive and enforce the decompression caps before returning it.
+ * Used for both PPTX and (pre-mammoth) DOCX inputs.
+ */
+async function loadZipWithLimits(arrayBuffer: ArrayBuffer, label: string): Promise<any> {
+  const JSZip = await import('jszip');
+  const zip = await JSZip.default.loadAsync(arrayBuffer);
+  assertZipWithinLimits(zip, label);
+  return zip;
+}
+
+export function joinSemanticChunks(chunks: string[]): string {
+  return chunks.join(`\n\n${SEMANTIC_CHUNK_SEPARATOR}\n\n`);
+}
+
+/**
+ * Detect PDF/DOCX/PPTX section boundary lines for document-aware chunking.
+ */
+export function isDocumentSectionBoundary(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+
+  if (/^---\s*Slide\s+\d+\s*---$/i.test(trimmed)) return true;
+  if (/^(?:Chapter|Section|Part)\s+\d+/i.test(trimmed)) return true;
+  if (/^\d+\)\s+\S/.test(trimmed)) return true;
+  if (/^\d+(?:\.\d+)+\s+\S/.test(trimmed)) return true;
+  if (/^\d+\.\s+\S/.test(trimmed)) return true;
+
+  // Clinical / health-science section markers (SOAP, discharge summaries, etc.)
+  if (/^(?:S|O|A|P):\s*\S/i.test(trimmed)) return true;
+  if (/^(?:SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)(?:\s*:|$)/i.test(trimmed)) return true;
+  if (
+    /^(?:CHIEF COMPLAINT|HISTORY OF PRESENT ILLNESS|REVIEW OF SYSTEMS|PAST MEDICAL HISTORY|PHYSICAL EXAMINATION|DISCHARGE SUMMARY|MEDICATIONS|ALLERGIES|VITAL SIGNS|LAB RESULTS)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  if (/^ICD(?:-10)?:\s*[A-Z]\d/i.test(trimmed)) return true;
+
+  if (trimmed.length >= 3 && trimmed.length <= 60 && !/[.!?]/.test(trimmed)) {
+    const letters = trimmed.replace(/[^a-zA-Z]/g, '');
+    if (letters.length >= 3) {
+      const upperCount = (letters.match(/[A-Z]/g) ?? []).length;
+      if (upperCount / letters.length >= 0.85) return true;
+    }
+  }
+
+  return false;
+}
+
+/** Ranges of inline `$...$` and display `$$...$$` math that must not be split during chunking. */
+export function findEquationSpans(content: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  let i = 0;
+
+  while (i < content.length) {
+    if (content.startsWith('$$', i)) {
+      const close = content.indexOf('$$', i + 2);
+      if (close !== -1) {
+        spans.push({ start: i, end: close + 2 });
+        i = close + 2;
+        continue;
+      }
+    }
+
+    if (content[i] === '$' && content[i - 1] !== '\\') {
+      const close = content.indexOf('$', i + 1);
+      if (close !== -1 && content[close - 1] !== '\\') {
+        spans.push({ start: i, end: close + 1 });
+        i = close + 1;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return spans;
+}
+
+function isInsideEquationSpan(index: number, spans: Array<{ start: number; end: number }>): boolean {
+  return spans.some((span) => index > span.start && index < span.end);
+}
+
+function findSafeSplitIndex(
+  text: string,
+  preferredIndex: number,
+  spans: Array<{ start: number; end: number }>,
+  minIndex = 0,
+): number {
+  if (!isInsideEquationSpan(preferredIndex, spans)) {
+    return preferredIndex;
+  }
+
+  for (let i = preferredIndex; i > minIndex; i--) {
+    if (!isInsideEquationSpan(i, spans)) {
+      return i;
+    }
+  }
+
+  // Prefer keeping the equation intact even if the piece exceeds maxChunkSize.
+  for (const span of spans) {
+    if (preferredIndex > span.start && preferredIndex < span.end) {
+      return span.end;
+    }
+  }
+
+  return preferredIndex;
+}
+
+/** Split oversized text without breaking inline/display LaTeX delimiters. */
+function splitTextRespectingEquations(text: string, maxChunkSize: number): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxChunkSize) return [trimmed];
+
+  const equationSpans = findEquationSpans(trimmed);
+  const pieces: string[] = [];
+  let start = 0;
+
+  while (start < trimmed.length) {
+    let end = Math.min(start + maxChunkSize, trimmed.length);
+    if (end < trimmed.length && equationSpans.length > 0) {
+      end = findSafeSplitIndex(trimmed, end, equationSpans, start);
+    }
+
+    if (end <= start) {
+      end = Math.min(start + maxChunkSize, trimmed.length);
+    }
+
+    const piece = trimmed.slice(start, end).trim();
+    if (piece.length > 0) pieces.push(piece);
+    start = end;
+  }
+
+  return pieces;
+}
+
+function stripInlineHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function convertTableHtmlToMarkdown(tableHtml: string): string {
+  const rows: string[][] = [];
+  const rowMatches = tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+
+  for (const rowMatch of rowMatches) {
+    const cells: string[] = [];
+    const cellMatches = rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi);
+    for (const cellMatch of cellMatches) {
+      cells.push(stripInlineHtml(cellMatch[1]).replace(/\|/g, '\\|'));
+    }
+    if (cells.length > 0) rows.push(cells);
+  }
+
+  if (rows.length === 0) return '';
+
+  const colCount = Math.max(...rows.map((row) => row.length));
+  const normalized = rows.map((row) => {
+    const copy = [...row];
+    while (copy.length < colCount) copy.push('');
+    return copy;
+  });
+
+  const header = normalized[0];
+  const separator = header.map(() => '---');
+  const body = normalized.slice(1);
+  const lines = [
+    `| ${header.join(' | ')} |`,
+    `| ${separator.join(' | ')} |`,
+    ...body.map((row) => `| ${row.join(' | ')} |`),
+  ];
+
+  return lines.join('\n');
+}
+
+function mathMlFragmentToLatex(mathml: string): string {
+  const fracMatch = mathml.match(
+    /<m:fraction[^>]*>[\s\S]*?<m:num[^>]*>([\s\S]*?)<\/m:num>[\s\S]*?<m:den[^>]*>([\s\S]*?)<\/m:den>/i,
+  );
+  if (fracMatch) {
+    const num = mathMlFragmentToLatex(fracMatch[1]) || stripInlineHtml(fracMatch[1]);
+    const den = mathMlFragmentToLatex(fracMatch[2]) || stripInlineHtml(fracMatch[2]);
+    return `\\frac{${num}}{${den}}`;
+  }
+
+  const supMatch = mathml.match(/<m:sSup[^>]*>[\s\S]*?<m:e[^>]*>([\s\S]*?)<\/m:e>[\s\S]*?<m:sup[^>]*>([\s\S]*?)<\/m:sup>/i);
+  if (supMatch) {
+    const base = mathMlFragmentToLatex(supMatch[1]) || stripInlineHtml(supMatch[1]);
+    const exp = mathMlFragmentToLatex(supMatch[2]) || stripInlineHtml(supMatch[2]);
+    return `${base}^{${exp}}`;
+  }
+
+  const text = stripInlineHtml(mathml);
+  return text;
+}
+
+function convertMathHtmlToMarkdown(markup: string): string {
+  const latex = mathMlFragmentToLatex(markup);
+  if (!latex) return '';
+  const trimmed = latex.trim();
+  if (trimmed.includes('\n')) return `\n$$\n${trimmed}\n$$\n`;
+  return ` $${trimmed}$ `;
+}
+
+/**
+ * Normalize extracted document text: preserve LaTeX delimiters and convert common
+ * math/table markup into markdown-friendly forms before chunking.
+ */
+export function enrichExtractedDocumentContent(content: string): string {
+  let enriched = content;
+
+  enriched = enriched.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
+    const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
+    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+  });
+
+  enriched = enriched.replace(/\\\(([\s\S]*?)\\\)/g, (_, body) => `$${body.trim()}$`);
+  enriched = enriched.replace(/\\\[([\s\S]*?)\\\]/g, (_, body) => `\n$$\n${body.trim()}\n$$\n`);
+
+  enriched = enriched.replace(/<math[^>]*>([\s\S]*?)<\/math>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+  enriched = enriched.replace(/<m:oMath[^>]*>([\s\S]*?)<\/m:oMath>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+
+  return sanitizeTextContent(enriched);
+}
+
+function isHeadingOnlySection(lines: string[]): boolean {
+  return lines.every((line) => {
+    const trimmed = line.trim();
+    return trimmed.length === 0 || isDocumentSectionBoundary(line);
+  });
+}
+
+function splitIntoDocumentSections(content: string): string[] {
+  const lines = content.split('\n');
+  const sections: string[] = [];
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (isDocumentSectionBoundary(line) && currentLines.length > 0) {
+      if (isHeadingOnlySection(currentLines)) {
+        currentLines.push(line);
+      } else {
+        const section = currentLines.join('\n').trim();
+        if (section.length > 0) sections.push(section);
+        currentLines = [line];
+      }
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  const last = currentLines.join('\n').trim();
+  if (last.length > 0) {
+    if (isHeadingOnlySection(currentLines) && sections.length > 0) {
+      sections[sections.length - 1] += `\n\n${last}`;
+    } else {
+      sections.push(last);
+    }
+  }
+
+  return sections;
+}
+
+/**
+ * Prefix each chunk (after the first) with trailing text from the previous chunk.
+ * Overlap is baked into chunk content so SEMANTIC_CHUNK_SEPARATOR parsing stays valid.
+ */
+export function applyChunkOverlap(
+  chunks: string[],
+  overlap: number = DEFAULT_SEMANTIC_CHUNK_OVERLAP,
+): string[] {
+  if (chunks.length <= 1 || overlap <= 0) {
+    return chunks.map((chunk) => chunk.trim()).filter((chunk) => chunk.length > 0);
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    let chunk = chunks[i].trim();
+    if (i > 0) {
+      const suffix = takeOverlapSuffix(chunks[i - 1].trim(), overlap);
+      if (suffix && !chunk.startsWith(suffix)) {
+        chunk = `${suffix} ${chunk}`;
+      }
+    }
+    if (chunk.length > 0) result.push(chunk);
+  }
+  return result;
+}
+
+function takeOverlapSuffix(text: string, targetChars: number): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.length <= targetChars && isDocumentSectionBoundary(trimmed)) {
+    return '';
+  }
+
+  const words = trimmed.split(/\s+/);
+  const overlapWordCount = Math.max(1, Math.floor(targetChars / 5));
+  let suffix = words.slice(-overlapWordCount).join(' ');
+
+  if (trimmed.length <= targetChars) {
+    const cap = Math.floor(trimmed.length * 0.5);
+    if (cap === 0) return '';
+    if (suffix.length > cap) suffix = suffix.slice(-cap);
+    return suffix.trim();
+  }
+
+  if (suffix.length > targetChars * 1.5) {
+    suffix = suffix.slice(-targetChars);
+  }
+
+  return suffix.trim();
+}
+
+export function enforceMaxChunkLength(chunks: string[], maxChunkSize: number): string[] {
+  const limit = Math.floor(maxChunkSize * 1.2);
+  const result: string[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.length <= limit) {
+      result.push(chunk);
+      continue;
+    }
+
+    result.push(...splitTextRespectingEquations(chunk, maxChunkSize));
+  }
+
+  return result;
+}
 
 export interface FileInfo {
   title: string;
@@ -44,6 +452,20 @@ export function sanitizeTextContent(content: string): string {
  */
 function convertHtmlToMarkdown(html: string): string {
   let markdown = html;
+
+  // Preserve tables as markdown before stripping remaining HTML
+  markdown = markdown.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, tableBody) => {
+    const tableMarkdown = convertTableHtmlToMarkdown(tableBody);
+    return tableMarkdown ? `\n${tableMarkdown}\n` : '';
+  });
+
+  // Preserve equations from MathML / Office Math markup
+  markdown = markdown.replace(/<math[^>]*>([\s\S]*?)<\/math>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
+  markdown = markdown.replace(/<m:oMath[^>]*>([\s\S]*?)<\/m:oMath>/gi, (_, mathBody) =>
+    convertMathHtmlToMarkdown(mathBody),
+  );
 
   // Convert headers
   markdown = markdown.replace(/<h([1-6])[^>]*>(.*?)<\/h[1-6]>/gi, (match, level, content) => {
@@ -228,6 +650,9 @@ export async function extractDocxText(file: File): Promise<{ content: string; me
 
     const arrayBuffer = await file.arrayBuffer();
 
+    // DOCX is a ZIP container; bound decompression before mammoth inflates it.
+    await loadZipWithLimits(arrayBuffer, 'DOCX');
+
     // Extract as HTML first, then convert to markdown-like format for better RAG performance
     const result = await mammoth.convertToHtml({ arrayBuffer });
 
@@ -262,11 +687,8 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
     // In a production environment, you might want to use a server-side service
     // or a more robust client-side PPTX parser when available
 
-    const JSZip = await import('jszip');
-    const zip = new JSZip.default();
-
     const arrayBuffer = await file.arrayBuffer();
-    const zipContent = await zip.loadAsync(arrayBuffer);
+    const zipContent = await loadZipWithLimits(arrayBuffer, 'PPTX');
 
     const textContent: string[] = [];
     let slideCount = 0;
@@ -279,13 +701,13 @@ export async function extractPptxText(file: File): Promise<{ content: string; pa
     slideCount = slideFiles.length;
 
     for (const slideFile of slideFiles) {
-      const slideXml = await zipContent.files[slideFile].async('text');
+      const slideXml: string = await zipContent.files[slideFile].async('text');
 
       // Basic text extraction from XML (simplified approach)
-      const textMatches = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+      const textMatches: string[] = slideXml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
       const slideText = textMatches
-        .map(match => match.replace(/<[^>]*>/g, '').trim())
-        .filter(text => text.length > 0)
+        .map((match: string) => match.replace(/<[^>]*>/g, '').trim())
+        .filter((text: string) => text.length > 0)
         .join(' ');
 
       if (slideText) {
@@ -379,27 +801,40 @@ function applyMarkdownSemanticChunking(content: string, maxChunkSize: number): s
     chunks.push(addContextHeaders(currentChunk.trim(), currentHeaders));
   }
 
-  return chunks.filter(chunk => chunk.trim().length > 0);
+  return chunks
+    .filter((chunk) => chunk.trim().length > 0)
+    .flatMap((chunk) =>
+      chunk.length > maxChunkSize ? splitTextRespectingEquations(chunk, maxChunkSize) : [chunk],
+    );
 }
 
 /**
- * Standard paragraph-based chunking for non-markdown content
+ * Standard document-aware chunking for non-markdown content (PDF/DOCX/PPTX text).
  */
 function applyStandardChunking(content: string, maxChunkSize: number): string[] {
-  const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  const sections = splitIntoDocumentSections(content);
+  const chunks: string[] = [];
+
+  for (const section of sections) {
+    chunks.push(...chunkSectionByParagraphs(section, maxChunkSize));
+  }
+
+  return enforceMaxChunkLength(chunks, maxChunkSize);
+}
+
+function chunkSectionByParagraphs(section: string, maxChunkSize: number): string[] {
+  const paragraphs = section.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
   const chunks: string[] = [];
   let currentChunk = '';
 
   for (const paragraph of paragraphs) {
     const trimmedParagraph = paragraph.trim();
 
-    // If adding this paragraph would exceed the limit, save current chunk
     if (currentChunk.length + trimmedParagraph.length > maxChunkSize && currentChunk.length > 0) {
       chunks.push(currentChunk.trim());
       currentChunk = '';
     }
 
-    // If a single paragraph is too long, split it by sentences
     if (trimmedParagraph.length > maxChunkSize) {
       const sentences = trimmedParagraph.split(/(?<=[.!?])\s+/);
 
@@ -415,12 +850,13 @@ function applyStandardChunking(content: string, maxChunkSize: number): string[] 
     }
   }
 
-  // Add remaining content
   if (currentChunk.trim().length > 0) {
     chunks.push(currentChunk.trim());
   }
 
-  return chunks;
+  return chunks.flatMap((chunk) =>
+    chunk.length > maxChunkSize ? splitTextRespectingEquations(chunk, maxChunkSize) : [chunk],
+  );
 }
 
 /**
@@ -497,9 +933,24 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
         throw new Error(`Unsupported file type: ${file.type}`);
     }
 
-    // Enhanced semantic chunking for markdown content
-    const chunks = applySemanticChunking(content, 1500); // Larger chunks for markdown
-    const finalContent = chunks.join('\n\n--- CHUNK SEPARATOR ---\n\n');
+    // Defense-in-depth: bound the extracted text length before chunking, so an
+    // archive that slips past the per-entry ZIP caps still can't flood the
+    // chunking/embedding path.
+    if (content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+      throw new Error(
+        `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+      );
+    }
+
+    content = enrichExtractedDocumentContent(content);
+
+    const maxChunkSize = 1500;
+    const chunks = applySemanticChunking(content, maxChunkSize);
+    const overlappedChunks = enforceMaxChunkLength(
+      applyChunkOverlap(chunks, DEFAULT_SEMANTIC_CHUNK_OVERLAP),
+      maxChunkSize,
+    );
+    const finalContent = joinSemanticChunks(overlappedChunks);
 
     // Extract file info with enhanced metadata
     const fileInfo = await extractTextFromFile(file, finalContent);
@@ -509,7 +960,7 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
       pageCount,
       metadata: {
         ...metadata,
-        chunkCount: chunks.length,
+        chunkCount: overlappedChunks.length,
         extractedAt: new Date(),
         processingLibrary: metadata.processingMethod || 'Unknown',
         isEnhanced: true, // Indicates this uses the new enhanced processing

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -15,13 +15,14 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
-    }
+        "@/*": ["./src/*"],
+        "@eduai/ui": ["../../../../../packages/ui/src/index.ts"]
+      }
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.setup.ts", "src/**/*.test.setup.tsx", "src/test", "src/archive", "src/data/mockData.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.setup.ts", "src/**/*.test.setup.tsx", "src/archive", "src/data/mockData.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -21,6 +21,12 @@
  */
 
 import { prisma } from '../config/database.js';
+import {
+  listCoreAdminBugReports,
+  patchCoreAdminBugReportStatus,
+  postCoreBugReport,
+} from './eduaiClient.js';
+import { mapCoreAdminBugReportRow, UI_TO_CORE_BUG_STATUS } from '../utils/bugReportMappers.js';
 
 export const BUG_REPORT_STATUSES = ['unhandled', 'in progress', 'resolved'];
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
@@ -116,9 +122,9 @@ function normalizeContext(context) {
 
 function ensureCourseAuthorization(user, course) {
   const isStudent = user.role === 'STUDENT';
-  const isProfessor = user.role === 'PROFESSOR';
+  const isProfessor = user.role === 'INSTRUCTOR';
   if (!isStudent && !isProfessor) {
-    throw new BugReportError(403, 'Only STUDENT and PROFESSOR users can submit bug reports');
+    throw new BugReportError(403, 'Only STUDENT and INSTRUCTOR users can submit bug reports');
   }
 
   if (isStudent) {
@@ -270,8 +276,28 @@ async function validateContextAndAccess(user, context) {
  * re-derives trust from ids in the payload instead of assuming the frontend's
  * contextual metadata is correct.
  */
+const VALID_BUG_TYPES = new Set([
+  'UI_DISPLAY',
+  'FEATURE_NOT_WORKING',
+  'PERFORMANCE',
+  'CONTENT_ERROR',
+  'ACCESS_PERMISSION',
+  'OTHER',
+]);
+
+function normalizeBugType(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string' || !VALID_BUG_TYPES.has(value)) {
+    throw new BugReportError(400, `bugType must be one of: ${[...VALID_BUG_TYPES].join(', ')}`);
+  }
+  return value;
+}
+
 export async function createBugReport(user, payload) {
   const description = normalizeDescription(payload?.description);
+  const bugType = normalizeBugType(payload?.bugType);
   const consoleLogs = normalizeOptionalString(payload?.consoleLogs, 'consoleLogs');
   const networkLogs = normalizeOptionalString(payload?.networkLogs, 'networkLogs');
   const screenshot = normalizeOptionalString(payload?.screenshot, 'screenshot');
@@ -282,51 +308,30 @@ export async function createBugReport(user, payload) {
   const context = normalizeContext(payload?.context);
   const validatedContext = await validateContextAndAccess(user, context);
 
-  return prisma.bugReport.create({
-    data: {
-      description,
-      consoleLogs,
-      networkLogs,
-      screenshot,
-      pageUrl,
-      userAgent,
-      isAnonymous,
-      userId: user.id,
-      courseOfferingId: validatedContext.courseOfferingId,
-      moduleId: validatedContext.moduleId,
-      lessonId: validatedContext.lessonId,
-      activityId: validatedContext.activityId,
-    },
+  await postCoreBugReport(user.id, {
+    description,
+    bugType,
+    consoleLogs,
+    networkLogs,
+    screenshot,
+    pageUrl,
+    userAgent,
+    isAnonymous,
+    context: validatedContext,
   });
 }
 
 /**
- * Load the full bug-report list for the admin review console.
- *
- * Why: Admin triage needs the related course/module/lesson/activity labels in
- * one query so the UI can sort and inspect reports without N+1 follow-up calls.
+ * Load AI Tutor-scoped bug reports from Core admin triage API (#648).
  */
-export async function listAdminBugReports() {
-  return prisma.bugReport.findMany({
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    include: {
-      user: {
-        select: { id: true, name: true, email: true, role: true },
-      },
-      courseOffering: {
-        select: { id: true, title: true },
-      },
-      module: {
-        select: { id: true, title: true },
-      },
-      lesson: {
-        select: { id: true, title: true },
-      },
-      activity: {
-        select: { id: true, title: true, config: true },
-      },
-    },
+export async function listAdminBugReports(cookie) {
+  const payload = await listCoreAdminBugReports(cookie, {
+    source: 'AI_TUTOR',
+    limit: 100,
+    offset: 0,
   });
+  const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+  return reports.map(mapCoreAdminBugReportRow);
 }
 
 /**
@@ -352,39 +357,25 @@ export function validateBugReportStatus(status) {
  * helper preserves the same include shape as listing to let the UI refresh from
  * the PATCH response directly.
  */
-export async function updateBugReportStatus(bugReportId, nextStatus) {
+export async function updateBugReportStatus(bugReportId, nextStatus, cookie) {
   if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
     throw new BugReportError(400, 'Invalid bug report id');
   }
 
-  const status = validateBugReportStatus(nextStatus);
+  validateBugReportStatus(nextStatus);
 
-  try {
-    return await prisma.bugReport.update({
-      where: { id: bugReportId },
-      data: { status },
-      include: {
-        user: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-        courseOffering: {
-          select: { id: true, title: true },
-        },
-        module: {
-          select: { id: true, title: true },
-        },
-        lesson: {
-          select: { id: true, title: true },
-        },
-        activity: {
-          select: { id: true, title: true, config: true },
-        },
-      },
-    });
-  } catch (error) {
-    if (error?.code === 'P2025') {
-      throw new BugReportError(404, 'Bug report not found');
-    }
-    throw error;
+  const coreStatus = UI_TO_CORE_BUG_STATUS[nextStatus];
+  if (!coreStatus) {
+    throw new BugReportError(400, `status must be one of: ${BUG_REPORT_STATUSES.join(', ')}`);
   }
+
+  const updated = await patchCoreAdminBugReportStatus(cookie, bugReportId, coreStatus);
+  if (!updated?.id) {
+    throw new BugReportError(404, 'Bug report not found');
+  }
+
+  return {
+    id: updated.id,
+    status: mapCoreAdminBugReportRow({ ...updated, description: '' }).status,
+  };
 }

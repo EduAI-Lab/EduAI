@@ -1,7 +1,8 @@
 import type { Config } from "@react-router/dev/config";
 
 export default {
-  // Config options...
-  // Server-side render by default, to enable SPA mode set this to `false`
   ssr: true,
+  // Enables root-route middleware (#982) so security headers reach every
+  // response — including `/api/*` resource routes, which bypass entry.server.
+  future: { v8_middleware: true },
 } satisfies Config;

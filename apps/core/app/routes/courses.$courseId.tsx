@@ -1,237 +1,311 @@
-import { useState } from "react"
-import { useLoaderData, useParams, redirect } from "react-router"
-import type { LoaderFunctionArgs } from "react-router"
-import { IconBook, IconUpload, IconUsers, IconCalendar, IconSettings } from "@tabler/icons-react"
+import { useState, useCallback } from 'react'
+import { Link, redirect, useLoaderData, useRevalidator } from 'react-router'
+import type { LoaderFunctionArgs } from 'react-router'
 
-import { auth } from "~/lib/auth/server"
-import { Button } from "~/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
-import { Badge } from "~/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs"
-import { AppSidebar } from "~/components/app-sidebar"
-import { SiteHeader } from "~/components/site-header"
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar"
-import { CourseMaterialsUpload } from "~/components/course-materials-upload"
-import { useApiKeys } from "~/hooks/use-api-keys"
-import prisma from "~/lib/prisma.server"
+import { auth } from '~/lib/auth/server'
+import prisma from '~/lib/prisma.server'
+import { CoreAppShell } from '~/components/layout/core-app-shell'
+import { CourseDetailManagerView } from '~/components/courses/course-detail-manager-view'
+import { CourseDetailTaView } from '~/components/courses/course-detail-ta-view'
+import { CourseDetailStudentView } from '~/components/courses/course-detail-student-view'
+import { useCourseTopics } from '~/hooks/api/use-course-topics'
+import { useCourseEnrollments } from '~/hooks/api/use-course-enrollments'
+import { useCourseMaterials } from '~/hooks/api/use-course-materials'
+import { useCourseTAs } from '~/hooks/api/use-course-tas'
+import { useApiKeys } from '~/hooks/use-api-keys'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@eduai/ui'
+import { CourseSwitcher } from '~/components/layout/course-switcher'
+import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
+import type { CourseDetail } from '~/hooks/api/use-course-detail'
+import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
+import { getPolicy } from '~/lib/policy.server'
+import type { RbacUser } from '~/lib/rbac'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession(request)
-
-  if (!session?.user) {
-    return redirect("/auth/login")
-  }
+  const session = await auth.api.getSession({ headers: request.headers })
+  if (!session?.user) return redirect('/auth/login')
 
   const courseId = params.courseId
-  if (!courseId) {
-    return redirect("/courses")
-  }
+  if (!courseId) return redirect('/courses')
 
-  // Fetch course details directly from database
-  try {
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      include: {
-        professor: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
-        }
-      }
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: {
+      instructor: { select: { id: true, name: true, email: true } },
+    },
+  })
+
+  if (!course) return redirect('/courses')
+
+  const user = session.user
+  let authorizedUnits: string[] = []
+  if (user.role === 'UNIT_ADMIN') {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { authorizedUnits: true },
     })
-
-    if (!course) {
-      return redirect("/courses")
-    }
-
-    return {
-      course,
-      user: session.user
-    }
-  } catch (error) {
-    console.error("Failed to fetch course:", error)
-    return redirect("/courses")
+    authorizedUnits = dbUser?.authorizedUnits ?? []
   }
-}
+  const rbacUser: RbacUser = {
+    id: user.id,
+    role: user.role as RbacUser['role'],
+    authorizedUnits,
+  }
 
-type Course = {
-  id: string
-  name: string
-  code: string
-  description: string | null
-  term: string
-  year: number
-  isActive: boolean
-  aiInstructions: string
-  professorId: string
-  createdAt: string
-  updatedAt: string
+  const access = await resolveCourseAccess(rbacUser, {
+    id: course.id,
+    instructorId: course.instructorId,
+    department: course.department,
+  })
+
+  // No access at all — redirect (e.g. TA opened a course they do not assist)
+  if (!access) return redirect('/courses?access=denied')
+
+  // Students cannot view unpublished courses by direct URL
+  if (access === 'student' && !course.isPublished) return redirect('/courses')
+
+  // Reassigning the instructor is ADMIN/UNIT_ADMIN only; managing TAs also opens
+  // to an owning INSTRUCTOR when `instructors.canManageEnrollments` is on
+  // (mirrors the TA endpoint gate). Load each user list only when usable.
+  const canManageStaff = access === 'admin' || access === 'unit'
+  const canManageStudentEnrollments =
+    access === 'admin' || access === 'unit' || access === 'instructor'
+  const canManageTAs =
+    canManageStaff ||
+    (access === 'instructor' && (await getPolicy('instructors.canManageEnrollments')))
+
+  const needsStudentUsers = canManageStudentEnrollments || canManageTAs
+  const [instructors, studentUsers] = await Promise.all([
+    canManageStaff
+      ? prisma.user.findMany({
+          where: { role: 'INSTRUCTOR', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([]),
+    needsStudentUsers
+      ? prisma.user.findMany({
+          // TA candidates are STUDENT-platform users; assigning one creates an
+          // Enrollment(role=TA). There is no platform-level TA role anymore.
+          where: { role: 'STUDENT', isActive: true },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([]),
+  ])
+
+  return {
+    course: {
+      id: course.id,
+      code: course.code,
+      name: course.name,
+      description: course.description,
+      term: course.term,
+      year: course.year,
+      isActive: course.isActive,
+      isPublished: course.isPublished,
+      aiInstructions: course.aiInstructions,
+      instructorId: course.instructorId,
+      department: course.department,
+      startDate: course.startDate.toISOString(),
+      endDate: course.endDate?.toISOString() ?? null,
+      externalSource: course.externalSource,
+      externalId: course.externalId,
+      createdAt: course.createdAt.toISOString(),
+      updatedAt: course.updatedAt.toISOString(),
+      instructor: course.instructor ?? undefined,
+      // TA roster is loaded client-side via useCourseTAs (TA = Enrollment
+      // role=TA); the course query no longer includes a CourseTA relation.
+    } satisfies CourseDetail,
+    user,
+    access,
+    instructors,
+    studentUsers,
+  }
 }
 
 export default function CourseDetailPage() {
-  const { course, user } = useLoaderData<typeof loader>()
-  const { courseId } = useParams()
+  const { course, user, access, instructors, studentUsers } =
+    useLoaderData<typeof loader>()
+  const revalidator = useRevalidator()
+  const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
+  const {
+    enrollments,
+    loading: enrollmentsLoading,
+    error: enrollmentsError,
+    enroll,
+    removeEnrollment,
+    refetch: refetchEnrollments,
+  } = useCourseEnrollments(course.id)
+  const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
+  const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const { getValidApiKeys } = useApiKeys()
-  const [activeTab, setActiveTab] = useState("overview")
+  const [isUploading, setIsUploading] = useState(false)
+  const [materialsError, setMaterialsError] = useState<string | null>(null)
+  const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
 
-  const isAdmin = user.role === "ADMIN"
-  const isProfessor = user.role === "PROFESSOR"
-  const isTA = user.role === "TA"
-  const isStudent = user.role === "STUDENT"
+  const handleAssignInstructor = useCallback(async (instructorId: string) => {
+    const res = await fetch(`/api/courses/${course.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instructorId }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error ?? 'Failed to assign instructor')
+    }
+    revalidator.revalidate()
+    await refetchEnrollments()
+  }, [course.id, revalidator, refetchEnrollments])
 
-  // Check if user has access to this course
-  const hasAccess = isAdmin ||
-    (isProfessor && course.professorId === user.id) ||
-    isTA || isStudent // For now, allowing all TAs and students
+  const handleEnrollStudent = useCallback(
+    async (userId: string) => {
+      await enroll(userId, 'STUDENT')
+    },
+    [enroll],
+  )
 
-  if (!hasAccess) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card>
-          <CardContent className="p-8">
-            <p className="text-muted-foreground">You don't have access to this course.</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  const handleRemoveEnrollment = useCallback(
+    async (enrollmentId: string) => {
+      await removeEnrollment(enrollmentId)
+    },
+    [removeEnrollment],
+  )
+
+  const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
+    const res = await fetch(`/api/courses/${course.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aiInstructions }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error ?? 'Failed to update AI instructions')
+    }
+    revalidator.revalidate()
+  }, [course.id, revalidator])
+
+  const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
+    id: m.id,
+    title: m.title,
+    mimeType: m.mimeType,
+    fileSize: m.fileSize,
+    status: m.status,
+    createdAt: m.createdAt,
+    chunkCount: m.chunkCount,
+    uploadedBy: m.uploadedBy ?? null,
+    visibleToStudents: m.visibleToStudents,
+    availableAt: m.availableAt ?? null,
+  }))
+
+  const handleFileSelect = async (file: File) => {
+    setIsUploading(true)
+    setMaterialsError(null)
+    setMaterialsSuccess(null)
+    try {
+      await uploadMaterial(file, getValidApiKeys())
+      setMaterialsSuccess('Material uploaded successfully')
+    } catch (e) {
+      setMaterialsError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
   }
 
-  const canManageMaterials = isAdmin || (isProfessor && course.professorId === user.id)
-
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      title={course.name}
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/dashboard">Home</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild><Link to="/courses">Courses</Link></BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <CourseSwitcher currentCourseId={course.id} currentCourseCode={course.code} currentCourseName={course.name} />
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     >
-      <AppSidebar variant="inset" user={user} />
-      <SidebarInset>
-        <SiteHeader user={user} />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <div className="px-4 lg:px-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold">{course.code}: {course.name}</h2>
-                    <p className="text-muted-foreground">
-                      {course.term} {course.year} • {course.isActive ? "Active" : "Inactive"}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <IconUsers className="w-4 h-4 mr-2" />
-                      View Students
-                    </Button>
-                    {canManageMaterials && (
-                      <Button variant="outline" size="sm">
-                        <IconSettings className="w-4 h-4 mr-2" />
-                        Settings
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-4 lg:px-6">
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="materials">Materials</TabsTrigger>
-                    <TabsTrigger value="chat">Chat</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="overview" className="mt-6">
-                    <div className="grid gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <IconBook className="h-5 w-5" />
-                            Course Information
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid gap-4">
-                            <div>
-                              <h3 className="font-medium">Description</h3>
-                              <p className="text-muted-foreground mt-1">
-                                {course.description || "No description available."}
-                              </p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <h3 className="font-medium">Term</h3>
-                                <p className="text-muted-foreground mt-1">{course.term} {course.year}</p>
-                              </div>
-                              <div>
-                                <h3 className="font-medium">Status</h3>
-                                <Badge variant={course.isActive ? "default" : "secondary"} className="mt-1">
-                                  {course.isActive ? "Active" : "Inactive"}
-                                </Badge>
-                              </div>
-                            </div>
-                            {course.aiInstructions && (
-                              <div>
-                                <h3 className="font-medium">AI Instructions</h3>
-                                <p className="text-muted-foreground mt-1">{course.aiInstructions}</p>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="materials" className="mt-6">
-                    {canManageMaterials ? (
-                      <CourseMaterialsUpload
-                        courseId={courseId!}
-                        apiKeys={getValidApiKeys()}
-                      />
-                    ) : (
-                      <Card>
-                        <CardContent className="flex flex-col items-center justify-center py-8">
-                          <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-                          <p className="text-muted-foreground text-center">
-                            Only professors and administrators can manage course materials.
-                          </p>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="chat" className="mt-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Course Chat</CardTitle>
-                        <CardDescription>
-                          Chat with AI about this course's materials and content.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-col items-center justify-center py-8">
-                          <IconBook className="w-12 h-12 text-muted-foreground mb-4" />
-                          <p className="text-muted-foreground text-center mb-4">
-                            Use the main chat page to interact with course materials.
-                          </p>
-                          <Button asChild>
-                            <a href="/chat">Go to Chat</a>
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </div>
-          </div>
+      <div className="flex flex-1 flex-col">
+        <div className="px-4 lg:px-6 py-6">
+          {access === 'admin' || access === 'unit' || access === 'instructor' ? (
+            <CourseDetailManagerView
+              course={course}
+              access={access}
+              topics={topics}
+              enrollments={enrollments}
+              enrollmentsLoading={enrollmentsLoading}
+              enrollmentsError={enrollmentsError}
+              materials={uploadMaterials}
+              tas={tas}
+              instructors={instructors}
+              studentUsers={studentUsers}
+              onEnrollStudent={handleEnrollStudent}
+              onRemoveEnrollment={handleRemoveEnrollment}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+              onCreateTopic={async (name) => { await createTopic(name) }}
+              onDeleteTopic={async (id) => { await deleteTopic(id) }}
+              onAssignInstructor={handleAssignInstructor}
+              onAddTA={addTA}
+              onRemoveTA={removeTA}
+              onRefreshMaterials={refetchMaterials}
+              courseId={course.id}
+              currentUserId={user.id}
+              showCanvasMaterialSync={
+                access === 'instructor' &&
+                course.externalSource === 'canvas' &&
+                Boolean(course.externalId)
+              }
+              onMaterialsRefresh={() => void refetchMaterials()}
+            />
+          ) : access === 'ta' ? (
+            <CourseDetailTaView
+              course={course}
+              topics={topics}
+              materials={uploadMaterials}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+              courseId={course.id}
+              currentUserId={user.id}
+              onRefreshMaterials={refetchMaterials}
+              tas={tas}
+              onCreateTopic={async (name) => { await createTopic(name) }}
+              onDeleteTopic={async (id) => { await deleteTopic(id) }}
+              onUpdateAiInstructions={handleUpdateAiInstructions}
+            />
+          ) : (
+            <CourseDetailStudentView
+              course={course}
+              materials={uploadMaterials}
+              topics={topics}
+              tas={tas}
+              isUploading={isUploading}
+              materialsError={materialsError}
+              materialsSuccess={materialsSuccess}
+              onFileSelect={handleFileSelect}
+            />
+          )}
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </CoreAppShell>
   )
 }

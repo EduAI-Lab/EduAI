@@ -4,6 +4,7 @@
   "private": true,
   "packageManager": "npm@11.12.1",
   "workspaces": [
+    "packages/*",
     "apps/*",
     "apps/extensions/*",
     "apps/extensions/ai-tutor/*",
@@ -11,26 +12,71 @@
   ],
   "scripts": {
     "postinstall": "node scripts/setup-env.js",
-    "docker:dev:db": "bash scripts/dev-db.sh",
+    "docker:dev:db": "node scripts/dev-db.js",
     "docker:dev:db:eduai": "docker compose -f docker-compose.dev.yml up -d --wait eduai-db",
     "docker:dev:db:ai-tutor": "docker compose -f docker-compose.dev.yml up -d --wait ai-tutor-db",
     "docker:dev:db:question-maker": "docker compose -f docker-compose.dev.yml up -d --wait question-maker-db",
     "docker:dev:db:down": "docker compose -f docker-compose.dev.yml down --remove-orphans",
     "docker:dev:db:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "docker:dev:nuke": "docker compose -f docker-compose.dev.yml down --volumes --remove-orphans",
     "build": "turbo run build",
-    "predev": "npm run docker:dev:db",
+    "kill:ports": "node scripts/kill-ports.js",
+    "predev": "npm run kill:ports && npm run docker:dev:db",
     "dev": "turbo run dev",
+    "dbseed": "npm run db:seed -w edu-ai && npm run seed -w ai-tutor-server && npm run seed -w question-maker-backend",
     "lint": "turbo run lint",
-    "test": "turbo run test",
+    "test": "turbo run test --continue",
+    "test:coverage": "turbo run test:coverage --continue --filter=edu-ai --filter=ai-tutor-server --filter=question-maker-backend",
     "test:time-report": "node --test eduai-summer-2026/tests/team-time-report.test.js",
-    "test:all": "turbo run test:all",
+    "test:all": "bash scripts/test-in-docker.sh",
+    "test:unit": "bash scripts/test-in-docker.sh unit",
+    "test:integration": "bash scripts/test-in-docker.sh integration",
+    "test:e2e": "bash scripts/e2e-in-docker.sh",
+    "test:eduai": "npm run test:eduai:unit && npm run test:eduai:integration",
+    "test:eduai:unit": "docker compose -f docker-compose.test.yml run --build --rm eduai-unit-tests",
+    "test:eduai:integration": "docker compose -f docker-compose.test.yml run --build --rm eduai-integration-tests",
+    "test:ai-tutor": "npm run test:ai-tutor:app && npm run test:ai-tutor:server",
+    "test:ai-tutor:app": "npm run test:ai-tutor:app:unit && npm run test:ai-tutor:app:integration",
+    "test:ai-tutor:app:unit": "docker compose -f docker-compose.test.yml run --build --rm ai-tutor-app-unit-tests",
+    "test:ai-tutor:app:integration": "docker compose -f docker-compose.test.yml run --build --rm ai-tutor-app-integration-tests",
+    "test:ai-tutor:server": "npm run test:ai-tutor:server:unit && npm run test:ai-tutor:server:integration",
+    "test:ai-tutor:server:unit": "docker compose -f docker-compose.test.yml run --build --rm ai-tutor-server-unit-tests",
+    "test:ai-tutor:server:integration": "docker compose -f docker-compose.test.yml run --build --rm ai-tutor-server-integration-tests",
+    "test:qm": "npm run test:qm:app && npm run test:qm:server",
+    "test:qm:app": "npm run test:qm:app:unit && npm run test:qm:app:integration",
+    "test:qm:app:unit": "docker compose -f docker-compose.test.yml run --build --rm qm-app-unit-tests",
+    "test:qm:app:integration": "docker compose -f docker-compose.test.yml run --build --rm qm-app-integration-tests",
+    "test:qm:server": "npm run test:qm:server:unit && npm run test:qm:server:integration",
+    "test:qm:server:unit": "docker compose -f docker-compose.test.yml run --build --rm qm-server-unit-tests",
+    "test:qm:server:integration": "docker compose -f docker-compose.test.yml run --build --rm qm-server-integration-tests",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "turbo": "latest"
+    "@better-auth/core": "^1.6.22",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22",
+    "drizzle-orm": "^0.45.2",
+    "lucide-react": "^0.554.0",
+    "nodemon": "^3.1.10",
+    "syncpack": "^15",
+    "tsx": "^4.19.4",
+    "turbo": "^2.10.0",
+    "typescript": "^5.8.3"
   },
   "overrides": {
-    "better-auth": "1.2.8",
-    "@better-auth/cli": "1.2.8"
+    "better-auth": "1.6.22",
+    "@better-auth/cli": {
+      "better-auth": "1.4.22",
+      "@better-auth/core": "1.4.22",
+      "drizzle-orm": "^0.45.2",
+      "@mrleebo/prisma-ast": "^0.16.0"
+    },
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "clsx": "^2.1.1",
+    "class-variance-authority": "^0.7.1"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3"
   }
 }
