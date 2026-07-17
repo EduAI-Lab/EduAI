@@ -11,7 +11,7 @@ export function CoursesAdminView(props: CoursesAdminViewProps) {
     <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
       <PageHeading
         heading="Courses"
-        subheading="Platform-wide access — every linked QM course appears here. Open any course to manage its question bank."
+        subheading="Every course you have access to appears here. Open a course to manage its question bank."
       />
       <CoursesGrid
         {...props}
