@@ -18,6 +18,8 @@ import {
 import { normalizeMathMarkdown } from "~/lib/ai/math-markdown";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
 import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
+import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
+import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
 
 export interface ChatMessageProps {
@@ -200,13 +202,23 @@ export function ChatMessage({
       {hasTextContent && (
         <BasicMessage className="group">
           <div className="flex flex-col gap-2 flex-1 min-w-0">
-            <MessageContent
-              markdown={true}
-              isAnimating={isStreaming}
-              className="bg-transparent p-0 text-foreground"
-            >
-              {textContent}
-            </MessageContent>
+            {splitEduaiDiagrams(textContent).map((segment, index) =>
+              segment.kind === "diagram" ? (
+                <EduaiDiagram
+                  key={`diagram-${index}-${segment.payload.typeId}`}
+                  payload={segment.payload}
+                />
+              ) : segment.text.trim().length === 0 ? null : (
+                <MessageContent
+                  key={`md-${index}`}
+                  markdown={true}
+                  isAnimating={isStreaming}
+                  className="bg-transparent p-0 text-foreground"
+                >
+                  {segment.text}
+                </MessageContent>
+              ),
+            )}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">

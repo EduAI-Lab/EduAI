@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
   composeSystemPrompt,
+  ensureDiagramBeforeNext,
+  hasDiagramBlock,
   resolveAdhdAssistPolicyBlock,
   resolveEffectiveAdhdAssist,
 } from "~/lib/ai/adhd-assist";
@@ -115,9 +117,92 @@ describe("v1.1 response-format rules", () => {
     expect(greeting).toContain("No condescension");
     expect(greeting).toContain('"Sources:" line');
   });
+});
+
+describe("v1.9 labeled eduai-diagram policy", () => {
+  it("full tutoring block lists the catalog and requires matching stage names", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("DIAGRAMS:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the \"Next?\" line");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("diagram is REQUIRED");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("eduai-diagram");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("process-flow");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("gradient-descent");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("hierarchy");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("compare");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("SAME stage names");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("never omit later");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("do not emit a bare type-id-only fence");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("How a bill becomes law");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Step ladder → diagram → TLDR → Continue");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
+      "Do NOT describe what a diagram would look like in prose",
+    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
+      "AND the learner asked for one. Never add diagrams by default.",
+    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
+      "gradient-descent needs only the type id line",
+    );
+  });
 
   it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Top summary"');
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Next?"');
+  });
+});
+
+describe("ensureDiagramBeforeNext", () => {
+  it("defaults to process-flow with stages from Top summary", () => {
+    const draft = `**Top summary**
+- **Light reactions** capture energy
+- **Calvin cycle** builds sugar
+- **Oxygen out** is released
+
+**Next?** Want the light reactions?`;
+    const fixed = ensureDiagramBeforeNext(draft, {
+      userText: "draw a diagram of photosynthesis",
+    });
+    expect(hasDiagramBlock(fixed)).toBe(true);
+    expect(fixed).toContain("```eduai-diagram");
+    expect(fixed).toContain("process-flow");
+    expect(fixed).toContain("Light reactions:");
+    expect(fixed.indexOf("```eduai-diagram")).toBeLessThan(fixed.indexOf("**Next?**"));
+  });
+
+  it("picks gradient-descent when the learner asks about it", () => {
+    const draft = `**Top summary**
+- Ball rolls downhill
+
+**Next?** Want the learning rate?`;
+    const fixed = ensureDiagramBeforeNext(draft, {
+      userText: "draw a diagram of gradient descent",
+    });
+    expect(fixed).toContain("gradient-descent");
+    expect(fixed).toContain("Start point:");
+  });
+
+  it("picks hierarchy / compare from keywords", () => {
+    expect(
+      ensureDiagramBeforeNext("**Top summary**\n- A\n\n**Next?** B?", {
+        userText: "sketch the hierarchy of this taxonomy",
+      }),
+    ).toContain("hierarchy");
+    expect(
+      ensureDiagramBeforeNext("**Top summary**\n- A\n\n**Next?** B?", {
+        userText: "draw a comparison of A versus B",
+      }),
+    ).toContain("compare");
+  });
+
+  it("is a no-op when an eduai-diagram fence already exists", () => {
+    const draft = `**Top summary**
+- A
+
+\`\`\`eduai-diagram
+gradient-descent
+\`\`\`
+
+**Next?** More?`;
+    expect(ensureDiagramBeforeNext(draft)).toBe(draft.trim());
   });
 });
