@@ -4,6 +4,8 @@ import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
+// Canonical UBC term code (source of truth: packages/ui/src/lib/term.ts).
+import { termFromMonth, type TermCode } from '@eduai/ui/term';
 
 export const prisma = new PrismaClient();
 
@@ -72,7 +74,7 @@ type SeedCourse = {
   section: string;
   name: string;
   description: string;
-  term: string;
+  term: TermCode;
   year: number;
   startDate: Date;
   endDate: Date;
@@ -109,7 +111,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Computer Studies',
     description: 'Introductory course covering computational thinking and digital literacy.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -184,7 +186,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Computer Programming II',
     description: 'Object-oriented design, data structures, algorithms, and testing.',
-    term: 'Spring',
+    term: 'W2',
     year: 2026,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
@@ -255,7 +257,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Machine Architecture',
     description: 'Instruction sets, pipelining, memory hierarchy, and performance.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -317,7 +319,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Calculus III',
     description: 'Multivariable calculus: partial derivatives, multiple integrals, vector calculus.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -380,7 +382,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Real Analysis',
     description: 'Rigorous treatment of limits, continuity, differentiation, and Riemann integration.',
-    term: 'Spring',
+    term: 'W2',
     year: 2026,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
@@ -430,7 +432,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Intermediate Statistics',
     description: 'Estimation, hypothesis testing, regression, and resampling.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -492,7 +494,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Applied Machine Learning',
     description: 'Supervised and unsupervised learning, model selection, and evaluation.',
-    term: 'Spring',
+    term: 'W2',
     year: 2026,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
@@ -554,7 +556,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Introduction to Psychology',
     description: 'Survey of major topics in psychology.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -616,7 +618,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Cell Biology',
     description: 'Structure and function of eukaryotic and prokaryotic cells.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -666,7 +668,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Mechanics',
     description: 'Newtonian mechanics: kinematics, dynamics, energy, and momentum.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -716,7 +718,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'World History: 1500 to Present',
     description: 'Major themes in global history from the early modern period.',
-    term: 'Winter',
+    term: 'W2',
     year: 2026,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
@@ -766,7 +768,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Composition',
     description: 'Academic writing and argumentation.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -808,7 +810,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Introduction to Ethics',
     description: 'Major ethical theories and contemporary applied problems.',
-    term: 'Spring',
+    term: 'W2',
     year: 2026,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
@@ -1119,6 +1121,26 @@ async function seedDisciplines(): Promise<number> {
     });
   }
   return lines.length;
+}
+
+/**
+ * Invariant: each seeded course's literal `term` must agree with the
+ * canonical UBC-term derivation from its `startDate` (mirrors
+ * `packages/ui/src/lib/term.ts` `termFromMonth`, the single source of truth
+ * shared by Core's `CreateCourseSchema` and every app). Throws — rather than
+ * silently seeding mismatched data — if a literal and its date ever drift.
+ */
+function assertCanonicalTerms(courses: SeedCourse[]) {
+  for (const course of courses) {
+    const derived = termFromMonth(course.startDate.getMonth());
+    if (course.term !== derived) {
+      throw new Error(
+        `Seed course ${course.id} has term '${course.term}' but startDate ` +
+          `${course.startDate.toISOString()} derives '${derived}' via termFromMonth ` +
+          `(packages/ui/src/lib/term.ts). Fix the literal to match.`,
+      );
+    }
+  }
 }
 
 async function seedCourses() {
@@ -1565,6 +1587,7 @@ async function main() {
   );
 
   await seedCourses();
+  assertCanonicalTerms(COURSES);
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
 
   await seedBugReports();
