@@ -43,6 +43,7 @@ import type {
   SuggestedPrompt,
   User,
 } from './types';
+import { getCoreLoginUrl } from './coreUrl';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -202,8 +203,7 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
     // lesson outside their unit). Surface 403 as a normal error instead so the
     // route's error boundary can render it.
     if (res.status === 401) {
-      const coreUrl = import.meta.env.VITE_CORE_URL || 'http://localhost:3000';
-      window.location.href = `${coreUrl}/login?redirect=${encodeURIComponent(window.location.href)}`;
+      window.location.href = getCoreLoginUrl();
       throw new Error('Authentication required');
     }
     // 504 = the AI Tutor server's own upstream call timed out (see
@@ -569,6 +569,20 @@ export const api = {
     const qs = search.toString();
     return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ''}`) as Promise<
       SubmissionRow[]
+    >;
+  },
+  listCourseFeedback: (
+    courseId: number,
+    params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.activityId != null) search.set('activityId', String(params.activityId));
+    if (params?.studentId) search.set('studentId', params.studentId);
+    if (params?.take != null) search.set('take', String(params.take));
+    if (params?.skip != null) search.set('skip', String(params.skip));
+    const qs = search.toString();
+    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ''}`) as Promise<
+      ActivityFeedbackRow[]
     >;
   },
   courseStudentMetrics: (courseId: number) =>

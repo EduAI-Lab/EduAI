@@ -58,7 +58,7 @@ describe('api methods', () => {
     expect(result).toEqual(mockData);
   });
 
-  it('401 response redirects to Core login with a ?redirect= param', async () => {
+  it('401 response redirects to Core login with force=1 and a ?redirect= param', async () => {
     window.location.pathname = '/dashboard';
     window.location.href = 'http://localhost:3001/dashboard';
 
@@ -71,7 +71,9 @@ describe('api methods', () => {
     const { api } = await import('~/lib/api');
 
     await expect(api.listCourses()).rejects.toThrow('Authentication required');
-    expect(window.location.href).toMatch(/^http:\/\/localhost:3000\/login\?redirect=/);
+    expect(window.location.href).toMatch(
+      /^http:\/\/localhost:3000\/login\?force=1&redirect=/,
+    );
   });
 
   it('403 response throws without redirecting to login (no infinite loop)', async () => {
@@ -244,5 +246,29 @@ describe('api methods', () => {
     expect(options.method).toBe('POST');
     expect(options.credentials).toBe('include');
     expect(result).toEqual({ ok: true });
+  });
+
+  it('api.listCourseFeedback() builds query params for course feedback (#784)', async () => {
+    const mockData = [{ id: 1, userId: 's1', activityId: 2, rating: 5, createdAt: '2026-07-01' }];
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockData),
+    });
+
+    const { api } = await import('~/lib/api');
+    const result = await api.listCourseFeedback(9, {
+      activityId: 2,
+      studentId: 's1',
+      take: 100,
+      skip: 50,
+    });
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe(
+      'http://localhost:4000/api/courses/9/feedback?activityId=2&studentId=s1&take=100&skip=50',
+    );
+    expect(options.credentials).toBe('include');
+    expect(result).toEqual(mockData);
   });
 });

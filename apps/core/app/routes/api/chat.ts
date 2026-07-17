@@ -60,6 +60,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
@@ -391,7 +392,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
-    const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
@@ -736,7 +736,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    if (!model) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -746,20 +746,6 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
-    if (!apiKeysParsed.success) {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid apiKeys",
-          details: apiKeysParsed.error.flatten(),
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
       return new Response(
@@ -774,10 +760,44 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeys = mergeLocalInferenceFromEnv(
-      toUserProviderSettings(apiKeysParsed.data),
-      model,
-    );
+    // Service key callers (AI Tutor, QM) have no real User row to look up DB
+    // settings for (actingUser.id is the synthetic "service" id), so they
+    // must still pass apiKeys in the body, same as before the DB migration.
+    // Regular users' keys are always loaded from the DB.
+    let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
+    if (isServiceKeyCaller) {
+      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      const apiKeysParsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+      if (!apiKeysParsed.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid apiKeys",
+            details: apiKeysParsed.error.flatten(),
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        toUserProviderSettings(apiKeysParsed.data),
+        model,
+      );
+    } else {
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        await getUserProviderSettings(actingUser.id),
+        model,
+      );
+    }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
       const envHint =
@@ -1056,21 +1076,28 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
       }
 
       if (!useToolCalling) {
-        if (courseRagInject) {
-          const systemWithRAG = courseRagContextText
-            ? `${defaultCourseSystemPrompt}
-
-${buildRagSystemBlock(courseRagContextText)}`
-            : `${defaultCourseSystemPrompt}
-
-${buildEmptyCourseRagBlock()}`;
-
+        if (courseRagInject && courseRagContextText) {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: systemWithRAG,
+            system: `${defaultCourseSystemPrompt}
+
+${buildRagSystemBlock(courseRagContextText)}`,
+          };
+        } else if (courseRagInject && !resolvedSystemPrompt) {
+          // Default tutor chat: tell the student materials were empty.
+          // Skip this refusal when a custom systemPrompt is set (extensions /
+          // structured generation) — otherwise JSON/variant generation fails.
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: `${defaultCourseSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`,
           };
         } else {
           streamConfig = {
@@ -1099,7 +1126,7 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}`;
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
-        } else if (courseRagInject) {
+        } else if (courseRagInject && !resolvedSystemPrompt) {
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildEmptyCourseRagBlock()}`;

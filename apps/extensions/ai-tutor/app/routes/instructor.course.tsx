@@ -61,6 +61,7 @@ import { useLocalUser } from '../hooks/useLocalUser';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel';
 import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
+import { CourseFeedbackPanel } from '../components/courses/CourseFeedbackPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
 import { PermissionGate } from '../components/rbac/PermissionGate';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
@@ -502,6 +503,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </Dialog>
           </PermissionGate>
 
+
           <PermissionGate allow={perms.canManageContent}>
             <Dialog
               open={deletingModule !== null}
@@ -718,6 +720,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </SortableProvider>
           )}
         </PageTabsContent>
+
+
+        {tabs.some((tab) => tab.id === 'feedback') && (
+          <PageTabsContent value="feedback">
+            {numericCourseId ? <CourseFeedbackPanel courseId={numericCourseId} /> : null}
+          </PageTabsContent>
+        )}
 
         {tabs.some((tab) => tab.id === 'submissions') && (
           <PageTabsContent value="submissions">
