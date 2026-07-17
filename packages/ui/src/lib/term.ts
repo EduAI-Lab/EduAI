@@ -28,8 +28,9 @@ export function isTermCode(value: unknown): value is TermCode {
 }
 
 /**
- * Map a JS month index (0–11) to its UBC term code. Mirrors Core's
- * `ubcTermFromDate` so date-derived terms are identical everywhere.
+ * Map a JS month index (0–11) to its UBC term code. Used internally by
+ * `termFromDate`; prefer that (or `normalizeTerm`) whenever a real `Date`
+ * is available, since a raw month index carries no timezone information.
  */
 export function termFromMonth(month: number): TermCode {
   if (month >= 8) return "W1" // Sep–Dec
@@ -43,7 +44,15 @@ export function termFromMonth(month: number): TermCode {
 // TZ, or a browser's OS setting) and can bucket a date near a month
 // boundary into the wrong term. Always derive a term from a real Date via
 // this timezone, mirroring Core's `ubcTermFromDate` in term.server.ts.
-const UBC_TIME_ZONE = "America/Vancouver"
+//
+// This is the single owner of the Vancouver zone constant. Core's
+// `term.server.ts` imports it rather than redeclaring it, so the
+// `UBC_TIMEZONE` env override (deployments outside Vancouver) can't cause
+// the two derivations to drift apart. `process` only exists in Node, so
+// browser bundles fall back to the same default Core uses when the env
+// var is unset.
+export const UBC_TIME_ZONE =
+  (typeof process !== "undefined" ? process.env?.UBC_TIMEZONE : undefined) ?? "America/Vancouver"
 
 function monthInUbcTimeZone(date: Date): number {
   return Number(
@@ -73,6 +82,14 @@ export function normalizeTerm(
   startDate?: string | Date | null,
 ): TermCode | null {
   if (startDate != null) {
+    // A bare "YYYY-MM-DD" string names a calendar date, not an instant. Parsing
+    // it as UTC midnight and re-deriving via the Vancouver offset can shift it
+    // into the previous day (and term) near a month boundary — read the month
+    // straight from the string instead of round-tripping through a timezone.
+    if (typeof startDate === "string") {
+      const dateOnly = startDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (dateOnly) return termFromMonth(Number(dateOnly[2]) - 1)
+    }
     const date = startDate instanceof Date ? startDate : new Date(startDate)
     if (!Number.isNaN(date.getTime())) return termFromDate(date)
   }

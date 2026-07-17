@@ -1,4 +1,4 @@
-import type { TermCode } from "./term"
+import type { TermCode } from "../../lib/term"
 
 /**
  * Shared month-boundary test vectors for UBC term derivation (#1010).

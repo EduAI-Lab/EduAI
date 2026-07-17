@@ -13,7 +13,7 @@ import {
   termSortKey,
   TERM_CODES,
 } from "../lib/term";
-import { UBC_TERM_BOUNDARY_CASES } from "../lib/term-boundary-fixtures";
+import { UBC_TERM_BOUNDARY_CASES } from "./fixtures/term-boundary-fixtures";
 
 describe("term codes", () => {
   it("exposes the four UBC codes", () => {
@@ -58,6 +58,15 @@ describe("normalizeTerm", () => {
     // 2026-09-01T00:00:00Z is still 2026-08-31 evening in Vancouver (S2),
     // not September (W1) — the exact divergence fixed in #1010.
     expect(normalizeTerm(null, "2026-09-01T00:00:00Z")).toBe("S2");
+  });
+
+  it("reads a bare calendar date (e.g. from <input type=\"date\">) as-is, not as a UTC instant", () => {
+    // Unlike a full ISO instant, "2026-09-01" names a calendar day with no
+    // attached time. Parsing it as UTC midnight and reprojecting through the
+    // Vancouver offset would shift it back to Aug 31 (S2) — wrong for a date
+    // that plainly means September 1st (W1).
+    expect(normalizeTerm(null, "2026-09-01")).toBe("W1");
+    expect(normalizeTerm(null, "2026-05-01")).toBe("S1");
   });
 
   it("passes through canonical codes", () => {

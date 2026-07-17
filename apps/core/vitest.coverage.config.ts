@@ -22,7 +22,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // More specific subpath must precede the barrel alias (prefix match).
-      '@eduai/ui/term-boundary-fixtures': path.resolve(coreDir, '../../packages/ui/src/lib/term-boundary-fixtures.ts'),
+      '@eduai/ui/term-boundary-fixtures': path.resolve(coreDir, '../../packages/ui/src/tests/fixtures/term-boundary-fixtures.ts'),
       '@eduai/ui/term': path.resolve(coreDir, '../../packages/ui/src/lib/term.ts'),
       '@eduai/ui': path.resolve(coreDir, '../../packages/ui/src/index.ts'),
     },

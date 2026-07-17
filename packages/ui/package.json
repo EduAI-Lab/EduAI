@@ -10,8 +10,7 @@
     "./theme-provider": "./src/theme-provider.tsx",
     "./theme-sync": "./src/lib/theme-sync.ts",
     "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
-    "./term": "./src/lib/term.ts",
-    "./term-boundary-fixtures": "./src/lib/term-boundary-fixtures.ts"
+    "./term": "./src/lib/term.ts"
   },
   "scripts": {
     "test": "vitest run",

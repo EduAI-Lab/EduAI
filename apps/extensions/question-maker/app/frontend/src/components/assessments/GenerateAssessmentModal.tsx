@@ -17,7 +17,7 @@ import {
     DialogTitle,
     DialogFooter,
     TERM_CODES,
-    termFromMonth,
+    termFromDate,
     termLabel,
     termLabelLong,
     termSortKey,
@@ -39,7 +39,7 @@ interface GenerateAssessmentModalProps {
 /** Canonical current-term value, e.g. "2026W1", from today's date. */
 function defaultSemester(): string {
   const now = new Date();
-  return termLabel(termFromMonth(now.getMonth()), now.getFullYear());
+  return termLabel(termFromDate(now), now.getFullYear());
 }
 
 /**
