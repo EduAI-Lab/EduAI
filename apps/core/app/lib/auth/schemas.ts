@@ -80,6 +80,9 @@ export const updateUserSchema = z.object({
   // #297: unit scoping for UNIT_ADMIN targets; code existence is validated
   // server-side against the Discipline table (§19/§541).
   authorizedUnits: z.array(z.string()).optional(),
+  // Existing STUDENT users may be assigned as TAs in these courses. Course
+  // existence and effective-role compatibility are enforced server-side.
+  taCourseIds: z.array(z.string().min(1)).optional(),
   studentId: z
     .union([
       z.string().min(1).max(32).transform((value) => value.trim()),
