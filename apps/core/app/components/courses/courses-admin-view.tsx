@@ -16,7 +16,7 @@ import {
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
 } from '@eduai/ui'
-import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
+import { TERM_CODES, termName, termFromDate } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -41,7 +41,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [createDept, setCreateDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()))
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
   const { options: departmentOptions, getLabel: getDepartmentLabel, loading: deptLoading } = useDisciplines()
@@ -81,7 +81,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
     setCreateDept('')
-    setSelectedTerm(termFromMonth(new Date().getMonth()))
+    setSelectedTerm(termFromDate(new Date()))
     setSelectedInstructor('')
     setCreateOpen(false)
   }
