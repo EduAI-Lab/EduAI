@@ -543,6 +543,20 @@ export const api = {
       SubmissionRow[]
     >;
   },
+  listCourseFeedback: (
+    courseId: number,
+    params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.activityId != null) search.set('activityId', String(params.activityId));
+    if (params?.studentId) search.set('studentId', params.studentId);
+    if (params?.take != null) search.set('take', String(params.take));
+    if (params?.skip != null) search.set('skip', String(params.skip));
+    const qs = search.toString();
+    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ''}`) as Promise<
+      ActivityFeedbackRow[]
+    >;
+  },
   courseStudentMetrics: (courseId: number) =>
     http(`/api/courses/${courseId}/student-metrics`) as Promise<StudentMetricRow[]>,
   courseAnalytics: (courseId: number) =>
