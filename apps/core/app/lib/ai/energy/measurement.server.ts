@@ -116,8 +116,11 @@ function tokenEstimate(input: EnergyMeasurementInput): EnergyMeasurementResult {
       ? input.estEnergyJoulesPerToken * totalTokens
       : null;
 
+  // Carbon without energy is not trustworthy for downstream research queries.
   const carbonGramsCO2 =
-    input.averageCarbonGramsPerToken != null && totalTokens != null
+    energyJoules != null &&
+    input.averageCarbonGramsPerToken != null &&
+    totalTokens != null
       ? input.averageCarbonGramsPerToken * totalTokens
       : null;
 

@@ -110,4 +110,18 @@ describe("measureTurnEnergy", () => {
 
     expect(result.energySource).toBe("RAPL_PLUS_NVML");
   });
+
+  it("nulls carbon when energy cannot be estimated (no energy without source)", async () => {
+    const result = await measureTurnEnergy({
+      ...baseInput,
+      estEnergyJoulesPerToken: null,
+      averageCarbonGramsPerToken: 0.01,
+    });
+
+    expect(result).toEqual({
+      energyJoules: null,
+      carbonGramsCO2: null,
+      energySource: null,
+    });
+  });
 });
