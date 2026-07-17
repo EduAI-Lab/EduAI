@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getNavForUser } from '~/lib/rbac';
+import { getCourseDetailTabs, getNavForUser } from '~/lib/rbac';
 import type { AtUser } from '~/lib/rbac/types';
 
 const u = (role: AtUser['role']): AtUser => ({ id: '1', role });
@@ -7,7 +7,10 @@ const u = (role: AtUser['role']): AtUser => ({ id: '1', role });
 describe('getNavForUser', () => {
   it("labels the student course list 'Courses' (#741)", () => {
     const nav = getNavForUser(u('STUDENT'));
-    expect(nav).toEqual([{ key: 'my-courses', title: 'Courses', href: '/student' }]);
+    expect(nav).toEqual([
+      { key: 'dashboard', title: 'Dashboard', href: '/dashboard' },
+      { key: 'my-courses', title: 'Courses', href: '/student' },
+    ]);
   });
 
   it("labels every instructor-shell role's course list 'Courses' (#741)", () => {
@@ -25,28 +28,44 @@ describe('getNavForUser', () => {
     }
   });
 
-  it('drops User Management and Enrollments from admin nav, keeps Bug Reports (#734/#735)', () => {
+  it('drops User Management and Enrollments from admin nav, keeps the Admin console (#734/#735)', () => {
     const nav = getNavForUser(u('ADMIN'));
     const keys = nav.map((i) => i.key);
     expect(keys).not.toContain('admin-users');
     expect(keys).not.toContain('admin-enrollments');
     expect(nav).toContainEqual({
       key: 'admin-bug-reports',
-      title: 'Bug Reports',
+      title: 'Admin',
       href: '/admin',
     });
   });
 
-  it('gives admins the shared Courses dashboard plus Bug Reports (#781)', () => {
+  it('gives admins the shared Courses dashboard plus the Admin console (#781)', () => {
     const nav = getNavForUser(u('ADMIN'));
     expect(nav).toEqual([
+      { key: 'dashboard', title: 'Dashboard', href: '/dashboard' },
       { key: 'admin-courses', title: 'Courses', href: '/instructor' },
-      { key: 'admin-bug-reports', title: 'Bug Reports', href: '/admin' },
+      { key: 'admin-bug-reports', title: 'Admin', href: '/admin' },
     ]);
   });
 
   it('returns no nav items for a null user', () => {
     expect(getNavForUser(null)).toEqual([]);
     expect(getNavForUser(undefined)).toEqual([]);
+  });
+});
+
+describe('getCourseDetailTabs', () => {
+  it('shows feedback for instructor-shell roles but not students (#784)', () => {
+    for (const role of ['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN'] as const) {
+      const tabs = getCourseDetailTabs(u(role));
+      expect(tabs.map((tab) => tab.id)).toContain('feedback');
+    }
+    expect(getCourseDetailTabs(u('STUDENT')).map((tab) => tab.id)).not.toContain('feedback');
+  });
+
+  it('keeps submissions and feedback alongside analytics for instructors (#784)', () => {
+    const tabs = getCourseDetailTabs(u('INSTRUCTOR')).map((tab) => tab.id);
+    expect(tabs).toEqual(['content', 'submissions', 'feedback', 'analytics']);
   });
 });

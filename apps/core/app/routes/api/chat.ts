@@ -11,7 +11,10 @@ import {
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  estimateToolDefinitionTokens,
+  estimateAdminToolStepReserve,
   getChatModelCapabilities,
+  promptFitsContextWindow,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
@@ -60,6 +63,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
@@ -368,7 +372,6 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
@@ -391,7 +394,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const model = typeof body.model === "string" ? body.model : undefined;
-    const apiKeys = body.apiKeys as unknown;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
@@ -428,7 +430,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let actingUser = session.user;
     if (proxyUserPayload) {
-      if (!apiKeyHeader) {
+      if (!apiKeySession) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -736,7 +738,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    if (!model) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -746,20 +748,6 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
-    if (!apiKeysParsed.success) {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid apiKeys",
-          details: apiKeysParsed.error.flatten(),
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
     const parsedModel = parseModelIdentifier(model);
     if (!parsedModel) {
       return new Response(
@@ -774,10 +762,44 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeys = mergeLocalInferenceFromEnv(
-      toUserProviderSettings(apiKeysParsed.data),
-      model,
-    );
+    // Service key callers (AI Tutor, QM) have no real User row to look up DB
+    // settings for (actingUser.id is the synthetic "service" id), so they
+    // must still pass apiKeys in the body, same as before the DB migration.
+    // Regular users' keys are always loaded from the DB.
+    let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
+    if (isServiceKeyCaller) {
+      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      const apiKeysParsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+      if (!apiKeysParsed.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid apiKeys",
+            details: apiKeysParsed.error.flatten(),
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        toUserProviderSettings(apiKeysParsed.data),
+        model,
+      );
+    } else {
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        await getUserProviderSettings(actingUser.id),
+        model,
+      );
+    }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
       const envHint =
@@ -896,6 +918,9 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
     let courseRagInject = false;
+    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
+    let adminContextWindow: number | undefined;
+    let adminDesiredMaxOutput: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -924,26 +949,36 @@ export async function action({ request }: ActionFunctionArgs) {
         activeChatModel?.maxTokens,
         parsedModel.providerId,
       );
-      const desiredMaxOutput = resolveMaxOutputTokens(
-        activeChatModel?.maxTokens,
-        parsedModel.providerId,
+      // 16k windows: tool schemas + multi-step list payloads leave little room.
+      // Cap completion aggressively; mid-turn tool results are reserved separately.
+      const desiredMaxOutput = Math.min(
+        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
+        contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
+      // Leave room for the ~17 admin tool schemas on small context models.
       const adminSessionBudget =
-        contextWindow <= 32_768
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
-          : undefined;
+        contextWindow <= 16_384
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
+          : contextWindow <= 32_768
+            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
+            : undefined;
+
+      const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
       modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, 3000),
+        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
         adminSessionBudget
           ? {
               charBudget: adminSessionBudget,
-              recentCount: 4,
-              digestMaxChars: 3000,
+              recentCount: 3,
+              digestMaxChars: toolResultCapChars,
             }
           : undefined,
       );
+
+      adminContextWindow = contextWindow;
+      adminDesiredMaxOutput = desiredMaxOutput;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -970,37 +1005,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
+      const adminMaxSteps =
+        contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
+
+      // Provisional maxTokens — final cap runs after composeSecurityPrompt below
+      // so the security block and tool schemas are included in the budget.
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
-        maxSteps: TOOL_MAX_STEPS,
+        maxSteps: adminMaxSteps,
         tools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
-
-      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
-      let messageChars = 0;
-      for (const message of modelMessages) {
-        messageChars += estimateMessageCharsForModel(message);
-      }
-      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-      });
-
-      chatApiTrace("max output tokens capped", {
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-        effectiveMaxTokens: streamConfig.maxTokens,
-        systemChars,
-        messageChars,
-      });
     } else {
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -1056,21 +1075,28 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
       }
 
       if (!useToolCalling) {
-        if (courseRagInject) {
-          const systemWithRAG = courseRagContextText
-            ? `${defaultCourseSystemPrompt}
-
-${buildRagSystemBlock(courseRagContextText)}`
-            : `${defaultCourseSystemPrompt}
-
-${buildEmptyCourseRagBlock()}`;
-
+        if (courseRagInject && courseRagContextText) {
           streamConfig = {
             model: aiModel,
             messages: modelMessages,
             temperature: 0.6,
             maxTokens: 8192,
-            system: systemWithRAG,
+            system: `${defaultCourseSystemPrompt}
+
+${buildRagSystemBlock(courseRagContextText)}`,
+          };
+        } else if (courseRagInject && !resolvedSystemPrompt) {
+          // Default tutor chat: tell the student materials were empty.
+          // Skip this refusal when a custom systemPrompt is set (extensions /
+          // structured generation) — otherwise JSON/variant generation fails.
+          streamConfig = {
+            model: aiModel,
+            messages: modelMessages,
+            temperature: 0.6,
+            maxTokens: 8192,
+            system: `${defaultCourseSystemPrompt}
+
+${buildEmptyCourseRagBlock()}`,
           };
         } else {
           streamConfig = {
@@ -1099,7 +1125,7 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}`;
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildRagSystemBlock(courseRagContextText, { toolPath: true })}`;
-        } else if (courseRagInject) {
+        } else if (courseRagInject && !resolvedSystemPrompt) {
           toolSystemPrompt = `${toolSystemPrompt}
 
 ${buildEmptyCourseRagBlock()}`;
@@ -1147,6 +1173,74 @@ ${buildEmptyCourseRagBlock()}`;
         profile: adhdProfile,
       }),
     );
+
+    // Re-cap after composeSecurityPrompt so the security block is included, and
+    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
+    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
+    if (
+      chatMode === "admin" &&
+      adminContextWindow != null &&
+      adminDesiredMaxOutput != null
+    ) {
+      const systemChars =
+        typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const toolCount =
+        streamConfig.tools && typeof streamConfig.tools === "object"
+          ? Object.keys(streamConfig.tools).length
+          : 0;
+      const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
+      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const estimatedInputTokens =
+        estimateTokensFromChars(systemChars + messageChars) +
+        toolDefinitionTokens +
+        toolStepReserve;
+
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        toolDefinitionTokens: 0,
+        safetyBuffer: 512,
+        minOutput: 256,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        toolCount,
+        toolDefinitionTokens,
+        toolStepReserve,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+
+      if (
+        !promptFitsContextWindow({
+          contextWindow: adminContextWindow,
+          estimatedInputTokens,
+          maxOutputTokens: streamConfig.maxTokens,
+          safetyBuffer: 256,
+        })
+      ) {
+        return chatApiReject(
+          400,
+          {
+            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            code: "ADMIN_CONTEXT_TOO_LARGE",
+            estimatedInputTokens,
+            contextWindow: adminContextWindow,
+            toolCount,
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+    }
 
     const streamStartedAt = Date.now();
     // True when course material reached the model this turn: either a tool
@@ -1267,12 +1361,9 @@ ${buildEmptyCourseRagBlock()}`;
                 });
               }
             },
-        onError:
-          chatMode === "admin"
-            ? ({ error }) => {
-                logStreamError(error, streamTrace);
-              }
-            : undefined,
+        onError: ({ error }) => {
+          logStreamError(error, streamTrace);
+        },
       });
     } catch (error) {
       if (isClientAbort(error, request.signal)) {

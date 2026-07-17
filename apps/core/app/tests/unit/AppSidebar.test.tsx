@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { AppSidebar } from "~/components/app-sidebar";
-import { SidebarProvider } from "@eduai/ui";
+import { useCoreSidebarProps } from "~/components/app-sidebar";
+import { AppSidebar as SharedAppSidebar, SidebarProvider } from "@eduai/ui";
 import type { User } from "~/lib/auth/types";
 import {
   PolicyProvider,
@@ -27,6 +27,17 @@ beforeEach(() => {
   });
 });
 
+/**
+ * `~/components/app-sidebar` is a props-builder hook now (issue #764 core-shell
+ * parity) — `CoreAppShell` calls it and feeds the result straight into the
+ * shared `AppSidebar`. This harness reproduces exactly that composition so the
+ * test still exercises the real RBAC-nav-building logic end to end.
+ */
+function TestSidebar({ user }: { user: User }) {
+  const sidebarProps = useCoreSidebarProps({ user });
+  return <SharedAppSidebar {...sidebarProps} />;
+}
+
 function renderSidebar(role: string, policies: PolicyValues = {}) {
   const user = {
     id: "user-1",
@@ -38,16 +49,17 @@ function renderSidebar(role: string, policies: PolicyValues = {}) {
     updatedAt: new Date(),
   } as User;
 
-  // A data router (not plain MemoryRouter) so AppSidebar's useRouteLoaderData
-  // call resolves. No "root" route is defined, so it returns undefined and the
-  // component falls back to the SSR-seeded policy gate for the canInvite flag.
+  // A data router (not plain MemoryRouter) so useCoreSidebarProps'
+  // useRouteLoaderData call resolves. No "root" route is defined, so it
+  // returns undefined and the hook falls back to the SSR-seeded policy gate
+  // for the canInvite flag.
   const router = createMemoryRouter([
     {
       path: "/",
       element: (
         <PolicyProvider policies={policies}>
           <SidebarProvider>
-            <AppSidebar user={user} />
+            <TestSidebar user={user} />
           </SidebarProvider>
         </PolicyProvider>
       ),
@@ -70,13 +82,17 @@ describe("AppSidebar — rendering", () => {
 
   it("renders the app switcher (cross-app links moved into the switcher popover)", () => {
     // AI Tutor / Question Maker are no longer sidebar nav links — they live in
-    // the header app switcher (BrandSwitcher). Its popover contents aren't
+    // the footer app switcher (AppSwitcher). Its popover contents aren't
     // rendered under happy-dom (Radix), so assert the trigger is present; the
     // RBAC gate on the popover is covered in @eduai/ui's app-launcher.test.tsx.
+    // The switcher only appears when 2+ apps are accessible (#636 env-var-gated
+    // visibility), so stub AI Tutor's URL as configured for this assertion.
+    vi.stubEnv("VITE_AI_TUTOR_URL", "http://localhost:4100");
     renderSidebar("STUDENT");
     expect(
       screen.getByRole("button", { name: "Switch app" }),
     ).toBeInTheDocument();
+    vi.unstubAllEnvs();
   });
 });
 

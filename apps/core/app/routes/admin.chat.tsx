@@ -4,9 +4,8 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
 import { AdminChatView } from "~/components/chat/admin-chat-view";
-import { AppSidebar } from "~/components/app-sidebar";
+import { CoreAppShell } from "~/components/layout/core-app-shell";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
-import { SiteHeader } from "~/components/site-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -14,11 +13,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  SidebarInset,
-  SidebarProvider,
 } from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
-import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
@@ -88,21 +84,29 @@ export default function AdminChatPage() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  // Mirror Focus mode onto <html data-assistive-focus-mode> so the shared CSS
+  // hides the sidebar/history rail, matching ChatScreen's behavior.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [focusMode]);
+
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) setFocusMode(false);
       setAssistive(checked);
     },
     [setAssistive],
   );
 
-  const { getValidApiKeys } = useApiKeys();
-
   const requestMetadata = {
     chatMode: "admin" as const,
     model: selectedModel,
-    apiKeys: getValidApiKeys(),
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
@@ -142,7 +146,6 @@ export default function AdminChatPage() {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
           adhdAssist,
           streaming: false,
         }),
@@ -174,56 +177,47 @@ export default function AdminChatPage() {
   };
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+    <CoreAppShell
+      user={user}
+      sidebarVariant="inset"
+      breadcrumbs={
+        <Breadcrumb>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link to="/dashboard">Home</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
+          </BreadcrumbItem>
+        </Breadcrumb>
       }
     >
-      <AppSidebar variant="inset" user={user} />
-      <SidebarInset>
-        <SiteHeader
-          breadcrumbs={
-            <Breadcrumb>
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <Link to="/dashboard">Home</Link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Admin Chatbot</BreadcrumbPage>
-              </BreadcrumbItem>
-            </Breadcrumb>
-          }
-        />
-        <AdminChatView
-          chatModels={chatModels}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          selectedModelInfo={selectedModelInfo}
-          selectedCourseCode={null}
-          setSelectedCourseCode={() => {}}
-          availableCourses={[]}
-          messages={messages}
-          input={input}
-          isLoading={isLoading}
-          adhdAssist={adhdAssist}
-          assistive={assistive}
-          onAssistiveChange={handleAssistiveChange}
-          focusMode={focusMode}
-          onFocusModeChange={setFocusMode}
-          webToolsEnabled={webToolsEnabled}
-          systemPrompt={systemPrompt}
-          onSystemPromptSave={handleSystemPromptSave}
-          onInputChange={handleInputChange}
-          onSubmit={handleSubmit}
-          onStop={stop}
-          onSelectPrompt={handlePromptSelect}
-        />
-      </SidebarInset>
-    </SidebarProvider>
+      <AdminChatView
+        chatModels={chatModels}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        selectedModelInfo={selectedModelInfo}
+        selectedCourseCode={null}
+        setSelectedCourseCode={() => {}}
+        availableCourses={[]}
+        messages={messages}
+        input={input}
+        isLoading={isLoading}
+        adhdAssist={adhdAssist}
+        assistive={assistive}
+        onAssistiveChange={handleAssistiveChange}
+        focusMode={focusMode}
+        onFocusModeChange={setFocusMode}
+        webToolsEnabled={webToolsEnabled}
+        systemPrompt={systemPrompt}
+        onSystemPromptSave={handleSystemPromptSave}
+        onInputChange={handleInputChange}
+        onSubmit={handleSubmit}
+        onStop={stop}
+        onSelectPrompt={handlePromptSelect}
+      />
+    </CoreAppShell>
   );
 }

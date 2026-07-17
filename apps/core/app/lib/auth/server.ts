@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
@@ -17,6 +18,8 @@ import {
   recordPasswordHistory,
 } from "./password-history.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
+import { isActiveAdminUser } from "../api-keys/access.server";
+import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -25,6 +28,14 @@ export const authBaseURL =
 
 const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
 const useSecureCookies = authBaseURL.startsWith("https://");
+
+const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
+  "/api-key/create",
+  "/api-key/delete",
+  "/api-key/list",
+  "/api-key/update",
+  "/api-key/get",
+]);
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -37,6 +48,17 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
   },
+  plugins: [
+    apiKey({
+      apiKeyHeaders: ["x-api-key"],
+      // Default: enableSessionForAPIKeys is false — x-api-key does not auto-mock
+      // a session on /api/* routes. Admin automation uses enforceAdminIfApiKey.
+      enableSessionForAPIKeys: false,
+      keyExpiration: {
+        maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
+      },
+    }),
+  ],
   hooks: {
     // §6a: single chokepoint for the public-registration toggle. Both public
     // sign-up entry points (the register.tsx action sub-request and a direct
@@ -49,6 +71,24 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+      if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
+        const session = await getSessionFromCtx(ctx);
+        if (!(await isActiveAdminUser(session?.user?.id))) {
+          throw new APIError("FORBIDDEN", {
+            message: "API key management restricted to admin users",
+          });
+        }
+      }
+
+      if (ctx.path === "/api-key/create") {
+        const expiresIn = (ctx.body as Record<string, unknown> | undefined)?.expiresIn;
+        if (expiresIn === undefined || expiresIn === null) {
+          throw new APIError("BAD_REQUEST", {
+            message: "API keys must have an expiration date",
+          });
+        }
+      }
+
       // #339: enforce strength policy + no-reuse-of-last-10 on every
       // password-setting path. Runs before Zod schemas (which only guard the
       // app's own forms) so the raw /api/auth/* entry point is also covered.
@@ -116,6 +156,29 @@ export const auth = betterAuth({
         }
       }
 
+      // #971: reject credential sign-in for deactivated users. Checked here
+      // (before the endpoint's own credential verification) so a deactivated
+      // account never gets a session in the first place — the get-session
+      // after-hook below only covers sessions that already exist. A dummy
+      // password hash keeps the timing profile identical to the "user not
+      // found" branch in better-auth's own sign-in handler, so this check
+      // can't be used to distinguish "wrong password" from "deactivated" by
+      // response latency.
+      if (ctx.path === "/sign-in/email") {
+        const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
+        const password = typeof ctx.body?.password === "string" ? ctx.body.password : "";
+        if (email) {
+          const targetUser = await prisma.user.findUnique({
+            where: { email },
+            select: { isActive: true },
+          });
+          if (targetUser && !targetUser.isActive) {
+            await ctx.context.password.hash(password);
+            throw new APIError("UNAUTHORIZED", { message: "Invalid email or password" });
+          }
+        }
+      }
+
       if (ctx.path !== "/sign-up/email") return;
       if (ctx.headers?.has(INTERNAL_INVITE_SIGNUP_HEADER)) return;
       if (!(await getPolicy("auth.allowPublicRegistration"))) {
@@ -136,6 +199,27 @@ export const auth = betterAuth({
       if (!isUbcEmail(email)) {
         throw new APIError("BAD_REQUEST", { message: UBC_EMAIL_MESSAGE });
       }
+    }),
+    // #971: shared session-resolution guard. `/get-session` is the endpoint
+    // every `auth.api.getSession()` call in the app resolves to (they all run
+    // through this same hook pipeline, not just HTTP requests), so gating
+    // here closes the guard for every caller at once instead of patching
+    // each route individually. Handles the case where a user is deactivated
+    // *after* already holding a valid session: the next request treats them
+    // as signed out and the now-orphaned session row is deleted so a leaked
+    // or cached cookie can't be replayed later.
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/get-session") return;
+      const returned = ctx.context.returned as
+        | { session?: { token?: string }; user?: { isActive?: boolean } }
+        | null
+        | undefined;
+      if (!returned?.user || returned.user.isActive !== false) return;
+      const token = returned.session?.token;
+      if (token) {
+        await prisma.session.deleteMany({ where: { token } }).catch(() => {});
+      }
+      return null;
     }),
   },
   databaseHooks: {
@@ -179,26 +263,33 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
+      // input: false — these are only ever set server-side (admin/invitation
+      // flows), never accepted from the client on sign-up/update-user.
       role: {
         type: "string",
         defaultValue: "STUDENT",
         required: false,
+        input: false,
       },
       isActive: {
         type: "boolean",
         defaultValue: true,
         required: false,
+        input: false,
       },
       authorizedUnits: {
         type: "string[]",
         defaultValue: [],
         required: false,
+        input: false,
       },
     },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
+    // Intentionally NO `cookieCache`: serving getSession() from a signed cookie
+    // bypasses immediate session invalidation on deactivation (#971) / logout.
   },
   advanced: {
     useSecureCookies,

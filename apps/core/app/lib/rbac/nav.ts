@@ -1,19 +1,18 @@
 import type { NavItem, NavGroupItem, NavUser } from '~/lib/rbac/types'
-import { getQuestionMakerUrl } from '~/lib/extensions/question-maker'
-import { getAiTutorAppUrl } from '~/lib/extension-urls'
 
 const CORE_NAV: NavItem[] = [
   { key: 'dashboard', title: 'Dashboard', url: '/dashboard' },
   { key: 'courses', title: 'Courses', url: '/courses' },
-  { key: 'chat', title: 'Course Chat', url: '/chat' },
 ]
+
+const CHATBOT_NAV_ITEM: NavItem = { key: 'chat', title: 'Course Chat', url: '/chat' }
 
 const ADMIN_NAV: NavItem[] = [
   { key: 'admin-users', title: 'User Management', url: '/admin/users' },
   { key: 'admin-ai', title: 'AI Management', url: '/admin/ai-models' },
   { key: 'admin-bugs', title: 'Bug Reports', url: '/admin/bug-reports' },
   { key: 'admin-invites', title: 'Invitations', url: '/admin/invitations' },
-  { key: 'admin-settings', title: 'Permissions', url: '/admin/settings' },
+  { key: 'admin-settings', title: 'Settings', url: '/admin/settings' },
   { key: 'admin-logs', title: 'Logs', url: '/admin/logs' },
   { key: 'admin-cron', title: 'Cron Jobs', url: '/admin/cron-jobs' },
 ]
@@ -78,11 +77,14 @@ export function usesGlobalChat(user: NavUser): boolean {
  */
 export function getNavSecondaryForUser(user: NavUser): NavItem[] {
   const role = user.role ?? 'STUDENT'
-  const items: NavItem[] = []
+  const items: NavItem[] = [CHATBOT_NAV_ITEM]
 
   if (role === 'ADMIN') {
     items.push(...ADMIN_SECONDARY_NAV)
   }
+
+  // In-app user guide — available to everyone (issue #764).
+  items.push({ key: 'help', title: 'Help & guide', url: '/help' })
 
   return items
 }

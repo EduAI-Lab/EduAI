@@ -120,7 +120,7 @@ flowchart TB
 | `useCourseMaterials` | **Yes** | `GET/POST /api/courses/:courseId/materials` | No **DELETE** (#300); students can POST (wrong) |
 | `useCourseTopics` | **Yes** | `GET/POST/DELETE .../topics` | No **PATCH**; create/delete ADMIN-only (#299) |
 | `useCourseEnrollments` | **No** | No enrollment API in Core | **Stub until #305** |
-| `useUsers` | **Yes** | `GET/POST/PATCH/DELETE /api/users` | Works; no `authorizedUnits` until schema #297 |
+| `useUsers` | **Yes** | `GET/POST/PATCH/DELETE /api/users` | Works; includes validated `authorizedUnits` assignment for `UNIT_ADMIN` users |
 | `useAiProviders` / `useAiModels` | **Yes** | `/api/ai-providers`, `/api/ai-models`, `GET /api/ollama-models` | Already used by `admin.ai-models.tsx` |
 | `useBugReports` / `useSubmitBugReport` | **No in Core** | Bug reports in extensions only | **Stub until #304** Core API + UI |
 | `useChatSessions` | **Partial** | `POST /api/chat`, `GET /api/chats/:chatId` | No **DELETE** chat (#302); no course-scoped list |

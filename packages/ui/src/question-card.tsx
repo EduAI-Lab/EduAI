@@ -4,11 +4,11 @@ import {
   IconSparkles,
   IconHistory,
   IconDots,
-  IconCircleCheckFilled,
 } from "@tabler/icons-react"
 
 import { cn } from "./utils"
 import { Badge } from "./ui/badge"
+import { AnswerOption } from "./answer-option"
 
 export type QuestionDifficulty = "easy" | "medium" | "hard"
 
@@ -218,29 +218,15 @@ export function QuestionCard({
             )}
           >
             {choices.map((choice) => (
-              <div
+              <AnswerOption
                 key={choice.letter}
-                className={cn(
-                  "flex items-start gap-3 rounded-[var(--radius-lg)] border px-4 transition-colors",
-                  compact ? "py-2.5" : "py-3.5",
-                  choice.correct
-                    ? "border-[var(--color-success-500)] bg-[var(--color-success-100)]"
-                    : "border-border bg-muted/40",
-                )}
+                letter={choice.letter}
+                letterVariant="plain"
+                size={compact ? "compact" : "default"}
+                state={choice.correct ? "correct" : "default"}
               >
-                <span
-                  className={cn(
-                    "flex-shrink-0 font-semibold",
-                    choice.correct ? "text-[var(--color-success-700)]" : "text-muted-foreground",
-                  )}
-                >
-                  {choice.letter}
-                </span>
-                <span className="min-w-0 flex-1 break-words text-foreground">{choice.text}</span>
-                {choice.correct && (
-                  <IconCircleCheckFilled className="mt-0.5 size-5 flex-shrink-0 text-[var(--color-success-500)]" />
-                )}
-              </div>
+                {choice.text}
+              </AnswerOption>
             ))}
           </div>
         )}

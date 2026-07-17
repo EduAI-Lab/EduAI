@@ -15,7 +15,7 @@ function coreCourseForm(instrId: string, overrides: Record<string, string> = {})
     name: 'E2E AT Course',
     code: `${codeBase ?? 'AT-E2E'}-${RUN_SUFFIX}-${Math.floor(Math.random() * 1e4)}`,
     section: '001',
-    term: 'Fall',
+    term: 'W1',
     year: '2026',
     startDate: '2026-08-15',
     department: 'COSC',
