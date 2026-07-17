@@ -399,7 +399,7 @@ model CourseTopic {
 }
 
 /// Named question bank scoped to a Core course (Canvas-modeled).
-/// Questions from extensions (e.g. Question Maker) join via QuestionBankMembership.externalQuestionId.
+/// Questions join via QuestionBankMembership linking to Core Question rows.
 model QuestionBank {
   id           String                   @id @default(cuid())
   courseId     String
@@ -416,18 +416,15 @@ model QuestionBank {
 }
 
 model QuestionBankMembership {
-  id                 String       @id @default(cuid())
-  questionBankId     String
-  /// Extension-local question id (e.g. QM Question_Metadata.id as string)
-  externalQuestionId String
-  /// Source system that owns the question row
-  source             String       @default("question-maker")
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  questionBank       QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  questionBankId String
+  questionId     String
+  createdAt      DateTime     @default(now())
+  questionBank   QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+  question       Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  @@unique([questionBankId, source, externalQuestionId])
-  @@index([source, externalQuestionId])
+  @@unique([questionBankId, questionId])
+  @@index([questionId])
   @@map("question_bank_memberships")
 }
 
@@ -451,9 +448,15 @@ model Question {
   topic           CourseTopic              @relation(fields: [topicId], references: [id])
   creator         User                     @relation(fields: [createdBy], references: [id])
   secondaryTopics QuestionSecondaryTopic[]
+  source          String?                  @default("question-maker")
+  externalId      String?
+  externalSource  String?
+  bankMemberships QuestionBankMembership[]
 
   @@index([courseId, topicId, testable])
   @@index([createdBy])
+  @@index([source])
+  @@index([externalSource, externalId])
   @@map("questions")
 }
 
