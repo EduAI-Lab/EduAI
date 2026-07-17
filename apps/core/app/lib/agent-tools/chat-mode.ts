@@ -79,7 +79,8 @@ type AdminPromptOptions = PromptOptions & {
 export function formatAdminCourseContext(): string {
   return `Admin chat is platform-wide (no UI course filter).
 Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCourseTopic, topic write tools, and enrollment write tools when the admin names a specific course.
-listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.`;
+listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.
+When looking up one enrollment for update/deactivate, call listCourseEnrollments with userId or userEmail — do not rely on an unfiltered newest-page browse.`;
 }
 
 /**
@@ -126,7 +127,7 @@ CRITICAL RULES:
 - You do NOT tutor students or search course materials.
 
 Read tools:
-- listCourses, getCourse, listCourseEnrollments, listCourseTopics, getCourseTopic, listUsers (supports email / query filters), listBugReports
+- listCourses, getCourse, listCourseEnrollments (supports userId / userEmail exact lookup), listCourseTopics, getCourseTopic, listUsers (supports email / query filters), listBugReports
 
 ${writeSafetyRules}
 
