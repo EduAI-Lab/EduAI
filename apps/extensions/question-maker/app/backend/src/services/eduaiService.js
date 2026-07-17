@@ -9,6 +9,100 @@ import { logger } from "../utils/logger.js";
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
 
+/**
+ * Cloud providers we can probe for the connectivity badge, in preference order,
+ * each paired with a lightweight probe model. Keys mirror the browser-stored
+ * provider ids (see the frontend apiKeyStorage `CLOUD_PROVIDERS`).
+ */
+const CLOUD_PROBE_MODELS = {
+  google: "google:gemini-2.5-flash",
+  openai: "openai:gpt-4o-mini",
+  deepseek: "deepseek:deepseek-chat",
+  anthropic: "anthropic:claude-3-5-haiku-latest",
+};
+
+/** Strip ```json ... ``` / ``` ... ``` fences if the model wrapped its answer. */
+function stripMarkdownJsonFence(raw) {
+  const text = String(raw ?? "").trim();
+  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : text;
+}
+
+/**
+ * Extract the first balanced JSON array or object from text (string-aware).
+ * Avoids the greedy /(\[[\s\S]*\]|\{[\s\S]*\})/ trap that matches markdown
+ * citations like `[mr68fk2hgh…]` and then throws SyntaxError on JSON.parse.
+ */
+function extractBalancedJsonValue(text, openChar) {
+  const closeChar = openChar === "[" ? "]" : "}";
+  const start = text.indexOf(openChar);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === openChar) depth += 1;
+    else if (c === closeChar) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function tryParseJson(s) {
+  if (!s || typeof s !== "string") return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    try {
+      return JSON.parse(s.replace(/,\s*([}\]])/g, "$1"));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Parse model output into a questions payload (array or wrapper object).
+ * Returns null when nothing valid can be extracted — never throws on bad matches.
+ */
+function parseQuestionsPayloadFromText(raw) {
+  const text = stripMarkdownJsonFence(raw);
+  if (!text) return null;
+
+  let parsed = tryParseJson(text);
+  if (parsed != null) return parsed;
+
+  // Scan every `[` / `{` start so CUID-like citations (`[mr68fk2hgh…]`) are
+  // skipped when they fail to parse, and a later real JSON array still wins.
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c !== "[" && c !== "{") continue;
+    const slice = extractBalancedJsonValue(text.slice(i), c);
+    if (!slice) continue;
+    parsed = tryParseJson(slice);
+    if (parsed == null) continue;
+    // Prefer question arrays; accept objects that wrap questions / error.
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object") return parsed;
+  }
+
+  return null;
+}
+
 class EduAIService {
   constructor() {
     this.baseURL = config.eduaiApiUrl;
@@ -19,7 +113,6 @@ class EduAIService {
         baseURL: this.baseURL,
         hasApiKey: !!this.apiKey,
         apiKeyLength: this.apiKey ? this.apiKey.length : 0,
-        apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + "..." : "none",
       },
       "EduAI Service initialized"
     );
@@ -42,42 +135,67 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/chat. The service key is the primary
-   * credential for server-to-server proxying — Core's requireServiceKey guard
-   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
-   * chat route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
-   * session cookie only when no service key is configured.
+   * Builds auth headers for Core /api/chat.
+   *
+   * Prefer the caller's Core session cookie so generation runs as that user
+   * (course access, audit, RBAC). Fall back to `Authorization: Bearer
+   * <EDUAI_API_KEY>` only when no cookie is available (e.g. background jobs).
+   * Do not send x-api-key — Core's chat route ignores it.
    */
   buildChatAuthHeaders(cookie) {
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
-    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
+    }
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }
 
   /**
-   * Picks a lightweight model for connectivity checks. Prefers a cloud (Google)
-   * provider whenever a key is available — from the client (browser-stored key)
-   * or the server config — so the badge reflects cloud availability even when the
-   * UBC-hosted (Ollama) provider is offline. Falls back to Ollama only when no
-   * cloud key exists at all.
+   * Picks a lightweight model for connectivity checks. Prefers whichever cloud
+   * provider the caller has a key for (browser-stored key), then the server's
+   * Google key — so the badge reflects cloud availability for ANY supported cloud
+   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
+   * offline. Falls back to Ollama only when no cloud key exists at all.
+   *
+   * `forceProvider` overrides the auto-selection so a caller can probe a specific
+   * path regardless of what keys exist. The status chips rely on this: the UBC
+   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
+   * configured — otherwise the auto-selection would test Google and the UBC chip
+   * would report Google's state, never its own.
    */
-  getConnectivityTestParams(clientApiKeys = {}) {
-    const clientGoogleKey = clientApiKeys?.google?.apiKey?.trim?.();
-    const googleKey = clientGoogleKey || config.googleGenerativeAiApiKey?.trim();
-    if (googleKey) {
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
+    if (forceProvider === "ollama") {
       return {
-        provider: "google",
-        model: "google:gemini-2.5-flash",
-        apiKeys: {
-          google: { apiKey: googleKey, isEnabled: true },
-        },
+        provider: "ollama",
+        model: "ollama:gpt-oss:120b",
+        apiKeys: { ollama: { isEnabled: true } },
       };
     }
+
+    for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
+      const clientKey = clientApiKeys?.[provider]?.apiKey?.trim?.();
+      if (clientKey) {
+        return {
+          provider,
+          model: CLOUD_PROBE_MODELS[provider],
+          apiKeys: { [provider]: { apiKey: clientKey, isEnabled: true } },
+        };
+      }
+    }
+
+    // No client cloud key — fall back to the server-configured Google key if present.
+    const serverGoogleKey = config.googleGenerativeAiApiKey?.trim();
+    if (serverGoogleKey) {
+      return {
+        provider: "google",
+        model: CLOUD_PROBE_MODELS.google,
+        apiKeys: { google: { apiKey: serverGoogleKey, isEnabled: true } },
+      };
+    }
+
     return {
       provider: "ollama",
       model: "ollama:gpt-oss:120b",
@@ -105,19 +223,34 @@ class EduAIService {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
       throw new Error(
-        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
+        "EduAI chat requires a Core session. Sign in via Core, or set EDUAI_API_KEY for server-only calls."
       );
     }
 
     let chatStartMs;
     try {
       const model = params.model || "google:gemini-2.5-flash";
+      // Core strips non-user roles from `messages` (ALLOWED_CLIENT_MESSAGE_ROLES).
+      // System instructions must go in top-level `systemPrompt` or they are discarded
+      // and Core falls back to the course-tutor persona (markdown prose, not JSON).
+      const incoming = Array.isArray(params.messages) ? params.messages : [];
+      const systemParts = incoming
+        .filter((m) => m?.role === "system" && typeof m.content === "string" && m.content.trim())
+        .map((m) => m.content.trim());
+      const userMessages = incoming.filter((m) => m?.role === "user");
+      const systemPrompt =
+        (typeof params.systemPrompt === "string" && params.systemPrompt.trim()) ||
+        systemParts.join("\n\n") ||
+        undefined;
+
       const requestPayload = {
-        messages: params.messages || [],
+        messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
         courseCode: params.courseCode,
-        streaming: params.streaming || false,
+        // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
+        streaming: params.streaming === true,
+        ...(systemPrompt ? { systemPrompt } : {}),
       };
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
@@ -129,7 +262,8 @@ class EduAIService {
         model: requestPayload.model,
         courseCode: requestPayload.courseCode,
         messageCount: (requestPayload.messages || []).length,
-        systemPromptLength: (requestPayload.messages || []).find((m) => m.role === "system")?.content?.length ?? 0,
+        hasSystemPrompt: Boolean(systemPrompt),
+        systemPromptLength: systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
@@ -308,7 +442,11 @@ IMPORTANT:
 
     const defaultUserPrompt = `Generate questions about: ${prompt}
 
-Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.`;
+Please ensure the questions are appropriate for the course level and cover the key concepts comprehensively.
+
+OUTPUT RULES (mandatory):
+- Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}).
+- No markdown, no code fences, no headings, no commentary before or after the JSON.`;
 
     const systemPrompt = systemPromptOverride ?? defaultSystemPrompt;
     const userPrompt = userPromptOverride ?? defaultUserPrompt;
@@ -351,32 +489,55 @@ Please ensure the questions are appropriate for the course level and cover the k
         rawContentPreview: typeof rawContent === "string" ? rawContent.slice(0, 150) + (rawContent.length > 150 ? "..." : "") : String(rawContent).slice(0, 150),
       });
 
-      // Parse the response (EduAI may return string JSON or already-parsed array/object)
+      // Parse the response (EduAI may return string JSON, fenced markdown, or prose + JSON)
       const rawPayload = response?.content ?? response?.message ?? response;
       let parsedResponse;
       if (rawPayload !== null && typeof rawPayload === "object") {
-        // Already an object or array – use as-is to avoid JSON.parse(non-string) throwing (e.g. "array" / .match errors)
         parsedResponse = rawPayload;
         console.log(`${DEBUG_PREFIX} generateQuestions using pre-parsed response`, {
           isArray: Array.isArray(rawPayload),
           keys: Array.isArray(rawPayload) ? "array" : Object.keys(rawPayload || {}),
         });
       } else {
-        try {
-          const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload);
-          parsedResponse = JSON.parse(str);
-        } catch (parseError) {
-          const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload);
-          const jsonMatch = str.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
-          if (jsonMatch) {
-            parsedResponse = JSON.parse(jsonMatch[0]);
+        const str = typeof rawPayload === "string" ? rawPayload : String(rawPayload ?? "");
+        parsedResponse = parseQuestionsPayloadFromText(str);
+        if (parsedResponse == null) {
+          console.warn(`${DEBUG_PREFIX} generateQuestions first parse failed; retrying with JSON-only repair`, {
+            rawPreview: str.slice(0, 300),
+          });
+          const repairSystem = `${systemPrompt}
+
+CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array of question objects (or {"error":true,"reason":"..."}). No markdown, no code fences, no prose before or after the JSON.`;
+          const repairResponse = await this.chat({
+            messages: [
+              { role: "system", content: repairSystem },
+              { role: "user", content: userPrompt },
+            ],
+            model,
+            apiKeys,
+            courseCode,
+            streaming: false,
+            timeoutMs: 180000,
+            cookie,
+          });
+          const repairRaw =
+            repairResponse?.content ?? repairResponse?.message ?? repairResponse;
+          if (repairRaw !== null && typeof repairRaw === "object") {
+            parsedResponse = repairRaw;
           } else {
-            console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed`, {
-              parseError: parseError?.message,
+            parsedResponse = parseQuestionsPayloadFromText(
+              typeof repairRaw === "string" ? repairRaw : String(repairRaw ?? ""),
+            );
+          }
+          if (parsedResponse == null) {
+            console.error(`${DEBUG_PREFIX} generateQuestions JSON parse failed after retry`, {
               rawType: typeof rawPayload,
-              rawPreview: str?.slice?.(0, 300),
+              rawPreview: str.slice(0, 300),
+              repairPreview: String(repairRaw ?? "").slice(0, 300),
             });
-            throw new Error("Could not parse response from EduAI");
+            throw new Error(
+              "Could not parse response from EduAI (expected a JSON array of questions)",
+            );
           }
         }
       }
@@ -787,24 +948,25 @@ Please ensure the questions are appropriate for the course level and cover the k
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
    * the (possibly offline) UBC-hosted provider. `provider` is echoed back so the
-   * UI can tell the user which path is live.
+   * UI can tell the user which path is live. `forceProvider` pins the probe to a
+   * specific path (e.g. `'ollama'` for the independent UBC status chip).
    */
-  async testApiKey({ cookie, apiKeys: clientApiKeys = {} } = {}) {
+  async testApiKey({ cookie, apiKeys: clientApiKeys = {}, forceProvider } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "EduAI base URL not configured (EDUAI_API_URL)",
       };
     }
 
-    if (!this.apiKey && !cookie?.trim()) {
+    if (!cookie?.trim() && !this.apiKey) {
       return {
         success: false,
-        error: "EduAI API key not configured",
+        error: "Sign in via Core to use AI (session cookie required)",
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys);
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
     try {
       const response = await this.chat({
         messages: [{ role: "user", content: "test" }],
@@ -817,7 +979,7 @@ Please ensure the questions are appropriate for the course level and cover the k
 
       return {
         success: true,
-        message: "API key is valid",
+        message: cookie?.trim() ? "Core session can reach AI" : "Service key can reach AI",
         provider,
         response: response,
       };
@@ -828,7 +990,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "Invalid EduAI API key - authentication failed",
+          error: "AI authentication failed — sign in via Core again",
         };
       } else if (
         error.message.includes("403") ||
@@ -836,7 +998,7 @@ Please ensure the questions are appropriate for the course level and cover the k
       ) {
         return {
           success: false,
-          error: "EduAI API key access forbidden",
+          error: "AI access forbidden for this session",
         };
       } else if (
         error.message.includes("Invalid API key") ||
