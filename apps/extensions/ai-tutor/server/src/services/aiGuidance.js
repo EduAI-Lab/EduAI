@@ -105,6 +105,11 @@ async function callEduAI({
     },
   };
 
+  // Trim so whitespace-only / padded Core CUIDs never leak into the body
+  // (matches getCoreCourseId's trim; callEduAI stays defensive for other callers).
+  const trimmedCourseId = typeof courseId === 'string' ? courseId.trim() : '';
+  const trimmedCourseCode = typeof courseCode === 'string' ? courseCode.trim() : '';
+
   const requestBody = {
     messages: [{ id: userMessageId, role: 'user', content: userMessage }],
     systemPrompt,
@@ -112,8 +117,8 @@ async function callEduAI({
     apiKeys,
     streaming: false,
     ...(chatId ? { chatId } : {}),
-    ...(courseId ? { courseId } : {}),
-    ...(courseCode ? { courseCode } : {}),
+    ...(trimmedCourseId ? { courseId: trimmedCourseId } : {}),
+    ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
   };
 
   try {

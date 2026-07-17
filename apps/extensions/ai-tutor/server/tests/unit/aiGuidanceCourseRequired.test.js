@@ -28,6 +28,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('getCoreCourseId wiring helper (#1021)', () => {
+  it('returns trimmed coreOfferingId when the offering is linked', async () => {
+    const { getCoreCourseId } = await import('../../src/utils/coreCourseId.js');
+    expect(getCoreCourseId({ coreOfferingId: '  cuid-core-cosc121  ' })).toBe('cuid-core-cosc121');
+  });
+
+  it('returns null for missing, blank, or non-string coreOfferingId', async () => {
+    const { getCoreCourseId } = await import('../../src/utils/coreCourseId.js');
+    expect(getCoreCourseId({})).toBeNull();
+    expect(getCoreCourseId({ coreOfferingId: null })).toBeNull();
+    expect(getCoreCourseId({ coreOfferingId: '   ' })).toBeNull();
+    expect(getCoreCourseId({ coreOfferingId: 42 })).toBeNull();
+  });
+});
+
 describe('callEduAI courseId pass-through (#1021)', () => {
   it('includes courseId and courseCode on the EduAI chat body when linked', async () => {
     global.fetch = vi.fn().mockResolvedValue({
@@ -142,5 +157,55 @@ describe('callEduAI courseId pass-through (#1021)', () => {
       expect(body.courseId).toBe('cuid-core-cosc121');
       expect(body.courseCode).toBe('COSC 121');
     }
+  });
+
+  it('trims whitespace-padded courseId/courseCode before sending', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+    });
+
+    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+
+    await generateGuideResponse({
+      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
+      knowledgeLevel: 'beginner',
+      message: 'I am stuck',
+      studentAnswer: null,
+      dualLoopEnabled: false,
+      cookie: 'session=abc',
+      apiKey: 'test-key',
+      courseCode: '  COSC 121  ',
+      courseId: '  cuid-core-cosc121  ',
+    });
+
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.courseId).toBe('cuid-core-cosc121');
+    expect(body.courseCode).toBe('COSC 121');
+  });
+
+  it('omits whitespace-only courseId from the payload', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ content: 'Here is a hint.', chatId: 'chat-1' }),
+    });
+
+    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+
+    await generateGuideResponse({
+      activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
+      knowledgeLevel: 'beginner',
+      message: 'I am stuck',
+      studentAnswer: null,
+      dualLoopEnabled: false,
+      cookie: 'session=abc',
+      apiKey: 'test-key',
+      courseCode: 'COSC 121',
+      courseId: '   ',
+    });
+
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty('courseId');
+    expect(body.courseCode).toBe('COSC 121');
   });
 });
