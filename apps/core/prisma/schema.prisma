@@ -286,16 +286,17 @@ model AIModel {
 }
 
 model UserProviderSettings {
-  id         String     @id @default(cuid())
-  userId     String
-  providerId String
-  apiKey     String?
-  baseUrl    String?
-  isEnabled  Boolean    @default(false)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  provider   AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  userId           String
+  providerId       String
+  apiKey           String?
+  apiKeyExpiresAt  DateTime?
+  baseUrl          String?
+  isEnabled        Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  provider         AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
   @@map("user_provider_settings")
