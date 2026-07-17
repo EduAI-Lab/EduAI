@@ -10,10 +10,15 @@
  *   - Topics for imported (EduAI) courses are managed exclusively by sync;
  *     manual creation is rejected (POST /courses/:id/topics).
  *   - Sync is name-keyed and additive — it never deletes local topics that
- *     drift away upstream. Drift is surfaced via the `missingTopics` array so
- *     the instructor can act on it deliberately.
+ *     drift away upstream. Drift is surfaced via the `missingTopics` array on
+ *     the deprecated POST .../sync response, but as of #1031 there is no UI
+ *     surface left that reads it (TopicSyncMappingDialog was removed) —
+ *     drifted local topics now accumulate silently rather than being
+ *     resolved. POST .../remap still exists to consolidate them by hand via
+ *     direct API call, but is otherwise dead code.
  *   - GET auto-syncs from Core for imported courses (#1031); POST .../sync
- *     is kept for compatibility but is no longer called by the UI.
+ *     and POST .../remap are kept for API compatibility but are no longer
+ *     called by the UI.
  *   - Remap rewrites both `Activity.mainTopicId` and the
  *     `ActivitySecondaryTopic` join table inside a transaction, then drops the
  *     source topic. If the source is still referenced (e.g. another module),
@@ -24,7 +29,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { syncExternalCourseTopics } from '../services/topicSync.js';
+import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS } from '../services/topicSync.js';
 
 const router = express.Router();
 
@@ -57,9 +62,12 @@ async function ensureCourseAccess(courseId, user) {
  *
  * Why: Core is the source of truth for topics. For EduAI-imported courses,
  * this pulls the latest topic list from Core before responding, so the topic
- * list is always current without a manual sync action. A failed pull (Core
- * down, network blip) falls back to serving the local mirror rather than
- * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
+ * list is always current without a manual sync action. Pulls are throttled
+ * per course to `AUTO_SYNC_TTL_MS` (services/topicSync.js) so a page with
+ * many concurrent viewers doesn't fire a Core call per request. A failed
+ * pull (Core fetch or local write) falls back to serving the local mirror
+ * rather than failing the request — mirrors the tolerance pattern in
+ * jobs/reconcile.js.
  */
 router.get('/courses/:courseId/topics', async (req, res) => {
   const courseId = Number(req.params.courseId);
@@ -81,9 +89,10 @@ router.get('/courses/:courseId/topics', async (req, res) => {
 
     if (course.externalId) {
       try {
-        await syncExternalCourseTopics(courseId);
+        await syncExternalCourseTopics(courseId, { ttlMs: AUTO_SYNC_TTL_MS });
       } catch (e) {
-        console.warn(`[topics] Auto-sync failed for course ${courseId}, serving local mirror: ${e.message}`);
+        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+        console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
       }
     }
 
@@ -216,15 +225,23 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
 /**
  * POST /courses/:courseId/topics/remap — move activities between topics.
  *
+ * Deprecated (#1031): the UI no longer surfaces this — TopicSyncMappingDialog
+ * (the only caller) was removed along with the "Sync now" button. Kept
+ * unreachable-from-UI for API compatibility, same treatment as the now-dead
+ * `POST /courses/:courseId/topics/sync` above.
+ *
  * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Body: `{ mappings: [{ fromTopicId, toTopicId }, ...] }`
  * Side effects: in a single transaction, reassigns `Activity.mainTopicId`,
  *   migrates `ActivitySecondaryTopic` rows (creating missing target rows,
  *   deleting source rows), then deletes each source topic if no longer used.
  *
- * Why: post-sync cleanup tool — when EduAI renames or splits a topic, the
- * instructor uses this to consolidate the orphaned local topic into the new
- * upstream-synced one without losing activity associations.
+ * Why: post-sync cleanup tool — when EduAI renames or splits a topic, an
+ * admin can still consolidate the orphaned local topic into the new
+ * upstream-synced one without losing activity associations, via direct API
+ * call. Since GET .../topics now auto-syncs (#1031) and there's no UI path
+ * to `missingTopics` anymore, drifted local topics otherwise pile up
+ * silently — this is the only remaining way to clean them up.
  */
 router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
