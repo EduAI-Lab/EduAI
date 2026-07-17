@@ -14,6 +14,7 @@ import type {
   ChatCourseOption,
   ChatModelOption,
 } from "~/components/chat/chat-view-types";
+import { useApiKeys } from "~/hooks/use-api-keys";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import { useChatHistory } from "~/hooks/api/use-chat-history";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
