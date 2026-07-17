@@ -86,6 +86,10 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
