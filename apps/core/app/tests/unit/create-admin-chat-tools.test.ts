@@ -32,6 +32,7 @@ vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
 import {
+  listAdminCourseEnrollments,
   listAdminCourseTopics,
   resolveAdminCourseId,
 } from "~/lib/agent-tools/admin-context.server";
@@ -73,6 +74,36 @@ describe("createAdminChatTools read execute", () => {
     expect(listAdminCourseTopics).toHaveBeenCalledWith(ADMIN, "course-1");
     expect(result).toMatchObject({ count: 0, dataSource: "database" });
   });
+
+  it("listCourseEnrollments passes userId/userEmail through for an exact roster lookup", async () => {
+    vi.mocked(resolveAdminCourseId).mockResolvedValue({
+      courseId: "course-1",
+      courseCode: "COSC 111",
+    });
+    vi.mocked(listAdminCourseEnrollments).mockResolvedValue({
+      dataSource: "database",
+      courseId: "course-1",
+      courseCode: "COSC 111",
+      enrollments: [],
+      count: 0,
+      total: 0,
+      truncated: false,
+      queriedAt: new Date().toISOString(),
+    } as never);
+
+    const tools = createAdminChatTools(ctx);
+    await tools.listCourseEnrollments.execute(
+      { courseCode: "COSC 111", userEmail: "student@test.com" },
+      { toolCallId: "test", messages: [] },
+    );
+
+    expect(listAdminCourseEnrollments).toHaveBeenCalledWith(
+      ADMIN,
+      "course-1",
+      expect.objectContaining({ userEmail: "student@test.com" }),
+    );
+  });
+
   it("returns CONFIRMATION_REQUIRED for createCourseTopic when confirmed is false", async () => {
     const tools = createAdminChatTools(ctx);
     const result = await tools.createCourseTopic.execute(
