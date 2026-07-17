@@ -4,7 +4,7 @@
  */
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
-import { attachQuestionToBanks, listExternalQuestionIdsForBank } from './questionBankService.js';
+import { attachQuestionToBanks, listLocalQuestionIdsForBank } from './questionBankService.js';
 import { Op } from 'sequelize';
 
 /**
@@ -215,12 +215,13 @@ export const getQuestionsByUser = async (userId, options = {}) => {
         : null;
 
     if (parsedBankId && whereClause.courseId) {
-      const memberIds = await listExternalQuestionIdsForBank(
+      const { memberIds, pendingIds } = await listLocalQuestionIdsForBank(
         whereClause.courseId,
         userId,
         parsedBankId
       );
-      whereClause.id = { [Op.in]: memberIds.length ? memberIds : [-1] };
+      const bankQuestionIds = [...memberIds, ...pendingIds];
+      whereClause.id = { [Op.in]: bankQuestionIds.length ? bankQuestionIds : [-1] };
     }
 
     const include = [

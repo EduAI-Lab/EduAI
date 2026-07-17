@@ -121,63 +121,25 @@ vi.mock('../../src/services/eduaiService.js', () => ({
     }),
     addQuestionBankMembership: async (_coreCourseId, bankId, payload) => {
       const list = membershipsByBank.get(bankId) || [];
-      const existing = list.find(
-        (m) =>
-          m.externalQuestionId === String(payload.externalQuestionId) &&
-          m.source === (payload.source || 'question-maker')
-      );
+      const existing = list.find((m) => m.questionId === payload.questionId);
       if (existing) return existing;
       const membership = {
         id: `mem_${++membershipSeq}`,
         questionBankId: bankId,
-        externalQuestionId: String(payload.externalQuestionId),
-        source: payload.source || 'question-maker',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        questionId: payload.questionId,
+        createdAt: new Date().toISOString()
       };
       list.push(membership);
       membershipsByBank.set(bankId, list);
       return membership;
     },
-    removeQuestionBankMembership: async (
-      coreCourseId,
-      bankId,
-      externalQuestionId,
-      source = 'question-maker'
-    ) => {
+    removeQuestionBankMembership: async (_coreCourseId, bankId, questionId) => {
       const list = membershipsByBank.get(bankId) || [];
       membershipsByBank.set(
         bankId,
-        list.filter(
-          (m) =>
-            !(
-              m.externalQuestionId === String(externalQuestionId) &&
-              m.source === source
-            )
-        )
+        list.filter((m) => m.questionId !== questionId)
       );
-      const remaining = [...membershipsByBank.values()]
-        .flat()
-        .filter(
-          (m) =>
-            m.externalQuestionId === String(externalQuestionId) &&
-            m.source === source
-        );
-      if (remaining.length === 0) {
-        const def = ensureDefaultBank(coreCourseId);
-        const defList = membershipsByBank.get(def.id) || [];
-        defList.push({
-          id: `mem_${++membershipSeq}`,
-          questionBankId: def.id,
-          externalQuestionId: String(externalQuestionId),
-          source,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-        membershipsByBank.set(def.id, defList);
-        return { removed: true, reassignedToDefault: true, defaultBankId: def.id };
-      }
-      return { removed: true, reassignedToDefault: false };
+      return { removed: true };
     }
   }
 }));
@@ -190,11 +152,32 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
   let authToken;
   let courseId;
   let topicId;
+  let Variants;
+  let CanvasBankQuestionMapping;
+
+  async function seedApprovedVariant(questionMetadataId, coreQuestionId) {
+    let variant = await Variants.findOne({ where: { questionMetadataId } });
+    if (variant) {
+      await variant.update({ coreQuestionId, isDraft: false });
+      return variant;
+    }
+    return Variants.create({
+      questionMetadataId,
+      questionText: 'Test question',
+      difficulty: 'medium',
+      coreQuestionId,
+      isDraft: false,
+      isAiGenerated: false
+    });
+  }
 
   beforeAll(async () => {
     if (!hasTestDb) return;
     const { default: appMod } = await import('../../src/app.js');
     const testDb = await import('../helpers/testDb.js');
+    const schema = await import('../../src/schema/index.js');
+    Variants = schema.Variants;
+    CanvasBankQuestionMapping = schema.CanvasBankQuestionMapping;
     app = appMod;
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
@@ -265,11 +248,18 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
         description: 'Shared question',
         courseId,
         primaryTopicId: topicId,
-        type: 'SA',
-        questionBankId: defaultBank.id
+        type: 'SA'
       });
     expect(createQ.status).toBe(201);
     const qid = createQ.body.data.id;
+    const coreQuestionId = `core_q_${qid}`;
+    await seedApprovedVariant(qid, coreQuestionId);
+
+    const addDefault = await request(app)
+      .post(`/api/course/${courseId}/banks/${defaultBank.id}/questions`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ questionMetadataId: qid });
+    expect([200, 201]).toContain(addDefault.status);
 
     const add = await request(app)
       .post(`/api/course/${courseId}/banks/${extraBankId}/questions`)
@@ -309,6 +299,30 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     expect(del.status).toBe(400);
   });
 
+  it('returns 409 when adding an unapproved question to a bank', async () => {
+    const banksRes = await request(app)
+      .get(`/api/course/${courseId}/banks`)
+      .set('Authorization', `Bearer ${authToken}`);
+    const defaultBank = banksRes.body.data.find((b) => b.isDefault);
+
+    const createQ = await request(app)
+      .post('/api/questions')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({
+        description: 'Pending question',
+        courseId,
+        primaryTopicId: topicId,
+        type: 'SA'
+      });
+    expect(createQ.status).toBe(201);
+
+    const add = await request(app)
+      .post(`/api/course/${courseId}/banks/${defaultBank.id}/questions`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ questionMetadataId: createQ.body.data.id });
+    expect(add.status).toBe(409);
+  });
+
   it('syncs a Canvas bank in test mode and re-syncs without duplicates', async () => {
     await request(app)
       .post('/api/canvas/connect')
@@ -327,6 +341,16 @@ describeDb('Question banks + Canvas bank sync (integration)', () => {
     const bankId = first.body.data.bankId;
     expect(typeof bankId).toBe('string');
     const created = first.body.data.created;
+
+    const mappings = await CanvasBankQuestionMapping.findAll({
+      where: { localBankId: String(bankId) }
+    });
+    for (const mapping of mappings) {
+      await seedApprovedVariant(
+        mapping.localQuestionMetadataId,
+        `core_canvas_${mapping.localQuestionMetadataId}`
+      );
+    }
 
     const second = await request(app)
       .post('/api/canvas/import/1/banks/10')

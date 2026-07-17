@@ -958,14 +958,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     return response.data;
   }
 
-  async removeQuestionBankMembership(
-    coreCourseId,
-    bankId,
-    externalQuestionId,
-    source = "question-maker"
-  ) {
+  async removeQuestionBankMembership(coreCourseId, bankId, questionId) {
     this._assertConfigured();
-    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}/questions/${externalQuestionId}?source=${encodeURIComponent(source)}`;
+    const url = `${this.baseURL}/api/courses/${coreCourseId}/banks/${bankId}/questions/${questionId}`;
     const response = await axios.delete(url, {
       headers: this._coreHeaders(),
       timeout: 60000,

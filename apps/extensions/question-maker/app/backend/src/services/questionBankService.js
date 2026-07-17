@@ -1,13 +1,18 @@
 /**
  * Question bank operations proxied to EduAI Core.
- * Local QM courses are resolved to Core courses by matching `code`.
- * Membership stores QM Question_Metadata ids as externalQuestionId on Core.
+ * Local QM courses resolve to Core via `Course.coreCourseId` or course code match.
+ * Membership uses Core Question ids (`Variants.coreQuestionId`).
  */
-import { Course, Question_Metadata } from '../schema/index.js';
+import { Op } from 'sequelize';
+import {
+  Course,
+  Question_Metadata,
+  Variants,
+  CanvasBankQuestionMapping
+} from '../schema/index.js';
 import eduaiService from './eduaiService.js';
 
 export const DEFAULT_BANK_NAME = 'Course bank';
-const SOURCE = 'question-maker';
 
 const normalizeCode = (value) =>
   value == null ? '' : String(value).replace(/\s+/g, '').toLowerCase();
@@ -34,7 +39,8 @@ async function callCore(fn) {
 }
 
 /**
- * Resolve a local QM course to a Core course CUID via course code.
+ * Resolve a local QM course to a Core course CUID.
+ * Prefers `Course.coreCourseId`; falls back to matching course code via Core list.
  * @param {number} localCourseId
  * @param {number} userId
  * @returns {Promise<{ localCourse: object, coreCourseId: string }>}
@@ -46,6 +52,11 @@ export async function resolveCoreCourse(localCourseId, userId) {
   if (!localCourse) {
     throw coreError('Course not found', 404);
   }
+
+  if (localCourse.coreCourseId?.trim()) {
+    return { localCourse, coreCourseId: String(localCourse.coreCourseId).trim() };
+  }
+
   if (!localCourse.code?.trim()) {
     throw coreError(
       'Course code is required to sync question banks with EduAI Core',
@@ -154,6 +165,14 @@ export async function deleteBank(localCourseId, userId, bankId, options = {}) {
   );
 }
 
+async function findApprovedCoreQuestionId(questionMetadataId) {
+  const variant = await Variants.findOne({
+    where: { questionMetadataId, coreQuestionId: { [Op.ne]: null } },
+    order: [['updatedAt', 'DESC']]
+  });
+  return variant?.coreQuestionId ?? null;
+}
+
 export async function addQuestionToBank(localCourseId, userId, bankId, questionMetadataId) {
   const question = await Question_Metadata.findByPk(questionMetadataId);
   if (!question) {
@@ -162,11 +181,19 @@ export async function addQuestionToBank(localCourseId, userId, bankId, questionM
   if (Number(question.courseId) !== Number(localCourseId)) {
     throw coreError('Question and bank must belong to the same course', 400);
   }
+
+  const coreQuestionId = await findApprovedCoreQuestionId(questionMetadataId);
+  if (!coreQuestionId) {
+    throw coreError(
+      'Approve the question (push to Core) before adding it to a bank',
+      409
+    );
+  }
+
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   const membership = await callCore(() =>
     eduaiService.addQuestionBankMembership(coreCourseId, bankId, {
-      externalQuestionId: String(questionMetadataId),
-      source: SOURCE
+      questionId: coreQuestionId
     })
   );
   return { membership, created: true };
@@ -178,19 +205,27 @@ export async function removeQuestionFromBank(
   bankId,
   questionMetadataId
 ) {
+  const coreQuestionId = await findApprovedCoreQuestionId(questionMetadataId);
+  if (!coreQuestionId) {
+    throw coreError(
+      'Approve the question (push to Core) before removing it from a bank',
+      409
+    );
+  }
+
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   return callCore(() =>
     eduaiService.removeQuestionBankMembership(
       coreCourseId,
       bankId,
-      String(questionMetadataId),
-      SOURCE
+      coreQuestionId
     )
   );
 }
 
 /**
  * Attach a newly created local question to one or more Core banks.
+ * Skips banks when the question has not been pushed to Core yet (409).
  */
 export async function attachQuestionToBanks(
   localCourseId,
@@ -211,15 +246,21 @@ export async function attachQuestionToBanks(
   }
 
   for (const bankId of bankIds) {
-    await addQuestionToBank(localCourseId, userId, bankId, questionMetadataId);
+    try {
+      await addQuestionToBank(localCourseId, userId, bankId, questionMetadataId);
+    } catch (error) {
+      if (error.status === 409) continue;
+      throw error;
+    }
   }
   return bankIds;
 }
 
 /**
- * External question ids that belong to a Core bank (for filtering local QM questions).
+ * Local metadata ids for a Core bank: approved members and Canvas-pending shells.
+ * @returns {Promise<{ memberIds: number[], pendingIds: number[] }>}
  */
-export async function listExternalQuestionIdsForBank(localCourseId, userId, bankId) {
+export async function listLocalQuestionIdsForBank(localCourseId, userId, bankId) {
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   const payload = await callCore(() =>
     eduaiService.listQuestionBankMemberships(coreCourseId, bankId)
@@ -227,10 +268,66 @@ export async function listExternalQuestionIdsForBank(localCourseId, userId, bank
   const memberships = Array.isArray(payload?.memberships)
     ? payload.memberships
     : [];
-  return memberships
-    .filter((m) => (m.source || SOURCE) === SOURCE)
-    .map((m) => Number(m.externalQuestionId))
-    .filter((id) => Number.isInteger(id));
+  const coreQuestionIds = memberships
+    .map((m) => m.questionId)
+    .filter((id) => typeof id === 'string' && id.length > 0);
+
+  const memberVariants =
+    coreQuestionIds.length > 0
+      ? await Variants.findAll({
+          where: { coreQuestionId: { [Op.in]: coreQuestionIds } },
+          attributes: ['questionMetadataId']
+        })
+      : [];
+
+  const memberIds = [
+    ...new Set(
+      memberVariants
+        .map((v) => Number(v.questionMetadataId))
+        .filter((id) => Number.isInteger(id))
+    )
+  ];
+
+  const mappings = await CanvasBankQuestionMapping.findAll({
+    where: { localBankId: String(bankId) },
+    attributes: ['localQuestionMetadataId']
+  });
+  const mappedMetadataIds = [
+    ...new Set(
+      mappings
+        .map((m) => Number(m.localQuestionMetadataId))
+        .filter((id) => Number.isInteger(id))
+    )
+  ];
+
+  let pendingIds = [];
+  if (mappedMetadataIds.length > 0) {
+    const approvedForMapped = await Variants.findAll({
+      where: {
+        questionMetadataId: { [Op.in]: mappedMetadataIds },
+        coreQuestionId: { [Op.ne]: null }
+      },
+      attributes: ['questionMetadataId']
+    });
+    const approvedSet = new Set(
+      approvedForMapped.map((v) => Number(v.questionMetadataId))
+    );
+    pendingIds = mappedMetadataIds.filter((id) => !approvedSet.has(id));
+  }
+
+  return { memberIds, pendingIds };
+}
+
+/**
+ * Local question metadata ids that belong to a Core bank (members + pending).
+ */
+export async function listExternalQuestionIdsForBank(localCourseId, userId, bankId) {
+  const { memberIds, pendingIds } = await listLocalQuestionIdsForBank(
+    localCourseId,
+    userId,
+    bankId
+  );
+  return [...memberIds, ...pendingIds];
 }
 
 /** @deprecated local backfill — Core ensures default banks; no-op for API compatibility */

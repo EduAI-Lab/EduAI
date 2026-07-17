@@ -529,9 +529,7 @@ router.delete(
       );
       res.json({
         success: true,
-        message: result.reassignedToDefault
-          ? 'Removed from bank; reassigned to default bank'
-          : 'Removed from bank',
+        message: 'Removed from bank',
         data: result
       });
     } catch (error) {
