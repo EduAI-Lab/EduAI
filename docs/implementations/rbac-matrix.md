@@ -541,7 +541,7 @@ Schema work is merged on the `feature/rbac` branch:
 | Hard-delete user | — (not in target) | **Present** | `DELETE /api/users/:id` permanently deletes the user row (not a soft-delete). Not covered by the target matrix; a hard-delete that bypasses any deactivation workflow. |
 | View own profile | All roles | Partial — no dedicated own-profile GET route for non-admins | Authenticated users get session but no separate `/api/me` in Core |
 | Edit own profile | All roles | Not implemented | No self-edit endpoint for non-admin users in Core |
-| Assign `authorizedUnits` to a `UNIT_ADMIN` | ADMIN only | **Not implemented at route level** | Schema field `User.authorizedUnits` exists; no endpoint exposes it for assignment yet (#297) |
+| Assign `authorizedUnits` to a `UNIT_ADMIN` | ADMIN only | **Implemented** | `POST /api/users` and `PATCH /api/users/:id` validate and persist canonical discipline codes; `useUsers` exposes them in `PlatformUser` (#297, #967) |
 
 ---
 
