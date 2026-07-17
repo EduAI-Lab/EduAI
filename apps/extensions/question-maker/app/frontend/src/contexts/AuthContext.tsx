@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { User } from '../types/auth';
 import { authService } from '../services/authService';
 
@@ -27,25 +27,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const hasInitialized = useRef(false);
-
   useEffect(() => {
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
+    let cancelled = false;
 
     authService
       .getCurrentUser()
       .then((currentUser) => {
+        if (cancelled) return;
         setUser(currentUser);
         setIsAuthenticated(true);
       })
       .catch(() => {
         // 401s are handled by the api.ts interceptor (redirects to Core login).
-        // Other errors leave the user in an unauthenticated state.
       })
       .finally(() => {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const logout = useCallback(async () => {
