@@ -44,6 +44,7 @@ import {
 import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
+import { courseCodeLookupCandidates } from "~/lib/courses/course-code-candidates";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
@@ -471,17 +472,13 @@ export async function action({ request }: ActionFunctionArgs) {
     );
 
     // Resolve course code to internal ID when needed.
-    // Prefer exact match; fall back to common whitespace/case variants because
+    // Prefer exact match; fall back to common whitespace variants because
     // callers (e.g. QM before coreCourseId pass-through) sometimes send
     // "COSC121" while Core stores "COSC 121". Prefer courseId when available.
     let resolvedCourseId: string | null = null;
     if (courseCode && typeof courseCode === "string") {
       try {
-        const trimmed = courseCode.trim();
-        const compact = trimmed.replace(/\s+/g, "");
-        const spaced = compact.replace(/([A-Za-z]+)(\d+)/, "$1 $2");
-        const codeCandidates = [...new Set([trimmed, compact, spaced].filter(Boolean))];
-        for (const code of codeCandidates) {
+        for (const code of courseCodeLookupCandidates(courseCode)) {
           const course = await prisma.course.findFirst({
             where: { code, deletedAt: null },
           });
