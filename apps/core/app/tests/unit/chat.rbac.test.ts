@@ -26,7 +26,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    course: { findFirst: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn() },
   },
 }));
 
