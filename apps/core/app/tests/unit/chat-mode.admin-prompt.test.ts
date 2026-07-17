@@ -12,6 +12,7 @@ describe("formatAdminCourseContext", () => {
     expect(text).toContain("platform-wide");
     expect(text).toContain("listCourseEnrollments");
     expect(text).toContain("courseId or courseCode");
+    expect(text).toContain("userId or userEmail");
   });
 });
 
