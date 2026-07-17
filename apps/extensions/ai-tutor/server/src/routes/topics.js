@@ -18,7 +18,14 @@
  *     direct API call, but is otherwise dead code.
  *   - GET auto-syncs from Core for imported courses (#1031); POST .../sync
  *     and POST .../remap are kept for API compatibility but are no longer
- *     called by the UI.
+ *     called by the UI. This means any enrolled student's read can now
+ *     trigger a Core call + local `createMany`, where before sync was an
+ *     explicit admin-only action — deliberate, so the topic list is current
+ *     without a manual step; `AUTO_SYNC_TTL_MS` caps the resulting Core/DB
+ *     load to at most one sync per course per TTL window regardless of how
+ *     many students are reading concurrently. `jobs/reconcile.js` still owns
+ *     periodic reconciliation independent of reads; this is a read-time
+ *     top-up on top of that, not a replacement for it.
  *   - Remap rewrites both `Activity.mainTopicId` and the
  *     `ActivitySecondaryTopic` join table inside a transaction, then drops the
  *     source topic. If the source is still referenced (e.g. another module),
@@ -29,7 +36,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS } from '../services/topicSync.js';
+import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
 
 const router = express.Router();
 
@@ -64,10 +71,12 @@ async function ensureCourseAccess(courseId, user) {
  * this pulls the latest topic list from Core before responding, so the topic
  * list is always current without a manual sync action. Pulls are throttled
  * per course to `AUTO_SYNC_TTL_MS` (services/topicSync.js) so a page with
- * many concurrent viewers doesn't fire a Core call per request. A failed
- * pull (Core fetch or local write) falls back to serving the local mirror
- * rather than failing the request — mirrors the tolerance pattern in
- * jobs/reconcile.js.
+ * many concurrent viewers doesn't fire a Core call per request, and bounded
+ * to `AUTO_SYNC_TIMEOUT_MS` so a Core that's up but slow/hung degrades to
+ * the local mirror the same way a hard failure does, instead of blocking
+ * the request on the OS socket timeout. A failed or timed-out pull (Core
+ * fetch or local write) falls back to serving the local mirror rather than
+ * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
  */
 router.get('/courses/:courseId/topics', async (req, res) => {
   const courseId = Number(req.params.courseId);
@@ -87,19 +96,29 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
+    let topics;
     if (course.externalId) {
       try {
-        await syncExternalCourseTopics(courseId, { ttlMs: AUTO_SYNC_TTL_MS });
+        const synced = await syncExternalCourseTopics(courseId, {
+          ttlMs: AUTO_SYNC_TTL_MS,
+          signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+        });
+        topics = synced?.topics;
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
         console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
       }
     }
 
-    const topics = await prisma.topic.findMany({
-      where: { courseOfferingId: courseId },
-      orderBy: { name: 'asc' },
-    });
+    // Native courses skip the sync branch above; a failed/aborted sync
+    // leaves `topics` unset — either way, fall back to a fresh local read
+    // instead of double-querying when the sync already returned the list.
+    if (!topics) {
+      topics = await prisma.topic.findMany({
+        where: { courseOfferingId: courseId },
+        orderBy: { name: 'asc' },
+      });
+    }
     res.json(topics);
   } catch (e) {
     res.status(500).json({ error: String(e) });

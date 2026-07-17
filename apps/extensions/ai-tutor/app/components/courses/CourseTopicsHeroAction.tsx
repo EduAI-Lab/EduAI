@@ -45,8 +45,11 @@ export function CourseTopicsHeroAction({
   const [createError, setCreateError] = useState<string | null>(null);
 
   // EduAI-sourced courses have their topics pulled automatically from Core
-  // on every read (routes/topics.js) — no manual action needed here.
-  const isEduAiCourse = !!course.externalId || course.externalSource === 'EDUAI';
+  // on every read (routes/topics.js) — no manual action needed here. Gated
+  // on `externalId` alone to match the server's sync/create gate exactly
+  // (routes/topics.js checks `course.externalId`, not `externalSource`);
+  // the import flow always sets both together, so this can't drift from it.
+  const isEduAiCourse = !!course.externalId;
   if (!perms.canManageTopics || isEduAiCourse) return null;
 
   const handleCreateTopic = async () => {

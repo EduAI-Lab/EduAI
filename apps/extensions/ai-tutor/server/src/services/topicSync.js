@@ -10,6 +10,14 @@ import { listEduAiCourseTopics } from './eduaiClient.js';
  */
 export const AUTO_SYNC_TTL_MS = 30_000;
 
+/**
+ * How long the read path (GET /topics) will wait on Core before giving up
+ * and serving the local mirror. Without this, a Core that's up but slow or
+ * hung doesn't throw — it just holds the socket — so every reader blocks on
+ * Core's latency instead of degrading gracefully like a hard failure does.
+ */
+export const AUTO_SYNC_TIMEOUT_MS = 3_000;
+
 const lastAutoSyncAt = new Map();
 
 /**
@@ -18,6 +26,9 @@ const lastAutoSyncAt = new Map();
  * - Returns the up-to-date list of local topics for the course.
  * - Pass `options.ttlMs` to skip the Core call (and just return the local
  *   mirror) if a sync for this course succeeded within the last `ttlMs` ms.
+ * - Pass `options.signal` (e.g. `AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS)`)
+ *   to bound the Core call; an abort surfaces like any other fetch failure
+ *   and is tagged `phase: 'fetch'` below.
  * @param {number} courseOfferingId
  */
 export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
@@ -48,7 +59,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
   // Fetch topics from Core using the service key
   let externalTopics;
   try {
-    externalTopics = await listEduAiCourseTopics(course.externalId);
+    externalTopics = await listEduAiCourseTopics(course.externalId, { signal: options.signal });
   } catch (e) {
     e.phase = e.phase || 'fetch';
     throw e;
