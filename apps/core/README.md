@@ -135,11 +135,11 @@ INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
 
 ### Programmatic Access
 
-Core API routes authenticate via **session cookie** (user-context calls) or **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls). The legacy `x-api-key` Better Auth API-key plugin has been removed (#158). Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls.
+Core API routes authenticate via **session cookie** (user-context calls), **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls), or an admin-owned **`x-api-key`** on supported routes. Better Auth's API-key plugin verifies `x-api-key`; `enforceAdminIfApiKey` restricts it to active ADMIN owners on `/api/chat`, `/api/me`, `/api/users`, `/api/ai-providers`, and `/api/ai-models`. Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls.
 
 ## API Documentation
 
-Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. See `app/lib/auth/guards.server.ts` (`requireServiceKey`) for the service-key implementation.
+Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. Supported admin automation routes also accept an active ADMIN user's `x-api-key` through Better Auth and `enforceAdminIfApiKey`. See `app/lib/auth/guards.server.ts` for both guards.
 
 ### Chat Endpoint
 
