@@ -140,16 +140,14 @@ export async function deleteQuestionBank(
     for (const membership of memberships) {
       await prisma.questionBankMembership.upsert({
         where: {
-          questionBankId_source_externalQuestionId: {
+          questionBankId_questionId: {
             questionBankId: target.id,
-            source: membership.source,
-            externalQuestionId: membership.externalQuestionId,
+            questionId: membership.questionId,
           },
         },
         create: {
           questionBankId: target.id,
-          source: membership.source,
-          externalQuestionId: membership.externalQuestionId,
+          questionId: membership.questionId,
         },
         update: {},
       });
@@ -180,18 +178,31 @@ export async function addQuestionToBank(
     return { error: "Question bank not found" } as const;
   }
 
+  const question = await prisma.question.findFirst({
+    where: {
+      id: parsed.data.questionId,
+      courseId,
+      deletedAt: null,
+    },
+  });
+  if (
+    !question ||
+    question.courseId !== courseId ||
+    question.deletedAt !== null
+  ) {
+    return { error: "Question not found in this course" } as const;
+  }
+
   const membership = await prisma.questionBankMembership.upsert({
     where: {
-      questionBankId_source_externalQuestionId: {
+      questionBankId_questionId: {
         questionBankId: bankId,
-        source: parsed.data.source,
-        externalQuestionId: parsed.data.externalQuestionId,
+        questionId: parsed.data.questionId,
       },
     },
     create: {
       questionBankId: bankId,
-      source: parsed.data.source,
-      externalQuestionId: parsed.data.externalQuestionId,
+      questionId: parsed.data.questionId,
     },
     update: {},
   });
@@ -202,8 +213,7 @@ export async function addQuestionToBank(
 export async function removeQuestionFromBank(
   courseId: string,
   bankId: string,
-  externalQuestionId: string,
-  source = "question-maker",
+  questionId: string,
 ) {
   const bank = await prisma.questionBank.findFirst({
     where: { id: bankId, courseId },
@@ -214,10 +224,9 @@ export async function removeQuestionFromBank(
 
   const membership = await prisma.questionBankMembership.findUnique({
     where: {
-      questionBankId_source_externalQuestionId: {
+      questionBankId_questionId: {
         questionBankId: bankId,
-        source,
-        externalQuestionId,
+        questionId,
       },
     },
   });
@@ -226,28 +235,7 @@ export async function removeQuestionFromBank(
   }
 
   await prisma.questionBankMembership.delete({ where: { id: membership.id } });
-
-  const remaining = await prisma.questionBankMembership.count({
-    where: { source, externalQuestionId },
-  });
-
-  if (remaining === 0) {
-    const defaultBank = await ensureDefaultBank(courseId);
-    await prisma.questionBankMembership.create({
-      data: {
-        questionBankId: defaultBank.id,
-        source,
-        externalQuestionId,
-      },
-    });
-    return {
-      removed: true,
-      reassignedToDefault: true,
-      defaultBankId: defaultBank.id,
-    } as const;
-  }
-
-  return { removed: true, reassignedToDefault: false } as const;
+  return { removed: true } as const;
 }
 
 export async function listBankMemberships(courseId: string, bankId: string) {
@@ -260,6 +248,7 @@ export async function listBankMemberships(courseId: string, bankId: string) {
 
   const memberships = await prisma.questionBankMembership.findMany({
     where: { questionBankId: bankId },
+    include: { question: true },
     orderBy: { createdAt: "asc" },
   });
   return { memberships } as const;
@@ -267,13 +256,11 @@ export async function listBankMemberships(courseId: string, bankId: string) {
 
 export async function listMembershipsForQuestion(
   courseId: string,
-  externalQuestionId: string,
-  source = "question-maker",
+  questionId: string,
 ) {
   return prisma.questionBankMembership.findMany({
     where: {
-      source,
-      externalQuestionId,
+      questionId,
       questionBank: { courseId },
     },
     include: { questionBank: true },

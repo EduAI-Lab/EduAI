@@ -7,7 +7,7 @@ import {
   CreateQuestionBankSchema,
   DeleteQuestionBankSchema,
   UpdateQuestionBankSchema,
-} from "../../app/lib/question-banks/schemas";
+} from "~/lib/question-banks/schemas";
 
 describe("question-banks schemas", () => {
   it("accepts a valid create payload", () => {
@@ -35,14 +35,10 @@ describe("question-banks schemas", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("requires externalQuestionId for membership", () => {
-    const ok = AddBankMembershipSchema.safeParse({
-      externalQuestionId: "42",
-      source: "question-maker",
-    });
-    expect(ok.success).toBe(true);
-
-    const bad = AddBankMembershipSchema.safeParse({ source: "question-maker" });
-    expect(bad.success).toBe(false);
+  it("requires questionId for membership", () => {
+    expect(AddBankMembershipSchema.safeParse({}).success).toBe(false);
+    expect(
+      AddBankMembershipSchema.safeParse({ questionId: "clxxx" }).success,
+    ).toBe(true);
   });
 });

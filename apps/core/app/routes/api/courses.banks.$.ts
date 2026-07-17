@@ -42,7 +42,7 @@ function json(data: unknown, status = 200) {
  * - "" → GET list / POST create
  * - ":bankId" → PUT update / DELETE
  * - ":bankId/questions" → GET memberships / POST add
- * - ":bankId/questions/:externalQuestionId" → DELETE remove
+ * - ":bankId/questions/:questionId" → DELETE remove
  */
 function parseBanksPath(splat: string | undefined) {
   const rest = (splat || "").replace(/^\/+/, "");
@@ -127,20 +127,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const body = await request.json();
     const result = await addQuestionToBank(courseId, parts[0], body);
     if ("error" in result) {
-      const status = result.error === "Question bank not found" ? 404 : 400;
+      const status =
+        result.error === "Question bank not found" ||
+        result.error === "Question not found in this course"
+          ? 404
+          : 400;
       return json(result, status);
     }
     return json(result.membership, 201);
   }
 
   if (parts.length === 3 && parts[1] === "questions" && method === "DELETE") {
-    const source =
-      new URL(request.url).searchParams.get("source") || "question-maker";
     const result = await removeQuestionFromBank(
       courseId,
       parts[0],
       parts[2],
-      source,
     );
     if ("error" in result) {
       const status =

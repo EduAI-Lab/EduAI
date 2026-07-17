@@ -16,8 +16,7 @@ export const DeleteQuestionBankSchema = z.object({
 });
 
 export const AddBankMembershipSchema = z.object({
-  externalQuestionId: z.string().min(1),
-  source: z.string().min(1).optional().default("question-maker"),
+  questionId: z.string().min(1),
 });
 
 export type CreateQuestionBankInput = z.infer<typeof CreateQuestionBankSchema>;
