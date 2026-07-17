@@ -154,6 +154,61 @@ describe("listAdminCourseEnrollments", () => {
       }),
     );
   });
+
+  it("filters by exact userId regardless of the page-size limit", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([
+      {
+        id: "e1",
+        userId: "u1",
+        role: "STUDENT",
+        isActive: true,
+        enrolledAt: new Date("2020-01-01"),
+        user: { email: "old@test.com", name: "Old Student" },
+      },
+    ]);
+    prismaMock.enrollment.count.mockResolvedValue(1);
+
+    // limit is small but should be irrelevant once an exact userId is given —
+    // the row could otherwise be outside the newest page and unreachable.
+    const result = await listAdminCourseEnrollments(ADMIN, "c1", { userId: "u1", limit: 1 });
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ courseId: "c1", userId: "u1" }) }),
+    );
+    expect("count" in result && result.count).toBe(1);
+  });
+
+  it("filters by exact userEmail (case-insensitive), independent of limit", async () => {
+    vi.mocked(getAccessibleCourse).mockResolvedValue({
+      course: { id: "c1", code: "COSC 111" },
+    } as never);
+    prismaMock.enrollment.findMany.mockResolvedValue([
+      {
+        id: "e1",
+        userId: "u1",
+        role: "STUDENT",
+        isActive: true,
+        enrolledAt: new Date("2020-01-01"),
+        user: { email: "old@test.com", name: "Old Student" },
+      },
+    ]);
+    prismaMock.enrollment.count.mockResolvedValue(1);
+
+    await listAdminCourseEnrollments(ADMIN, "c1", { userEmail: "OLD@test.com" });
+
+    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          courseId: "c1",
+          user: { email: { equals: "OLD@test.com", mode: "insensitive" } },
+        }),
+        take: 1,
+      }),
+    );
+  });
 });
 
 describe("listAdminCourseTopics", () => {

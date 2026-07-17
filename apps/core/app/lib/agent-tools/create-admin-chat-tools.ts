@@ -85,9 +85,10 @@ export function createAdminChatTools(ctx: ChatToolContext) {
 
     listCourseEnrollments: tool({
       description:
-        "List users enrolled in a course (roster). Requires courseId or courseCode. Filter by enrolledAt window for time-range questions.",
+        "List users enrolled in a course (roster). Requires courseId or courseCode. Filter by enrolledAt window for time-range questions, or by userId/userEmail to look up one specific enrollment (e.g. before an update/deactivate write) — an exact user lookup is not subject to the list's row limit, so it still finds enrollments outside the newest page.",
       parameters: z.object({
         ...courseScope,
+        ...userRef,
         limit: z.number().int().min(1).max(50).optional(),
         enrolledSince: z
           .string()
@@ -102,6 +103,8 @@ export function createAdminChatTools(ctx: ChatToolContext) {
       execute: async ({
         courseId,
         courseCode,
+        userId,
+        userEmail,
         enrolledSince,
         enrolledBefore,
         isActive,
@@ -112,6 +115,8 @@ export function createAdminChatTools(ctx: ChatToolContext) {
           return resolved;
         }
         return listAdminCourseEnrollments(user, resolved.courseId, {
+          userId,
+          userEmail,
           enrolledSince,
           enrolledBefore,
           isActive,

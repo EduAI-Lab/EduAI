@@ -154,6 +154,8 @@ export async function listAdminCourseEnrollments(
   user: RbacUser,
   courseId: string,
   opts: {
+    userId?: string;
+    userEmail?: string;
     enrolledSince?: string;
     enrolledBefore?: string;
     isActive?: boolean;
@@ -179,10 +181,15 @@ export async function listAdminCourseEnrollments(
     return gate;
   }
 
-  const clampedLimit = Math.min(
-    Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1),
-    MAX_LIST_LIMIT,
-  );
+  // An exact user lookup (by id or email) always targets a single enrollment,
+  // regardless of the page-size limit — so an admin can still find/act on a
+  // roster row outside the newest page instead of the model guessing a
+  // similar-looking match from a truncated list.
+  const userId = opts.userId?.trim() || undefined;
+  const userEmail = opts.userEmail?.trim() || undefined;
+  const clampedLimit = userId || userEmail
+    ? 1
+    : Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT);
 
   const enrolledAtFilter =
     enrolledSince instanceof Date || enrolledBefore instanceof Date
@@ -194,6 +201,8 @@ export async function listAdminCourseEnrollments(
 
   const where = {
     courseId,
+    ...(userId ? { userId } : {}),
+    ...(userEmail ? { user: { email: { equals: userEmail, mode: "insensitive" as const } } } : {}),
     ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
     ...(enrolledAtFilter ? { enrolledAt: enrolledAtFilter } : {}),
   };
