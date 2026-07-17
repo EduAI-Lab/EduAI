@@ -83,7 +83,7 @@ describe('Topics routes', () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
-      expect(listEduAiCourseTopics).toHaveBeenCalledWith('ext-123');
+      expect(listEduAiCourseTopics).toHaveBeenCalledWith('ext-123', expect.objectContaining({ signal: expect.anything() }));
       const names = res.body.map((t) => t.name);
       expect(names).toContain('Test Topic');
       expect(names).toContain('Core-only Topic');
