@@ -70,6 +70,20 @@ describe("normalizeTokenUsage", () => {
       totalTokens: 42,
     });
   });
+
+  it("treats total_tokens: 0 as missing when split fields are present", () => {
+    expect(
+      normalizeTokenUsage({
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 0,
+      }),
+    ).toEqual({
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+    });
+  });
 });
 
 describe("splitRegistryModelId", () => {

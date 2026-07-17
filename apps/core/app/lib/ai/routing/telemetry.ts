@@ -50,12 +50,15 @@ export function normalizeTokenUsage(
     asTokenCount(usage.completionTokens) ??
     asTokenCount(usage.outputTokens) ??
     asTokenCount(usage.completion_tokens);
+  const reportedTotal =
+    asTokenCount(usage.totalTokens) ?? asTokenCount(usage.total_tokens);
+  // Treat total_tokens: 0 as missing when split fields are present (provider quirk).
   const totalTokens =
-    asTokenCount(usage.totalTokens) ??
-    asTokenCount(usage.total_tokens) ??
-    (promptTokens != null && completionTokens != null
-      ? promptTokens + completionTokens
-      : null);
+    reportedTotal != null && reportedTotal > 0
+      ? reportedTotal
+      : promptTokens != null && completionTokens != null
+        ? promptTokens + completionTokens
+        : reportedTotal;
   if (isMissingUsage(promptTokens, completionTokens, totalTokens)) {
     return { promptTokens: null, completionTokens: null, totalTokens: null };
   }

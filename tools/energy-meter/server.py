@@ -4,7 +4,7 @@ HTTP sidecar for hardware energy measurement (RAPL + NVML).
 
 Endpoints:
   GET  /health
-  POST /measure-start  { "tag": "optional-id", "gpuIndex": 0 }
+  POST /measure-start  { "tag": "optional-id", "gpuIndex": 0 } or { "gpuIndices": [0,1] }
   POST /measure-stop   { "tag": "optional-id" }
   POST /measure        legacy noop summary (returns last stop or zeros)
 
@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from meter import MeasurementSession
+from meter import MeasurementSession, resolve_gpu_indices
 
 HOST = os.environ.get("ENERGY_METER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("ENERGY_METER_PORT", "9100"))
@@ -80,13 +80,30 @@ class EnergyMeterHandler(BaseHTTPRequestHandler):
 
         if path == "/measure-start":
             tag = str(body.get("tag") or uuid.uuid4())
-            gpu_index = int(body.get("gpuIndex", 0))
+            try:
+                gpu_indices = resolve_gpu_indices(
+                    body_gpu_index=body.get("gpuIndex"),
+                    body_gpu_indices=body.get("gpuIndices"),
+                )
+            except ValueError as exc:
+                _send_json(self, 400, {"error": str(exc)})
+                return
             with _lock:
+                # Host-wide RAPL/NVML counters — serialize to one active session.
+                if _sessions:
+                    _send_json(
+                        self,
+                        409,
+                        {
+                            "error": "another measurement session is already active; wait for measure-stop",
+                        },
+                    )
+                    return
                 if tag in _sessions:
                     _send_json(self, 409, {"error": f"session already active: {tag}"})
                     return
-                _sessions[tag] = MeasurementSession.start(tag=tag, gpu_index=gpu_index)
-            _send_json(self, 200, {"ok": True, "tag": tag})
+                _sessions[tag] = MeasurementSession.start(tag=tag, gpu_indices=gpu_indices)
+            _send_json(self, 200, {"ok": True, "tag": tag, "gpuIndices": gpu_indices})
             return
 
         if path == "/measure-stop":
