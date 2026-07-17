@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatMessage, coerceMessageContent } from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
@@ -87,6 +87,52 @@ describe("ChatMessage — AI message", () => {
       <ChatMessage message={aiMessage} highlightRole="inactive" />,
     );
     expect(container.querySelector(".chat-message--inactive")).toBeInTheDocument();
+  });
+
+  it("renders an animated eduai-diagram widget instead of a code fence", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `Intro
+
+\`\`\`eduai-diagram
+gradient-descent
+\`\`\`
+
+Outro`,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /replay/i })).toBeInTheDocument();
+    expect(screen.queryByText(/```eduai-diagram/)).not.toBeInTheDocument();
+  });
+
+  it("renders labeled process-flow stages and shows detail on tap", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: How a bill becomes law
+Introduce bill: Member files the proposal
+Committee: Experts study and amend
+Floor vote: Chamber decides
+Become law: President signs
+\`\`\``,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
+    expect(screen.getByText("How a bill becomes law")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Committee" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Committee" }));
+    expect(screen.getByText(/Experts study and amend/)).toBeInTheDocument();
+  });
+
+  it("falls back unknown type ids to process-flow animation", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: "```eduai-diagram\nphotosynthesis-cycle\n```",
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
   });
 });
 
