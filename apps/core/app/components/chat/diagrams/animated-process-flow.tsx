@@ -83,6 +83,7 @@ function ProcessFlowTrack({
   onHighlight: (i: number) => void;
   playKey: number;
 }) {
+  // Autoplay only drives highlight — never selected — so taps stay sticky.
   useEffect(() => {
     if (reducedMotion) return;
     onHighlight(0);
@@ -91,12 +92,11 @@ function ProcessFlowTrack({
       timers.push(
         window.setTimeout(() => {
           onHighlight(i);
-          onSelect(i);
         }, i * 700),
       );
     });
     return () => timers.forEach((t) => window.clearTimeout(t));
-  }, [playKey, reducedMotion, stages.length, onHighlight, onSelect]);
+  }, [playKey, reducedMotion, stages.length, onHighlight]);
 
   return (
     <ol className="flex flex-wrap items-stretch justify-center gap-1.5 sm:gap-2">

@@ -126,6 +126,47 @@ Become law: President signs
     expect(screen.getByText(/Experts study and amend/)).toBeInTheDocument();
   });
 
+  it("keeps process-flow stage selection after autoplay timers fire", () => {
+    vi.useFakeTimers();
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: Bill
+Introduce Bill: file
+Committee: review
+Vote: decide
+Law: sign
+\`\`\``,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    fireEvent.click(screen.getByRole("button", { name: "Committee" }));
+    const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
+    vi.advanceTimersByTime(5000);
+    // Detail panel must still describe Committee, not the last autoplay stage.
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
+    expect(diagram?.textContent).not.toMatch(/Law\s+—\s+sign/);
+    vi.useRealTimers();
+  });
+
+  it("renders gradient-descent stage chips and detail on tap", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+gradient-descent
+title: Gradient descent
+Start high: Pick a starting point
+Compute slope: Measure steepness
+Step downhill: Move opposite the slope
+\`\`\``,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Compute slope" }));
+    expect(screen.getByText(/Measure steepness/)).toBeInTheDocument();
+  });
+
   it("falls back unknown type ids to process-flow animation", () => {
     const withDiagram: Message = {
       ...aiMessage,
