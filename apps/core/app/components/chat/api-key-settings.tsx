@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { DB_STORED_KEY } from "~/hooks/use-api-keys";
 import { Button } from "@eduai/ui";
 import { Input } from "@eduai/ui";
 import { Label } from "@eduai/ui";
@@ -254,31 +255,42 @@ export function ApiKeySettings({
                         {p.label} API key
                       </Label>
                       <div className="flex items-center gap-2">
-                        <Input
-                          id={`key-display-${p.id}`}
-                          type={showKeys[p.id] ? "text" : "password"}
-                          value={
-                            showKeys[p.id]
-                              ? (apiKeys[p.id]?.apiKey ?? "")
-                              : maskKey(apiKeys[p.id]?.apiKey ?? "")
-                          }
-                          readOnly
-                          className="font-mono text-sm rounded-[var(--radius-md)] flex-1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => toggleShowKey(p.id)}
-                          aria-label={
-                            showKeys[p.id] ? "Hide API key" : "Reveal API key"
-                          }
-                          className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {showKeys[p.id] ? (
-                            <IconEyeOff className="h-4 w-4" />
-                          ) : (
-                            <IconEye className="h-4 w-4" />
-                          )}
-                        </button>
+                        {apiKeys[p.id]?.apiKey === DB_STORED_KEY ? (
+                          <Input
+                            id={`key-display-${p.id}`}
+                            type="password"
+                            value="stored-securely"
+                            readOnly
+                            className="font-mono text-sm rounded-[var(--radius-md)] flex-1 text-muted-foreground"
+                            aria-label={`${p.label} API key stored securely`}
+                          />
+                        ) : (
+                          <>
+                            <Input
+                              id={`key-display-${p.id}`}
+                              type={showKeys[p.id] ? "text" : "password"}
+                              value={
+                                showKeys[p.id]
+                                  ? (apiKeys[p.id]?.apiKey ?? "")
+                                  : maskKey(apiKeys[p.id]?.apiKey ?? "")
+                              }
+                              readOnly
+                              className="font-mono text-sm rounded-[var(--radius-md)] flex-1"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => toggleShowKey(p.id)}
+                              aria-label={showKeys[p.id] ? "Hide API key" : "Reveal API key"}
+                              className="inline-flex items-center justify-center h-11 w-11 shrink-0 rounded-[var(--radius-md)] border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {showKeys[p.id] ? (
+                                <IconEyeOff className="h-4 w-4" />
+                              ) : (
+                                <IconEye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleRemoveKey(p.id)}
@@ -365,8 +377,8 @@ export function ApiKeySettings({
           <div className="mt-3 flex items-start gap-2 rounded-[var(--radius-md)] border border-border bg-muted/40 px-4 py-3">
             <IconShield className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
-              API keys are stored locally in your browser and never sent to our
-              servers.
+              API keys are encrypted and stored securely on the server. They are
+              never exposed to other users or returned to the browser.
             </p>
           </div>
           </PageTabsContent>

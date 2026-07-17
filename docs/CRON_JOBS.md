@@ -225,6 +225,7 @@ SELECT * FROM cron_job_runs WHERE status = 'RUNNING';
 | `backup-offsite` | `45 2 * * *` (02:45 UTC) | Infra | Sync dumps to off-site storage |
 | `backup-rotate` | `15 3 * * *` (03:15 UTC) | Infra | Delete local dumps past retention window |
 | `cleanup-invitations` | `30 3 * * *` (03:30 UTC) | Infra | Delete revoked/expired invitations past a 30-day grace period |
+| `notify-api-key-expiry` | `0 4 * * *` (04:00 UTC) | Infra | Email users whose provider API keys expire in exactly 7 days |
 | `ai-tutor-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in AI Tutor |
 | `qm-reconcile` | `0 2 * * *` (02:00 UTC) | Extension | Nullify stale Core references in Question Maker |
 

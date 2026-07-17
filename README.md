@@ -4,6 +4,8 @@ Monorepo for the EduAI platform — a suite of AI-powered educational tools buil
 
 ## Repository structure
 
+Quick map of the monorepo. For the full layout, Core internals, routes, schema, and RBAC, see [`docs/ARCHITECTURE.md` §7](docs/ARCHITECTURE.md#7-codebase-walkthrough-where-to-look).
+
 ```text
 EduAI/
 ├── apps/
@@ -11,10 +13,11 @@ EduAI/
 │   └── extensions/
 │       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
 │       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
-│       └── question-maker/          # Question Maker — question bank authoring, Canvas integration
-│           └── app/
-│               ├── backend/         # Question Maker Express/Sequelize API
-│               └── frontend/        # Question Maker Vite/React frontend
+│       ├── question-maker/          # Question Maker — question bank authoring, Canvas integration
+│       │   └── app/
+│       │       ├── backend/         # Question Maker Express/Sequelize API
+│       │       └── frontend/        # Question Maker Vite/React frontend
+│       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
 │   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
@@ -61,7 +64,8 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`rag-ai/HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md) | Shared s378 / `dev.eduai` runbook — Core + AI Tutor + Question Maker URLs, systemd units, shared cookies, auth troubleshooting |
 | [`rag-ai/EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md) | How embeddings work — pgvector storage, server vs chat API keys, index/retrieval lifecycle, hosting |
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, embeddings overview, and high-level flows |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
