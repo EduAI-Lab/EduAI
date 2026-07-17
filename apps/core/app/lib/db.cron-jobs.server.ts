@@ -43,6 +43,13 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "cleanup-invitations.sh",
   },
   {
+    name: "notify-api-key-expiry",
+    description: "Email users whose AI provider API keys expire in 7 days",
+    schedule: "0 4 * * *",
+    scheduleLabel: "Daily at 04:00 UTC",
+    script: "notify-api-key-expiry.sh",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
