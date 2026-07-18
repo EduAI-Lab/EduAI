@@ -219,6 +219,7 @@ model AIInteraction {
   durationMs       Int?
   promptTokens     Int?
   completionTokens Int?
+  totalTokens      Int?
   estInputCostUsd  Float?
   estOutputCostUsd Float?
   energyJoules     Float?
@@ -733,6 +734,7 @@ enum RouterTier {
 enum EnergyMeasurementSource {
   RAPL_CPU
   NVML_GPU
+  RAPL_PLUS_NVML
   OLLAMA_METRICS
   ESTIMATED_FROM_TOKENS
   ESTIMATED_FROM_DURATION
