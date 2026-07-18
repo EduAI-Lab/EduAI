@@ -47,6 +47,7 @@ export async function action({ request }: ActionFunctionArgs) {
     streaming: payload.streaming,
     temperature: payload.temperature,
     maxTokens: payload.maxTokens,
+    routingContext: payload.routingContext,
   });
 
   if (!outcome.ok) {

@@ -57,4 +57,14 @@ describe("mergeLocalInferenceFromEnv", () => {
     expect(merged.vllm?.isEnabled).toBe(true);
     expect(merged.ollama?.isEnabled).toBe(true);
   });
+
+  it("uses fleet vLLM base URL override when provided", () => {
+    process.env.VLLM_BASE_URL = "http://cmps01.ok.ubc.ca:8001";
+    const merged = mergeLocalInferenceFromEnv(
+      { vllm: { isEnabled: false } },
+      "vllm:qwen2.5-7b-instruct",
+      "http://cmps02.ok.ubc.ca:8001",
+    );
+    expect(merged.vllm?.baseUrl).toBe("http://cmps02.ok.ubc.ca:8001");
+  });
 });

@@ -254,6 +254,8 @@ class EduAIService {
         messages,
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
+        // Background pool (#878) — QM generation/chat maps to VLLM_FLEET_HEAVY_URL when set.
+        routingContext: params.routingContext || { jobType: "background" },
         streaming: params.streaming === true,
         ...(params.temperature != null ? { temperature: params.temperature } : {}),
         ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),

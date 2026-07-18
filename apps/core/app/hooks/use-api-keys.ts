@@ -2,181 +2,252 @@ import { useSyncExternalStore, useCallback } from 'react';
 import type { UserProviderSettings } from '~/lib/ai/provider-types';
 import { LOCAL_INFERENCE_PROVIDERS } from '~/lib/ai/provider-types';
 
-export interface ApiKeyData {
-  providerId: string;
+/**
+ * Sentinel stored in the client-side state when the real key lives in the DB.
+ * Never sent back to the server — the server loads the decrypted key directly.
+ */
+export const DB_STORED_KEY = '__db_stored__';
+
+const LEGACY_STORAGE_KEY = 'edu-ai-api-keys';
+
+// ---------------------------------------------------------------------------
+// Server row shape returned by GET /api/user-provider-settings
+// ---------------------------------------------------------------------------
+
+type ServerRow = {
   providerName: string;
-  apiKey: string;
-  baseUrl?: string;
   isEnabled: boolean;
+  hasKey: boolean;
+  baseUrl: string | null;
+};
+
+function rowsToSettings(rows: ServerRow[]): UserProviderSettings {
+  const settings: UserProviderSettings = {};
+  for (const row of rows) {
+    settings[row.providerName] = {
+      isEnabled: row.isEnabled,
+      apiKey: row.hasKey ? DB_STORED_KEY : undefined,
+      baseUrl: row.baseUrl ?? undefined,
+    };
+  }
+  return settings;
 }
 
-const STORAGE_KEY = 'edu-ai-api-keys';
-
 // ---------------------------------------------------------------------------
-// Shared external store — one JS module instance, shared across all call sites
-// on the same page. Any write in one component re-renders ALL consumers,
-// eliminating the stale-state bug that required a full page refresh.
+// Module-level store — shared across all hook instances on the same page.
 // ---------------------------------------------------------------------------
-
-type Listener = () => void;
 
 interface ApiKeysStore {
   data: UserProviderSettings;
-  /** true only during the very first synchronous render before localStorage is read */
   isLoading: boolean;
 }
 
 let storeState: ApiKeysStore = { data: {}, isLoading: true };
-/**
- * The raw JSON string we last wrote to / read from localStorage.
- * Tracked so getSnapshot can detect out-of-band mutations (e.g. test teardown
- * calling localStorage.clear()) without expensive stringify comparisons.
- */
-let lastKnownRaw: string | null = null;
-const listeners = new Set<Listener>();
+let fetchInitiated = false;
+const listeners = new Set<() => void>();
 
 function emitChange() {
-  for (const listener of listeners) {
-    listener();
-  }
+  for (const listener of listeners) listener();
 }
 
-function setState(next: ApiKeysStore, rawJson: string | null) {
+function setState(next: ApiKeysStore) {
   storeState = next;
-  lastKnownRaw = rawJson;
   emitChange();
 }
 
-function parseStorage(): { data: UserProviderSettings; raw: string | null } {
-  if (typeof window === 'undefined') return { data: {}, raw: null };
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) return { data: {}, raw: null };
-  try {
-    return { data: JSON.parse(raw) as UserProviderSettings, raw };
-  } catch (error) {
-    console.error('Failed to parse stored API keys:', error);
-    return { data: {}, raw: null };
-  }
-}
+// One-time fetch on the first component mount.
+function ensureLoaded() {
+  if (fetchInitiated || typeof window === 'undefined') return;
+  fetchInitiated = true;
 
-/**
- * useSyncExternalStore snapshot function.
- *
- * On every call we check whether the raw localStorage value matches what we
- * last recorded (lastKnownRaw). If it differs — because the user called
- * saveApiKeys (expected), or because tests cleared/populated localStorage
- * out-of-band — we re-hydrate synchronously. This keeps the hook correct
- * across test runs (which share the module but clear localStorage in
- * beforeEach) without requiring a Provider wrapper.
- */
-function getSnapshot(): ApiKeysStore {
-  if (typeof window === 'undefined') return storeState;
-
-  const currentRaw = window.localStorage.getItem(STORAGE_KEY);
-  // Reconcile whenever: (a) still in the initial loading state, or (b) the raw
-  // localStorage value changed externally (cleared by tests, or written by
-  // another tab before the storage event fires).
-  if (storeState.isLoading || currentRaw !== lastKnownRaw) {
-    let data: UserProviderSettings = {};
-    if (currentRaw) {
-      try {
-        data = JSON.parse(currentRaw) as UserProviderSettings;
-      } catch (error) {
-        console.error('Failed to parse stored API keys:', error);
+  fetch('/api/user-provider-settings', { credentials: 'include' })
+    .then((r) => {
+      if (r.status === 401) {
+        // Session expired/unauthenticated: surface as no keys rather than
+        // falling back to a stale, possibly-mismatched localStorage keyset.
+        console.error('Failed to load provider settings: unauthorized');
+        setState({ data: {}, isLoading: false });
+        return null;
       }
-    }
-    storeState = { data, isLoading: false };
-    lastKnownRaw = currentRaw;
+      if (!r.ok) throw new Error(`Failed to load provider settings: ${r.status}`);
+      return r.json() as Promise<ServerRow[]>;
+    })
+    .then((rows) => {
+      if (rows === null) return;
+      const data = rowsToSettings(rows);
+      const configuredProviders = new Set(rows.map((row) => row.providerName));
+
+      // Migrate any legacy localStorage key that doesn't already have a DB
+      // row, rather than skipping migration entirely once any row exists.
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        try {
+          const localKeys = JSON.parse(raw) as UserProviderSettings;
+          const toMigrate = Object.fromEntries(
+            Object.entries(localKeys).filter(
+              ([providerName, v]) => v.isEnabled && !configuredProviders.has(providerName),
+            ),
+          );
+          if (Object.keys(toMigrate).length > 0) {
+            setState({ data: { ...data, ...toMigrate }, isLoading: false });
+            migrateFromLocalStorage(localKeys, toMigrate);
+            return;
+          }
+        } catch {
+          // ignore parse errors — fall through to server state
+        }
+      }
+
+      setState({ data, isLoading: false });
+    })
+    .catch(() => {
+      // Server unreachable: fall back to localStorage so offline devs aren't blocked.
+      const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      try {
+        const data = raw ? (JSON.parse(raw) as UserProviderSettings) : {};
+        setState({ data, isLoading: false });
+      } catch {
+        setState({ data: {}, isLoading: false });
+      }
+    });
+}
+
+async function migrateFromLocalStorage(
+  allLocalKeys: UserProviderSettings,
+  toMigrate: UserProviderSettings,
+): Promise<void> {
+  const entries = Object.entries(toMigrate);
+  const results = await Promise.allSettled(
+    entries.map(([providerName, settings]) =>
+      fetch('/api/user-provider-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerName,
+          isEnabled: settings.isEnabled,
+          apiKey: settings.apiKey,
+          baseUrl: settings.baseUrl,
+        }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Migration failed for ${providerName}: ${r.status}`);
+      }),
+    ),
+  );
+
+  // Only drop the legacy keys that actually persisted to the server; keep
+  // the rest in localStorage so a failed write doesn't permanently lose the
+  // user's key.
+  const migratedProviders = new Set(
+    entries
+      .filter((_, i) => results[i].status === 'fulfilled')
+      .map(([providerName]) => providerName),
+  );
+  const remaining = Object.fromEntries(
+    Object.entries(allLocalKeys).filter(([providerName]) => !migratedProviders.has(providerName)),
+  );
+
+  if (Object.keys(remaining).length > 0) {
+    localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(remaining));
+  } else {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
-  return storeState;
 }
 
-function getServerSnapshot(): ApiKeysStore {
-  // SSR: return a stable empty loading state (no window access).
-  return { data: {}, isLoading: true };
-}
+// ---------------------------------------------------------------------------
+// Store mutation helpers (optimistic update + API persist)
+// ---------------------------------------------------------------------------
 
-function subscribe(listener: Listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-// Cross-tab / cross-window sync via storage events.
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (event) => {
-    if (event.key !== STORAGE_KEY) return;
-    const { data } = parseStorage();
-    setState({ data, isLoading: false }, event.newValue);
+function optimisticSet(providerName: string, patch: Partial<UserProviderSettings[string]>) {
+  const current = storeState.data[providerName] ?? { isEnabled: false };
+  setState({
+    data: { ...storeState.data, [providerName]: { ...current, ...patch } },
+    isLoading: false,
   });
 }
 
+function optimisticDelete(providerName: string) {
+  const { [providerName]: _removed, ...rest } = storeState.data;
+  setState({ data: rest, isLoading: false });
+}
+
 // ---------------------------------------------------------------------------
-// Public hook — identical external API to the previous useState version.
-// No Provider wrapper required; works standalone in tests.
+// Public hook
 // ---------------------------------------------------------------------------
 
 export function useApiKeys() {
-  const store = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  ensureLoaded();
+
+  const store = useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => storeState,
+    () => ({ data: {}, isLoading: true } satisfies ApiKeysStore),
+  );
 
   const apiKeys = store.data;
   const isLoading = store.isLoading;
 
-  const saveApiKeys = useCallback((newKeys: UserProviderSettings) => {
-    const rawJson = JSON.stringify(newKeys);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, rawJson);
-    }
-    setState({ data: newKeys, isLoading: false }, rawJson);
-  }, []);
-
-  const updateProviderSettings = useCallback((providerId: string, settings: {
-    apiKey?: string;
-    baseUrl?: string;
-    isEnabled: boolean;
-  }) => {
-    const newKeys = {
-      ...apiKeys,
-      [providerId]: {
-        ...apiKeys[providerId],
+  const updateProviderSettings = useCallback(
+    (
+      providerId: string,
+      settings: { apiKey?: string; baseUrl?: string; isEnabled: boolean },
+    ) => {
+      // Optimistic: show change immediately.
+      optimisticSet(providerId, {
         ...settings,
-      },
-    };
-    saveApiKeys(newKeys);
-  }, [apiKeys, saveApiKeys]);
+        apiKey: settings.apiKey ?? storeState.data[providerId]?.apiKey,
+      });
+
+      fetch('/api/user-provider-settings', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerName: providerId, ...settings }),
+      }).catch(console.error);
+    },
+    [],
+  );
 
   const removeProviderSettings = useCallback((providerId: string) => {
-    const { [providerId]: _removed, ...rest } = apiKeys;
-    saveApiKeys(rest);
-  }, [apiKeys, saveApiKeys]);
+    optimisticDelete(providerId);
 
-  const getValidApiKeys = useCallback(() => {
-    const validKeys: UserProviderSettings = {};
+    fetch('/api/user-provider-settings', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerName: providerId }),
+    }).catch(console.error);
+  }, []);
 
-    Object.entries(apiKeys).forEach(([providerId, settings]) => {
+  const getValidApiKeys = useCallback((): UserProviderSettings => {
+    const valid: UserProviderSettings = {};
+    for (const [providerId, settings] of Object.entries(apiKeys)) {
       if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
-        if (settings.isEnabled) {
-          validKeys[providerId] = settings;
-        }
+        if (settings.isEnabled) valid[providerId] = settings;
       } else {
-        if (settings.isEnabled && settings.apiKey) {
-          validKeys[providerId] = settings;
-        }
+        if (settings.isEnabled && settings.apiKey) valid[providerId] = settings;
       }
-    });
-
-    return validKeys;
-  }, [apiKeys]);
-
-  const isProviderConfigured = useCallback((providerId: string) => {
-    if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
-      return !!(apiKeys[providerId]?.isEnabled);
     }
-    return !!(apiKeys[providerId]?.isEnabled && apiKeys[providerId]?.apiKey);
+    return valid;
   }, [apiKeys]);
 
-  const getProviderSettings = useCallback((providerId: string) => {
-    return apiKeys[providerId];
-  }, [apiKeys]);
+  const isProviderConfigured = useCallback(
+    (providerId: string) => {
+      if (LOCAL_INFERENCE_PROVIDERS.includes(providerId as (typeof LOCAL_INFERENCE_PROVIDERS)[number])) {
+        return !!(apiKeys[providerId]?.isEnabled);
+      }
+      return !!(apiKeys[providerId]?.isEnabled && apiKeys[providerId]?.apiKey);
+    },
+    [apiKeys],
+  );
+
+  const getProviderSettings = useCallback(
+    (providerId: string) => apiKeys[providerId],
+    [apiKeys],
+  );
 
   return {
     apiKeys,
@@ -186,7 +257,19 @@ export function useApiKeys() {
     getValidApiKeys,
     isProviderConfigured,
     getProviderSettings,
-    /** @deprecated Prefer updateProviderSettings; exposed for legacy call sites. */
-    saveApiKeys,
+    /** @deprecated Use updateProviderSettings instead. */
+    saveApiKeys: useCallback(
+      (newKeys: UserProviderSettings) => {
+        setState({ data: newKeys, isLoading: false });
+      },
+      [],
+    ),
   };
+}
+
+/** Resets module-level state. Only for use in tests. */
+export function __resetForTesting(): void {
+  storeState = { data: {}, isLoading: true };
+  fetchInitiated = false;
+  listeners.clear();
 }

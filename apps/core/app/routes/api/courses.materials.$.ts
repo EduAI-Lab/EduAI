@@ -349,7 +349,6 @@ async function uploadMaterial(
 ) {
   const formData = await request.formData();
   const file = formData.get('file') as File;
-  const apiKeys = JSON.parse(formData.get('apiKeys') as string);
 
   if (!file) {
     return json(400, { error: 'No file provided' });
@@ -512,7 +511,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // soft-deleted materials — including those in a soft-deleted course. The access
   // resolver filters `deletedAt: null` (→ 404 on deleted courses), so ADMIN reads
   // bypass it here, mirroring courses.id.ts. No-op for every non-ADMIN caller.
-  const session = await auth.api.getSession(request);
+  const session = await auth.api.getSession({ headers: request.headers });
   if (wantsIncludeDeleted(request, session?.user)) {
     // The access resolver (skipped here) is what 404s a nonexistent course, so
     // check existence explicitly — otherwise an unknown id returns 200 {[]},
