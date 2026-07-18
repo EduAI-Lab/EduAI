@@ -202,7 +202,8 @@ export const ProfileCoursesDialog = ({
 
                 const createdCourse = await courseService.createCourse({
                     name: option.name,
-                    courseCode: option.code
+                    courseCode: option.code,
+                    coreCourseId: courseId
                 });
 
                 try {
@@ -381,9 +382,9 @@ export const ProfileCoursesDialog = ({
 
                             {courseOptions.length === 0 && !isLoading && (
                                 <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                                    {error 
-                                        ? 'Unable to load courses from the AI service. You can still create a test course above.'
-                                        : 'No courses available from the AI service right now. You can create a test course above to get started.'}
+                                    {error
+                                        ? 'Unable to load courses from the AI service. Please try again.'
+                                        : 'No courses available from the AI service right now. Ask an administrator to enroll you in a course.'}
                                 </div>
                             )}
                         </div>

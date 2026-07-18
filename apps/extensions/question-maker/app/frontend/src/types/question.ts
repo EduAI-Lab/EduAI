@@ -106,6 +106,8 @@ export interface Course {
 export interface CourseCreate {
     name: string;
     courseCode?: string;
+    /** Core Course CUID — required at creation (#1072 §4 step 7: every QM course originates in Core). */
+    coreCourseId: string;
 }
 
 // Topic type exported from ./topic (CUID string ids)
