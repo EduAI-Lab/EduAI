@@ -33,98 +33,49 @@ export function formatCourseNavLabel(
   return termYear ? `${base} (${termYear})` : base;
 }
 
-function resolveCoreCourseMetadata(
-  course: Course,
-  coreById: Map<string, EduAICourseOption>,
-  coreByCode: Map<string, EduAICourseOption>,
-): EduAICourseOption | null {
-  if (course.coreCourseId && coreById.has(course.coreCourseId)) {
-    return coreById.get(course.coreCourseId)!;
-  }
-  const code = normalizeCourseCode(course.code);
-  if (code && coreByCode.has(code)) {
-    return coreByCode.get(code)!;
-  }
-  return null;
-}
-
-/** Attach Core term/year to local courses matched by coreCourseId or normalized code. */
-export function enrichCoursesWithCoreMetadata(
-  localCourses: Course[],
-  coreCourses: EduAICourseOption[],
-): Course[] {
-  const coreById = new Map(coreCourses.map((course) => [course.id, course]));
-  const coreByCode = new Map(
-    coreCourses
-      .map((course) => [normalizeCourseCode(course.code), course] as const)
-      .filter(([code]) => code !== ''),
-  );
-
-  return localCourses.map((course) => {
-    const core = resolveCoreCourseMetadata(course, coreById, coreByCode);
-    if (!core) return course;
-
-    return {
-      ...course,
-      description: core.description ?? course.description ?? null,
-      term: core.term ?? course.term ?? null,
-      year: core.year ?? course.year ?? null,
-    };
-  });
-}
-
-/** Keep one row per normalized course code; prefer Core-linked, then newest id. */
-export function dedupeCoursesByCode(courses: Course[]): Course[] {
-  const byCode = new Map<string, Course>();
+/**
+ * Keep one row per Core-course identity (#1072 §4 step 6). `coreCourseId` is
+ * DB-unique across all rows once set, so this only ever collapses duplicate
+ * *unlinked* local rows that happen to share the same `id` — i.e. never,
+ * except defensively. Unlinked rows (`coreCourseId` null) have no shared
+ * identity, so each keeps its own row rather than being merged by `code`.
+ */
+export function dedupeCoursesByCoreId(courses: Course[]): Course[] {
+  const byKey = new Map<string, Course>();
 
   for (const course of courses) {
-    const key = normalizeCourseCode(course.code) || `id:${course.id}`;
-    const existing = byCode.get(key);
-    if (!existing) {
-      byCode.set(key, course);
-      continue;
-    }
-    const prefer =
-      course.coreCourseId && !existing.coreCourseId
-        ? course
-        : !course.coreCourseId && existing.coreCourseId
-          ? existing
-          : course.id > existing.id
-            ? course
-            : existing;
-    byCode.set(key, prefer);
+    const key = course.coreCourseId ? `core:${course.coreCourseId}` : `local:${course.id}`;
+    const existing = byKey.get(key);
+    const prefer = !existing || course.id > existing.id ? course : existing;
+    byKey.set(key, prefer);
   }
 
-  return Array.from(byCode.values()).sort((a, b) =>
+  return Array.from(byKey.values()).sort((a, b) =>
     (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }),
   );
 }
 
+/**
+ * Scopes the local course list to the caller's Core enrollments (identity is
+ * `coreCourseId` — #1072 §4 step 6, no code-matching fallback). ADMIN bypasses
+ * the filter (sees everything); other roles only see local rows that are
+ * either linked to a course the caller is enrolled in, or not yet linked at
+ * all (pre-#1072-step-7 local-only rows with no Core identity to check).
+ */
 export function filterCoursesForCourseSelection(
   localCourses: Course[] | undefined,
   coreCourses: EduAICourseOption[],
   options?: { bypassCoreEnrollmentFilter?: boolean }
 ): { courses: Course[]; showMockLabel: boolean } {
-  const local = dedupeCoursesByCode(localCourses ?? []);
+  const local = dedupeCoursesByCoreId(localCourses ?? []);
   if (options?.bypassCoreEnrollmentFilter || coreCourses.length === 0) {
     return { courses: local, showMockLabel: coreCourses.length === 0 };
   }
 
   const coreIds = new Set(coreCourses.map((course) => course.id));
-  const coreCodes = new Set(
-    coreCourses
-      .map((course) => normalizeCourseCode(course.code))
-      .filter((code) => code !== '')
-  );
 
-  const courses = dedupeCoursesByCode(
-    local.filter((course) => {
-      if (course.coreCourseId && coreIds.has(course.coreCourseId)) {
-        return true;
-      }
-      const code = normalizeCourseCode(course.code);
-      return code !== '' && coreCodes.has(code);
-    }),
+  const courses = local.filter(
+    (course) => !course.coreCourseId || coreIds.has(course.coreCourseId),
   );
 
   return { courses, showMockLabel: false };

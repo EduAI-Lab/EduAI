@@ -26,7 +26,7 @@ async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
 
   // Narrow with case-insensitive matches (raw + space-stripped forms) so common
   // code variations hit the index, then normalize-compare in JS to collapse any
-  // remaining whitespace differences (mirrors findScopedCoreCourseByCode).
+  // remaining whitespace differences.
   const compact = courseCode.replace(/\s+/g, '');
   const candidates = await Course.findAll({
     where: { code: { [Op.or]: [{ [Op.iLike]: courseCode }, { [Op.iLike]: compact }] } },
