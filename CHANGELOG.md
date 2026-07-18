@@ -4,6 +4,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] tests: `fleet-routing.test.ts` — job-type parsing, empty-model-list 503, interactive/background pool routing, round-robin, and background-pool fallback. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+### Changed
+
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
@@ -19,12 +30,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Pre-bundle `react-router` in Vite `optimizeDeps` to stop the intermittent first-load "dispatcher is null" crash caused by a dep re-optimization race. (#1035, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [ai-tutor] fix: Cut local dev startup/navigation slowness — repoint pre-login `@eduai/ui` barrel imports to narrow subpaths (213→37 first-load modules), add an `http()` fetch timeout and `/api/me` in-flight dedupe, and throttle + background the Core course mirror on `GET /api/me`. (#446, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
+- [core] fix: Materials imported via Canvas sync (or uploaded directly) never appeared in the course materials list — the materials loader called `auth.api.getSession` with the raw `Request` instead of `{ headers }`, so better-auth threw `Headers is required` on every list load. Also wired up per-file `skippedItems` (skip reason: unpublished/excluded/not-modified) in the Canvas material sync dialog, which the backend already computed but the frontend never rendered. (#1049, @GlowyBlack, 2026-07-14) — [#1050](https://github.com/EduAI-Lab/EduAI/pull/1050)
 - [ai-tutor] fix: Surface chat history load failures instead of a silent empty state — `student-chat-history` helpers propagate API errors to callers instead of swallowing them, the history panel renders a retryable "Couldn't load history" state (previously the misleading "No conversations yet"), and a failed session restore posts an assistant error message instead of a silent empty chat. PR-review hardening: out-of-order completions are ignored in both the panel refresh and session restore via generation counters (a stale rejection can no longer overwrite a newer request's result, blank a successfully restored session, or leak an error into a fresh chat started with "New chat"), and a failed restore drops the session's `chatId` so the user can't keep chatting into a history that never loaded. (#1000, @Ayyhab, 2026-07-14) — [#1023](https://github.com/EduAI-Lab/EduAI/pull/1023)
 - [ai-tutor] test: Add component-level regression coverage for `StudentAiChat` and `StudentChatHistoryPanel` — tab switching maintains independent message history per mode; the API key dialog opens with the correct initial `tempApiKey`, validates via `validateKey`, and saves on success; send/receive round trip confirms user and assistant messages appear in order and input clears; chatId threading verifies the second request carries the `chatId` from the first response; history restoration calls `loadSessionMessages` and renders loaded messages; the history panel covers loading, empty state, session rows with mode badge and relative timestamp, active-session highlighting, and session/new-chat interactions. (#1003, @evanbones, 2026-07-13)
+- [core, question-maker, ai-tutor] fix: Simplify overly-technical user-facing copy — course list subheadings drop the internal "QM" abbreviation and backend "Platform-wide access"/"blocked server-side" phrasing, Core admin settings description reads as plain language instead of RBAC-speak, and AI Tutor's admin settings panel toasts/banner no longer surface the raw `EDUAI_API_KEY` env var or an internal "endpoints not wired into the client API" dev note. (#1025, @evanbones, 2026-07-15)
 
 ## [Week 10 — July 6–12, 2026]
 
 ### Added
+- [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
 - [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. In-flight loads use a request-id guard so an older filter/page response cannot overwrite a newer result. (#784, @Ayyhab, 2026-07-08) — [#959](https://github.com/EduAI-Lab/EduAI/pull/959)
 - [core] feat: API key expiry notification cron — a daily cron job (`POST /api/cron/notify-api-key-expiry`, `infra/cron/notify-api-key-expiry.sh`) queries for all enabled `UserProviderSettings` rows whose key expires exactly 7 days out and sends one styled HTML/text email per key via the existing mailer; `buildApiKeyExpiryEmail` builds the message with HTML-escaped fields to prevent injection. (#747, @evanbones, 2026-07-07) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
