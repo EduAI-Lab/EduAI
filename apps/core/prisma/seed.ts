@@ -4,8 +4,8 @@ import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
-// Canonical UBC term code (source of truth: packages/ui/src/lib/term.ts).
-import { termFromMonth, type TermCode } from '@eduai/ui/term';
+// Canonical UBC term code + academic-year attribution (source of truth: packages/ui/src/lib/term.ts).
+import { termInfoFromDate, type TermCode } from '@eduai/ui/term';
 
 export const prisma = new PrismaClient();
 
@@ -187,7 +187,7 @@ const COURSES: SeedCourse[] = [
     name: 'Computer Programming II',
     description: 'Object-oriented design, data structures, algorithms, and testing.',
     term: 'W2',
-    year: 2026,
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'COSC',
@@ -383,7 +383,7 @@ const COURSES: SeedCourse[] = [
     name: 'Real Analysis',
     description: 'Rigorous treatment of limits, continuity, differentiation, and Riemann integration.',
     term: 'W2',
-    year: 2026,
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'MATH',
@@ -495,7 +495,7 @@ const COURSES: SeedCourse[] = [
     name: 'Applied Machine Learning',
     description: 'Supervised and unsupervised learning, model selection, and evaluation.',
     term: 'W2',
-    year: 2026,
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'DATA',
@@ -719,7 +719,7 @@ const COURSES: SeedCourse[] = [
     name: 'World History: 1500 to Present',
     description: 'Major themes in global history from the early modern period.',
     term: 'W2',
-    year: 2026,
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'HIST',
@@ -811,7 +811,7 @@ const COURSES: SeedCourse[] = [
     name: 'Introduction to Ethics',
     description: 'Major ethical theories and contemporary applied problems.',
     term: 'W2',
-    year: 2026,
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'PHIL',
@@ -1124,20 +1124,22 @@ async function seedDisciplines(): Promise<number> {
 }
 
 /**
- * Invariant: each seeded course's literal `term` must agree with the
- * canonical UBC-term derivation from its `startDate` (mirrors
- * `packages/ui/src/lib/term.ts` `termFromMonth`, the single source of truth
- * shared by Core's `CreateCourseSchema` and every app). Throws — rather than
- * silently seeding mismatched data — if a literal and its date ever drift.
+ * Invariant: each seeded course's literal `term` AND `year` must agree with
+ * the canonical UBC academic-year derivation from its `startDate` (mirrors
+ * `packages/ui/src/lib/term.ts` `termInfoFromDate`, the single source of
+ * truth shared by Core's `CreateCourseSchema` and every app). `year` is the
+ * academic-year label, not the calendar year — a W2 course starting Jan–Apr
+ * derives the PREVIOUS year (#1088). Throws — rather than silently seeding
+ * mismatched data — if a literal and its date ever drift.
  */
 function assertCanonicalTerms(courses: SeedCourse[]) {
   for (const course of courses) {
-    const derived = termFromMonth(course.startDate.getMonth());
-    if (course.term !== derived) {
+    const derived = termInfoFromDate(course.startDate);
+    if (course.term !== derived.term || course.year !== derived.year) {
       throw new Error(
-        `Seed course ${course.id} has term '${course.term}' but startDate ` +
-          `${course.startDate.toISOString()} derives '${derived}' via termFromMonth ` +
-          `(packages/ui/src/lib/term.ts). Fix the literal to match.`,
+        `Seed course ${course.id} has term '${course.term}' year ${course.year} but startDate ` +
+          `${course.startDate.toISOString()} derives '${derived.term}' year ${derived.year} via ` +
+          `termInfoFromDate (packages/ui/src/lib/term.ts). Fix the literal to match.`,
       );
     }
   }

@@ -127,6 +127,13 @@ export async function enrichRowWithCourse(row) {
  * Mirrors `termLabelLong` in packages/ui/src/lib/term.ts; duplicated here in plain
  * JS because QM's backend has no dependency on the frontend-only @eduai/ui package.
  * Keep the season-word mapping in sync with that file if it ever changes.
+ *
+ * `year` here is always the ACADEMIC-year label read straight through from
+ * Core (`core.year` via `projectCoreFields` below) — never derived locally.
+ * A W2 course spanning Jan-Apr is labelled with the PREVIOUS calendar year
+ * (#1088; see `termInfoFromDate` in packages/ui/src/lib/term.ts). QM does no
+ * date-based derivation of its own, so it inherits this convention for free
+ * via read-through — nothing to change here beyond this note.
  */
 const SEMESTER_TERM_NAMES = {
   W1: 'Winter Term 1',
