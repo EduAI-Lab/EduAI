@@ -15,6 +15,7 @@ import {
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
 } from '@eduai/ui'
 import { TERM_CODES, termName, termInfoFromDate } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
@@ -240,7 +241,7 @@ export function CoursesAdminView({ courses, instructors = [], onCreateCourse, on
             isPublished={course.isPublished}
             department={course.department}
             departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-            colorIndex={index}
+            colorIndex={defaultColorIndexForCourse(course.id)}
             href={`/courses/${course.id}`}
             LinkComponent={Link}
             actions={{

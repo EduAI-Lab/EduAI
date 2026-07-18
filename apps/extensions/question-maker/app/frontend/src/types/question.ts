@@ -95,6 +95,8 @@ export interface Course {
     accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
     term?: string | null;
     year?: number | null;
+    /** Core's live publish state (display-only; null when Core unresolved). */
+    isPublished?: boolean | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations

@@ -15,9 +15,16 @@ import { titleName } from './course-title';
  * colour + code) everywhere it appears — matching how Core/QM colour courses.
  */
 
-/** Stable accent colour for a course, keyed off its id. */
-export function accentForCourse(course: Pick<Course, 'id'>): CourseAccentColor {
-  return paletteColorAtIndex(defaultColorIndexForCourse(String(course.id)));
+/**
+ * Stable accent colour for a course, keyed off its CORE course id — the one
+ * identity shared by Core, AI Tutor, and QM — so the same course renders the
+ * same color on every platform. Local id only as a fallback for rows with no
+ * Core link (unreachable post-#1072, kept for safety).
+ */
+export function accentForCourse(course: Pick<Course, 'id' | 'coreOfferingId'>): CourseAccentColor {
+  return paletteColorAtIndex(
+    defaultColorIndexForCourse(course.coreOfferingId ?? String(course.id)),
+  );
 }
 
 /**
