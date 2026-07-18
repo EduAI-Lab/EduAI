@@ -18,9 +18,10 @@
  *     catalog fetch (`resolveCoreCourseCatalog`) — complete regardless of the
  *     caller's Core enrollment (AT and Core enrollment are independent
  *     tracks, so the cookie-scoped list is not a valid field source). The
- *     cookie-scoped list (`resolveCoreCourseList`) is fetched only in
- *     branches that run the auto-import mirrors, which consume
- *     `callerEnrollmentRole` — authorization context. ≤2 Core calls/request.
+ *     cookie-scoped list is only fetched inside the throttled fire-and-forget
+ *     auto-import mirror (`runCoreMirror`), which consumes
+ *     `callerEnrollmentRole` — authorization context. The list response
+ *     itself performs exactly ONE Core call (the catalog).
  *   - Course-owned fields (title/description/department/dates/isPublished/
  *     term/year/aiInstructions) are read-through from Core via
  *     `services/courseResolver.js` + `mapCourseOffering`; the local
@@ -60,7 +61,6 @@ import {
   indexCoreCoursesById,
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
-  resolveCoreCourseList,
   resolveIsPublished,
 } from '../services/courseResolver.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
@@ -68,9 +68,8 @@ import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   ensureOfferingAnchors,
-  importEnrolledCoursesFromCore,
   importExternalCourseForUser,
-  importTaughtCoursesFromCore,
+  runCoreMirror,
 } from '../services/importTaughtCoursesService.js';
 import { listAdminBugReports } from '../services/bugReports.js';
 
@@ -191,12 +190,12 @@ router.get('/courses', async (req, res) => {
     const isCorePublished = (offering) => resolveIsPublished(offering, coreCoursesById);
 
     if (authUser.role === 'STUDENT' || authUser.role === 'TA') {
-      try {
-        const { courses: scopedCourses } = await resolveCoreCourseList({ cookie });
-        await importEnrolledCoursesFromCore(authUser, cookie, { coreCourses: scopedCourses });
-      } catch (err) {
-        console.error('[eduai] Core enrollment mirror failed on list', err);
-      }
+      // Unified contract: the mirror is a throttled fire-and-forget side
+      // effect (shared runCoreMirror) — the list response never waits on it.
+      // It fetches its own cookie-scoped list internally (authorization
+      // context / callerEnrollmentRole); a fresh Core enrollment shows up on
+      // the caller's next request, same trade-off as QM's list mirror.
+      runCoreMirror(authUser, cookie);
     }
 
     if (authUser.role === 'ADMIN') {
@@ -220,14 +219,10 @@ router.get('/courses', async (req, res) => {
       });
       res.json(courses.map(withCore));
     } else if (authUser.role === 'INSTRUCTOR') {
-      try {
-        // The mirror consumes `callerEnrollmentRole` — the one legitimate
-        // cookie-scoped consumer in this branch (authorization context).
-        const { courses: scopedCourses } = await resolveCoreCourseList({ cookie });
-        await importTaughtCoursesFromCore(authUser, cookie, { coreCourses: scopedCourses });
-      } catch (err) {
-        console.error('[eduai] Core course mirror failed on list', err);
-      }
+      // Unified contract: throttled fire-and-forget mirror (see STUDENT/TA
+      // branch note above) — a course newly assigned in Core appears on the
+      // instructor's next request rather than blocking this one.
+      runCoreMirror(authUser, cookie);
 
       const courses = await prisma.courseOffering.findMany({
         where: { instructors: { some: { userId: authUser.id } } },

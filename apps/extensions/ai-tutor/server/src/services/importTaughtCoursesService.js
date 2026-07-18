@@ -397,3 +397,40 @@ export async function userHasCoreTaEnrollment(cookie, coreCourses) {
     coreCourses !== undefined ? coreCourses : await listEduAiCourses({ cookie });
   return coreCoursesIncludeTaEnrollment(courses);
 }
+
+// ---------------------------------------------------------------------------
+// Shared mirror runner — the ONE way any route triggers the Core auto-import
+// mirror (unified extension contract, #1072). The mirror is a background side
+// effect (Core list fetch + local anchor/enrollment writes + per-offering
+// topic/enrollment sub-syncs); no response may depend on or wait for it.
+// Throttled to once per window per user and fired without awaiting, so list
+// and /me responses never pay the serial Core waterfall. A freshly-imported
+// course therefore appears on the caller's NEXT request — the same documented
+// trade-off as Question Maker's runCoreImportMirror.
+const MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
+const lastMirrorAtByUser = new Map();
+
+export function runCoreMirror(authUser, cookie, sharedOptions = {}) {
+  const now = Date.now();
+  const last = lastMirrorAtByUser.get(authUser.id) ?? 0;
+  if (now - last < MIRROR_THROTTLE_MS) return;
+  lastMirrorAtByUser.set(authUser.id, now);
+
+  // Invoke both synchronously (so callers/tests can observe the calls) but do
+  // not await — the mirror runs in the background. A user is either an
+  // INSTRUCTOR (taught) or a STUDENT/TA (enrolled), so only one actually does
+  // work; running them in parallel is safe.
+  void Promise.allSettled([
+    importTaughtCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
+      console.error('[eduai] Auto-import taught courses failed', err),
+    ),
+    importEnrolledCoursesFromCore(authUser, cookie, sharedOptions).catch((err) =>
+      console.error('[eduai] Student enrollment mirror failed', err),
+    ),
+  ]);
+}
+
+/** Test-only: clears the per-user mirror throttle so each test starts fresh. */
+export function resetCoreMirrorThrottleForTests() {
+  lastMirrorAtByUser.clear();
+}
