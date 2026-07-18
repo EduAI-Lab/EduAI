@@ -6,6 +6,10 @@ vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
 
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     user: { findUnique: vi.fn(), update: vi.fn() },
@@ -14,6 +18,7 @@ vi.mock("~/lib/prisma.server", () => ({
 
 import { loader, action } from "~/routes/api/me";
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 
 const PROFILE = {
@@ -29,11 +34,14 @@ const PROFILE = {
   updatedAt: new Date("2026-01-01"),
 };
 
-function makeArgs(method = "GET", body?: unknown) {
+function makeArgs(method = "GET", body?: unknown, headers?: Record<string, string>) {
   return {
     request: new Request("http://localhost/api/me", {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     }),
     params: {},
@@ -47,6 +55,7 @@ function mockUser(id = "u1", role = "STUDENT") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(enforceAdminIfApiKey).mockResolvedValue({ response: null, session: null });
   vi.mocked(prisma.user.findUnique).mockResolvedValue(PROFILE as never);
   vi.mocked(prisma.user.update).mockResolvedValue(PROFILE as never);
 });
@@ -56,6 +65,27 @@ describe("GET /api/me (#297)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     const res = await loader(makeArgs());
     expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when only x-api-key is provided without a session", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    const res = await loader(makeArgs("GET", undefined, { "x-api-key": "eduai-student-key" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when x-api-key belongs to a non-admin user", async () => {
+    vi.mocked(enforceAdminIfApiKey).mockResolvedValue({
+      response: new Response(
+        JSON.stringify({ error: "Forbidden: x-api-key access restricted to admin users" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+      session: null,
+    });
+    const res = await loader(makeArgs("GET", undefined, { "x-api-key": "eduai-student-key" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "Forbidden: x-api-key access restricted to admin users",
+    });
   });
 
   it("returns the caller's own profile", async () => {
