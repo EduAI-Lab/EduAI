@@ -4,6 +4,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+
+## [Week 10 — July 6–12, 2026]
+
+### Added
+
+- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] tests: `fleet-routing.test.ts` — job-type parsing, empty-model-list 503, interactive/background pool routing, round-robin, and background-pool fallback. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+### Changed
+
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
@@ -26,6 +37,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 10 — July 6–12, 2026]
 
 ### Added
+- [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
 - [ai-tutor] feat: Course feedback viewer on the instructor course admin page — new Feedback tab (INSTRUCTOR/TA/UNIT_ADMIN/ADMIN only) lists `ActivityFeedback` rows via `GET /courses/:courseId/feedback` with activity/student filters and take/skip pagination; mirrors the submissions panel pattern. In-flight loads use a request-id guard so an older filter/page response cannot overwrite a newer result. (#784, @Ayyhab, 2026-07-08) — [#959](https://github.com/EduAI-Lab/EduAI/pull/959)
 - [core] feat: API key expiry notification cron — a daily cron job (`POST /api/cron/notify-api-key-expiry`, `infra/cron/notify-api-key-expiry.sh`) queries for all enabled `UserProviderSettings` rows whose key expires exactly 7 days out and sends one styled HTML/text email per key via the existing mailer; `buildApiKeyExpiryEmail` builds the message with HTML-escaped fields to prevent injection. (#747, @evanbones, 2026-07-07) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
