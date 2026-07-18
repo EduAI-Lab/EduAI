@@ -38,14 +38,14 @@ describe('listCoursesForUser', () => {
 
   it('returns all courses for ADMIN', async () => {
     mockFindAll.mockResolvedValue([
-      { toJSON: () => ({ id: 1, name: 'A', code: 'stale-a', coreCourseId: 'core-1' }) },
-      { toJSON: () => ({ id: 2, name: 'B', code: 'stale-b', coreCourseId: 'core-1' }) },
+      { toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) },
+      { toJSON: () => ({ id: 2, coreCourseId: 'core-1' }) },
     ]);
 
     const rows = await listCoursesForUser({ id: 'admin-1', role: 'ADMIN' });
-    // Both local rows link to the same Core course (core-1) — name/code now come
-    // from Core (#1076), so they dedupe to one row on Core's code, not the stale
-    // local codes that previously differed.
+    // Both local rows link to the same Core course (core-1) — name/code live
+    // only on Core now (#1072 §4 step 10: `Course` dropped the columns), so
+    // they dedupe to one row on Core's identity.
     expect(rows).toHaveLength(1);
     expect(rows[0].accessLevel).toBe('admin');
     expect(rows[0].department).toBe('COSC');
@@ -55,8 +55,8 @@ describe('listCoursesForUser', () => {
   });
 
   it('filters courses for INSTRUCTOR by resolveAccessForCourse', async () => {
-    const owned = { id: 1, toJSON: () => ({ id: 1, name: 'Mine', code: 'stale', coreCourseId: 'core-1' }) };
-    const other = { id: 2, toJSON: () => ({ id: 2, name: 'Other', code: 'stale', coreCourseId: 'core-2' }) };
+    const owned = { id: 1, toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) };
+    const other = { id: 2, toJSON: () => ({ id: 2, coreCourseId: 'core-2' }) };
     mockFindAll.mockResolvedValue([owned, other]);
     mockResolveAccess.mockImplementation((_user, course) =>
       course.id === 1 ? { level: 'instructor', rank: 2 } : null,
@@ -66,15 +66,15 @@ describe('listCoursesForUser', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(1);
     expect(rows[0].accessLevel).toBe('instructor');
-    // Name/code are read through from Core, not the stale local columns (#1076).
+    // Name/code are read through from Core exclusively (#1076/#1072 §4 step 10).
     expect(rows[0].name).toBe('Core Course One');
     expect(rows[0].code).toBe('STUDY3');
   });
 
-  it('degrades to a placeholder (not the stale local value) when Core is unreachable', async () => {
+  it('degrades to a placeholder when Core is unreachable', async () => {
     mockGetAllCoursesFromCore.mockRejectedValue(new Error('Core unavailable'));
     mockFindAll.mockResolvedValue([
-      { toJSON: () => ({ id: 1, name: 'Stale Local Name', code: 'STALE101', coreCourseId: 'core-1' }) },
+      { toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) },
     ]);
 
     const rows = await listCoursesForUser({ id: 'admin-1', role: 'ADMIN' });
@@ -84,15 +84,18 @@ describe('listCoursesForUser', () => {
     expect(rows[0].coreUnavailable).toBe(true);
   });
 
-  it('keeps local name/code for a course not yet linked to Core', async () => {
+  it('degrades to a placeholder for a course not yet linked to Core', async () => {
+    // Should be unreachable in practice post-sandbox-removal (#1072 step 7 —
+    // creation always sets coreCourseId), but `Course` has no local name/code
+    // to fall back to either way now that the columns are gone (step 10).
     mockFindAll.mockResolvedValue([
-      { toJSON: () => ({ id: 1, name: 'Sandbox Course', code: 'SANDBOX', coreCourseId: null }) },
+      { toJSON: () => ({ id: 1, coreCourseId: null }) },
     ]);
 
     const rows = await listCoursesForUser({ id: 'admin-1', role: 'ADMIN' });
     expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe('Sandbox Course');
-    expect(rows[0].code).toBe('SANDBOX');
-    expect(rows[0].coreUnavailable).toBe(false);
+    expect(rows[0].name).toBe('Course unavailable');
+    expect(rows[0].code).toBeNull();
+    expect(rows[0].coreUnavailable).toBe(true);
   });
 });

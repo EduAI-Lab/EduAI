@@ -5,7 +5,7 @@
 import { Course } from '../schema/index.js';
 import { LEVELS, resolveAccessForCourse } from '../middleware/courseAccess.js';
 import { getAllCoursesFromCore, getCourseFromCore } from './coreApiService.js';
-import { dedupeCoursesByCoreId } from './courseCodeUtils.js';
+import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 
@@ -16,31 +16,21 @@ const CORE_UNAVAILABLE_NAME = 'Course unavailable';
  * Projects Core-owned fields (`name`, `code`, `department`, `term`, `year`,
  * `description`) onto a local QM course row (#1076/#1072 §3).
  *
- * `name`/`code` are Core-owned once a course is linked — never fall back to
- * the local column in that case, even when Core didn't resolve (that would
- * resurrect the exact staleness bug this closes). Degrade instead: a
- * placeholder name and null code (locked decision: degrade, not stale).
+ * `name`/`code` are Core-owned — never fall back to a local column (there is
+ * none; `Course` dropped `name`/`code` entirely, #1072 §4 step 10), even when
+ * Core didn't resolve (that would resurrect the exact staleness bug this
+ * closes). Degrade instead: a placeholder name and null code (locked
+ * decision: degrade, not stale).
  *
- * Unlinked local-only rows (`coreCourseId` null — pre-sandbox-removal courses,
- * #1072 step 7) have no Core row to read through yet, so they keep their own
- * local name/code; that's not a duplicate; it's the only record that exists.
+ * A row without `coreCourseId` has no Core row to read through (creation
+ * requires `coreCourseId` post-sandbox-removal, #1072 step 7, so this should
+ * be unreachable in practice) — still degrades to the same placeholder rather
+ * than reading a local field that no longer exists.
  */
 function projectCoreFields(row, core) {
   const linked = Boolean(row.coreCourseId);
 
-  if (!linked) {
-    return {
-      name: row.name,
-      code: row.code,
-      department: null,
-      term: null,
-      year: null,
-      description: null,
-      coreUnavailable: false,
-    };
-  }
-
-  if (!core) {
+  if (!linked || !core) {
     return {
       name: CORE_UNAVAILABLE_NAME,
       code: null,
@@ -196,4 +186,36 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     }
   }
   return visible;
+}
+
+/**
+ * Resolves local QM `Course` rows whose Core-projected `code` matches
+ * `codeQuery` (case/whitespace-insensitive). Used by the EduAI proxy routes
+ * (`routes/eduai.js`) to authorize a client-supplied course code against a
+ * real course — `code` is Core-owned and no longer stored locally (#1072 §4
+ * step 10), so matching must read through Core rather than querying the
+ * dropped `courses.code` column. One batched `getAllCoursesFromCore` call
+ * regardless of row count (no N+1, mirrors `listCoursesForUser`).
+ *
+ * Returns raw `Course` model instances (not enriched rows) so callers can
+ * pass them straight to `resolveAccessForCourse`.
+ */
+export async function findCoursesByProjectedCode(codeQuery) {
+  const target = normalizeCourseCode(codeQuery);
+  if (!target) return [];
+
+  let coreById = new Map();
+  try {
+    const coreCourses = await getAllCoursesFromCore();
+    coreById = new Map(coreCourses.map((c) => [c.id, c]));
+  } catch {
+    return []; // Core unreachable — no code-based match is possible; degrade to no access.
+  }
+
+  const allCourses = await Course.findAll();
+  return allCourses.filter((course) => {
+    if (!course.coreCourseId) return false;
+    const core = coreById.get(course.coreCourseId);
+    return core?.code && normalizeCourseCode(core.code) === target;
+  });
 }

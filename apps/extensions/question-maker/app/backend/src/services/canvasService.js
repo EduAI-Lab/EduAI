@@ -717,10 +717,11 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
       throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
     }
 
-    // Verify local course exists and is accessible (owner-scoped).
+    // Verify local course exists and is accessible (owner-scoped). Existence
+    // check only — `Course` has no local name to select anymore (#1072 §4 step 10).
     const course = await Course.findOne({
       where: { id: localCourseId, userId: ownerId },
-      attributes: ['id', 'name']
+      attributes: ['id']
     });
 
     if (!course) {

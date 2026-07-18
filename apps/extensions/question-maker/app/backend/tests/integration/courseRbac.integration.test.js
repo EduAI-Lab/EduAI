@@ -115,20 +115,16 @@ describeDb('course RBAC (integration)', () => {
       expect(res.body.data.id).toBe(courseId);
     });
 
-    it('lets an ADMIN edit a course they do not own', async () => {
+    it('lets an ADMIN pass the per-course edit gate for a course they do not own', async () => {
+      // `name`/`code` are Core-owned and no longer stored locally (#1072 §4
+      // step 10) — PUT has nothing left to write, so this only asserts the
+      // RBAC gate itself (an ADMIN reaches the route and gets the course back).
       const res = await request(app)
         .put(`/api/course/${courseId}`)
         .set(asAdmin())
         .send({ name: 'Renamed by admin' });
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(courseId);
-
-      // The fixture course is Core-linked, so the *response* name is projected
-      // from Core (read-through, #1072 §3) — not the local column just written.
-      // Assert the RBAC-gated write itself landed, rather than the unrelated
-      // Core-projection behavior.
-      const updated = await Course.findByPk(courseId);
-      expect(updated.name).toBe('Renamed by admin');
     });
 
     it('rejects a non-owner without access with 403', async () => {

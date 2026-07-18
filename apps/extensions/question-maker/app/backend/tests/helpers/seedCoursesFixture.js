@@ -19,28 +19,18 @@ import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scrip
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
-/** Default courses to create for every new user (name, code). Order matches template indices 0..6. */
-const DEFAULT_COURSES = [
-  { name: 'Machine Architecture', code: 'COSC 211' },
-  { name: 'Computer Programming II', code: 'COSC 121' },
-  { name: 'Introduction to Statistics', code: 'STUDY1' },
-  { name: 'Discrete Math', code: 'STUDY3' },
-  { name: 'Introduction to Psychology', code: 'STUDY2' },
-  { name: 'Introduction to Nursing', code: 'STUDY4' },
-  { name: 'Scientific Research Methods', code: 'STUDY5' }
-];
-
 /**
- * Creates the default courses for a user (each linked to a deterministic fake
- * Core course id) and seeds each with topics, one assessment, and sample questions.
+ * Creates `NUM_TEMPLATES` default courses for a user (each linked to a
+ * deterministic fake Core course id) and seeds each with topics, one
+ * assessment, and sample questions. `name`/`code` are Core-owned and no
+ * longer stored locally (#1072 §4 step 10) — the anchor row is just
+ * userId + coreCourseId; template selection is by index only.
  * @param {string} userId - The user's id
  * @returns {Promise<{ coursesCreated: number, topicsCreated: number, questionsCreated: number, variantsCreated: number }>}
  */
 export async function seedCoursesForNewUser(userId) {
   const courses = await Course.bulkCreate(
-    DEFAULT_COURSES.map(({ name, code }, index) => ({
-      name,
-      code,
+    Array.from({ length: NUM_TEMPLATES }, (_, index) => ({
       userId,
       coreCourseId: `core-seed-course-${userId}-${index}`,
     }))
@@ -63,11 +53,11 @@ export async function seedCoursesForNewUser(userId) {
       topicsCreated++;
     }
 
+    // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077).
     const assessment = await Assessments.create({
       courseId: course.id,
       type: 'Quiz',
-      name: 'Practice Exam',
-      semester: 'Fall 2026'
+      name: 'Practice Exam'
     });
 
     const section = await AssessmentSections.create({

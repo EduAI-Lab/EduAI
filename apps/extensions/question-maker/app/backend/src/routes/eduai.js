@@ -6,32 +6,22 @@ import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import eduaiService from '../services/eduaiService.js';
-import { Op } from 'sequelize';
-import { Course } from '../schema/Course.js';
 import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
-import { normalizeCourseCode } from '../services/courseCodeUtils.js';
+import { findCoursesByProjectedCode } from '../services/courseListService.js';
 import { config } from '../config/settings.js';
 
 const router = express.Router();
 
 /**
  * Confirm the caller has at least TA access to a QM course matching `courseCode`
- * before proxying to EduAI (#4). Resolves the local QM Course row by normalized
- * code and reuses the same access helper as the per-course middleware. Returns
- * the resolved access on success, or null when no accessible match exists.
+ * before proxying to EduAI (#4). `code` is Core-owned and no longer stored
+ * locally (#1072 §4 step 10), so the match reads through Core via
+ * `findCoursesByProjectedCode` rather than querying a local `code` column.
+ * Reuses the same access helper as the per-course middleware. Returns the
+ * resolved access on success, or null when no accessible match exists.
  */
 async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
-  const target = normalizeCourseCode(courseCode);
-  if (!target) return null;
-
-  // Narrow with case-insensitive matches (raw + space-stripped forms) so common
-  // code variations hit the index, then normalize-compare in JS to collapse any
-  // remaining whitespace differences.
-  const compact = courseCode.replace(/\s+/g, '');
-  const candidates = await Course.findAll({
-    where: { code: { [Op.or]: [{ [Op.iLike]: courseCode }, { [Op.iLike]: compact }] } },
-  }).catch(() => []);
-  const matches = candidates.filter((c) => normalizeCourseCode(c.code) === target);
+  const matches = await findCoursesByProjectedCode(courseCode);
   for (const course of matches) {
     const access = await resolveAccessForCourse(reqUser, course, { cookie });
     if (access && access.rank >= LEVELS.ta.rank) return access;
