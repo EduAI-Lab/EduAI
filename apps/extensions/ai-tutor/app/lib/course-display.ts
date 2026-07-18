@@ -22,11 +22,11 @@ export function accentForCourse(course: Pick<Course, 'id'>): CourseAccentColor {
 
 /**
  * Short course code for the card colour band / hero eyebrow. Prefers the
- * EduAI-synced `code`; when a course has none, derives a short token from the
- * title so the eyebrow never renders empty.
+ * Core-owned, read-through `code` (#1072 step 2); when a course has none,
+ * derives a short token from the title so the eyebrow never renders empty.
  */
-export function courseCode(course: Pick<Course, 'title' | 'externalMetadata'>): string {
-  const code = course.externalMetadata?.code?.trim();
+export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
+  const code = course.code?.trim();
   if (code) return code;
   const firstWord = course.title.trim().split(/\s+/)[0] ?? '';
   return firstWord ? firstWord.slice(0, 10).toUpperCase() : 'COURSE';
@@ -43,18 +43,18 @@ export function courseName(course: Pick<Course, 'title'>): string {
   return titleName(course.title);
 }
 
-/** Raw term value from EduAI metadata (empty string when unknown). */
-export function courseTerm(course: Pick<Course, 'externalMetadata'>): string {
-  return course.externalMetadata?.term?.trim() ?? '';
+/** Raw term value, read-through from Core (#1072 step 2; empty string when unknown). */
+export function courseTerm(course: Pick<Course, 'term'>): string {
+  return course.term?.trim() ?? '';
 }
 
-/** Year from EduAI metadata (null when unknown). */
-export function courseYear(course: Pick<Course, 'externalMetadata'>): number | null {
-  return course.externalMetadata?.year ?? null;
+/** Year, read-through from Core (#1072 step 2; null when unknown). */
+export function courseYear(course: Pick<Course, 'year'>): number | null {
+  return course.year ?? null;
 }
 
 /** Adapt a Course to the shared `TermInfo` shape; startDate is authoritative for ordering. */
-function courseTermInfo(course: Pick<Course, 'externalMetadata' | 'startDate'>): TermInfo {
+function courseTermInfo(course: Pick<Course, 'term' | 'year' | 'startDate'>): TermInfo {
   return {
     term: courseTerm(course),
     year: courseYear(course),
@@ -71,7 +71,7 @@ export type { CourseTermGroup };
  * single group, or a `<section>` per term (heading = `group.labelLong`) when
  * there's more than one — see `student.tsx` / `instructor.tsx`.
  */
-export function groupCoursesByTerm<T extends Pick<Course, 'externalMetadata' | 'startDate'>>(
+export function groupCoursesByTerm<T extends Pick<Course, 'term' | 'year' | 'startDate'>>(
   courses: T[],
 ): CourseTermGroup<T>[] {
   return groupByTerm(courses, courseTermInfo);

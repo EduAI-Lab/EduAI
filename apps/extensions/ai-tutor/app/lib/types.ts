@@ -197,11 +197,22 @@ export type EduAiCourse = ExternalCourseMetadata;
 
 export type Course = {
   id: number;
+  /** Core's own course id — the read-through link (#1072 step 2). Null for a legacy unlinked offering. */
+  coreOfferingId?: string | null;
   title: string;
+  /** Core-owned course code (e.g. "COSC 101"), read-through — not the local `externalId`. */
+  code?: string | null;
   description?: string | null;
+  department?: string | null;
   isPublished: boolean;
   startDate?: string | null;
   endDate?: string | null;
+  /** Canonical term code (e.g. "W1"), read-through from Core. Empty/absent when unknown. */
+  term?: string | null;
+  /** Calendar year, read-through from Core. */
+  year?: number | null;
+  /** Core-owned instructor guidance for the AI tutor — available but not yet consumed (#1072). */
+  aiInstructions?: string | null;
   progress?: Progress;
   externalId?: string | null;
   externalSource?: string | null;

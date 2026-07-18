@@ -107,11 +107,24 @@ describe('mapCoreAdminUser', () => {
 // mapCourseOffering
 // ---------------------------------------------------------------------------
 describe('mapCourseOffering', () => {
-  it('maps all core fields', () => {
+  const localOnlyOffering = {
+    id: 1,
+    coreOfferingId: null,
+    title: 't',
+    description: 'd',
+    department: null,
+    isPublished: false,
+    startDate: null,
+    endDate: null,
+  };
+
+  it('falls back entirely to local columns when no Core course resolves', () => {
     const offering = {
       id: 10,
+      coreOfferingId: null,
       title: 'CS101',
       description: 'Intro',
+      department: 'CS',
       isPublished: true,
       startDate: '2025-01-01',
       endDate: '2025-06-01',
@@ -119,19 +132,77 @@ describe('mapCourseOffering', () => {
       externalSource: 'canvas',
       externalMetadata: { foo: 'bar' },
     };
-    expect(mapCourseOffering(offering)).toEqual(offering);
+    expect(mapCourseOffering(offering)).toEqual({
+      id: 10,
+      coreOfferingId: null,
+      title: 'CS101',
+      code: null,
+      description: 'Intro',
+      department: 'CS',
+      isPublished: true,
+      startDate: '2025-01-01',
+      endDate: '2025-06-01',
+      term: null,
+      year: null,
+      aiInstructions: null,
+      externalId: 'ext-1',
+      externalSource: 'canvas',
+      externalMetadata: { foo: 'bar' },
+    });
+  });
+
+  it('prefers the resolved Core course for title/description/department/dates/isPublished/term/year/aiInstructions (#1072 step 2)', () => {
+    const offering = { ...localOnlyOffering, id: 5, coreOfferingId: 'core-5', title: 'Stale Title' };
+    const coreCourse = {
+      id: 'core-5',
+      code: 'COSC 101',
+      name: 'Fresh Title',
+      description: 'Fresh description',
+      department: 'COSC',
+      isPublished: true,
+      startDate: '2026-01-05',
+      endDate: '2026-04-15',
+      term: 'W1',
+      year: 2026,
+      aiInstructions: 'Be encouraging.',
+    };
+    const result = mapCourseOffering(offering, coreCourse);
+    expect(result).toMatchObject({
+      id: 5,
+      coreOfferingId: 'core-5',
+      title: 'Fresh Title',
+      code: 'COSC 101',
+      description: 'Fresh description',
+      department: 'COSC',
+      isPublished: true,
+      startDate: '2026-01-05',
+      endDate: '2026-04-15',
+      term: 'W1',
+      year: 2026,
+      aiInstructions: 'Be encouraging.',
+    });
+  });
+
+  it('closes #819: Core isPublished=false wins over a stale local isPublished=true', () => {
+    const offering = { ...localOnlyOffering, coreOfferingId: 'core-1', isPublished: true };
+    const result = mapCourseOffering(offering, { id: 'core-1', isPublished: false });
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('closes #819: Core isPublished=true wins over a stale local isPublished=false', () => {
+    const offering = { ...localOnlyOffering, coreOfferingId: 'core-1', isPublished: false };
+    const result = mapCourseOffering(offering, { id: 'core-1', isPublished: true });
+    expect(result.isPublished).toBe(true);
+  });
+
+  it('falls back to the local column when the Core course omits isPublished', () => {
+    const offering = { ...localOnlyOffering, coreOfferingId: 'core-1', isPublished: true };
+    const result = mapCourseOffering(offering, { id: 'core-1' });
+    expect(result.isPublished).toBe(true);
   });
 
   it('defaults externalId, externalSource, externalMetadata to null when undefined', () => {
-    const offering = {
-      id: 1,
-      title: 't',
-      description: 'd',
-      isPublished: false,
-      startDate: null,
-      endDate: null,
-    };
-    const result = mapCourseOffering(offering);
+    const result = mapCourseOffering(localOnlyOffering);
     expect(result.externalId).toBeNull();
     expect(result.externalSource).toBeNull();
     expect(result.externalMetadata).toBeNull();
@@ -139,12 +210,7 @@ describe('mapCourseOffering', () => {
 
   it('preserves explicit null external fields', () => {
     const offering = {
-      id: 1,
-      title: 't',
-      description: 'd',
-      isPublished: false,
-      startDate: null,
-      endDate: null,
+      ...localOnlyOffering,
       externalId: null,
       externalSource: null,
       externalMetadata: null,
@@ -153,6 +219,15 @@ describe('mapCourseOffering', () => {
     expect(result.externalId).toBeNull();
     expect(result.externalSource).toBeNull();
     expect(result.externalMetadata).toBeNull();
+  });
+
+  it('defaults coreOfferingId, code, term, year, aiInstructions to null with no Core course', () => {
+    const result = mapCourseOffering(localOnlyOffering);
+    expect(result.coreOfferingId).toBeNull();
+    expect(result.code).toBeNull();
+    expect(result.term).toBeNull();
+    expect(result.year).toBeNull();
+    expect(result.aiInstructions).toBeNull();
   });
 });
 

@@ -32,6 +32,7 @@ import {
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { indexCoreCoursesById, resolveCoreCourseList } from '../services/courseResolver.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   deleteCoreEnrollment,
@@ -67,12 +68,21 @@ router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res)
   return res.status(410).json({ error: 'Roles are managed in EduAI' });
 });
 
-router.get('/admin/courses', requireRole('ADMIN'), async (_req, res) => {
+router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
   try {
+    // #1072 step 2: one batched Core list, joined against the local anchors
+    // — same read-through shape as `GET /courses`'s ADMIN branch.
+    const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({
+      cookie: getEduAiCookieForRequest(req),
+    });
+    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
     const courses = await prisma.courseOffering.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    res.json(courses.map(mapCourseOffering));
+    res.json(courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
