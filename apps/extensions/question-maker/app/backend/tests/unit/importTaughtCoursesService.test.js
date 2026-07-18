@@ -58,7 +58,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
   it('skips auto-import for non-instructor roles', async () => {
     const result = await importTaughtCoursesFromCore('u1', 'STUDENT', 'session=abc');
 
-    expect(result).toEqual({ imported: 0, linked: 0, skipped: 0 });
+    expect(result).toEqual({ imported: 0, skipped: 0 });
     expect(listCoursesFromCore).not.toHaveBeenCalled();
   });
 
@@ -88,7 +88,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalled();
   });
 
-  it('links an existing local course by code instead of creating a duplicate', async () => {
+  it('skips a Core course already linked to a local anchor instead of creating a duplicate', async () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [
         {
@@ -102,16 +102,16 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     const localCourse = {
       id: 5,
       code: 'COSC 121',
-      coreCourseId: null,
+      coreCourseId: 'core-2',
       update: courseUpdate,
     };
     courseFindAll.mockResolvedValue([localCourse]);
 
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 
-    expect(result.linked).toBe(1);
     expect(result.imported).toBe(0);
-    expect(courseUpdate).toHaveBeenCalled();
+    expect(result.skipped).toBe(1);
     expect(courseCreate).not.toHaveBeenCalled();
+    expect(courseUpdate).not.toHaveBeenCalled();
   });
 });

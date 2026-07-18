@@ -17,7 +17,6 @@ import {
   getCourseEnrollmentsFromCore,
 } from '../services/coreApiService.js';
 import { listCoursesForUser, enrichCourseDetail } from '../services/courseListService.js';
-import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
@@ -283,10 +282,6 @@ router.get(
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
-    if (await ensureCoreCourseLink(course, cookie)) {
-      await course.reload();
-    }
-
     if (course.coreCourseId) {
       await syncTopicsFromCoreForCourse(course, cookie);
     }
@@ -438,10 +433,6 @@ router.post(
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
-    if (await ensureCoreCourseLink(course, cookie)) {
-      await course.reload();
-    }
-
     if (!course.coreCourseId) {
       return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
     }

@@ -22,7 +22,6 @@ const {
   listCoursesFromCore,
   getMyProfileFromCore,
   isCoreCourseInScopedList,
-  findScopedCoreCourseByCode,
 } = await import('../../src/services/coreApiService.js');
 
 const ok = (data, status = 200) => ({
@@ -322,29 +321,5 @@ describe('isCoreCourseInScopedList', () => {
     );
 
     await expect(isCoreCourseInScopedList('cuid-missing', 'session=abc')).resolves.toBe(false);
-  });
-});
-
-describe('findScopedCoreCourseByCode', () => {
-  it('matches Core courses ignoring spaces and case', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(
-        ok({ courses: [{ id: 'cuid-1', code: 'COSC 121' }, { id: 'cuid-2', code: 'MATH 101' }] }),
-      ),
-    );
-
-    const result = await findScopedCoreCourseByCode('cosc121', 'session=abc');
-
-    expect(result).toEqual({ id: 'cuid-1', code: 'COSC 121' });
-  });
-
-  it('returns null when no code matches', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
-    );
-
-    await expect(findScopedCoreCourseByCode('COSC 999', 'session=abc')).resolves.toBeNull();
   });
 });

@@ -5,7 +5,6 @@
 import { Op } from 'sequelize';
 import { Course, Topics } from '../schema/index.js';
 import { listCoursesFromCore } from './coreApiService.js';
-import { normalizeCourseCode } from './courseCodeUtils.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
 import { createAssessment } from './assessmentService.js';
 import { logger } from '../utils/logger.js';
@@ -32,16 +31,6 @@ async function ensurePracticeExam(userId, courseId) {
   }
 }
 
-async function linkExistingCourseByCode(localCourse, coreCourseId, cookie) {
-  await localCourse.update({ coreCourseId });
-  await syncTopicsFromCoreForCourse(localCourse, cookie);
-
-  const topics = await Topics.findAll({ where: { courseId: localCourse.id } });
-  if (topics.length === 0) {
-    await Topics.create({ name: 'General', courseId: localCourse.id });
-  }
-}
-
 async function createLinkedCourse(userId, coreCourse, cookie) {
   const created = await Course.create({
     userId,
@@ -63,12 +52,13 @@ async function createLinkedCourse(userId, coreCourse, cookie) {
 
 /**
  * Mirrors Core course catalog into the local QM library. Core is the source of truth —
- * imports new taught courses and refreshes topics for existing links.
+ * imports new taught courses (each anchor is created already linked via `coreCourseId`,
+ * #1072 §4 step 6 — no code-matching backfill) and refreshes topics for existing links.
  * Idempotent — safe to call on every /auth/me and GET /api/course request.
  */
 export async function importTaughtCoursesFromCore(userId, role, cookie) {
   if (!AUTO_IMPORT_ROLES.has(role)) {
-    return { imported: 0, linked: 0, skipped: 0 };
+    return { imported: 0, skipped: 0 };
   }
 
   let coreCourses;
@@ -77,23 +67,17 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
     coreCourses = Array.isArray(data?.courses) ? data.courses : [];
   } catch (err) {
     logger.warn({ err, userId }, 'Auto-import skipped: could not list Core courses');
-    return { imported: 0, linked: 0, skipped: 0, error: err.message };
+    return { imported: 0, skipped: 0, error: err.message };
   }
 
   if (coreCourses.length === 0) {
-    return { imported: 0, linked: 0, skipped: 0 };
+    return { imported: 0, skipped: 0 };
   }
 
   const localCourses = await Course.findAll({ where: { userId } });
   const linkedCoreIds = new Set(localCourses.map((course) => course.coreCourseId).filter(Boolean));
-  const localByCode = new Map(
-    localCourses
-      .map((course) => [normalizeCourseCode(course.code), course])
-      .filter(([code]) => code !== ''),
-  );
 
   let imported = 0;
-  let linked = 0;
   let skipped = 0;
 
   for (const coreCourse of coreCourses) {
@@ -112,27 +96,9 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
       continue;
     }
 
-    const normalizedCode = normalizeCourseCode(coreCourse.code);
-    const existingLocal = normalizedCode ? localByCode.get(normalizedCode) : undefined;
-
     try {
-      if (existingLocal && !existingLocal.coreCourseId) {
-        await linkExistingCourseByCode(existingLocal, coreCourse.id, cookie);
-        linkedCoreIds.add(coreCourse.id);
-        linked++;
-        continue;
-      }
-
-      if (existingLocal?.coreCourseId) {
-        skipped++;
-        continue;
-      }
-
-      const created = await createLinkedCourse(userId, coreCourse, cookie);
+      await createLinkedCourse(userId, coreCourse, cookie);
       linkedCoreIds.add(coreCourse.id);
-      if (normalizedCode) {
-        localByCode.set(normalizedCode, created);
-      }
       imported++;
     } catch (err) {
       logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
@@ -140,8 +106,8 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
     }
   }
 
-  if (imported > 0 || linked > 0) {
-    logger.info({ userId, imported, linked, skipped }, 'Auto-imported taught courses from Core');
+  if (imported > 0) {
+    logger.info({ userId, imported, skipped }, 'Auto-imported taught courses from Core');
   }
 
   let synced = 0;
@@ -158,5 +124,5 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
     }
   }
 
-  return { imported, linked, skipped, synced };
+  return { imported, skipped, synced };
 }

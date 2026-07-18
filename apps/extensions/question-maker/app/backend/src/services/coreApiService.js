@@ -4,7 +4,6 @@
  * (status stored on the error as .status, parsed body as .body).
  */
 import { config } from '../config/settings.js';
-import { normalizeCourseCode } from './courseCodeUtils.js';
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -215,27 +214,6 @@ export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
   const data = await listCoursesFromCore(cookieHeader);
   const courses = Array.isArray(data?.courses) ? data.courses : [];
   return courses.some((course) => course?.id === coreCourseId);
-}
-
-/**
- * Finds a Core course in the caller's scoped list by normalized course code (#578).
- * Used when a local QM row matches Core by code but was never link-core'd.
- */
-export async function findScopedCoreCourseByCode(courseCode, cookieHeader) {
-  const target = normalizeCourseCode(courseCode);
-  if (!target) return null;
-
-  const matchInList = (data) => {
-    const courses = Array.isArray(data?.courses) ? data.courses : [];
-    return courses.find((course) => normalizeCourseCode(course?.code) === target) ?? null;
-  };
-
-  try {
-    const scoped = await listCoursesFromCore(cookieHeader);
-    return matchInList(scoped);
-  } catch {
-    return null;
-  }
 }
 
 /**
