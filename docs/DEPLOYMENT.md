@@ -174,6 +174,10 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 # VLLM_API_KEY="vllm-local"
+# Multi-server fleet — round-robin vllm:* chat across healthy hosts (see docs/DEPLOYMENT.md)
+# VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
 
 GOOGLE_GENERATIVE_AI_API_KEY=""   # set if using Gemini
 FIRECRAWL_API_KEY=""              # set if using Firecrawl web search
@@ -184,6 +188,28 @@ DEV_SERVER_HMR_CLIENT_PORT="443"
 ```
 
 **Do not** commit real secrets. URL-encode special characters in `DATABASE_URL` passwords — see [encoding table](#database_url-encoding) below.
+
+#### vLLM fleet routing (optional)
+
+When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
+
+| Variable | Purpose |
+| -------- | ------- |
+| `VLLM_FLEET_CHAT_URLS` | Comma-separated chat/interactive pool (e.g. cmps01 + cmps02 `:8001`) |
+| `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.jobType: background`); falls back to chat pool when unset |
+| `VLLM_FLEET_DEFAULT_MODELS` | Expected model ids for health checks and smoke script (default: `qwen2.5-7b-instruct,qwen2.5-32b-instruct`) |
+| `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
+
+Pre-flight from **`apps/core`** on a host that can reach cmps (e.g. s378):
+
+```bash
+npm run fleet:smoke
+npx vitest run app/tests/unit/fleet-routing.test.ts
+```
+
+Successful picks expose `X-Fleet-Server: cmps01` (or `cmps02`) on `/api/chat` responses. See [`MULTI_SERVER_ROUTING_PLAN.md`](rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) for architecture details.
+
+**Note:** cmps02 may be unreachable from s378 until campus firewall rules are applied (IT ticket INC5196289). Fleet degrades gracefully — only healthy hosts participate in round-robin.
 
 #### Docker (Postgres + pgvector)
 
