@@ -41,6 +41,7 @@ function projectCoreFields(row, core) {
       term: null,
       year: null,
       description: null,
+      isPublished: null,
       coreUnavailable: true,
     };
   }
@@ -52,6 +53,10 @@ function projectCoreFields(row, core) {
     term: core.term ?? null,
     year: core.year ?? null,
     description: core.description ?? null,
+    // Display-only (QM has no student publish gate — that's AT/Core's job):
+    // surfaced so the UI badges the course's real Core publish state instead
+    // of a hardcoded value. Null when unresolved.
+    isPublished: typeof core.isPublished === 'boolean' ? core.isPublished : null,
     coreUnavailable: false,
   };
 }
