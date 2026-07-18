@@ -69,13 +69,20 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     throw new FleetUnavailableError("No fleet servers configured for this workload");
   }
 
-  const eligible: typeof candidates = [];
-  for (const server of candidates) {
-    const health = await getServerHealth(server.baseUrl);
-    if (!health.ok) continue;
-    if (!serverHostsModel(parsed.modelId, health.modelIds, server.models)) continue;
-    eligible.push(server);
-  }
+  // Probe the fleet concurrently so a cold request waits for at most one
+  // health-check timeout window, regardless of the number of candidates.
+  const healthResults = await Promise.all(
+    candidates.map(async (server) => ({
+      server,
+      health: await getServerHealth(server.baseUrl),
+    })),
+  );
+  const eligible = healthResults
+    .filter(
+      ({ server, health }) =>
+        health.ok && serverHostsModel(parsed.modelId, health.modelIds, server.models),
+    )
+    .map(({ server }) => server);
 
   if (eligible.length === 0) {
     throw new FleetUnavailableError(

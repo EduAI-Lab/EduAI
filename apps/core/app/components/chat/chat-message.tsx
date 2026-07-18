@@ -23,7 +23,7 @@ import { cn } from "~/lib/utils";
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
-  /** Human-readable model name when Auto routing resolved the backend model. */
+  /** Human-readable model name recorded for this assistant message. */
   answeredByLabel?: string | null;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;

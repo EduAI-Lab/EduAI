@@ -106,6 +106,7 @@ import {
   type HybridRagHit,
 } from "~/lib/chat-rag";
 import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+import { withResolvedModelMetadata } from "~/lib/chat/chat-message-metadata";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -1064,11 +1065,16 @@ export async function action({ request }: ActionFunctionArgs) {
           continue;
         }
 
+        const messageToPersist =
+          message.role === "assistant"
+            ? withResolvedModelMetadata(message, resolvedModelId)
+            : message;
+
         rows.push({
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(message) as Prisma.InputJsonValue,
+          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
         });
 
         existingMessageIds.add(message.id);
