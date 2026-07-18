@@ -17,6 +17,7 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
     ...actual,
     findEduAiCourseById: vi.fn(),
     listEduAiCourses: vi.fn(),
+    listEduAiCoursesServiceKey: vi.fn(),
     fetchCoreCourseSafe: vi.fn(),
     syncExternalCourseTopics: vi.fn(),
     syncCourseEnrollments: vi.fn(),
@@ -27,6 +28,7 @@ import {
   fetchCoreCourseSafe,
   findEduAiCourseById,
   listEduAiCourses,
+  listEduAiCoursesServiceKey,
 } from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
@@ -62,6 +64,7 @@ describe('Courses routes', () => {
     profApp = await createApp({ mockUser: prof });
     vi.mocked(findEduAiCourseById).mockReset();
     vi.mocked(listEduAiCourses).mockReset();
+    vi.mocked(listEduAiCoursesServiceKey).mockReset();
     vi.mocked(syncExternalCourseTopics).mockClear();
     vi.mocked(syncCourseEnrollments).mockClear();
 
@@ -177,6 +180,71 @@ describe('Courses routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.map((c) => c.id)).toContain(seed.course.id);
+    });
+
+    // #1082: AT and Core enrollment are independent tracks. A STUDENT/TA can
+    // be enrolled in the local AT course (`enrollStudent`/`enrollTa` below)
+    // without a matching Core enrollment, so Core's cookie-scoped list
+    // (`listEduAiCourses`) silently omits the course — reproduces the raw-HTTP
+    // repro that motivated this fix.
+    it('STUDENT sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]); // not in the caller's Core-scoped list
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+      ]);
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(seed.course.id);
+      expect(res.body[0].title).toBe('Test Course');
+      expect(res.body[0].isPublished).toBe(true);
+      expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
+    });
+
+    it('STUDENT still sees no courses when the AT-enrolled course is unpublished in Core, even via the fallback (#1082 fail-closed)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
+      ]);
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
+    });
+
+    it('STUDENT sees no courses when the fallback catalog also has no match (both-miss stays hidden)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([]);
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
+    });
+
+    it('TA sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
+      ]);
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(seed.course.id);
+      expect(res.body[0].title).toBe('Test Course');
     });
 
     it('ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)', async () => {
@@ -531,6 +599,40 @@ describe('Courses routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.role).toBe('ADMIN');
       expect(res.body.totalCourses).toBe(1);
+      expect(res.body.publishedCourses).toBe(1);
+    });
+
+    // #1082: dashboard-stats counterpart of the GET /courses fallback tests
+    // above — the publish count must read through the same service-key
+    // fallback, not just the caller-facing list.
+    it('STUDENT rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+      ]);
+      const student = await enrollStudent();
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('STUDENT');
+      expect(res.body.enrolledCourses).toBe(1);
+    });
+
+    it('TA rollup counts an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
+      vi.mocked(listEduAiCourses).mockResolvedValue([]);
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: true },
+      ]);
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get('/api/me/dashboard-stats');
+
+      expect(res.status).toBe(200);
+      expect(res.body.role).toBe('TA');
+      expect(res.body.yourCourses).toBe(1);
       expect(res.body.publishedCourses).toBe(1);
     });
   });
