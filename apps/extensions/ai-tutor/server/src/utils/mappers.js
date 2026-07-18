@@ -84,14 +84,15 @@ export function mapCoreAdminUser(user) {
  * path) — `coreCourse` is the resolved Core course for this offering
  * (`services/courseResolver.js`), and every one of those fields prefers it.
  * The local column is only a fallback for the transition window before the
- * columns are dropped (S4) and for the moment Core can't be reached
+ * columns are dropped (step 4) and for the moment Core can't be reached
  * (`coreCourse` is `null`/`undefined`) — never dropped entirely, so a Core
  * outage degrades to a stale-but-present course rather than a blank one.
  *
- * The `external*` fields remain local-only (the Core *link*, not Core-owned
- * data) and are coerced to explicit `null` (rather than left as `undefined`)
- * so the client can detect "imported" vs "native" with a simple truthy check
- * on `externalId`.
+ * `coreOfferingId` is now the ONLY Core-link field on the wire (#1072 step 3
+ * consolidated the old `externalId`/`externalSource` pair into it — they
+ * were always `'EDUAI'` plus a redundant copy of the same id, never a
+ * genuine second source like Canvas). The client detects "Core-linked" with
+ * a truthy check on `coreOfferingId` instead.
  */
 export function mapCourseOffering(offering, coreCourse) {
   const core = coreCourse ?? null;
@@ -108,9 +109,6 @@ export function mapCourseOffering(offering, coreCourse) {
     term: core?.term ?? null,
     year: typeof core?.year === 'number' ? core.year : null,
     aiInstructions: typeof core?.aiInstructions === 'string' ? core.aiInstructions : null,
-    externalId: offering.externalId ?? null,
-    externalSource: offering.externalSource ?? null,
-    externalMetadata: offering.externalMetadata ?? null,
   };
 }
 

@@ -108,11 +108,11 @@ describe('Topics routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 403 for imported courses (externalId set)', async () => {
-      // Set externalId on the course to make it "imported"
+    it('returns 403 for imported courses (coreOfferingId set)', async () => {
+      // Set coreOfferingId on the course to make it "imported"
       await prisma.courseOffering.update({
         where: { id: seed.course.id },
-        data: { externalId: 'ext-123', externalSource: 'eduai' },
+        data: { coreOfferingId: 'core-123' },
       });
 
       const res = await request(app)

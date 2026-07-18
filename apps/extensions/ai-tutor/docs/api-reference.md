@@ -98,26 +98,6 @@ The creating professor is automatically assigned as `LEAD` instructor. If `sourc
 
 ---
 
-### `PATCH /api/courses/:courseId`
-
-Update course metadata.
-
-**Auth:** PROFESSOR (course instructor).
-
-**Body:**
-```json
-{
-  "title": "string",
-  "description": "string",
-  "startDate": "ISO 8601",
-  "endDate": "ISO 8601"
-}
-```
-
-**Response:** `Course`
-
----
-
 ### `PATCH /api/courses/:courseId/publish`
 
 Publish a course, making it visible to enrolled students.
@@ -185,7 +165,7 @@ Import a course from the EduAI platform.
 }
 ```
 
-Creates a `CourseOffering` with `externalSource: 'EDUAI'`, then syncs topics and student enrollments from EduAI concurrently.
+Creates a `CourseOffering` anchor row (`coreOfferingId` set to the EduAI course id), then syncs topics and student enrollments from EduAI concurrently.
 
 **Response:** `201 Created` with `Course`
 

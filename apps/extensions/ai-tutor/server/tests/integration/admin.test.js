@@ -22,6 +22,7 @@ import {
   deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
+  listEduAiCourses,
   patchCoreEnrollmentRole,
 } from '../../src/services/eduaiClient.js';
 
@@ -103,6 +104,23 @@ describe('Admin routes', () => {
       const res = await request(profApp).get('/api/admin/courses');
       expect(res.status).toBe(403);
     });
+
+    it('materializes an anchor for a Core course with no local row yet — create-on-open (#1072 step 3 / #1074)', async () => {
+      const UNANCHORED_CORE_ID = 'core-cuid-admin-unanchored';
+      vi.mocked(listEduAiCourses).mockResolvedValueOnce([
+        { id: UNANCHORED_CORE_ID, code: 'MATH 200', name: 'Not Yet Imported', callerEnrollmentRole: 'ADMIN' },
+      ]);
+
+      const res = await request(adminApp).get('/api/admin/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
+
+      const anchor = await prisma.courseOffering.findFirst({
+        where: { coreOfferingId: UNANCHORED_CORE_ID },
+      });
+      expect(anchor).not.toBeNull();
+    });
   });
 
   // ── PATCH /api/admin/users/:id/role ───────────────────────────────
@@ -154,8 +172,7 @@ describe('Admin routes', () => {
           title: 'EduAI Course',
           description: 'imported',
           isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
+          coreOfferingId: 'core-cuid-ext-1',
         },
       });
     });
@@ -197,32 +214,13 @@ describe('Admin routes', () => {
       expect(res.body.error).toMatch(/not found/i);
     });
 
-    it('returns 400 when course is native (no externalId)', async () => {
+    it('returns 400 when course is native (no coreOfferingId)', async () => {
       const nativeCourse = await prisma.courseOffering.create({
         data: { title: 'Native', description: '', isPublished: false },
       });
 
       const res = await request(adminApp).post(
         `/api/admin/courses/${nativeCourse.id}/sync-enrollments`,
-      );
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/not imported/i);
-    });
-
-    it('returns 400 when externalSource is not EDUAI', async () => {
-      const canvasCourse = await prisma.courseOffering.create({
-        data: {
-          title: 'Canvas Course',
-          description: '',
-          isPublished: false,
-          externalId: 'canvas-123',
-          externalSource: 'CANVAS',
-        },
-      });
-
-      const res = await request(adminApp).post(
-        `/api/admin/courses/${canvasCourse.id}/sync-enrollments`,
       );
 
       expect(res.status).toBe(400);
@@ -675,8 +673,7 @@ describe('Admin routes', () => {
           title: 'EduAI Course',
           description: 'imported',
           isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
+          coreOfferingId: 'core-cuid-ext-1',
         },
       });
       await prisma.courseEnrollment.create({
@@ -764,8 +761,7 @@ describe('Admin routes', () => {
           title: 'EduAI Course',
           description: 'imported',
           isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
+          coreOfferingId: 'core-cuid-ext-1',
         },
       });
       await prisma.courseEnrollment.create({

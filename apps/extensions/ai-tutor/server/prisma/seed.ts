@@ -493,32 +493,20 @@ async function seedCourses(promptTemplateIds: Record<string, number>) {
       await prisma.module.deleteMany({ where: { id: { in: moduleIds.map((m) => m.id) } } });
       await prisma.topic.deleteMany({ where: { courseOfferingId: offering.id } });
 
-      offering = await prisma.courseOffering.update({
-        where: { id: offering.id },
-        data: {
-          title: course.title,
-          description: course.description,
-          startDate: course.startDate,
-          endDate: course.endDate,
-          isPublished: course.isPublished,
-          externalId: course.coreCourseId,
-          externalSource: 'EDUAI',
-          coreOfferingId: course.coreCourseId,
-          department: course.department,
-        },
-      });
+      // #1072 step 3: `offering` is a pure anchor row — it was already found
+      // by `coreOfferingId`, so there is nothing left to update. Every real
+      // field (title/description/dates/isPublished/department) is Core-owned
+      // and read-through via `mapCourseOffering`; this seed no longer copies
+      // any of them onto the local row.
     } else {
       offering = await prisma.courseOffering.create({
         data: {
-          title: course.title,
-          description: course.description,
-          startDate: course.startDate,
-          endDate: course.endDate,
-          isPublished: course.isPublished,
-          externalId: course.coreCourseId,
-          externalSource: 'EDUAI',
+          // `title` is NOT NULL until the step-4 migration drops it; the
+          // fixture's local-only `internalKey` is a harmless placeholder —
+          // nothing reads this column (read-through always prefers Core's
+          // resolved `name`).
+          title: course.internalKey,
           coreOfferingId: course.coreCourseId,
-          department: course.department,
         },
       });
     }

@@ -269,19 +269,6 @@ export const api = {
     }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
-  updateCourse: (
-    courseId: number,
-    payload: {
-      title?: string;
-      description?: string | null;
-      startDate?: string | null;
-      endDate?: string | null;
-    },
-  ) =>
-    http(`/api/courses/${courseId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    }),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
       method: 'PATCH',

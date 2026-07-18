@@ -18,7 +18,7 @@ type DashboardUnitAdminViewProps = {
 export function DashboardUnitAdminView({ courses, dashboardStats }: DashboardUnitAdminViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const drafts = courses.filter((c) => !c.isPublished);
-  const synced = courses.filter((c) => c.externalSource === 'EDUAI');
+  const synced = courses.filter((c) => !!c.coreOfferingId);
 
   const stats = [
     { label: 'Unit courses', value: dashboardStats?.totalCourses ?? courses.length },

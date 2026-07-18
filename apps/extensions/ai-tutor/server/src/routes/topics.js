@@ -118,7 +118,7 @@ router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     }
 
     // Block manual topic creation for imported (external) courses
-    if (course.externalId) {
+    if (course.coreOfferingId) {
       return res.status(403).json({
         error: 'Topics for imported courses are managed by EduAI and cannot be added here',
       });
@@ -173,7 +173,7 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    if (!course.externalId) {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 

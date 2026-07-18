@@ -181,20 +181,6 @@ export type Progress = {
 
 export type CompletionStatus = 'correct' | 'incorrect' | 'not_attempted';
 
-export type ExternalCourseMetadata = {
-  id: string;
-  code?: string | null;
-  name?: string | null;
-  description?: string | null;
-  term?: string | null;
-  year?: number | null;
-  isActive?: boolean | null;
-  aiInstructions?: string | null;
-  [key: string]: unknown;
-};
-
-export type EduAiCourse = ExternalCourseMetadata;
-
 export type Course = {
   id: number;
   /** Core's own course id — the read-through link (#1072 step 2). Null for a legacy unlinked offering. */
@@ -214,9 +200,6 @@ export type Course = {
   /** Core-owned instructor guidance for the AI tutor — available but not yet consumed (#1072). */
   aiInstructions?: string | null;
   progress?: Progress;
-  externalId?: string | null;
-  externalSource?: string | null;
-  externalMetadata?: ExternalCourseMetadata | null;
 };
 
 export type Module = {

@@ -22,7 +22,7 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
   };
 });
 
-import { findEduAiCourseById } from '../../src/services/eduaiClient.js';
+import { findEduAiCourseById, listEduAiCourses } from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
 
@@ -56,6 +56,7 @@ describe('Courses routes', () => {
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
     vi.mocked(findEduAiCourseById).mockReset();
+    vi.mocked(listEduAiCourses).mockReset();
     vi.mocked(syncExternalCourseTopics).mockClear();
     vi.mocked(syncCourseEnrollments).mockClear();
   });
@@ -153,6 +154,31 @@ describe('Courses routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.map((c) => c.id)).toContain(seed.course.id);
     });
+
+    it('ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)', async () => {
+      const UNANCHORED_CORE_ID = 'core-cuid-unanchored';
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { id: UNANCHORED_CORE_ID, code: 'COSC 999', name: 'Not Yet Imported', callerEnrollmentRole: 'ADMIN' },
+      ]);
+      const admin = makeAdmin();
+      const adminApp = await createApp({ mockUser: admin });
+
+      const before = await prisma.courseOffering.findFirst({
+        where: { coreOfferingId: UNANCHORED_CORE_ID },
+      });
+      expect(before).toBeNull();
+
+      const res = await request(adminApp).get('/api/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
+
+      // The anchor was materialized as a side effect of the list request.
+      const after = await prisma.courseOffering.findFirst({
+        where: { coreOfferingId: UNANCHORED_CORE_ID },
+      });
+      expect(after).not.toBeNull();
+    });
   });
 
   // ── GET /api/courses/:id ──────────────────────────────────────────
@@ -220,27 +246,6 @@ describe('Courses routes', () => {
     });
   });
 
-  // ── PATCH /api/courses/:id ────────────────────────────────────────
-
-  describe('PATCH /api/courses/:id', () => {
-    it('updates title and description', async () => {
-      const res = await request(profApp)
-        .patch(`/api/courses/${seed.course.id}`)
-        .send({ title: 'Updated Title', description: 'Updated Description' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.title).toBe('Updated Title');
-      expect(res.body.description).toBe('Updated Description');
-    });
-
-    it('returns 400 when nothing to update', async () => {
-      const res = await request(profApp).patch(`/api/courses/${seed.course.id}`).send({});
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/nothing to update/i);
-    });
-  });
-
   // ── PATCH /api/courses/:id/publish ────────────────────────────────
 
   describe('PATCH /api/courses/:id/publish', () => {
@@ -299,7 +304,7 @@ describe('Courses routes', () => {
         .send({ externalCourseId: 'core-course-1' });
 
       expect(res.status).toBe(201);
-      expect(res.body.externalId).toBe('core-course-1');
+      expect(res.body.coreOfferingId).toBe('core-course-1');
       expect(findEduAiCourseById).toHaveBeenCalledWith(
         'core-course-1',
         expect.objectContaining({ cookie: 'session=valid' }),
@@ -331,7 +336,7 @@ describe('Courses routes', () => {
     it('syncs student enrollments for an EduAI-imported course the instructor owns', async () => {
       await prisma.courseOffering.update({
         where: { id: seed.course.id },
-        data: { externalId: 'core-1', externalSource: 'EDUAI' },
+        data: { coreOfferingId: 'core-1' },
       });
 
       const res = await request(profApp)
@@ -357,7 +362,7 @@ describe('Courses routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 400 for a native course without Core externalId', async () => {
+    it('returns 400 for a native course without a coreOfferingId', async () => {
       const res = await request(profApp)
         .post(`/api/courses/${seed.course.id}/sync-enrollments`)
         .set('Cookie', 'session=valid');
@@ -593,7 +598,7 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('import — sets coreOfferingId and syncs isPublished from Core course', async () => {
+  it('import — sets coreOfferingId; isPublished is read-through from the Core course, not stored locally (#1072 step 3)', async () => {
     const EXTERNAL_COURSE_ID = 'core-cuid-xyz';
     const coreCourse = {
       id: EXTERNAL_COURSE_ID,
@@ -610,16 +615,16 @@ describe('Course publish state — Core write-through (#477)', () => {
       .send({ externalCourseId: EXTERNAL_COURSE_ID });
 
     expect(res.status).toBe(201);
+    expect(res.body.coreOfferingId).toBe(EXTERNAL_COURSE_ID);
+    expect(res.body.isPublished).toBe(true);
     expect(findEduAiCourseById).toHaveBeenCalledWith(
       EXTERNAL_COURSE_ID,
       expect.objectContaining({ cookie: 'session=valid' }),
     );
 
     const imported = await prisma.courseOffering.findFirst({
-      where: { externalId: EXTERNAL_COURSE_ID },
+      where: { coreOfferingId: EXTERNAL_COURSE_ID },
     });
     expect(imported).not.toBeNull();
-    expect(imported.coreOfferingId).toBe(EXTERNAL_COURSE_ID);
-    expect(imported.isPublished).toBe(true);
   });
 });

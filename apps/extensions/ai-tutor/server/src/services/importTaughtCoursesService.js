@@ -1,6 +1,16 @@
 /**
- * Auto-imports Core courses the instructor teaches into local CourseOffering rows on login.
- * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
+ * Auto-imports Core courses the instructor teaches into local CourseOffering
+ * anchor rows on login. Uses Core GET /api/courses (session-scoped via
+ * buildCourseListFilter).
+ *
+ * #1072 step 3: `CourseOffering` is a pure anchor — this module only ever
+ * provisions `{ coreOfferingId }` rows. `title` stays populated with the
+ * Core id as a placeholder (the column is still `NOT NULL` until the step-4
+ * migration drops it) but nothing reads it: every real field is
+ * read-through via `mapCourseOffering`/`services/courseResolver.js`. No Core
+ * field (title/description/department/dates/isPublished/externalMetadata)
+ * is copied here anymore, and `reconcileOfferingFromCore` is gone entirely —
+ * there is nothing left to reconcile once the row holds no Core-owned data.
  */
 import { prisma } from '../config/database.js';
 import { listEduAiCourses } from './eduaiClient.js';
@@ -25,137 +35,70 @@ function isTaCoreCourse(coreCourse) {
   return coreCourse?.callerEnrollmentRole === TA_ENROLLMENT_ROLE;
 }
 
-/** Ensures a Core-linked local offering exists and publish state matches Core. */
+/**
+ * Ensures a Core-linked local anchor row exists for one Core course. No Core
+ * fields are copied onto it.
+ */
 async function ensureOfferingFromCore(coreCourse) {
   const existing = await prisma.courseOffering.findFirst({
-    where: {
-      OR: [
-        { coreOfferingId: coreCourse.id },
-        { externalId: coreCourse.id, externalSource: 'EDUAI' },
-      ],
-    },
+    where: { coreOfferingId: coreCourse.id },
   });
 
   if (existing) {
-    await reconcileOfferingFromCore(coreCourse);
-    if (!existing.coreOfferingId) {
-      await prisma.courseOffering.update({
-        where: { id: existing.id },
-        data: { coreOfferingId: coreCourse.id },
-      });
-    }
     return existing;
   }
 
   return prisma.courseOffering.create({
     data: {
-      title: deriveTitle(coreCourse),
-      description: deriveDescription(coreCourse),
-      externalId: coreCourse.id,
+      // `title` is NOT NULL until the step-4 migration drops it; the Core id
+      // is a harmless placeholder that nothing reads (read-through via
+      // `mapCourseOffering` always prefers the resolved Core course's name).
+      title: coreCourse.id,
       coreOfferingId: coreCourse.id,
-      isPublished: coreCourse.isPublished ?? false,
-      externalSource: 'EDUAI',
-      externalMetadata: coreCourse,
     },
   });
 }
 
-function deriveTitle(externalCourse) {
-  const titleParts = [
-    typeof externalCourse.code === 'string' ? externalCourse.code.trim() : null,
-    typeof externalCourse.name === 'string' ? externalCourse.name.trim() : null,
-  ].filter(Boolean);
-
-  return (
-    titleParts.join(' - ') ||
-    (typeof externalCourse.name === 'string' ? externalCourse.name : null) ||
-    (typeof externalCourse.code === 'string' ? externalCourse.code : null) ||
-    'Imported Course'
-  );
-}
-
-function deriveDescription(externalCourse) {
-  if (typeof externalCourse.description === 'string' && externalCourse.description.trim()) {
-    return externalCourse.description;
-  }
-  return [externalCourse.term, externalCourse.year].filter(Boolean).join(' ') || null;
-}
-
-function corePublishState(externalCourse) {
-  return typeof externalCourse?.isPublished === 'boolean' ? externalCourse.isPublished : null;
-}
-
 /**
- * Mirrors a Core course's mutable fields (publish state, title, description) onto
- * the linked local offering. Core is the source of truth, so a rename or
- * draft/publish flip upstream propagates down on the next sync. Returns true when
- * any field actually changed (so callers can count reconciliations).
+ * Ensures a local anchor row exists for every id in `coreCourseIds`, in one
+ * batched read + one batched insert — never a per-course round trip. Backs
+ * the ADMIN course list's create-on-open behavior (#1072 step 3 / #1074): by
+ * the time the list response is built, every course in Core's catalog —
+ * including ones no instructor has ever logged in to auto-import — has a
+ * stable local id the client can link into.
  */
-async function reconcileOfferingFromCore(externalCourse) {
-  if (!externalCourse?.id) {
-    return false;
-  }
+export async function ensureOfferingAnchors(coreCourseIds) {
+  const ids = Array.from(
+    new Set((coreCourseIds ?? []).filter((id) => typeof id === 'string' && id)),
+  );
+  if (ids.length === 0) return;
 
-  const offering = await prisma.courseOffering.findFirst({
-    where: {
-      OR: [
-        { coreOfferingId: externalCourse.id },
-        { externalId: externalCourse.id, externalSource: 'EDUAI' },
-      ],
-    },
+  const existing = await prisma.courseOffering.findMany({
+    where: { coreOfferingId: { in: ids } },
+    select: { coreOfferingId: true },
   });
+  const existingIds = new Set(existing.map((o) => o.coreOfferingId));
+  const missing = ids.filter((id) => !existingIds.has(id));
+  if (missing.length === 0) return;
 
-  if (!offering) {
-    return false;
-  }
-
-  const data = {};
-
-  const publish = corePublishState(externalCourse);
-  if (publish !== null && offering.isPublished !== publish) {
-    data.isPublished = publish;
-  }
-
-  const nextTitle = deriveTitle(externalCourse);
-  if (nextTitle && offering.title !== nextTitle) {
-    data.title = nextTitle;
-  }
-
-  const nextDescription = deriveDescription(externalCourse);
-  if (offering.description !== nextDescription) {
-    data.description = nextDescription;
-  }
-
-  if (Object.keys(data).length === 0) {
-    return false;
-  }
-
-  data.externalMetadata = externalCourse;
-  await prisma.courseOffering.update({
-    where: { id: offering.id },
-    data,
+  await prisma.courseOffering.createMany({
+    data: missing.map((id) => ({ title: id, coreOfferingId: id })),
+    skipDuplicates: true,
   });
-
-  return true;
 }
 
 /**
- * Creates a CourseOffering for one Core course and syncs topics + enrollments.
- * Mirrors POST /api/courses/import-external without the HTTP layer.
+ * Creates a CourseOffering anchor for one Core course and syncs topics +
+ * enrollments. Mirrors POST /api/courses/import-external without the HTTP layer.
  */
 export async function importExternalCourseForUser(instructor, externalCourse) {
   const alreadyImported = await prisma.courseOffering.findFirst({
-    where: {
-      OR: [
-        { coreOfferingId: externalCourse.id },
-        { externalId: externalCourse.id, externalSource: 'EDUAI' },
-      ],
-    },
+    where: { coreOfferingId: externalCourse.id },
   });
 
   if (alreadyImported) {
-    // Ensure the instructor is linked to the existing course (handles seeded courses
-    // and courses already imported by another user).
+    // Ensure the instructor is linked to the existing course (handles seeded
+    // courses and courses already imported by another user).
     await prisma.courseInstructor.upsert({
       where: {
         userId_courseOfferingId: {
@@ -167,40 +110,14 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
       update: {},
     });
 
-    // Backfill department so UNIT_ADMIN scoping works when course was seeded without it.
-    if (
-      !alreadyImported.department &&
-      typeof externalCourse.department === 'string' &&
-      externalCourse.department.trim()
-    ) {
-      await prisma.courseOffering.update({
-        where: { id: alreadyImported.id },
-        data: { department: externalCourse.department.trim() },
-      });
-    }
-
-    // #477: backfill the Core offering link and mirror its publish state.
-    if (!alreadyImported.coreOfferingId) {
-      await prisma.courseOffering.update({
-        where: { id: alreadyImported.id },
-        data: { coreOfferingId: externalCourse.id },
-      });
-    }
-    await reconcileOfferingFromCore(externalCourse);
-
     return { offering: alreadyImported, created: false };
   }
 
   const created = await prisma.$transaction(async (tx) => {
     const offering = await tx.courseOffering.create({
       data: {
-        title: deriveTitle(externalCourse),
-        description: deriveDescription(externalCourse),
-        externalId: externalCourse.id,
+        title: externalCourse.id,
         coreOfferingId: externalCourse.id,
-        isPublished: externalCourse.isPublished ?? false,
-        externalSource: 'EDUAI',
-        externalMetadata: externalCourse,
       },
     });
 
@@ -231,8 +148,9 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
 }
 
 /**
- * Mirrors Core course catalog into local offerings. Core is the source of truth —
- * imports new taught courses and refreshes topics + enrollments for existing links.
+ * Mirrors Core's course catalog into local offering anchors. Core is the
+ * source of truth for every real field — imports new taught courses (anchor
+ * row only) and refreshes topics + enrollments for existing links.
  * Idempotent — safe to call on every /api/me and GET /courses request.
  *
  * Pass `options.coreCourses` when the caller already fetched Core's course list
@@ -259,25 +177,16 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
 
   const importedRows = await prisma.courseOffering.findMany({
     where: {
-      externalSource: 'EDUAI',
-      OR: [
-        { externalId: { not: null } },
-        { coreOfferingId: { not: null } },
-      ],
+      coreOfferingId: { not: null },
       instructors: { some: { userId: instructor.id } },
     },
-    select: { externalId: true, coreOfferingId: true },
+    select: { coreOfferingId: true },
   });
 
-  const importedIds = new Set();
-  for (const row of importedRows) {
-    if (row.externalId) importedIds.add(row.externalId);
-    if (row.coreOfferingId) importedIds.add(row.coreOfferingId);
-  }
+  const importedIds = new Set(importedRows.map((row) => row.coreOfferingId).filter(Boolean));
 
   let imported = 0;
   let skipped = 0;
-  let publishSynced = 0;
 
   for (const coreCourse of coreCourses) {
     if (!coreCourse?.id || typeof coreCourse.id !== 'string') {
@@ -291,9 +200,6 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
     }
 
     if (importedIds.has(coreCourse.id)) {
-      if (await reconcileOfferingFromCore(coreCourse)) {
-        publishSynced++;
-      }
       skipped++;
       continue;
     }
@@ -320,8 +226,7 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   const offerings = await prisma.courseOffering.findMany({
     where: {
       instructors: { some: { userId: instructor.id } },
-      externalSource: 'EDUAI',
-      externalId: { not: null },
+      coreOfferingId: { not: null },
     },
   });
 
@@ -342,12 +247,13 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
     }
   }
 
-  return { imported, skipped, synced, publishSynced };
+  return { imported, skipped, synced };
 }
 
 /**
  * Mirrors Core student enrollments into local CourseEnrollment rows. Core is the
- * source of truth — creates offerings when missing and prunes stale EDUAI links.
+ * source of truth — creates offering anchors when missing and prunes stale
+ * Core-linked enrollments.
  * Idempotent — safe to call on every /api/me and GET /courses request.
  *
  * Pass `options.coreCourses` when the caller already fetched Core's course list.
@@ -441,16 +347,14 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
     where: { userId: student.id, role: STUDENT_ENROLLMENT_ROLE },
     include: {
       courseOffering: {
-        select: { externalSource: true, externalId: true, coreOfferingId: true },
+        select: { coreOfferingId: true },
       },
     },
   });
 
   const staleOfferingIds = localEnrollments
     .filter((enrollment) => {
-      const offering = enrollment.courseOffering;
-      if (offering.externalSource !== 'EDUAI') return false;
-      const coreId = offering.coreOfferingId ?? offering.externalId;
+      const coreId = enrollment.courseOffering.coreOfferingId;
       return coreId && !activeCoreIds.has(coreId);
     })
     .map((enrollment) => enrollment.courseOfferingId);
