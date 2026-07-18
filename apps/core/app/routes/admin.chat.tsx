@@ -15,7 +15,6 @@ import {
   BreadcrumbSeparator,
 } from "@eduai/ui";
 import { fetchChatSession } from "~/hooks/api/use-chat-sessions";
-import { useApiKeys } from "~/hooks/use-api-keys";
 import { auth } from "~/lib/auth/server";
 import prisma from "~/lib/prisma.server";
 import { useAssistiveUi } from "~/components/assistive/assistive-ui-provider";
@@ -85,21 +84,29 @@ export default function AdminChatPage() {
     })();
   }, [chatId, systemPrompt, setAssistive]);
 
+  // Mirror Focus mode onto <html data-assistive-focus-mode> so the shared CSS
+  // hides the sidebar/history rail, matching ChatScreen's behavior.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (focusMode) {
+      el.setAttribute("data-assistive-focus-mode", "true");
+    } else {
+      el.removeAttribute("data-assistive-focus-mode");
+    }
+    return () => el.removeAttribute("data-assistive-focus-mode");
+  }, [focusMode]);
+
   const handleAssistiveChange = useCallback(
     (checked: boolean) => {
       setAdhdAssist(checked);
-      if (!checked) setFocusMode(false);
       setAssistive(checked);
     },
     [setAssistive],
   );
 
-  const { getValidApiKeys } = useApiKeys();
-
   const requestMetadata = {
     chatMode: "admin" as const,
     model: selectedModel,
-    apiKeys: getValidApiKeys(),
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
     adhdAssist,
@@ -139,7 +146,6 @@ export default function AdminChatPage() {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
           adhdAssist,
           streaming: false,
         }),

@@ -1,33 +1,44 @@
 import { useLocation } from 'react-router';
 import { IconSparkles } from '@tabler/icons-react';
-import { Button } from '@eduai/ui';
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@eduai/ui';
+import { useLocalUser } from '~/hooks/useLocalUser';
+import { canAccessStudentTour } from '~/lib/tours/tour-storage';
 import { useAppTour } from './TourProvider';
 
 export default function TourButton() {
   const location = useLocation();
+  const { user } = useLocalUser();
   const { isRunning, startSuggestedTour, stopTour } = useAppTour();
 
-  if (!location.pathname.startsWith('/student')) {
+  if (!canAccessStudentTour(user?.role, location.pathname)) {
     return null;
   }
 
+  const label = isRunning ? 'Stop Tour' : 'Take Tour';
+
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        if (isRunning) {
-          stopTour();
-          return;
-        }
-        startSuggestedTour();
-      }}
-      data-tour="nav-take-tour"
-      title={isRunning ? 'Stop tour' : 'Take a guided tour'}
-    >
-      <IconSparkles className="h-4 w-4" />
-      <span className="hidden sm:inline">{isRunning ? 'Stop Tour' : 'Take Tour'}</span>
-    </Button>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          onClick={() => {
+            if (isRunning) {
+              stopTour();
+              return;
+            }
+            startSuggestedTour();
+          }}
+          tooltip={isRunning ? 'Stop tour' : 'Take a guided tour'}
+          data-tour="nav-take-tour"
+        >
+          <IconSparkles className="size-4" />
+          <span>{label}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
