@@ -183,9 +183,13 @@ export type CompletionStatus = 'correct' | 'incorrect' | 'not_attempted';
 
 export type Course = {
   id: number;
-  /** Core's own course id — the read-through link (#1072 step 2). Null for a legacy unlinked offering. */
+  /** Core's own course id — the read-through link (#1072 step 2/4). Always
+   *  present (`CourseOffering` is a pure anchor row, `coreOfferingId` is
+   *  required + unique); optional/nullable here only defensively. */
   coreOfferingId?: string | null;
-  title: string;
+  /** Core-owned (#1072 step 4) — `null` when Core can't be resolved (no
+   *  local fallback exists anymore). */
+  title: string | null;
   /** Core-owned course code (e.g. "COSC 101"), read-through — not the local `externalId`. */
   code?: string | null;
   description?: string | null;

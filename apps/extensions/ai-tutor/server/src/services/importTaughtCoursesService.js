@@ -3,14 +3,13 @@
  * anchor rows on login. Uses Core GET /api/courses (session-scoped via
  * buildCourseListFilter).
  *
- * #1072 step 3: `CourseOffering` is a pure anchor — this module only ever
- * provisions `{ coreOfferingId }` rows. `title` stays populated with the
- * Core id as a placeholder (the column is still `NOT NULL` until the step-4
- * migration drops it) but nothing reads it: every real field is
- * read-through via `mapCourseOffering`/`services/courseResolver.js`. No Core
- * field (title/description/department/dates/isPublished/externalMetadata)
- * is copied here anymore, and `reconcileOfferingFromCore` is gone entirely —
- * there is nothing left to reconcile once the row holds no Core-owned data.
+ * #1072 step 4: `CourseOffering` is a pure anchor — `id`, `coreOfferingId`,
+ * timestamps only. This module only ever provisions `{ coreOfferingId }`
+ * rows; every real field is read-through via
+ * `mapCourseOffering`/`services/courseResolver.js`. No Core field
+ * (title/description/department/dates/isPublished/externalMetadata) is
+ * copied here, and `reconcileOfferingFromCore` is gone entirely — there is
+ * nothing left to reconcile once the row holds no Core-owned data.
  */
 import { prisma } from '../config/database.js';
 import { listEduAiCourses } from './eduaiClient.js';
@@ -50,10 +49,6 @@ async function ensureOfferingFromCore(coreCourse) {
 
   return prisma.courseOffering.create({
     data: {
-      // `title` is NOT NULL until the step-4 migration drops it; the Core id
-      // is a harmless placeholder that nothing reads (read-through via
-      // `mapCourseOffering` always prefers the resolved Core course's name).
-      title: coreCourse.id,
       coreOfferingId: coreCourse.id,
     },
   });
@@ -82,7 +77,7 @@ export async function ensureOfferingAnchors(coreCourseIds) {
   if (missing.length === 0) return;
 
   await prisma.courseOffering.createMany({
-    data: missing.map((id) => ({ title: id, coreOfferingId: id })),
+    data: missing.map((id) => ({ coreOfferingId: id })),
     skipDuplicates: true,
   });
 }
@@ -116,7 +111,6 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
   const created = await prisma.$transaction(async (tx) => {
     const offering = await tx.courseOffering.create({
       data: {
-        title: externalCourse.id,
         coreOfferingId: externalCourse.id,
       },
     });
@@ -175,9 +169,9 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
     return { imported: 0, skipped: 0 };
   }
 
+  // coreOfferingId is required (#1072 step 4) — no null-filter needed.
   const importedRows = await prisma.courseOffering.findMany({
     where: {
-      coreOfferingId: { not: null },
       instructors: { some: { userId: instructor.id } },
     },
     select: { coreOfferingId: true },
@@ -223,10 +217,10 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   }
 
   let synced = 0;
+  // coreOfferingId is required (#1072 step 4) — no null-filter needed.
   const offerings = await prisma.courseOffering.findMany({
     where: {
       instructors: { some: { userId: instructor.id } },
-      coreOfferingId: { not: null },
     },
   });
 

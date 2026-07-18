@@ -86,12 +86,26 @@ export async function resolveCoreCourseById(coreOfferingId) {
 }
 
 /**
- * Live publish gate (#819): Core's `isPublished` wins whenever the offering
- * resolved against the batch; otherwise falls back to the local anchor's
- * last-known column so a Core outage degrades to stale-but-present rather
- * than hiding every course.
+ * Live publish gate (#819): Core's `isPublished` is the sole source of truth
+ * — `CourseOffering` has no local `isPublished` column anymore (#1072 step
+ * 4). Unresolved (offering not in the batch, or Core unavailable) fails
+ * closed to `false` rather than leaking an unpublished/unknown course to
+ * students; a stale local mirror is no longer available as a middle ground.
  */
 export function resolveIsPublished(offering, coreCoursesById) {
   const core = coreCoursesById?.get(offering.coreOfferingId);
-  return typeof core?.isPublished === 'boolean' ? core.isPublished : offering.isPublished;
+  return typeof core?.isPublished === 'boolean' ? core.isPublished : false;
+}
+
+/**
+ * Single-course counterpart to `resolveIsPublished` for route handlers that
+ * only have one course row in hand (a nested `courseOffering` include, not a
+ * pre-fetched Core list/batch) — e.g. the module/lesson publish gates and
+ * the AI-tutoring endpoints. Self-resolves via `resolveCoreCourseById` and
+ * fails closed to `false` on any Core outage, same posture as
+ * `resolveIsPublished`.
+ */
+export async function isCoursePublishedLive(coreOfferingId) {
+  const { course } = await resolveCoreCourseById(coreOfferingId);
+  return typeof course?.isPublished === 'boolean' ? course.isPublished : false;
 }

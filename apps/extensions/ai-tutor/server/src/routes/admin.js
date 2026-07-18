@@ -128,7 +128,7 @@ router.get(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -227,7 +227,7 @@ router.post(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -279,7 +279,7 @@ router.delete(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -350,7 +350,7 @@ router.patch(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -478,8 +478,8 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
 /**
  * GET /admin/ai-traces — recent AiInteractionTrace rows for oversight.
  *
- * Auth: UNIT_ADMIN (scoped to `authorizedUnits` via CourseOffering.department),
- *   ADMIN (unscoped).
+ * Auth: UNIT_ADMIN (scoped to `authorizedUnits` via the Core course's live
+ *   `department`), ADMIN (unscoped).
  * Query params: `unit` (department filter — for UNIT_ADMIN it must be one of
  *   their authorized units), `courseId` (numeric CourseOffering id), `limit`
  *   (default 50, max 200).
@@ -487,7 +487,12 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
  * Why: `AiInteractionTrace.userId` has no local FK (User is owned by Core), so
  * display names are resolved the same way `/admin/courses/:courseId/enrollments`
  * already does — via `listCoreAdminUsers` and an id->name map — rather than a
- * Prisma include that can't exist.
+ * Prisma include that can't exist. `department` and `courseTitle` are
+ * Core-owned too (#1072 step 4, no local column): both are resolved by
+ * joining one batched `GET /api/courses` fetch against the local anchor rows
+ * by `coreOfferingId`, same pattern as `routes/courses.js`. Fail-soft: a
+ * Core outage degrades UNIT_ADMIN's department scope to empty (never a hard
+ * error or an unscoped leak).
  */
 router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const authUser = req.user;
@@ -505,6 +510,14 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
 
   try {
+    const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({
+      cookie: getEduAiCookieForRequest(req),
+    });
+    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+
     const courseOfferingWhere = {};
 
     if (authUser.role === 'UNIT_ADMIN') {
@@ -516,13 +529,18 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
         if (!units.includes(unit)) {
           return res.status(403).json({ error: 'Not authorized for this unit' });
         }
-        courseOfferingWhere.department = unit;
+        const deptCoreIds = coreCourses.filter((c) => c?.department === unit).map((c) => c.id);
+        courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       } else {
-        courseOfferingWhere.department = { in: units };
+        const deptCoreIds = coreCourses
+          .filter((c) => c?.department && units.includes(c.department))
+          .map((c) => c.id);
+        courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       }
     } else if (unit) {
       // ADMIN scoping by unit is optional filtering, not an authorization boundary.
-      courseOfferingWhere.department = unit;
+      const deptCoreIds = coreCourses.filter((c) => c?.department === unit).map((c) => c.id);
+      courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
     }
 
     if (numericCourseId !== null) {
@@ -545,7 +563,7 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
                 module: {
                   select: {
                     courseOfferingId: true,
-                    courseOffering: { select: { title: true } },
+                    courseOffering: { select: { coreOfferingId: true } },
                   },
                 },
               },
@@ -581,7 +599,8 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
       user: { id: t.userId, name: userNameMap.get(t.userId) ?? null },
       activity: { id: t.activity.id, title: t.activity.title },
       courseId: t.activity.lesson.module.courseOfferingId,
-      courseTitle: t.activity.lesson.module.courseOffering?.title ?? null,
+      courseTitle:
+        coreCoursesById.get(t.activity.lesson.module.courseOffering?.coreOfferingId)?.name ?? null,
     }));
 
     res.json(result);
