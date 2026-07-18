@@ -353,16 +353,18 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
+    // coreOfferingId is @unique — one AI Tutor offering per Core course
+    // regardless of instructor. Import is an idempotent ENSURE (unified
+    // contract): the throttled background mirror may have anchored this
+    // course between the caller's list and this request, so "already
+    // imported" is a success (200 with the existing row, instructor linkage
+    // ensured by the service), not a conflict.
     const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
-    if (!created) {
-      return res.status(409).json({ error: 'Course already imported' });
-    }
 
     // `externalCourse` is already the resolved Core course for this offering
     // (just fetched above) — pass it straight through rather than issuing a
     // second Core call.
-    res.status(201).json(mapCourseOffering(offering, externalCourse));
+    res.status(created ? 201 : 200).json(mapCourseOffering(offering, externalCourse));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
     return respondEduAiUpstreamError(res, error, 'Unable to import course');

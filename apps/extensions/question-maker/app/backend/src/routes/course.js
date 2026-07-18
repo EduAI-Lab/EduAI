@@ -87,14 +87,31 @@ router.post('/', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    const courseData = await Course.create({
-      userId: req.user.id,
-      coreCourseId,
-    });
+    // Idempotent ENSURE (unified contract): coreCourseId is globally unique —
+    // the throttled background import mirror (or another caller) may have
+    // anchored this course between the caller's list and this request, so an
+    // existing anchor is a success (200 with the row), not an error. The
+    // create path race (mirror wins between our miss and the insert) is
+    // absorbed by re-reading on a unique-constraint violation.
+    let courseData = await Course.findOne({ where: { coreCourseId } });
+    let created = false;
+    if (!courseData) {
+      try {
+        courseData = await Course.create({
+          userId: req.user.id,
+          coreCourseId,
+        });
+        created = true;
+      } catch (error) {
+        if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
+        courseData = await Course.findOne({ where: { coreCourseId } });
+        if (!courseData) throw error;
+      }
+    }
 
-    res.status(201).json({
+    res.status(created ? 201 : 200).json({
       success: true,
-      message: 'Course created successfully',
+      message: created ? 'Course created successfully' : 'Course already linked',
       data: await enrichCourseDetail(courseData, { cookie }),
     });
   } catch (error) {

@@ -108,23 +108,35 @@ export async function importExternalCourseForUser(instructor, externalCourse) {
     return { offering: alreadyImported, created: false };
   }
 
-  const created = await prisma.$transaction(async (tx) => {
-    const offering = await tx.courseOffering.create({
-      data: {
-        coreOfferingId: externalCourse.id,
-      },
-    });
+  let created;
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const offering = await tx.courseOffering.create({
+        data: {
+          coreOfferingId: externalCourse.id,
+        },
+      });
 
-    await tx.courseInstructor.create({
-      data: {
-        courseOfferingId: offering.id,
-        userId: instructor.id,
-        role: 'LEAD',
-      },
-    });
+      await tx.courseInstructor.create({
+        data: {
+          courseOfferingId: offering.id,
+          userId: instructor.id,
+          role: 'LEAD',
+        },
+      });
 
-    return offering;
-  });
+      return offering;
+    });
+  } catch (err) {
+    // Unique-violation race: the throttled background mirror (runCoreMirror)
+    // can insert this coreOfferingId between our findFirst miss and the
+    // create — explicit add is an idempotent ENSURE (unified contract), so
+    // the loser adopts the winner's row instead of surfacing an error.
+    if (err?.code === 'P2002') {
+      return importExternalCourseForUser(instructor, externalCourse);
+    }
+    throw err;
+  }
 
   const [topicResult, enrollmentResult] = await Promise.allSettled([
     syncExternalCourseTopics(created.id),
