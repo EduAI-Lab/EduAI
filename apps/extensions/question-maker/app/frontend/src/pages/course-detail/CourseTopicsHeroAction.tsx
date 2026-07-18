@@ -104,7 +104,7 @@ export const CourseTopicsHeroAction = ({
                 className={HERO_BUTTON_CLASS}
                 onClick={() => void handleSyncFromCore()}
                 disabled={isSyncing}
-                aria-label="Sync topics from Core"
+                aria-label="Sync topics from EduAI"
               >
                 <IconRefresh className={`size-4${isSyncing ? ' animate-spin' : ''}`} />
                 {isSyncing ? 'Syncing…' : 'Sync now'}
