@@ -24,9 +24,11 @@ function withDerivedSemester(row) {
 
 /**
  * Creates an assessment blueprint for the given user/course after validating inputs.
- * `semester` is no longer accepted from callers — it's derived from the course's
- * Core term (#1072 §4 step 8 / #1077); pass `cookie` to read through as the caller
- * when available (falls back to the service key).
+ * `semester` is no longer accepted from callers, nor persisted — the `Assessments`
+ * table dropped the column (#1072 §4 step 10/#1077). It's still derived from the
+ * course's Core term for the immediate create-response (mirrors `withDerivedSemester`
+ * for the read seams); pass `cookie` to read through as the caller when available
+ * (falls back to the service key).
  */
 export const createAssessment = async (userId, assessmentData, { cookie } = {}) => {
   try {
@@ -49,18 +51,17 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
       throw new Error('Course not found');
     }
 
-    const semester = await deriveSemesterDisplayForCourseId(courseId, { cookie });
+    const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId, { cookie });
 
     const assessment = await Assessments.create({
       type,
       name,
-      semester,
       courseId,
       description: description?.trim() || null,
       blueprintConfig: blueprintConfig || null
     });
 
-    return assessment;
+    return { ...assessment.toJSON(), semester: semesterDisplay };
   } catch (error) {
     throw error;
   }
@@ -82,7 +83,10 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code', 'coreCourseId'],
+          // `coreCourseId` is what `enrichRowsWithCourse` needs to project
+          // name/code from Core below — `Course` has no local name/code to
+          // select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: courseWhere,
           required: true
         },
@@ -100,7 +104,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
                   model: Course,
                   as: 'course',
                   where: { userId: userId },
-                  attributes: ['id', 'name', 'code']
+                  // Ownership filter only — this nested course is never enriched/returned.
+                  attributes: ['id']
                 }
               ]
             }
@@ -127,7 +132,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
                         {
                           model: Course,
                           as: 'course',
-                          attributes: ['id', 'name', 'code'],
+                          // Ownership filter only — this nested course is never enriched/returned.
+                          attributes: ['id'],
                           where: { userId },
                           required: false
                         }
@@ -162,7 +168,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code', 'coreCourseId'],
+          // `coreCourseId` feeds `enrichRowWithCourse`'s Core projection below.
+          attributes: ['id', 'coreCourseId'],
           where: { userId },
           required: true
         },
@@ -180,7 +187,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
                   model: Course,
                   as: 'course',
                   where: { userId: userId },
-                  attributes: ['id', 'name', 'code']
+                  // Ownership filter only — this nested course is never enriched/returned.
+                  attributes: ['id']
                 }
               ]
             }
@@ -208,7 +216,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
                           model: Course,
                           as: 'course',
                           where: { userId },
-                          attributes: ['id', 'name', 'code'],
+                          // Ownership filter only — this nested course is never enriched/returned.
+                          attributes: ['id'],
                           required: false
                         }
                       ]
@@ -487,7 +496,9 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
           model: Course,
           as: 'course',
           where: { userId: userId },
-          attributes: ['id', 'name', 'code']
+          // Ownership filter only — this endpoint returns rows unenriched, and
+          // `Course` has no local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id']
         },
         {
           model: Variants,

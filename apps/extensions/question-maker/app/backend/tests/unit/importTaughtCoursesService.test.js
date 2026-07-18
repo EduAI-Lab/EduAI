@@ -77,13 +77,12 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 
     expect(result.imported).toBe(1);
-    expect(courseCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'u1',
-        coreCourseId: 'core-1',
-        code: 'COSC 111',
-      }),
-    );
+    // `name`/`code` are Core-owned and never written locally (#1072 §4 step 10)
+    // — the anchor is just userId + coreCourseId.
+    expect(courseCreate).toHaveBeenCalledWith({
+      userId: 'u1',
+      coreCourseId: 'core-1',
+    });
     expect(createAssessment).toHaveBeenCalled();
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalled();
   });

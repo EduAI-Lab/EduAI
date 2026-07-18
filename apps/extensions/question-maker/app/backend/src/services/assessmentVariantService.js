@@ -136,7 +136,9 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
         model: Course,
         as: 'course',
         where: { userId },
-        attributes: ['id', 'name', 'code', 'coreCourseId'],
+        // `coreCourseId` feeds `enrichCourseDetail` below — `Course` has no
+        // local name/code to select anymore (#1072 §4 step 10).
+        attributes: ['id', 'coreCourseId'],
         required: true
       }
     ]
@@ -324,8 +326,10 @@ export async function assembleEquivalentExamVariants(userId, params) {
 
   // Derived once from the course's Core term — every exam created in this
   // batch shares the same course, so one lookup covers all of them (#1072
-  // §4 step 8 / #1077). `semesterOverride` is gone: it only ever relabelled
-  // the same course, and `examLabels` already handle per-exam naming.
+  // §4 step 8/step 10 / #1077). `semesterOverride` is gone: it only ever
+  // relabelled the same course, and `examLabels` already handle per-exam
+  // naming. `semester` is display-only now (never persisted, the column is
+  // gone) — kept just to populate the summary returned below.
   const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId);
 
   const started = Date.now();
@@ -345,7 +349,6 @@ export async function assembleEquivalentExamVariants(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterDisplay,
           description: `Assessment variant workflow exam (${label}) from reference assessment #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
@@ -426,7 +429,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
       id: a.id,
       name: a.name,
       type: a.type,
-      semester: a.semester
+      semester: semesterDisplay
     })),
     assemblyTimeMs,
     warnings,
@@ -539,7 +542,6 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterDisplay,
           description: `Assessment variant workflow exam (${label}) assembled by metadata similarity from reference #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
@@ -633,7 +635,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
       id: a.id,
       name: a.name,
       type: a.type,
-      semester: a.semester
+      semester: semesterDisplay
     })),
     assemblyTimeMs,
     warnings,
@@ -679,7 +681,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
   const course = await Course.findOne({
     where: { id: Number(courseId), userId },
-    attributes: ['id', 'code', 'name']
+    attributes: ['id', 'coreCourseId']
   });
 
   if (!course) {
@@ -690,7 +692,10 @@ export async function generateBankVariantsForQuestions(userId, params) {
     throw new Error('EduAI is not configured; cannot generate variants.');
   }
 
-  const rawCode = (course.code && course.code.trim()) || `COURSE-${course.id}`;
+  // `code` is Core-owned and no longer stored locally (#1072 §4 step 10) —
+  // read through Core for the display code sent to EduAI.
+  const courseDetail = await enrichCourseDetail(course, { cookie });
+  const rawCode = (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
   const courseCode = rawCode.replace(/\s+/g, '').toUpperCase();
 
   const topics = await Topics.findAll({

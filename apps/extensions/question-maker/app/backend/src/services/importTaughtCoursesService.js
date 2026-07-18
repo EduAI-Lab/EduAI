@@ -33,10 +33,10 @@ async function ensurePracticeExam(userId, courseId) {
 }
 
 async function createLinkedCourse(userId, coreCourse, cookie) {
+  // `name`/`code` are Core-owned and read through Core at every read seam
+  // (#1072 §4 step 10) — the anchor row only needs the link, not a local copy.
   const created = await Course.create({
     userId,
-    name: coreCourse.name?.trim() || coreCourse.code?.trim() || 'Imported Course',
-    code: coreCourse.code?.trim() || null,
     coreCourseId: coreCourse.id,
   });
 

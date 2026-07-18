@@ -30,18 +30,12 @@ const courseIdFromParam = (req) => req.params.id;
  * POST /api/course – creates a local QM course anchor owned by the authenticated
  * user, always linked to Core at creation time (#1072 §4 step 7). Local-only
  * "sandbox" creation has been retired: Core is the source of truth for course
- * data, so every row must be provisioned with a caller-scoped `coreCourseId`.
+ * data (name/code included, #1072 §4 step 10), so every row is just a
+ * caller-scoped `coreCourseId` anchor.
  */
 router.post('/', authenticateToken, async (req, res, next) => {
   try {
-    const { name, courseCode, coreCourseId } = req.body;
-
-    if (!name || !name.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Course name is required'
-      });
-    }
+    const { coreCourseId } = req.body;
 
     if (!coreCourseId || typeof coreCourseId !== 'string') {
       return res.status(400).json({ success: false, error: 'coreCourseId is required' });
@@ -65,8 +59,6 @@ router.post('/', authenticateToken, async (req, res, next) => {
 
     const courseData = await Course.create({
       userId: req.user.id,
-      name: name.trim(),
-      code: courseCode || null,
       coreCourseId,
     });
 
@@ -227,20 +219,20 @@ router.get(
   }
 );
 
-/** PUT /api/course/:id – updates course metadata (§5 edit: instructor access or above). */
+/**
+ * PUT /api/course/:id – access-gated no-op (§5 edit: instructor access or above).
+ * `name`/`code` are Core-owned and no longer stored locally (#1072 §4 step 10) —
+ * there is nothing left on the local anchor row to update from the request body.
+ * Kept as a route so the per-course edit-access gate stays available to callers
+ * (e.g. RBAC checks), and returns the current Core-projected detail.
+ */
 router.put(
   '/:id',
   authenticateToken,
   requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      const { name, courseCode } = req.body;
       const courseData = req.qmCourse;
-
-      await courseData.update({
-        ...(name !== undefined && { name: name?.trim() || courseData.name }),
-        ...(courseCode !== undefined && { code: courseCode || null })
-      });
 
       res.json({
         success: true,

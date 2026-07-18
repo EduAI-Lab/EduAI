@@ -7,8 +7,7 @@ import { Course } from '../schema/Course.js';
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
-  formatSemesterDisplay,
-  deriveSemesterDisplayForCourseId
+  formatSemesterDisplay
 } from './courseListService.js';
 
 /**
@@ -227,7 +226,9 @@ export const getQuestionsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code', 'coreCourseId'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId: userId } // Filter by user through course relationship
         },
         {
@@ -272,7 +273,9 @@ export const getQuestionById = async (questionId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code', 'coreCourseId'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId: userId } // Ensure user owns the course
         },
         {
@@ -451,11 +454,12 @@ export const createMultipleQuestions = async (userId, questionsData) => {
 
 /**
  * Persists extracted questions/variants and optionally creates assessments/sections
- * for them. The optional `assessment.semester` on `payload` is ignored — the created
- * assessment's semester is derived from the course's Core term (#1072 §4 step 8 / #1077).
+ * for them. The optional `assessment.semester` on `payload` is ignored — `semester`
+ * is no longer stored at all (#1072 §4 step 10/#1077); it's derived from the
+ * course's Core term at the read seam (`withDerivedVariantSemesters` above).
  */
 export const saveExtractedQuestions = async (userId, payload) => {
-  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null, cookie } = payload;
+  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null } = payload;
 
   if (!courseId) {
     throw new Error('courseId is required');
@@ -544,11 +548,9 @@ export const saveExtractedQuestions = async (userId, payload) => {
       if (!type || !name) {
         throw new Error('Assessment type and name are required.');
       }
-      const semester = await deriveSemesterDisplayForCourseId(courseId, { cookie });
       createdAssessment = await Assessments.create({
         type,
         name,
-        semester,
         courseId
       }, { transaction });
 
@@ -679,7 +681,9 @@ export const saveExtractedQuestions = async (userId, payload) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code', 'coreCourseId'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId }
         },
         {

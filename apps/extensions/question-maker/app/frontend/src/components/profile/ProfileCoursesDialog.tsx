@@ -179,9 +179,9 @@ export const ProfileCoursesDialog = ({
                 const option = courseOptions.find((item) => item.id === courseId);
                 if (!option) continue;
 
+                // `name`/`code` are Core-owned and never sent to create — the
+                // anchor row is just the Core link (#1072 §4 step 10).
                 const createdCourse = await courseService.createCourse({
-                    name: option.name,
-                    courseCode: option.code,
                     coreCourseId: courseId
                 });
 

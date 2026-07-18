@@ -138,6 +138,7 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `npm run test:integration` | Integration tests (needs DB) |
 | `npm run lint`             | ESLint                       |
 | `npm run seed:production`  | Seed script                  |
+| `npm run migrate:1072`     | One-time hand-run migration: drops `courses.name`/`code` and `assessments.semester` (#1072 §4 step 10 — Core-owned, superseded by read-through). Idempotent; safe to re-run. |
 
 
 ### Frontend (`app/frontend`)

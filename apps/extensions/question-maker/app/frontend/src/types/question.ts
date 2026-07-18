@@ -104,9 +104,11 @@ export interface Course {
 }
 
 export interface CourseCreate {
-    name: string;
-    courseCode?: string;
-    /** Core Course CUID — required at creation (#1072 §4 step 7: every QM course originates in Core). */
+    /**
+     * Core Course CUID — required at creation (#1072 §4 step 7: every QM course
+     * originates in Core). `name`/`code` are Core-owned and never accepted here
+     * (#1072 §4 step 10) — the anchor row has nothing else to send.
+     */
     coreCourseId: string;
 }
 
