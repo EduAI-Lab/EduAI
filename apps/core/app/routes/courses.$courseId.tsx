@@ -12,7 +12,6 @@ import { useCourseTopics } from '~/hooks/api/use-course-topics'
 import { useCourseEnrollments } from '~/hooks/api/use-course-enrollments'
 import { useCourseMaterials } from '~/hooks/api/use-course-materials'
 import { useCourseTAs } from '~/hooks/api/use-course-tas'
-import { useApiKeys } from '~/hooks/use-api-keys'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -158,7 +157,6 @@ export default function CourseDetailPage() {
   } = useCourseEnrollments(course.id)
   const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
-  const { getValidApiKeys } = useApiKeys()
   const [isUploading, setIsUploading] = useState(false)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
   const [materialsSuccess, setMaterialsSuccess] = useState<string | null>(null)
@@ -209,7 +207,7 @@ export default function CourseDetailPage() {
     setMaterialsError(null)
     setMaterialsSuccess(null)
     try {
-      await uploadMaterial(file, getValidApiKeys())
+      await uploadMaterial(file)
       setMaterialsSuccess('Material uploaded successfully')
     } catch (e) {
       setMaterialsError(e instanceof Error ? e.message : 'Upload failed')

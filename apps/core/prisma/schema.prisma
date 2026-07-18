@@ -31,6 +31,7 @@ model User {
   questions         Question[]
   sessions          Session[]
   providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
   chats             Chat[]
   externalUsers     ExternalUser[]
   preference        UserPreference?
@@ -288,16 +289,17 @@ model AIModel {
 }
 
 model UserProviderSettings {
-  id         String     @id @default(cuid())
-  userId     String
-  providerId String
-  apiKey     String?
-  baseUrl    String?
-  isEnabled  Boolean    @default(false)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  provider   AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  userId           String
+  providerId       String
+  apiKey           String?
+  apiKeyExpiresAt  DateTime?
+  baseUrl          String?
+  isEnabled        Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  provider         AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, providerId])
   @@map("user_provider_settings")
@@ -483,6 +485,34 @@ model MaterialEmbedding {
   @@map("material_embeddings")
 }
 
+
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(false)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  permissions         Json?
+  metadata            Json?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("apiKey")
+}
 
 enum ChatbotType {
   LEARNING

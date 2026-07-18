@@ -13,6 +13,7 @@ export type PlatformUser = {
   isActive: boolean;
   emailVerified: boolean;
   authorizedUnits: string[];
+  taCourseIds: string[];
   createdAt: string;
   updatedAt: string;
   _count: {
