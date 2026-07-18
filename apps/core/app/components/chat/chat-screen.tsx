@@ -42,6 +42,7 @@ import {
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -104,10 +105,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   );
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
-  /** Registry ids from `X-Routed-Model`, keyed by assistant message id after each turn. */
+  /** Persisted/header registry ids keyed by their assistant message id. */
   const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
     Record<string, string>
-  >({});
+  >(() => {
+    const hydrated: Record<string, string> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      const resolvedModelId = resolvedModelIdFromMessage(message);
+      if (id && resolvedModelId) hydrated[id] = resolvedModelId;
+    }
+    return hydrated;
+  });
   /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
   const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
     string | null

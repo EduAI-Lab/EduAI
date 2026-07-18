@@ -158,6 +158,33 @@ describe("resolveFleetHost", () => {
     fetchMock.mockRestore();
   });
 
+  it("checks candidate health concurrently", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001,http://cmps03.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return new Response(
+        JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }),
+        { status: 200 },
+      );
+    });
+
+    await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(maxInFlight).toBe(3);
+  });
+
   it("throws when no healthy server hosts the model", async () => {
     process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001";
     resetFleetRegistryCache();

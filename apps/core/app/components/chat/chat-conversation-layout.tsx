@@ -8,10 +8,7 @@ import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
-import {
-  displayNameForRegistryId,
-  isAutoRoutingModelId,
-} from "~/lib/chat-auto-model";
+import { displayNameForRegistryId } from "~/lib/chat-auto-model";
 import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
   resolveMessageHighlightRole,
@@ -129,7 +126,7 @@ export function ChatConversationLayout({
                           (isStreamingMessage ? streamingRoutedRegistryId : null))
                         : null;
                     const answeredByLabel =
-                      isAutoRoutingModelId(selectedModel) && routedRegistryId
+                      routedRegistryId
                         ? displayNameForRegistryId(routedRegistryId, chatModels)
                         : undefined;
 
