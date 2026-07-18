@@ -85,7 +85,12 @@ describe('Courses routes', () => {
       isPublished: true,
       callerEnrollmentRole: 'NONE',
     };
+    // Unified contract (#1072): the service-key catalog is the field/publish
+    // source for list routes; the cookie-scoped list only feeds the
+    // auto-import mirrors (callerEnrollmentRole). Default both to the same
+    // course so either consumer resolves it.
     vi.mocked(listEduAiCourses).mockResolvedValue([defaultCoreCourse]);
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([defaultCoreCourse]);
     vi.mocked(fetchCoreCourseSafe).mockResolvedValue(defaultCoreCourse);
   });
 
@@ -148,8 +153,8 @@ describe('Courses routes', () => {
     });
 
     it('TA sees TA-enrolled course (no progress, all publish states)', async () => {
-      vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false, callerEnrollmentRole: 'NONE' },
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false },
       ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -249,8 +254,8 @@ describe('Courses routes', () => {
 
     it('ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)', async () => {
       const UNANCHORED_CORE_ID = 'core-cuid-unanchored';
-      vi.mocked(listEduAiCourses).mockResolvedValue([
-        { id: UNANCHORED_CORE_ID, code: 'COSC 999', name: 'Not Yet Imported', callerEnrollmentRole: 'ADMIN' },
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
+        { id: UNANCHORED_CORE_ID, code: 'COSC 999', name: 'Not Yet Imported' },
       ]);
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });

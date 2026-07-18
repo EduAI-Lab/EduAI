@@ -6,6 +6,9 @@ import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateA
 vi.mock('../../src/services/eduaiClient.js', () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
   listEduAiCourses: vi.fn(),
+  // Unified contract (#1072): fields/department come from the service-key
+  // catalog — the admin course list and ai-traces routes read this one.
+  listEduAiCoursesServiceKey: vi.fn(),
   findEduAiCourseById: vi.fn(),
   listEduAiCourseTopics: vi.fn(),
   listEduAiModels: vi.fn(),
@@ -28,6 +31,7 @@ import {
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
   listEduAiCourses,
+  listEduAiCoursesServiceKey,
   patchCoreEnrollmentRole,
 } from '../../src/services/eduaiClient.js';
 
@@ -112,8 +116,8 @@ describe('Admin routes', () => {
 
     it('materializes an anchor for a Core course with no local row yet — create-on-open (#1072 step 3 / #1074)', async () => {
       const UNANCHORED_CORE_ID = 'core-cuid-admin-unanchored';
-      vi.mocked(listEduAiCourses).mockResolvedValueOnce([
-        { id: UNANCHORED_CORE_ID, code: 'MATH 200', name: 'Not Yet Imported', callerEnrollmentRole: 'ADMIN' },
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValueOnce([
+        { id: UNANCHORED_CORE_ID, code: 'MATH 200', name: 'Not Yet Imported' },
       ]);
 
       const res = await request(adminApp).get('/api/admin/courses');
@@ -871,9 +875,9 @@ describe('Admin routes', () => {
       const prof = makeProfessor();
       seed = await seedMinimalCourse(prof.id);
       // `department` is Core-owned (#1072 step 4) — the ai-traces route
-      // resolves it from one batched `listEduAiCourses` fetch, not a local
-      // column.
-      listEduAiCourses.mockResolvedValue([
+      // resolves it from one batched service-key catalog fetch (unified
+      // contract), not a local column.
+      listEduAiCoursesServiceKey.mockResolvedValue([
         { id: seed.course.coreOfferingId, name: 'Seeded Course', department: 'CPSC' },
       ]);
       activity = await prisma.activity.create({

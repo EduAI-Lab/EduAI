@@ -18,9 +18,9 @@ import { fetchCoreCourseSafe, listEduAiCourses, listEduAiCoursesServiceKey } fro
 import {
   indexCoreCoursesById,
   resolveCoreCourseById,
+  resolveCoreCourseCatalog,
   resolveCoreCourseList,
   resolveIsPublished,
-  resolveMissingCoreCourses,
 } from '../../src/services/courseResolver.js';
 
 beforeEach(() => {
@@ -144,94 +144,74 @@ describe('resolveIsPublished (#819)', () => {
   });
 });
 
-// #1082: AT and Core enrollment are independent tracks. A caller AT-enrolled
-// in a course they aren't Core-enrolled in is silently absent from the
-// cookie-scoped batch (`resolveCoreCourseList`) — `resolveMissingCoreCourses`
-// fills that gap via one service-key catalog fetch, never per-course.
-describe('resolveMissingCoreCourses (#1082)', () => {
-  it('scoped-hit: skips the service-key call entirely when every id already resolves', async () => {
-    const byId = indexCoreCoursesById([{ id: 'core-1', isPublished: true, callerEnrollmentRole: 'STUDENT' }]);
+// Unified contract (#1072): the service-key catalog is the single field
+// source for list flows. It contains every non-deleted Core course
+// regardless of the caller's Core enrollment, so the #1082 class of bug
+// (AT-only-enrolled caller's course invisible because the cookie-scoped
+// list omitted it) is impossible by construction — locked in below.
+describe('resolveCoreCourseCatalog', () => {
+  it('returns the full catalog and coreUnavailable:false on success', async () => {
+    const catalog = [{ id: 'c1', isPublished: true }, { id: 'c2', isPublished: false }];
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(catalog);
 
-    const result = await resolveMissingCoreCourses(byId, ['core-1']);
+    const result = await resolveCoreCourseCatalog();
 
-    expect(listEduAiCoursesServiceKey).not.toHaveBeenCalled();
-    expect(result).toBe(byId); // same Map instance — no-op
-    expect(result.get('core-1')).toEqual({ id: 'core-1', isPublished: true, callerEnrollmentRole: 'STUDENT' });
+    expect(result).toEqual({ courses: catalog, coreUnavailable: false });
+    expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
+    // Field truth never touches the cookie-scoped list.
+    expect(listEduAiCourses).not.toHaveBeenCalled();
   });
 
-  it('scoped-miss + service-key-hit: merges the missing course in from the full catalog', async () => {
-    const byId = indexCoreCoursesById([{ id: 'core-scoped', isPublished: true }]);
+  it('#1082 by construction: an AT-only-enrolled caller\'s published course resolves from the catalog', async () => {
+    // The catalog is enrollment-independent — the course is present even
+    // though no cookie-scoped list would have contained it for this caller.
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-      { id: 'core-scoped', isPublished: true }, // present in both — cookie-scoped entry must win
       { id: 'core-at-only', isPublished: true },
     ]);
 
-    const result = await resolveMissingCoreCourses(byId, ['core-scoped', 'core-at-only']);
+    const { courses } = await resolveCoreCourseCatalog();
+    const byId = indexCoreCoursesById(courses);
 
-    expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
-    expect(result.get('core-at-only')).toEqual({ id: 'core-at-only', isPublished: true });
-    // Cookie-scoped map is untouched — a new Map is returned.
-    expect(byId.has('core-at-only')).toBe(false);
+    expect(resolveIsPublished({ coreOfferingId: 'core-at-only' }, byId)).toBe(true);
   });
 
-  it('never overwrites a cookie-scoped entry (callerEnrollmentRole) with the service-key one', async () => {
-    const byId = indexCoreCoursesById([{ id: 'core-1', isPublished: true, callerEnrollmentRole: 'STUDENT' }]);
-    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([
-      { id: 'core-1', isPublished: true }, // no callerEnrollmentRole (service-key shape)
-      { id: 'core-2', isPublished: false },
-    ]);
-
-    // core-1 already resolves — only core-2 is "missing," so only core-2
-    // should be merged in even though the catalog also contains core-1.
-    const result = await resolveMissingCoreCourses(byId, ['core-1', 'core-2']);
-
-    expect(result.get('core-1')).toEqual({ id: 'core-1', isPublished: true, callerEnrollmentRole: 'STUDENT' });
-    expect(result.get('core-2')).toEqual({ id: 'core-2', isPublished: false });
-  });
-
-  it('both-miss: a course absent from both the cookie list AND the service-key catalog stays unresolved (hidden)', async () => {
-    const byId = indexCoreCoursesById([]);
-    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([{ id: 'core-unrelated', isPublished: true }]);
-
-    const result = await resolveMissingCoreCourses(byId, ['core-deleted-or-unknown']);
-
-    expect(result.has('core-deleted-or-unknown')).toBe(false);
-    expect(resolveIsPublished({ coreOfferingId: 'core-deleted-or-unknown' }, result)).toBe(false);
-  });
-
-  it('dedupes and batches: many missing ids still trigger exactly one service-key call', async () => {
-    const byId = indexCoreCoursesById([]);
+  it('one batched call regardless of catalog size — never per-course', async () => {
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(
-      Array.from({ length: 20 }, (_, i) => ({ id: `core-${i}`, isPublished: true })),
+      Array.from({ length: 50 }, (_, i) => ({ id: `c${i}` })),
     );
 
-    const ids = Array.from({ length: 20 }, (_, i) => `core-${i}`);
-    // Duplicate every id once — a naive implementation might fetch per unique
-    // occurrence rather than per unique id.
-    await resolveMissingCoreCourses(byId, [...ids, ...ids]);
+    await resolveCoreCourseCatalog();
 
     expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores null/undefined ids in the wanted list', async () => {
-    const byId = indexCoreCoursesById([]);
-    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([]);
-
-    const result = await resolveMissingCoreCourses(byId, [null, undefined, '']);
-
-    expect(listEduAiCoursesServiceKey).not.toHaveBeenCalled();
-    expect(result).toBe(byId);
-  });
-
-  it('fails soft on a service-key fetch error — misses stay unresolved rather than throwing', async () => {
-    const byId = indexCoreCoursesById([]);
+  it('degrades to empty + coreUnavailable:true on a thrown error (Core down / missing service key)', async () => {
     vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(
       Object.assign(new Error('Core unreachable'), { status: 503 }),
     );
 
-    const result = await resolveMissingCoreCourses(byId, ['core-1']);
+    const result = await resolveCoreCourseCatalog();
 
-    expect(result.has('core-1')).toBe(false);
-    expect(resolveIsPublished({ coreOfferingId: 'core-1' }, result)).toBe(false);
+    expect(result).toEqual({ courses: [], coreUnavailable: true });
+    // Publish gates keyed off the empty map fail closed.
+    expect(resolveIsPublished({ coreOfferingId: 'core-1' }, indexCoreCoursesById(result.courses))).toBe(false);
+  });
+
+  it('a course absent from the catalog (deleted in Core) stays unresolved and fails closed', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([{ id: 'core-unrelated', isPublished: true }]);
+
+    const { courses } = await resolveCoreCourseCatalog();
+    const byId = indexCoreCoursesById(courses);
+
+    expect(byId.has('core-deleted-or-unknown')).toBe(false);
+    expect(resolveIsPublished({ coreOfferingId: 'core-deleted-or-unknown' }, byId)).toBe(false);
+  });
+
+  it('treats a non-array resolved value as empty', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(undefined);
+
+    const result = await resolveCoreCourseCatalog();
+
+    expect(result).toEqual({ courses: [], coreUnavailable: false });
   });
 });
