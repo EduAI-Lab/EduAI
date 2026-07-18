@@ -370,6 +370,22 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       throw new Error('isAiGenerated and isDraft are variant-level fields. Use updateVariant to update individual variants.');
     }
 
+    // §19/#1080 post-review lock, extended: `type` and `primaryTopicId` feed the Core
+    // push payload (coreWiringService.js `type`/`topicId`) exactly like a variant's
+    // questionText/difficulty. Once any sibling variant is reviewed (isDraft:false)
+    // and pushed, editing either here would silently diverge from the immutable Core
+    // copy — so the SAME 409 VARIANT_LOCKED convention as the variants.js content
+    // lock applies. Un-review the reviewed variant(s) first (which clears
+    // coreQuestionId) to unlock these fields again.
+    if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
+      const reviewedVariant = await Variants.findOne({
+        where: { questionMetadataId: question.id, isDraft: false }
+      });
+      if (reviewedVariant) {
+        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409 });
+      }
+    }
+
     await question.update(updates);
     return question;
   } catch (error) {
@@ -903,6 +919,13 @@ export const updateVariant = async (variantId, variantData, userId) => {
       normalizedAnswer = variantData.answer.trim();
     }
 
+    const nextIsDraft = variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;
+    // #1080 un-review: reopening a reviewed variant back to draft must clear its Core
+    // link so the next approval re-pushes a fresh copy instead of the state-based push
+    // guard (`variants.js` — `isDraft === false && !variant.coreQuestionId`) skipping it
+    // as "already linked". Only fires on the false→true transition (not a no-op resend).
+    const unreviewing = variant.isDraft === false && nextIsDraft === true;
+
     const normalizedData = {
       ...variantData,
       ...(variantData.secondaryTopicsId !== undefined && {
@@ -911,14 +934,17 @@ export const updateVariant = async (variantId, variantData, userId) => {
       ...(variantData.isAiGenerated !== undefined && {
         isAiGenerated: Boolean(variantData.isAiGenerated)
       }),
-      ...(variantData.isDraft !== undefined && {
-        isDraft: Boolean(variantData.isDraft)
+      ...(nextIsDraft !== undefined && {
+        isDraft: nextIsDraft
       }),
       ...(normalizedChoices !== undefined && {
         choices: normalizedChoices
       }),
       ...(normalizedAnswer !== undefined && {
         answer: normalizedAnswer
+      }),
+      ...(unreviewing && {
+        coreQuestionId: null
       })
     };
 
