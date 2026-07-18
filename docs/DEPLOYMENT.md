@@ -174,6 +174,10 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 # VLLM_API_KEY="vllm-local"
+# Multi-server fleet — round-robin vllm:* chat across healthy hosts (see docs/DEPLOYMENT.md)
+# VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
 
 GOOGLE_GENERATIVE_AI_API_KEY=""   # set if using Gemini
 FIRECRAWL_API_KEY=""              # set if using Firecrawl web search
@@ -184,6 +188,28 @@ DEV_SERVER_HMR_CLIENT_PORT="443"
 ```
 
 **Do not** commit real secrets. URL-encode special characters in `DATABASE_URL` passwords — see [encoding table](#database_url-encoding) below.
+
+#### vLLM fleet routing (optional)
+
+When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
+
+| Variable | Purpose |
+| -------- | ------- |
+| `VLLM_FLEET_CHAT_URLS` | Comma-separated chat/interactive pool (e.g. cmps01 + cmps02 `:8001`) |
+| `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.jobType: background`); falls back to chat pool when unset |
+| `VLLM_FLEET_DEFAULT_MODELS` | Expected model ids for health checks and smoke script (default: `qwen2.5-7b-instruct,qwen2.5-32b-instruct`) |
+| `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
+
+Pre-flight from **`apps/core`** on a host that can reach cmps (e.g. s378):
+
+```bash
+npm run fleet:smoke
+npx vitest run app/tests/unit/fleet-routing.test.ts
+```
+
+Successful picks expose `X-Fleet-Server: cmps01` (or `cmps02`) on `/api/chat` responses. See [`MULTI_SERVER_ROUTING_PLAN.md`](rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) for architecture details.
+
+**Note:** cmps02 may be unreachable from s378 until campus firewall rules are applied (IT ticket INC5196289). Fleet degrades gracefully — only healthy hosts participate in round-robin.
 
 #### Docker (Postgres + pgvector)
 
@@ -404,6 +430,30 @@ Each app sits behind a reverse proxy (nginx or Caddy) that:
 - Handles HTTP → HTTPS redirects
 
 The proxy is scoped per-app, not shared across all apps. A misconfiguration or restart on one app's proxy does not affect others. If apps are co-located on one host, a single proxy process can serve multiple subdomains via separate server blocks — this is acceptable as long as the blocks are independent and one app's config changes don't risk breaking another's routing.
+
+### Client IP & X-Forwarded-For (security invariant)
+
+Core records the client IP (`ipAddress`) on audit/security log rows and uses it for the `/admin/logs`
+IP-triage filter and session rate limiting. That IP is derived from the **last** `x-forwarded-for`
+(XFF) entry in `apps/core/app/lib/request-context.server.ts`. For that to be trustworthy, the live
+topology must hold this invariant:
+
+- **Exactly one trusted reverse proxy** in front of each app — on the shared host that is Apache
+  (`ProxyPass / http://127.0.0.1:3000/`, `ProxyPreserveHost On`) terminating HTTPS and forwarding to
+  Node on `localhost`. No Cloudflare and no second proxy sit in front.
+- **Node must not be directly reachable.** It binds to `127.0.0.1` only; the internal app port is not
+  exposed to the network. If a client could reach Node directly, it could send an arbitrary XFF and
+  fully control the recorded IP.
+- The vhosts do **not** set `RemoteIP*` or rewrite `X-Forwarded-*` — we rely on Apache mod_proxy's
+  default behavior, which **appends** the real socket-peer address as the last XFF entry. A spoofed
+  `X-Forwarded-For: 1.2.3.4` therefore arrives as `1.2.3.4, <real-client>` and Core records the
+  real client (rightmost token). Process management (tmux → systemd user units) does not change this.
+- `x-real-ip` / `cf-connecting-ip` are intentionally **not** honored, because Apache does not set them.
+
+**If a second proxy is ever added** (e.g. Cloudflare in front of Apache), the rightmost XFF entry
+becomes that proxy's address rather than the client's. The IP selection in `request-context.server.ts`
+and its tests (`request-context.test.ts`, `sessions-validate.integration.test.ts`) must be updated as
+part of that deployment change. See [LOGGING.md §3](./LOGGING.md).
 
 ### TLS Certificates
 

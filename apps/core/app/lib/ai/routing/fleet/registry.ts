@@ -1,4 +1,9 @@
-import type { FleetServer, WorkloadFeature } from "./types";
+import {
+  jobTypeForWorkloadFeature,
+  type FleetServer,
+  type JobType,
+  type WorkloadFeature,
+} from "./types";
 
 const DEFAULT_CHAT_MODELS = ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct"];
 
@@ -33,16 +38,12 @@ function normalizeBaseUrl(url: string): string {
   return url.replace(/\/$/, "");
 }
 
-function buildServer(
-  url: string,
-  features: WorkloadFeature[],
-  models: string[],
-): FleetServer {
+function buildServer(url: string, jobTypes: JobType[], models: string[]): FleetServer {
   const baseUrl = normalizeBaseUrl(url);
   return {
     id: serverIdFromUrl(baseUrl),
     baseUrl,
-    features,
+    jobTypes,
     models,
     energySidecarUrl: `${baseUrl}/energy`,
   };
@@ -63,7 +64,7 @@ function chatServers(): FleetServer[] {
   if (!cachedChatServers) {
     const models = defaultModels();
     cachedChatServers = parseCommaUrls(process.env.VLLM_FLEET_CHAT_URLS).map((url) =>
-      buildServer(url, ["chat", "tutor"], models),
+      buildServer(url, ["interactive"], models),
     );
   }
   return cachedChatServers;
@@ -76,7 +77,7 @@ function heavyServers(): FleetServer[] {
       cachedHeavyServers = [];
     } else {
       const models = defaultModels();
-      cachedHeavyServers = [buildServer(heavyUrl, ["question-maker"], models)];
+      cachedHeavyServers = [buildServer(heavyUrl, ["background"], models)];
     }
   }
   return cachedHeavyServers;
@@ -97,10 +98,15 @@ export function heavyFleetConfigured(): boolean {
   return heavyServers().length > 0;
 }
 
-export function getServersForFeature(feature: WorkloadFeature): FleetServer[] {
-  if (feature === "question-maker") {
+export function getServersForJobType(jobType: JobType): FleetServer[] {
+  if (jobType === "background") {
     const heavy = heavyServers();
     if (heavy.length > 0) return heavy;
   }
   return chatServers();
+}
+
+/** Compatibility adapter for PR4 callers that still identify workloads by feature. */
+export function getServersForFeature(feature: WorkloadFeature): FleetServer[] {
+  return getServersForJobType(jobTypeForWorkloadFeature(feature));
 }

@@ -1,12 +1,20 @@
 import { parseModelIdentifier } from "~/lib/ai/provider-types";
 import { getServerHealth, serverHostsModel } from "./health";
-import { fleetRoutingEnabled, getServersForFeature, heavyFleetConfigured } from "./registry";
-import type { FleetPick, WorkloadFeature } from "./types";
+import { fleetRoutingEnabled, getServersForJobType, heavyFleetConfigured } from "./registry";
+import {
+  jobTypeForWorkloadFeature,
+  type FleetPick,
+  type JobType,
+  type WorkloadFeature,
+} from "./types";
 
-export type ResolveFleetInput = {
-  feature: WorkloadFeature;
+type ResolveFleetInputBase = {
   resolvedModelId: string;
 };
+
+export type ResolveFleetInput =
+  | (ResolveFleetInputBase & { jobType: JobType; feature?: WorkloadFeature })
+  | (ResolveFleetInputBase & { feature: WorkloadFeature; jobType?: never });
 
 export class FleetUnavailableError extends Error {
   constructor(message: string) {
@@ -15,18 +23,33 @@ export class FleetUnavailableError extends Error {
   }
 }
 
-let roundRobinIndex = 0;
+/** Independent round-robin cursor per pool (chat vs heavy). */
+const roundRobinByPool = new Map<"interactive" | "background", number>();
 
-/** Reset round-robin counter (unit tests). */
+/** Reset round-robin counters (unit tests). */
 export function resetFleetRoundRobin(): void {
-  roundRobinIndex = 0;
+  roundRobinByPool.clear();
 }
 
-function pickReason(feature: WorkloadFeature): string {
-  if (feature === "question-maker" && heavyFleetConfigured()) {
-    return "heavy-round-robin";
+/** Pool key for the server list actually used (not raw jobType when background falls back to chat). */
+function poolCursorKey(jobType: JobType): "interactive" | "background" {
+  if (jobType === "background" && heavyFleetConfigured()) {
+    return "background";
   }
-  return "chat-round-robin";
+  return "interactive";
+}
+
+function nextRoundRobinIndex(pool: "interactive" | "background"): number {
+  const current = roundRobinByPool.get(pool) ?? 0;
+  roundRobinByPool.set(pool, current + 1);
+  return current;
+}
+
+function pickReason(jobType: JobType): string {
+  if (jobType === "background" && heavyFleetConfigured()) {
+    return "background-round-robin";
+  }
+  return "interactive-round-robin";
 }
 
 /**
@@ -39,7 +62,9 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   const parsed = parseModelIdentifier(input.resolvedModelId);
   if (!parsed || parsed.providerId !== "vllm") return null;
 
-  const candidates = getServersForFeature(input.feature);
+  const jobType =
+    input.jobType ?? jobTypeForWorkloadFeature(input.feature);
+  const candidates = getServersForJobType(jobType);
   if (candidates.length === 0) {
     throw new FleetUnavailableError("No fleet servers configured for this workload");
   }
@@ -54,17 +79,17 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
 
   if (eligible.length === 0) {
     throw new FleetUnavailableError(
-      `No healthy fleet server hosts model "${parsed.modelId}" for feature "${input.feature}"`,
+      `No healthy fleet server hosts model "${parsed.modelId}" for job type "${jobType}"`,
     );
   }
 
-  const server = eligible[roundRobinIndex % eligible.length]!;
-  roundRobinIndex += 1;
+  const pool = poolCursorKey(jobType);
+  const server = eligible[nextRoundRobinIndex(pool) % eligible.length]!;
 
   return {
     serverId: server.id,
     baseUrl: server.baseUrl,
     energySidecarUrl: server.energySidecarUrl,
-    reason: pickReason(input.feature),
+    reason: pickReason(jobType),
   };
 }
