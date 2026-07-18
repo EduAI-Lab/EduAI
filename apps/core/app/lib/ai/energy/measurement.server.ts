@@ -106,8 +106,13 @@ export async function stopSidecarMeasurement(
 function mapSidecarSource(
   source: string | undefined,
 ): EnergyMeasurementSource | null {
-  if (source === "RAPL_CPU" || source === "NVML_GPU") return source;
-  if (source === "RAPL_PLUS_NVML") return "NVML_GPU";
+  if (
+    source === "RAPL_CPU" ||
+    source === "NVML_GPU" ||
+    source === "RAPL_PLUS_NVML"
+  ) {
+    return source;
+  }
   return null;
 }
 
@@ -122,8 +127,11 @@ function tokenEstimate(input: EnergyMeasurementInput): EnergyMeasurementResult {
       ? input.estEnergyJoulesPerToken * totalTokens
       : null;
 
+  // Carbon without energy is not trustworthy for downstream research queries.
   const carbonGramsCO2 =
-    input.averageCarbonGramsPerToken != null && totalTokens != null
+    energyJoules != null &&
+    input.averageCarbonGramsPerToken != null &&
+    totalTokens != null
       ? input.averageCarbonGramsPerToken * totalTokens
       : null;
 
@@ -145,11 +153,15 @@ export async function measureTurnEnergy(
   const resolvedSidecarUrl = sidecarBaseUrl(options?.sidecarBaseUrl);
 
   if (options?.sidecarTag && resolvedSidecarUrl) {
-    const measured = await stopSidecarMeasurement(options.sidecarTag, {
-      sidecarBaseUrl: resolvedSidecarUrl,
-    });
-    if (measured?.energyJoules != null) {
-      return measured;
+    try {
+      const measured = await stopSidecarMeasurement(options.sidecarTag, {
+        sidecarBaseUrl: resolvedSidecarUrl,
+      });
+      if (measured?.energyJoules != null) {
+        return measured;
+      }
+    } catch (error) {
+      console.warn("energy sidecar measure-stop failed; using token estimate", error);
     }
   }
 

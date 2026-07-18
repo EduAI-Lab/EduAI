@@ -8,18 +8,25 @@
  *   2) Pre-exported JSON from psql:
  *        RESEARCH_INTERACTION_EXPORT=interactions.json npm run research:backfill-energy
  *
- * Joins by userId + exact query text when available, else query text only.
+ * Joins by userId + exact query text. Query-only matching is allowed only when
+ * the prompt is unique in the interaction set and (if both sides have timestamps)
+ * within RESEARCH_BACKFILL_MATCH_WINDOW_MS (default 60s).
  *
  * Env:
  *   RESEARCH_BACKFILL_IN       policy or both-tier JSONL (required)
  *   RESEARCH_BACKFILL_OUT        enriched JSONL (default: <in>-with-energy.jsonl)
  *   RESEARCH_BACKFILL_SINCE      ISO timestamp lower bound (optional)
  *   RESEARCH_BACKFILL_UNTIL      ISO timestamp upper bound (optional)
+ *   RESEARCH_BACKFILL_MATCH_WINDOW_MS  query-only time window (default 60000)
  */
 import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { PrismaClient } from "@prisma/client";
+import {
+  indexInteractions,
+  takeMatch,
+} from "./backfill-match.mjs";
 
 function readEnv(name) {
   const v = process.env[name];
@@ -78,29 +85,6 @@ async function loadInteractionsFromDb({ since, until }) {
   }
 }
 
-function indexInteractions(rows) {
-  /** userId::query or ::query -> list of interactions (FIFO for duplicate prompts) */
-  const map = new Map();
-  for (const row of rows) {
-    const query = (row.query ?? "").trim();
-    if (!query) continue;
-    const userId = (row.userId ?? "").trim();
-    const key = userId ? `${userId}::${query}` : `::${query}`;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(row);
-  }
-  return map;
-}
-
-function takeMatch(index, promptText, userId) {
-  const query = (promptText ?? "").trim();
-  const uid = (userId ?? "").trim();
-  const scopedKey = uid ? `${uid}::${query}` : `::${query}`;
-  const list = index.get(scopedKey);
-  if (!list || list.length === 0) return null;
-  return list.shift();
-}
-
 function summarize(rows) {
   const matched = rows.filter((r) => r._interaction_match).length;
   const withEnergy = rows.filter((r) => r.energy_joules != null).length;
@@ -117,6 +101,7 @@ async function main() {
   const exportPath = readEnv("RESEARCH_INTERACTION_EXPORT");
   const since = readEnv("RESEARCH_BACKFILL_SINCE");
   const until = readEnv("RESEARCH_BACKFILL_UNTIL");
+  const windowMs = Number(readEnv("RESEARCH_BACKFILL_MATCH_WINDOW_MS") ?? "60000");
 
   if (!inPath) {
     console.error("Set RESEARCH_BACKFILL_IN to a policy or both-tier JSONL file.");
@@ -142,11 +127,19 @@ async function main() {
 
   const index = indexInteractions(interactions);
   const enriched = [];
+  let skippedMissingUserId = 0;
 
   for (const row of runRows) {
     const promptText = row.prompt ?? row.query ?? "";
     const userId = row.userId ?? row.user_id ?? null;
-    const match = takeMatch(index, promptText, userId);
+    const runTs = row.timestamp ?? row.createdAt ?? row.created_at ?? null;
+    const match = takeMatch(index, promptText, userId, {
+      runTimestamp: runTs,
+      windowMs: Number.isFinite(windowMs) ? windowMs : 60_000,
+    });
+    if (!userId && !match) {
+      skippedMissingUserId += 1;
+    }
     enriched.push({
       ...row,
       _interaction_match: Boolean(match),
@@ -183,8 +176,10 @@ async function main() {
     `matched to AIInteraction: ${stats.matched}`,
     `with energy_joules: ${stats.withEnergy}`,
     `with token counts: ${stats.withTokens}`,
+    `run rows without userId (query-only path): ${skippedMissingUserId}`,
     "",
     "Note: energy_joules from DB is ESTIMATED_FROM_TOKENS unless sidecar was active.",
+    "Matching prefers userId::query; query-only requires a unique prompt (+ optional time window).",
   ].join("\n");
   writeFileSync(summaryPath, `${summary}\n`, "utf8");
 

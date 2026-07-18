@@ -17,7 +17,7 @@ EduAI/
 │       │   └── app/
 │       │       ├── backend/         # Question Maker Express/Sequelize API
 │       │       └── frontend/        # Question Maker Vite/React frontend
-│       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns
+│       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
 │   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
