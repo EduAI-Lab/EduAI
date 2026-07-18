@@ -1,8 +1,20 @@
 /**
- * Seeds a newly registered user with default courses, topics, and sample questions.
- * Uses the same seed data as development (populateDatabase) and production (seedProductionQuestions).
+ * TEST-ONLY fixture: seeds a user with default courses, topics, one practice
+ * assessment, and sample questions/variants. Used by integration suites that
+ * need a realistic, populated course to exercise services/routes against.
+ *
+ * This used to run on every user's first login (seedNewUserService.js on the
+ * QM login path). That runtime seeding was retired — new users now start with
+ * zero courses and get real ones through the Core-linked import/link flows.
+ * The fixture survives here, invoked explicitly by tests only.
+ *
+ * Every seeded course gets a deterministic, fake `coreCourseId` so it satisfies
+ * the "every QM Course row is Core-linked at creation" invariant, same as the
+ * `cuid-*` fixture ids used in coreWiringDb.integration.test.js. Tests that
+ * stub Core enrollment/course lookups via a catch-all `fetch` mock are
+ * unaffected — see resolveAccessForCourse's owner-fallback path.
  */
-import { Course, Topics, Question_Metadata, Assessments, AssessmentSections, Variants, SectionVariants } from '../schema/index.js';
+import { Course, Topics, Question_Metadata, Assessments, AssessmentSections, Variants, SectionVariants } from '../../src/schema/index.js';
 import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scripts/seedData.js';
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
@@ -19,13 +31,19 @@ const DEFAULT_COURSES = [
 ];
 
 /**
- * Creates the default courses for a user and seeds each with topics, one assessment, and sample questions.
- * @param {number} userId - The new user's id
+ * Creates the default courses for a user (each linked to a deterministic fake
+ * Core course id) and seeds each with topics, one assessment, and sample questions.
+ * @param {string} userId - The user's id
  * @returns {Promise<{ coursesCreated: number, topicsCreated: number, questionsCreated: number, variantsCreated: number }>}
  */
 export async function seedCoursesForNewUser(userId) {
   const courses = await Course.bulkCreate(
-    DEFAULT_COURSES.map(({ name, code }) => ({ name, code, userId }))
+    DEFAULT_COURSES.map(({ name, code }, index) => ({
+      name,
+      code,
+      userId,
+      coreCourseId: `core-seed-course-${userId}-${index}`,
+    }))
   );
 
   let topicsCreated = 0;

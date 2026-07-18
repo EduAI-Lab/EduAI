@@ -78,7 +78,7 @@ const { Course, Topics, Question_Metadata, Assessments, Variants } = schemaModul
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
-// Map real course codes to the same templates used in development populate:
+// Map real course codes to the same templates used by the test seed fixture:
 // 0: COSC 211 (Machine Architecture)
 // 1: COSC 121 (Computer Programming II)
 // 2: STUDY1 (Introduction to Statistics)
