@@ -9,7 +9,7 @@ import {
   normalizeStudentId,
 } from "~/lib/canvas/enrollment-link.server";
 import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
-import { ubcTermFromDate } from "~/lib/canvas/term.server";
+import { ubcTermFromDate, ubcAcademicYearFromDate } from "~/lib/canvas/term.server";
 
 describe("normalizeStudentId", () => {
   it("trims whitespace", () => {
@@ -44,6 +44,19 @@ describe("ubcTermFromDate", () => {
   });
 });
 
+describe("ubcAcademicYearFromDate", () => {
+  it("attributes a Jan-Apr (W2) date to the previous calendar year (#1088)", () => {
+    expect(ubcAcademicYearFromDate(new Date("2026-01-15T12:00:00Z"))).toBe(2025);
+    expect(ubcAcademicYearFromDate(new Date("2026-04-15T12:00:00Z"))).toBe(2025);
+  });
+
+  it("keeps the calendar year for W1/S1/S2", () => {
+    expect(ubcAcademicYearFromDate(new Date("2026-09-15T12:00:00Z"))).toBe(2026);
+    expect(ubcAcademicYearFromDate(new Date("2026-05-15T12:00:00Z"))).toBe(2026);
+    expect(ubcAcademicYearFromDate(new Date("2026-07-15T12:00:00Z"))).toBe(2026);
+  });
+});
+
 describe("mapCanvasCourseToCoreFields", () => {
   it("maps Canvas course fields with defaults", () => {
     const mapped = mapCanvasCourseToCoreFields({
@@ -59,7 +72,9 @@ describe("mapCanvasCourseToCoreFields", () => {
     expect(mapped.code).toBe("COSC 101");
     expect(mapped.section).toBe("001");
     expect(mapped.term).toBe("W2");
-    expect(mapped.year).toBe(2026);
+    // Academic-year label: a Jan-start W2 course attributes to the previous
+    // year (#1088) — 2026-01-06 is the second half of the 2025 academic year.
+    expect(mapped.year).toBe(2025);
     expect(mapped.endDate).toEqual(new Date("2026-04-30T23:59:59Z"));
   });
 
