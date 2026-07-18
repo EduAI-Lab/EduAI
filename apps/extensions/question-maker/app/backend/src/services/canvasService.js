@@ -745,13 +745,12 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
     // Determine assessment type from options or default
     const assessmentType = options.assessmentType || 'Quiz';
     const assessmentName = options.assessmentName || quiz.title || 'Imported Quiz';
-    const semester = options.semester || new Date().getFullYear().toString();
 
-    // Create assessment (owner-scoped)
+    // Create assessment (owner-scoped). Semester is derived from the course's
+    // Core term (#1072 §4 step 8 / #1077) — no longer accepted from options.
     const assessment = await createAssessment(ownerId, {
       type: assessmentType,
       name: assessmentName,
-      semester: semester,
       courseId: localCourseId,
       description: quiz.description || `Imported from Canvas: ${quiz.title}`
     });

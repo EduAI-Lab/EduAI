@@ -253,7 +253,7 @@ const ARTICLES: HelpArticle[] = [
                 <li>Drafts block exports; mark variants reviewed before exporting.</li>
                 <li>Canvas import requires a local course and topic destination; unsupported Canvas question types are skipped.</li>
                 <li>Course code helps AI relevance; generation still works without it but may be less accurate.</li>
-                <li>Upload save requires at least one included question and filled assessment fields (type/name/semester).</li>
+                <li>Upload save requires at least one included question and filled assessment fields (type/name); the semester is set automatically from the course's term.</li>
             </ul>
         ),
     },

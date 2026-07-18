@@ -4,7 +4,27 @@
  */
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
-import { enrichRowsWithCourse, enrichRowWithCourse } from './courseListService.js';
+import {
+  enrichRowsWithCourse,
+  enrichRowWithCourse,
+  formatSemesterDisplay,
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
+
+/**
+ * Overwrites each question row's nested `variant.assessment.semester` with the
+ * value derived from the question's own course term (#1072 §4 step 8 / #1077).
+ * A variant's assessment always shares the question's course (enforced at
+ * write time — `addQuestionToAssessment` / assembly flows), so the course
+ * already enriched onto the question row is reused; no extra Core fetch.
+ */
+function withDerivedVariantSemesters(row) {
+  const semester = formatSemesterDisplay(row.course?.term, row.course?.year);
+  const variants = Array.isArray(row.variants)
+    ? row.variants.map((v) => (v.assessment ? { ...v, assessment: { ...v.assessment, semester } } : v))
+    : row.variants;
+  return variants === row.variants ? row : { ...row, variants };
+}
 
 /**
  * Normalizes a primary topic id into a non-empty CUID string, or null if absent/invalid.
@@ -218,7 +238,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
             {
               model: Assessments,
               as: 'assessment',
-              attributes: ['id', 'name', 'type', 'semester']
+              attributes: ['id', 'name', 'type']
             }
           ]
         }
@@ -236,7 +256,8 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       );
     }
 
-    return enrichRowsWithCourse(filteredQuestions);
+    const enriched = await enrichRowsWithCourse(filteredQuestions);
+    return enriched.map(withDerivedVariantSemesters);
   } catch (error) {
     throw error;
   }
@@ -262,7 +283,7 @@ export const getQuestionById = async (questionId, userId) => {
             {
               model: Assessments,
               as: 'assessment',
-              attributes: ['id', 'name', 'type', 'semester']
+              attributes: ['id', 'name', 'type']
             }
           ]
         }
@@ -273,7 +294,7 @@ export const getQuestionById = async (questionId, userId) => {
       throw new Error('Question not found');
     }
 
-    return enrichRowWithCourse(question);
+    return withDerivedVariantSemesters(await enrichRowWithCourse(question));
   } catch (error) {
     throw error;
   }
@@ -412,9 +433,13 @@ export const createMultipleQuestions = async (userId, questionsData) => {
   }
 };
 
-/** Persists extracted questions/variants and optionally creates assessments/sections for them. */
+/**
+ * Persists extracted questions/variants and optionally creates assessments/sections
+ * for them. The optional `assessment.semester` on `payload` is ignored — the created
+ * assessment's semester is derived from the course's Core term (#1072 §4 step 8 / #1077).
+ */
 export const saveExtractedQuestions = async (userId, payload) => {
-  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null } = payload;
+  const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null, cookie } = payload;
 
   if (!courseId) {
     throw new Error('courseId is required');
@@ -499,10 +524,11 @@ export const saveExtractedQuestions = async (userId, payload) => {
     let createdAssessment = null;
     let createdSection = null;
     if (assessment) {
-      const { type, name, semester } = assessment;
-      if (!type || !name || !semester) {
-        throw new Error('Assessment type, name, and semester are required.');
+      const { type, name } = assessment;
+      if (!type || !name) {
+        throw new Error('Assessment type and name are required.');
       }
+      const semester = await deriveSemesterDisplayForCourseId(courseId, { cookie });
       createdAssessment = await Assessments.create({
         type,
         name,

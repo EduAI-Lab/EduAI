@@ -18,10 +18,11 @@ function isTeachingCoreCourse(coreCourse) {
 
 async function ensurePracticeExam(userId, courseId) {
   try {
+    // Semester is derived from the course's Core term (#1072 §4 step 8 / #1077),
+    // not passed here.
     await createAssessment(userId, {
       type: 'Quiz',
       name: 'Practice Exam',
-      semester: 'Fall 2026',
       description: '',
       courseId,
       blueprintConfig: null,

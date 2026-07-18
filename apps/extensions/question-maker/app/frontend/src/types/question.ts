@@ -228,7 +228,6 @@ export interface AssessmentGenerationParams extends AssessmentBlueprintConfig {
     name: string;
     type: AssessmentType;
     description: string;
-    semester: string;
 }
 
 export interface SectionVariantLink {

@@ -131,6 +131,44 @@ export async function enrichRowWithCourse(row) {
 }
 
 /**
+ * Legacy-shaped "semester" display string derived from a Core-projected term/year,
+ * e.g. "Winter Term 1 2026" (#1072 §4 step 8 / #1077). QM's `Assessments.semester`
+ * column is derive-only now — nothing persists free-form semester text anymore.
+ * Mirrors `termLabelLong` in packages/ui/src/lib/term.ts; duplicated here in plain
+ * JS because QM's backend has no dependency on the frontend-only @eduai/ui package.
+ * Keep the season-word mapping in sync with that file if it ever changes.
+ */
+const SEMESTER_TERM_NAMES = {
+  W1: 'Winter Term 1',
+  W2: 'Winter Term 2',
+  S1: 'Summer Term 1',
+  S2: 'Summer Term 2',
+};
+
+export function formatSemesterDisplay(term, year) {
+  const name = term ? SEMESTER_TERM_NAMES[term] : null;
+  if (name && year != null) return `${name} ${year}`;
+  if (name) return name;
+  if (year != null) return String(year);
+  return 'Unscheduled';
+}
+
+/**
+ * One-shot Core lookup + format for assessment-create paths that don't already
+ * have an enriched course row on hand (#1072 §4 step 8 / #1077). One Core call
+ * per creation event — not a list/read hot path, so this doesn't reintroduce the
+ * per-row N+1 the batched read paths (`enrichRowsWithCourse` et al.) avoid.
+ * Degrades to 'Unscheduled' when the course isn't linked or Core is unreachable.
+ */
+export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}) {
+  if (!courseId) return formatSemesterDisplay(null, null);
+  const course = await Course.findByPk(courseId, { attributes: ['id', 'coreCourseId'] });
+  if (!course) return formatSemesterDisplay(null, null);
+  const detail = await enrichCourseDetail(course, { cookie });
+  return formatSemesterDisplay(detail.term, detail.year);
+}
+
+/**
  * List QM courses visible to the caller at instructor rank or above.
  * ADMIN sees all rows; UNIT_ADMIN / INSTRUCTOR are filtered via courseAccess.
  */

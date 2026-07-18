@@ -44,8 +44,7 @@ export const ApiTestPage = () => {
 
   const [assessmentForm, setAssessmentForm] = useState({
     name: '',
-    type: 'Assignment',
-    semester: ''
+    type: 'Assignment'
   });
   const [assessmentResult, setAssessmentResult] = useState<ResultState>(defaultResult);
 
@@ -395,21 +394,13 @@ export const ApiTestPage = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="assessment-semester">Semester</Label>
-                <Input
-                  id="assessment-semester"
-                  value={assessmentForm.semester}
-                  onChange={(event) => setAssessmentForm((prev) => ({ ...prev, semester: event.target.value }))}
-                />
-              </div>
               <Button
                 onClick={() => {
-                  if (!assessmentForm.name.trim() || !assessmentForm.semester.trim()) {
+                  if (!assessmentForm.name.trim()) {
                     toast({
                       variant: 'destructive',
                       title: 'Missing required fields',
-                      description: 'Name and semester are required.'
+                      description: 'Name is required.'
                     });
                     return;
                   }
@@ -418,8 +409,7 @@ export const ApiTestPage = () => {
                     () =>
                       api.post('/api/assessments', {
                         name: assessmentForm.name,
-                        type: assessmentForm.type,
-                        semester: assessmentForm.semester
+                        type: assessmentForm.type
                       }),
                     (data) => {
                       setAssessmentResult({ status: 'success', payload: data });
