@@ -17,9 +17,13 @@
  *   - Course-owned fields (title/description/department/dates/isPublished/
  *     term/year/aiInstructions) are read-through from Core via
  *     `services/courseResolver.js` + `mapCourseOffering`; the local
- *     `CourseOffering` row is an anchor (local id, content FK target, Core
- *     link) whose own columns are only a fallback when Core can't be
- *     resolved. See `courseResolver.js` for the fail-soft contract.
+ *     `CourseOffering` row is a pure anchor (#1072 step 4 — id,
+ *     `coreOfferingId`, timestamps only, no Core-owned columns). A Core
+ *     outage degrades those fields to `null`/`false` rather than a stale
+ *     local copy. See `courseResolver.js` for the fail-soft contract.
+ *   - UNIT_ADMIN department scoping (`isUnitAdminForCourse`/`isCourseAdmin`
+ *     in `middleware/auth.js`) also resolves `department` live from Core —
+ *     there is no local column to filter/read anymore.
  *   - Importing from EduAI fans out into parallel topic + enrollment sync via
  *     `Promise.allSettled` so a partial upstream failure doesn't roll back the
  *     import itself; failures are logged.
@@ -122,10 +126,9 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
     const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
     // Exclude any Core course already mirrored into AI Tutor. coreOfferingId is
-    // @unique (one offering per Core course globally), so a hit there means the
-    // course is already in the system (#1072 step 3: it's the only Core-link field now).
+    // required + @unique (#1072 step 4 — every row is Core-linked, no filter
+    // needed), so a hit there means the course is already in the system.
     const imported = await prisma.courseOffering.findMany({
-      where: { coreOfferingId: { not: null } },
       select: { coreOfferingId: true },
     });
 
@@ -218,11 +221,20 @@ router.get('/courses', async (req, res) => {
       // UNIT_ADMINs see every course in their authorized units (regardless of
       // publish state), plus any course they personally lead — so the courses
       // they create or import are always visible even before a department is set.
+      // `department` is Core-owned (#1072 step 4): join the already-fetched
+      // `coreCourses` batch (never a per-course Core call) to find which
+      // `coreOfferingId`s fall in the caller's units, then scope the local
+      // query on that id set unioned with instructor membership. Fail-soft:
+      // on `coreUnavailable` the department set is empty, so the branch
+      // degrades to "courses I personally lead" rather than erroring.
       const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const deptCoreIds = units.length > 0
+        ? coreCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
+        : [];
       const courses = await prisma.courseOffering.findMany({
         where: {
           OR: [
-            ...(units.length > 0 ? [{ department: { in: units } }] : []),
+            ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
             { instructors: { some: { userId: authUser.id } } },
           ],
         },
@@ -362,7 +374,7 @@ router.post('/courses/:courseId/sync-enrollments', requireRole(['INSTRUCTOR', 'U
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
+    if (!await isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
     if (!course.coreOfferingId) {
@@ -402,24 +414,26 @@ router.get('/courses/:courseId', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
+    // #1072 step 2/4: single-course read-through, resolved once and reused
+    // for both the UNIT_ADMIN department check below and the response body
+    // — `department` is Core-owned data, not a local column. Degrades to a
+    // stale-but-present course (and a closed unit-admin department check) on
+    // any Core failure rather than hard-erroring.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+
     const isAdmin = authUser.role === 'ADMIN';
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const unitAdmin = await isUnitAdminForCourse(authUser, course, coreCourse);
     const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
 
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // #1072 step 2: single-course read-through. Degrades to the local
-    // anchor's last-known fields (via `mapCourseOffering`'s fallback chain)
-    // on any Core failure, so the detail page renders a stale placeholder
-    // instead of hard-erroring.
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
-    if (coreUnavailable) {
-      res.set('X-Core-Status', 'unavailable');
-    }
     res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -492,7 +506,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
       include: { instructors: { select: { userId: true } } },
     });
     if (!destCourse) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, destCourse)) {
+    if (!await isCourseAdmin(authUser, destCourse)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -505,7 +519,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
         where: { id: numericSourceCourseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!sourceCourse || !isCourseAdmin(authUser, sourceCourse)) {
+      if (!sourceCourse || !await isCourseAdmin(authUser, sourceCourse)) {
         return res.status(403).json({ error: 'Not authorized for source course' });
       }
 
@@ -561,7 +575,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
           where: { id: scId },
           include: { instructors: { select: { userId: true } } },
         });
-        if (!sc || !isCourseAdmin(authUser, sc)) {
+        if (!sc || !await isCourseAdmin(authUser, sc)) {
           return res.status(403).json({ error: 'Not authorized for lesson source course' });
         }
       }
@@ -614,26 +628,23 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
+    if (!await isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // #477: write through to Core first. If Core rejects, surface 500 and leave
-    // local state untouched so the two never diverge silently.
+    // #477: write through to Core first. If Core rejects, surface 500. There is
+    // no local `isPublished` column to keep in sync anymore (#1072 step 4) —
+    // Core is the sole store for publish state; this route now only proxies
+    // the write and re-reads it back for the response.
     if (course.coreOfferingId) {
       await setCoreCoursePublishState(course.coreOfferingId, true);
     }
 
-    const updated = await prisma.courseOffering.update({
-      where: { id: courseId },
-      data: { isPublished: true },
-    });
-
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(updated.coreOfferingId);
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(updated, coreCourse));
+    res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -643,8 +654,10 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
  * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
- * Side effects: in a single transaction sets `isPublished=false` on the
- *   course, all its modules, and all lessons within those modules.
+ * Side effects: writes `isPublished=false` through to Core (the sole store
+ *   for course publish state, #1072 step 4), then in a single local
+ *   transaction sets `isPublished=false` on all of the course's modules and
+ *   lessons.
  *
  * Why: the asymmetry with publish is deliberate — unpublishing must
  * immediately hide ALL child content from students; without the cascade a
@@ -663,7 +676,7 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       include: { instructors: { select: { userId: true } } },
     });
     if (!courseForAuth) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, courseForAuth)) {
+    if (!await isCourseAdmin(authUser, courseForAuth)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -672,14 +685,9 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       await setCoreCoursePublishState(courseForAuth.coreOfferingId, false);
     }
 
-    // Unpublish course and cascade to all modules and lessons
+    // Cascade to all modules and lessons. No local courseOffering.isPublished
+    // write anymore (#1072 step 4) — Core already got the write-through above.
     await prisma.$transaction(async (tx) => {
-      // Update the course
-      await tx.courseOffering.update({
-        where: { id: courseId },
-        data: { isPublished: false },
-      });
-
       // Update all modules in this course
       await tx.module.updateMany({
         where: { courseOfferingId: courseId },
@@ -701,15 +709,15 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       }
     });
 
-    const updated = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-    });
-
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(updated.coreOfferingId);
+    // No local courseOffering fields changed by the cascade above, so
+    // `courseForAuth` (already fetched) is still an accurate anchor row.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(
+      courseForAuth.coreOfferingId,
+    );
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(updated, coreCourse));
+    res.json(mapCourseOffering(courseForAuth, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -739,7 +747,7 @@ router.get('/courses/:courseId/feedback', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -802,7 +810,7 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -912,7 +920,7 @@ router.get('/courses/:courseId/student-metrics', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -967,7 +975,7 @@ router.get('/courses/:courseId/analytics', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -1021,7 +1029,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
 
     if (authUser.role === 'ADMIN') {
       const courses = await prisma.courseOffering.findMany({
-        select: { isPublished: true, coreOfferingId: true },
+        select: { coreOfferingId: true },
       });
       const publishedCourses = courses.filter(isCorePublished).length;
 
@@ -1051,21 +1059,28 @@ router.get('/me/dashboard-stats', async (req, res) => {
     }
 
     if (authUser.role === 'INSTRUCTOR' || authUser.role === 'UNIT_ADMIN') {
+      // `department` is Core-owned (#1072 step 4) — join the batch fetched
+      // above rather than filtering by a local column. Same fail-soft
+      // posture as `GET /courses`'s UNIT_ADMIN branch: an empty/unavailable
+      // Core list degrades the department scope to empty, not an error.
+      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const deptCoreIds =
+        authUser.role === 'UNIT_ADMIN' && units.length > 0
+          ? coreCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
+          : [];
       const courseWhere =
         authUser.role === 'INSTRUCTOR'
           ? { instructors: { some: { userId: authUser.id } } }
           : {
               OR: [
-                ...(Array.isArray(authUser.authorizedUnits) && authUser.authorizedUnits.length > 0
-                  ? [{ department: { in: authUser.authorizedUnits } }]
-                  : []),
+                ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
                 { instructors: { some: { userId: authUser.id } } },
               ],
             };
 
       const courses = await prisma.courseOffering.findMany({
         where: courseWhere,
-        select: { id: true, isPublished: true, coreOfferingId: true },
+        select: { id: true, coreOfferingId: true },
       });
       const courseIds = courses.map((c) => c.id);
       const publishedCourses = courses.filter(isCorePublished).length;
@@ -1124,7 +1139,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
               }),
               prisma.courseOffering.findMany({
                 where: { id: { in: courseIds } },
-                select: { isPublished: true, coreOfferingId: true },
+                select: { coreOfferingId: true },
               }),
             ])
           : [0, []];
@@ -1149,7 +1164,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
         ? (
             await prisma.courseOffering.findMany({
               where: { id: { in: enrolledCourseIds } },
-              select: { id: true, isPublished: true, coreOfferingId: true },
+              select: { id: true, coreOfferingId: true },
             })
           ).filter(isCorePublished)
         : [];

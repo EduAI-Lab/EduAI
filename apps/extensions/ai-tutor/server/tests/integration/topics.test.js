@@ -66,27 +66,13 @@ describe('Topics routes', () => {
   // ── POST /api/courses/:courseId/topics ─────────────────────────────
 
   describe('POST /api/courses/:courseId/topics', () => {
-    it('creates a new topic and returns 201', async () => {
-      const res = await request(app)
-        .post(`/api/courses/${seed.course.id}/topics`)
-        .send({ name: 'New Topic' });
-
-      expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({
-        name: 'New Topic',
-        courseOfferingId: seed.course.id,
-      });
-      expect(res.body.id).toBeDefined();
-    });
-
-    it('returns 409 on duplicate topic name', async () => {
-      const res = await request(app)
-        .post(`/api/courses/${seed.course.id}/topics`)
-        .send({ name: 'Test Topic' }); // already seeded
-
-      expect(res.status).toBe(409);
-      expect(res.body.error).toMatch(/already exists/i);
-    });
+    // #1072 step 4: `CourseOffering` is a pure anchor with a required,
+    // unique `coreOfferingId` — every course is Core-linked ("imported") by
+    // construction now, so the "native course, manual topic creation"
+    // scenario this endpoint was built for can no longer occur. Manual
+    // topic creation is unconditionally blocked (see the "imported courses"
+    // test below); the former 201/409-on-duplicate cases tested a course
+    // shape that no longer exists.
 
     it('returns 400 on empty name', async () => {
       const res = await request(app)
@@ -108,13 +94,7 @@ describe('Topics routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 403 for imported courses (coreOfferingId set)', async () => {
-      // Set coreOfferingId on the course to make it "imported"
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { coreOfferingId: 'core-123' },
-      });
-
+    it('returns 403 for imported courses (coreOfferingId set) — the only shape a CourseOffering can have (#1072 step 4)', async () => {
       const res = await request(app)
         .post(`/api/courses/${seed.course.id}/topics`)
         .send({ name: 'Blocked Topic' });

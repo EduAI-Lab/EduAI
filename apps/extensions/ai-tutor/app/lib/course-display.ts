@@ -28,7 +28,7 @@ export function accentForCourse(course: Pick<Course, 'id'>): CourseAccentColor {
 export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
   const code = course.code?.trim();
   if (code) return code;
-  const firstWord = course.title.trim().split(/\s+/)[0] ?? '';
+  const firstWord = course.title?.trim().split(/\s+/)[0] ?? '';
   return firstWord ? firstWord.slice(0, 10).toUpperCase() : 'COURSE';
 }
 
@@ -37,10 +37,12 @@ export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
  * code stripped ("COSC 101 - Computer Studies" → "Computer Studies"). The code
  * is shown separately (card colour band, hero eyebrow), so the headline needn't
  * repeat it behind a colon/dash. Falls back to the whole title when it carries
- * no code prefix.
+ * no code prefix, and to `''` when `title` is `null` (#1072 step 4 — Core
+ * unresolved, no local fallback exists) so callers can render an empty/
+ * placeholder state instead of crashing.
  */
 export function courseName(course: Pick<Course, 'title'>): string {
-  return titleName(course.title);
+  return course.title ? titleName(course.title) : '';
 }
 
 /** Raw term value, read-through from Core (#1072 step 2; empty string when unknown). */

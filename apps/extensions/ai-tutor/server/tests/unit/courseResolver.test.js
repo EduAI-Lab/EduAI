@@ -112,27 +112,31 @@ describe('resolveCoreCourseById', () => {
   });
 });
 
+// #1072 step 4: CourseOffering has no local `isPublished` column anymore —
+// Core is the sole source of truth. Every case where the offering doesn't
+// resolve against the batch fails closed to `false` rather than falling back
+// to a stale local value.
 describe('resolveIsPublished (#819)', () => {
   it('prefers Core isPublished when the offering resolves against the batch', () => {
-    const offering = { coreOfferingId: 'core-1', isPublished: false };
+    const offering = { coreOfferingId: 'core-1' };
     const byId = indexCoreCoursesById([{ id: 'core-1', isPublished: true }]);
     expect(resolveIsPublished(offering, byId)).toBe(true);
   });
 
-  it('falls back to the local column when the offering has no Core match', () => {
-    const offering = { coreOfferingId: 'core-missing', isPublished: true };
+  it('fails closed to false when the offering has no Core match', () => {
+    const offering = { coreOfferingId: 'core-missing' };
     const byId = indexCoreCoursesById([{ id: 'core-1', isPublished: false }]);
-    expect(resolveIsPublished(offering, byId)).toBe(true);
+    expect(resolveIsPublished(offering, byId)).toBe(false);
   });
 
-  it('falls back to the local column when coreCoursesById is empty (Core unavailable)', () => {
-    const offering = { coreOfferingId: 'core-1', isPublished: true };
-    expect(resolveIsPublished(offering, indexCoreCoursesById([]))).toBe(true);
+  it('fails closed to false when coreCoursesById is empty (Core unavailable)', () => {
+    const offering = { coreOfferingId: 'core-1' };
+    expect(resolveIsPublished(offering, indexCoreCoursesById([]))).toBe(false);
   });
 
-  it('falls back to the local column when the Core course omits isPublished', () => {
-    const offering = { coreOfferingId: 'core-1', isPublished: true };
+  it('fails closed to false when the Core course omits isPublished', () => {
+    const offering = { coreOfferingId: 'core-1' };
     const byId = indexCoreCoursesById([{ id: 'core-1' }]);
-    expect(resolveIsPublished(offering, byId)).toBe(true);
+    expect(resolveIsPublished(offering, byId)).toBe(false);
   });
 });

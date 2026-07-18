@@ -113,7 +113,7 @@ router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -169,7 +169,7 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -238,7 +238,7 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 

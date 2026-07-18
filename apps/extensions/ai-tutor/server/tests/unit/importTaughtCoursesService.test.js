@@ -73,7 +73,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
         courseInstructor: { create: courseInstructorCreate },
       }),
     );
-    courseOfferingCreate.mockResolvedValue({ id: 10, title: 'COSC 111 - Computing' });
+    courseOfferingCreate.mockResolvedValue({ id: 10, coreOfferingId: 'core-1' });
     courseInstructorCreate.mockResolvedValue({});
     courseEnrollmentUpsert.mockResolvedValue({});
     courseEnrollmentFindMany.mockResolvedValue([]);
@@ -97,7 +97,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
     expect(result.imported).toBe(1);
     expect(courseOfferingCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { title: 'core-1', coreOfferingId: 'core-1' },
+        data: { coreOfferingId: 'core-1' },
       }),
     );
   });
@@ -160,8 +160,8 @@ describe('ensureOfferingAnchors (AI Tutor, #1072 step 3 / #1074 admin create-on-
     expect(courseOfferingCreateMany).toHaveBeenCalledTimes(1);
     expect(courseOfferingCreateMany).toHaveBeenCalledWith({
       data: [
-        { title: 'core-2', coreOfferingId: 'core-2' },
-        { title: 'core-3', coreOfferingId: 'core-3' },
+        { coreOfferingId: 'core-2' },
+        { coreOfferingId: 'core-3' },
       ],
       skipDuplicates: true,
     });
@@ -182,7 +182,7 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     courseOfferingFindFirst.mockResolvedValue(null);
-    courseOfferingCreate.mockResolvedValue({ id: 20, title: 'COSC 111 - Computing' });
+    courseOfferingCreate.mockResolvedValue({ id: 20, coreOfferingId: 'core-1' });
     courseOfferingUpdate.mockResolvedValue({});
     courseEnrollmentUpsert.mockResolvedValue({});
     courseEnrollmentFindMany.mockResolvedValue([]);

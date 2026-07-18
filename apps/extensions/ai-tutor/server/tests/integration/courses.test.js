@@ -17,12 +17,17 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
     ...actual,
     findEduAiCourseById: vi.fn(),
     listEduAiCourses: vi.fn(),
+    fetchCoreCourseSafe: vi.fn(),
     syncExternalCourseTopics: vi.fn(),
     syncCourseEnrollments: vi.fn(),
   };
 });
 
-import { findEduAiCourseById, listEduAiCourses } from '../../src/services/eduaiClient.js';
+import {
+  fetchCoreCourseSafe,
+  findEduAiCourseById,
+  listEduAiCourses,
+} from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
 
@@ -59,6 +64,26 @@ describe('Courses routes', () => {
     vi.mocked(listEduAiCourses).mockReset();
     vi.mocked(syncExternalCourseTopics).mockClear();
     vi.mocked(syncCourseEnrollments).mockClear();
+
+    // Course-owned fields (title/isPublished/etc) are Core-owned (#1072 step
+    // 2/4) — default the seeded course to a resolved, published Core course
+    // so pre-#1072 expectations ("Test Course", published) still hold;
+    // individual tests override list/detail mocks as needed.
+    // `callerEnrollmentRole: 'NONE'` is a deliberate non-match sentinel: it
+    // fails every role check in importTaughtCoursesService.js
+    // (isTeachingCoreCourse/isStudentCoreCourse/isTaCoreCourse all require an
+    // exact 'INSTRUCTOR'/'STUDENT'/'TA' string — `undefined` would otherwise
+    // default-match `isStudentCoreCourse`), so this default never triggers
+    // the auto-import/auto-enrollment side effects on `GET /courses` that
+    // would otherwise leak enrollments across tests in this file.
+    const defaultCoreCourse = {
+      id: seed.course.coreOfferingId,
+      name: 'Test Course',
+      isPublished: true,
+      callerEnrollmentRole: 'NONE',
+    };
+    vi.mocked(listEduAiCourses).mockResolvedValue([defaultCoreCourse]);
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue(defaultCoreCourse);
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -120,10 +145,9 @@ describe('Courses routes', () => {
     });
 
     it('TA sees TA-enrolled course (no progress, all publish states)', async () => {
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { isPublished: false },
-      });
+      vi.mocked(listEduAiCourses).mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Test Course', isPublished: false, callerEnrollmentRole: 'NONE' },
+      ]);
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -204,9 +228,10 @@ describe('Courses routes', () => {
     });
 
     it('TA enrolled in course sees it even when unpublished', async () => {
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { isPublished: false },
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+        id: seed.course.coreOfferingId,
+        name: 'Test Course',
+        isPublished: false,
       });
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
@@ -249,12 +274,22 @@ describe('Courses routes', () => {
   // ── PATCH /api/courses/:id/publish ────────────────────────────────
 
   describe('PATCH /api/courses/:id/publish', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('publishes a course', async () => {
-      // Unpublish it first so we can test publishing
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { isPublished: false },
-      });
+      // Every course is Core-linked now (#1072 step 4) — publish writes
+      // through to Core over the real `fetch`, so it must be stubbed.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(''),
+          json: () => Promise.resolve({ id: seed.course.coreOfferingId, isPublished: true }),
+        }),
+      );
 
       const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
@@ -266,7 +301,30 @@ describe('Courses routes', () => {
   // ── PATCH /api/courses/:id/unpublish ──────────────────────────────
 
   describe('PATCH /api/courses/:id/unpublish', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('unpublishes a course and cascades to modules and lessons', async () => {
+      // Every course is Core-linked now (#1072 step 4) — unpublish writes
+      // through to Core over the real `fetch`, so it must be stubbed. The
+      // read-back after unpublish goes through the module-mocked
+      // `fetchCoreCourseSafe` (shared across this file), not the raw `fetch`
+      // stub, so it needs its own override.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(''),
+          json: () => Promise.resolve({ id: seed.course.coreOfferingId, isPublished: false }),
+        }),
+      );
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+        id: seed.course.coreOfferingId,
+        isPublished: false,
+      });
+
       const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
 
       expect(res.status).toBe(200);
@@ -362,14 +420,11 @@ describe('Courses routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 400 for a native course without a coreOfferingId', async () => {
-      const res = await request(profApp)
-        .post(`/api/courses/${seed.course.id}/sync-enrollments`)
-        .set('Cookie', 'session=valid');
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/not imported from EduAI/i);
-    });
+    // The "native course, no coreOfferingId" scenario this test covered is no
+    // longer constructible: #1072 step 4 made `coreOfferingId` required at the
+    // DB level, so every CourseOffering row is Core-linked by construction.
+    // The route's `!course.coreOfferingId` guard is dead code now, harmlessly
+    // so; left in place rather than removed as part of this migration.
   });
 
   // ── GET /api/courses/:courseId/submissions (enriched) ─────────────
@@ -498,7 +553,7 @@ describe('Course publish state — Core write-through (#477)', () => {
     // Link the seeded course to a Core offering so write-through is triggered.
     await prisma.courseOffering.update({
       where: { id: seed.course.id },
-      data: { coreOfferingId: CORE_OFFERING_ID, isPublished: false },
+      data: { coreOfferingId: CORE_OFFERING_ID },
     });
 
     // setCoreCoursePublishState and listEduAiCourses check for this key before calling fetch.
@@ -510,7 +565,7 @@ describe('Course publish state — Core write-through (#477)', () => {
     delete process.env.EDUAI_API_KEY;
   });
 
-  it('publish — calls Core publish endpoint and updates local isPublished', async () => {
+  it('publish — calls Core publish endpoint and reads isPublished back from Core', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -518,6 +573,10 @@ describe('Course publish state — Core write-through (#477)', () => {
       json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
     });
     vi.stubGlobal('fetch', mockFetch);
+    // `fetchCoreCourseSafe` is module-mocked (shared across this file's
+    // describe blocks) — it no longer goes through the raw `fetch` stub
+    // above, so the read-back after publish must be set explicitly too.
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: CORE_OFFERING_ID, isPublished: true });
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
@@ -531,15 +590,11 @@ describe('Course publish state — Core write-through (#477)', () => {
     expect(coreCalls).toHaveLength(1);
     expect(coreCalls[0][1].method).toBe('PATCH');
 
-    // Verify local DB was also updated.
-    const updated = await prisma.courseOffering.findUnique({ where: { id: seed.course.id } });
-    expect(updated.isPublished).toBe(true);
+    // No local `isPublished` column exists anymore (#1072 step 4) — Core is
+    // the sole store; the response body above is the only place to check.
   });
 
   it('unpublish — calls Core unpublish endpoint and cascades locally', async () => {
-    // Seed as published first.
-    await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: true } });
-
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -547,6 +602,10 @@ describe('Course publish state — Core write-through (#477)', () => {
       json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
     });
     vi.stubGlobal('fetch', mockFetch);
+    // `fetchCoreCourseSafe` is module-mocked (shared across this file's
+    // describe blocks) — it no longer goes through the raw `fetch` stub
+    // above, so the read-back after unpublish must be set explicitly too.
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: CORE_OFFERING_ID, isPublished: false });
 
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
 
@@ -575,28 +634,17 @@ describe('Course publish state — Core write-through (#477)', () => {
     const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
 
     expect(res.status).toBe(500);
-
-    // Local state must remain unchanged.
-    const unchanged = await prisma.courseOffering.findUnique({ where: { id: seed.course.id } });
-    expect(unchanged.isPublished).toBe(false);
+    // No local `isPublished` column exists anymore (#1072 step 4) — there is
+    // nothing local left to leave "untouched"; the write-through call
+    // erroring and short-circuiting before the response is the guarantee.
   });
 
-  it('publish — no Core call when coreOfferingId is null (native course)', async () => {
-    // Remove the Core link — native course.
-    await prisma.courseOffering.update({
-      where: { id: seed.course.id },
-      data: { coreOfferingId: null, isPublished: false },
-    });
-
-    const mockFetch = vi.fn();
-    vi.stubGlobal('fetch', mockFetch);
-
-    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.isPublished).toBe(true);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
+  // The "publish — no Core call when coreOfferingId is null (native course)"
+  // scenario this used to cover is no longer constructible: #1072 step 4 made
+  // `coreOfferingId` required + unique, so every CourseOffering row is
+  // Core-linked by construction. The route's `if (course.coreOfferingId)`
+  // guard is dead code now, harmlessly so; left in place rather than removed
+  // as part of this migration.
 
   it('import — sets coreOfferingId; isPublished is read-through from the Core course, not stored locally (#1072 step 3)', async () => {
     const EXTERNAL_COURSE_ID = 'core-cuid-xyz';

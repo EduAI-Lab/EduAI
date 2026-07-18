@@ -82,13 +82,15 @@ export function mapCoreAdminUser(user) {
  * Why: Course-owned fields (title/description/department/dates/isPublished/
  * term/year/aiInstructions) live in Core (#1072 step 2, closes #819's read
  * path) — `coreCourse` is the resolved Core course for this offering
- * (`services/courseResolver.js`), and every one of those fields prefers it.
- * The local column is only a fallback for the transition window before the
- * columns are dropped (step 4) and for the moment Core can't be reached
- * (`coreCourse` is `null`/`undefined`) — never dropped entirely, so a Core
- * outage degrades to a stale-but-present course rather than a blank one.
+ * (`services/courseResolver.js`), and every one of those fields is sourced
+ * from it exclusively. `CourseOffering` is a pure anchor as of #1072 step 4
+ * (id, `coreOfferingId`, timestamps — no Core-owned columns left to fall
+ * back to), so when `coreCourse` is `null`/`undefined` (Core unreachable, or
+ * no `coreOfferingId` to resolve) every Core-owned field degrades to
+ * `null`/`false` rather than a stale local copy — an explicit "unresolved"
+ * placeholder, consistent with the parent issue's degrade-gracefully rule.
  *
- * `coreOfferingId` is now the ONLY Core-link field on the wire (#1072 step 3
+ * `coreOfferingId` is the ONLY Core-link field on the wire (#1072 step 3
  * consolidated the old `externalId`/`externalSource` pair into it — they
  * were always `'EDUAI'` plus a redundant copy of the same id, never a
  * genuine second source like Canvas). The client detects "Core-linked" with
@@ -99,13 +101,13 @@ export function mapCourseOffering(offering, coreCourse) {
   return {
     id: offering.id,
     coreOfferingId: offering.coreOfferingId ?? null,
-    title: core?.name ?? offering.title,
+    title: core?.name ?? null,
     code: core?.code ?? null,
-    description: core?.description ?? offering.description ?? null,
-    department: core?.department ?? offering.department ?? null,
-    isPublished: typeof core?.isPublished === 'boolean' ? core.isPublished : offering.isPublished,
-    startDate: core?.startDate ?? offering.startDate ?? null,
-    endDate: core?.endDate ?? offering.endDate ?? null,
+    description: core?.description ?? null,
+    department: core?.department ?? null,
+    isPublished: typeof core?.isPublished === 'boolean' ? core.isPublished : false,
+    startDate: core?.startDate ?? null,
+    endDate: core?.endDate ?? null,
     term: core?.term ?? null,
     year: typeof core?.year === 'number' ? core.year : null,
     aiInstructions: typeof core?.aiInstructions === 'string' ? core.aiInstructions : null,
