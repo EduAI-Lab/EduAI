@@ -160,7 +160,9 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
 
 /**
  * List QM courses visible to the caller at instructor rank or above.
- * ADMIN sees all rows; UNIT_ADMIN / INSTRUCTOR are filtered via courseAccess.
+ * ADMIN sees Core's full catalog (materializing anchors as needed, see
+ * below); UNIT_ADMIN / INSTRUCTOR are filtered via courseAccess over the
+ * local rows only.
  */
 export async function listCoursesForUser(reqUser, { cookie } = {}) {
   const allCourses = await Course.findAll({ order: [['createdAt', 'DESC']] });
@@ -174,7 +176,41 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   }
 
   if (reqUser.role === 'ADMIN') {
-    const enriched = allCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
+    // #1074: ADMIN's list = Core's full catalog, not just locally-anchored
+    // rows — materialize an anchor for every Core course that doesn't have
+    // one yet, so the client always has a real local id to route by (mirrors
+    // ai-tutor's `ensureOfferingAnchors`, apps/extensions/ai-tutor/server/src/
+    // services/importTaughtCoursesService.js). Batched: `allCourses` above is
+    // already every local row unfiltered, so the "existing ids" read is free
+    // — no extra findAll. One bulkCreate for the missing set, idempotent via
+    // `ignoreDuplicates` (Postgres ON CONFLICT DO NOTHING on the unique
+    // `core_course_id` index) so concurrent admin requests racing to
+    // materialize the same course never error. Core unreachable ⇒ coreById is
+    // empty ⇒ nothing to materialize ⇒ falls through to the existing local
+    // rows with placeholder projection (degrade, not error).
+    const existingCoreCourseIds = new Set(
+      allCourses.map((c) => (c.toJSON ? c.toJSON() : c).coreCourseId).filter(Boolean),
+    );
+    const missingCoreCourseIds = Array.from(coreById.keys()).filter(
+      (id) => !existingCoreCourseIds.has(id),
+    );
+
+    let adminCourses = allCourses;
+    if (missingCoreCourseIds.length > 0) {
+      await Course.bulkCreate(
+        missingCoreCourseIds.map((coreCourseId) => ({ userId: reqUser.id, coreCourseId })),
+        { ignoreDuplicates: true },
+      );
+      // Re-fetch: bulkCreate's returned instances aren't reliable under
+      // ON CONFLICT DO NOTHING, and a racing request may have inserted some
+      // of these rows first — read back the ground truth.
+      adminCourses = await Course.findAll({ order: [['createdAt', 'DESC']] });
+    }
+
+    // Catalog-sourced dedupe: an existing local anchor and a freshly
+    // materialized one can both resolve to the same Core course; merge them
+    // on Core identity same as before.
+    const enriched = adminCourses.map((course) => enrichCourseRow(course, coreById, 'admin'));
     return dedupeCoursesByCoreId(enriched);
   }
 
