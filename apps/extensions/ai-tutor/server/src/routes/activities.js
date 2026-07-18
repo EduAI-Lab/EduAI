@@ -48,6 +48,7 @@ import {
 } from '../services/aiGuidance.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
+import { resolveCoreCourseById } from '../services/courseResolver.js';
 import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
@@ -70,14 +71,16 @@ const normalizeCustomPromptTitle = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-function getCourseCode(course) {
-  return (
-    (course.externalMetadata &&
-      typeof course.externalMetadata === 'object' &&
-      typeof course.externalMetadata.code === 'string' &&
-      course.externalMetadata.code) ||
-    (typeof course.externalId === 'string' ? course.externalId : null)
-  );
+/**
+ * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
+ * no longer mirrored into `externalMetadata`/`externalId` — so this is a
+ * single fail-soft Core fetch keyed on the offering's `coreOfferingId`.
+ * Empty string (never a thrown error) when Core is unreachable or the
+ * offering has no Core link.
+ */
+async function getCourseCode(coreOfferingId) {
+  const { course } = await resolveCoreCourseById(coreOfferingId);
+  return typeof course?.code === 'string' ? course.code : '';
 }
 
 function getActivityAccess(course, authUser) {
@@ -188,9 +191,6 @@ async function loadActivityForChat(activityId) {
                 select: {
                   id: true,
                   isPublished: true,
-                  externalId: true,
-                  externalSource: true,
-                  externalMetadata: true,
                   coreOfferingId: true,
                   enrollments: { select: { userId: true } },
                 },
@@ -260,10 +260,14 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
-    // Stage 4: fetch testable questions for the linked Core course (fail-soft).
-    const testableQuestions = course.coreOfferingId
-      ? await listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
-      : [];
+    // Stage 4: fetch testable questions + the course code, both from the
+    // linked Core course (fail-soft — empty/[] on any Core hiccup).
+    const [testableQuestions, courseCode] = await Promise.all([
+      course.coreOfferingId
+        ? listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
+        : Promise.resolve([]),
+      getCourseCode(course.coreOfferingId),
+    ]);
 
     // Stage 5: mode-specific EduAI call.
     const aiResult = await generateResponse({
@@ -274,7 +278,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       cookie,
       chatId,
       messageId,
-      courseCode: getCourseCode(course),
+      courseCode,
       testableQuestions,
       signal: abortController.signal,
     });
@@ -1149,9 +1153,6 @@ router.post('/questions/:id/answer', async (req, res) => {
                   select: {
                     id: true,
                     isPublished: true,
-                    externalId: true,
-                    externalSource: true,
-                    externalMetadata: true,
                     enrollments: { select: { userId: true } },
                   },
                 },

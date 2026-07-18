@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const courseOfferingFindFirst = vi.fn();
 const courseOfferingFindMany = vi.fn();
 const courseOfferingCreate = vi.fn();
+const courseOfferingCreateMany = vi.fn();
 const courseOfferingUpdate = vi.fn();
 const courseInstructorCreate = vi.fn();
 const courseInstructorFindFirst = vi.fn();
@@ -20,6 +21,7 @@ vi.mock('../../src/config/database.js', () => ({
       findFirst: courseOfferingFindFirst,
       findMany: courseOfferingFindMany,
       create: courseOfferingCreate,
+      createMany: courseOfferingCreateMany,
       update: courseOfferingUpdate,
     },
     courseInstructor: {
@@ -49,6 +51,7 @@ vi.mock('../../src/services/enrollmentSync.js', () => ({
 
 const { listEduAiCourses } = await import('../../src/services/eduaiClient.js');
 const {
+  ensureOfferingAnchors,
   importEnrolledCoursesFromCore,
   importTaughtCoursesFromCore,
   userHasCoreTaEnrollment,
@@ -84,7 +87,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
     expect(listEduAiCourses).not.toHaveBeenCalled();
   });
 
-  it('imports Core courses not yet present locally', async () => {
+  it('imports Core courses not yet present locally as anchor-only rows', async () => {
     listEduAiCourses.mockResolvedValue([
       { id: 'core-1', code: 'COSC 111', name: 'Computing Science', callerEnrollmentRole: 'INSTRUCTOR' },
     ]);
@@ -94,10 +97,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
     expect(result.imported).toBe(1);
     expect(courseOfferingCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          externalId: 'core-1',
-          externalSource: 'EDUAI',
-        }),
+        data: { title: 'core-1', coreOfferingId: 'core-1' },
       }),
     );
   });
@@ -106,7 +106,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
     listEduAiCourses.mockResolvedValue([
       { id: 'core-1', code: 'COSC 111', name: 'Computing Science', callerEnrollmentRole: 'INSTRUCTOR' },
     ]);
-    courseOfferingFindMany.mockResolvedValue([{ externalId: 'core-1' }]);
+    courseOfferingFindMany.mockResolvedValue([{ coreOfferingId: 'core-1' }]);
 
     const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
 
@@ -115,7 +115,7 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
     expect(courseOfferingCreate).not.toHaveBeenCalled();
   });
 
-  it('syncs isPublished from Core when the course is already linked locally', async () => {
+  it('does not reconcile Core field changes on an already-linked course (#1073 — reconcile removed, fields are read-through)', async () => {
     listEduAiCourses.mockResolvedValue([
       {
         id: 'core-1',
@@ -126,23 +126,53 @@ describe('importTaughtCoursesFromCore (AI Tutor)', () => {
       },
     ]);
     courseOfferingFindMany
-      .mockResolvedValueOnce([{ externalId: 'core-1', coreOfferingId: 'core-1' }])
-      .mockResolvedValueOnce([{ id: 10, externalId: 'core-1', isPublished: false }]);
-    courseOfferingFindFirst.mockResolvedValue({
-      id: 10,
-      externalId: 'core-1',
-      coreOfferingId: 'core-1',
-      isPublished: false,
-    });
+      .mockResolvedValueOnce([{ coreOfferingId: 'core-1' }])
+      .mockResolvedValueOnce([{ id: 10, coreOfferingId: 'core-1', isPublished: false }]);
 
     const result = await importTaughtCoursesFromCore(instructor, 'session=abc');
 
-    expect(result.publishSynced).toBe(1);
-    expect(courseOfferingUpdate).toHaveBeenCalledWith({
-      where: { id: 10 },
-      data: expect.objectContaining({ isPublished: true }),
-    });
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
     expect(courseOfferingCreate).not.toHaveBeenCalled();
+    expect(courseOfferingUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureOfferingAnchors (AI Tutor, #1072 step 3 / #1074 admin create-on-open)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does nothing when every id already has a local anchor', async () => {
+    courseOfferingFindMany.mockResolvedValue([{ coreOfferingId: 'core-1' }, { coreOfferingId: 'core-2' }]);
+
+    await ensureOfferingAnchors(['core-1', 'core-2']);
+
+    expect(courseOfferingCreateMany).not.toHaveBeenCalled();
+  });
+
+  it('batch-creates anchors only for ids missing a local row — one read, one insert, never per-course', async () => {
+    courseOfferingFindMany.mockResolvedValue([{ coreOfferingId: 'core-1' }]);
+
+    await ensureOfferingAnchors(['core-1', 'core-2', 'core-3']);
+
+    expect(courseOfferingFindMany).toHaveBeenCalledTimes(1);
+    expect(courseOfferingCreateMany).toHaveBeenCalledTimes(1);
+    expect(courseOfferingCreateMany).toHaveBeenCalledWith({
+      data: [
+        { title: 'core-2', coreOfferingId: 'core-2' },
+        { title: 'core-3', coreOfferingId: 'core-3' },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('no-ops on an empty or all-falsy id list without touching the database', async () => {
+    await ensureOfferingAnchors([]);
+    await ensureOfferingAnchors([null, undefined, '']);
+
+    expect(courseOfferingFindMany).not.toHaveBeenCalled();
+    expect(courseOfferingCreateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -199,8 +229,6 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
       {
         courseOfferingId: 30,
         courseOffering: {
-          externalSource: 'EDUAI',
-          externalId: 'core-old',
           coreOfferingId: 'core-old',
         },
       },
@@ -225,16 +253,12 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
       {
         courseOfferingId: 30,
         courseOffering: {
-          externalSource: 'EDUAI',
-          externalId: 'core-old',
           coreOfferingId: 'core-old',
         },
       },
       {
         courseOfferingId: 31,
         courseOffering: {
-          externalSource: 'EDUAI',
-          externalId: 'core-current',
           coreOfferingId: 'core-current',
         },
       },

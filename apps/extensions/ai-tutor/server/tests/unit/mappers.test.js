@@ -128,9 +128,6 @@ describe('mapCourseOffering', () => {
       isPublished: true,
       startDate: '2025-01-01',
       endDate: '2025-06-01',
-      externalId: 'ext-1',
-      externalSource: 'canvas',
-      externalMetadata: { foo: 'bar' },
     };
     expect(mapCourseOffering(offering)).toEqual({
       id: 10,
@@ -145,9 +142,6 @@ describe('mapCourseOffering', () => {
       term: null,
       year: null,
       aiInstructions: null,
-      externalId: 'ext-1',
-      externalSource: 'canvas',
-      externalMetadata: { foo: 'bar' },
     });
   });
 
@@ -201,24 +195,11 @@ describe('mapCourseOffering', () => {
     expect(result.isPublished).toBe(true);
   });
 
-  it('defaults externalId, externalSource, externalMetadata to null when undefined', () => {
+  it('never emits externalId/externalSource/externalMetadata — consolidated into coreOfferingId (#1072 step 3)', () => {
     const result = mapCourseOffering(localOnlyOffering);
-    expect(result.externalId).toBeNull();
-    expect(result.externalSource).toBeNull();
-    expect(result.externalMetadata).toBeNull();
-  });
-
-  it('preserves explicit null external fields', () => {
-    const offering = {
-      ...localOnlyOffering,
-      externalId: null,
-      externalSource: null,
-      externalMetadata: null,
-    };
-    const result = mapCourseOffering(offering);
-    expect(result.externalId).toBeNull();
-    expect(result.externalSource).toBeNull();
-    expect(result.externalMetadata).toBeNull();
+    expect(result).not.toHaveProperty('externalId');
+    expect(result).not.toHaveProperty('externalSource');
+    expect(result).not.toHaveProperty('externalMetadata');
   });
 
   it('defaults coreOfferingId, code, term, year, aiInstructions to null with no Core course', () => {

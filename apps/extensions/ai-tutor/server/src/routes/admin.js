@@ -34,6 +34,7 @@ import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { indexCoreCoursesById, resolveCoreCourseList } from '../services/courseResolver.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
   deleteCoreEnrollment,
   listCoreAdminUsers,
@@ -78,6 +79,12 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     const coreCoursesById = indexCoreCoursesById(coreCourses);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
+    }
+    // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
+    // Core course before listing, so this shows Core's full catalog rather
+    // than whatever happened to already have a local row.
+    if (!coreUnavailable && coreCourses.length > 0) {
+      await ensureOfferingAnchors(coreCourses.map((c) => c.id));
     }
     const courses = await prisma.courseOffering.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -127,9 +134,9 @@ router.get(
 
       // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
       let coreEnrollmentMap = new Map();
-      if (course.externalId) {
+      if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
@@ -277,14 +284,14 @@ router.delete(
       }
 
       // Write through to Core first, so a later sync doesn't re-import the student (#812).
-      if (course.externalId && course.externalSource === 'EDUAI') {
-        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+      if (course.coreOfferingId) {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
           return res.status(404).json({ error: 'Enrollment not found in Core' });
         }
         const cookie = getEduAiCookieForRequest(req);
-        await deleteCoreEnrollment(course.externalId, coreEnrollment.id, cookie);
+        await deleteCoreEnrollment(course.coreOfferingId, coreEnrollment.id, cookie);
       }
 
       await prisma.courseEnrollment.deleteMany({
@@ -356,16 +363,16 @@ router.patch(
       }
 
       let coreRollback = null;
-      if (course.externalId && course.externalSource === 'EDUAI') {
-        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+      if (course.coreOfferingId) {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
           return res.status(404).json({ error: 'Enrollment not found in Core' });
         }
         const cookie = getEduAiCookieForRequest(req);
-        await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+        await patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, rawRole, cookie);
         coreRollback = () =>
-          patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
+          patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
       }
 
       try {
@@ -595,7 +602,7 @@ router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), a
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    if (!course.externalId || course.externalSource !== 'EDUAI') {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 

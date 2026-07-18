@@ -55,6 +55,7 @@ import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
+  ensureOfferingAnchors,
   importEnrolledCoursesFromCore,
   importExternalCourseForUser,
   importTaughtCoursesFromCore,
@@ -109,7 +110,7 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
  *
  * Auth: INSTRUCTOR.
  * Returns: EduAI course descriptors minus any already imported by this
- *   instructor (de-duped via local `externalId`).
+ *   instructor (de-duped via local `coreOfferingId`).
  *
  * Why: filtering by THIS instructor (not globally) lets multiple instructors
  * import the same EduAI course independently into their own offerings.
@@ -120,22 +121,15 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
     // (the service key would return the full catalog). Mirrors the import path.
     const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
-    // Exclude any EduAI course already mirrored into AI Tutor. coreOfferingId is
-    // @unique (one offering per Core course globally), so a hit on either the Core
-    // link or the legacy externalId means the course is already in the system.
+    // Exclude any Core course already mirrored into AI Tutor. coreOfferingId is
+    // @unique (one offering per Core course globally), so a hit there means the
+    // course is already in the system (#1072 step 3: it's the only Core-link field now).
     const imported = await prisma.courseOffering.findMany({
-      where: {
-        externalSource: 'EDUAI',
-        OR: [{ coreOfferingId: { not: null } }, { externalId: { not: null } }],
-      },
-      select: { coreOfferingId: true, externalId: true },
+      where: { coreOfferingId: { not: null } },
+      select: { coreOfferingId: true },
     });
 
-    const importedIds = new Set();
-    for (const row of imported) {
-      if (row.coreOfferingId) importedIds.add(row.coreOfferingId);
-      if (row.externalId) importedIds.add(row.externalId);
-    }
+    const importedIds = new Set(imported.map((row) => row.coreOfferingId).filter(Boolean));
     const filtered = Array.isArray(courses)
       ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
       : [];
@@ -192,11 +186,18 @@ router.get('/courses', async (req, res) => {
     }
 
     if (authUser.role === 'ADMIN') {
-      // Platform admins see every locally-anchored course offering (no
-      // progress) so the shared Courses dashboard lists all courses they can
-      // open and edit; fields are read-through from Core above. The full
-      // Core catalog — including courses with no local anchor yet — lands
-      // with create-on-open (#1072 step 3 / #1074).
+      // Platform admins see Core's full course catalog (#1074), not just
+      // whatever happened to already have a local anchor row — the old
+      // enrollment-driven mirror never ran for admins (no enrollments of
+      // their own), so it silently showed a stale/incomplete subset.
+      // Create-on-open (#1072 step 3): ensure every Core course has a local
+      // anchor *before* listing, in one batched read + insert (never a
+      // per-course loop) — this is what lets the response link to a real,
+      // stable local id for a course no instructor has ever logged in to
+      // auto-import. Fields are read-through from Core above.
+      if (!coreUnavailable && coreCourses.length > 0) {
+        await ensureOfferingAnchors(coreCourses.map((c) => c.id));
+      }
       const courses = await prisma.courseOffering.findMany({
         orderBy: { createdAt: 'desc' },
       });
@@ -364,7 +365,7 @@ router.post('/courses/:courseId/sync-enrollments', requireRole(['INSTRUCTOR', 'U
     if (!isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
-    if (course.externalSource !== 'EDUAI' || !course.externalId) {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course was not imported from EduAI' });
     }
 
@@ -434,60 +435,6 @@ router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), asyn
     error:
       'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
   });
-});
-
-/**
- * PATCH /courses/:courseId — edits the local anchor's title/description/
- * dates. NOTE (#1072 step 2): these fields are now Core-owned and
- * read-through — `mapCourseOffering` prefers the resolved Core course, so a
- * write here is shadowed by Core's value whenever the offering resolves
- * (only visible while Core is unreachable, or for a legacy offering with no
- * `coreOfferingId`). No current client calls this route; course editing for
- * a linked offering belongs in Core. Left functional rather than deleted —
- * removing it is a bigger cleanup (with the `externalId`/`externalSource`
- * consolidation) out of scope for this step.
- */
-router.patch('/courses/:courseId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const authUser = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const { title, description, startDate, endDate } = req.body || {};
-
-  if (!title && !description && !startDate && !endDate) {
-    return res.status(400).json({ error: 'Nothing to update' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
-    }
-
-    const updated = await prisma.courseOffering.update({
-      where: { id: courseId },
-      data: {
-        title: title ?? undefined,
-        description: description ?? undefined,
-        startDate: startDate ? new Date(startDate) : startDate === null ? null : undefined,
-        endDate: endDate ? new Date(endDate) : endDate === null ? null : undefined,
-      },
-    });
-
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(updated.coreOfferingId);
-    if (coreUnavailable) {
-      res.set('X-Core-Status', 'unavailable');
-    }
-    res.json(mapCourseOffering(updated, coreCourse));
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
 });
 
 /**

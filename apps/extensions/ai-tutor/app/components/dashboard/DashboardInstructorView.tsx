@@ -18,7 +18,7 @@ type DashboardInstructorViewProps = {
 export function DashboardInstructorView({ courses, dashboardStats }: DashboardInstructorViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const drafts = courses.filter((c) => !c.isPublished);
-  const synced = courses.filter((c) => c.externalSource === 'EDUAI');
+  const synced = courses.filter((c) => !!c.coreOfferingId);
 
   const stats = [
     { label: 'Courses teaching', value: dashboardStats?.yourCourses ?? courses.length },
