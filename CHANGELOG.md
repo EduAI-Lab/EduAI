@@ -23,6 +23,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Address PR #758 review follow-ups — wrap-aware RAPL package deltas, serialize concurrent sidecar sessions, align Python/Node multi-GPU sampling, safer energy backfill matching, and consistent carbon/token edge cases. (#731, @superbolt08, 2026-07-17) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
 - [core] fix: Admin chat write-safety + 16k context budgeting — write-safety confirmation rules always append even with a custom system prompt; learning-chat stream errors log like admin chat; admin tool schemas / mid-turn tool-result headroom are reserved so delete→list no longer trips `ContextWindowExceededError` on 16k vLLM models; `listUsers` / `listCourseEnrollments` support exact email (and enrollment `userId`/`userEmail`) lookups so capped list pages cannot hide the target of an update/deactivate. (#988, #989, @GlowyBlack, @superbolt08, 2026-07-12) — [#1008](https://github.com/EduAI-Lab/EduAI/pull/1008)
 - [core] fix: Restore admin user management — await user-dialog saves so successful updates close reliably, enforce valid platform-role and authorized-unit updates, add multi-select student TA course assignment, and prevent TA course-count double-counting while keeping assignment types and audit logs aligned; TA reconciliation now returns its transaction-owned final course IDs so responses and audit details do not depend on a post-commit re-query, and removed TA assignments are demoted back to the STUDENT course role instead of losing the enrollment. (#967, @gwan-kib, 2026-07-15) — [#1067](https://github.com/EduAI-Lab/EduAI/pull/1067)
 - [core] fix: Server-side navigation slowness — warm the Prisma pool with `$connect()` at boot and parallelize independent loader queries in `root.tsx`/`courses.tsx`, eliminating the cold-connect stall on the first navigation. (#1036, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
@@ -120,6 +121,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Harden PR #758 energy telemetry — count only top-level RAPL package zones, fall back to token estimates when the sidecar is unavailable, preserve combined RAPL + NVML attribution, and reject invalid GPU indices. (#731, @superbolt08, 2026-07-11) — [#758](https://github.com/EduAI-Lab/EduAI/pull/758)
 - [core] fix: Decouple Focus mode from Assistive mode in chat — Focus mode is now toggleable independently in both the header switch and composer toolbar chip, no longer disabled/greyed-out while Assistive mode is off; removed the forced `focusMode` reset when Assistive mode is turned off. (#859, closes #838)
 
 - [core] fix: Show both "Courses You Are Assisting In" and "Courses You Are Enrolled In" sections on `/courses` for users with both TA and student enrollments — previously a dual-role user only ever saw their TA courses. (#832, @GlowyBlack, 2026-07-02) — [#848](https://github.com/EduAI-Lab/EduAICore/pull/848)

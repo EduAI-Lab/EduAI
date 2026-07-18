@@ -4,7 +4,7 @@ Hardware energy measurement for URA research runs (RAPL CPU + NVML GPU).
 
 ## Requirements
 
-- **Linux** host with Intel RAPL (`/sys/class/powercap/intel-rapl*/energy_uj`)
+- **Linux** host with Intel RAPL (`/sys/class/powercap/intel-rapl:*/energy_uj` for `package-*` domains)
 - **NVIDIA GPU** with NVML (`pynvml`) for GPU Joules
 - Run on the **same machine as vLLM** (s378 / cmps01), not on a Windows dev laptop
 

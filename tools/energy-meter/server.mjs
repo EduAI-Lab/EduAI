@@ -9,6 +9,7 @@ import { createServer } from "node:http";
 import { readFileSync, readdirSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { integratePowerSamplesMw, raplDeltaJoules } from "./rapl-util.mjs";
 
 const HOST = process.env.ENERGY_METER_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.ENERGY_METER_PORT ?? "9100");
@@ -20,33 +21,49 @@ const MAX_GPU_INDEX = 7;
 /** @param {unknown} raw */
 function validateGpuIndices(raw) {
   const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return values
-    .map(Number)
-    .filter((n) => Number.isInteger(n) && n >= 0 && n <= MAX_GPU_INDEX);
+  const indices = values.map(Number);
+  if (
+    indices.length === 0 ||
+    indices.some((n) => !Number.isInteger(n) || n < 0 || n > MAX_GPU_INDEX)
+  ) {
+    return null;
+  }
+  return [...new Set(indices)];
 }
 
-/** Comma-separated GPU indices, e.g. "0,1". Default: all visible GPUs. */
-function resolveGpuIndices() {
-  const raw = process.env.ENERGY_GPU_INDICES?.trim();
-  if (raw) {
-    return raw
-      .split(",")
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isInteger(n) && n >= 0);
-  }
+/** Visible GPU indices from nvidia-smi (empty if unavailable). */
+function listVisibleGpuIndices() {
   const r = spawnSync("nvidia-smi", ["--query-gpu=index", "--format=csv,noheader"], {
     encoding: "utf8",
     timeout: 5000,
   });
-  if (r.status !== 0) return [0];
-  const indices = String(r.stdout ?? "")
+  if (r.status !== 0) return [];
+  return String(r.stdout ?? "")
     .split("\n")
     .map((l) => Number(l.trim()))
     .filter((n) => Number.isInteger(n));
-  return indices.length ? indices : [0];
 }
 
-/** @type {Map<string, { raplStart: number|null, gpu: GpuSampler, t0: number }>} */
+/**
+ * Comma-separated GPU indices, e.g. "0,1". Default: all visible GPUs.
+ * Intersects configured indices with GPUs that actually exist so a 1-GPU host
+ * with ENERGY_GPU_INDICES=0,1 still samples GPU 0 instead of waiting forever.
+ */
+function resolveGpuIndices() {
+  const visible = listVisibleGpuIndices();
+  const raw = process.env.ENERGY_GPU_INDICES?.trim();
+  if (raw) {
+    const configured = validateGpuIndices(raw.split(",").map((s) => s.trim())) ?? [0];
+    if (visible.length) {
+      const filtered = configured.filter((i) => visible.includes(i));
+      return filtered.length ? filtered : configured.slice(0, 1);
+    }
+    return configured;
+  }
+  return visible.length ? visible : [0];
+}
+
+/** @type {Map<string, { raplStart: ReturnType<typeof readRaplZones>, gpu: GpuSampler, t0: number }>} */
 const sessions = new Map();
 /** @type {Record<string, unknown>|null} */
 let lastResult = null;
@@ -64,32 +81,46 @@ setInterval(() => {
 
 function probeNvmlAvailable() {
   try {
-    const r = spawnSync("nvidia-smi", ["--query-gpu=index", "--format=csv,noheader"], {
-      encoding: "utf8",
-      timeout: 5000,
-    });
-    return r.status === 0 && String(r.stdout ?? "").trim().length > 0;
+    return listVisibleGpuIndices().length > 0;
   } catch {
     return false;
   }
 }
 
-function readRaplUj() {
+/**
+ * Read top-level package-* RAPL zones with wrap ranges.
+ * @returns {{ zone: string, uj: number, maxUj: number|null }[]|null}
+ */
+function readRaplZones() {
   try {
     const base = "/sys/class/powercap";
-    let total = 0;
-    let found = false;
+    /** @type {{ zone: string, uj: number, maxUj: number|null }[]} */
+    const zones = [];
     for (const name of readdirSync(base)) {
-      if (!name.startsWith("intel-rapl")) continue;
+      // Only sum zones whose sysfs `name` is package-N.
+      // On cmps01: intel-rapl:0/2 are packages; :0:0/:2:0 are dram;
+      // intel-rapl:1 is psys (platform). MMIO mirrors (if present) are skipped.
+      if (!/^intel-rapl:\d+$/.test(name)) continue;
       try {
-        const uj = readFileSync(`${base}/${name}/energy_uj`, "utf8").trim();
-        total += Number(uj);
-        found = true;
+        const domain = readFileSync(`${base}/${name}/name`, "utf8").trim();
+        if (!domain.startsWith("package-")) continue;
+        const uj = Number(readFileSync(`${base}/${name}/energy_uj`, "utf8").trim());
+        if (!Number.isFinite(uj)) continue;
+        let maxUj = null;
+        try {
+          const maxRaw = Number(
+            readFileSync(`${base}/${name}/max_energy_range_uj`, "utf8").trim(),
+          );
+          if (Number.isFinite(maxRaw) && maxRaw > 0) maxUj = maxRaw;
+        } catch {
+          /* optional */
+        }
+        zones.push({ zone: name, uj, maxUj });
       } catch {
         /* skip zone */
       }
     }
-    return found ? total : null;
+    return zones.length ? zones : null;
   } catch {
     return null;
   }
@@ -130,6 +161,8 @@ class GpuSampler {
         if (!Number.isFinite(w)) continue;
         if (!this.gpuIndices.includes(idx)) continue;
         this.lastPowerByGpu.set(idx, w);
+        // Flush when every *configured* index has reported at least once in this
+        // round. Indices are already intersected with visible GPUs at start.
         if (this.lastPowerByGpu.size === this.gpuIndices.length) {
           let sumMw = 0;
           for (const v of this.lastPowerByGpu.values()) sumMw += v * 1000;
@@ -149,28 +182,18 @@ class GpuSampler {
       this.proc.kill("SIGTERM");
       this.proc = null;
     }
-    const samples = this.samples;
-    if (samples.length < 2) {
-      if (samples.length === 1) return (samples[0].mw / 1000) * (SAMPLE_MS / 1000);
-      return null;
-    }
-    let joules = 0;
-    const dt = SAMPLE_MS / 1000;
-    for (let i = 1; i < samples.length; i++) {
-      joules += ((samples[i - 1].mw + samples[i].mw) / 2 / 1000) * dt;
-    }
-    return joules;
+    return integratePowerSamplesMw(this.samples, SAMPLE_MS / 1000);
   }
 }
 
 function finishSession(session) {
   const durationMs = Math.round(performance.now() - session.t0);
-  const raplEnd = readRaplUj();
+  const raplEnd = readRaplZones();
   const joulesGpu = session.gpu?.stop() ?? null;
 
   let joulesCpu = null;
   if (session.raplStart != null && raplEnd != null) {
-    joulesCpu = Math.max(0, raplEnd - session.raplStart) / 1_000_000;
+    joulesCpu = raplDeltaJoules(session.raplStart, raplEnd);
   }
 
   const parts = [joulesCpu, joulesGpu].filter((j) => j != null);
@@ -225,7 +248,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${HOST}`);
 
   if (req.method === "GET" && url.pathname === "/health") {
-    const raplAvailable = readRaplUj() != null;
+    const raplAvailable = readRaplZones() != null;
     const nvmlAvailable = probeNvmlAvailable();
     sendJson(res, 200, {
       ok: true,
@@ -247,6 +270,14 @@ const server = createServer(async (req, res) => {
   const body = await readBody(req);
 
   if (url.pathname === "/measure-start") {
+    // RAPL + NVML are host-wide counters; concurrent sessions would each attribute
+    // the full box energy during overlap. Serialize to one active measurement.
+    if (sessions.size > 0) {
+      sendJson(res, 409, {
+        error: "another measurement session is already active; wait for measure-stop",
+      });
+      return;
+    }
     const tag = String(body.tag ?? randomUUID());
     if (sessions.has(tag)) {
       sendJson(res, 409, { error: `session already active: ${tag}` });
@@ -258,18 +289,30 @@ const server = createServer(async (req, res) => {
         : body.gpuIndices?.length
           ? validateGpuIndices(body.gpuIndices)
           : resolveGpuIndices();
-    if (!gpuIndices.length) {
+    if (!gpuIndices?.length) {
       sendJson(res, 400, { error: "invalid or missing gpuIndex/gpuIndices" });
       return;
     }
-    const gpu = new GpuSampler(gpuIndices);
+    // Drop indices that are not present on this host (avoids waiting forever).
+    const visible = listVisibleGpuIndices();
+    const sampled =
+      visible.length > 0
+        ? gpuIndices.filter((i) => visible.includes(i))
+        : gpuIndices;
+    if (!sampled.length) {
+      sendJson(res, 400, {
+        error: `requested GPUs ${gpuIndices.join(",")} not visible (have ${visible.join(",") || "none"})`,
+      });
+      return;
+    }
+    const gpu = new GpuSampler(sampled);
     gpu.start();
     sessions.set(tag, {
-      raplStart: readRaplUj(),
+      raplStart: readRaplZones(),
       gpu,
       t0: performance.now(),
     });
-    sendJson(res, 200, { ok: true, tag });
+    sendJson(res, 200, { ok: true, tag, gpuIndices: sampled });
     return;
   }
 
@@ -295,6 +338,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/measure") {
+    // Legacy manual-debugging compatibility; application telemetry uses tagged sessions.
     if (lastResult) {
       sendJson(res, 200, {
         energyJoules: lastResult.energyJoules,
