@@ -34,10 +34,14 @@ const cookie = () => ({ Cookie: 'session=valid' });
  * Stubs global fetch for: Core session validation (always) and, when
  * `withPush` is set, `POST {coreUrl}/api/questions` — each call returns a
  * distinct `id` (`core-question-1`, `core-question-2`, …) so re-push vs.
- * reused-link is observable from the response body. Exposes `.pushCalls`.
+ * reused-link is observable from the response body. Exposes `.pushCalls` and
+ * `.idempotencyKeys` (the `idempotencyKey` sent on each push, in call order)
+ * so a genuine content-changed re-push (#1080 follow-up) can be distinguished
+ * from a stale-key replay.
  */
 function coreFetchStub() {
   let pushCalls = 0;
+  const idempotencyKeys = [];
   const fn = vi.fn().mockImplementation((url, opts = {}) => {
     const target = String(url);
     if (target.endsWith('/api/sessions/validate')) {
@@ -45,11 +49,19 @@ function coreFetchStub() {
     }
     if (target.endsWith('/api/questions') && (opts.method ?? 'GET') === 'POST') {
       pushCalls += 1;
+      if (typeof opts.body === 'string') {
+        try {
+          idempotencyKeys.push(JSON.parse(opts.body).idempotencyKey);
+        } catch {
+          idempotencyKeys.push(undefined);
+        }
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: `core-question-${pushCalls}` }) });
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
   });
   Object.defineProperty(fn, 'pushCalls', { get: () => pushCalls });
+  Object.defineProperty(fn, 'idempotencyKeys', { get: () => idempotencyKeys });
   return fn;
 }
 
@@ -58,6 +70,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
   let User, Course, Topics;
   let seedCoursesForNewUser;
   let courseId, topicId, otherTopicId;
+  let fetchStub;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
@@ -87,7 +100,8 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     await Topics.update({ coreTopicId: 'core-topic-primary' }, { where: { id: topicId } });
     await Topics.update({ coreTopicId: 'core-topic-secondary' }, { where: { id: otherTopicId } });
 
-    vi.stubGlobal('fetch', coreFetchStub());
+    fetchStub = coreFetchStub();
+    vi.stubGlobal('fetch', fetchStub);
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -203,5 +217,15 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
       .send({ isDraft: false });
     expect(reapprove.status).toBe(200);
     expect(reapprove.body.data.coreQuestionId).toBe('core-question-2');
+
+    // #1080 follow-up: the two pushes must have used different idempotency
+    // keys (content-derived, not a bare `qm-variant-<id>`) — otherwise Core's
+    // idempotencyKey lookup would have returned the stale pre-edit row instead
+    // of creating `core-question-2`.
+    expect(fetchStub.pushCalls).toBe(2);
+    expect(fetchStub.idempotencyKeys).toHaveLength(2);
+    expect(fetchStub.idempotencyKeys[0]).not.toBe(fetchStub.idempotencyKeys[1]);
+    expect(fetchStub.idempotencyKeys[0]).toMatch(/^qm-variant-\d+-[0-9a-f]{12}$/);
+    expect(fetchStub.idempotencyKeys[1]).toMatch(/^qm-variant-\d+-[0-9a-f]{12}$/);
   });
 });

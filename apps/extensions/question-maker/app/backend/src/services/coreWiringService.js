@@ -2,12 +2,53 @@
  * Orchestration helpers that bridge QM's local data model and Core API calls.
  * Handles topic resolution (push-if-missing) before pushing a variant as a Core Question.
  */
+import crypto from 'node:crypto';
 import { Topics } from '../schema/index.js';
 import { pushTopicToCore, pushQuestionToCore, patchQuestionTestableOnCore } from './coreApiService.js';
 
 /** Allowed enum values, validated before persisting/pushing (mirrors the Variants model + questionService). */
 export const VALID_DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const VALID_REASONING_LEVELS = ['factual', 'analytical', 'application'];
+
+/**
+ * Content fields hashed into the idempotency key (#1080 follow-up). Explicit
+ * order — do not rely on object-key iteration order. Volatile fields (e.g.
+ * timestamps) must never be added here: they'd make the key change on every
+ * call and defeat retry-safety.
+ */
+const IDEMPOTENCY_HASH_FIELDS = [
+  'courseId',
+  'topicId',
+  'content',
+  'type',
+  'difficulty',
+  'reasoningLevel',
+  'choices',
+  'answer',
+  'testable',
+  'secondaryTopicIds',
+];
+
+/** Deterministic stringify: object keys are sorted so field order in source never matters. */
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * Short content hash (12 hex chars) over the fields in IDEMPOTENCY_HASH_FIELDS,
+ * serialized with an explicit stable field order. Identical content -> identical
+ * hash (retry safety); any content change -> a different hash (so a re-approve
+ * after an edit pushes a fresh Core row instead of replaying the stale one).
+ */
+function hashPayloadContent(payload) {
+  const canonical = IDEMPOTENCY_HASH_FIELDS.map((field) => stableStringify(payload[field] ?? null)).join('|');
+  return crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 12);
+}
 
 /**
  * Ensures a local topic has a coreTopicId, pushing it to Core first if needed.
@@ -74,8 +115,8 @@ export async function pushVariantToCore(variant, course, cookieHeader) {
     answer: variant.answer ?? undefined,
     testable: false,
     secondaryTopicIds: coreSecondaryTopicIds,
-    idempotencyKey: `qm-variant-${variant.id}`,
   };
+  payload.idempotencyKey = `qm-variant-${variant.id}-${hashPayloadContent(payload)}`;
 
   // Idempotency (#2): if this variant already links to a Core question, do not
   // create a duplicate. Confirm the Core row still exists (PATCH returns null on
