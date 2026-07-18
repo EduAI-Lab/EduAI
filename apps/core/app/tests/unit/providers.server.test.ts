@@ -4,6 +4,9 @@ import { describe, it, expect } from "vitest";
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  estimateToolDefinitionTokens,
+  estimateAdminToolStepReserve,
+  promptFitsContextWindow,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
 } from "~/lib/ai/providers.server";
@@ -61,6 +64,79 @@ describe("capMaxOutputTokensForPrompt", () => {
       desiredMaxOutput: 8192,
     });
     expect(8193 + capped).toBeLessThanOrEqual(16384);
+  });
+
+  it("caps below 2048 when admin tool schemas are reserved (16k window)", () => {
+    // Observed LiteLLM failure: ~14337 real input + 2048 output > 16384.
+    // With tool schemas in the estimate, headroom must drop below 2048.
+    const estimatedWithoutTools = 4_000;
+    const toolDefinitionTokens = estimateToolDefinitionTokens(17);
+    const estimatedInputTokens = estimatedWithoutTools + toolDefinitionTokens;
+    const capped = capMaxOutputTokensForPrompt({
+      contextWindow: 16_384,
+      estimatedInputTokens,
+      desiredMaxOutput: 1024,
+      toolDefinitionTokens: 0,
+      safetyBuffer: 512,
+    });
+    expect(capped).toBeLessThanOrEqual(1024);
+    expect(estimatedInputTokens + capped + 512).toBeLessThanOrEqual(16_384);
+  });
+
+  it("leaves room for multi-step tool results on 16k delete→list flows", () => {
+    const base =
+      estimateTokensFromChars(8_000) +
+      estimateToolDefinitionTokens(17) +
+      estimateAdminToolStepReserve(16_384);
+    const capped = capMaxOutputTokensForPrompt({
+      contextWindow: 16_384,
+      estimatedInputTokens: base,
+      desiredMaxOutput: 512,
+      toolDefinitionTokens: 0,
+      safetyBuffer: 512,
+      minOutput: 256,
+    });
+    expect(base + capped + 512).toBeLessThanOrEqual(16_384);
+    expect(capped).toBeLessThanOrEqual(512);
+  });
+});
+
+describe("estimateToolDefinitionTokens", () => {
+  it("scales with tool count", () => {
+    expect(estimateToolDefinitionTokens(0)).toBe(0);
+    expect(estimateToolDefinitionTokens(17)).toBe(256 + 17 * 420);
+  });
+});
+
+describe("estimateAdminToolStepReserve", () => {
+  it("reserves headroom on small context windows", () => {
+    expect(estimateAdminToolStepReserve(16_384)).toBe(3_500);
+    expect(estimateAdminToolStepReserve(32_768)).toBe(2_000);
+    expect(estimateAdminToolStepReserve(128_000)).toBe(0);
+  });
+});
+
+describe("promptFitsContextWindow", () => {
+  it("rejects the observed 16k overflow", () => {
+    expect(
+      promptFitsContextWindow({
+        contextWindow: 16_384,
+        estimatedInputTokens: 14_337,
+        maxOutputTokens: 2048,
+        safetyBuffer: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts a capped completion for the same input", () => {
+    expect(
+      promptFitsContextWindow({
+        contextWindow: 16_384,
+        estimatedInputTokens: 14_337,
+        maxOutputTokens: 1024,
+        safetyBuffer: 256,
+      }),
+    ).toBe(true);
   });
 });
 

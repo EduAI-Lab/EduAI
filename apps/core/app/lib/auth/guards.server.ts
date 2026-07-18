@@ -1,8 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { auth } from "./server";
+import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { denyByPolicy, getPolicy } from "~/lib/policy.server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import prisma from "~/lib/prisma.server";
 import type { Session } from "./server";
 
 const ALLOWED_PROD_SUFFIX = ".eduai.ok.ubc.ca";
@@ -39,25 +41,76 @@ type GuardResult = {
 /**
  * Enforce: if request includes `x-api-key`, only ADMIN users may proceed.
  * Returns `{ response, session }` so callers can reuse the fetched session.
+ *
+ * With `enableSessionForAPIKeys: false`, Better Auth will not auto-mock a
+ * session from x-api-key; this guard verifies the key and loads the owner.
  */
 export async function enforceAdminIfApiKey(request: Request): Promise<GuardResult> {
-  const apiKeyHeader = request.headers.get("x-api-key");
+  const apiKeyHeader = request.headers.get("x-api-key")?.trim();
   if (!apiKeyHeader) {
     return { response: null, session: null };
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user || session.user.role !== "ADMIN") {
+  const cookieSession = await auth.api.getSession({ headers: request.headers });
+  if (cookieSession?.user?.role === "ADMIN" && (await isActiveAdminUser(cookieSession.user.id))) {
+    return { response: null, session: cookieSession };
+  }
+
+  const verification = await auth.api.verifyApiKey({
+    body: { key: apiKeyHeader },
+  });
+
+  if (!verification?.valid || !verification.key?.referenceId) {
+    if (cookieSession?.user) {
+      return { response: null, session: null };
+    }
     fireAndForget(
       logSecurityEvent({
-        ...getActorContext(session?.user ?? null),
+        ...getActorContext(cookieSession?.user ?? null),
         ...getRequestContext(request),
         actionCode: "API_KEY_DENIED",
         outcome: "DENIED",
         entityType: "Auth",
-        entityId: session?.user?.id ?? null,
-        entityLabel: session?.user?.email ?? null,
-        ...(session?.user?.email ? { details: { email: session.user.email } } : {}),
+        entityId: cookieSession?.user?.id ?? null,
+        entityLabel: cookieSession?.user?.email ?? null,
+      }),
+    );
+    return {
+      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+      session: null,
+    };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: verification.key.referenceId },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      image: true,
+      role: true,
+      isActive: true,
+      emailVerified: true,
+      authorizedUnits: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!user || user.role !== "ADMIN" || !user.isActive) {
+    fireAndForget(
+      logSecurityEvent({
+        ...getActorContext(user ?? cookieSession?.user ?? null),
+        ...getRequestContext(request),
+        actionCode: "API_KEY_DENIED",
+        outcome: "DENIED",
+        entityType: "Auth",
+        entityId: user?.id ?? cookieSession?.user?.id ?? null,
+        entityLabel: user?.email ?? cookieSession?.user?.email ?? null,
+        ...(user?.email ? { details: { email: user.email } } : {}),
       }),
     );
     return {
@@ -68,9 +121,21 @@ export async function enforceAdminIfApiKey(request: Request): Promise<GuardResul
           headers: { "Content-Type": "application/json" },
         },
       ),
-      session,
+      session: null,
     };
   }
+
+  const session = {
+    user,
+    session: {
+      id: verification.key.id,
+      token: apiKeyHeader,
+      userId: user.id,
+      createdAt: verification.key.createdAt,
+      updatedAt: verification.key.updatedAt,
+      expiresAt: verification.key.expiresAt,
+    },
+  } as Session;
 
   return { response: null, session };
 }
