@@ -11,7 +11,7 @@ Course hooks (`use-course*`) are owned by Person A — see their PR description.
 
 | Hook | Owner | Live? | Endpoint / method | Gap / issue |
 |------|-------|-------|-------------------|-------------|
-| `useUsers` | B | **Yes** | `GET/POST /api/users`, `PATCH/DELETE /api/users/:id` | No `authorizedUnits` until schema #297 |
+| `useUsers` | B | **Yes** | `GET/POST /api/users`, `PATCH/DELETE /api/users/:id` | Includes validated `authorizedUnits` assignment for `UNIT_ADMIN` users |
 | `useAiProviders` | B | **Yes** | `GET/POST /api/ai-providers`, `PATCH/DELETE /api/ai-providers/:id` | ADMIN-only on API |
 | `useAiModels` | B | **Yes** | `GET/POST /api/ai-models`, `PATCH/DELETE /api/ai-models/:id` | ADMIN-only on API |
 | `useChatSession` | B | **Partial** | `GET /api/chats/:chatId` | No `DELETE` chat (#302); no course-scoped list |
