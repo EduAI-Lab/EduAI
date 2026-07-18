@@ -83,6 +83,10 @@ export function canViewCourseSubmissions(user: AtUser | null | undefined): boole
   return access === 'admin' || access === 'unit' || access === 'instructor' || access === 'ta';
 }
 
+export function canViewCourseFeedback(user: AtUser | null | undefined): boolean {
+  return canViewCourseSubmissions(user);
+}
+
 /**
  * Grading is available to the same course-staff set as submission viewing
  * (instructors, TAs, unit admins, platform admins). Accepts an optional

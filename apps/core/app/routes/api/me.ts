@@ -7,6 +7,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
+import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import prisma from "~/lib/prisma.server";
 import { updateMeSchema } from "~/lib/auth/schemas";
 
@@ -31,7 +32,12 @@ const PROFILE_SELECT = {
 } as const;
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const apiKeyGate = await enforceAdminIfApiKey(request);
+  if (apiKeyGate.response) return apiKeyGate.response;
+
+  const session =
+    apiKeyGate.session ??
+    (await auth.api.getSession({ headers: request.headers }));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }
@@ -53,7 +59,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(405, { error: "Method not allowed" });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
+  const apiKeyGate = await enforceAdminIfApiKey(request);
+  if (apiKeyGate.response) return apiKeyGate.response;
+
+  const session =
+    apiKeyGate.session ??
+    (await auth.api.getSession({ headers: request.headers }));
   if (!session?.user) {
     return json(401, { error: "Unauthorized" });
   }

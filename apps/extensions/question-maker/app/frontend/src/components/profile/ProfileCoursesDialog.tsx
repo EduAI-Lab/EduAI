@@ -157,7 +157,7 @@ export const ProfileCoursesDialog = ({
             });
         } catch (err) {
             console.error('Failed to re-sync course from Core', err);
-            setError('Unable to re-sync this course from Core. Check EDUAI_API_KEY and try again.');
+            setError('Unable to re-sync this course. Please try again.');
         } finally {
             setResyncingCoreId(null);
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getNavForUser } from '~/lib/rbac';
+import { getCourseDetailTabs, getNavForUser } from '~/lib/rbac';
 import type { AtUser } from '~/lib/rbac/types';
 
 const u = (role: AtUser['role']): AtUser => ({ id: '1', role });
@@ -52,5 +52,20 @@ describe('getNavForUser', () => {
   it('returns no nav items for a null user', () => {
     expect(getNavForUser(null)).toEqual([]);
     expect(getNavForUser(undefined)).toEqual([]);
+  });
+});
+
+describe('getCourseDetailTabs', () => {
+  it('shows feedback for instructor-shell roles but not students (#784)', () => {
+    for (const role of ['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN'] as const) {
+      const tabs = getCourseDetailTabs(u(role));
+      expect(tabs.map((tab) => tab.id)).toContain('feedback');
+    }
+    expect(getCourseDetailTabs(u('STUDENT')).map((tab) => tab.id)).not.toContain('feedback');
+  });
+
+  it('keeps submissions and feedback alongside analytics for instructors (#784)', () => {
+    const tabs = getCourseDetailTabs(u('INSTRUCTOR')).map((tab) => tab.id);
+    expect(tabs).toEqual(['content', 'submissions', 'feedback', 'analytics']);
   });
 });
