@@ -119,9 +119,11 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
+  const validatedModelId =
+    `${parsedModel.providerId}:${parsedModel.modelId}` as const;
   const validatedApiKeys = mergeLocalInferenceFromEnv(
     toUserProviderSettings(apiKeysParsed.data),
-    request.model,
+    validatedModelId,
   );
 
   if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
@@ -133,7 +135,7 @@ export async function runCompletion(request: CompletionRequest) {
   }
 
   const registry = createAIProviderRegistry(validatedApiKeys);
-  const aiModel = registry.languageModel(request.model);
+  const aiModel = registry.languageModel(validatedModelId);
   const streaming = request.streaming === true;
   const temperature =
     typeof request.temperature === "number" && Number.isFinite(request.temperature)
@@ -168,7 +170,7 @@ export async function runCompletion(request: CompletionRequest) {
     streaming: false as const,
     body: {
       content: text,
-      model: request.model,
+      model: validatedModelId,
       usage,
       finishReason,
     },
