@@ -151,6 +151,16 @@ describeDb('Questions & assessments (integration)', () => {
 
     const list = await request(app).get('/api/course').set(cookie());
     expect(list.body.data.some((c) => c.id === created.body.data.id && c.name === name)).toBe(true);
+
+    // Idempotent ensure (unified contract): re-POSTing the same coreCourseId
+    // (racing the background mirror, or a plain retry) succeeds with the
+    // existing anchor rather than a unique-constraint error.
+    const again = await request(app)
+      .post('/api/course')
+      .set(cookie())
+      .send({ coreCourseId });
+    expect(again.status).toBe(200);
+    expect(again.body.data.id).toBe(created.body.data.id);
   });
 
   it('rejects course creation without a coreCourseId', async () => {

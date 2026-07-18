@@ -71,7 +71,8 @@ export async function createQmCourseForInstructor(
     const { id: coreCourseId } = await coreRes.json();
 
     const qmRes = await instrCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
-    expect(qmRes.status()).toBe(201);
+    // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
+    expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();
 
     return { coreCourseId, qmCourseId: qmCourse.id };
@@ -122,7 +123,8 @@ export async function createQmCourseForStudent(
     expect(pubRes.status()).toBe(200);
 
     const qmRes = await studentCtx.post(`${QM}/api/course`, { data: { coreCourseId } });
-    expect(qmRes.status()).toBe(201);
+    // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
+    expect([200, 201]).toContain(qmRes.status());
     const { data: qmCourse } = await qmRes.json();
 
     return { coreCourseId, qmCourseId: qmCourse.id };

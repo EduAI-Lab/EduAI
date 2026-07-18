@@ -442,6 +442,32 @@ describe('Courses routes', () => {
       );
     });
 
+    it('is an idempotent ensure: re-importing an already-anchored course returns 200 with the same offering', async () => {
+      vi.mocked(findEduAiCourseById).mockResolvedValue({
+        id: 'core-course-1',
+        code: 'COSC 111',
+        name: 'Computing I',
+        term: 'W1',
+        year: 2026,
+      });
+
+      const first = await request(profApp)
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .send({ externalCourseId: 'core-course-1' });
+      expect(first.status).toBe(201);
+
+      // Second import (e.g. the caller raced the background mirror, or simply
+      // retried) succeeds with the existing row rather than conflicting.
+      const second = await request(profApp)
+        .post('/api/courses/import-external')
+        .set('Cookie', 'session=valid')
+        .send({ externalCourseId: 'core-course-1' });
+      expect(second.status).toBe(200);
+      expect(second.body.id).toBe(first.body.id);
+      expect(second.body.coreOfferingId).toBe('core-course-1');
+    });
+
     it('returns 403 when the Core course is not in the instructor scoped list (#578)', async () => {
       vi.mocked(findEduAiCourseById).mockResolvedValue(null);
 
