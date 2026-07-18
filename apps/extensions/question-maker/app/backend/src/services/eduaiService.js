@@ -241,6 +241,8 @@ class EduAIService {
         messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
+        // Background pool (#878) — QM generation/chat maps to VLLM_FLEET_HEAVY_URL when set.
+        routingContext: params.routingContext || { jobType: "background" },
         // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
         streaming: params.streaming === true,
         ...(systemPrompt ? { systemPrompt } : {}),

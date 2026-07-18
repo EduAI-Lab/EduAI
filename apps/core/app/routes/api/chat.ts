@@ -20,6 +20,13 @@ import {
   resolveModelContextWindow,
   ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { parseJobType } from "~/lib/ai/routing/fleet/types";
+import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
@@ -105,6 +112,10 @@ type ProxyUserPayload = {
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
+
+function fleetResponseHeaders(fleetPick: FleetPick | null): Record<string, string> {
+  return fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {};
+}
 
 /**
  * Normalizes arbitrary incoming message payloads so downstream code can rely on
@@ -402,10 +413,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
+    const jobType = parseJobType(body.routingContext);
 
     chatApiTrace("request received", {
       chatMode,
       chatbotType: expectedChatbotType,
+      jobType,
       chatId: chatId ?? null,
       model: model ?? null,
       courseCode: courseCode ?? null,
@@ -773,6 +786,38 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    let fleetPick: FleetPick | null = null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        fleetPick = await resolveFleetHost({
+          jobType,
+          resolvedModelId: model,
+        });
+        if (fleetPick) {
+          chatApiTrace("fleet host selected", {
+            fleetServerId: fleetPick.serverId,
+            fleetReason: fleetPick.reason,
+            jobType,
+            model,
+          });
+        }
+      } catch (err) {
+        if (err instanceof FleetUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "No healthy vLLM fleet server available",
+              details: err.message,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+
     // Service key callers (AI Tutor, QM) have no real User row to look up DB
     // settings for (actingUser.id is the synthetic "service" id), so they
     // must still pass apiKeys in the body, same as before the DB migration.
@@ -804,11 +849,13 @@ export async function action({ request }: ActionFunctionArgs) {
       validatedApiKeys = mergeLocalInferenceFromEnv(
         toUserProviderSettings(apiKeysParsed.data),
         model,
+        fleetPick?.baseUrl,
       );
     } else {
       validatedApiKeys = mergeLocalInferenceFromEnv(
         await getUserProviderSettings(actingUser.id),
         model,
+        fleetPick?.baseUrl,
       );
     }
 
@@ -1465,6 +1512,7 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          Object.assign(headers, fleetResponseHeaders(fleetPick));
 
           await persistOverseenAssistantMessages(finalText);
 
@@ -1499,7 +1547,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...fleetResponseHeaders(fleetPick) },
           },
         );
       } catch (error) {
@@ -1530,6 +1578,7 @@ ${buildEmptyCourseRagBlock()}`;
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+      Object.assign(headers, fleetResponseHeaders(fleetPick));
       return result.toDataStreamResponse({
         headers,
         ...(chatMode === "admin"
@@ -1588,7 +1637,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...fleetResponseHeaders(fleetPick) },
           },
         );
       } catch (error) {
