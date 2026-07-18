@@ -11,10 +11,19 @@ export const ResponseStyleTagIdSchema = z.enum(
   RESPONSE_STYLE_TAG_IDS as [string, ...string[]],
 );
 
-export const UpdateCourseResponseStyleSchema = z.object({
-  responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7),
-  aiInstructions: z.string().max(4000).optional(),
-});
+/** PATCH body: at least one of responseStyleTags / aiInstructions required (and/or). */
+export const UpdateCourseResponseStyleSchema = z
+  .object({
+    responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7).optional(),
+    aiInstructions: z.string().max(4000).optional(),
+  })
+  .refine(
+    (data) =>
+      data.responseStyleTags !== undefined || data.aiInstructions !== undefined,
+    {
+      message: "At least one of responseStyleTags or aiInstructions is required",
+    },
+  );
 
 export type UpdateCourseResponseStyleInput = z.infer<
   typeof UpdateCourseResponseStyleSchema

@@ -372,6 +372,7 @@ Update per-course AI response style tags and optional additional instructions. I
 }
 ```
 
+Either field may be omitted for a partial update; at least one must be present (422 otherwise).
 Tag ids must be from the predefined catalog (`socratic`, `concise`, `step-by-step`, `encouraging`, `formal`, `example-driven`, `scaffolded`). At runtime, selected tags and instructions are injected into the chat system prompt; students see tag labels on the course overview only.
 
 ### User Preferences Endpoints

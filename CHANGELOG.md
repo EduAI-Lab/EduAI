@@ -5,14 +5,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
-## [Week 10 — July 6–12, 2026]
-
-### Added
-
-- [core] feat: Per-course AI response style tags — instructors configure chat tone via presets (Socratic, concise, step-by-step, etc.) on the course Settings tab; selected tags and optional additional instructions inject into the course chat system prompt at runtime; students see tag labels only, not raw prompt text; includes tag preview examples, `PATCH /api/courses/:id/response-style`, Prisma `responseStyleTags` column, and unit tests. (#782, @superbolt08, 2026-07-06) — [#931](https://github.com/EduAI-Lab/EduAI/pull/931)
-### Changed
-
-- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
@@ -25,23 +17,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Pre-bundle `react-router` in Vite `optimizeDeps` to stop the intermittent first-load "dispatcher is null" crash caused by a dep re-optimization race. (#1035, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [ai-tutor] fix: Cut local dev startup/navigation slowness — repoint pre-login `@eduai/ui` barrel imports to narrow subpaths (213→37 first-load modules), add an `http()` fetch timeout and `/api/me` in-flight dedupe, and throttle + background the Core course mirror on `GET /api/me`. (#446, @mochi_21, 2026-07-13) — [#1028](https://github.com/EduAI-Lab/EduAI/pull/1028)
 - [question-maker] fix: Enforce `config.maxQuestions` on EduAI and legacy question-generation endpoints; fail closed on Canvas credential decrypt (throw `CredentialDecryptError` instead of returning ciphertext); use shared `config.coreUrl` in auth middleware. (#992, #994, #995, @superbolt08, 2026-07-13) — [#1019](https://github.com/EduAI-Lab/EduAI/pull/1019)
+- [core] fix: Response-style PATCH and/or contract — both `responseStyleTags` and `aiInstructions` optional with at least one required; drop stale `onUpdateAiInstructions` prop that broke Core typecheck; add route RBAC tests. (#782, @superbolt08, 2026-07-15) — [#931](https://github.com/EduAI-Lab/EduAI/pull/931)
 
 ## [Week 10 — July 6–12, 2026]
 
 ### Added
-<<<<<<< feat/extension-deployment
+- [core] feat: Per-course AI response style tags — instructors configure chat tone via presets (Socratic, concise, step-by-step, etc.) on the course Settings tab; selected tags and optional additional instructions inject into the course chat system prompt at runtime; students see tag labels only, not raw prompt text; includes tag preview examples, `PATCH /api/courses/:id/response-style`, Prisma `responseStyleTags` column, and unit tests. (#782, @superbolt08, 2026-07-06) — [#931](https://github.com/EduAI-Lab/EduAI/pull/931)
 - [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
-=======
-
 - [infra] feat: Add Redis (`redis:7-alpine`) to `docker-compose.dev.yml` plus `bullmq`/`ioredis` and a hot-reload-safe connection module (`app/lib/queue/connection.server.ts`) for the async AI-job queue. (#913, @abdullahmoh21, 2026-07-07) — [#934](https://github.com/EduAI-Lab/EduAI/pull/934)
 - [core] feat: Add global HTTP security headers to every response — pages via the server entry and `/api/*` responses via root-route middleware — with `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` in all environments, plus prod-only HSTS and CSP (nonce-based for pages, locked-down `default-src 'none'` for API). (#982, @mochi_21, 2026-07-12) — [#1016](https://github.com/EduAI-Lab/EduAI/pull/1016)
 - [monorepo] chore: Add a standalone Playwright mobile-responsiveness audit tool (`scripts/mobile-audit/`) — logs into Core once, walks a declarative page list across Core/AI Tutor/Question Maker at 375×667 and 700×900, and captures screenshots plus objective overflow/ARIA checks into a written report. (#805, @GlowyBlack, 2026-07-09) — [#963](https://github.com/EduAI-Lab/EduAI/pull/963)
->>>>>>> development
 - [ui] feat: Extract the last forked chrome into `@eduai/ui` so all three apps render from one source — a shared `QuickActionsPanel` (dashboard quick-actions grid), `AnswerOption` (lettered MCQ choice row, default/selected/correct/incorrect), `CourseListView` declarative filter groups (`buildStatusFilterGroup`/`buildTermFilterGroup`/`buildDepartmentFilterGroup`, one MultiSelect per group, auto-hidden when a group has a single value), a sidebar-footer `AppSwitcher`, a `CourseHeroCard.topicsAction` slot, and `CourseSwitcher.onOpenCurrent`. Adopted across Core (5 course lists + 3 dashboards), QM, and AI Tutor. (#965, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 - [ai-tutor] feat: New surfaces to reach parity with Core/QM — a role-aware `/dashboard` landing page (real-data stat cards, continue-learning resume, quick actions), an in-app `/help` page, per-user Settings with an Accessibility tab wired to the shared Assistive-Mode reading treatment, and an admin AI-oversight tab surfacing captured `AiInteractionTrace` data. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 - [ai-tutor] feat: Feature-gap endpoints (no schema change) — manual grade override (`PATCH /activities/:id/submissions/:submissionId`), module editing (`PATCH /modules/:id`, role- and ownership-gated), content reuse (activity duplicate/import), and a cross-course `GET /me/dashboard-stats` rollup; submissions are enriched server-side with student names (resolved from Core via the service key) and human answer labels. (#938, @yta3216, 2026-07-11) — [#1007](https://github.com/EduAI-Lab/EduAI/pull/1007)
 
 ### Changed
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 - [core, ai-tutor, question-maker] feat: Shared-session auth across `*.eduai.ok.ubc.ca` — extensions redirect to Core login with `?force=1` to avoid cookie redirect loops; QM AI chat prefers the Core session cookie over the service key. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 - [monorepo] docs: Update `docs/rag-ai/HOW_TO_USE_DEV_SERVER.md` and `infra/s378/GO-LIVE.md` for systemd ops, public URLs, `COOKIE_DOMAIN`, and extension troubleshooting. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
 
