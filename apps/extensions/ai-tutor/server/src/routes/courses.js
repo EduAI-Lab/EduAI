@@ -14,6 +14,16 @@
  *     warrant batching if course counts grow). The publish gate itself is
  *     read-through from Core (`resolveIsPublished`, #1072 step 2 / #819) —
  *     one batched `GET /api/courses` per request, not per-course.
+ *   - #1082: AT and Core enrollment are independent tracks, so a caller can be
+ *     AT-enrolled in a course Core's cookie-scoped list doesn't include them
+ *     for (no matching Core enrollment). Every non-ADMIN branch below that
+ *     resolves publish state or course fields for a caller-scoped local set —
+ *     INSTRUCTOR/UNIT_ADMIN/TA/STUDENT — augments `coreCoursesById` via
+ *     `resolveMissingCoreCourses` right after fetching that set, so those
+ *     courses still resolve (via one service-key catalog fallback) instead of
+ *     silently reading as unpublished/blank. ADMIN is exempt: Core's
+ *     `buildCourseListFilter` returns the full catalog unscoped for ADMIN, so
+ *     there's never a miss to fall back for.
  *   - Course-owned fields (title/description/department/dates/isPublished/
  *     term/year/aiInstructions) are read-through from Core via
  *     `services/courseResolver.js` + `mapCourseOffering`; the local
@@ -54,6 +64,7 @@ import {
   resolveCoreCourseById,
   resolveCoreCourseList,
   resolveIsPublished,
+  resolveMissingCoreCourses,
 } from '../services/courseResolver.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
@@ -173,7 +184,7 @@ router.get('/courses', async (req, res) => {
     // plus an `X-Core-Status` header the client can render (see #1066's
     // topic fail-soft pattern) — never a hard error.
     const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({ cookie });
-    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    let coreCoursesById = indexCoreCoursesById(coreCourses);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
@@ -216,6 +227,13 @@ router.get('/courses', async (req, res) => {
         where: { instructors: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
       });
+      // #1082: an instructor's own course can be missing from the
+      // cookie-scoped list if they aren't Core-enrolled on it (independent
+      // enrollment tracks) — fall back so its fields don't degrade to null.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        courses.map((c) => c.coreOfferingId),
+      );
       res.json(courses.map(withCore));
     } else if (authUser.role === 'UNIT_ADMIN') {
       // UNIT_ADMINs see every course in their authorized units (regardless of
@@ -240,6 +258,13 @@ router.get('/courses', async (req, res) => {
         },
         orderBy: { createdAt: 'desc' },
       });
+      // #1082: the "courses I personally lead" half of this OR isn't
+      // guaranteed to be Core-enrollment-scoped either — same fallback as
+      // the INSTRUCTOR branch above.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        courses.map((c) => c.coreOfferingId),
+      );
       res.json(courses.map(withCore));
     } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
@@ -264,14 +289,23 @@ router.get('/courses', async (req, res) => {
           })
         : [];
 
-      const studentCourses = studentOfferingIds.length > 0
-        ? (
-            await prisma.courseOffering.findMany({
-              where: { id: { in: studentOfferingIds } },
-              orderBy: { createdAt: 'desc' },
-            })
-          ).filter(isCorePublished)
+      const studentOfferingsRaw = studentOfferingIds.length > 0
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: studentOfferingIds } },
+            orderBy: { createdAt: 'desc' },
+          })
         : [];
+
+      // #1082: TA-enrolled and student-enrolled courses are both local sets,
+      // independent of Core enrollment — fall back for whichever of them the
+      // cookie-scoped list is missing before the publish gate/field
+      // projection below reads `coreCoursesById`.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        [...taCourses, ...studentOfferingsRaw].map((c) => c.coreOfferingId),
+      );
+
+      const studentCourses = studentOfferingsRaw.filter(isCorePublished);
 
       const studentCoursesWithProgress = await Promise.all(
         studentCourses.map(async (course) => {
@@ -290,6 +324,13 @@ router.get('/courses', async (req, res) => {
         where: { enrollments: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
       });
+      // #1082: the whole bug this closes — a STUDENT can be AT-enrolled in a
+      // course without a matching Core enrollment, so it's silently absent
+      // from the cookie-scoped list and would otherwise fail closed here.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        enrolledCourses.map((c) => c.coreOfferingId),
+      );
       const courses = enrolledCourses.filter(isCorePublished);
 
       // Calculate progress for each course
@@ -1021,13 +1062,15 @@ router.get('/me/dashboard-stats', async (req, res) => {
     const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({
       cookie: getEduAiCookieForRequest(req),
     });
-    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    let coreCoursesById = indexCoreCoursesById(coreCourses);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
     const isCorePublished = (offering) => resolveIsPublished(offering, coreCoursesById);
 
     if (authUser.role === 'ADMIN') {
+      // No #1082 fallback needed here: Core's `buildCourseListFilter` returns
+      // the full catalog unscoped for ADMIN, so there's never a miss.
       const courses = await prisma.courseOffering.findMany({
         select: { coreOfferingId: true },
       });
@@ -1082,6 +1125,13 @@ router.get('/me/dashboard-stats', async (req, res) => {
         where: courseWhere,
         select: { id: true, coreOfferingId: true },
       });
+      // #1082: same independent-enrollment fallback as `GET /courses`'s
+      // INSTRUCTOR/UNIT_ADMIN branches — an owned course can be missing from
+      // the cookie-scoped list without a matching Core enrollment.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        courses.map((c) => c.coreOfferingId),
+      );
       const courseIds = courses.map((c) => c.id);
       const publishedCourses = courses.filter(isCorePublished).length;
 
@@ -1143,6 +1193,11 @@ router.get('/me/dashboard-stats', async (req, res) => {
               }),
             ])
           : [0, []];
+      // #1082: same fallback as `GET /courses`'s TA branch.
+      coreCoursesById = await resolveMissingCoreCourses(
+        coreCoursesById,
+        taCourses.map((c) => c.coreOfferingId),
+      );
       const publishedCourses = taCourses.filter(isCorePublished).length;
 
       return res.json({
@@ -1159,15 +1214,20 @@ router.get('/me/dashboard-stats', async (req, res) => {
       select: { courseOfferingId: true },
     });
     const enrolledCourseIds = enrollments.map((e) => e.courseOfferingId);
-    const courses =
+    const rawCourses =
       enrolledCourseIds.length > 0
-        ? (
-            await prisma.courseOffering.findMany({
-              where: { id: { in: enrolledCourseIds } },
-              select: { id: true, coreOfferingId: true },
-            })
-          ).filter(isCorePublished)
+        ? await prisma.courseOffering.findMany({
+            where: { id: { in: enrolledCourseIds } },
+            select: { id: true, coreOfferingId: true },
+          })
         : [];
+    // #1082: same fallback as `GET /courses`'s STUDENT branch — this is the
+    // dashboard-stats counterpart of the bug that motivated this fix.
+    coreCoursesById = await resolveMissingCoreCourses(
+      coreCoursesById,
+      rawCourses.map((c) => c.coreOfferingId),
+    );
+    const courses = rawCourses.filter(isCorePublished);
 
     const progresses = await Promise.all(
       courses.map((c) => calculateCourseProgress(c.id, authUser.id)),
