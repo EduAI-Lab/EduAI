@@ -24,7 +24,7 @@ export function DashboardInstructorView({ courses, dashboardStats }: DashboardIn
     { label: 'Courses teaching', value: dashboardStats?.yourCourses ?? courses.length },
     { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
     { label: 'Drafts', value: dashboardStats?.draftCourses ?? drafts.length },
-    { label: 'Synced from Core', value: synced.length },
+    { label: 'Synced from EduAI', value: synced.length },
   ];
 
   const statusSegments: DonutSegment[] = [

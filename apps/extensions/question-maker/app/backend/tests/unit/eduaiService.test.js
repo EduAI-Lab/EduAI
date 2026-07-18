@@ -116,6 +116,7 @@ describe('chat', () => {
     expect(payload.systemPrompt).toBe('Return JSON only');
     expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(payload.streaming).toBe(false);
+    expect(payload.routingContext).toEqual({ jobType: 'background' });
     expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
     expect(opts.headers.cookie).toBeUndefined();
   });

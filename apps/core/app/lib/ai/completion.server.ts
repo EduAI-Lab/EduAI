@@ -10,6 +10,12 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { parseJobType } from "~/lib/ai/routing/fleet/types";
+import {
   composeSecurityPrompt,
   sanitizeSystemPrompt,
 } from "~/lib/ai/prompt-safety";
@@ -32,6 +38,7 @@ export type CompletionRequest = {
   streaming?: boolean;
   temperature?: number;
   maxTokens?: number;
+  routingContext?: unknown;
 };
 
 export type ResolvedCompletionPrompt = {
@@ -121,9 +128,30 @@ export async function runCompletion(request: CompletionRequest) {
 
   const validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as const;
+  let fleetBaseUrl: string | undefined;
+  if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+    try {
+      const fleetPick = await resolveFleetHost({
+        jobType: parseJobType(request.routingContext),
+        resolvedModelId: validatedModelId,
+      });
+      fleetBaseUrl = fleetPick?.baseUrl;
+    } catch (error) {
+      if (error instanceof FleetUnavailableError) {
+        return {
+          ok: false as const,
+          status: 503,
+          error: "No healthy vLLM fleet server available",
+        };
+      }
+      throw error;
+    }
+  }
+
   const validatedApiKeys = mergeLocalInferenceFromEnv(
     toUserProviderSettings(apiKeysParsed.data),
     validatedModelId,
+    fleetBaseUrl,
   );
 
   if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
