@@ -8,34 +8,30 @@
  * file reads or writes local `CourseOffering` columns, and nothing loops a
  * single-course fetch per row (locked N+1 decision, #1072 §1).
  *
- * Design:
- *   - `resolveCoreCourseList` — ONE batched `GET /api/courses` call (via
- *     `listEduAiCourses`, cookie-scoped so Core's own RBAC —
- *     `buildCourseListFilter`, including ADMIN's admin-to-all branch — does
- *     the scoping). Callers join the result against local anchor rows by
- *     `coreOfferingId` via `indexCoreCoursesById`, in memory — never a
- *     per-course Core call.
+ * Design — the unified extension course-fetch contract (shared verbatim with
+ * Question Maker's courseListService):
+ *   - Course FIELD truth comes ONLY from service-key fetches.
+ *     `resolveCoreCourseCatalog` — ONE batched service-key full-catalog
+ *     `GET /api/courses` call per list request (`listEduAiCoursesServiceKey`).
+ *     Field values, existence, and publish state must never depend on the
+ *     caller's own Core enrollment: AT and Core enrollment are independent
+ *     tracks, so the cookie-scoped list silently omits courses the caller
+ *     isn't Core-enrolled in and is therefore NOT a valid field source.
+ *     Callers join the catalog against local anchor rows by `coreOfferingId`
+ *     via `indexCoreCoursesById`, in memory — never a per-course Core call.
+ *   - Caller AUTHORIZATION context comes from the cookie-scoped list only.
+ *     `resolveCoreCourseList` (`listEduAiCourses`, cookie) survives solely
+ *     for consumers of `callerEnrollmentRole` — today the auto-import
+ *     mirrors (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore`).
+ *     It is never a source of field values.
  *   - `resolveCoreCourseById` — single detail fetch (service key,
  *     `GET /api/courses/:id`) for the one-course read seam (course detail
  *     page, publish/unpublish responses, etc). Safe to call unconditionally:
  *     returns `{ course: null, coreUnavailable: false }` when there's no
  *     `coreOfferingId` to resolve (nothing to fetch, not a failure).
- *   - `resolveIsPublished` — the #819 read-through gate: Core's live
- *     `isPublished` wins when resolved, otherwise the local anchor's
- *     last-known value (never a hard failure).
- *   - `resolveMissingCoreCourses` — the #1082 independent-enrollment fallback.
- *     `resolveCoreCourseList`'s cookie-scoped batch only contains courses
- *     Core's own RBAC (`buildCourseListFilter`) says the caller can see,
- *     which for non-ADMIN/department scoping requires a matching Core
- *     enrollment. AT and Core enrollment are intentionally independent
- *     tracks, so a caller who is AT-enrolled but NOT Core-enrolled in a
- *     course is silently absent from that list — every `resolveIsPublished`/
- *     `mapCourseOffering` call keyed off it then treats the course as
- *     unpublished/unknown even when Core has it published. Given the
- *     `coreOfferingId`s the caller's local rows actually need, this fills
- *     just the gaps via ONE service-key full-catalog fetch
- *     (`listEduAiCoursesServiceKey`, never per-course), leaving the
- *     cookie-scoped entries (which carry `callerEnrollmentRole`) untouched.
+ *   - `resolveIsPublished` — the #819 read-through gate, keyed off the
+ *     catalog map: Core's live `isPublished` wins when resolved; unresolved
+ *     fails closed (never a hard failure).
  *
  * Both list/detail fetchers degrade gracefully: a thrown/network error is caught and
  * reported as `coreUnavailable: true` with empty/null data, never a hard
@@ -51,10 +47,31 @@
 import { fetchCoreCourseSafe, listEduAiCourses, listEduAiCoursesServiceKey } from './eduaiClient.js';
 
 /**
- * Fetch every Core course visible to the caller in one batched call.
+ * Fetch Core's FULL course catalog in one batched service-key call — the
+ * single field-truth source for list flows (see file header). Contains every
+ * non-deleted Core course regardless of the caller's enrollment, so an
+ * AT-only-enrolled student's course resolves here by construction.
  * Returns `{ courses: [], coreUnavailable: true }` on any failure (network,
- * 5xx, malformed response) so callers can render an empty-but-not-broken
- * list instead of a hard error.
+ * 5xx, missing service key, malformed response) so callers can render an
+ * empty-but-not-broken list instead of a hard error; publish gates keyed off
+ * the empty map then fail closed.
+ */
+export async function resolveCoreCourseCatalog() {
+  try {
+    const courses = await listEduAiCoursesServiceKey();
+    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+  } catch (err) {
+    console.error('[courseResolver] Core course catalog unavailable', err);
+    return { courses: [], coreUnavailable: true };
+  }
+}
+
+/**
+ * Fetch the Core courses visible to the CALLER in one batched cookie-scoped
+ * call. Authorization context only — this is the sole source of
+ * `callerEnrollmentRole` (consumed by the auto-import mirrors) and must
+ * never be used for field values, existence, or publish state (the catalog
+ * above is the field source; see file header).
  */
 export async function resolveCoreCourseList({ cookie } = {}) {
   try {
@@ -77,48 +94,6 @@ export function indexCoreCoursesById(coreCourses) {
     if (course?.id) byId.set(course.id, course);
   }
   return byId;
-}
-
-/**
- * #1082: fills gaps in a cookie-scoped Core course index for the
- * `coreOfferingId`s a caller's LOCAL (AT) rows actually need resolved. Only
- * looks at ids that are (a) present in `coreOfferingIds` and (b) absent from
- * `coreCoursesById` — a caller who is AT-enrolled but not Core-enrolled in
- * that course is exactly this situation (see file header). Skips the extra
- * Core call entirely when there's nothing missing.
- *
- * Fetches the FULL catalog once via the service key
- * (`listEduAiCoursesServiceKey`) rather than looping a per-course fetch —
- * one network call regardless of how many ids are missing. The cookie-scoped
- * map stays primary: existing entries (which carry `callerEnrollmentRole`)
- * are never overwritten, and the input map is never mutated — a new Map is
- * returned (the original is returned unchanged when there's no gap to fill).
- *
- * Fails soft: a fallback fetch failure (Core down, no service key
- * configured, etc) leaves the misses unresolved — still absent from the
- * returned map — rather than throwing, so `resolveIsPublished` keeps failing
- * closed for them and `mapCourseOffering` keeps degrading their fields to
- * null, same posture as every other fetcher in this file.
- */
-export async function resolveMissingCoreCourses(coreCoursesById, coreOfferingIds) {
-  const missingIds = new Set(
-    (coreOfferingIds ?? []).filter((id) => id && !coreCoursesById.has(id)),
-  );
-  if (missingIds.size === 0) return coreCoursesById;
-
-  try {
-    const catalog = await listEduAiCoursesServiceKey();
-    const merged = new Map(coreCoursesById);
-    for (const course of catalog ?? []) {
-      if (course?.id && missingIds.has(course.id)) {
-        merged.set(course.id, course);
-      }
-    }
-    return merged;
-  } catch (err) {
-    console.error('[courseResolver] Service-key course catalog fallback failed', err);
-    return coreCoursesById;
-  }
 }
 
 /**

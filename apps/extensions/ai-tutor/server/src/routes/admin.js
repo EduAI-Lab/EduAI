@@ -32,7 +32,7 @@ import {
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
-import { indexCoreCoursesById, resolveCoreCourseList } from '../services/courseResolver.js';
+import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
@@ -71,20 +71,20 @@ router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res)
 
 router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
   try {
-    // #1072 step 2: one batched Core list, joined against the local anchors
-    // — same read-through shape as `GET /courses`'s ADMIN branch.
-    const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({
-      cookie: getEduAiCookieForRequest(req),
-    });
-    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    // Unified contract (#1072): fields come from ONE service-key catalog
+    // fetch, joined against the local anchors — same read-through shape as
+    // `GET /courses`'s ADMIN branch. No cookie-scoped call: nothing here
+    // consumes `callerEnrollmentRole`.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
     // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
     // Core course before listing, so this shows Core's full catalog rather
     // than whatever happened to already have a local row.
-    if (!coreUnavailable && coreCourses.length > 0) {
-      await ensureOfferingAnchors(coreCourses.map((c) => c.id));
+    if (!coreUnavailable && catalogCourses.length > 0) {
+      await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
     }
     const courses = await prisma.courseOffering.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -510,10 +510,10 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
 
   try {
-    const { courses: coreCourses, coreUnavailable } = await resolveCoreCourseList({
-      cookie: getEduAiCookieForRequest(req),
-    });
-    const coreCoursesById = indexCoreCoursesById(coreCourses);
+    // Unified contract (#1072): department/courseTitle are fields — one
+    // service-key catalog fetch, no cookie-scoped call.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
@@ -529,17 +529,17 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
         if (!units.includes(unit)) {
           return res.status(403).json({ error: 'Not authorized for this unit' });
         }
-        const deptCoreIds = coreCourses.filter((c) => c?.department === unit).map((c) => c.id);
+        const deptCoreIds = catalogCourses.filter((c) => c?.department === unit).map((c) => c.id);
         courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       } else {
-        const deptCoreIds = coreCourses
+        const deptCoreIds = catalogCourses
           .filter((c) => c?.department && units.includes(c.department))
           .map((c) => c.id);
         courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       }
     } else if (unit) {
       // ADMIN scoping by unit is optional filtering, not an authorization boundary.
-      const deptCoreIds = coreCourses.filter((c) => c?.department === unit).map((c) => c.id);
+      const deptCoreIds = catalogCourses.filter((c) => c?.department === unit).map((c) => c.id);
       courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
     }
 

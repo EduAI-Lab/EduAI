@@ -51,7 +51,7 @@ import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiC
 import {
   isCoursePublishedLive,
   resolveCoreCourseById,
-  resolveCoreCourseList,
+  resolveCoreCourseCatalog,
 } from '../services/courseResolver.js';
 import {
   ActivityFeedbackRequestSchema,
@@ -1072,17 +1072,16 @@ router.get(
         const all = await prisma.courseOffering.findMany({ select: { id: true } });
         manageableCourseIds = all.map((c) => c.id);
       } else if (authUser.role === 'UNIT_ADMIN') {
-        // `department` is Core-owned (#1072 step 4) — join one batched Core
-        // course-list fetch rather than filtering by a local column.
-        // Fail-soft: Core unavailable degrades the department scope to
-        // empty, not an error (courses this admin personally leads still show).
+        // `department` is Core-owned (#1072 step 4) — a FIELD, so per the
+        // unified contract it joins one batched service-key catalog fetch,
+        // never the cookie-scoped list. Fail-soft: Core unavailable degrades
+        // the department scope to empty, not an error (courses this admin
+        // personally leads still show).
         const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
         let deptCoreIds = [];
         if (units.length > 0) {
-          const { courses: coreCourses } = await resolveCoreCourseList({
-            cookie: getEduAiCookieForRequest(req),
-          });
-          deptCoreIds = coreCourses
+          const { courses: catalogCourses } = await resolveCoreCourseCatalog();
+          deptCoreIds = catalogCourses
             .filter((c) => c?.department && units.includes(c.department))
             .map((c) => c.id);
         }
