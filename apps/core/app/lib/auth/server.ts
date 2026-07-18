@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { apiKey } from "@better-auth/api-key";
 import { createAuthMiddleware, APIError, getSessionFromCtx } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import prisma from "../prisma.server";
@@ -17,6 +18,8 @@ import {
   recordPasswordHistory,
 } from "./password-history.server";
 import { invalidatePasswordExpiryCache } from "./password-expiry.server";
+import { isActiveAdminUser } from "../api-keys/access.server";
+import { MAX_API_KEY_EXPIRATION_DAYS } from "../api-keys/expiration";
 
 export const authBaseURL =
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -25,6 +28,14 @@ export const authBaseURL =
 
 const cookieDomain = process.env.COOKIE_DOMAIN?.trim();
 const useSecureCookies = authBaseURL.startsWith("https://");
+
+const ADMIN_API_KEY_MANAGEMENT_PATHS = new Set([
+  "/api-key/create",
+  "/api-key/delete",
+  "/api-key/list",
+  "/api-key/update",
+  "/api-key/get",
+]);
 
 export const auth = betterAuth({
   baseURL: authBaseURL,
@@ -37,6 +48,17 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
   },
+  plugins: [
+    apiKey({
+      apiKeyHeaders: ["x-api-key"],
+      // Default: enableSessionForAPIKeys is false — x-api-key does not auto-mock
+      // a session on /api/* routes. Admin automation uses enforceAdminIfApiKey.
+      enableSessionForAPIKeys: false,
+      keyExpiration: {
+        maxExpiresIn: MAX_API_KEY_EXPIRATION_DAYS,
+      },
+    }),
+  ],
   hooks: {
     // §6a: single chokepoint for the public-registration toggle. Both public
     // sign-up entry points (the register.tsx action sub-request and a direct
@@ -49,6 +71,24 @@ export const auth = betterAuth({
     // imports prisma + the logging facade, neither of which imports this file —
     // no cycle.
     before: createAuthMiddleware(async (ctx) => {
+      if (ADMIN_API_KEY_MANAGEMENT_PATHS.has(ctx.path)) {
+        const session = await getSessionFromCtx(ctx);
+        if (!(await isActiveAdminUser(session?.user?.id))) {
+          throw new APIError("FORBIDDEN", {
+            message: "API key management restricted to admin users",
+          });
+        }
+      }
+
+      if (ctx.path === "/api-key/create") {
+        const expiresIn = (ctx.body as Record<string, unknown> | undefined)?.expiresIn;
+        if (expiresIn === undefined || expiresIn === null) {
+          throw new APIError("BAD_REQUEST", {
+            message: "API keys must have an expiration date",
+          });
+        }
+      }
+
       // #339: enforce strength policy + no-reuse-of-last-10 on every
       // password-setting path. Runs before Zod schemas (which only guard the
       // app's own forms) so the raw /api/auth/* entry point is also covered.

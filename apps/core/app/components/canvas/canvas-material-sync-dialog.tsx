@@ -8,7 +8,11 @@ import {
   syncCanvasMaterials,
   unexcludeCanvasMaterial,
 } from "~/lib/canvas/client";
-import type { CanvasMaterialDiscoverItem, SyncCanvasMaterialsResult } from "@eduai/types";
+import type {
+  CanvasMaterialDiscoverItem,
+  CanvasMaterialSkipReason,
+  SyncCanvasMaterialsResult,
+} from "@eduai/types";
 import { Button } from "@eduai/ui";
 import { Checkbox } from "@eduai/ui";
 import {
@@ -44,6 +48,17 @@ function statusLabel(
       return "Imported";
     case "updated_on_canvas":
       return "Updated on Canvas";
+  }
+}
+
+function skipReasonLabel(reason: CanvasMaterialSkipReason): string {
+  switch (reason) {
+    case "unpublished":
+      return "not published on Canvas";
+    case "excluded":
+      return "excluded from import";
+    case "not-modified":
+      return "unchanged since last import";
   }
 }
 
@@ -294,6 +309,17 @@ export function CanvasMaterialSyncDialog({
               return (
                 <p key={failure.canvasFileId} className="mt-1 text-xs">
                   {file?.displayName ?? failure.canvasFileId}: {failure.message}
+                </p>
+              );
+            })}
+            {result?.skippedItems.map((skipped) => {
+              const file = files.find(
+                (item) => item.canvasFileId === skipped.canvasFileId,
+              );
+              return (
+                <p key={skipped.canvasFileId} className="mt-1 text-xs">
+                  {file?.displayName ?? skipped.canvasFileId}: skipped —{" "}
+                  {skipReasonLabel(skipped.reason)}
                 </p>
               );
             })}

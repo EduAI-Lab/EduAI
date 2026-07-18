@@ -11,6 +11,11 @@ function vllmAuthHeader(): string {
   return process.env.VLLM_API_KEY?.trim() || "vllm-local";
 }
 
+/**
+ * Parse `/v1/models` payload.
+ * - `null`: response shape unusable → health check marks host unhealthy (no configured-model fallback)
+ * - `[]`: endpoint is healthy but hosts no models → do not fall back
+ */
 function parseModelIds(payload: unknown): string[] | null {
   if (!payload || typeof payload !== "object") return null;
   const data = payload as { data?: unknown };
@@ -21,7 +26,7 @@ function parseModelIds(payload: unknown): string[] | null {
       ids.push((entry as { id: string }).id);
     }
   }
-  return ids.length > 0 ? ids : null;
+  return ids;
 }
 
 /** Clear health cache (unit tests). */
@@ -53,9 +58,21 @@ export async function getServerHealth(baseUrl: string): Promise<FleetHealthResul
       return result;
     }
     const body = (await res.json()) as unknown;
+    const modelIds = parseModelIds(body);
+    // HTTP 200 without a valid `data` array is unhealthy — do not fall back to configured models.
+    if (modelIds === null) {
+      const result: FleetHealthResult = {
+        ok: false,
+        modelIds: null,
+        checkedAt,
+        error: "invalid /v1/models response",
+      };
+      healthCache.set(normalized, result);
+      return result;
+    }
     const result: FleetHealthResult = {
       ok: true,
-      modelIds: parseModelIds(body),
+      modelIds,
       checkedAt,
     };
     healthCache.set(normalized, result);
@@ -78,7 +95,8 @@ export function serverHostsModel(
   configuredModels: string[],
 ): boolean {
   const needle = modelId.toLowerCase();
-  if (healthModelIds && healthModelIds.length > 0) {
+  // Explicit empty list means the host reported zero models — do not use defaults.
+  if (healthModelIds !== null) {
     return healthModelIds.some((id) => id.toLowerCase() === needle);
   }
   return configuredModels.some((id) => id.toLowerCase() === needle);

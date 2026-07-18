@@ -64,6 +64,8 @@ const baseData: ChatBaseData = {
       provider: "openai",
     },
   ],
+  routerAutoEnabled: false,
+  showRoutingModels: false,
   user: {
     id: "user-1",
     name: "Test User",

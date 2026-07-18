@@ -12,7 +12,8 @@ import {
   storeStepSelection,
   type ActiveTourSession,
 } from '~/lib/tours/tour-engine';
-import { isLessonRoute, markTourCompleted } from '~/lib/tours/tour-storage';
+import { markTourCompleted, resolveSuggestedTourId } from '~/lib/tours/tour-storage';
+import { useLocalUser } from '~/hooks/useLocalUser';
 import type { AppTourDefinition, AppTourId } from '~/lib/tours/tour-types';
 import { waitForElement } from '~/lib/tours/tour-utils';
 
@@ -36,6 +37,7 @@ function applyPopoverTheme(popover: PopoverDOM) {
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useLocalUser();
   const [activeTourId, setActiveTourId] = useState<AppTourId | null>(null);
   const driverRef = useRef<Driver | null>(null);
   const sessionRef = useRef<ActiveTourSession | null>(null);
@@ -212,10 +214,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     void showStep();
   }, [destroyDriver, location.pathname, showStep]);
 
-  const suggestedTourId = useMemo<AppTourId | null>(() => {
-    if (!location.pathname.startsWith('/student')) return null;
-    return isLessonRoute(location.pathname) ? 'student-lesson-help' : 'student-journey';
-  }, [location.pathname]);
+  const suggestedTourId = useMemo<AppTourId | null>(
+    () => resolveSuggestedTourId(user?.role, location.pathname),
+    [location.pathname, user?.role],
+  );
 
   const startSuggestedTour = useCallback(() => {
     if (!suggestedTourId) return;
