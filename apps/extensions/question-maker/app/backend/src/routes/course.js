@@ -28,15 +28,14 @@ const router = express.Router();
 const courseIdFromParam = (req) => req.params.id;
 
 /**
- * POST /api/course – creates a local QM course owned by the authenticated user.
- *
- * NOTE: course creation gating is intentionally left unchanged here — Core is the
- * intended source of truth for courses and this endpoint is being addressed
- * separately. Per-course RBAC on read/update/delete is enforced below.
+ * POST /api/course – creates a local QM course anchor owned by the authenticated
+ * user, always linked to Core at creation time (#1072 §4 step 7). Local-only
+ * "sandbox" creation has been retired: Core is the source of truth for course
+ * data, so every row must be provisioned with a caller-scoped `coreCourseId`.
  */
 router.post('/', authenticateToken, async (req, res, next) => {
   try {
-    const { name, courseCode } = req.body;
+    const { name, courseCode, coreCourseId } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -45,16 +44,37 @@ router.post('/', authenticateToken, async (req, res, next) => {
       });
     }
 
+    if (!coreCourseId || typeof coreCourseId !== 'string') {
+      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
+    }
+
+    const cookie = req.headers.cookie;
+    let linkable = false;
+    try {
+      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+    } catch (err) {
+      const status = Number.isInteger(err?.status) ? err.status : 502;
+      return res.status(status).json({
+        success: false,
+        error: err.message || 'Failed to verify Core course access',
+      });
+    }
+
+    if (!linkable) {
+      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+    }
+
     const courseData = await Course.create({
       userId: req.user.id,
       name: name.trim(),
-      code: courseCode || null
+      code: courseCode || null,
+      coreCourseId,
     });
 
     res.status(201).json({
       success: true,
       message: 'Course created successfully',
-      data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
+      data: await enrichCourseDetail(courseData, { cookie }),
     });
   } catch (error) {
     next(error);
