@@ -1,3 +1,7 @@
+/**
+ * Auto routing model ids and picker helpers for the chat UI.
+ * Production wiring (loadChatBaseData + /api/chat) ships in PR4 — this module is the library surface only.
+ */
 export const AUTO_MODEL_ID = "auto";
 export const AUTO_LLM_MODEL_ID = "auto-llm";
 

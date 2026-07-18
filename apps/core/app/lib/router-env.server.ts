@@ -1,7 +1,8 @@
 /**
- * `ROUTER_AUTO_DEFAULT` — when false / 0 / no / off, implicit Auto is disabled:
- * chat loader must not default to `auto` when no concrete `AIModel` rows exist, and `/api/chat`
- * rejects omitted `model` unless the client explicitly sends `"auto"` or a registry id.
+ * `ROUTER_AUTO_DEFAULT` — when false / 0 / no / off, implicit Auto is disabled.
+ * Consumed by PR4 chat loader / `/api/chat` (not wired in this PR): loader must not default to
+ * `auto` when no concrete `AIModel` rows exist, and `/api/chat` rejects omitted `model` unless
+ * the client explicitly sends `"auto"` or a registry id.
  */
 export function routerAutoDefaultEnabled(): boolean {
   const v = process.env.ROUTER_AUTO_DEFAULT;
@@ -10,7 +11,10 @@ export function routerAutoDefaultEnabled(): boolean {
   return lower !== "false" && lower !== "0" && lower !== "no" && lower !== "off";
 }
 
-/** Show Auto (rules) and Auto (LLM) in the chat model picker when routing is configured. */
+/**
+ * Whether Auto (rules) / Auto (LLM) should appear in the chat model picker once PR4 wires
+ * `withAutoChatModel` into `loadChatBaseData`.
+ */
 export function routingPickerEnabled(): boolean {
   if (routerAutoDefaultEnabled()) return true;
   return Boolean(process.env.VLLM_BASE_URL?.trim());

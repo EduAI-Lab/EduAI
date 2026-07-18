@@ -104,7 +104,7 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # s378 dev server: use http://cmps01.
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # LiteLLM edge on cmps01; see infra/cmps01/README.md
 # CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
-# ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
+# ROUTER_AUTO_DEFAULT="true"  # Auto picker helpers; chat/API wiring ships in PR4 (see .env.example)
 # ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
 # ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
@@ -484,7 +484,7 @@ See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full test inventor
 
 ### Routing (Auto model)
 
-Sustainability-aware tier routing lives under `app/lib/ai/routing/`. When `ROUTER_AUTO_DEFAULT=true` or `VLLM_BASE_URL` is set, the chat model picker shows **Auto** (rules) and **Auto (LLM)** entries. Configure modes via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and offline evaluation via:
+Sustainability-aware tier routing lives under `app/lib/ai/routing/`. This PR ships the routing library plus `chat-auto-model` / `router-env.server` helpers used by the picker; **chat loader and `/api/chat` Auto integration ship in PR4** (`feat/pr4-chat-integration`). Configure modes via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and offline evaluation via:
 
 ```bash
 npm run research:embed-knn-exemplars
