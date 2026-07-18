@@ -5,8 +5,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mockFindAll = vi.fn();
 const mockBulkCreate = vi.fn();
-const mockResolveAccess = vi.fn();
 const mockGetAllCoursesFromCore = vi.fn();
+const mockListCoursesFromCore = vi.fn();
+const mockGetAuthorizedUnits = vi.fn();
+const mockGetCourseFromCore = vi.fn();
 
 vi.mock('../../src/schema/index.js', () => ({
   Course: {
@@ -21,15 +23,20 @@ vi.mock('../../src/middleware/courseAccess.js', () => ({
     unit: { level: 'unit', rank: 3 },
     instructor: { level: 'instructor', rank: 2 },
     ta: { level: 'ta', rank: 1 },
+    student: { level: 'student', rank: 0 },
   },
-  resolveAccessForCourse: (...args) => mockResolveAccess(...args),
+  getAuthorizedUnits: (...args) => mockGetAuthorizedUnits(...args),
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
   getAllCoursesFromCore: (...args) => mockGetAllCoursesFromCore(...args),
+  getCourseFromCore: (...args) => mockGetCourseFromCore(...args),
+  listCoursesFromCore: (...args) => mockListCoursesFromCore(...args),
 }));
 
-const { listCoursesForUser } = await import('../../src/services/courseListService.js');
+const { listCoursesForUser, enrichCourseDetail } = await import(
+  '../../src/services/courseListService.js'
+);
 
 describe('listCoursesForUser', () => {
   beforeEach(() => {
@@ -38,6 +45,32 @@ describe('listCoursesForUser', () => {
       { id: 'core-1', name: 'Core Course One', code: 'STUDY3', department: 'COSC' },
       { id: 'core-2', name: 'Core Course Two', code: 'MATH100', department: 'MATH' },
     ]);
+    mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+    mockGetAuthorizedUnits.mockResolvedValue([]);
+    mockGetCourseFromCore.mockResolvedValue({ id: 'core-1', name: 'Core Course One' });
+  });
+
+  describe('enrichCourseDetail (#1072 detail-fetch: service-key mode, not preferCookie)', () => {
+    it('calls getCourseFromCore with preferCookie: false even when a caller cookie is present', async () => {
+      const row = { toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) };
+
+      await enrichCourseDetail(row, { cookie: 'session=abc' });
+
+      expect(mockGetCourseFromCore).toHaveBeenCalledWith('core-1', {
+        cookie: 'session=abc',
+        preferCookie: false,
+      });
+    });
+
+    it('degrades to a placeholder when the service-key/cookie read throws', async () => {
+      mockGetCourseFromCore.mockRejectedValueOnce(new Error('Core unavailable'));
+      const row = { toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) };
+
+      const detail = await enrichCourseDetail(row, { cookie: 'session=abc' });
+
+      expect(detail.coreUnavailable).toBe(true);
+      expect(detail.name).toBe('Course unavailable');
+    });
   });
 
   it('returns Core catalog for ADMIN when every Core course already has a local anchor', async () => {
@@ -55,26 +88,10 @@ describe('listCoursesForUser', () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.accessLevel === 'admin')).toBe(true);
     expect(rows.map((r) => r.department).sort()).toEqual(['COSC', 'MATH']);
-    expect(mockResolveAccess).not.toHaveBeenCalled();
     expect(mockBulkCreate).not.toHaveBeenCalled();
     expect(mockFindAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('filters courses for INSTRUCTOR by resolveAccessForCourse', async () => {
-    const owned = { id: 1, toJSON: () => ({ id: 1, coreCourseId: 'core-1' }) };
-    const other = { id: 2, toJSON: () => ({ id: 2, coreCourseId: 'core-2' }) };
-    mockFindAll.mockResolvedValue([owned, other]);
-    mockResolveAccess.mockImplementation((_user, course) =>
-      course.id === 1 ? { level: 'instructor', rank: 2 } : null,
-    );
-
-    const rows = await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(1);
-    expect(rows[0].accessLevel).toBe('instructor');
-    // Name/code are read through from Core exclusively (#1076/#1072 §4 step 10).
-    expect(rows[0].name).toBe('Core Course One');
-    expect(rows[0].code).toBe('STUDY3');
+    // ADMIN's branch never touches the cookie-scoped roles call.
+    expect(mockListCoursesFromCore).not.toHaveBeenCalled();
   });
 
   it('degrades to a placeholder when Core is unreachable', async () => {
@@ -158,6 +175,157 @@ describe('listCoursesForUser', () => {
       expect(mockFindAll).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
       expect(rows[0].coreUnavailable).toBe(true);
+    });
+  });
+
+  describe('non-ADMIN access derivation (#1072 unified contract — no per-row Core call)', () => {
+    it('makes exactly one service-key catalog call and one cookie-scoped roles call, regardless of row count', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'inst-1', coreCourseId: 'core-1' }) },
+        { toJSON: () => ({ id: 2, userId: 'inst-1', coreCourseId: 'core-2' }) },
+        { toJSON: () => ({ id: 3, userId: 'someone-else', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({
+        courses: [
+          { id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' },
+          { id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' },
+        ],
+      });
+
+      await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' }, { cookie: 'session=x' });
+
+      expect(mockGetAllCoursesFromCore).toHaveBeenCalledTimes(1);
+      expect(mockListCoursesFromCore).toHaveBeenCalledTimes(1);
+      expect(mockListCoursesFromCore).toHaveBeenCalledWith('session=x');
+    });
+
+    it('grants instructor access from an INSTRUCTOR callerEnrollmentRole', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({
+        courses: [{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }],
+      });
+
+      const rows = await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(1);
+      expect(rows[0].accessLevel).toBe('instructor');
+      // Name/code are read through from Core exclusively (#1076/#1072 §4 step 10).
+      expect(rows[0].name).toBe('Core Course One');
+      expect(rows[0].code).toBe('STUDY3');
+    });
+
+    it('excludes a course where the caller has a TA callerEnrollmentRole (below MIN_LIST_RANK)', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({
+        courses: [{ id: 'core-1', callerEnrollmentRole: 'TA' }],
+      });
+
+      const rows = await listCoursesForUser({ id: 'ta-1', role: 'TA' });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('excludes a course where the caller has a STUDENT callerEnrollmentRole (below MIN_LIST_RANK)', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({
+        courses: [{ id: 'core-1', callerEnrollmentRole: 'STUDENT' }],
+      });
+
+      const rows = await listCoursesForUser({ id: 'stu-1', role: 'STUDENT' });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('falls back to owner-instructor when the course is absent from the cookie-scoped list', async () => {
+      // Mirrors the unpublished-student edge and the "linker not yet in Core
+      // roster" edge: the cookie list omits the course, but the caller is the
+      // local QM owner — grant instructor so the anchor stays reachable.
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+
+      const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].accessLevel).toBe('instructor');
+    });
+
+    it('denies a non-owner absent from the cookie-scoped list', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }) },
+      ]);
+      mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+
+      const rows = await listCoursesForUser({ id: 'stranger-1', role: 'INSTRUCTOR' });
+      expect(rows).toHaveLength(0);
+    });
+
+    it('grants owner-instructor access for a course not yet linked to Core, without any cookie-scoped lookup gating it', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: null }) },
+      ]);
+
+      const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].accessLevel).toBe('instructor');
+    });
+
+    it('degrades to owner-fallback for every row when Core is unreachable for the cookie-scoped call', async () => {
+      mockFindAll.mockResolvedValue([
+        { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }) },
+        { toJSON: () => ({ id: 2, userId: 'stranger', coreCourseId: 'core-2' }) },
+      ]);
+      mockListCoursesFromCore.mockRejectedValue(new Error('Core unreachable'));
+
+      const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(1);
+    });
+
+    describe('UNIT_ADMIN unit lock', () => {
+      it('grants unit access when the course department (read from the catalog) is in authorizedUnits, without a listCoursesFromCore role match', async () => {
+        mockFindAll.mockResolvedValue([
+          { toJSON: () => ({ id: 1, userId: 'someone-else', coreCourseId: 'core-1' }) },
+        ]);
+        mockGetAuthorizedUnits.mockResolvedValue(['COSC']);
+        mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+
+        const rows = await listCoursesForUser({ id: 'ua-1', role: 'UNIT_ADMIN' });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].accessLevel).toBe('unit');
+        // Department came from the already-fetched service-key catalog — no
+        // extra per-row Core call was needed to resolve the unit lock.
+      });
+
+      it('falls through to callerEnrollmentRole when the department is outside their units', async () => {
+        mockFindAll.mockResolvedValue([
+          { toJSON: () => ({ id: 1, userId: 'someone-else', coreCourseId: 'core-2' }) },
+        ]);
+        mockGetAuthorizedUnits.mockResolvedValue(['COSC']);
+        mockListCoursesFromCore.mockResolvedValue({
+          courses: [{ id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' }],
+        });
+
+        const rows = await listCoursesForUser({ id: 'ua-1', role: 'UNIT_ADMIN' });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].accessLevel).toBe('instructor');
+      });
+
+      it('does not call getAuthorizedUnits for non-UNIT_ADMIN callers', async () => {
+        mockFindAll.mockResolvedValue([
+          { toJSON: () => ({ id: 1, userId: 'inst-1', coreCourseId: 'core-1' }) },
+        ]);
+        mockListCoursesFromCore.mockResolvedValue({
+          courses: [{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }],
+        });
+
+        await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' });
+        expect(mockGetAuthorizedUnits).not.toHaveBeenCalled();
+      });
     });
   });
 });
