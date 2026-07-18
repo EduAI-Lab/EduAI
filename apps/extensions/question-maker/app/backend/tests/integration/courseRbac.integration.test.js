@@ -9,9 +9,11 @@
  *   - ADMIN reaches any course (not just ones they own); a non-owner without
  *     access gets 403, and a missing course gets 404.
  *
- * All courses below are unlinked QM courses, so access resolves purely from the
- * owner-fallback / ADMIN rules in resolveAccessForCourse — no Core enrollment
- * round-trips are needed. Auth is stubbed via global fetch (session validate).
+ * The seeded fixture courses are Core-linked (fake coreCourseId), but the shared
+ * `multiUserFetch` stub below only answers session validation, so any Core
+ * enrollment lookup resolves to an empty roster — access still resolves via the
+ * owner-fallback / ADMIN rules in resolveAccessForCourse. Auth is stubbed via
+ * global fetch (session validate).
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
@@ -60,7 +62,7 @@ describeDb('course RBAC (integration)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
@@ -119,7 +121,14 @@ describeDb('course RBAC (integration)', () => {
         .set(asAdmin())
         .send({ name: 'Renamed by admin' });
       expect(res.status).toBe(200);
-      expect(res.body.data.name).toBe('Renamed by admin');
+      expect(res.body.data.id).toBe(courseId);
+
+      // The fixture course is Core-linked, so the *response* name is projected
+      // from Core (read-through, #1072 §3) — not the local column just written.
+      // Assert the RBAC-gated write itself landed, rather than the unrelated
+      // Core-projection behavior.
+      const updated = await Course.findByPk(courseId);
+      expect(updated.name).toBe('Renamed by admin');
     });
 
     it('rejects a non-owner without access with 403', async () => {

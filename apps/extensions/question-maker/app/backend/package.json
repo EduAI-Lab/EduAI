@@ -13,7 +13,6 @@
     "test:all": "npm run test",
     "test:coverage": "vitest run --coverage --config vitest.coverage.config.js",
     "lint": "eslint . --max-warnings=0",
-    "populate": "node scripts/populateDatabase.js",
     "seed": "node scripts/seedUnified.js",
     "seed:production": "node scripts/seedProductionQuestions.js",
     "test:ocr": "node scripts/testOcrExtraction.js"

@@ -124,7 +124,6 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `npm run dev:down`         | Stop dev stack                               |
 | `npm run dev:logs`         | Follow Compose logs                          |
 | `npm run dev:build`        | Dev stack with rebuild                       |
-| `npm run populate:backend` | Run backend populate script from root        |
 | `npm run seed:production`  | Seed production-style questions (see script) |
 
 
@@ -138,7 +137,6 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `npm test`                 | Unit tests                   |
 | `npm run test:integration` | Integration tests (needs DB) |
 | `npm run lint`             | ESLint                       |
-| `npm run populate`         | Populate DB helper           |
 | `npm run seed:production`  | Seed script                  |
 
 

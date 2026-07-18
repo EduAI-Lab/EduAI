@@ -42,7 +42,7 @@ describeDb('Questions & assessments (integration)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
