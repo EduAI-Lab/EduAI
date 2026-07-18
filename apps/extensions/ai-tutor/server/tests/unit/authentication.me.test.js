@@ -15,20 +15,21 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
 }));
 
 vi.mock('../../src/services/importTaughtCoursesService.js', () => ({
-  importTaughtCoursesFromCore: vi.fn().mockResolvedValue({}),
-  importEnrolledCoursesFromCore: vi.fn().mockResolvedValue({}),
+  // The shared mirror runner now lives here (unified contract) — the route
+  // delegates the throttle + fire-and-forget to it, so tests observe
+  // runCoreMirror rather than the two underlying import functions.
+  runCoreMirror: vi.fn(),
+  resetCoreMirrorThrottleForTests: vi.fn(),
   userHasCoreTaEnrollment: vi.fn(),
 }));
 
 const { listEduAiCourses } = await import('../../src/services/eduaiClient.js');
 const {
-  importTaughtCoursesFromCore,
-  importEnrolledCoursesFromCore,
+  runCoreMirror,
   userHasCoreTaEnrollment,
 } = await import('../../src/services/importTaughtCoursesService.js');
 const authModule = await import('../../src/routes/authentication.js');
 const authRouter = authModule.default;
-const { resetCoreMirrorThrottleForTests } = authModule;
 
 function appFor(user) {
   const app = express();
@@ -49,9 +50,6 @@ const coreCourses = [
 describe('GET /api/me effective TA role', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // The course mirror is throttled per-user across calls; reset so each test
-    // starts unthrottled and its import-call assertions hold.
-    resetCoreMirrorThrottleForTests();
     listEduAiCourses.mockResolvedValue(coreCourses);
   });
 
@@ -63,16 +61,7 @@ describe('GET /api/me effective TA role', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('TA');
     expect(listEduAiCourses).toHaveBeenCalledOnce();
-    expect(importTaughtCoursesFromCore).toHaveBeenCalledWith(
-      student,
-      '',
-      { coreCourses },
-    );
-    expect(importEnrolledCoursesFromCore).toHaveBeenCalledWith(
-      student,
-      '',
-      { coreCourses },
-    );
+    expect(runCoreMirror).toHaveBeenCalledWith(student, '', { coreCourses });
     expect(userHasCoreTaEnrollment).toHaveBeenCalledWith('', coreCourses);
   });
 
@@ -102,8 +91,7 @@ describe('GET /api/me effective TA role', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('STUDENT');
     expect(userHasCoreTaEnrollment).not.toHaveBeenCalled();
-    expect(importTaughtCoursesFromCore).toHaveBeenCalledWith(student, '', {});
-    expect(importEnrolledCoursesFromCore).toHaveBeenCalledWith(student, '', {});
+    expect(runCoreMirror).toHaveBeenCalledWith(student, '', {});
   });
 
   it('does not run the TA check for non-STUDENT platform roles', async () => {
