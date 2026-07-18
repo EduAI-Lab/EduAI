@@ -29,6 +29,7 @@ import { parseJobType } from "~/lib/ai/routing/fleet/types";
 import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
   buildChatToolRegistry,
@@ -573,6 +574,8 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
+    let effectiveCourse: { responseStyleTags: string[]; aiInstructions: string } | null =
+      null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -591,6 +594,10 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+      effectiveCourse = {
+        responseStyleTags: course.responseStyleTags ?? [],
+        aiInstructions: course.aiInstructions ?? null,
+      };
     }
 
     // §839: students must not see materials that are hidden or scheduled for a
@@ -1078,17 +1085,26 @@ export async function action({ request }: ActionFunctionArgs) {
       useToolCalling = supportsTools && !forceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
-      const defaultCourseSystemPrompt =
-        resolvedSystemPrompt ||
-        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const courseStyleBlock = effectiveCourse
+        ? buildCourseResponseStylePrompt(
+            effectiveCourse.responseStyleTags,
+            effectiveCourse.aiInstructions,
+          )
+        : "";
+
+      const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
+
+      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
+        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+        courseStyleBlock,
+      );
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
@@ -1155,11 +1171,15 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ??
+            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`;
+${LATEST_TURN_FOCUS_INSTRUCTION}`,
+          courseStyleBlock,
+        );
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,
