@@ -26,6 +26,36 @@ const router = express.Router();
 /** Resolves the QM course id from the URL param for per-course access gates. */
 const courseIdFromParam = (req) => req.params.id;
 
+// The Core course mirror (`importTaughtCoursesFromCore`) is a background side
+// effect, not a dependency of the list response: it fetches Core's cookie-
+// scoped course list and writes local Course anchors + topic syncs. It
+// previously ran awaited on every GET /api/course, so every list paid a
+// serial Core-fetch + import waterfall before the caller's own courses were
+// even read. Mirrors ai-tutor's `runCoreMirror` (server/src/routes/
+// authentication.js): throttle to at most once per window per user, and fire
+// without awaiting so the list response never blocks on it. A freshly-
+// imported course therefore may not appear until the NEXT list call, not this
+// one — acceptable per #1072's unified contract.
+const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
+const lastMirrorAtByUser = new Map();
+
+function runCoreImportMirror(userId, role, cookie) {
+  const now = Date.now();
+  const last = lastMirrorAtByUser.get(userId) ?? 0;
+  if (now - last < CORE_MIRROR_THROTTLE_MS) return;
+  lastMirrorAtByUser.set(userId, now);
+
+  // Fire-and-forget — errors are logged, never surfaced to the list response.
+  void importTaughtCoursesFromCore(userId, role ?? 'STUDENT', cookie ?? '').catch((err) => {
+    logger.warn({ err, userId }, 'Core course mirror failed on list');
+  });
+}
+
+/** Test-only: clears the per-user mirror throttle so each test starts fresh. */
+export function resetCoreImportThrottleForTests() {
+  lastMirrorAtByUser.clear();
+}
+
 /**
  * POST /api/course – creates a local QM course anchor owned by the authenticated
  * user, always linked to Core at creation time (#1072 §4 step 7). Local-only
@@ -79,15 +109,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
-    try {
-      await importTaughtCoursesFromCore(
-        req.user.id,
-        req.user.role ?? 'STUDENT',
-        req.headers.cookie ?? '',
-      );
-    } catch (err) {
-      logger.warn({ err, userId: req.user.id }, 'Core course mirror failed on list');
-    }
+    runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 

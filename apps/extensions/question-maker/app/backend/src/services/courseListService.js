@@ -1,10 +1,13 @@
 /**
- * Role-scoped QM course listing — mirrors Core's buildCourseListFilter (§5)
- * using resolveAccessForCourse for each local QM course row.
+ * Role-scoped QM course listing — mirrors Core's buildCourseListFilter (§5).
+ * Access for the non-ADMIN branch is derived from ONE cookie-scoped Core list
+ * call per request (`deriveListAccess`, #1072 unified contract), not a per-row
+ * `resolveAccessForCourse` roster fetch — see that function's docstring for
+ * the callerEnrollmentRole-vs-roster parity analysis.
  */
 import { Course } from '../schema/index.js';
-import { LEVELS, resolveAccessForCourse } from '../middleware/courseAccess.js';
-import { getAllCoursesFromCore, getCourseFromCore } from './coreApiService.js';
+import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
+import { getAllCoursesFromCore, getCourseFromCore, listCoursesFromCore } from './coreApiService.js';
 import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
@@ -76,7 +79,15 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
   let core = null;
   if (row.coreCourseId) {
     try {
-      core = await getCourseFromCore(row.coreCourseId, { cookie });
+      // Service-key mode first (`preferCookie: false`): this is a pure FIELD
+      // read, not an identity-gated one, so it should never route through
+      // Core's session-RBAC branch (which can 403 on a caller/course mismatch
+      // that QM's own gate already resolved differently, and whose body
+      // doesn't always match `isRetryableAuthFailure`'s literal error strings
+      // — a fragile retry edge that silently degraded a resolvable course to
+      // a placeholder). `cookie` stays as the fallback variant for
+      // environments with no EDUAI_API_KEY configured (#1072 unified contract).
+      core = await getCourseFromCore(row.coreCourseId, { cookie, preferCookie: false });
     } catch {
       core = null; // Core unreachable — degrade the detail response, don't hard-error.
     }
@@ -221,14 +232,91 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     return dedupeCoursesByCoreId(enriched);
   }
 
+  // Non-ADMIN list (UNIT_ADMIN / INSTRUCTOR, and any TA/STUDENT caller who
+  // happens to hit this endpoint): resolve access for every row from ONE
+  // cookie-scoped Core list call, not a per-row roster fetch (#1072 unified
+  // contract — this replaced an N+1 that called `getCourseEnrollmentsFromCore`
+  // once per local course row). `resolveAccessForCourse` (per-course roster
+  // read) stays in place for single-course routes, where one Core call per
+  // request was never the problem.
+  let roleByCoreId = new Map();
+  try {
+    const data = await listCoursesFromCore(cookie);
+    const scopedCourses = Array.isArray(data?.courses) ? data.courses : [];
+    roleByCoreId = new Map(scopedCourses.map((c) => [c.id, c.callerEnrollmentRole ?? null]));
+  } catch {
+    // Core unreachable — every row falls through to the owner-fallback below,
+    // same degrade as the old per-row path (§5 "Core-down" unchanged).
+  }
+
+  const authorizedUnits =
+    reqUser.role === 'UNIT_ADMIN' ? await getAuthorizedUnits(reqUser, cookie) : [];
+
   const visible = [];
   for (const course of allCourses) {
-    const access = await resolveAccessForCourse(reqUser, course, { cookie });
+    const row = course.toJSON ? course.toJSON() : course;
+    const access = deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnits });
     if (access && access.rank >= MIN_LIST_RANK) {
       visible.push(enrichCourseRow(course, coreById, access.level));
     }
   }
   return visible;
+}
+
+/**
+ * Resolves one local row's access for `listCoursesForUser`'s non-ADMIN branch,
+ * mirroring `resolveAccessForCourse`'s per-row logic without a per-row Core
+ * call: `roleByCoreId` and `authorizedUnits` are pre-fetched once per request.
+ *
+ * `callerEnrollmentRole` comes from Core's cookie-scoped `GET /api/courses`
+ * (`buildCourseListFilter`, apps/core/app/lib/auth/course-access.server.ts),
+ * which derives it from the SAME `Enrollment` row `getCourseEnrollmentsFromCore`
+ * would return for the caller — so the two are equivalent for any course that
+ * appears in the cookie-scoped list. They diverge in exactly one case: Core's
+ * enrollment branch for a STUDENT-role enrollment additionally requires
+ * `isPublished: true` (an INSTRUCTOR/TA enrollment has no such gate), so a
+ * caller who is a STUDENT on an unpublished course is OMITTED from the cookie
+ * list entirely — `roleByCoreId.get(...)` is then `undefined` for that course,
+ * same as "no enrollment". That's harmless here: this function's result is
+ * only ever kept when `rank >= MIN_LIST_RANK` (instructor), and `student` is
+ * rank 0 — a caller in that edge either isn't the local owner (excluded either
+ * way) or is (owner-fallback below still grants instructor access), so the
+ * omission never changes what `listCoursesForUser` returns.
+ */
+function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnits }) {
+  const ownerFallback = () => (reqUser.id === row.userId ? LEVELS.instructor : null);
+
+  // Course not yet linked to Core: no enrollment data exists (mirrors
+  // resolveAccessForCourse's unlinked branch).
+  if (!row.coreCourseId) return ownerFallback();
+
+  // UNIT_ADMIN unit lock (§19): checked first, short-circuits on a match — a
+  // null department is never a match. Department is read from the already-
+  // fetched service-key catalog (`coreById`), so this never issues its own
+  // Core call, unlike the single-course `resolveAccessForCourse` path.
+  if (reqUser.role === 'UNIT_ADMIN') {
+    const department = coreById.get(row.coreCourseId)?.department ?? null;
+    if (department !== null && authorizedUnits.includes(department)) {
+      return LEVELS.unit;
+    }
+    // Outside their units a UNIT_ADMIN may still hold an enrollment — fall through.
+  }
+
+  const role = roleByCoreId.get(row.coreCourseId) ?? null;
+  switch (role) {
+    case 'INSTRUCTOR':
+      return LEVELS.instructor;
+    case 'TA':
+      return LEVELS.ta;
+    case 'STUDENT':
+      return LEVELS.student;
+    default:
+      // No cookie-scoped role for this course — either genuinely unenrolled,
+      // or the unpublished-student edge documented above. The QM course
+      // linker may also not appear in Core's roster yet right after a fresh
+      // link/sync (same edge `resolveAccessForCourse` handles).
+      return ownerFallback();
+  }
 }
 
 /**
