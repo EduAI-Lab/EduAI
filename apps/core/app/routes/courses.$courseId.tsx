@@ -191,19 +191,6 @@ export default function CourseDetailPage() {
     [removeEnrollment],
   )
 
-  const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
-    const res = await fetch(`/api/courses/${course.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aiInstructions }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error ?? 'Failed to update AI instructions')
-    }
-    revalidator.revalidate()
-  }, [course.id, revalidator])
-
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
     title: m.title,
@@ -303,7 +290,6 @@ export default function CourseDetailPage() {
               tas={tas}
               onCreateTopic={async (name) => { await createTopic(name) }}
               onDeleteTopic={async (id) => { await deleteTopic(id) }}
-              onUpdateAiInstructions={handleUpdateAiInstructions}
             />
           ) : (
             <CourseDetailStudentView
