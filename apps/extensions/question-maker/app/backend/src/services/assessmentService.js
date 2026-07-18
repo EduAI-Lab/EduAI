@@ -4,15 +4,36 @@
  */
 import { Assessments, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course, sequelize } from '../schema/index.js';
 import { Op } from 'sequelize';
-import { enrichRowsWithCourse, enrichRowWithCourse } from './courseListService.js';
+import {
+  enrichRowsWithCourse,
+  enrichRowWithCourse,
+  formatSemesterDisplay,
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
 
-/** Creates an assessment blueprint for the given user/course after validating inputs. */
-export const createAssessment = async (userId, assessmentData) => {
+/**
+ * Overwrites the transitional `semester` column value with the display string
+ * derived from the row's (already-enriched) course term/year (#1072 §4 step 8 /
+ * #1077). `semester` is never trusted as authoritative on read — every returned
+ * assessment recomputes it here.
+ */
+function withDerivedSemester(row) {
+  if (!row) return row;
+  return { ...row, semester: formatSemesterDisplay(row.course?.term, row.course?.year) };
+}
+
+/**
+ * Creates an assessment blueprint for the given user/course after validating inputs.
+ * `semester` is no longer accepted from callers — it's derived from the course's
+ * Core term (#1072 §4 step 8 / #1077); pass `cookie` to read through as the caller
+ * when available (falls back to the service key).
+ */
+export const createAssessment = async (userId, assessmentData, { cookie } = {}) => {
   try {
-    const { type, name, semester, courseId, description, blueprintConfig } = assessmentData;
+    const { type, name, courseId, description, blueprintConfig } = assessmentData;
 
-    if (!type || !name || !semester) {
-      throw new Error('Type, name, and semester are required');
+    if (!type || !name) {
+      throw new Error('Type and name are required');
     }
 
     if (!courseId) {
@@ -27,6 +48,8 @@ export const createAssessment = async (userId, assessmentData) => {
     if (!course) {
       throw new Error('Course not found');
     }
+
+    const semester = await deriveSemesterDisplayForCourseId(courseId, { cookie });
 
     const assessment = await Assessments.create({
       type,
@@ -123,7 +146,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       offset: parseInt(offset)
     });
 
-    return enrichRowsWithCourse(assessments);
+    const enriched = await enrichRowsWithCourse(assessments);
+    return enriched.map(withDerivedSemester);
   } catch (error) {
     throw error;
   }
@@ -202,7 +226,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
       throw new Error('Assessment not found');
     }
 
-    return enrichRowWithCourse(assessment);
+    return withDerivedSemester(await enrichRowWithCourse(assessment));
   } catch (error) {
     throw error;
   }
@@ -255,8 +279,11 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
       }
     }
 
+    // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
+    // even if a legacy caller still sends one.
+    const { semester: _ignoredSemester, ...updateFields } = updateData;
     const normalizedUpdates = {
-      ...updateData,
+      ...updateFields,
       description: updateData.description !== undefined
         ? (updateData.description?.trim() || null)
         : assessment.description,
@@ -266,7 +293,7 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     };
 
     await assessment.update(normalizedUpdates);
-    return enrichRowWithCourse(assessment);
+    return withDerivedSemester(await enrichRowWithCourse(assessment));
   } catch (error) {
     throw error;
   }

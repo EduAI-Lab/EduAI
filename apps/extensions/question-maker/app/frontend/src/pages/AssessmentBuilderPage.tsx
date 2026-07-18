@@ -948,7 +948,6 @@ const AssessmentBuilderPage = () => {
                         name: assessment.name,
                         type: assessment.type,
                         description: assessment.description ?? '',
-                        semester: assessment.semester ?? '',
                         courseId: assessment.courseId ?? assessment.course?.id ?? 0,
                         primaryTopicIds: assessment.blueprintConfig?.primaryTopicIds ?? [],
                         secondaryTopicIds: assessment.blueprintConfig?.secondaryTopicIds ?? [],

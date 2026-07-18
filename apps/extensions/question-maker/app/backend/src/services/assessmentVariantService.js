@@ -16,6 +16,11 @@ import eduaiService from './eduaiService.js';
 import { Op } from 'sequelize';
 import { loadOrderedVariantsForAssessment, aggregateStructure } from './assessmentVariantUtils.js';
 import { scoreMetadataMatch } from './assessmentVariantMetadataScoring.js';
+import {
+  enrichCourseDetail,
+  formatSemesterDisplay,
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
 
 const VALID_STUDY_ROLES = ['reference_baseline', 'generated_variant'];
 
@@ -131,7 +136,7 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
         model: Course,
         as: 'course',
         where: { userId },
-        attributes: ['id', 'name', 'code'],
+        attributes: ['id', 'name', 'code', 'coreCourseId'],
         required: true
       }
     ]
@@ -153,12 +158,15 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
   }));
 
   const structure = aggregateStructure(variants);
+  // Derived from the course's Core term (#1072 §4 step 8 / #1077) — never the
+  // stored `semester` column.
+  const courseDetail = await enrichCourseDetail(assessment.course);
 
   return {
     assessmentId: assessment.id,
     courseId: assessment.courseId,
     name: assessment.name,
-    semester: assessment.semester,
+    semester: formatSemesterDisplay(courseDetail.term, courseDetail.year),
     type: assessment.type,
     studyRole: assessment.blueprintConfig?.studyRole ?? null,
     slotCount: slots.length,
@@ -276,7 +284,6 @@ export async function assembleEquivalentExamVariants(userId, params) {
     examLabels = ['Variant exam'],
     namePrefix = null,
     includeDrafts = false,
-    semesterOverride = null,
     assessmentTypeOverride = null
   } = params;
 
@@ -315,6 +322,12 @@ export async function assembleEquivalentExamVariants(userId, params) {
     throw new Error('Every reference variant must have question metadata');
   }
 
+  // Derived once from the course's Core term — every exam created in this
+  // batch shares the same course, so one lookup covers all of them (#1072
+  // §4 step 8 / #1077). `semesterOverride` is gone: it only ever relabelled
+  // the same course, and `examLabels` already handle per-exam naming.
+  const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId);
+
   const started = Date.now();
   const warnings = [];
   const createdAssessments = [];
@@ -332,7 +345,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterOverride || ref.semester,
+          semester: semesterDisplay,
           description: `Assessment variant workflow exam (${label}) from reference assessment #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
@@ -476,7 +489,6 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
     examLabels = ['Variant exam'],
     namePrefix = null,
     includeDrafts = true,
-    semesterOverride = null,
     assessmentTypeOverride = null
   } = params;
 
@@ -506,6 +518,10 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
     throw new Error('Reference assessment has no questions in sections');
   }
 
+  // Derived once from the course's Core term — see the comment in
+  // `assembleEquivalentExamVariants` (#1072 §4 step 8 / #1077).
+  const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId);
+
   const started = Date.now();
   const warnings = [];
   const createdAssessments = [];
@@ -523,7 +539,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterOverride || ref.semester,
+          semester: semesterDisplay,
           description: `Assessment variant workflow exam (${label}) assembled by metadata similarity from reference #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
