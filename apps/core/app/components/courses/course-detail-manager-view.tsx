@@ -57,6 +57,11 @@ import { Switch } from "@eduai/ui";
 import { CourseMaterialsUpload } from "~/components/course-materials-upload";
 import { CourseEmbeddingSettings } from "~/components/course-embedding-settings";
 import { CourseChatsTab } from "~/components/courses/course-chats-panel";
+import {
+  CourseResponseStyleSettings,
+  CourseResponseStyleSummary,
+} from "~/components/courses/course-response-style-settings";
+import { courseHasAiConfig } from "~/lib/ai/response-style-tags";
 import type { CourseMaterial } from "~/components/course-materials-upload";
 import { CanvasMaterialSyncDialog } from "~/components/canvas/canvas-material-sync-dialog";
 import type { CourseDetail } from "~/hooks/api/use-course-detail";
@@ -921,14 +926,17 @@ export function CourseDetailManagerView({
                     </p>
                   </div>
                 </div>
-                {course.aiInstructions && (
+                {courseHasAiConfig(
+                  course.responseStyleTags ?? [],
+                  course.aiInstructions,
+                ) && (
                   <div className="pt-3 border-t border-border">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-                      AI instructions
+                      AI response style
                     </p>
-                    <p className="text-[13px] text-muted-foreground leading-relaxed">
-                      {course.aiInstructions}
-                    </p>
+                    <CourseResponseStyleSummary
+                      tagIds={course.responseStyleTags ?? []}
+                    />
                   </div>
                 )}
               </CardContent>
@@ -1557,6 +1565,15 @@ export function CourseDetailManagerView({
             forceMount
             className="data-[state=inactive]:hidden flex-1 outline-none"
           >
+            {courseId && (
+              <div className="mb-6">
+                <CourseResponseStyleSettings
+                  courseId={courseId}
+                  initialTags={course.responseStyleTags ?? []}
+                  initialAiInstructions={course.aiInstructions ?? ""}
+                />
+              </div>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
