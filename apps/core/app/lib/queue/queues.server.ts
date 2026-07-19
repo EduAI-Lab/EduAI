@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import redis from "./connection.server";
 import { QUEUE_CHAT, QUEUE_HEAVY, type QueueName } from "./resolve-pool.server";
 
@@ -31,7 +31,11 @@ export function getQueue(name: QueueName): Queue {
   const registry = getRegistry();
   let queue = registry.get(name);
   if (!queue) {
-    queue = new Queue(name, { connection: redis });
+    // The shared ioredis instance works at runtime, but BullMQ's `connection`
+    // type (`ConnectionOptions`) doesn't accept a bare `Redis` instance resolved
+    // through the app's own ioredis — a known BullMQ/ioredis type clash. Cast to
+    // reuse the singleton from connection.server.ts (contract §4) without dropping it.
+    queue = new Queue(name, { connection: redis as unknown as ConnectionOptions });
     registry.set(name, queue);
   }
   return queue;
