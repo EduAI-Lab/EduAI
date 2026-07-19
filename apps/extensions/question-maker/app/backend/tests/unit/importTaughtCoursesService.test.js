@@ -12,6 +12,15 @@ const topicsCreate = vi.fn();
 const assessmentsFindOne = vi.fn();
 const createAssessment = vi.fn();
 
+// ensurePracticeExam serializes via a transaction-scoped advisory lock; in
+// unit tests the transaction is a passthrough and the lock query a no-op.
+vi.mock('../../src/config/database.js', () => ({
+  sequelize: {
+    transaction: vi.fn(async (fn) => fn({})),
+    query: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 vi.mock('../../src/schema/index.js', () => ({
   Course: {
     findAll: courseFindAll,

@@ -3,6 +3,7 @@
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
 import { Op } from 'sequelize';
+import { sequelize } from '../config/database.js';
 import { Course, Topics, Assessments } from '../schema/index.js';
 import { listCoursesFromCore, getCourseEnrollmentsFromCore } from './coreApiService.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
@@ -12,28 +13,46 @@ import { logger } from '../utils/logger.js';
 const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
 const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
 
+// Advisory-lock namespace for per-course Practice Exam provisioning (pairs
+// with an arbitrary app-unique int; 1072 = the refactor issue).
+const PRACTICE_EXAM_LOCK_NS = 1072;
+
 function isTeachingCoreCourse(coreCourse) {
   return TEACHING_ENROLLMENT_ROLES.has(coreCourse?.callerEnrollmentRole);
 }
 
 async function ensurePracticeExam(userId, courseId) {
   try {
-    // Idempotent: provisioning now runs for pre-existing anchors too (e.g. one
-    // materialized by an ADMIN course-list visit, #1074), not just freshly
-    // created ones — never create a second Practice Exam for the course.
-    const existing = await Assessments.findOne({
-      where: { courseId, name: 'Practice Exam' },
-    });
-    if (existing) return;
+    // Idempotent AND concurrency-safe: provisioning runs for pre-existing
+    // anchors too (e.g. one materialized by an ADMIN course-list visit,
+    // #1074), and two co-instructors can provision the same course at once
+    // (mirrors are throttled per USER). A bare check-then-create races, so
+    // serialize per course with a transaction-scoped Postgres advisory lock:
+    // the loser blocks on the lock until the winner's transaction commits
+    // (the exam insert is awaited before that), then its re-check sees the
+    // existing exam. The partial unique index added by migrate:1072 backstops
+    // this at the schema level.
+    await sequelize.transaction(async (transaction) => {
+      await sequelize.query('SELECT pg_advisory_xact_lock(:ns, :courseId)', {
+        replacements: { ns: PRACTICE_EXAM_LOCK_NS, courseId },
+        transaction,
+      });
 
-    // Semester is derived from the course's Core term (#1072 §4 step 8 / #1077),
-    // not passed here.
-    await createAssessment(userId, {
-      type: 'Quiz',
-      name: 'Practice Exam',
-      description: '',
-      courseId,
-      blueprintConfig: null,
+      const existing = await Assessments.findOne({
+        where: { courseId, name: 'Practice Exam' },
+        transaction,
+      });
+      if (existing) return;
+
+      // Semester is derived from the course's Core term (#1072 §4 step 8 / #1077),
+      // not passed here.
+      await createAssessment(userId, {
+        type: 'Quiz',
+        name: 'Practice Exam',
+        description: '',
+        courseId,
+        blueprintConfig: null,
+      });
     });
   } catch (err) {
     logger.warn({ err, courseId }, 'Practice Exam creation skipped during auto-import');

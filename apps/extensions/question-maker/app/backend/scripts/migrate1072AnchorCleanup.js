@@ -4,6 +4,9 @@
  *   - courses.name
  *   - courses.code
  *   - assessments.semester
+ * and enforces at most one 'Practice Exam' per course (rename-dedupes any
+ * race-created duplicates, then adds a partial unique index — see
+ * `ensurePracticeExamUniqueness`).
  *
  * QM has no migration framework — it boots with `sequelize.sync({ alter: true })`
  * (src/config/database.js), which adds missing columns but never drops extra
@@ -138,14 +141,47 @@ async function dropColumnIfExists(table, column) {
   return { dropped: true, indexesDropped };
 }
 
+/**
+ * At most one 'Practice Exam' per course: auto-import's provisioning was a
+ * check-then-create race before the advisory lock landed, so a database may
+ * already hold duplicates. Dedupe by RENAME, not delete — a duplicate may
+ * have accumulated variants/sections, and renaming preserves everything
+ * while freeing the name for the partial unique index that enforces the
+ * invariant going forward. Idempotent: re-running renames nothing and the
+ * index is created IF NOT EXISTS.
+ */
+async function ensurePracticeExamUniqueness() {
+  const [, meta] = await sequelize.query(`
+    UPDATE assessments a
+       SET name = a.name || ' (duplicate #' || a.id || ')'
+     WHERE a.name = 'Practice Exam'
+       AND a.id <> (
+         SELECT min(b.id) FROM assessments b
+          WHERE b.course_id IS NOT DISTINCT FROM a.course_id
+            AND b.name = 'Practice Exam'
+       )
+  `);
+  const renamed = meta?.rowCount ?? 0;
+  if (renamed > 0) {
+    console.log(`   ✏️  Renamed ${renamed} duplicate Practice Exam(s) (kept the oldest per course)`);
+  }
+
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS assessments_practice_exam_unique
+      ON assessments (course_id) WHERE name = 'Practice Exam'
+  `);
+  return renamed;
+}
+
 const migrate = async () => {
   try {
     console.log('🔌 Connecting to database...');
     await sequelize.authenticate();
     console.log('✅ Database connection established.');
 
-    console.log('\n📋 Plan: drop courses.name, courses.code, assessments.semester');
-    console.log('   (each column checked via information_schema first — safe to re-run.)\n');
+    console.log('\n📋 Plan: drop courses.name, courses.code, assessments.semester;');
+    console.log('   enforce one Practice Exam per course (partial unique index)');
+    console.log('   (each step checked first — safe to re-run.)\n');
 
     let totalDropped = 0;
     let totalIndexesDropped = 0;
@@ -156,10 +192,13 @@ const migrate = async () => {
       totalIndexesDropped += indexesDropped;
     }
 
+    const dedupedPracticeExams = await ensurePracticeExamUniqueness();
+
     console.log('\n📈 Migration Summary:');
     console.log(`   ✅ Columns dropped: ${totalDropped}`);
     console.log(`   🔗 Dependent indexes dropped: ${totalIndexesDropped}`);
     console.log(`   ⏭️  Already absent (no-op): ${COLUMNS_TO_DROP.length - totalDropped}`);
+    console.log(`   🎓 Duplicate Practice Exams renamed: ${dedupedPracticeExams}`);
 
     console.log('\n✅ Migration completed successfully!');
 
