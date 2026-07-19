@@ -6,13 +6,14 @@ import {
   parseEduaiDiagramBody,
   type EduaiDiagramPayload,
 } from "~/lib/ai/eduai-diagram-payload";
+import {
+  EDUAI_DIAGRAM_FENCE_GLOBAL,
+  hasEduaiDiagramFence,
+} from "~/lib/ai/eduai-diagram-type";
 
 export type EduaiDiagramSegment =
   | { kind: "markdown"; text: string }
   | { kind: "diagram"; payload: EduaiDiagramPayload };
-
-const EDUAI_DIAGRAM_FENCE =
-  /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;
 
 export function splitEduaiDiagrams(content: string): EduaiDiagramSegment[] {
   const text = content ?? "";
@@ -22,8 +23,8 @@ export function splitEduaiDiagrams(content: string): EduaiDiagramSegment[] {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  EDUAI_DIAGRAM_FENCE.lastIndex = 0;
-  while ((match = EDUAI_DIAGRAM_FENCE.exec(text)) !== null) {
+  EDUAI_DIAGRAM_FENCE_GLOBAL.lastIndex = 0;
+  while ((match = EDUAI_DIAGRAM_FENCE_GLOBAL.exec(text)) !== null) {
     const before = text.slice(lastIndex, match.index);
     if (before.length > 0) {
       segments.push({ kind: "markdown", text: before });
@@ -47,7 +48,7 @@ export function splitEduaiDiagrams(content: string): EduaiDiagramSegment[] {
   return segments;
 }
 
-/** True when the text contains an eduai-diagram fence (animated catalog). */
+/** @deprecated Prefer hasEduaiDiagramFence from eduai-diagram-type */
 export function hasEduaiDiagramBlock(text: string): boolean {
-  return /```eduai-diagram\b/i.test(text ?? "");
+  return hasEduaiDiagramFence(text);
 }

@@ -7,15 +7,15 @@
  * Display order (when sections exist):
  *   Step ladder → eduai-diagram → (optional other body) → TLDR → Continue
  *
- * When an eduai-diagram lists labeled stages (process-flow / hierarchy / compare),
- * incomplete Step ladder or Top summary blocks are completed from those stages so
- * every diagram type stays aligned — not just process-flow bill examples.
+ * When an eduai-diagram lists labeled stages (any catalog type), incomplete
+ * Step ladder or Top summary blocks are completed from those stages.
  */
 
 import {
   parseEduaiDiagramBody,
   type EduaiDiagramStage,
 } from "~/lib/ai/eduai-diagram-payload";
+import { EDUAI_DIAGRAM_FENCE_GLOBAL } from "~/lib/ai/eduai-diagram-type";
 
 /** Heading line that opens the Top summary / TLDR block (case-insensitive). */
 const TOP_SUMMARY_HEADING = /^\*\*Top summary\*\*\s*$/i;
@@ -23,9 +23,6 @@ const TOP_SUMMARY_HEADING = /^\*\*Top summary\*\*\s*$/i;
 const STEP_LADDER_HEADING = /^#{1,6}\s*Step ladder\s*$/i;
 
 const NEXT_HEADING = /^\*\*Next\?\*\*/i;
-
-const EDUAI_DIAGRAM_FENCE =
-  /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/i;
 
 /**
  * Structural markers that end the Top summary section when they appear as a
@@ -54,18 +51,20 @@ function relabelAssistiveHeadings(content: string): string {
 function reorderAssistiveSections(content: string): string {
   const top = extractTopSummarySection(content);
   const step = extractStepLadderSection(content);
-  const diagram = extractEduaiDiagramFence(content);
+  const diagrams = extractEduaiDiagramFences(content);
   const next = extractNextSection(content);
 
   // Nothing structural to reshape — keep original (Next? still relabeled later).
-  if (!top && !step && !diagram) {
+  if (!top && !step && diagrams.length === 0) {
     return content;
   }
 
   const usedRanges: Array<{ start: number; end: number }> = [];
   if (top) usedRanges.push({ start: top.start, end: top.end });
   if (step) usedRanges.push({ start: step.start, end: step.end });
-  if (diagram) usedRanges.push({ start: diagram.start, end: diagram.end });
+  for (const diagram of diagrams) {
+    usedRanges.push({ start: diagram.start, end: diagram.end });
+  }
   if (next) usedRanges.push({ start: next.start, end: next.end });
 
   const remainder = stripRanges(content, usedRanges)
@@ -73,7 +72,8 @@ function reorderAssistiveSections(content: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  const stages = diagram ? parseEduaiDiagramBody(diagram.body).stages : [];
+  const primary = diagrams[0] ?? null;
+  const stages = primary ? parseEduaiDiagramBody(primary.body).stages : [];
 
   let tldrBlock = completeTldrFromStages(top?.text ?? null, stages);
   if (!tldrBlock && stages.length > 0) {
@@ -85,13 +85,15 @@ function reorderAssistiveSections(content: string): string {
 
   const parts: string[] = [];
   if (stepText) parts.push(stepText);
-  if (diagram) parts.push(diagram.text.trim());
+  if (diagrams.length > 0) {
+    parts.push(diagrams.map((d) => d.text.trim()).join("\n\n"));
+  }
 
   if (remainder) {
     // With Step ladder / diagram, drop orphan intro fluff (duplicate of TLDR).
     // Without them, keep the body explanation before the TLDR (#1060).
     const kept =
-      stepText || diagram
+      stepText || diagrams.length > 0
         ? keepTrailingStructuralExtras(remainder)
         : remainder.trim();
     if (kept) parts.push(kept);
@@ -133,6 +135,22 @@ function countListItems(block: string, pattern: RegExp): number {
   return (block.match(pattern) ?? []).length;
 }
 
+function countMatchingStageLabels(
+  block: string,
+  stages: EduaiDiagramStage[],
+  itemPattern: RegExp,
+): number {
+  const stageKeys = new Set(stages.map((s) => normalizeLabelKey(s.label)));
+  let matched = 0;
+  for (const match of block.matchAll(itemPattern)) {
+    const item = (match[1] ?? match[2] ?? "").trim();
+    const bold = /^\*\*(.+?)\*\*/.exec(item);
+    const label = bold?.[1] ?? item.split(/[-–—:]/, 1)[0] ?? item;
+    if (stageKeys.has(normalizeLabelKey(label))) matched += 1;
+  }
+  return matched;
+}
+
 /**
  * Complete / rebuild Top summary so it has one bullet per diagram stage.
  * Prefers existing bullets when their labels match a stage.
@@ -145,7 +163,19 @@ function completeTldrFromStages(
   if (stages.length === 0) return existing || null;
 
   const bulletCount = countListItems(existing, /(?:^|\n)\s*[-*•]\s+/g);
-  if (existing && bulletCount >= stages.length) return existing;
+  const labelMatches = countMatchingStageLabels(
+    existing,
+    stages,
+    /(?:^|\n)\s*[-*•]\s+(.+)/g,
+  );
+  // Keep only when count is enough AND labels largely cover diagram stages.
+  if (
+    existing &&
+    bulletCount >= stages.length &&
+    labelMatches >= Math.ceil(stages.length / 2)
+  ) {
+    return existing;
+  }
 
   const byLabel = new Map<string, string>();
   for (const match of existing.matchAll(/(?:^|\n)\s*[-*•]\s+(.+)/g)) {
@@ -169,8 +199,7 @@ function completeTldrFromStages(
 /**
  * If the model under-emitted Step ladder items (progressive-disclosure habit)
  * but the diagram lists labeled stages, fill missing numbered steps for any
- * catalog type (process-flow, hierarchy, compare). Preserves richer existing
- * step text when the stage label matches.
+ * catalog type. Preserves richer existing step text when the stage label matches.
  */
 function completeStepLadderFromStages(
   stepBlock: string | null,
@@ -180,7 +209,18 @@ function completeStepLadderFromStages(
   if (stages.length === 0) return existing || null;
 
   const numberedCount = countListItems(existing, /(?:^|\n)\s*\d+[.)]\s+/g);
-  if (existing && numberedCount >= stages.length) return existing;
+  const labelMatches = countMatchingStageLabels(
+    existing,
+    stages,
+    /(?:^|\n)\s*\d+[.)]\s+(.+)/g,
+  );
+  if (
+    existing &&
+    numberedCount >= stages.length &&
+    labelMatches >= Math.ceil(stages.length / 2)
+  ) {
+    return existing;
+  }
 
   const byLabel = new Map<string, string>();
   const byIndex = new Map<number, string>();
@@ -340,20 +380,29 @@ function extractStepLadderSection(
   return { text, start: headingStart, end };
 }
 
-function extractEduaiDiagramFence(
+function extractEduaiDiagramFences(
   content: string,
-): { text: string; body: string; start: number; end: number } | null {
-  const match = EDUAI_DIAGRAM_FENCE.exec(content);
-  if (!match || match.index === undefined) return null;
-  const start = match.index;
-  const end = start + match[0].length;
-  const endWithNl = content[end] === "\n" ? end + 1 : end;
-  return {
-    text: match[0],
-    body: match[1] ?? "",
-    start,
-    end: endWithNl,
-  };
+): Array<{ text: string; body: string; start: number; end: number }> {
+  const fences: Array<{
+    text: string;
+    body: string;
+    start: number;
+    end: number;
+  }> = [];
+  EDUAI_DIAGRAM_FENCE_GLOBAL.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = EDUAI_DIAGRAM_FENCE_GLOBAL.exec(content)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    const endWithNl = content[end] === "\n" ? end + 1 : end;
+    fences.push({
+      text: match[0],
+      body: match[1] ?? "",
+      start,
+      end: endWithNl,
+    });
+  }
+  return fences;
 }
 
 function extractNextSection(

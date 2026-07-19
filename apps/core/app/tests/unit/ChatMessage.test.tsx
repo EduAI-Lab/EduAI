@@ -167,6 +167,38 @@ Step downhill: Move opposite the slope
     expect(screen.getByText(/Measure steepness/)).toBeInTheDocument();
   });
 
+  it("renders hierarchy and compare stage detail on tap", () => {
+    const hierarchy: Message = {
+      ...aiMessage,
+      id: "h",
+      content: `\`\`\`eduai-diagram
+hierarchy
+title: Neuron
+Neuron: Whole cell
+Dendrites: Receive
+Axon: Send
+\`\`\``,
+    };
+    const { unmount } = render(<ChatMessage message={hierarchy} />);
+    fireEvent.click(screen.getByRole("button", { name: "Dendrites" }));
+    expect(screen.getByText(/Receive/)).toBeInTheDocument();
+    unmount();
+
+    const compare: Message = {
+      ...aiMessage,
+      id: "c",
+      content: `\`\`\`eduai-diagram
+compare
+title: TCP vs UDP
+TCP: Reliable
+UDP: Fast
+\`\`\``,
+    };
+    render(<ChatMessage message={compare} />);
+    fireEvent.click(screen.getByRole("button", { name: "UDP" }));
+    expect(screen.getByText(/Fast/)).toBeInTheDocument();
+  });
+
   it("falls back unknown type ids to process-flow animation", () => {
     const withDiagram: Message = {
       ...aiMessage,

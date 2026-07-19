@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { AnimatedDiagramShell } from "~/components/chat/diagrams/animated-diagram-shell";
 import {
-  defaultStagesForType,
-  normalizeStagesForType,
-  type EduaiDiagramPayload,
-} from "~/lib/ai/eduai-diagram-payload";
-import { cn } from "~/lib/utils";
+  StageChipButton,
+  diagramStageResetKey,
+  useDiagramStageUi,
+} from "~/components/chat/diagrams/diagram-stage-ui";
+import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 
 /**
  * Topic-specific process flow: labeled, tappable stages with a detail panel.
@@ -17,19 +17,16 @@ export function AnimatedProcessFlow({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const stages = normalizeStagesForType(
+  const { stages, selected, setSelected, detail } = useDiagramStageUi(
     "process-flow",
-    payload.stages.length > 0
-      ? payload.stages
-      : defaultStagesForType("process-flow"),
+    payload,
   );
-  const [selected, setSelected] = useState(0);
   const [highlight, setHighlight] = useState(0);
+  const stageKey = diagramStageResetKey(payload.title, stages);
 
   useEffect(() => {
-    setSelected(0);
     setHighlight(0);
-  }, [payload.title, stages.map((s) => s.label).join("|")]);
+  }, [stageKey]);
 
   return (
     <AnimatedDiagramShell
@@ -38,17 +35,7 @@ export function AnimatedProcessFlow({
       title={payload.title?.trim() || "Process flow"}
       ariaLabel={`Interactive process flow: ${stages.map((s) => s.label).join(", ")}`}
       caption="Tap a stage for a short explanation."
-      detail={
-        <>
-          <span className="font-medium">{stages[selected]?.label}</span>
-          {stages[selected]?.detail ? (
-            <span className="text-muted-foreground">
-              {" — "}
-              {stages[selected]?.detail}
-            </span>
-          ) : null}
-        </>
-      }
+      detail={detail}
     >
       {({ playKey, reducedMotion }) => (
         <ProcessFlowTrack
@@ -100,37 +87,24 @@ function ProcessFlowTrack({
 
   return (
     <ol className="flex flex-wrap items-stretch justify-center gap-1.5 sm:gap-2">
-      {stages.map((stage, i) => {
-        const isSelected = selected === i;
-        const isLit = highlight === i;
-        return (
-          <li key={`${stage.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
-            {i > 0 ? (
-              <span
-                aria-hidden
-                className="hidden text-muted-foreground/50 sm:inline"
-              >
-                →
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => onSelect(i)}
-              aria-pressed={isSelected}
-              className={cn(
-                "min-h-11 min-w-[4.5rem] max-w-[7.5rem] flex-1 rounded-lg border px-2 py-2 text-center text-[11px] font-medium leading-snug transition-colors sm:text-xs",
-                isSelected
-                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                  : isLit
-                    ? "border-primary/60 bg-primary/15 text-foreground"
-                    : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-muted/60",
-              )}
+      {stages.map((stage, i) => (
+        <li key={`${stage.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
+          {i > 0 ? (
+            <span
+              aria-hidden
+              className="hidden text-muted-foreground/50 sm:inline"
             >
-              {stage.label}
-            </button>
-          </li>
-        );
-      })}
+              →
+            </span>
+          ) : null}
+          <StageChipButton
+            label={stage.label}
+            selected={selected === i}
+            lit={highlight === i}
+            onSelect={() => onSelect(i)}
+          />
+        </li>
+      ))}
     </ol>
   );
 }

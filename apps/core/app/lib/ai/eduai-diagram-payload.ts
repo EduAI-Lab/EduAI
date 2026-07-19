@@ -4,6 +4,7 @@
  */
 
 import {
+  matchExplicitDiagramTypeId,
   resolveEduaiDiagramTypeId,
   type EduaiDiagramCanonicalId,
 } from "~/lib/ai/eduai-diagram-type";
@@ -55,10 +56,19 @@ function clampDetail(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, 160);
 }
 
+/**
+ * Only treat a line as a type token when it matches a known catalog id/alias
+ * (or `type: …`). Bare labels like "Start" stay as stages.
+ */
 function looksLikeTypeId(line: string): string | null {
   const typePrefixed = /^type\s*:\s*([a-z0-9_-]+)$/i.exec(line);
-  if (typePrefixed) return typePrefixed[1] ?? null;
-  if (/^[a-z0-9_-]+$/i.test(line)) return line;
+  if (typePrefixed) {
+    const token = typePrefixed[1] ?? "";
+    return matchExplicitDiagramTypeId(token) ? token : null;
+  }
+  if (/^[a-z0-9_-]+$/i.test(line) && matchExplicitDiagramTypeId(line)) {
+    return line;
+  }
   return null;
 }
 
@@ -123,8 +133,12 @@ export function normalizeStagesForType(
   // process-flow and gradient-descent: 3–5 stages
   if (cleaned.length < 3) {
     const defaults = defaultStagesForType(typeId);
-    while (cleaned.length < 3 && cleaned.length < defaults.length) {
-      cleaned.push({ ...defaults[cleaned.length]! });
+    const used = new Set(cleaned.map((s) => s.label.toLowerCase()));
+    for (const d of defaults) {
+      if (cleaned.length >= 3) break;
+      if (used.has(d.label.toLowerCase())) continue;
+      cleaned.push({ ...d });
+      used.add(d.label.toLowerCase());
     }
   }
   return cleaned.slice(0, 5);
@@ -194,8 +208,10 @@ export function extractStagesFromDraft(markdown: string): EduaiDiagramStage[] {
     if (stage) fromNumbered.push(stage);
   }
 
+  // Return raw stages only — callers normalize for the resolved catalog type
+  // so gradient-descent / hierarchy are not padded with process-flow defaults.
   if (fromNumbered.length >= 2) {
-    return normalizeStagesForType("process-flow", fromNumbered).slice(0, 5);
+    return fromNumbered.slice(0, 5);
   }
 
   const bulletRegion =
@@ -230,7 +246,7 @@ export function extractStagesFromDraft(markdown: string): EduaiDiagramStage[] {
   }
 
   if (fromBullets.length >= 2) {
-    return normalizeStagesForType("process-flow", fromBullets).slice(0, 5);
+    return fromBullets.slice(0, 5);
   }
 
   return [];

@@ -1,6 +1,9 @@
 import type { AdhdTurnProfile } from "~/lib/ai/adhd-turn-profile";
 import { buildEduaiDiagramFence } from "~/lib/ai/eduai-diagram-payload";
-import { resolveEduaiDiagramTypeId } from "~/lib/ai/eduai-diagram-type";
+import {
+  hasEduaiDiagramFence,
+  resolveEduaiDiagramTypeId,
+} from "~/lib/ai/eduai-diagram-type";
 
 /**
  * Version stamp for the ADHD Assist response-format policy. Logged on every
@@ -239,10 +242,7 @@ export function resolveEffectiveAdhdAssist(opts: {
   return opts.hasField ? opts.bodyValue : opts.chatValue;
 }
 
-/** True when assistant text includes an animated eduai-diagram catalog fence. */
-export function hasEduaiDiagramFence(text: string): boolean {
-  return /```eduai-diagram\b/i.test(text ?? "");
-}
+export { hasEduaiDiagramFence } from "~/lib/ai/eduai-diagram-type";
 
 /**
  * True when assistant text includes an eduai-diagram fence or any markdown
