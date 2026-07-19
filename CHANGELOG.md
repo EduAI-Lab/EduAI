@@ -17,6 +17,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
+### Added
+
+- [core] feat: Assist interactive `eduai-diagram` catalog (process-flow, gradient-descent, hierarchy, compare) with labeled tappable stages, plus display-only Step ladder → diagram → TLDR → Continue layout (storage anchors unchanged). (#1060, @Ayyhab, 2026-07-18) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Changed
 
 - [monorepo] perf: Speed up the PR Tests workflow — unit/integration suites now run natively on the runner via `turbo run test` (Turborepo task cache persisted in the GitHub Actions cache, Postgres service containers replacing the per-image Docker builds, which rebuilt every test image plus a full `npm ci` each on cache-less remote runners); E2E keeps the dockerized stack but prebuilds its images with `docker buildx bake` and GHA layer caching (`E2E_SKIP_BUILD=1` skips the script's uncached rebuild); docs-only PRs (`*.md`, `*.txt`, `docs/`) skip both test jobs while still satisfying the required status checks; pushes to `development` seed the turbo + Docker layer caches that fresh PRs restore from. Also fixes `turbo.json` test inputs missing `tests/**` (the ai-tutor-server/qm-backend test dirs, which would have made turbo serve stale cached passes for test-only changes) and relaxes `test.dependsOn` from `build` to `^build` so running tests no longer forces each app's own production build. (#1026, @evanbones, 2026-07-13)
