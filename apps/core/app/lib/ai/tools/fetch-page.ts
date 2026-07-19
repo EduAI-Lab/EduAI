@@ -36,20 +36,21 @@ function coerceDoc(record: unknown, fallbackUrl: string): { url: string; title: 
   return { url, title, markdown: md };
 }
 
-export const fetchPage = tool({
-  description:
-    "Fetch and return the main content of a web page as markdown with metadata. Use this after webSearch to read full details from promising URLs.",
-  parameters: z.object({
-    url: z.string().url().describe("The absolute URL to fetch"),
-    timeoutMs: z
-      .number()
-      .int()
-      .min(1000)
-      .max(10000)
-      .default(5000)
-      .describe("Per-request timeout in milliseconds"),
-  }),
-  execute: async ({ url, timeoutMs }) => {
+export type FetchPageResult = {
+  url: string;
+  title: string;
+  markdown: string;
+  error?: string;
+  details?: string;
+};
+
+export async function runFetchPage({
+  url,
+  timeoutMs = 5000,
+}: {
+  url: string;
+  timeoutMs?: number;
+}): Promise<FetchPageResult> {
     try {
       const client = getFirecrawlClient();
 
@@ -82,7 +83,7 @@ export const fetchPage = tool({
         });
 
         if (!resp || (typeof resp === "object" && "success" in resp && !(resp as { success?: boolean }).success)) {
-          return { error: "Failed to fetch page content", url };
+          return { url, title: url, markdown: "", error: "Failed to fetch page content" };
         }
 
         const dataArr = Array.isArray((resp as { data?: unknown[] }).data)
@@ -102,15 +103,32 @@ export const fetchPage = tool({
         // fallthrough
       }
 
-      return { error: "Failed to fetch page content", url };
+      return { url, title: url, markdown: "", error: "Failed to fetch page content" };
     } catch (error) {
       return {
-        error: "Failed to fetch page content",
         url,
+        title: url,
+        markdown: "",
+        error: "Failed to fetch page content",
         details: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  },
+}
+
+export const fetchPage = tool({
+  description:
+    "Fetch and return the main content of a web page as markdown with metadata. Use this after webSearch to read full details from promising URLs.",
+  parameters: z.object({
+    url: z.string().url().describe("The absolute URL to fetch"),
+    timeoutMs: z
+      .number()
+      .int()
+      .min(1000)
+      .max(10000)
+      .default(5000)
+      .describe("Per-request timeout in milliseconds"),
+  }),
+  execute: runFetchPage,
 });
 
 

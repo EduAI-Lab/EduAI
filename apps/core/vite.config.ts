@@ -23,11 +23,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
     ssr: {
-      // Server bundle is ESM (react-router default). Two packages need bundling:
+      // Server bundle is ESM (react-router default). Packages that need bundling:
       //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
       //                         to honour the alias during SSR tree-shaking.
       //   @mendable/firecrawl-js — "type":"module", used in AI web tools.
-      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js"],
+      //   streamdown — CJS/ESM interop for markdown streaming in SSR.
+      noExternal: ["@tabler/icons-react", "@mendable/firecrawl-js", "streamdown"],
     },
     define: {
       __dirname: "import.meta.dirname",
@@ -40,20 +41,28 @@ export default defineConfig(({ mode }) => {
       // Monorepo hoisting can give Radix/shadcn a second React copy → "useState of null" after HMR.
       dedupe: ["react", "react-dom"],
     },
-    // Force React and the router runtime to be pre-bundled at startup so Vite never
-    // discovers them lazily during the first client-side navigation. `react-router` is
-    // included because otherwise it is found mid-load, triggering a dep re-optimization
-    // that leaves the page holding two optimizer generations (two browserHashes) of
-    // React → a null renderer dispatcher → "dispatcher is null" in useContext, cleared
-    // only by a manual refresh.
+    // Pre-bundle React, the router runtime, and streamdown's CJS dependencies
+    // at startup so client navigation and lazy markdown loads stay on one
+    // optimizer generation and remain ESM-compatible.
     optimizeDeps: {
-      include: ["react", "react-dom", "react-dom/client", "react-router"],
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react-router",
+        "streamdown",
+        "@streamdown/math",
+        "style-to-js",
+      ],
     },
     server: {
       port: 3000,
       // Apache reverse proxy sends Host: dev.eduai.ok.ubc.ca; Vite 6+ rejects unknown hosts by default.
       host: true,
       allowedHosts: ["dev.eduai.ok.ubc.ca", "localhost", "127.0.0.1"],
+      headers: {
+        "Cache-Control": "no-store",
+      },
       fs: {
         allow: [monorepoRoot],
       },
