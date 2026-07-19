@@ -26,6 +26,15 @@ function monthInUbcTimeZone(date: Date): number {
   );
 }
 
+function yearInUbcTimeZone(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: UBC_TIME_ZONE,
+      year: "numeric",
+    }).format(date),
+  );
+}
+
 export function ubcTermFromDate(date: Date): string {
   const month = monthInUbcTimeZone(date);
 
@@ -61,10 +70,22 @@ const UBC_TERM_START_MONTH: Record<string, number> = {
 
 function ubcTermStartDate(year: number, code: string): Date {
   const month = UBC_TERM_START_MONTH[code] ?? 9;
-  return new Date(Date.UTC(year, month - 1, 1, 7, 0, 0));
+  // Noon UTC, not midnight-with-a-fixed-offset: Vancouver is UTC-8 (PST) in
+  // January but UTC-7 (PDT) in May–Sep, so any single fixed hour below 8
+  // lands the synthesized W2 start on Dec 31 Vancouver time and
+  // `ubcTermFromDate` re-derives it as W1 of the wrong year. Noon UTC is the
+  // same calendar day in Vancouver, UTC, and every plausible host timezone.
+  return new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
 }
 
-/** Infers a UBC term start from patterns like "2026 Winter" or "2026 W1". */
+/**
+ * Infers a UBC term start from patterns like "2026 Winter" or "2026 W1".
+ *
+ * The year in a UBC term name is the ACADEMIC year (#1088): "2026 W2" is the
+ * second half of the Winter session that began September 2026, so its classes
+ * start January of the FOLLOWING calendar year (Jan 2027). Every other term
+ * starts within its academic year's calendar year.
+ */
 export function inferStartDateFromTermName(termName: string | null | undefined): Date | null {
   if (!termName?.trim()) {
     return null;
@@ -82,7 +103,7 @@ export function inferStartDateFromTermName(termName: string | null | undefined):
     return ubcTermStartDate(year, "W1");
   }
   if (/\bw2\b/.test(lower)) {
-    return ubcTermStartDate(year, "W2");
+    return ubcTermStartDate(year + 1, "W2");
   }
   if (/\bs1\b/.test(lower)) {
     return ubcTermStartDate(year, "S1");
@@ -97,5 +118,8 @@ export function inferStartDateFromTermName(termName: string | null | undefined):
 /** Infers UBC term start from a term end date when Canvas omits `start_at`. */
 export function inferUbcTermStartFromEndDate(endDate: Date): Date {
   const code = ubcTermFromDate(endDate);
-  return ubcTermStartDate(endDate.getUTCFullYear(), code);
+  // Vancouver year, not UTC year: an end_at in the first UTC hours of Jan 1
+  // is still Dec 31 in Vancouver — `code` above is derived in Vancouver time,
+  // so the year must be too or the pair disagrees across New Year.
+  return ubcTermStartDate(yearInUbcTimeZone(endDate), code);
 }
