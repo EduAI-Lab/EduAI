@@ -16,8 +16,14 @@
  * no-op the second time. Order matters — dependent indexes/constraints on a
  * column are dropped before the column itself; see `dropColumnIfExists`.
  *
- * Usage (from project root): npm run migrate:1072 --prefix app/backend
- * Or from app/backend: node scripts/migrate1072AnchorCleanup.js
+ * Usage:
+ *   - host, from project root:  npm run migrate:1072 --prefix app/backend
+ *   - host, from app/backend:   node scripts/migrate1072AnchorCleanup.js
+ *   - Docker (deployed image):  docker compose exec <qm-backend-service> \
+ *                                 node scripts/migrate1072AnchorCleanup.js
+ *     e.g. `e2e-qm-server` in docker-compose.e2e.yml. Compose supplies
+ *     DATABASE_URL as an environment variable and mounts no .env file —
+ *     see env resolution below.
  */
 
 // CRITICAL: Load environment variables FIRST before any imports that depend on them
@@ -30,27 +36,30 @@ import { existsSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env file from the project root
-const projectRoot = join(__dirname, '../../../');
-const envPath = join(projectRoot, '.env');
-
-// Check if .env file exists
-if (!existsSync(envPath)) {
-  console.error('❌ Error: .env file not found!');
-  console.error(`   Expected location: ${envPath}`);
-  process.exit(1);
-}
-
-// Load environment variables
-const result = dotenv.config({ path: envPath });
-if (result.error) {
-  console.error('❌ Error loading .env file:', result.error.message);
-  process.exit(1);
-}
-
-// Check if DATABASE_URL is set
+// Env resolution: an already-set DATABASE_URL wins (the Docker image gets it
+// from Compose and does not mount a .env — resolving `../../../.env` from
+// /app/scripts would look for /.env and abort). The repo-root .env is only a
+// fallback for host runs.
 if (!process.env.DATABASE_URL) {
-  console.error('❌ Error: DATABASE_URL is not set in .env file');
+  const projectRoot = join(__dirname, '../../../');
+  const envPath = join(projectRoot, '.env');
+
+  if (!existsSync(envPath)) {
+    console.error('❌ Error: DATABASE_URL is not set and no .env file was found!');
+    console.error(`   Looked for: ${envPath}`);
+    console.error('   Set DATABASE_URL in the environment, or create the .env file.');
+    process.exit(1);
+  }
+
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    console.error('❌ Error loading .env file:', result.error.message);
+    process.exit(1);
+  }
+}
+
+if (!process.env.DATABASE_URL) {
+  console.error('❌ Error: DATABASE_URL is not set (checked environment and .env file)');
   process.exit(1);
 }
 
