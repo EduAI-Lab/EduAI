@@ -212,6 +212,12 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(persisted[0]).toMatchObject({ messageId: "tool-step", role: "assistant" });
     expect(persisted[1]).toMatchObject({ messageId: "final-step", role: "assistant" });
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Top summary**");
+    expect(persisted[0]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
+    expect(persisted[1]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
   });
 
   it("persists overseen content before streaming the reply", async () => {
@@ -225,6 +231,9 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const persisted = lastPersistedRows();
     expect(persisted).toHaveLength(2);
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Next?**");
+    expect(persisted[1]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
     expect(await res.text()).toContain("Want to continue?");
   });
 
