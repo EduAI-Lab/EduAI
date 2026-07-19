@@ -60,8 +60,8 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         heading="Courses"
         subheading={
           unitsLabel
-            ? `Courses in ${unitsLabel} that you can author in Question Maker. Cross-unit edits are blocked server-side.`
-            : 'Courses you can author in Question Maker. Cross-unit edits are blocked server-side.'
+            ? `Courses in ${unitsLabel} that you can author in Question Maker. You can only edit courses in your own units.`
+            : 'Courses you can author in Question Maker. You can only edit courses in your own units.'
         }
       />
       <CoursesGrid

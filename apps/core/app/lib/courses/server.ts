@@ -332,7 +332,9 @@ export async function updateCourse(request: Request, courseId: string) {
     }
     const updated = await prisma.course.update({
       where: { id: courseId },
-      data: { aiInstructions: result.data.aiInstructions },
+      data: {
+        aiInstructions: result.data.aiInstructions,
+      },
     });
     return new Response(JSON.stringify(updated), {
       status: 200,
