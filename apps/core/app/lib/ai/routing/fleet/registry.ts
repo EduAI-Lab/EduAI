@@ -1,4 +1,9 @@
-import type { FleetServer, JobType } from "./types";
+import {
+  jobTypeForWorkloadFeature,
+  type FleetServer,
+  type JobType,
+  type WorkloadFeature,
+} from "./types";
 
 const DEFAULT_CHAT_MODELS = ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct"];
 
@@ -40,6 +45,7 @@ function buildServer(url: string, jobTypes: JobType[], models: string[]): FleetS
     baseUrl,
     jobTypes,
     models,
+    energySidecarUrl: `${baseUrl}/energy`,
   };
 }
 
@@ -98,4 +104,9 @@ export function getServersForJobType(jobType: JobType): FleetServer[] {
     if (heavy.length > 0) return heavy;
   }
   return chatServers();
+}
+
+/** Compatibility adapter for PR4 callers that still identify workloads by feature. */
+export function getServersForFeature(feature: WorkloadFeature): FleetServer[] {
+  return getServersForJobType(jobTypeForWorkloadFeature(feature));
 }

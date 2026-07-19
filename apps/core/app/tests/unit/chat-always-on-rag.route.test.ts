@@ -270,6 +270,7 @@ describe("Smart course RAG gate (#484)", () => {
 
   describe("tool path (supportsTools = true)", () => {
     beforeEach(() => {
+      process.env.VLLM_CHAT_TOOLS = "1";
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: true,
         maxTokens: 8192,

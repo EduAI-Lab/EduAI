@@ -132,7 +132,15 @@ jobs:
           PORT=4001
           EOF
 
-      - name: Generate Prisma clients
+      # Generate Core immediately before typechecking so another workspace's
+      # hoisted Prisma client cannot mask or invalidate Core's generated types.
+      - name: Typecheck core
+        run: |
+          set -euo pipefail
+          npm run db:generate -w edu-ai
+          npm run typecheck -w edu-ai
+
+      - name: Generate Prisma clients for tests
         run: |
           set -euo pipefail
           npm run db:generate -w edu-ai

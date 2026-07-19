@@ -25,6 +25,8 @@ import { cn } from "~/lib/utils";
 export interface ChatMessageProps {
   message: Message;
   isStreaming?: boolean;
+  /** Human-readable model name recorded for this assistant message. */
+  answeredByLabel?: string | null;
   highlightRole?: MessageHighlightRole;
   webToolsEnabled?: boolean;
   /** When true, relabel Assistive policy headings at display time only (#699). */
@@ -66,6 +68,7 @@ export function coerceMessageContent(content: unknown): string {
 export function ChatMessage({
   message,
   isStreaming = false,
+  answeredByLabel,
   highlightRole = null,
   webToolsEnabled = false,
   assistiveDisplay = false,
@@ -219,6 +222,12 @@ export function ChatMessage({
                 </MessageContent>
               ),
             )}
+
+            {answeredByLabel ? (
+              <p className="text-xs text-muted-foreground px-1">
+                Answered by {answeredByLabel}
+              </p>
+            ) : null}
 
             <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction tooltip="Copy message">

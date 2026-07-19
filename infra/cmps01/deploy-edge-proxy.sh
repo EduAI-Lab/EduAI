@@ -13,6 +13,10 @@ if [ -f .env ]; then
 fi
 
 : "${CMPS01_INTERNAL_KEY:?Set CMPS01_INTERNAL_KEY in infra/cmps01/.env (see .env.example)}"
+if [ "$CMPS01_INTERNAL_KEY" = "changeme-run-deploy-edge-proxy" ]; then
+  echo "ERROR: CMPS01_INTERNAL_KEY is still the placeholder — set a real secret in .env"
+  exit 1
+fi
 : "${CMPS01_INTERNAL_ALLOW_IPS:?Set CMPS01_INTERNAL_ALLOW_IPS to s378 only (e.g. 206.87.25.229) — do not add laptops}"
 
 echo "=== render nginx configs ==="
