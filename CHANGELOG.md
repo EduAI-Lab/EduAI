@@ -18,6 +18,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ## [Week 11 — July 13–19, 2026]
 
 ### Added
+- [ai-tutor] docs: Add ~54 technically-grounded use-case scenarios across 7 actor files (student, instructor, admin, unit-admin, TA, unauthenticated, service-caller) documenting how AI Tutor — including its dual-loop tutor/supervisor tutoring pipeline — is used, misused, and attacked from every RBAC perspective; every cited file path/function name verified against the actual codebase. (#1079, @GlowyBlack, 2026-07-17) — [#1081](https://github.com/EduAI-Lab/EduAI/pull/1081)
 - [core] docs: Add ~70 technically-grounded use-case scenarios across 7 actor files (admin, unit-admin, instructor, TA, student, unauthenticated, service-caller) documenting how Core is used, misused, and attacked from every RBAC perspective â every cited file path/function name verified against the actual codebase. Scaffolds `docs/use-cases/qm/` and `docs/use-cases/ai-tutor/` as empty placeholders for future contributors. (#1056, @GlowyBlack, 2026-07-15) — [#1057](https://github.com/EduAI-Lab/EduAI/pull/1057)
 
 ### Changed
