@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
 
 const baseProps = {
@@ -53,5 +53,48 @@ describe("ChatConversationLayout — empty state layout", () => {
     expect(root?.className).toMatch(/\bh-full\b/);
     expect(root?.className).toMatch(/\bmin-h-0\b/);
     expect(root?.className).not.toMatch(/100vh/);
+  });
+});
+
+describe("ChatConversationLayout — routed model labels", () => {
+  it("keeps a message-owned label visible when the picker changes", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        selectedModel="google:gemini-2.5-pro"
+        chatModels={[
+          {
+            id: "openai:gpt-4o",
+            name: "GPT-4o",
+            description: "OpenAI model",
+            provider: "openai",
+          },
+        ]}
+        messages={[
+          { id: "assistant-1", role: "assistant", content: "Persisted answer" },
+        ]}
+        routedModelByMessageId={{ "assistant-1": "openai:gpt-4o" }}
+      />,
+    );
+
+    expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
+  });
+
+  it("uses the response-header fallback for an in-flight assistant message", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        selectedModel="auto"
+        messages={[
+          { id: "assistant-stream", role: "assistant", content: "Streaming" },
+        ]}
+        isLoading
+        streamingRoutedRegistryId="vllm:qwen2.5-7b-instruct"
+      />,
+    );
+
+    expect(
+      screen.getByText("Answered by vllm:qwen2.5-7b-instruct"),
+    ).toBeInTheDocument();
   });
 });

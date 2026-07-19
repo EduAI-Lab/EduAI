@@ -29,7 +29,7 @@ EduAI/
 ├── scripts/                         # Repo-level setup and dev utilities
 ├── docs/                            # System-wide architecture and planning docs
 │   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
-│   └── implementations/           # schema-design, planned-core-tests, …
+│   └── implementations/             # schema-design, planned-core-tests, …
 ├── turbo.json                       # Turborepo task pipeline configuration
 ├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
 ├── CHANGELOG.md                     # Unified changelog across all apps

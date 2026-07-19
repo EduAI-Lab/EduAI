@@ -8,6 +8,11 @@ import { getUserPreference, saveUserPreference } from "~/lib/user-preferences.se
 import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
+import { withAutoChatModel } from "~/lib/chat-auto-model";
+import {
+  routerAutoDefaultEnabled,
+  routingPickerEnabled,
+} from "~/lib/router-env.server";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import type { User } from "~/lib/auth/types";
@@ -20,6 +25,8 @@ import type { User } from "~/lib/auth/types";
  */
 export interface ChatBaseData {
   chatModels: ChatModelOption[];
+  routerAutoEnabled: boolean;
+  showRoutingModels: boolean;
   user: User;
   assistDefault: boolean;
   lastCourseCode: string | null;
@@ -38,13 +45,16 @@ export async function loadChatBaseData(
     throw redirect("/auth/login");
   }
 
+  const routerAutoEnabled = routerAutoDefaultEnabled();
+  const showRoutingModels = routingPickerEnabled();
+
   const dbModels = await prisma.aIModel.findMany({
     where: { isActive: true },
     include: { provider: true },
     orderBy: [{ provider: { name: "asc" } }, { name: "asc" }],
   });
 
-  const chatModels: ChatModelOption[] = dbModels.map((model) => ({
+  const registryModels: ChatModelOption[] = dbModels.map((model) => ({
     id: `${model.provider.name}:${model.modelId}`,
     name: model.name,
     description: model.description,
@@ -54,11 +64,15 @@ export async function loadChatBaseData(
     supportsTools: model.supportsTools,
   }));
 
+  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
+
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);
 
   return {
     chatModels,
+    routerAutoEnabled,
+    showRoutingModels,
     user: session.user,
     ...preferences,
   };
