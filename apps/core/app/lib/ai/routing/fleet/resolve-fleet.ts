@@ -1,12 +1,20 @@
 import { parseModelIdentifier } from "~/lib/ai/provider-types";
 import { getServerHealth, serverHostsModel } from "./health";
 import { fleetRoutingEnabled, getServersForJobType, heavyFleetConfigured } from "./registry";
-import type { FleetPick, JobType } from "./types";
+import {
+  jobTypeForWorkloadFeature,
+  type FleetPick,
+  type JobType,
+  type WorkloadFeature,
+} from "./types";
 
-export type ResolveFleetInput = {
-  jobType: JobType;
+type ResolveFleetInputBase = {
   resolvedModelId: string;
 };
+
+export type ResolveFleetInput =
+  | (ResolveFleetInputBase & { jobType: JobType; feature?: WorkloadFeature })
+  | (ResolveFleetInputBase & { feature: WorkloadFeature; jobType?: never });
 
 export class FleetUnavailableError extends Error {
   constructor(message: string) {
@@ -54,31 +62,41 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   const parsed = parseModelIdentifier(input.resolvedModelId);
   if (!parsed || parsed.providerId !== "vllm") return null;
 
-  const candidates = getServersForJobType(input.jobType);
+  const jobType =
+    input.jobType ?? jobTypeForWorkloadFeature(input.feature);
+  const candidates = getServersForJobType(jobType);
   if (candidates.length === 0) {
     throw new FleetUnavailableError("No fleet servers configured for this workload");
   }
 
-  const eligible: typeof candidates = [];
-  for (const server of candidates) {
-    const health = await getServerHealth(server.baseUrl);
-    if (!health.ok) continue;
-    if (!serverHostsModel(parsed.modelId, health.modelIds, server.models)) continue;
-    eligible.push(server);
-  }
+  // Probe the fleet concurrently so a cold request waits for at most one
+  // health-check timeout window, regardless of the number of candidates.
+  const healthResults = await Promise.all(
+    candidates.map(async (server) => ({
+      server,
+      health: await getServerHealth(server.baseUrl),
+    })),
+  );
+  const eligible = healthResults
+    .filter(
+      ({ server, health }) =>
+        health.ok && serverHostsModel(parsed.modelId, health.modelIds, server.models),
+    )
+    .map(({ server }) => server);
 
   if (eligible.length === 0) {
     throw new FleetUnavailableError(
-      `No healthy fleet server hosts model "${parsed.modelId}" for job type "${input.jobType}"`,
+      `No healthy fleet server hosts model "${parsed.modelId}" for job type "${jobType}"`,
     );
   }
 
-  const pool = poolCursorKey(input.jobType);
+  const pool = poolCursorKey(jobType);
   const server = eligible[nextRoundRobinIndex(pool) % eligible.length]!;
 
   return {
     serverId: server.id,
     baseUrl: server.baseUrl,
-    reason: pickReason(input.jobType),
+    energySidecarUrl: server.energySidecarUrl,
+    reason: pickReason(jobType),
   };
 }
