@@ -1,10 +1,33 @@
 import { z } from "zod";
+import { RESPONSE_STYLE_TAG_IDS } from "~/lib/ai/response-style-tags";
 import { TERM_CODES } from "@eduai/ui/term";
 
 /**
  * Schema for creating a new course
  * - Used in POST /api/courses
  */
+
+export const ResponseStyleTagIdSchema = z.enum(
+  RESPONSE_STYLE_TAG_IDS as [string, ...string[]],
+);
+
+/** PATCH body: at least one of responseStyleTags / aiInstructions required (and/or). */
+export const UpdateCourseResponseStyleSchema = z
+  .object({
+    responseStyleTags: z.array(ResponseStyleTagIdSchema).max(7).optional(),
+    aiInstructions: z.string().max(4000).optional(),
+  })
+  .refine(
+    (data) =>
+      data.responseStyleTags !== undefined || data.aiInstructions !== undefined,
+    {
+      message: "At least one of responseStyleTags or aiInstructions is required",
+    },
+  );
+
+export type UpdateCourseResponseStyleInput = z.infer<
+  typeof UpdateCourseResponseStyleSchema
+>;
 
 // Canonical UBC term code — the single vocabulary shared across all EduAI apps.
 const TermCodeSchema = z.enum(TERM_CODES);
