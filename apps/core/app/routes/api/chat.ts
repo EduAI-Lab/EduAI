@@ -61,6 +61,7 @@ import {
   parseChatMode,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
+import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
@@ -480,6 +481,35 @@ export async function action({ request }: ActionFunctionArgs) {
         resolvedCourseId = course?.id || null;
       } catch (e) {
         console.error("Failed to resolve course by code", e);
+      }
+    }
+
+    // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
+    // request opts in with `enqueue: true`, push the work onto the AI-job queue and
+    // return a durable job id instead of streaming. Normal chat skips this entirely;
+    // the dispatch worker (#168) drains it later. See lib/queue/chat-producer.server.
+    if (isEnqueueRequested(body)) {
+      try {
+        const { jobId } = await enqueueQuestionGeneration({
+          body,
+          messages: rawMessages,
+          userId: actingUser.id,
+          courseId: resolvedCourseId ?? courseId,
+          requestedModel: model,
+        });
+        return new Response(JSON.stringify({ jobId }), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return chatApiReject(
+          400,
+          {
+            error: "Failed to enqueue AI job",
+            details: error instanceof Error ? error.message : "Unknown error",
+          },
+          { chatMode, userId: actingUser.id },
+        );
       }
     }
     // Load the owned chat up front so a follow-up turn that sends a `chatId`
