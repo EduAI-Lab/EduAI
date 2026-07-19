@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -81,11 +82,17 @@ export function reviveStoredMessage(record: {
       ? parsed.content
       : (parsed.parts ?? parsed.content ?? record.content);
   const text = messageToText(source);
+  const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
+  const resolvedModelId =
+    role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
 
   return {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
-    role: isNonEmptyString(parsed.role) ? parsed.role : record.role,
+    role,
     content: text,
     parts: [{ type: "text", text }],
+    ...(resolvedModelId
+      ? { metadata: { resolvedModelId } }
+      : {}),
   };
 }
