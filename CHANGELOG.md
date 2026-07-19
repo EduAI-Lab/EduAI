@@ -6,6 +6,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 11 — July 13–19, 2026]
 
+### Added
+
+- [core] feat: Async AI-job queue producer — `enqueue()` validates a job against the frozen contract, creates a durable `AiJob` Postgres row (source of truth), and pushes it onto the resolved per-pool BullMQ queue, wired at the `/api/chat` question-generation call site behind the off-by-default `QUEUE_ENQUEUE_ENABLED` flag; dequeue/dispatch is epic #168. (#914, @abdullahmoh21, 2026-07-18)
+
 ### Changed
 
 - [monorepo] perf: Speed up the PR Tests workflow — unit/integration suites now run natively on the runner via `turbo run test` (Turborepo task cache persisted in the GitHub Actions cache, Postgres service containers replacing the per-image Docker builds, which rebuilt every test image plus a full `npm ci` each on cache-less remote runners); E2E keeps the dockerized stack but prebuilds its images with `docker buildx bake` and GHA layer caching (`E2E_SKIP_BUILD=1` skips the script's uncached rebuild); docs-only PRs (`*.md`, `*.txt`, `docs/`) skip both test jobs while still satisfying the required status checks; pushes to `development` seed the turbo + Docker layer caches that fresh PRs restore from. Also fixes `turbo.json` test inputs missing `tests/**` (the ai-tutor-server/qm-backend test dirs, which would have made turbo serve stale cached passes for test-only changes) and relaxes `test.dependsOn` from `build` to `^build` so running tests no longer forces each app's own production build. (#1026, @evanbones, 2026-07-13)
