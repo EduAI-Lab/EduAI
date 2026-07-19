@@ -11,14 +11,25 @@ import {
 import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  estimateToolDefinitionTokens,
+  estimateAdminToolStepReserve,
   getChatModelCapabilities,
+  promptFitsContextWindow,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
   ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { parseJobType } from "~/lib/ai/routing/fleet/types";
+import type { FleetPick } from "~/lib/ai/routing/fleet/types";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
   buildChatToolRegistry,
@@ -101,6 +112,10 @@ type ProxyUserPayload = {
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
+
+function fleetResponseHeaders(fleetPick: FleetPick | null): Record<string, string> {
+  return fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {};
+}
 
 /**
  * Normalizes arbitrary incoming message payloads so downstream code can rely on
@@ -369,7 +384,6 @@ function clientAbortResponse(): Response {
  */
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
@@ -399,10 +413,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
+    const jobType = parseJobType(body.routingContext);
 
     chatApiTrace("request received", {
       chatMode,
       chatbotType: expectedChatbotType,
+      jobType,
       chatId: chatId ?? null,
       model: model ?? null,
       courseCode: courseCode ?? null,
@@ -428,7 +444,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let actingUser = session.user;
     if (proxyUserPayload) {
-      if (!apiKeyHeader) {
+      if (!apiKeySession) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -558,6 +574,8 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
+    let effectiveCourse: { responseStyleTags: string[]; aiInstructions: string } | null =
+      null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -576,6 +594,10 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+      effectiveCourse = {
+        responseStyleTags: course.responseStyleTags ?? [],
+        aiInstructions: course.aiInstructions ?? null,
+      };
     }
 
     // §839: students must not see materials that are hidden or scheduled for a
@@ -760,6 +782,38 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
+    let fleetPick: FleetPick | null = null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        fleetPick = await resolveFleetHost({
+          jobType,
+          resolvedModelId: model,
+        });
+        if (fleetPick) {
+          chatApiTrace("fleet host selected", {
+            fleetServerId: fleetPick.serverId,
+            fleetReason: fleetPick.reason,
+            jobType,
+            model,
+          });
+        }
+      } catch (err) {
+        if (err instanceof FleetUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "No healthy vLLM fleet server available",
+              details: err.message,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+
     // Service key callers (AI Tutor, QM) have no real User row to look up DB
     // settings for (actingUser.id is the synthetic "service" id), so they
     // must still pass apiKeys in the body, same as before the DB migration.
@@ -791,11 +845,13 @@ export async function action({ request }: ActionFunctionArgs) {
       validatedApiKeys = mergeLocalInferenceFromEnv(
         toUserProviderSettings(apiKeysParsed.data),
         model,
+        fleetPick?.baseUrl,
       );
     } else {
       validatedApiKeys = mergeLocalInferenceFromEnv(
         await getUserProviderSettings(actingUser.id),
         model,
+        fleetPick?.baseUrl,
       );
     }
 
@@ -916,6 +972,9 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
     let courseRagInject = false;
+    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
+    let adminContextWindow: number | undefined;
+    let adminDesiredMaxOutput: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -944,26 +1003,36 @@ export async function action({ request }: ActionFunctionArgs) {
         activeChatModel?.maxTokens,
         parsedModel.providerId,
       );
-      const desiredMaxOutput = resolveMaxOutputTokens(
-        activeChatModel?.maxTokens,
-        parsedModel.providerId,
+      // 16k windows: tool schemas + multi-step list payloads leave little room.
+      // Cap completion aggressively; mid-turn tool results are reserved separately.
+      const desiredMaxOutput = Math.min(
+        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
+        contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
+      // Leave room for the ~17 admin tool schemas on small context models.
       const adminSessionBudget =
-        contextWindow <= 32_768
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
-          : undefined;
+        contextWindow <= 16_384
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
+          : contextWindow <= 32_768
+            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
+            : undefined;
+
+      const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
       modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, 3000),
+        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
         adminSessionBudget
           ? {
               charBudget: adminSessionBudget,
-              recentCount: 4,
-              digestMaxChars: 3000,
+              recentCount: 3,
+              digestMaxChars: toolResultCapChars,
             }
           : undefined,
       );
+
+      adminContextWindow = contextWindow;
+      adminDesiredMaxOutput = desiredMaxOutput;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -990,37 +1059,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
+      const adminMaxSteps =
+        contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
+
+      // Provisional maxTokens — final cap runs after composeSecurityPrompt below
+      // so the security block and tool schemas are included in the budget.
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
-        maxSteps: TOOL_MAX_STEPS,
+        maxSteps: adminMaxSteps,
         tools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
-
-      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
-      let messageChars = 0;
-      for (const message of modelMessages) {
-        messageChars += estimateMessageCharsForModel(message);
-      }
-      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-      });
-
-      chatApiTrace("max output tokens capped", {
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-        effectiveMaxTokens: streamConfig.maxTokens,
-        systemChars,
-        messageChars,
-      });
     } else {
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -1032,17 +1085,26 @@ export async function action({ request }: ActionFunctionArgs) {
       useToolCalling = supportsTools && !forceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
-      const defaultCourseSystemPrompt =
-        resolvedSystemPrompt ||
-        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const courseStyleBlock = effectiveCourse
+        ? buildCourseResponseStylePrompt(
+            effectiveCourse.responseStyleTags,
+            effectiveCourse.aiInstructions,
+          )
+        : "";
+
+      const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
+
+      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
+        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+        courseStyleBlock,
+      );
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
@@ -1109,11 +1171,15 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ??
+            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`;
+${LATEST_TURN_FOCUS_INSTRUCTION}`,
+          courseStyleBlock,
+        );
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,
@@ -1174,6 +1240,74 @@ ${buildEmptyCourseRagBlock()}`;
         profile: adhdProfile,
       }),
     );
+
+    // Re-cap after composeSecurityPrompt so the security block is included, and
+    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
+    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
+    if (
+      chatMode === "admin" &&
+      adminContextWindow != null &&
+      adminDesiredMaxOutput != null
+    ) {
+      const systemChars =
+        typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const toolCount =
+        streamConfig.tools && typeof streamConfig.tools === "object"
+          ? Object.keys(streamConfig.tools).length
+          : 0;
+      const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
+      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const estimatedInputTokens =
+        estimateTokensFromChars(systemChars + messageChars) +
+        toolDefinitionTokens +
+        toolStepReserve;
+
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        toolDefinitionTokens: 0,
+        safetyBuffer: 512,
+        minOutput: 256,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        toolCount,
+        toolDefinitionTokens,
+        toolStepReserve,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+
+      if (
+        !promptFitsContextWindow({
+          contextWindow: adminContextWindow,
+          estimatedInputTokens,
+          maxOutputTokens: streamConfig.maxTokens,
+          safetyBuffer: 256,
+        })
+      ) {
+        return chatApiReject(
+          400,
+          {
+            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            code: "ADMIN_CONTEXT_TOO_LARGE",
+            estimatedInputTokens,
+            contextWindow: adminContextWindow,
+            toolCount,
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+    }
 
     const streamStartedAt = Date.now();
     // True when course material reached the model this turn: either a tool
@@ -1294,12 +1428,9 @@ ${buildEmptyCourseRagBlock()}`;
                 });
               }
             },
-        onError:
-          chatMode === "admin"
-            ? ({ error }) => {
-                logStreamError(error, streamTrace);
-              }
-            : undefined,
+        onError: ({ error }) => {
+          logStreamError(error, streamTrace);
+        },
       });
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
@@ -1390,6 +1521,7 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          Object.assign(headers, fleetResponseHeaders(fleetPick));
 
           await persistOverseenAssistantMessages(finalText);
 
@@ -1424,7 +1556,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...fleetResponseHeaders(fleetPick) },
           },
         );
       } catch (error) {
@@ -1455,6 +1587,7 @@ ${buildEmptyCourseRagBlock()}`;
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+      Object.assign(headers, fleetResponseHeaders(fleetPick));
       return result.toDataStreamResponse({
         headers,
         ...(chatMode === "admin"
@@ -1513,7 +1646,7 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...fleetResponseHeaders(fleetPick) },
           },
         );
       } catch (error) {
