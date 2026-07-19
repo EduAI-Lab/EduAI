@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
 import {
-  buildEduaiDiagramFence,
+  matchExplicitDiagramTypeId,
   resolveEduaiDiagramTypeId,
+  hasEduaiDiagramFence,
 } from "~/lib/ai/eduai-diagram-type";
+import { buildEduaiDiagramFence } from "~/lib/ai/eduai-diagram-payload";
 
 describe("resolveEduaiDiagramTypeId", () => {
   it("defaults to process-flow", () => {
@@ -44,11 +46,34 @@ describe("resolveEduaiDiagramTypeId", () => {
       "process-flow",
     );
   });
+});
 
-  it("builds a legacy type-only fence", () => {
-    expect(buildEduaiDiagramFence("mystery")).toContain("process-flow");
-    expect(buildEduaiDiagramFence("gradient-descent")).toBe(
-      ["```eduai-diagram", "gradient-descent", "```"].join("\n"),
+describe("matchExplicitDiagramTypeId", () => {
+  it("returns null for bare stage labels", () => {
+    expect(matchExplicitDiagramTypeId("Start")).toBeNull();
+    expect(matchExplicitDiagramTypeId("Introduce")).toBeNull();
+  });
+
+  it("matches canonical ids and aliases", () => {
+    expect(matchExplicitDiagramTypeId("gradient-descent")).toBe(
+      "gradient-descent",
     );
+    expect(matchExplicitDiagramTypeId("gd")).toBe("gradient-descent");
+  });
+});
+
+describe("hasEduaiDiagramFence", () => {
+  it("detects catalog fences", () => {
+    expect(hasEduaiDiagramFence("```eduai-diagram\ngd\n```")).toBe(true);
+    expect(hasEduaiDiagramFence("```text\nx\n```")).toBe(false);
+  });
+});
+
+describe("buildEduaiDiagramFence (payload)", () => {
+  it("emits labeled default stages even for bare type ids", () => {
+    const fence = buildEduaiDiagramFence({ typeId: "gradient-descent" });
+    expect(fence).toContain("gradient-descent");
+    expect(fence).toContain("Start point:");
+    expect(fence).toContain("Step downhill:");
   });
 });

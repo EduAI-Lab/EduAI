@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatedDiagramShell } from "~/components/chat/diagrams/animated-diagram-shell";
-import {
-  defaultStagesForType,
-  normalizeStagesForType,
-  type EduaiDiagramPayload,
-} from "~/lib/ai/eduai-diagram-payload";
+import { useDiagramStageUi } from "~/components/chat/diagrams/diagram-stage-ui";
+import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 import { cn } from "~/lib/utils";
 
 /**
@@ -17,17 +14,10 @@ export function AnimatedCompare({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const stages = normalizeStagesForType(
+  const { stages, selected, setSelected, detail } = useDiagramStageUi(
     "compare",
-    payload.stages.length > 0
-      ? payload.stages
-      : defaultStagesForType("compare"),
+    payload,
   );
-  const [selected, setSelected] = useState(0);
-
-  useEffect(() => {
-    setSelected(0);
-  }, [payload.title, stages.map((s) => s.label).join("|")]);
 
   return (
     <AnimatedDiagramShell
@@ -36,24 +26,14 @@ export function AnimatedCompare({
       title={payload.title?.trim() || "Compare"}
       ariaLabel={`Interactive comparison: ${stages.map((s) => s.label).join(" versus ")}`}
       caption="Tap a side for a short explanation."
-      detail={
-        <>
-          <span className="font-medium">{stages[selected]?.label}</span>
-          {stages[selected]?.detail ? (
-            <span className="text-muted-foreground">
-              {" — "}
-              {stages[selected]?.detail}
-            </span>
-          ) : null}
-        </>
-      }
+      detail={detail}
     >
       {({ playKey, reducedMotion }) => (
         <div
           key={playKey}
           className="flex flex-wrap items-stretch justify-center gap-2 sm:gap-3"
         >
-          {stages.slice(0, 2).map((pane, i) => (
+          {stages.map((pane, i) => (
             <ComparePane
               key={`${pane.label}-${i}`}
               label={pane.label}

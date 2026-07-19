@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatedDiagramShell } from "~/components/chat/diagrams/animated-diagram-shell";
-import {
-  defaultStagesForType,
-  normalizeStagesForType,
-  type EduaiDiagramPayload,
-} from "~/lib/ai/eduai-diagram-payload";
+import { useDiagramStageUi } from "~/components/chat/diagrams/diagram-stage-ui";
+import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 import { cn } from "~/lib/utils";
 
 /**
@@ -17,19 +14,12 @@ export function AnimatedHierarchy({
   className?: string;
   payload: EduaiDiagramPayload;
 }) {
-  const stages = normalizeStagesForType(
+  const { stages, selected, setSelected, detail } = useDiagramStageUi(
     "hierarchy",
-    payload.stages.length > 0
-      ? payload.stages
-      : defaultStagesForType("hierarchy"),
+    payload,
   );
-  const root = stages[0]!;
+  const root = stages[0] ?? { label: "Whole", detail: "" };
   const children = stages.slice(1);
-  const [selected, setSelected] = useState(0);
-
-  useEffect(() => {
-    setSelected(0);
-  }, [payload.title, stages.map((s) => s.label).join("|")]);
 
   return (
     <AnimatedDiagramShell
@@ -38,24 +28,13 @@ export function AnimatedHierarchy({
       title={payload.title?.trim() || "Structure / hierarchy"}
       ariaLabel={`Interactive hierarchy: ${stages.map((s) => s.label).join(", ")}`}
       caption="Tap a node for a short explanation."
-      detail={
-        <>
-          <span className="font-medium">{stages[selected]?.label}</span>
-          {stages[selected]?.detail ? (
-            <span className="text-muted-foreground">
-              {" — "}
-              {stages[selected]?.detail}
-            </span>
-          ) : null}
-        </>
-      }
+      detail={detail}
     >
       {({ playKey, reducedMotion }) => (
         <div key={playKey} className="flex flex-col items-center gap-3 py-1">
           <HierarchyNode
             label={root.label}
             selected={selected === 0}
-            lit={!reducedMotion}
             delayMs={0}
             onSelect={() => setSelected(0)}
             reducedMotion={reducedMotion}
@@ -68,7 +47,6 @@ export function AnimatedHierarchy({
                   key={`${child.label}-${i}`}
                   label={child.label}
                   selected={selected === i + 1}
-                  lit={!reducedMotion}
                   delayMs={(i + 1) * 450}
                   onSelect={() => setSelected(i + 1)}
                   reducedMotion={reducedMotion}
@@ -86,7 +64,6 @@ export function AnimatedHierarchy({
 function HierarchyNode({
   label,
   selected,
-  lit,
   delayMs,
   onSelect,
   reducedMotion,
@@ -94,7 +71,6 @@ function HierarchyNode({
 }: {
   label: string;
   selected: boolean;
-  lit: boolean;
   delayMs: number;
   onSelect: () => void;
   reducedMotion: boolean;
@@ -122,7 +98,7 @@ function HierarchyNode({
         selected
           ? "border-primary bg-primary text-primary-foreground shadow-sm"
           : "border-border bg-background text-foreground hover:border-primary/40",
-        visible || !lit ? "opacity-100 scale-100" : "opacity-0 scale-95",
+        visible ? "opacity-100 scale-100" : "opacity-0 scale-95",
       )}
     >
       {label}

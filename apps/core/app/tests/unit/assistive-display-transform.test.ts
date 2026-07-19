@@ -254,6 +254,59 @@ gradient-descent
     expect(displayed.indexOf("**TLDR**")).toBeLessThan(displayed.indexOf("**Continue**"));
   });
 
+  it("keeps a second eduai-diagram fence instead of dropping it", () => {
+    const stored = `**Top summary**
+- Alpha
+
+\`\`\`eduai-diagram
+process-flow
+title: First
+A: one
+B: two
+C: three
+\`\`\`
+
+\`\`\`eduai-diagram
+compare
+title: Second
+Left: a
+Right: b
+\`\`\`
+
+**Next?** More?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toContain("title: First");
+    expect(displayed).toContain("title: Second");
+    expect(displayed.indexOf("title: First")).toBeLessThan(
+      displayed.indexOf("title: Second"),
+    );
+  });
+
+  it("rebuilds TLDR when bullets do not match diagram stage labels", () => {
+    const stored = `**Top summary**
+- Unrelated one
+- Unrelated two
+- Unrelated three
+- Unrelated four
+
+\`\`\`eduai-diagram
+process-flow
+title: Bill
+Introduce Bill: file
+Committee: review
+Vote: decide
+Law: sign
+\`\`\`
+
+**Next?** More?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toContain("Introduce Bill");
+    expect(displayed).toContain("Committee");
+    expect(displayed).not.toContain("Unrelated one");
+  });
+
   it("leaves redirect-style turns without Top summary unchanged except Next? relabel", () => {
     const stored = `That's a separate question — want to come back to gradients first, or switch?
 
