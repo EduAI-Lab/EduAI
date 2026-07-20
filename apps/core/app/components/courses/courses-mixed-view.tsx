@@ -9,6 +9,7 @@ import {
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
 } from '@eduai/ui'
 import type { Course } from '~/hooks/api/use-courses'
 import { buildDateListSections } from '~/lib/courses/date-list-sections'
@@ -80,7 +81,7 @@ function CourseSection({
               isPublished={course.isPublished}
               department={course.department}
               extraBadges={extraBadges}
-              colorIndex={index}
+              colorIndex={defaultColorIndexForCourse(course.id)}
               accentColor={accentColor}
               heroAction={
                 <CourseCardCustomizePopover

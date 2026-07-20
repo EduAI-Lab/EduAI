@@ -78,7 +78,6 @@ export interface EduAIModelOption {
     label: string;
     provider: string;
     description?: string;
-    isDefault?: boolean;
 }
 
 export interface EduAICourseOption {
@@ -218,7 +217,6 @@ class EduAIService {
                         label: model.name ?? modelId,
                         provider,
                         description: model.description,
-                        isDefault: false,
                     };
                 });
         } catch (error) {

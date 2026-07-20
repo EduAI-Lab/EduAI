@@ -11,7 +11,16 @@
  */
 import { test, expect } from '@playwright/test';
 import { CORE_URL, AI_TUTOR_API_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { signUp, signOut, signIn, uniqueEmail, DEFAULT_PASSWORD, checkStatus } from '../helpers/auth';
+import {
+  signUp,
+  signOut,
+  signIn,
+  uniqueEmail,
+  DEFAULT_PASSWORD,
+  checkStatus,
+  createInstructor,
+} from '../helpers/auth';
+import { createQmCourseForInstructor } from '../helpers/qm-courses';
 
 // ---------------------------------------------------------------------------
 // Session propagation — one Core sign-in unlocks all three backends
@@ -178,23 +187,18 @@ test.describe('User data isolation across services', () => {
     const req2 = await playwright.request.newContext();
 
     try {
-      const email1 = uniqueEmail('isolation-u1');
-      const email2 = uniqueEmail('isolation-u2');
+      // #1072: QM course creation now requires a scoped `coreCourseId`, and
+      // QM's course LIST is instructor-rank-and-up only (`MIN_LIST_RANK` in
+      // courseListService.js, pre-dating #1072) — a STUDENT-rank creator
+      // never sees their own anchor in `GET /api/course`. Use INSTRUCTOR
+      // callers so this test still exercises real list isolation: each user
+      // gets their own Core-linked anchor via the shared helper (creates a
+      // distinctly-named Core course, then posts the QM anchor as them).
+      await createInstructor(req1, { prefix: 'isolation-u1' });
+      await createInstructor(req2, { prefix: 'isolation-u2' });
 
-      await signUp(req1, { email: email1 });
-      await signUp(req2, { email: email2 });
-
-      // User 1 creates a QM course
-      const create1 = await req1.post(`${QM_BACKEND_URL}/api/course`, {
-        data: { name: 'User 1 Course' },
-      });
-      expect(create1.status()).toBe(201);
-
-      // User 2 creates a QM course
-      const create2 = await req2.post(`${QM_BACKEND_URL}/api/course`, {
-        data: { name: 'User 2 Course' },
-      });
-      expect(create2.status()).toBe(201);
+      await createQmCourseForInstructor(playwright, req1, { name: 'User 1 Course' });
+      await createQmCourseForInstructor(playwright, req2, { name: 'User 2 Course' });
 
       // Each user only sees their own courses
       const raw1 = await (await req1.get(`${QM_BACKEND_URL}/api/course`)).json();

@@ -1,6 +1,11 @@
 /**
  * Sequelize model for assessment blueprints (midterm, quiz, etc.) tied to a course.
- * Stores metadata like type, semester, description, and optional blueprint configuration JSON.
+ * Stores metadata like type, description, and optional blueprint configuration JSON.
+ *
+ * `semester` was dropped (#1072 §2/§4 step 10/#1077) — it duplicated the linked
+ * course's Core term. Reads derive a display string from the course's Core
+ * term/year at the read seam (`courseListService.formatSemesterDisplay`); never
+ * re-add a stored `semester` column.
  */
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
@@ -25,13 +30,6 @@ export const Assessments = sequelize.define('Assessments', {
     allowNull: false
   },
   name: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      notEmpty: true
-    }
-  },
-  semester: {
     type: DataTypes.STRING,
     allowNull: false,
     validate: {

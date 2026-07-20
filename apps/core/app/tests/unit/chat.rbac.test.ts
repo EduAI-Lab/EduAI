@@ -26,7 +26,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    course: { findFirst: vi.fn(), findUnique: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -35,6 +35,7 @@ import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
@@ -61,6 +62,7 @@ function makeArgs(body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -130,18 +132,20 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("resolves compact courseCode via spaced candidate (COSC121 → COSC 121)", async () => {
-    vi.mocked(prisma.course.findFirst)
-      .mockResolvedValueOnce(null) // exact compact miss
-      .mockResolvedValueOnce({ id: "c1", code: "COSC 121" } as never); // spaced hit
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
     mockAccess({ level: "student", rank: 0 });
 
     const res = await action(makeArgs({ messages: [], courseCode: "COSC121" }));
     expect(res.status).toBe(200);
-    expect(prisma.course.findFirst).toHaveBeenNthCalledWith(1, {
-      where: { code: "COSC121", deletedAt: null },
-    });
-    expect(prisma.course.findFirst).toHaveBeenNthCalledWith(2, {
-      where: { code: "COSC 121", deletedAt: null },
+    expect(prisma.course.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["COSC121", "COSC 121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
     });
     expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
       expect.objectContaining({ id: "u1" }),
@@ -150,18 +154,42 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
   });
 
   it("resolves an already-spaced courseCode on the first candidate", async () => {
-    vi.mocked(prisma.course.findFirst).mockResolvedValueOnce({
-      id: "c1",
-      code: "COSC 121",
-    } as never);
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
     mockAccess({ level: "student", rank: 0 });
 
     const res = await action(makeArgs({ messages: [], courseCode: "COSC 121" }));
     expect(res.status).toBe(200);
-    expect(prisma.course.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.course.findFirst).toHaveBeenCalledWith({
-      where: { code: "COSC 121", deletedAt: null },
+    expect(prisma.course.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["COSC 121", "COSC121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
     });
+  });
+
+  it("resolves courseCode case-insensitively (cosc121 → COSC 121)", async () => {
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "cosc121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["cosc121", "cosc 121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
+    });
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "c1",
+    );
   });
 });
 

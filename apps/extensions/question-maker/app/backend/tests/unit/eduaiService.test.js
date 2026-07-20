@@ -125,7 +125,10 @@ describe('chat', () => {
     expect(payload.systemPrompt).toBe('Return JSON only');
     expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(payload.streaming).toBe(false);
-    expect(payload.routingContext).toEqual({ jobType: 'background' });
+    expect(payload.routingContext).toEqual({
+      feature: 'question-maker',
+      jobType: 'background',
+    });
     expect(opts.headers.cookie).toBe('__Secure-better-auth.session_token=abc');
     expect(opts.headers.Authorization).toBeUndefined();
   });
