@@ -275,6 +275,8 @@ describe("enforceAdminIfApiKey", () => {
                 actionCode: "API_KEY_DENIED",
                 outcome: "DENIED",
                 entityType: "Auth",
+                entityId: null,
+                entityLabel: null,
             }),
         );
     });
