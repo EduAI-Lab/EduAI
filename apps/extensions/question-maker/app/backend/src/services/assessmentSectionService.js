@@ -88,7 +88,8 @@ export const getSectionsForAssessment = async (assessmentId, userId) => {
                   {
                     model: Course,
                     as: 'course',
-                    attributes: ['id', 'name', 'code']
+                    // Unenriched here (`Course` dropped name/code, #1072 §4 step 10).
+                    attributes: ['id']
                   }
                 ]
               }

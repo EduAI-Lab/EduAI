@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+
+// `department` is Core-owned (#1072 step 4) — UNIT_ADMIN scoping resolves it
+// live via `fetchCoreCourseSafe`, so the UNIT_ADMIN describe block below
+// stubs it per-course keyed on `coreOfferingId`.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 describe('Modules routes', () => {
   let prof;
@@ -13,6 +23,13 @@ describe('Modules routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    // Default every seeded course to published (Core-owned, #1072 step 4) so
+    // existing "parent course is published" expectations hold; individual
+    // tests override this.
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -357,10 +374,10 @@ describe('Modules routes', () => {
     });
 
     it('returns 400 when parent course is not published', async () => {
-      // Unpublish the parent course and the module
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { isPublished: false },
+      // Unpublish the parent course (Core-owned, #1072 step 4) and the module
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+        id: seed.course.coreOfferingId,
+        isPublished: false,
       });
       await prisma.module.update({
         where: { id: seed.module.id },
@@ -502,12 +519,16 @@ describe('Modules routes', () => {
     let unitAdmin;
     let unitAdminApp;
 
+    // `department` is Core-owned (#1072 step 4) — stub `fetchCoreCourseSafe`
+    // to resolve it per `coreOfferingId`, keyed on a fixed lookup table.
+    const departmentByCoreOfferingId = { 'core-cosc': 'COSC', 'core-math': 'MATH' };
+
     beforeEach(async () => {
       coscCourse = await prisma.courseOffering.create({
-        data: { title: 'COSC Course', isPublished: true, department: 'COSC' },
+        data: { coreOfferingId: 'core-cosc' },
       });
       mathCourse = await prisma.courseOffering.create({
-        data: { title: 'MATH Course', isPublished: true, department: 'MATH' },
+        data: { coreOfferingId: 'core-math' },
       });
       await prisma.module.create({
         data: { title: 'COSC Module', position: 0, isPublished: true, courseOfferingId: coscCourse.id },
@@ -515,6 +536,10 @@ describe('Modules routes', () => {
       await prisma.module.create({
         data: { title: 'MATH Module', position: 0, isPublished: true, courseOfferingId: mathCourse.id },
       });
+      vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+        id: coreOfferingId,
+        department: departmentByCoreOfferingId[coreOfferingId] ?? null,
+      }));
       unitAdmin = makeUnitAdmin(['COSC']);
       unitAdminApp = await createApp({ mockUser: unitAdmin });
     });
@@ -554,8 +579,10 @@ describe('Modules routes', () => {
     });
 
     it('UNIT_ADMIN cannot POST to a course with no department set', async () => {
+      // 'core-no-dept' isn't in departmentByCoreOfferingId, so the mock
+      // resolves it with `department: null` — never a match.
       const noDeptCourse = await prisma.courseOffering.create({
-        data: { title: 'No Dept Course', isPublished: true },
+        data: { coreOfferingId: 'core-no-dept' },
       });
       const res = await request(unitAdminApp)
         .post(`/api/courses/${noDeptCourse.id}/modules`)

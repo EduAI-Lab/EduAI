@@ -22,6 +22,7 @@
  *   match the server mappers; silent breakage risk if they drift.
  */
 
+import { toast } from 'sonner';
 import type {
   AdminBugReportRow,
   AdminEnrollmentData,
@@ -44,6 +45,16 @@ import type {
   User,
 } from './types';
 import { getCoreLoginUrl } from './coreUrl';
+
+/**
+ * Set by course endpoints (#1072 step 2) when a request degraded gracefully
+ * because EduAI Core couldn't be reached — the response still succeeds (200)
+ * with locally-anchored, possibly-stale data instead of hard-erroring (mirrors
+ * the #1066 topic fail-soft pattern). `http()` below surfaces it as a single
+ * deduped toast (stable `id`, so concurrent course/stat calls during one page
+ * load collapse into one notice instead of stacking).
+ */
+const CORE_STATUS_HEADER = 'X-Core-Status';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -218,6 +229,13 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
   }
+  // Optional chaining: some lightweight test doubles for `Response` omit
+  // `headers` entirely — a real `fetch` Response always has it.
+  if (res.headers?.get?.(CORE_STATUS_HEADER) === 'unavailable') {
+    toast.warning('EduAI Core is unavailable — course data may be out of date.', {
+      id: 'core-unavailable',
+    });
+  }
   // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
   // empty payload, so short-circuit to null.
   if (res.status === 204) return null;
@@ -251,19 +269,6 @@ export const api = {
     }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
-  updateCourse: (
-    courseId: number,
-    payload: {
-      title?: string;
-      description?: string | null;
-      startDate?: string | null;
-      endDate?: string | null;
-    },
-  ) =>
-    http(`/api/courses/${courseId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    }),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
       method: 'PATCH',

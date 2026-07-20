@@ -405,29 +405,31 @@ Route handlers gate on the returned level rather than comparing role strings dir
 
 ## 8. Extension data flows
 
-### Course data — one-way import, not round-trip sync
+### Course data — anchor + live read-through (#1072)
 
-Core is the **authoritative source** for courses, topics, and enrollments. Extensions mirror this data locally; nothing is pushed back to Core during an import.
+Core is the **authoritative source** for courses, topics, and enrollments. Extensions keep only a minimal **anchor row** per course (a local id plus Core's course id) — no course field (title, description, department, dates, publish state, term/year, name/code) is copied or mirrored locally. Every field read goes live through Core on each request; there is no cache (deferred to #1083). Enrollments and topics are a separate mechanism and are still synced into each extension's local tables, unaffected by this change.
 
-**AI Tutor course import**
+**AI Tutor course read-through**
 
-Import is **automatic**. The server calls `GET /api/courses` on Core using the service key on every `GET /api/me` (login) and every `GET /api/courses` list fetch (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore` in `server/src/services/importTaughtCoursesService.js`), creating or reconciling a local `CourseOffering` row keyed by `externalId` = the Core course's CUID. Topics and enrollments are synced in the same flow, and publish state is reconciled against Core's `isPublished` flag. These calls are idempotent, so re-running them on every request is safe. The old manual `POST /courses/import-external` endpoint still exists in the API but is no longer reachable from the UI. A background job (`server/src/jobs/reconcile.js`) also reconciles offerings independently of any request.
+Anchor provisioning is automatic. The server calls `GET /api/courses` on Core using the service key on every `GET /api/me` (login) and every `GET /api/courses` list fetch (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore` in `server/src/services/importTaughtCoursesService.js`), creating a local `CourseOffering` anchor row (`coreOfferingId` only — required and unique) for any Core course not yet linked. Enrollments are synced in the same flow. The old manual `POST /courses/import-external` endpoint still exists in the API but is no longer reachable from the UI. An admin opening a Core course with no local anchor yet materializes one on the spot (`ensureOfferingAnchors`, create-on-open), so the admin course list always shows Core's full catalog instead of only previously-imported courses.
 
-`CourseOffering.isPublished` is mirrored from Core's `Course.isPublished` on every reconcile pass (`reconcileOfferingFromCore`) — students only see a course in AI Tutor once the instructor publishes it in Core. 
+All display fields — including `isPublished` — are resolved live from Core by `mapCourseOffering` (`server/src/utils/mappers.js`) via a `courseResolver` seam over `eduaiClient`: list requests source from one batched `GET /api/courses` call (never per-course), and single-course reads use a service-key `GET /api/courses/:id`. If Core is unreachable, the resolver degrades to an empty/placeholder result (`coreUnavailable: true`) instead of erroring the page. The old field-copying `reconcileOfferingFromCore` reconciler is gone — there's nothing left to reconcile once no course field is stored locally. The background job (`server/src/jobs/reconcile.js`) still runs, but only as a deletion-only safety net that drops the local anchor (and its children, via cascade) when Core 404s the course.
 
 ```
 Core (source of truth)          AI Tutor
 ────────────────────────        ─────────────────────────────────────
-courses  →  GET /api/courses  →  CourseOffering { externalId: coreId }
+courses  →  GET /api/courses  →  CourseOffering { coreOfferingId }  (anchor only —
+                                  title/description/dates/isPublished/term/year
+                                  read live on every request, never stored)
 topics   →  GET /api/courses/:id/topics  →  Topic rows
 enrollments → GET /api/courses/:id/enrollments → CourseEnrollment rows
 ```
 
-**Question Maker course import & link - TO BE UPDATED ONCE ISSUE #727** 
+**Question Maker course read-through**
 
-QM maintains its own `Course` table for instructor-created question banks. Like AI Tutor, the instructor-taught course list is imported automatically: every `GET /api/course` list fetch calls `importTaughtCoursesFromCore` (`app/backend/src/services/importTaughtCoursesService.js`) — no manual step required to see courses that exist in Core.
+QM maintains its own `Course` table, now reduced to a minimal anchor (`id`, `userId`, `coreCourseId`) — `name`/`code` are no longer stored locally. Every QM course must originate in Core: `POST /api/course` requires a `coreCourseId` from the caller's scoped Core catalog (local-only "sandbox" course creation was removed), so the anchor's Core link is always present from creation — no chicken-and-egg linking step. The legacy code-based backfill (`ensureCoreCourseLink` matching on course code, plus `dedupeCoursesByCode`) is deleted: it's dead code now that no course can exist without `coreCourseId`. `PATCH /api/course/:id/link-core` remains only as a manual fallback for pre-existing rows that predate this invariant.
 
-Linking a QM course to a specific Core course (for topic sync and Canvas export targeting) is a separate, persistent FK (`coreCourseId`) rather than a full mirror. It is mostly established automatically — `ensureCoreCourseLink` (`app/backend/src/services/coreCourseLinkService.js`) matches on course code during enrollment-fetch and topic-push flows — with `PATCH /api/course/:id/link-core` remaining as a manual fallback for cases the code-match can't resolve. After linking:
+All display fields (name/code/department/term/year/description) are projected live from Core through `courseListService`'s read-through seam: one batched call per list, one detail call per single-course read — no N+1. Core unreachable degrades to a placeholder (`coreUnavailable: true`) rather than serving stale local columns. `Assessments.semester` is derived the same way, live from the linked course's canonical Core term, rather than stored as a separate column. After linking:
 
 - `POST /api/course/:id/sync-topics` pulls topics from Core into QM.
 - Approved question variants can be pushed to Core via `POST /api/questions`.
