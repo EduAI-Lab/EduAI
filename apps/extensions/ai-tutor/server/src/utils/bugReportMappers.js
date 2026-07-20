@@ -129,7 +129,11 @@ export function mapAdminBugReportRow(row) {
     moduleId: row.moduleId ?? null,
     lessonId: row.lessonId ?? null,
     activityId: row.activityId ?? null,
-    courseTitle: row.courseOffering?.title ?? null,
+    // `title` is Core-owned (#1072 step 4) — no local CourseOffering column
+    // to read. Dead code path (no caller populates `row.courseOffering`
+    // with a title select today), kept null rather than wired to a Core
+    // fetch until this mapper is actually exercised.
+    courseTitle: null,
     moduleTitle: row.module?.title ?? null,
     lessonTitle: row.lesson?.title ?? null,
     activityTitle: resolveActivityTitle(row.activity),

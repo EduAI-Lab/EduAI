@@ -95,6 +95,8 @@ export interface Course {
     accessLevel?: 'admin' | 'unit' | 'instructor' | 'ta' | null;
     term?: string | null;
     year?: number | null;
+    /** Core's live publish state (display-only; null when Core unresolved). */
+    isPublished?: boolean | null;
     createdAt?: string;
     updatedAt?: string;
     // Relations
@@ -104,8 +106,12 @@ export interface Course {
 }
 
 export interface CourseCreate {
-    name: string;
-    courseCode?: string;
+    /**
+     * Core Course CUID — required at creation (#1072 §4 step 7: every QM course
+     * originates in Core). `name`/`code` are Core-owned and never accepted here
+     * (#1072 §4 step 10) — the anchor row has nothing else to send.
+     */
+    coreCourseId: string;
 }
 
 // Topic type exported from ./topic (CUID string ids)
@@ -226,7 +232,6 @@ export interface AssessmentGenerationParams extends AssessmentBlueprintConfig {
     name: string;
     type: AssessmentType;
     description: string;
-    semester: string;
 }
 
 export interface SectionVariantLink {

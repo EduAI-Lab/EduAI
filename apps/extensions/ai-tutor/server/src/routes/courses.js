@@ -9,9 +9,29 @@
  *   list pages plus the course-import dialogs.
  * Gotchas:
  *   - Listing is role-divergent: INSTRUCTOR sees all assigned courses regardless
- *     of publish state; STUDENT only sees `isPublished` courses they're enrolled
+ *     of publish state; STUDENT only sees published courses they're enrolled
  *     in, with progress computed per course (N+1 by design — kept here, may
- *     warrant batching if course counts grow).
+ *     warrant batching if course counts grow). The publish gate itself is
+ *     read-through from Core (`resolveIsPublished`, #1072 step 2 / #819) —
+ *     one batched `GET /api/courses` per request, not per-course.
+ *   - Unified contract (#1072): field/publish resolution uses ONE service-key
+ *     catalog fetch (`resolveCoreCourseCatalog`) — complete regardless of the
+ *     caller's Core enrollment (AT and Core enrollment are independent
+ *     tracks, so the cookie-scoped list is not a valid field source). The
+ *     cookie-scoped list is only fetched inside the throttled fire-and-forget
+ *     auto-import mirror (`runCoreMirror`), which consumes
+ *     `callerEnrollmentRole` — authorization context. The list response
+ *     itself performs exactly ONE Core call (the catalog).
+ *   - Course-owned fields (title/description/department/dates/isPublished/
+ *     term/year/aiInstructions) are read-through from Core via
+ *     `services/courseResolver.js` + `mapCourseOffering`; the local
+ *     `CourseOffering` row is a pure anchor (#1072 step 4 — id,
+ *     `coreOfferingId`, timestamps only, no Core-owned columns). A Core
+ *     outage degrades those fields to `null`/`false` rather than a stale
+ *     local copy. See `courseResolver.js` for the fail-soft contract.
+ *   - UNIT_ADMIN department scoping (`isUnitAdminForCourse`/`isCourseAdmin`
+ *     in `middleware/auth.js`) also resolves `department` live from Core —
+ *     there is no local column to filter/read anymore.
  *   - Importing from EduAI fans out into parallel topic + enrollment sync via
  *     `Promise.allSettled` so a partial upstream failure doesn't roll back the
  *     import itself; failures are logged.
@@ -37,13 +57,19 @@ import {
   listEduAiCourses,
   setCoreCoursePublishState,
 } from '../services/eduaiClient.js';
+import {
+  indexCoreCoursesById,
+  resolveCoreCourseById,
+  resolveCoreCourseCatalog,
+  resolveIsPublished,
+} from '../services/courseResolver.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
-  importEnrolledCoursesFromCore,
+  ensureOfferingAnchors,
   importExternalCourseForUser,
-  importTaughtCoursesFromCore,
+  runCoreMirror,
 } from '../services/importTaughtCoursesService.js';
 import { listAdminBugReports } from '../services/bugReports.js';
 
@@ -95,7 +121,7 @@ function respondEduAiUpstreamError(res, error, fallbackMessage) {
  *
  * Auth: INSTRUCTOR.
  * Returns: EduAI course descriptors minus any already imported by this
- *   instructor (de-duped via local `externalId`).
+ *   instructor (de-duped via local `coreOfferingId`).
  *
  * Why: filtering by THIS instructor (not globally) lets multiple instructors
  * import the same EduAI course independently into their own offerings.
@@ -106,22 +132,14 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
     // (the service key would return the full catalog). Mirrors the import path.
     const courses = await listEduAiCourses({ cookie: req.headers.cookie });
 
-    // Exclude any EduAI course already mirrored into AI Tutor. coreOfferingId is
-    // @unique (one offering per Core course globally), so a hit on either the Core
-    // link or the legacy externalId means the course is already in the system.
+    // Exclude any Core course already mirrored into AI Tutor. coreOfferingId is
+    // required + @unique (#1072 step 4 — every row is Core-linked, no filter
+    // needed), so a hit there means the course is already in the system.
     const imported = await prisma.courseOffering.findMany({
-      where: {
-        externalSource: 'EDUAI',
-        OR: [{ coreOfferingId: { not: null } }, { externalId: { not: null } }],
-      },
-      select: { coreOfferingId: true, externalId: true },
+      select: { coreOfferingId: true },
     });
 
-    const importedIds = new Set();
-    for (const row of imported) {
-      if (row.coreOfferingId) importedIds.add(row.coreOfferingId);
-      if (row.externalId) importedIds.add(row.externalId);
-    }
+    const importedIds = new Set(imported.map((row) => row.coreOfferingId).filter(Boolean));
     const filtered = Array.isArray(courses)
       ? courses.filter((c) => c && typeof c.id === 'string' && !importedIds.has(c.id))
       : [];
@@ -150,52 +168,96 @@ router.get('/courses', async (req, res) => {
     return res.status(403).json({ error: 'Role is not supported in AI Tutor' });
   }
 
+  const cookie = getEduAiCookieForRequest(req);
+
   try {
+    // Unified extension course-fetch contract (#1072): course FIELD truth
+    // comes from ONE batched service-key catalog fetch — never the
+    // cookie-scoped list, whose contents depend on the caller's Core
+    // enrollment (AT and Core enrollment are independent tracks). The
+    // cookie-scoped list is fetched separately below, ONLY in branches that
+    // run the auto-import mirrors (they consume `callerEnrollmentRole` —
+    // authorization context, not fields). At most 2 Core calls per request.
+    // On catalog failure this degrades to an empty Core map (fields null,
+    // publish gates fail closed) plus an `X-Core-Status` header the client
+    // can render (see #1066's topic fail-soft pattern) — never a hard error.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    const withCore = (offering) => mapCourseOffering(offering, coreCoursesById.get(offering.coreOfferingId));
+    const isCorePublished = (offering) => resolveIsPublished(offering, coreCoursesById);
+
     if (authUser.role === 'STUDENT' || authUser.role === 'TA') {
-      try {
-        await importEnrolledCoursesFromCore(authUser, getEduAiCookieForRequest(req));
-      } catch (err) {
-        console.error('[eduai] Core enrollment mirror failed on list', err);
-      }
+      // Unified contract: the mirror is a throttled fire-and-forget side
+      // effect (shared runCoreMirror) — the list response never waits on it.
+      // It fetches its own cookie-scoped list internally (authorization
+      // context / callerEnrollmentRole); a fresh Core enrollment shows up on
+      // the caller's next request, same trade-off as QM's list mirror.
+      runCoreMirror(authUser, cookie);
     }
 
     if (authUser.role === 'ADMIN') {
-      // Platform admins see every course offering (no progress) so the shared
-      // Courses dashboard lists all courses they can open and edit.
+      // Platform admins see Core's full course catalog (#1074), not just
+      // whatever happened to already have a local anchor row — the old
+      // enrollment-driven mirror never ran for admins (no enrollments of
+      // their own), so it silently showed a stale/incomplete subset.
+      // Create-on-open (#1072 step 3): ensure every Core course has a local
+      // anchor *before* listing, in one batched read + insert (never a
+      // per-course loop) — this is what lets the response link to a real,
+      // stable local id for a course no instructor has ever logged in to
+      // auto-import. Fields are read-through from Core above. The anchor id
+      // set comes from the service-key catalog — identical to what Core's
+      // admin-to-all cookie branch used to return, without needing a cookie
+      // call in this branch at all.
+      if (!coreUnavailable && catalogCourses.length > 0) {
+        await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
+      }
       const courses = await prisma.courseOffering.findMany({
         orderBy: { createdAt: 'desc' },
       });
-      res.json(courses.map(mapCourseOffering));
+      res.json(courses.map(withCore));
     } else if (authUser.role === 'INSTRUCTOR') {
-      try {
-        await importTaughtCoursesFromCore(authUser, getEduAiCookieForRequest(req));
-      } catch (err) {
-        console.error('[eduai] Core course mirror failed on list', err);
-      }
+      // Unified contract: throttled fire-and-forget mirror (see STUDENT/TA
+      // branch note above) — a course newly assigned in Core appears on the
+      // instructor's next request rather than blocking this one.
+      runCoreMirror(authUser, cookie);
 
       const courses = await prisma.courseOffering.findMany({
         where: { instructors: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
       });
-      res.json(courses.map(mapCourseOffering));
+      res.json(courses.map(withCore));
     } else if (authUser.role === 'UNIT_ADMIN') {
       // UNIT_ADMINs see every course in their authorized units (regardless of
       // publish state), plus any course they personally lead — so the courses
       // they create or import are always visible even before a department is set.
+      // `department` is Core-owned (#1072 step 4): join the already-fetched
+      // service-key catalog batch (never a per-course Core call) to find which
+      // `coreOfferingId`s fall in the caller's units, then scope the local
+      // query on that id set unioned with instructor membership. Fail-soft:
+      // on `coreUnavailable` the department set is empty, so the branch
+      // degrades to "courses I personally lead" rather than erroring.
       const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const deptCoreIds = units.length > 0
+        ? catalogCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
+        : [];
       const courses = await prisma.courseOffering.findMany({
         where: {
           OR: [
-            ...(units.length > 0 ? [{ department: { in: units } }] : []),
+            ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
             { instructors: { some: { userId: authUser.id } } },
           ],
         },
         orderBy: { createdAt: 'desc' },
       });
-      res.json(courses.map(mapCourseOffering));
+      res.json(courses.map(withCore));
     } else if (authUser.role === 'TA' || (authUser.role === 'STUDENT' && await userHasTaEnrollment(authUser.id))) {
       // TAs see all TA-enrolled courses regardless of publish state (no progress),
-      // plus published student-enrolled courses (with progress).
+      // plus published student-enrolled courses (with progress). The publish
+      // gate reads through Core (#819) rather than the possibly-stale local
+      // column, same as the STUDENT branch below.
       const allEnrollments = await prisma.courseEnrollment.findMany({
         where: { userId: authUser.id },
         select: { courseOfferingId: true, role: true },
@@ -214,37 +276,43 @@ router.get('/courses', async (req, res) => {
           })
         : [];
 
-      const studentCourses = studentOfferingIds.length > 0
+      const studentOfferingsRaw = studentOfferingIds.length > 0
         ? await prisma.courseOffering.findMany({
-            where: { id: { in: studentOfferingIds }, isPublished: true },
+            where: { id: { in: studentOfferingIds } },
             orderBy: { createdAt: 'desc' },
           })
         : [];
 
+      const studentCourses = studentOfferingsRaw.filter(isCorePublished);
+
       const studentCoursesWithProgress = await Promise.all(
         studentCourses.map(async (course) => {
           const progress = await calculateCourseProgress(course.id, authUser.id);
-          return { ...mapCourseOffering(course), progress: mapProgressData(progress) };
+          return { ...withCore(course), progress: mapProgressData(progress) };
         }),
       );
 
-      res.json([...taCourses.map(mapCourseOffering), ...studentCoursesWithProgress]);
+      res.json([...taCourses.map(withCore), ...studentCoursesWithProgress]);
     } else {
-      // Students only see published courses they're enrolled in (with progress)
-      const courses = await prisma.courseOffering.findMany({
-        where: {
-          enrollments: { some: { userId: authUser.id } },
-          isPublished: true,
-        },
+      // Students only see published courses they're enrolled in (with
+      // progress). The publish gate reads through Core (#819) rather than
+      // the possibly-stale local column — a course published in Core but not
+      // yet reconciled locally must still appear here.
+      const enrolledCourses = await prisma.courseOffering.findMany({
+        where: { enrollments: { some: { userId: authUser.id } } },
         orderBy: { createdAt: 'desc' },
       });
+      // #1082 stays fixed by construction: the catalog contains every
+      // non-deleted Core course, so an AT-only enrollment (no matching Core
+      // enrollment) still resolves its fields and publish state here.
+      const courses = enrolledCourses.filter(isCorePublished);
 
       // Calculate progress for each course
       const coursesWithProgress = await Promise.all(
         courses.map(async (course) => {
           const progress = await calculateCourseProgress(course.id, authUser.id);
           return {
-            ...mapCourseOffering(course),
+            ...withCore(course),
             progress: mapProgressData(progress),
           };
         }),
@@ -285,13 +353,18 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
       return res.status(403).json({ error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    // coreOfferingId is @unique — one AI Tutor offering per Core course regardless of instructor.
+    // coreOfferingId is @unique — one AI Tutor offering per Core course
+    // regardless of instructor. Import is an idempotent ENSURE (unified
+    // contract): the throttled background mirror may have anchored this
+    // course between the caller's list and this request, so "already
+    // imported" is a success (200 with the existing row, instructor linkage
+    // ensured by the service), not a conflict.
     const { offering, created } = await importExternalCourseForUser(instructor, externalCourse);
-    if (!created) {
-      return res.status(409).json({ error: 'Course already imported' });
-    }
 
-    res.status(201).json(mapCourseOffering(offering));
+    // `externalCourse` is already the resolved Core course for this offering
+    // (just fetched above) — pass it straight through rather than issuing a
+    // second Core call.
+    res.status(created ? 201 : 200).json(mapCourseOffering(offering, externalCourse));
   } catch (error) {
     console.error('[eduai] Failed to import course', error);
     return respondEduAiUpstreamError(res, error, 'Unable to import course');
@@ -318,10 +391,10 @@ router.post('/courses/:courseId/sync-enrollments', requireRole(['INSTRUCTOR', 'U
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
+    if (!await isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
-    if (course.externalSource !== 'EDUAI' || !course.externalId) {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course was not imported from EduAI' });
     }
 
@@ -358,17 +431,27 @@ router.get('/courses/:courseId', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
+    // #1072 step 2/4: single-course read-through, resolved once and reused
+    // for both the UNIT_ADMIN department check below and the response body
+    // — `department` is Core-owned data, not a local column. Degrades to a
+    // stale-but-present course (and a closed unit-admin department check) on
+    // any Core failure rather than hard-erroring.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+
     const isAdmin = authUser.role === 'ADMIN';
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
-    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const unitAdmin = await isUnitAdminForCourse(authUser, course, coreCourse);
     const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
 
     if (!isMember) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    res.json(mapCourseOffering(course));
+    res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -383,45 +466,6 @@ router.post('/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), asyn
     error:
       'Course creation is managed in EduAI Core. Import or enable courses from Core instead.',
   });
-});
-
-router.patch('/courses/:courseId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
-  const authUser = req.user;
-  const courseId = Number(req.params.courseId);
-  if (!Number.isFinite(courseId)) {
-    return res.status(400).json({ error: 'Invalid course id' });
-  }
-
-  const { title, description, startDate, endDate } = req.body || {};
-
-  if (!title && !description && !startDate && !endDate) {
-    return res.status(400).json({ error: 'Nothing to update' });
-  }
-
-  try {
-    const course = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-      include: { instructors: { select: { userId: true } } },
-    });
-    if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
-      return res.status(403).json({ error: 'Not authorized for this course' });
-    }
-
-    const updated = await prisma.courseOffering.update({
-      where: { id: courseId },
-      data: {
-        title: title ?? undefined,
-        description: description ?? undefined,
-        startDate: startDate ? new Date(startDate) : startDate === null ? null : undefined,
-        endDate: endDate ? new Date(endDate) : endDate === null ? null : undefined,
-      },
-    });
-
-    res.json(mapCourseOffering(updated));
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
 });
 
 /**
@@ -474,12 +518,26 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
   }
 
   try {
+    // UNIT_ADMIN department checks resolve from Core — one batched catalog
+    // fetch reused for the destination course, the module source course, and
+    // every lesson source course below, instead of a live Core lookup per
+    // course (#1072 unified contract; ADMIN/INSTRUCTOR never call Core here).
+    let catalogById = null;
+    if (authUser.role === 'UNIT_ADMIN') {
+      const { courses: catalogCourses } = await resolveCoreCourseCatalog();
+      catalogById = new Map(catalogCourses.map((c) => [c.id, c]));
+    }
+    // undefined = "resolve yourself" (non-UNIT_ADMIN, no Core call happens);
+    // null = "resolved, not in catalog" (fail-closed department mismatch).
+    const resolveFromCatalog = (row) =>
+      catalogById ? (catalogById.get(row?.coreOfferingId) ?? null) : undefined;
+
     const destCourse = await prisma.courseOffering.findUnique({
       where: { id: courseId },
       include: { instructors: { select: { userId: true } } },
     });
     if (!destCourse) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, destCourse)) {
+    if (!await isCourseAdmin(authUser, destCourse, resolveFromCatalog(destCourse))) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -492,7 +550,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
         where: { id: numericSourceCourseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!sourceCourse || !isCourseAdmin(authUser, sourceCourse)) {
+      if (!sourceCourse || !await isCourseAdmin(authUser, sourceCourse, resolveFromCatalog(sourceCourse))) {
         return res.status(403).json({ error: 'Not authorized for source course' });
       }
 
@@ -548,7 +606,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
           where: { id: scId },
           include: { instructors: { select: { userId: true } } },
         });
-        if (!sc || !isCourseAdmin(authUser, sc)) {
+        if (!sc || !await isCourseAdmin(authUser, sc, resolveFromCatalog(sc))) {
           return res.status(403).json({ error: 'Not authorized for lesson source course' });
         }
       }
@@ -601,22 +659,23 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, course)) {
+    if (!await isCourseAdmin(authUser, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // #477: write through to Core first. If Core rejects, surface 500 and leave
-    // local state untouched so the two never diverge silently.
+    // #477: write through to Core first. If Core rejects, surface 500. There is
+    // no local `isPublished` column to keep in sync anymore (#1072 step 4) —
+    // Core is the sole store for publish state; this route now only proxies
+    // the write and re-reads it back for the response.
     if (course.coreOfferingId) {
       await setCoreCoursePublishState(course.coreOfferingId, true);
     }
 
-    const updated = await prisma.courseOffering.update({
-      where: { id: courseId },
-      data: { isPublished: true },
-    });
-
-    res.json(mapCourseOffering(updated));
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    res.json(mapCourseOffering(course, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -626,8 +685,10 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
  * PATCH /courses/:courseId/unpublish — flip course unpublished, cascading down.
  *
  * Auth: ADMIN (global), UNIT_ADMIN (D-scoped), INSTRUCTOR (C-scoped).
- * Side effects: in a single transaction sets `isPublished=false` on the
- *   course, all its modules, and all lessons within those modules.
+ * Side effects: writes `isPublished=false` through to Core (the sole store
+ *   for course publish state, #1072 step 4), then in a single local
+ *   transaction sets `isPublished=false` on all of the course's modules and
+ *   lessons.
  *
  * Why: the asymmetry with publish is deliberate — unpublishing must
  * immediately hide ALL child content from students; without the cascade a
@@ -646,7 +707,7 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       include: { instructors: { select: { userId: true } } },
     });
     if (!courseForAuth) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(authUser, courseForAuth)) {
+    if (!await isCourseAdmin(authUser, courseForAuth)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -655,14 +716,9 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       await setCoreCoursePublishState(courseForAuth.coreOfferingId, false);
     }
 
-    // Unpublish course and cascade to all modules and lessons
+    // Cascade to all modules and lessons. No local courseOffering.isPublished
+    // write anymore (#1072 step 4) — Core already got the write-through above.
     await prisma.$transaction(async (tx) => {
-      // Update the course
-      await tx.courseOffering.update({
-        where: { id: courseId },
-        data: { isPublished: false },
-      });
-
       // Update all modules in this course
       await tx.module.updateMany({
         where: { courseOfferingId: courseId },
@@ -684,11 +740,15 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
       }
     });
 
-    const updated = await prisma.courseOffering.findUnique({
-      where: { id: courseId },
-    });
-
-    res.json(mapCourseOffering(updated));
+    // No local courseOffering fields changed by the cascade above, so
+    // `courseForAuth` (already fetched) is still an accurate anchor row.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(
+      courseForAuth.coreOfferingId,
+    );
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    res.json(mapCourseOffering(courseForAuth, coreCourse));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -718,7 +778,7 @@ router.get('/courses/:courseId/feedback', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -781,7 +841,7 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -891,7 +951,7 @@ router.get('/courses/:courseId/student-metrics', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -946,7 +1006,7 @@ router.get('/courses/:courseId/analytics', async (req, res) => {
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
-    const hasAdminAccess = isCourseAdmin(authUser, course);
+    const hasAdminAccess = await isCourseAdmin(authUser, course);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     if (!hasAdminAccess && !isTa) {
@@ -986,9 +1046,23 @@ router.get('/me/dashboard-stats', async (req, res) => {
   if (!authUser) return res.status(401).json({ error: 'Authentication required' });
 
   try {
+    // Unified contract (#1072): published counts are FIELD reads — one
+    // batched service-key catalog fetch, never the cookie-scoped list (whose
+    // contents depend on the caller's own Core enrollment). No cookie-scoped
+    // Core call happens in this route at all; nothing here consumes
+    // `callerEnrollmentRole`.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    const isCorePublished = (offering) => resolveIsPublished(offering, coreCoursesById);
+
     if (authUser.role === 'ADMIN') {
-      const courses = await prisma.courseOffering.findMany({ select: { isPublished: true } });
-      const publishedCourses = courses.filter((c) => c.isPublished).length;
+      const courses = await prisma.courseOffering.findMany({
+        select: { coreOfferingId: true },
+      });
+      const publishedCourses = courses.filter(isCorePublished).length;
 
       const stats = {
         role: 'ADMIN',
@@ -1016,24 +1090,31 @@ router.get('/me/dashboard-stats', async (req, res) => {
     }
 
     if (authUser.role === 'INSTRUCTOR' || authUser.role === 'UNIT_ADMIN') {
+      // `department` is Core-owned (#1072 step 4) — join the batch fetched
+      // above rather than filtering by a local column. Same fail-soft
+      // posture as `GET /courses`'s UNIT_ADMIN branch: an empty/unavailable
+      // Core list degrades the department scope to empty, not an error.
+      const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+      const deptCoreIds =
+        authUser.role === 'UNIT_ADMIN' && units.length > 0
+          ? catalogCourses.filter((c) => c?.department && units.includes(c.department)).map((c) => c.id)
+          : [];
       const courseWhere =
         authUser.role === 'INSTRUCTOR'
           ? { instructors: { some: { userId: authUser.id } } }
           : {
               OR: [
-                ...(Array.isArray(authUser.authorizedUnits) && authUser.authorizedUnits.length > 0
-                  ? [{ department: { in: authUser.authorizedUnits } }]
-                  : []),
+                ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
                 { instructors: { some: { userId: authUser.id } } },
               ],
             };
 
       const courses = await prisma.courseOffering.findMany({
         where: courseWhere,
-        select: { id: true, isPublished: true },
+        select: { id: true, coreOfferingId: true },
       });
       const courseIds = courses.map((c) => c.id);
-      const publishedCourses = courses.filter((c) => c.isPublished).length;
+      const publishedCourses = courses.filter(isCorePublished).length;
 
       let enrolledStudents = 0;
       let submissionsToReview = 0;
@@ -1078,7 +1159,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
       });
       const courseIds = taEnrollments.map((e) => e.courseOfferingId);
 
-      const [submissionsToReview, publishedCourses] =
+      const [submissionsToReview, taCourses] =
         courseIds.length > 0
           ? await Promise.all([
               prisma.submission.count({
@@ -1087,11 +1168,13 @@ router.get('/me/dashboard-stats', async (req, res) => {
                   activity: { lesson: { module: { courseOfferingId: { in: courseIds } } } },
                 },
               }),
-              prisma.courseOffering.count({
-                where: { id: { in: courseIds }, isPublished: true },
+              prisma.courseOffering.findMany({
+                where: { id: { in: courseIds } },
+                select: { coreOfferingId: true },
               }),
             ])
-          : [0, 0];
+          : [0, []];
+      const publishedCourses = taCourses.filter(isCorePublished).length;
 
       return res.json({
         role: 'TA',
@@ -1107,13 +1190,14 @@ router.get('/me/dashboard-stats', async (req, res) => {
       select: { courseOfferingId: true },
     });
     const enrolledCourseIds = enrollments.map((e) => e.courseOfferingId);
-    const courses =
+    const rawCourses =
       enrolledCourseIds.length > 0
         ? await prisma.courseOffering.findMany({
-            where: { id: { in: enrolledCourseIds }, isPublished: true },
-            select: { id: true },
+            where: { id: { in: enrolledCourseIds } },
+            select: { id: true, coreOfferingId: true },
           })
         : [];
+    const courses = rawCourses.filter(isCorePublished);
 
     const progresses = await Promise.all(
       courses.map((c) => calculateCourseProgress(c.id, authUser.id)),
