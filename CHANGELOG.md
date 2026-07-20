@@ -17,6 +17,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 ## [Week 11 — July 13–19, 2026]
 
+### Added
+
+- [core] test: Mutation testing (Stryker + `@stryker-mutator/vitest-runner`, `npm run test:mutation` in `apps/core`) scoped to the RBAC, auth, and Canvas-credential-encryption modules. Fixed all findable gaps in the two highest-severity files: `auth/guards.server.ts` 54.96% → 98.94% (127 gaps → 1 confirmed-equivalent) and `canvas/encryption.ts` 68.09% → 88.30% (30 gaps → 11, all confirmed equivalent/unreachable). Remaining lower-priority files' gaps tracked as follow-up issues (#1094–#1101). (#224, @GlowyBlack, 2026-07-19)
+
 ### Changed
 
 - [monorepo] perf: Speed up the PR Tests workflow — unit/integration suites now run natively on the runner via `turbo run test` (Turborepo task cache persisted in the GitHub Actions cache, Postgres service containers replacing the per-image Docker builds, which rebuilt every test image plus a full `npm ci` each on cache-less remote runners); E2E keeps the dockerized stack but prebuilds its images with `docker buildx bake` and GHA layer caching (`E2E_SKIP_BUILD=1` skips the script's uncached rebuild); docs-only PRs (`*.md`, `*.txt`, `docs/`) skip both test jobs while still satisfying the required status checks; pushes to `development` seed the turbo + Docker layer caches that fresh PRs restore from. Also fixes `turbo.json` test inputs missing `tests/**` (the ai-tutor-server/qm-backend test dirs, which would have made turbo serve stale cached passes for test-only changes) and relaxes `test.dependsOn` from `build` to `^build` so running tests no longer forces each app's own production build. (#1026, @evanbones, 2026-07-13)
