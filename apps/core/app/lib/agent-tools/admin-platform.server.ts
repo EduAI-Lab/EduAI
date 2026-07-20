@@ -747,9 +747,11 @@ export async function triggerAdminCronJob(actor: RbacUser, jobName: string) {
     return { ok: true, runId: alreadyRunning.id, jobName, reused: true };
   }
 
-  const runId = await startCronRun(jobName);
-  triggerCronJobAsync(jobName, job.script, runId);
-  return { ok: true, runId, jobName };
+  const { runId, created } = await startCronRun(jobName);
+  if (created) {
+    triggerCronJobAsync(jobName, job.script, runId);
+  }
+  return { ok: true, runId, jobName, reused: !created };
 }
 
 export async function updateAdminCronSchedule(

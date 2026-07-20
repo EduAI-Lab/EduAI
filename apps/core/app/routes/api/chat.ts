@@ -1207,6 +1207,7 @@ export async function action({ request }: ActionFunctionArgs) {
           effectiveCourseId,
           effectiveCourseCode,
           restrictToStudentVisible: restrictRagToStudentVisible,
+          turnId: crypto.randomUUID(),
         },
         chatMode,
       );

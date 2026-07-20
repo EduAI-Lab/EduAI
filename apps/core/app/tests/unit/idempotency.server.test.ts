@@ -26,6 +26,7 @@ import {
   completeIdempotency,
   releaseIdempotency,
   withIdempotency,
+  LEGACY_ENTITY_BACKFILL_HASH,
 } from "~/lib/idempotency.server";
 
 beforeEach(() => {
@@ -123,6 +124,34 @@ describe("claimIdempotency", () => {
       requestHash: "abc",
     });
     expect(result).toEqual({ kind: "mismatch" });
+  });
+
+  it("replays legacy entity backfill rows regardless of request hash", async () => {
+    prismaMock.idempotencyRecord.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+    prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
+      requestHash: LEGACY_ENTITY_BACKFILL_HASH,
+      status: "COMPLETED",
+      statusCode: 201,
+      responseBody: { id: "q-existing" },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const result = await claimIdempotency({
+      key: "qm-variant-existing",
+      route: "POST /api/questions",
+      actorId: "creator-1",
+      requestHash: "any-current-payload-hash",
+    });
+    expect(result).toEqual({
+      kind: "replay",
+      statusCode: 201,
+      responseBody: { id: "q-existing" },
+    });
   });
 
   it("returns in_progress when PROCESSING", async () => {

@@ -118,7 +118,7 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(403, "Forbidden");
       }
 
-return withIdempotency(
+      return withIdempotency(
         { request, route: "POST /api/users", actorId: session.user.id },
         async (body) => createUserFromBody(body, session.user, requestContext),
       );

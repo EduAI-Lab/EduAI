@@ -17,14 +17,26 @@ describe("admin-write-confirmation", () => {
     const now = Date.now();
     vi.setSystemTime(now);
 
-    registerWritePreview("actor-1", "createUser", { email: "a@b.c" }, 1000);
-    expect(consumeWritePreview("actor-1", "createUser", { email: "a@b.c" })).toBe(true);
+    registerWritePreview("actor-1", "createUser", { email: "a@b.c" }, 1000, "turn-a");
+    expect(consumeWritePreview("actor-1", "createUser", { email: "a@b.c" }, "turn-b")).toBe("ok");
 
-    registerWritePreview("actor-1", "createUser", { email: "stale@b.c" }, 1000);
+    registerWritePreview("actor-1", "createUser", { email: "stale@b.c" }, 1000, "turn-a");
     vi.setSystemTime(now + 2000);
-    registerWritePreview("actor-1", "createUser", { email: "fresh@b.c" }, 60_000);
+    registerWritePreview("actor-1", "createUser", { email: "fresh@b.c" }, 60_000, "turn-a");
 
-    expect(consumeWritePreview("actor-1", "createUser", { email: "stale@b.c" })).toBe(false);
-    expect(consumeWritePreview("actor-1", "createUser", { email: "fresh@b.c" })).toBe(true);
+    expect(consumeWritePreview("actor-1", "createUser", { email: "stale@b.c" }, "turn-b")).toBe(
+      "missing",
+    );
+    expect(consumeWritePreview("actor-1", "createUser", { email: "fresh@b.c" }, "turn-b")).toBe(
+      "ok",
+    );
+  });
+
+  it("rejects same-turn confirmation without consuming the preview", () => {
+    registerWritePreview("actor-1", "createUser", { email: "a@b.c" }, 60_000, "turn-1");
+    expect(consumeWritePreview("actor-1", "createUser", { email: "a@b.c" }, "turn-1")).toBe(
+      "same_turn",
+    );
+    expect(consumeWritePreview("actor-1", "createUser", { email: "a@b.c" }, "turn-2")).toBe("ok");
   });
 });

@@ -191,9 +191,12 @@ export async function findRunningCronRun(
   return rows[0] ?? null;
 }
 
-export async function startCronRun(jobName: string): Promise<string> {
+export async function startCronRun(
+  jobName: string,
+): Promise<{ runId: string; created: boolean }> {
   // Insert first; partial unique index (one RUNNING per jobName) makes concurrent
   // triggers conflict instead of double-spawning. ON CONFLICT DO NOTHING + reclaim.
+  // `created: true` only when this caller won the INSERT — losers must not spawn.
   const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "createdAt")
     VALUES (
@@ -207,12 +210,12 @@ export async function startCronRun(jobName: string): Promise<string> {
     RETURNING id
   `;
   if (inserted[0]?.id) {
-    return inserted[0].id;
+    return { runId: inserted[0].id, created: true };
   }
 
   const running = await findRunningCronRun(jobName);
   if (running) {
-    return running.id;
+    return { runId: running.id, created: false };
   }
 
   throw new Error(`Failed to start or reclaim cron run for job "${jobName}"`);

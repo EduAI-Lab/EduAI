@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.mocked(listCronJobStatuses).mockResolvedValue([]);
   vi.mocked(getRecentCronJobRuns).mockResolvedValue([]);
   vi.mocked(findRunningCronRun).mockResolvedValue(null);
-  vi.mocked(startCronRun).mockResolvedValue("run-1");
+  vi.mocked(startCronRun).mockResolvedValue({ runId: "run-1", created: true });
   vi.mocked(triggerCronJobAsync).mockReturnValue(undefined);
   vi.mocked(updateCronSchedule).mockResolvedValue(undefined);
   vi.mocked(resetCronSchedule).mockResolvedValue(undefined);

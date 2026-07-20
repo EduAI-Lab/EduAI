@@ -72,10 +72,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ runId: alreadyRunning.id, reused: true });
     }
 
-    const runId = await startCronRun(jobName);
-    triggerCronJobAsync(jobName, job.script, runId);
+    const { runId, created } = await startCronRun(jobName);
+    if (created) {
+      triggerCronJobAsync(jobName, job.script, runId);
+    }
 
-    return data({ runId });
+    return data({ runId, reused: !created });
   }
 
   if (intent === "update-schedule" && jobName) {
