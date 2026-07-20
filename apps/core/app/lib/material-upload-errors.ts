@@ -10,15 +10,15 @@ export function toMaterialUploadUserMessage(error: unknown): string {
   }
 
   if (/serializ|BigDecimal|Couldn't serialize/i.test(message)) {
-    return "Material indexing failed while saving embeddings. Please try again.";
+    return "Material indexing failed while saving. Please try again.";
   }
 
   if (/Embedding dimension mismatch/i.test(message)) {
-    return "Material indexing failed: embedding configuration mismatch. Contact your administrator.";
+    return "Material indexing failed: configuration mismatch. Contact your administrator.";
   }
 
   if (/No embedding provider configured|Local embedding provider failed/i.test(message)) {
-    return "Material indexing is unavailable (embedding service not configured). Contact your administrator.";
+    return "Material indexing is unavailable. Contact your administrator.";
   }
 
   if (/No content chunks generated/i.test(message)) {

@@ -164,8 +164,8 @@ export function CourseDetailTaView({
       setRenameMaterialId(null)
       setRenameTitle('')
       if (onRefreshMaterials) await onRefreshMaterials()
-    } catch (e) {
-      setRenameError(e instanceof Error ? e.message : 'Failed to rename material')
+    } catch {
+      setRenameError('Could not rename material. Please try again.')
     } finally {
       setRenamingMaterial(false)
     }
@@ -224,7 +224,7 @@ export function CourseDetailTaView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete material?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the file and its embeddings. This action
+              This permanently removes the file and its search data. This action
               cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -330,10 +330,10 @@ export function CourseDetailTaView({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <IconSettings className="h-4 w-4" />
-                Embedding settings
+                Course search settings
               </DialogTitle>
               <DialogDescription>
-                Configure the embedding model used to index this course's materials.
+                Choose the AI model used to search this course's materials.
               </DialogDescription>
             </DialogHeader>
             <CourseEmbeddingSettings courseId={courseId} />

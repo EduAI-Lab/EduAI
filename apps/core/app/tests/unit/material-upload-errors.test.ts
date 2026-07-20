@@ -15,14 +15,14 @@ describe("toMaterialUploadUserMessage", () => {
       toMaterialUploadUserMessage(
         new Error("Numeric(Some(BigDecimal(\"0.123\"))) repeated many times"),
       ),
-    ).toBe("Material indexing failed while saving embeddings. Please try again.");
+    ).toBe("Material indexing failed while saving. Please try again.");
   });
 
   it("maps embedding provider misconfiguration to an admin message", () => {
     expect(
       toMaterialUploadUserMessage(new Error("No embedding provider configured. Set OPENAI_API_KEY.")),
     ).toBe(
-      "Material indexing is unavailable (embedding service not configured). Contact your administrator.",
+      "Material indexing is unavailable. Contact your administrator.",
     );
   });
 

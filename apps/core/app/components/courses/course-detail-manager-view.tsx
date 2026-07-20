@@ -355,10 +355,8 @@ export function CourseDetailManagerView({
           : "Instructor assigned successfully",
       );
       setSelectedInstructorId("");
-    } catch (e) {
-      setStaffError(
-        e instanceof Error ? e.message : "Failed to assign instructor",
-      );
+    } catch {
+      setStaffError("Could not assign instructor. Please try again.");
     }
   };
 
@@ -393,8 +391,8 @@ export function CourseDetailManagerView({
     setStaffSuccess(null);
     try {
       await onRemoveTA(userId);
-    } catch (e) {
-      setStaffError(e instanceof Error ? e.message : "Failed to remove TA");
+    } catch {
+      setStaffError("Could not remove TA. Please try again.");
     }
   };
 
@@ -432,10 +430,8 @@ export function CourseDetailManagerView({
     try {
       await onRemoveEnrollment(enrollmentId);
       setEnrollmentActionSuccess("Student removed from course");
-    } catch (e) {
-      setEnrollmentActionError(
-        e instanceof Error ? e.message : "Failed to remove enrollment",
-      );
+    } catch {
+      setEnrollmentActionError("Could not remove student from course. Please try again.");
     } finally {
       setRemovingEnrollmentId(null);
     }
@@ -491,8 +487,8 @@ export function CourseDetailManagerView({
       if (onRefreshMaterials) {
         await onRefreshMaterials();
       }
-    } catch (e) {
-      setRenameError(e instanceof Error ? e.message : "Failed to rename material");
+    } catch {
+      setRenameError("Could not rename material. Please try again.");
     } finally {
       setRenamingMaterial(false);
     }
@@ -545,8 +541,8 @@ export function CourseDetailManagerView({
       if (onRefreshMaterials) {
         await onRefreshMaterials();
       }
-    } catch (e) {
-      setVisibilityError(e instanceof Error ? e.message : "Failed to update visibility");
+    } catch {
+      setVisibilityError("Could not update visibility. Please try again.");
     } finally {
       setSavingVisibility(false);
     }
@@ -617,11 +613,10 @@ export function CourseDetailManagerView({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <IconSettings className="h-4 w-4" />
-                Embedding settings
+                Course search settings
               </DialogTitle>
               <DialogDescription>
-                Configure the embedding model used to index this course's
-                materials.
+                Choose the AI model used to search this course's materials.
               </DialogDescription>
             </DialogHeader>
             <CourseEmbeddingSettings
@@ -643,7 +638,7 @@ export function CourseDetailManagerView({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete material?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the file and its embeddings from the course. Deletes
+              This removes the file and its search data from the course. Deletes
               are not propagated to Canvas, and re-uploading the same file
               restores it.
             </AlertDialogDescription>
@@ -1071,7 +1066,7 @@ export function CourseDetailManagerView({
                   onClick={() => setEmbeddingOpen(true)}
                 >
                   <IconSettings className="h-4 w-4 mr-1.5" />
-                  Embedding settings
+                  Course search settings
                 </Button>
               )}
               <Button size="sm" onClick={() => setUploadOpen(true)}>
@@ -1578,18 +1573,18 @@ export function CourseDetailManagerView({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <IconSettings className="h-5 w-5" />
-                  RAG Settings
+                  Search Tuning
                 </CardTitle>
                 <CardDescription>
-                  Override the global retrieval defaults for this course. Leave a
-                  field blank to use the platform default.
+                  Override how course chat searches this course's materials by
+                  default. Leave a field blank to use the platform default.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 max-w-sm">
                   <div className="grid gap-2">
                     <Label htmlFor="ragTopK">
-                      Top-K chunks{" "}
+                      Results per question{" "}
                       <span className="text-muted-foreground text-xs">
                         (default: 4)
                       </span>
@@ -1604,14 +1599,14 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagTopK(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Maximum number of material chunks returned per RAG query
-                      (1–20).
+                      Maximum number of material excerpts course chat can use to
+                      answer each question (1–20).
                     </p>
                   </div>
 
                   <div className="grid gap-2">
                     <Label htmlFor="ragThreshold">
-                      Similarity threshold{" "}
+                      Minimum match relevance{" "}
                       <span className="text-muted-foreground text-xs">
                         (default: 0.5)
                       </span>
@@ -1627,8 +1622,8 @@ export function CourseDetailManagerView({
                       onChange={(e) => setRagThreshold(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Minimum cosine similarity score (0–1). Higher values return
-                      fewer but more relevant chunks.
+                      Minimum relevance score for a match (0–1). Higher values
+                      return fewer but more relevant results.
                     </p>
                   </div>
 
