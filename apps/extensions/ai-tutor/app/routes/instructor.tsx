@@ -78,7 +78,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           year: courseYear(course),
           startDate: course.startDate ?? null,
         })}
-        getSearchText={(course) => `${course.title} ${courseCode(course)}`}
+        getSearchText={(course) => `${course.title ?? ""} ${courseCode(course)}`}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
           buildTermFilterGroup<Course>((c) => ({
