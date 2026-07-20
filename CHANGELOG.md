@@ -7,6 +7,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 10 — July 6–12, 2026]
 
+### Fixed
+
+- [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — [#929](https://github.com/EduAI-Lab/EduAI/pull/929)
 ### Added
 
 - [core] feat: Add stateless `POST /api/completion` for extension AI-assist flows — prompt-faithful LLM calls without chat persistence, RAG, tools, or ADHD-assist overhead; QM and AI Tutor cut over from `/api/chat`. (#858, @superbolt08, 2026-07-08) — [#958](https://github.com/EduAI-Lab/EduAI/pull/958)
@@ -32,6 +35,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Require exactly 8-digit UBC student numbers on onboarding, settings, link-roster API, and admin user updates; align Canvas mock/seed SIS IDs. (#818, @Ayyhab, 2026-07-18) — [#1093](https://github.com/EduAI-Lab/EduAI/pull/1093)
 - [core, ai-tutor, question-maker] fix: Course cards now render the same accent color on every platform (shared hash of the Core course id — previously Core colored by list position, QM by local id % 5, AI Tutor by local-id hash) and QM's publish badge shows the course's real Core publish state instead of a hardcoded "published". (#1072, @yta3216, 2026-07-18) — [#1085](https://github.com/EduAI-Lab/EduAI/pull/1085)
 - [ai-tutor, question-maker] fix: Both extensions now fetch Core course data through one identical contract: field/publish truth from a single batched service-key catalog call, caller authorization from at most one cookie-scoped list call (no per-row Core fetches — QM's non-admin list previously made one roster call per course), auto-import mirrors throttled (60s/user) and fire-and-forget in both apps, and explicit course-add is an idempotent ensure (201 created / 200 already-anchored) so racing the background mirror can't produce a 409/500. (#1072, @yta3216, 2026-07-18) — [#1085](https://github.com/EduAI-Lab/EduAI/pull/1085)
 - [monorepo] fix: E2E stack raises Core's `/api/sessions/validate` rate limit (`SESSION_VALIDATE_RATE_LIMIT=5000`) — three extension servers validating from one compose IP exceeded the 300/60s default once the full suite ran to completion, cascading 429→401. (#1072, @yta3216, 2026-07-18) — [#1085](https://github.com/EduAI-Lab/EduAI/pull/1085)

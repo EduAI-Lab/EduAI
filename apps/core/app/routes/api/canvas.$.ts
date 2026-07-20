@@ -305,10 +305,11 @@ async function handleLinkRosterRequest(
 
   const result = LinkRosterSchema.safeParse(body);
   if (!result.success) {
+    const fieldError = result.error.flatten().fieldErrors.studentNumber?.[0];
     return json(
       {
         success: false,
-        error: "Invalid input",
+        error: fieldError ?? "Invalid input",
         details: result.error.flatten(),
       },
       400,
