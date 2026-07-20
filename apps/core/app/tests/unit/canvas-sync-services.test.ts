@@ -9,7 +9,11 @@ import {
   normalizeStudentId,
 } from "~/lib/canvas/enrollment-link.server";
 import { SyncCanvasCoursesSchema } from "~/lib/canvas/schemas";
-import { ubcTermFromDate } from "~/lib/canvas/term.server";
+import {
+  ubcTermFromDate,
+  ubcAcademicYearFromDate,
+  inferUbcTermStartFromEndDate,
+} from "~/lib/canvas/term.server";
 import { UBC_TERM_BOUNDARY_CASES } from "@eduai/ui/term-boundary-fixtures";
 
 describe("normalizeStudentId", () => {
@@ -54,6 +58,19 @@ describe("ubcTermFromDate", () => {
   );
 });
 
+describe("ubcAcademicYearFromDate", () => {
+  it("attributes a Jan-Apr (W2) date to the previous calendar year (#1088)", () => {
+    expect(ubcAcademicYearFromDate(new Date("2026-01-15T12:00:00Z"))).toBe(2025);
+    expect(ubcAcademicYearFromDate(new Date("2026-04-15T12:00:00Z"))).toBe(2025);
+  });
+
+  it("keeps the calendar year for W1/S1/S2", () => {
+    expect(ubcAcademicYearFromDate(new Date("2026-09-15T12:00:00Z"))).toBe(2026);
+    expect(ubcAcademicYearFromDate(new Date("2026-05-15T12:00:00Z"))).toBe(2026);
+    expect(ubcAcademicYearFromDate(new Date("2026-07-15T12:00:00Z"))).toBe(2026);
+  });
+});
+
 describe("mapCanvasCourseToCoreFields", () => {
   it("maps Canvas course fields with defaults", () => {
     const mapped = mapCanvasCourseToCoreFields({
@@ -69,7 +86,9 @@ describe("mapCanvasCourseToCoreFields", () => {
     expect(mapped.code).toBe("COSC 101");
     expect(mapped.section).toBe("001");
     expect(mapped.term).toBe("W2");
-    expect(mapped.year).toBe(2026);
+    // Academic-year label: a Jan-start W2 course attributes to the previous
+    // year (#1088) — 2026-01-06 is the second half of the 2025 academic year.
+    expect(mapped.year).toBe(2025);
     expect(mapped.endDate).toEqual(new Date("2026-04-30T23:59:59Z"));
   });
 
@@ -155,9 +174,44 @@ describe("mapCanvasCourseToCoreFields", () => {
       },
     });
 
-    expect(course13.startDate).toEqual(new Date(Date.UTC(2026, 8, 1, 7, 0, 0)));
+    expect(course13.startDate).toEqual(new Date(Date.UTC(2026, 8, 1, 12, 0, 0)));
     expect(course13.endDate).toEqual(new Date("2026-12-31T07:00:00Z"));
     expect(ubcTermFromDate(course13.startDate)).toBe("W1");
+  });
+
+  it("maps an inferred '2026 W2' term end-to-end: W2 of academic year 2026, timezone-safe start", () => {
+    // Regression: the synthesized start used a fixed 07:00Z, which is
+    // 23:00 Dec 31 in Vancouver (PST is UTC-8 in January) — the course was
+    // then re-derived as W1 of the wrong year. The name's year is the
+    // ACADEMIC year, so "2026 W2" starts January 2027 (#1088).
+    const mapped = mapCanvasCourseToCoreFields({
+      id: 14,
+      name: "Advanced Algorithms",
+      course_code: "CPSC 421",
+      start_at: null,
+      end_at: null,
+      term: {
+        id: 40,
+        name: "2026 W2",
+        start_at: null,
+        end_at: null,
+      },
+    });
+
+    expect(mapped.startDate).toEqual(new Date(Date.UTC(2027, 0, 1, 12, 0, 0)));
+    expect(mapped.term).toBe("W2");
+    expect(mapped.year).toBe(2026);
+    // The synthesized instant must be Jan 1 in Vancouver too, not Dec 31.
+    expect(ubcTermFromDate(mapped.startDate)).toBe("W2");
+  });
+
+  it("infers a W2 start from an end_at in the first UTC hours of Jan 1 (Vancouver still Dec 31)", () => {
+    // 2027-01-01T02:00Z is 18:00 Dec 31 2026 in Vancouver: term derivation is
+    // Vancouver-based (W1), so the start year must be Vancouver's 2026 as
+    // well — getUTCFullYear() would say 2027 and skip a whole year ahead.
+    const start = inferUbcTermStartFromEndDate(new Date("2027-01-01T02:00:00Z"));
+    expect(start).toEqual(new Date(Date.UTC(2026, 8, 1, 12, 0, 0)));
+    expect(ubcTermFromDate(start)).toBe("W1");
   });
 
   it("infers start from term end_at when term name has no year or season", () => {
@@ -173,7 +227,7 @@ describe("mapCanvasCourseToCoreFields", () => {
       },
     });
 
-    expect(course21.startDate).toEqual(new Date(Date.UTC(2026, 6, 1, 7, 0, 0)));
+    expect(course21.startDate).toEqual(new Date(Date.UTC(2026, 6, 1, 12, 0, 0)));
     expect(course21.endDate).toEqual(new Date("2026-08-31T06:00:00Z"));
     expect(ubcTermFromDate(course21.startDate)).toBe("S2");
   });

@@ -7,6 +7,7 @@ import {
   normalizeTerm,
   termFromDate,
   termFromMonth,
+  termInfoFromDate,
   termLabel,
   termLabelLong,
   termName,
@@ -45,6 +46,27 @@ describe("termFromDate", () => {
       expect(termFromDate(new Date(iso))).toBe(expected);
     },
   );
+});
+
+describe("termInfoFromDate", () => {
+  it("attributes a Jan-Apr date to the PREVIOUS year's W2 (#1088)", () => {
+    expect(termInfoFromDate(new Date("2026-01-05T12:00:00Z"))).toEqual({ term: "W2", year: 2025 });
+    expect(termInfoFromDate(new Date("2026-04-30T12:00:00Z"))).toEqual({ term: "W2", year: 2025 });
+  });
+
+  it("current-term detection agrees at both sides of the boundary (#1088)", () => {
+    // July 2026 (mid-summer) => 2026 S2.
+    expect(termInfoFromDate(new Date("2026-07-15T12:00:00Z"))).toEqual({ term: "S2", year: 2026 });
+    // January 2027 (deep into the 2026 academic year's second winter term) => 2026 W2.
+    expect(termInfoFromDate(new Date("2027-01-15T12:00:00Z"))).toEqual({ term: "W2", year: 2026 });
+  });
+
+  it("keeps the calendar year for W1/S1/S2", () => {
+    expect(termInfoFromDate(new Date("2026-09-08T12:00:00Z"))).toEqual({ term: "W1", year: 2026 });
+    expect(termInfoFromDate(new Date("2026-12-15T12:00:00Z"))).toEqual({ term: "W1", year: 2026 });
+    expect(termInfoFromDate(new Date("2026-05-15T12:00:00Z"))).toEqual({ term: "S1", year: 2026 });
+    expect(termInfoFromDate(new Date("2026-07-15T12:00:00Z"))).toEqual({ term: "S2", year: 2026 });
+  });
 });
 
 describe("normalizeTerm", () => {
@@ -124,6 +146,28 @@ describe("ordering", () => {
       termSortKey({ term: "W2", year: 2026 }),
     );
   });
+
+  it("startDate path derives {term, year} via termInfoFromDate so rank and real time agree", () => {
+    // 2025W1 (Sep 2025) -> 2025W2 (Jan 2026): W2's actual startDate is later
+    // in real time AND the rank-based key must rank it higher, since the
+    // startDate path is no longer a raw-timestamp comparison — it's derived
+    // via the same academic-year attribution as the rank fallback.
+    const w1 = { term: "ignored", year: 9999, startDate: "2025-09-08" };
+    const w2 = { term: "ignored", year: 9999, startDate: "2026-01-05" };
+    expect(termSortKey(w2)).toBeGreaterThan(termSortKey(w1));
+    expect(compareByTerm(w1, w2)).toBeGreaterThan(0); // w2 (more recent) sorts first
+  });
+
+  it("sorts correctly across the academic-year boundary (S1 < S2 < W1 < W2, chronologically true)", () => {
+    const courses = [
+      { id: "s1", startDate: "2025-05-04" },
+      { id: "w2", startDate: "2026-01-05" }, // => 2025W2, follows 2025W1
+      { id: "w1", startDate: "2025-09-08" },
+      { id: "s2", startDate: "2025-07-06" },
+    ];
+    const sorted = [...courses].sort(compareByTerm).map((c) => c.id);
+    expect(sorted).toEqual(["w2", "w1", "s2", "s1"]); // most recent first
+  });
 });
 
 describe("groupCoursesByTerm", () => {
@@ -144,5 +188,14 @@ describe("groupCoursesByTerm", () => {
     const courses = [{ meta: { term: "S1", year: 2026 } }];
     const groups = groupCoursesByTerm(courses, (c) => c.meta);
     expect(groups[0].label).toBe("2026S1");
+  });
+
+  it("groups a Jan-dated W2 course under the previous year's label, most recent first", () => {
+    const courses = [
+      { id: 1, term: "W1", year: 2025, startDate: "2025-09-08" },
+      { id: 2, term: "W2", year: 2025, startDate: "2026-01-05" }, // 2025W2, follows 2025W1
+    ];
+    const groups = groupCoursesByTerm(courses);
+    expect(groups.map((g) => g.label)).toEqual(["2025W2", "2025W1"]);
   });
 });

@@ -126,14 +126,13 @@ const parseNewsSearchResult = (entry: unknown): ExternalSearchResult | null => {
   };
 };
 
-export const webSearch = tool({
-  description:
-    "Search the web and news for up-to-date information. Return concise, deduplicated results with URLs.",
-  parameters: z.object({
-    query: z.string().min(1).max(200).describe("The search query to run"),
-    limit: z.number().int().min(1).max(5).default(3).describe("Max number of results (1-5)"),
-  }),
-  execute: async ({ query, limit }) => {
+export async function runWebSearch({
+  query,
+  limit = 3,
+}: {
+  query: string;
+  limit?: number;
+}): Promise<ExternalSearchResult[]> {
     const sanitizedQuery = query.trim();
     if (!sanitizedQuery) {
       throw new Error("Cannot perform web search without a query.");
@@ -229,7 +228,16 @@ export const webSearch = tool({
 
 
     return aggregated;
-  },
+}
+
+export const webSearch = tool({
+  description:
+    "Search the web and news for up-to-date information. Return concise, deduplicated results with URLs.",
+  parameters: z.object({
+    query: z.string().min(1).max(200).describe("The search query to run"),
+    limit: z.number().int().min(1).max(5).default(3).describe("Max number of results (1-5)"),
+  }),
+  execute: runWebSearch,
 });
 
 export type { FirecrawlApp };

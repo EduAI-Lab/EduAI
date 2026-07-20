@@ -1,5 +1,7 @@
 /**
- * Modal for creating or editing an assessment blueprint (name, type, semester).
+ * Modal for creating or editing an assessment blueprint (name, type). The
+ * assessment's semester/term is derived read-only from its linked Core course
+ * (#1072 §4 step 8 / #1077) — not editable here.
  * Returns collected params to parent callbacks.
  */
 import {
@@ -16,11 +18,6 @@ import {
     DialogHeader,
     DialogTitle,
     DialogFooter,
-    TERM_CODES,
-    termFromDate,
-    termLabel,
-    termLabelLong,
-    termSortKey,
 } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import * as React from 'react';
@@ -36,39 +33,6 @@ interface GenerateAssessmentModalProps {
   courseId: number;
 }
 
-/** Canonical current-term value, e.g. "2026W1", from today's date. */
-function defaultSemester(): string {
-  const now = new Date();
-  return termLabel(termFromDate(now), now.getFullYear());
-}
-
-/**
- * Semester picker options using the canonical UBC term model. `value` is the
- * compact code ("2026W1") stored on the assessment; `label` is the readable
- * heading ("Winter Term 1 2026"). Any pre-existing legacy value (e.g. a saved
- * "Fall 2026") is preserved at the top so editing an old assessment still works.
- */
-function getSemesterOptions(initialSemester?: string): { value: string; label: string }[] {
-  const currentYear = new Date().getFullYear();
-  const opts: { value: string; label: string; sort: number }[] = [];
-  for (let y = currentYear - 1; y <= currentYear + 2; y++) {
-    for (const code of TERM_CODES) {
-      opts.push({
-        value: termLabel(code, y),
-        label: termLabelLong(code, y),
-        sort: termSortKey({ term: code, year: y }),
-      });
-    }
-  }
-  const legacy = initialSemester?.trim();
-  if (legacy && !opts.some((o) => o.value === legacy)) {
-    opts.push({ value: legacy, label: legacy, sort: Number.POSITIVE_INFINITY });
-  }
-  return opts
-    .sort((a, b) => b.sort - a.sort)
-    .map(({ value, label }) => ({ value, label }));
-}
-
 export const GenerateAssessmentModal = ({
   open,
   onClose,
@@ -81,33 +45,20 @@ export const GenerateAssessmentModal = ({
   const isEdit = mode === 'edit';
   const [assessmentName, setAssessmentName] = React.useState(initialValues?.name ?? '');
   const [assessmentType, setAssessmentType] = React.useState<AssessmentType>(initialValues?.type ?? 'Assignment');
-  const [assessmentSemester, setAssessmentSemester] = React.useState(
-    () => initialValues?.semester ?? defaultSemester(),
-  );
 
   React.useEffect(() => {
     if (!open) return;
     setAssessmentName(initialValues?.name ?? '');
     setAssessmentType(initialValues?.type ?? 'Assignment');
-    setAssessmentSemester(initialValues?.semester ?? defaultSemester());
-  }, [open, initialValues?.name, initialValues?.type, initialValues?.semester]);
+  }, [open, initialValues?.name, initialValues?.type]);
 
-  const semesterOptions = React.useMemo(
-    () => getSemesterOptions(assessmentSemester || initialValues?.semester),
-    [assessmentSemester, initialValues?.semester]
-  );
-
-  const canGenerate =
-    courseId > 0 &&
-    assessmentName.trim().length > 0 &&
-    assessmentSemester.trim().length > 0;
+  const canGenerate = courseId > 0 && assessmentName.trim().length > 0;
 
   const getDisabledReason = (): string | null => {
     if (!canGenerate) {
       const reasons: string[] = [];
       if (courseId <= 0) reasons.push('course');
       if (assessmentName.trim().length === 0) reasons.push('name');
-      if (assessmentSemester.trim().length === 0) reasons.push('semester');
       if (reasons.length > 0) {
         return `Missing required fields: ${reasons.join(', ')}`;
       }
@@ -131,7 +82,6 @@ export const GenerateAssessmentModal = ({
       name: assessmentName.trim(),
       type: assessmentType,
       description: '',
-      semester: assessmentSemester.trim(),
       primaryTopicIds: initialValues?.primaryTopicIds ?? [],
       secondaryTopicIds: initialValues?.secondaryTopicIds ?? [],
       excludedTopicIds: initialValues?.excludedTopicIds ?? [],
@@ -171,38 +121,20 @@ export const GenerateAssessmentModal = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="assessmentType">Assessment type</Label>
-              <Select value={assessmentType} onValueChange={(value) => setAssessmentType(value as AssessmentType)}>
-                <SelectTrigger id="assessmentType">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(['Assignment', 'Lab', 'Quiz', 'Midterm', 'Final'] as AssessmentType[]).map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="assessmentSemester">Semester</Label>
-              <Select value={assessmentSemester} onValueChange={setAssessmentSemester}>
-                <SelectTrigger id="assessmentSemester">
-                  <SelectValue placeholder="Select semester" />
-                </SelectTrigger>
-                <SelectContent>
-                  {semesterOptions.map((sem) => (
-                    <SelectItem key={sem.value} value={sem.value}>
-                      {sem.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="assessmentType">Assessment type</Label>
+            <Select value={assessmentType} onValueChange={(value) => setAssessmentType(value as AssessmentType)}>
+              <SelectTrigger id="assessmentType">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                {(['Assignment', 'Lab', 'Quiz', 'Midterm', 'Final'] as AssessmentType[]).map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {type}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

@@ -78,7 +78,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           year: courseYear(course),
           startDate: course.startDate ?? null,
         })}
-        getSearchText={(course) => `${course.title} ${courseCode(course)}`}
+        getSearchText={(course) => `${course.title ?? ""} ${courseCode(course)}`}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
           buildTermFilterGroup<Course>((c) => ({
@@ -122,7 +122,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             year={courseYear(c)}
             isPublished={c.isPublished}
             accentColor={accentForCourse(c)}
-            extraBadges={c.externalSource === 'EDUAI' ? ['EduAI'] : []}
+            extraBadges={c.coreOfferingId ? ['EduAI'] : []}
             href={`/instructor/courses/${c.id}`}
             LinkComponent={Link}
           />

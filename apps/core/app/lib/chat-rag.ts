@@ -227,6 +227,29 @@ export function extractMessageText(message?: Record<string, unknown>): string {
   return content == null ? "" : safeStringify(content);
 }
 
+function isImagePart(part: unknown): boolean {
+  if (!part || typeof part !== "object") return false;
+  const p = part as Record<string, unknown>;
+  const type = typeof p.type === "string" ? p.type : "";
+  if (type === "image" || type === "image_url") return true;
+  if (type === "file" && typeof p.mimeType === "string" && p.mimeType.startsWith("image/")) {
+    return true;
+  }
+  return p.image != null || p.image_url != null;
+}
+
+/** True when the message includes image parts (AI SDK content/parts arrays). */
+export function messageHasImageParts(message?: Record<string, unknown>): boolean {
+  if (!message) return false;
+  for (const field of ["content", "parts"] as const) {
+    const value = message[field];
+    if (Array.isArray(value) && value.some(isImagePart)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function totalMessageChars<T extends Record<string, unknown>>(
   messages: T[],
   estimate: (message?: T) => number,
