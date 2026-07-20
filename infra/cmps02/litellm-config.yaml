@@ -1,0 +1,18 @@
+# Active LiteLLM config — overwritten by migrate-tiered.sh.
+# Source of truth: litellm-config.tiered.yaml
+
+model_list:
+  - model_name: qwen2.5-7b-instruct
+    litellm_params:
+      model: openai/qwen2.5-7b-instruct
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+  - model_name: qwen2.5-32b-instruct
+    litellm_params:
+      model: openai/qwen2.5-32b-instruct
+      api_base: http://127.0.0.1:18002/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local

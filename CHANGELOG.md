@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Added
+
+- [infra] feat: Add `infra/cmps02` — LiteLLM + nginx edge on `:8001` with the same **Qwen 7B + 32B AWQ** model ids as cmps01 (`qwen2.5-7b-instruct`, `qwen2.5-32b-instruct`) so fleet Slice 1 can round-robin across both hosts. Replaces the temporary live 14B/72B layout via `./migrate.sh`. (@superbolt08, 2026-07-20)
+
 ## [Week 10 — July 6–12, 2026]
 
 ### Added

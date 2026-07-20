@@ -4,7 +4,7 @@ Hardware energy measurement for URA research runs (RAPL CPU + NVML GPU).
 
 ## Requirements
 
-- **Linux** host with Intel RAPL (`/sys/class/powercap/intel-rapl:*/energy_uj` for `package-*` domains)
+- **Linux** host with Intel RAPL (`/sys/class/powercap/intel-rapl*/energy_uj`)
 - **NVIDIA GPU** with NVML (`pynvml`) for GPU Joules
 - Run on the **same machine as vLLM** (s378 / cmps01), not on a Windows dev laptop
 
@@ -44,9 +44,17 @@ bash deploy-cmps01.sh
 # Then on cmps01: infra/cmps01/deploy-edge-proxy.sh (routes /energy on existing :8001)
 ```
 
+On **cmps02** (same nginx edge pattern):
+
+```bash
+cd ~/eduai-energy-meter && bash deploy-cmps02.sh
+cd ~/cmps02 && ./deploy-edge-proxy.sh
+# s378: ENERGY_SIDECAR_URL=http://cmps02.ok.ubc.ca:8001/energy
+```
+
 Uses **Docker** + `nvidia-smi --query-gpu=index,power.draw -lms 1000` (GPUs 0+1 summed). No host `node`/`pip` install.
 
-**Network:** s378 reaches energy via the **same firewall port as vLLM** (`:8001/energy` through nginx). Direct `:9100` is localhost-only on cmps01 — no IT ticket needed.
+**Network:** s378 reaches energy via the **same firewall port as vLLM** (`:8001/energy` through nginx). Direct `:9100` is localhost-only on GPU hosts — no IT ticket needed.
 
 Preflight from s378: `ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy npm run research:verify-energy`
 
