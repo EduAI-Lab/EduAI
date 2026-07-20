@@ -29,7 +29,7 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, Question_Metadata, Variants, Assessments } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment, deleteAssessment, getQuestionsInAssessment, addQuestionToAssessment } =
       await import('../../src/services/assessmentService.js'));
   });

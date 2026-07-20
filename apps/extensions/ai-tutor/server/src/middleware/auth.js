@@ -6,6 +6,7 @@
  */
 
 import { getPolicy } from '../services/policyService.js';
+import { resolveCoreCourseById } from '../services/courseResolver.js';
 
 const VALID_ROLES = new Set(['STUDENT', 'INSTRUCTOR', 'TA', 'ADMIN', 'UNIT_ADMIN']);
 
@@ -87,24 +88,39 @@ export function requireInstructorPolicy(flagKey) {
 /**
  * Returns true when the user is a UNIT_ADMIN whose authorizedUnits includes
  * the course's department. A null/missing department is never a match (§19 unit lock).
+ *
+ * `department` is Core-owned data (#1072 step 2/4) — `CourseOffering` no
+ * longer carries a local column, so this resolves it with a live Core fetch
+ * keyed on `course.coreOfferingId`. Pass `resolvedCoreCourse` when the caller
+ * already resolved the Core course in the same request (e.g. the list/detail
+ * read-through seams) to avoid a second round trip; omit it to have this
+ * function resolve on its own. Fail-soft: no `coreOfferingId`, or a Core
+ * outage, resolves to `false` rather than throwing — same degrade posture as
+ * `courseResolver.js`.
  */
-export function isUnitAdminForCourse(user, course) {
-  return (
-    user?.role === 'UNIT_ADMIN' &&
-    course?.department != null &&
-    Array.isArray(user.authorizedUnits) &&
-    user.authorizedUnits.includes(course.department)
-  );
+export async function isUnitAdminForCourse(user, course, resolvedCoreCourse) {
+  if (user?.role !== 'UNIT_ADMIN') return false;
+  if (!Array.isArray(user.authorizedUnits) || user.authorizedUnits.length === 0) return false;
+
+  let coreCourse = resolvedCoreCourse;
+  if (coreCourse === undefined) {
+    const coreOfferingId = course?.coreOfferingId ?? null;
+    if (!coreOfferingId) return false;
+    ({ course: coreCourse } = await resolveCoreCourseById(coreOfferingId));
+  }
+
+  return coreCourse?.department != null && user.authorizedUnits.includes(coreCourse.department);
 }
 
 /**
  * Returns true when the user has admin-level access to the course:
  * ADMIN globally, UNIT_ADMIN scoped to their department, or INSTRUCTOR of the course.
- * Requires course.instructors to be included.
+ * Requires course.instructors to be included. See `isUnitAdminForCourse` for
+ * the `resolvedCoreCourse` fast path.
  */
-export function isCourseAdmin(user, course) {
+export async function isCourseAdmin(user, course, resolvedCoreCourse) {
   if (user?.role === 'ADMIN') return true;
-  if (isUnitAdminForCourse(user, course)) return true;
+  if (await isUnitAdminForCourse(user, course, resolvedCoreCourse)) return true;
   if (
     (user?.role === 'INSTRUCTOR' || user?.role === 'UNIT_ADMIN') &&
     course?.instructors?.some((i) => i.userId === user.id)

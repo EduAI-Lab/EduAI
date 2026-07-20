@@ -334,7 +334,9 @@ describe("POST /api/courses", () => {
       code: "TX 001",
       section: "002",
       term: "W2",
-      year: 2026,
+      // Academic-year label: a Jan-start W2 course attributes to the
+      // previous year (#1088) — 2026-01-01 is the second half of 2025.
+      year: 2025,
       startDate: "2026-01-01",
       department: "COSC",
       instructorUserIds: instructorId,

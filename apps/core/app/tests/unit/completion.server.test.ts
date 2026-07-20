@@ -52,6 +52,20 @@ describe("resolveCompletionPrompt", () => {
     });
   });
 
+  it("falls back to system message when body.systemPrompt is empty/whitespace", () => {
+    const result = resolveCompletionPrompt({
+      systemPrompt: "   ",
+      messages: [
+        { role: "system", content: "Message system" },
+        { role: "user", content: "Hello" },
+      ],
+    });
+    expect("error" in result).toBe(false);
+    if ("error" in result) return;
+    expect(result.system).toContain("Message system");
+    expect(result.messages).toEqual([{ role: "user", content: "Hello" }]);
+  });
+
   it("rejects unsupported roles", () => {
     const result = resolveCompletionPrompt({
       systemPrompt: "Test",
