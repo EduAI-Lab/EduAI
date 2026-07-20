@@ -59,7 +59,7 @@ export function DashboardUnitAdminView({ courses, dashboardStats }: DashboardUni
     },
     {
       label: 'Publish content',
-      description: firstDraft ? `Review ${firstDraft.title}.` : 'Everything is already published.',
+      description: firstDraft ? `Review ${firstDraft.title ?? 'Untitled course'}.` : 'Everything is already published.',
       href: firstDraft ? `/instructor/courses/${firstDraft.id}` : '/instructor',
       icon: <IconUpload size={16} stroke={1.75} />,
     },
