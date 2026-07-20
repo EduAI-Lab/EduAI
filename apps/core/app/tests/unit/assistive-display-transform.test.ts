@@ -122,14 +122,40 @@ Become Law: President signs
 **Next?** Want Committee Review?`;
 
     const displayed = transformAssistiveDisplayCopy(stored);
-    expect(displayed).toContain("1. **Introduce Bill:**");
+    expect(displayed).toContain("1. **Introduce Bill**:");
     expect(displayed).toContain("starts the process");
-    expect(displayed).toContain("2. **Committee Review:**");
-    expect(displayed).toContain("3. **Floor Vote:**");
-    expect(displayed).toContain("4. **Become Law:**");
-    expect(displayed.indexOf("1. **Introduce Bill:**")).toBeLessThan(
+    expect(displayed).toContain("2. **Committee Review**:");
+    expect(displayed).toContain("3. **Floor Vote**:");
+    expect(displayed).toContain("4. **Become Law**:");
+    expect(displayed.indexOf("1. **Introduce Bill**:")).toBeLessThan(
       displayed.indexOf("```eduai-diagram"),
     );
+  });
+
+  it("normalizes Start here and avoids colon-inside-bold step markdown", () => {
+    const stored = `**Top summary**
+- **Introduce Bill** — file it
+- **Committee** — study
+
+### Step ladder
+Start here: Start here: Introduce Bill (~2 min)
+1. Start here: Introduce Bill: A member files the proposal.
+
+\`\`\`eduai-diagram
+process-flow
+title: Bill
+Introduce Bill: Member files
+Committee: Experts study
+\`\`\`
+
+**Next?** More?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toMatch(/^### Step ladder\nStart here: Introduce Bill \(~2 min\)/m);
+    expect(displayed).not.toMatch(/Start here: Start here:/i);
+    expect(displayed).toContain("1. **Introduce Bill**: A member files the proposal.");
+    expect(displayed).not.toContain("**Introduce Bill:**");
+    expect(displayed).toContain("2. **Committee**:");
   });
 
   it("backfills hierarchy and compare ladders the same way", () => {
@@ -149,9 +175,9 @@ Axon: Sends signals
 
 **Next?** More?`);
 
-    expect(hierarchy).toContain("1. **Neuron:**");
-    expect(hierarchy).toContain("2. **Dendrites:**");
-    expect(hierarchy).toContain("3. **Axon:**");
+    expect(hierarchy).toContain("1. **Neuron**:");
+    expect(hierarchy).toContain("2. **Dendrites**:");
+    expect(hierarchy).toContain("3. **Axon**:");
     expect(hierarchy).toContain("**Dendrites** — Receive signals");
 
     const compare = transformAssistiveDisplayCopy(`**Top summary**
@@ -167,8 +193,8 @@ Unsupervised: Finds structure
 **Next?** More?`);
 
     expect(compare).toContain("### Step ladder");
-    expect(compare).toContain("1. **Supervised:**");
-    expect(compare).toContain("2. **Unsupervised:**");
+    expect(compare).toContain("1. **Supervised**:");
+    expect(compare).toContain("2. **Unsupervised**:");
     expect(compare.indexOf("### Step ladder")).toBeLessThan(
       compare.indexOf("```eduai-diagram"),
     );
@@ -186,10 +212,10 @@ gradient-descent
 
     const displayed = transformAssistiveDisplayCopy(stored);
     expect(displayed).toContain("### Step ladder");
-    expect(displayed).toContain("1. **Start point:**");
-    expect(displayed).toContain("2. **Compute gradient:**");
-    expect(displayed).toContain("3. **Step downhill:**");
-    expect(displayed).toContain("4. **Near minimum:**");
+    expect(displayed).toContain("1. **Start point**:");
+    expect(displayed).toContain("2. **Compute gradient**:");
+    expect(displayed).toContain("3. **Step downhill**:");
+    expect(displayed).toContain("4. **Near minimum**:");
     expect(displayed).toContain("**TLDR**");
     expect(displayed).toContain("**Start point**");
     expect(displayed.indexOf("### Step ladder")).toBeLessThan(

@@ -460,17 +460,20 @@ export async function auditAndMaybeRewrite(args: {
 
     // When urgency triggered the rewrite, only accept a result that is clean;
     // a rewrite that still trips urgency is rejected and the draft is kept.
+    // requireDiagram must NOT bypass profileStructuralPass — diagram inject still
+    // needs valid Top summary / Next? (or a structural score gain) before adopt.
     const urgencyWasProblem = !beforeMetrics.noUrgency;
     const diagramOk = !requireDiagram || hasEduaiDiagramFence(llmText);
+    const structuralOk =
+      afterMetrics.profileStructuralPass ||
+      profileStructuralScore(afterMetrics, profile, llmText) >
+        profileStructuralScore(beforeMetrics, profile, trimmed);
     const useLlm =
       llmText.length > 0 &&
       afterMetrics.underCap &&
       diagramOk &&
       (!urgencyWasProblem || afterMetrics.noUrgency) &&
-      (requireDiagram ||
-        afterMetrics.profileStructuralPass ||
-        profileStructuralScore(afterMetrics, profile, llmText) >
-          profileStructuralScore(beforeMetrics, profile, trimmed));
+      structuralOk;
 
     let finalText = useLlm ? llmText : trimmed;
     if (requireDiagram && !hasEduaiDiagramFence(finalText)) {

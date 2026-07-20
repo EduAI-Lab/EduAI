@@ -208,52 +208,78 @@ function completeStepLadderFromStages(
   const existing = stepBlock?.trim() || "";
   if (stages.length === 0) return existing || null;
 
-  const numberedCount = countListItems(existing, /(?:^|\n)\s*\d+[.)]\s+/g);
-  const labelMatches = countMatchingStageLabels(
-    existing,
-    stages,
-    /(?:^|\n)\s*\d+[.)]\s+(.+)/g,
-  );
-  if (
-    existing &&
-    numberedCount >= stages.length &&
-    labelMatches >= Math.ceil(stages.length / 2)
-  ) {
-    return existing;
-  }
-
+  // Always rebuild when stages exist so Start-here / bold formatting stay
+  // consistent (preserves richer prior step bodies via label/index match).
   const byLabel = new Map<string, string>();
   const byIndex = new Map<number, string>();
   for (const match of existing.matchAll(/(?:^|\n)\s*(\d+)[.)]\s+(.+)/g)) {
     const idx = Number(match[1]);
-    const body = (match[2] ?? "").trim();
+    const body = normalizeStepBody(match[2] ?? "");
+    if (!body) continue;
     byIndex.set(idx, body);
     const bold = /^\*\*(.+?)\*\*/.exec(body);
     const label = bold?.[1] ?? body.split(/[:–—-]/, 1)[0] ?? body;
     byLabel.set(normalizeLabelKey(label), body);
   }
 
-  const startMatch = /Start here:[^\n]*/i.exec(existing);
-  const startLine =
-    startMatch?.[0]?.trim() ?? `Start here: ${stages[0]?.label} (~2 min)`;
+  const startLine = resolveStartHereLine(existing, stages[0]?.label ?? "first step");
 
   const steps = stages.map((s, i) => {
     const prior =
       byLabel.get(normalizeLabelKey(s.label)) ?? byIndex.get(i + 1) ?? null;
-    if (prior) {
-      if (/^\*\*/.test(prior)) return `${i + 1}. ${prior}`;
-      const stripped = prior.replace(
-        new RegExp(`^${escapeRegExp(s.label)}\\s*:\\s*`, "i"),
-        "",
-      );
-      return `${i + 1}. **${s.label}:** ${stripped}`;
-    }
-    return s.detail
-      ? `${i + 1}. **${s.label}:** ${s.detail}`
-      : `${i + 1}. **${s.label}:** ${s.label}`;
+    if (prior) return `${i + 1}. ${formatStepItem(s.label, prior)}`;
+    return `${i + 1}. ${formatStepItem(s.label, s.detail || null)}`;
   });
 
   return normalizeGaps(["### Step ladder", startLine, ...steps].join("\n"));
+}
+
+/**
+ * One clean "Start here:" line — never nested "Start here: Start here: …",
+ * and only taken from pre-numbered preamble (not from step bodies).
+ */
+function resolveStartHereLine(existing: string, firstLabel: string): string {
+  const preamble = existing.split(/\n\s*\d+[.)]\s+/, 1)[0] ?? "";
+  const match = /Start here:\s*(.+)/i.exec(preamble);
+  let target = (match?.[1] ?? `${firstLabel} (~2 min)`).trim();
+  // Collapse accidental repeats from model output / prior transforms.
+  target = target.replace(/^(?:Start here:\s*)+/i, "").trim();
+  if (!target) target = `${firstLabel} (~2 min)`;
+  return `Start here: ${target}`;
+}
+
+/** Strip Start-here prefix and raw markdown bold wrappers from a step body. */
+function normalizeStepBody(raw: string): string {
+  let body = raw.trim();
+  body = body.replace(/^(?:Start here:\s*)+/i, "").trim();
+  // Unwrap a single outer **…** so we can re-format consistently.
+  const wrapped = /^\*\*(.+?)\*\*\s*(.*)$/.exec(body);
+  if (wrapped) {
+    const head = (wrapped[1] ?? "").replace(/:\s*$/, "").trim();
+    const rest = (wrapped[2] ?? "").replace(/^[:–—-]\s*/, "").trim();
+    body = rest ? `${head}: ${rest}` : head;
+  }
+  return body;
+}
+
+/**
+ * Format a numbered step for markdown: bold label, colon OUTSIDE bold.
+ * (`**Label:**` often renders as visible `**:` in CommonMark.)
+ */
+function formatStepItem(label: string, detailOrPrior: string | null): string {
+  if (!detailOrPrior) return `**${label}**`;
+
+  let detail = normalizeStepBody(detailOrPrior);
+  // Drop a leading "Label:" / "**Label**:" so we don't duplicate the title.
+  detail = detail
+    .replace(new RegExp(`^\\*\\*${escapeRegExp(label)}\\*\\*\\s*:?\\s*`, "i"), "")
+    .replace(new RegExp(`^${escapeRegExp(label)}\\s*:\\s*`, "i"), "")
+    .trim();
+
+  if (!detail || normalizeLabelKey(detail) === normalizeLabelKey(label)) {
+    return `**${label}**`;
+  }
+  return `**${label}**: ${detail}`;
 }
 
 function escapeRegExp(value: string): string {
