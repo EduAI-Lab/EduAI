@@ -61,14 +61,14 @@ export function termFromMonth(month: number): TermCode {
 // boundary into the wrong term. Always derive a term from a real Date via
 // this timezone, mirroring Core's `ubcTermFromDate` in term.server.ts.
 //
-// This is the single owner of the Vancouver zone constant. Core's
-// `term.server.ts` imports it rather than redeclaring it, so the
-// `UBC_TIMEZONE` env override (deployments outside Vancouver) can't cause
-// the two derivations to drift apart. `process` only exists in Node, so
-// browser bundles fall back to the same default Core uses when the env
-// var is unset.
-export const UBC_TIME_ZONE =
-  (typeof process !== "undefined" ? process.env?.UBC_TIMEZONE : undefined) ?? "America/Vancouver"
+// This is the single owner of the Vancouver zone constant — a fixed value,
+// not an env-configurable one. An env override here would only ever reach
+// Core: bundlers don't expose `process.env` to browser code by default, so
+// a `UBC_TIMEZONE` override would apply on the server but silently not in
+// the browser, letting the two derivations drift apart. Core's
+// `term.server.ts` imports this rather than redeclaring it, so both stay
+// identical by construction.
+export const UBC_TIME_ZONE = "America/Vancouver"
 
 function monthInUbcTimeZone(date: Date): number {
   return Number(

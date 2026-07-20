@@ -8,8 +8,8 @@ import { UBC_TIME_ZONE } from "@eduai/ui/term";
  * - May–Jun: Summer Term 1 (S1)
  * - Jul–Aug: Summer Term 2 (S2)
  *
- * The zone (and its `UBC_TIMEZONE` env override) is owned by
- * `packages/ui/src/lib/term.ts` — see that file for why.
+ * The zone is a fixed constant owned by `packages/ui/src/lib/term.ts` —
+ * see that file for why.
  *
  * `year` (the Course row's academic-year label — see `ubcAcademicYearFromDate`
  * below) is NOT the calendar year a W2 course starts in: UBC's academic year
