@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import tsconfigPaths from 'vite-tsconfig-paths';
-import type { UserConfig } from 'vitest/config';
+import type { ViteUserConfig } from 'vitest/config';
 
 // Walk up from a config file's directory until we find the monorepo root
 // (identified by a packages/ui subdirectory). This must work both for a
@@ -26,7 +26,7 @@ export function findMonorepoRoot(startDir: string): string {
 // and override `test.include` — plain object spread, not vite's
 // mergeConfig, so `include` is a clean override rather than an array
 // concatenation.
-export function baseVitestConfig(coreDir: string): UserConfig {
+export function baseVitestConfig(coreDir: string): ViteUserConfig {
   const rootDir = findMonorepoRoot(coreDir);
 
   return {
