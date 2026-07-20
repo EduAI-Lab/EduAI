@@ -46,10 +46,11 @@ export function CourseTopicsHeroAction({
 
   // EduAI-sourced courses have their topics pulled automatically from Core
   // on every read (routes/topics.js) — no manual action needed here. Gated
-  // on `externalId` alone to match the server's sync/create gate exactly
-  // (routes/topics.js checks `course.externalId`, not `externalSource`);
-  // the import flow always sets both together, so this can't drift from it.
-  const isEduAiCourse = !!course.externalId;
+  // on `coreOfferingId` to match the server's sync/create gate exactly
+  // (routes/topics.js checks `course.coreOfferingId`); every CourseOffering
+  // is now a Core anchor row (#1072), so this is effectively always true —
+  // the field stays optional here only defensively.
+  const isEduAiCourse = !!course.coreOfferingId;
   if (!perms.canManageTopics || isEduAiCourse) return null;
 
   const handleCreateTopic = async () => {

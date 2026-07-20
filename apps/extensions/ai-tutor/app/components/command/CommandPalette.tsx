@@ -85,8 +85,8 @@ export function CommandPalette() {
     {
       heading: 'Switch course',
       items: courses.map((c) => ({
-        label: c.title,
-        value: `course ${c.title}`,
+        label: c.title ?? 'Untitled course',
+        value: `course ${c.title ?? c.id}`,
         icon: <IconLayoutGrid className="size-4" />,
         onSelect: () => navigate(`${coursePrefix}/courses/${c.id}`),
       })),

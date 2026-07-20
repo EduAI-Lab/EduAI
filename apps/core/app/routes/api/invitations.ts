@@ -6,6 +6,7 @@ import { createInvitation, listInvitations } from "~/lib/invitations/service.ser
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -37,7 +38,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
  */
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return apiError(405, "METHOD_NOT_ALLOWED");
   }
 
   const gate = await requireInviter(request, "invitation.create");
@@ -49,7 +50,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const body = await request.json().catch(() => null);
   const result = createInvitationSchema.safeParse(body);
   if (!result.success) {
-    return json({ error: "Invalid input", details: result.error.flatten() }, 400);
+    return validationErrorFromZod(result.error);
   }
 
   // Restrict which roles this actor may issue an invitation for.

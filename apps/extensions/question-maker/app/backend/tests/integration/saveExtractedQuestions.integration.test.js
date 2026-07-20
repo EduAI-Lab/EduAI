@@ -34,7 +34,7 @@ describeDb('saveExtractedQuestions (integration)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ saveExtractedQuestions } = await import('../../src/services/questionService.js'));
   });
 
