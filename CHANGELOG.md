@@ -5,6 +5,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Fixed
+
+- [core] fix: Cap and redact bug-report diagnostic fields before persist (screenshot rejected over 512KB chars; console/network logs redacted then truncated; context JSON sanitized + size-capped); admin list omits attachment blobs and exposes `has*` flags; `GET /api/admin/bug-reports/:id` returns full detail. Shared `redact.server` module extracted for key- and value-level scrubbing. (#979, @Ayyhab, 2026-07-20) — (#PR)
+- [ai-tutor] fix: Admin bug-report triage fetches attachment detail on demand (viewer/copy) so list responses stay lean after Core’s #979 change. (#979, @Ayyhab, 2026-07-20) — (#PR)
+
 ## [Week 10 — July 6–12, 2026]
 
 ### Added
