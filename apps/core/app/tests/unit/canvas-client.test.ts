@@ -1,4 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Mock at the ssrf-guard module boundary
+const { assertPublicHostnameMock } = vi.hoisted(() => ({
+  assertPublicHostnameMock: vi.fn(async (_hostname: string) => {}),
+}));
+
+vi.mock("~/lib/net/ssrf-guard.server", () => ({
+  assertPublicHostname: (hostname: string) => assertPublicHostnameMock(hostname),
+  UnsafeHostError: class UnsafeHostError extends Error {},
+}));
+
 import {
   CanvasApiError,
   CanvasVerificationError,
@@ -88,6 +99,84 @@ describe("verifyCanvasCredentials", () => {
     const error = new CanvasVerificationError("Invalid Canvas API token", 400);
     expect(error).toBeInstanceOf(Error);
     expect(error.statusCode).toBe(400);
+  });
+});
+
+describe("SSRF guard for real Canvas requests", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    assertPublicHostnameMock.mockReset();
+    assertPublicHostnameMock.mockImplementation(async () => {});
+  });
+
+  it("verifyCanvasCredentials rejects when the host guard rejects the resolved address", async () => {
+    assertPublicHostnameMock.mockRejectedValueOnce(
+      new Error('Host "canvas.attacker.example" resolves to a disallowed network address'),
+    );
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      verifyCanvasCredentials("https://canvas.attacker.example", "token"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("getCanvasCourseWithTerm rejects when the host guard rejects the resolved address", async () => {
+    assertPublicHostnameMock.mockRejectedValueOnce(
+      new Error('Host "canvas.attacker.example" resolves to a disallowed network address'),
+    );
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      getCanvasCourseWithTerm(
+        { canvasUrl: "https://canvas.attacker.example", apiKey: "token", isTestMode: false },
+        "21",
+      ),
+    ).rejects.toThrow(CanvasApiError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("re-checks the guard on every call, not just once", async () => {
+    // First call resolves public and succeeds; a later call for the same
+    // stored canvasUrl resolves private (e.g. rebound) and must be rejected.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 })),
+    );
+    await expect(
+      verifyCanvasCredentials("https://canvas.attacker.example", "token"),
+    ).resolves.toBeUndefined();
+    expect(assertPublicHostnameMock).toHaveBeenCalledTimes(1);
+
+    assertPublicHostnameMock.mockRejectedValueOnce(new Error("resolves to a disallowed network address"));
+    await expect(
+      verifyCanvasCredentials("https://canvas.attacker.example", "token"),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(assertPublicHostnameMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows a Canvas host once the guard resolves cleanly", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 })),
+    );
+
+    await expect(verifyCanvasCredentials("https://canvas.ubc.ca", "token")).resolves.toBeUndefined();
+    expect(assertPublicHostnameMock).toHaveBeenCalledWith("canvas.ubc.ca");
+  });
+
+  it("skips the host guard entirely for the allow-listed local-dev hosts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1 }), { status: 200 })),
+    );
+
+    await expect(
+      verifyCanvasCredentials("http://localhost:8080", "token"),
+    ).resolves.toBeUndefined();
+    expect(assertPublicHostnameMock).not.toHaveBeenCalled();
   });
 });
 
