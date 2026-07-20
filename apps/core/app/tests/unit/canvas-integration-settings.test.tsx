@@ -160,7 +160,9 @@ describe("CanvasIntegrationSettings — connect form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect Canvas" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Invalid Canvas API token")).toBeInTheDocument();
+      expect(
+        screen.getByText("Could not connect to Canvas. Check your URL and API key and try again."),
+      ).toBeInTheDocument();
     });
   });
 });
