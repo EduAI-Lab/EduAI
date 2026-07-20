@@ -28,10 +28,14 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
     generateQuestions.mockReset();
     findByPk.mockReset();
     findAll.mockReset();
+    // `code`/`name` are Core-owned and no longer stored locally (#1072 §4
+    // step 10) — a course with no `coreCourseId` degrades to the placeholder
+    // in `enrichCourseDetail`, so the extraction prompt falls back to
+    // `COURSE-<id>` for its display code (this test only checks the
+    // `findByPk` call shape; the missing-course fallback is covered below).
     findByPk.mockResolvedValue({
       id: 7,
-      code: 'CS 101',
-      name: 'Intro',
+      coreCourseId: null,
     });
     findAll.mockResolvedValue([]);
   });
@@ -51,7 +55,7 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
 
     const out = await extractQuestionsFromText('Exam paper snippet with a question.', 7, 'test:model', {});
 
-    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'code', 'name'] });
+    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'coreCourseId'] });
     expect(findAll).toHaveBeenCalled();
     expect(generateQuestions).toHaveBeenCalled();
     expect(out).toHaveLength(1);

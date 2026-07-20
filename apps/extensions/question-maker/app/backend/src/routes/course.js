@@ -16,8 +16,7 @@ import {
   isCoreCourseInScopedList,
   getCourseEnrollmentsFromCore,
 } from '../services/coreApiService.js';
-import { listCoursesForUser } from '../services/courseListService.js';
-import { ensureCoreCourseLink } from '../services/coreCourseLinkService.js';
+import { listCoursesForUser, enrichCourseDetail } from '../services/courseListService.js';
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
@@ -27,34 +26,93 @@ const router = express.Router();
 /** Resolves the QM course id from the URL param for per-course access gates. */
 const courseIdFromParam = (req) => req.params.id;
 
+// The Core course mirror (`importTaughtCoursesFromCore`) is a background side
+// effect, not a dependency of the list response: it fetches Core's cookie-
+// scoped course list and writes local Course anchors + topic syncs. It
+// previously ran awaited on every GET /api/course, so every list paid a
+// serial Core-fetch + import waterfall before the caller's own courses were
+// even read. Mirrors ai-tutor's `runCoreMirror` (server/src/routes/
+// authentication.js): throttle to at most once per window per user, and fire
+// without awaiting so the list response never blocks on it. A freshly-
+// imported course therefore may not appear until the NEXT list call, not this
+// one — acceptable per #1072's unified contract.
+const CORE_MIRROR_THROTTLE_MS = Number(process.env.CORE_MIRROR_THROTTLE_MS) || 60_000;
+const lastMirrorAtByUser = new Map();
+
+function runCoreImportMirror(userId, role, cookie) {
+  const now = Date.now();
+  const last = lastMirrorAtByUser.get(userId) ?? 0;
+  if (now - last < CORE_MIRROR_THROTTLE_MS) return;
+  lastMirrorAtByUser.set(userId, now);
+
+  // Fire-and-forget — errors are logged, never surfaced to the list response.
+  void importTaughtCoursesFromCore(userId, role ?? 'STUDENT', cookie ?? '').catch((err) => {
+    logger.warn({ err, userId }, 'Core course mirror failed on list');
+  });
+}
+
+/** Test-only: clears the per-user mirror throttle so each test starts fresh. */
+export function resetCoreImportThrottleForTests() {
+  lastMirrorAtByUser.clear();
+}
+
 /**
- * POST /api/course – creates a local QM course owned by the authenticated user.
- *
- * NOTE: course creation gating is intentionally left unchanged here — Core is the
- * intended source of truth for courses and this endpoint is being addressed
- * separately. Per-course RBAC on read/update/delete is enforced below.
+ * POST /api/course – creates a local QM course anchor owned by the authenticated
+ * user, always linked to Core at creation time (#1072 §4 step 7). Local-only
+ * "sandbox" creation has been retired: Core is the source of truth for course
+ * data (name/code included, #1072 §4 step 10), so every row is just a
+ * caller-scoped `coreCourseId` anchor.
  */
 router.post('/', authenticateToken, async (req, res, next) => {
   try {
-    const { name, courseCode } = req.body;
+    const { coreCourseId } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({
+    if (!coreCourseId || typeof coreCourseId !== 'string') {
+      return res.status(400).json({ success: false, error: 'coreCourseId is required' });
+    }
+
+    const cookie = req.headers.cookie;
+    let linkable = false;
+    try {
+      linkable = await isCoreCourseInScopedList(coreCourseId, cookie);
+    } catch (err) {
+      const status = Number.isInteger(err?.status) ? err.status : 502;
+      return res.status(status).json({
         success: false,
-        error: 'Course name is required'
+        error: err.message || 'Failed to verify Core course access',
       });
     }
 
-    const courseData = await Course.create({
-      userId: req.user.id,
-      name: name.trim(),
-      code: courseCode || null
-    });
+    if (!linkable) {
+      return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+    }
 
-    res.status(201).json({
+    // Idempotent ENSURE (unified contract): coreCourseId is globally unique —
+    // the throttled background import mirror (or another caller) may have
+    // anchored this course between the caller's list and this request, so an
+    // existing anchor is a success (200 with the row), not an error. The
+    // create path race (mirror wins between our miss and the insert) is
+    // absorbed by re-reading on a unique-constraint violation.
+    let courseData = await Course.findOne({ where: { coreCourseId } });
+    let created = false;
+    if (!courseData) {
+      try {
+        courseData = await Course.create({
+          userId: req.user.id,
+          coreCourseId,
+        });
+        created = true;
+      } catch (error) {
+        if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
+        courseData = await Course.findOne({ where: { coreCourseId } });
+        if (!courseData) throw error;
+      }
+    }
+
+    res.status(created ? 201 : 200).json({
       success: true,
-      message: 'Course created successfully',
-      data: courseData
+      message: created ? 'Course created successfully' : 'Course already linked',
+      data: await enrichCourseDetail(courseData, { cookie }),
     });
   } catch (error) {
     next(error);
@@ -68,15 +126,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
-    try {
-      await importTaughtCoursesFromCore(
-        req.user.id,
-        req.user.role ?? 'STUDENT',
-        req.headers.cookie ?? '',
-      );
-    } catch (err) {
-      logger.warn({ err, userId: req.user.id }, 'Core course mirror failed on list');
-    }
+    runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 
@@ -169,9 +219,13 @@ router.get(
   async (req, res, next) => {
     try {
       const { includeDetails = false } = req.query;
+      const cookie = req.headers.cookie;
 
       if (includeDetails !== 'true') {
-        return res.json({ success: true, data: req.qmCourse });
+        return res.json({
+          success: true,
+          data: await enrichCourseDetail(req.qmCourse, { cookie }),
+        });
       }
 
       const courseData = await Course.findOne({
@@ -197,32 +251,32 @@ router.get(
         ]
       });
 
-      res.json({ success: true, data: courseData });
+      res.json({ success: true, data: await enrichCourseDetail(courseData, { cookie }) });
     } catch (error) {
       next(error);
     }
   }
 );
 
-/** PUT /api/course/:id – updates course metadata (§5 edit: instructor access or above). */
+/**
+ * PUT /api/course/:id – access-gated no-op (§5 edit: instructor access or above).
+ * `name`/`code` are Core-owned and no longer stored locally (#1072 §4 step 10) —
+ * there is nothing left on the local anchor row to update from the request body.
+ * Kept as a route so the per-course edit-access gate stays available to callers
+ * (e.g. RBAC checks), and returns the current Core-projected detail.
+ */
 router.put(
   '/:id',
   authenticateToken,
   requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      const { name, courseCode } = req.body;
       const courseData = req.qmCourse;
-
-      await courseData.update({
-        ...(name !== undefined && { name: name?.trim() || courseData.name }),
-        ...(courseCode !== undefined && { code: courseCode || null })
-      });
 
       res.json({
         success: true,
         message: 'Course updated successfully',
-        data: courseData
+        data: await enrichCourseDetail(courseData, { cookie: req.headers.cookie }),
       });
     } catch (error) {
       next(error);
@@ -259,10 +313,6 @@ router.get(
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
-    if (await ensureCoreCourseLink(course, cookie)) {
-      await course.reload();
-    }
-
     if (course.coreCourseId) {
       await syncTopicsFromCoreForCourse(course, cookie);
     }
@@ -395,7 +445,10 @@ router.patch(
 
     await course.update({ coreCourseId });
 
-    res.json({ success: true, data: course });
+    res.json({
+      success: true,
+      data: await enrichCourseDetail(course, { cookie }),
+    });
   } catch (error) {
     next(error);
   }
@@ -411,10 +464,6 @@ router.post(
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
-    if (await ensureCoreCourseLink(course, cookie)) {
-      await course.reload();
-    }
-
     if (!course.coreCourseId) {
       return res.status(400).json({ success: false, error: 'Course is not linked to Core' });
     }

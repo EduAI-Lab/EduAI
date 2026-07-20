@@ -34,6 +34,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
@@ -60,6 +61,7 @@ function makeArgs(body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
