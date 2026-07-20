@@ -111,13 +111,17 @@ export async function truncateAll() {
 /**
  * Seed a minimal course structure: course -> module -> lesson -> topic.
  * If professorId is provided, a CourseInstructor record is created for them.
+ *
+ * `CourseOffering` is a pure anchor (#1072 step 4) — `coreOfferingId` is
+ * required + unique, so every call gets an auto-generated fake Core id
+ * unless the caller overrides it. Course-owned fields (title/description/
+ * isPublished/etc) no longer live on this row at all; tests that need those
+ * values assert against a mocked Core response instead.
  */
-export async function seedMinimalCourse(professorId) {
+export async function seedMinimalCourse(professorId, { coreOfferingId } = {}) {
   const course = await prisma.courseOffering.create({
     data: {
-      title: 'Test Course',
-      description: 'A test course',
-      isPublished: true,
+      coreOfferingId: coreOfferingId ?? nextId(),
     },
   });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import {
@@ -11,6 +11,15 @@ import {
   seedMinimalCourse,
   prisma,
 } from '../helpers.js';
+
+// `department` is Core-owned (#1072 step 4) — `isCourseAdmin`'s self-resolve
+// path fetches it live via `fetchCoreCourseSafe`.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 describe('Course analytics routes (#310)', () => {
   let prof;
@@ -142,9 +151,9 @@ describe('Course analytics routes (#310)', () => {
     });
 
     it('UNIT_ADMIN in authorized department can list submissions', async () => {
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { department: 'COSC' },
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+        id: seed.course.coreOfferingId,
+        department: 'COSC',
       });
       const ua = makeUnitAdmin(['COSC']);
       const uaApp = await createApp({ mockUser: ua });
