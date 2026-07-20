@@ -491,7 +491,8 @@ router.post(
         topicName,
         questions,
         assessment,
-        createdBy: req.user.id
+        createdBy: req.user.id,
+        cookie: req.headers.cookie
       });
       const saved = result.questions;
 

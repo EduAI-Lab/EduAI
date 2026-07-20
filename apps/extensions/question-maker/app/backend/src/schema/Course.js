@@ -1,7 +1,12 @@
 /**
- * Sequelize model for instructor-owned courses which group topics, questions, and assessments.
- * `userId` references the local users table (Core CUID string FK).
+ * Sequelize model for instructor-owned course anchors which group topics, questions,
+ * and assessments. `userId` references the local users table (Core CUID string FK).
  * `coreCourseId` links to Core's Course.id; null until the course is linked to Core.
+ *
+ * Pure anchor row (#1072 §2/§4 step 10): `name`/`code` are Core-owned and were
+ * dropped — every read goes through Core via `courseListService.js`'s read-through
+ * (`enrichCourseDetail`/`enrichRowsWithCourse`/etc). Never re-add them here; add a
+ * DB column only for data QM itself owns.
  */
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/database.js";
@@ -13,17 +18,6 @@ export const Course = sequelize.define(
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true,
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      validate: {
-        notEmpty: true,
-      },
-    },
-    code: {
-      type: DataTypes.STRING,
-      allowNull: true,
     },
     userId: {
       type: DataTypes.STRING,

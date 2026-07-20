@@ -270,8 +270,11 @@ erDiagram
 
 Notable invariants:
 
-- **`CourseOffering.externalId` + `externalSource`** track imported courses (EduAI imports use
-  `externalSource = 'eduai'`). Indexed on `externalId` for sync lookups.
+- **`CourseOffering.coreOfferingId`** is the only Core-link field (#1072 step 3 consolidated the
+  old `externalId`/`externalSource` pair into it — they were always `'EDUAI'` plus a redundant
+  copy of the same id). `CourseOffering` is otherwise a pure anchor row: title/description/
+  department/dates/isPublished/term/year/aiInstructions are Core-owned and read live through
+  `services/courseResolver.js` + `mapCourseOffering` on every request, never stored locally.
 - **`Activity.mainTopicId` is non-nullable.** Every activity must have exactly one main topic.
   Secondary topics are M:N via `ActivitySecondaryTopic`.
 - **`Activity.config` is a free-form `Json` column** carrying `question`, `options`, `answer`,

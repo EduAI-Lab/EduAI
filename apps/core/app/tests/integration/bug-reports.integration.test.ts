@@ -161,7 +161,7 @@ describe("POST /api/bug-reports — AI Tutor reports land in Core DB", () => {
     );
 
     expect(res.status).toBe(201);
-    expect(res.body).toBeNull();
+    expect(await res.json()).toMatchObject({ id: expect.any(String) });
 
     const row = await prisma.bugReport.findFirst({
       where: { userId: aiTutorUserId, description: "AI Tutor integration: page crashed on submit." },

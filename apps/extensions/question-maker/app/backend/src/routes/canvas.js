@@ -234,7 +234,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { canvasCourseId, quizId } = req.params;
-      const { assessmentType, assessmentName, semester, primaryTopicId } = req.body;
+      const { assessmentType, assessmentName, primaryTopicId } = req.body;
 
       if (!primaryTopicId) {
         return res.status(400).json({
@@ -264,7 +264,6 @@ router.post(
         {
           assessmentType,
           assessmentName,
-          semester,
           primaryTopicId
         },
         req.qmCourse.userId
