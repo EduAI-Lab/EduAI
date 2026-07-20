@@ -1,4 +1,5 @@
 import { request as undiciRequest } from "undici";
+import { assertPublicHostname } from "~/lib/net/ssrf-guard.server";
 
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
@@ -193,6 +194,26 @@ function buildCanvasProfileUrl(canvasUrl: string): string {
   return `${parsed.origin}/api/v1/users/self/profile`;
 }
 
+/**
+ * SSRF guard for the actual outbound request: local-dev hosts (already
+ * restricted to plain HTTP by parseAndValidateCanvasUrl) are trusted as-is;
+ * everything else is resolved and rejected if it lands on a private/loopback/
+ * link-local range (RFC1918, CGNAT, ULA — incl. cloud metadata endpoints).
+ * Re-checked on every call, not just once at connect time, to narrow the
+ * DNS-rebinding window.
+ */
+async function assertSafeCanvasRequestHost(url: string): Promise<void> {
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
+
+  try {
+    await assertPublicHostname(hostname);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "disallowed network address";
+    throw new CanvasApiError(detail, 400);
+  }
+}
+
 /** Probes Canvas with the personal access token before persisting credentials. */
 export async function verifyCanvasCredentials(
   canvasUrl: string,
@@ -202,6 +223,8 @@ export async function verifyCanvasCredentials(
   const url = buildCanvasProfileUrl(canvasUrl);
 
   try {
+    await assertSafeCanvasRequestHost(url);
+
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_VERIFY_TIMEOUT_MS),
@@ -217,6 +240,9 @@ export async function verifyCanvasCredentials(
   } catch (error) {
     if (error instanceof CanvasVerificationError) {
       throw error;
+    }
+    if (error instanceof CanvasApiError) {
+      throw new CanvasVerificationError(error.message, 400);
     }
     throw new CanvasVerificationError("Could not reach Canvas", 502);
   }
@@ -249,6 +275,8 @@ async function canvasFetchJson<T>(
   fetchImpl: typeof fetch,
 ): Promise<{ data: T; linkHeader: string | null }> {
   try {
+    await assertSafeCanvasRequestHost(url);
+
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
@@ -454,6 +482,8 @@ async function performCanvasFileDownloadRequest(
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
 ): Promise<CanvasFileDownloadResponse> {
+  await assertSafeCanvasRequestHost(url);
+
   const useUndici =
     fetchImpl === fetch &&
     process.env.VITEST !== "true" &&
