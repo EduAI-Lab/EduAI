@@ -13,6 +13,7 @@ import {
   createQuestion,
   listQuestions,
 } from "~/lib/questions/server";
+import { withIdempotency } from "~/lib/idempotency.server";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -111,13 +112,21 @@ export async function action({ request }: ActionFunctionArgs) {
     return json(401, { error: "Unauthorized" });
   }
 
-  const body = await request.json();
+  // Peek courseId before idempotency so course access cannot be skipped on replay.
+  const peekedBody = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  const bodyPreview =
+    peekedBody && typeof peekedBody === "object" && !Array.isArray(peekedBody)
+      ? (peekedBody as Record<string, unknown>)
+      : null;
 
-  // §9: create question is course-scoped, TA-and-up via enrollment (an
-  // INSTRUCTOR not enrolled in the course cannot author questions there).
-  // Missing/invalid courseId falls through to createQuestion's 422.
-  if (typeof body?.courseId === "string" && body.courseId) {
-    const { course, access } = await resolveCourseAccessWithCourse(session.user, body.courseId);
+  if (typeof bodyPreview?.courseId === "string" && bodyPreview.courseId) {
+    const { course, access } = await resolveCourseAccessWithCourse(
+      session.user,
+      bodyPreview.courseId,
+    );
     if (!course) {
       return json(404, { error: "COURSE_NOT_FOUND" });
     }
@@ -126,13 +135,25 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  const result = await createQuestion(body, session.user.id);
+  return withIdempotency(
+    {
+      request,
+      route: "POST /api/questions",
+      actorId: session.user.id,
+      body: bodyPreview,
+    },
+    async (body) => {
+      const result = await createQuestion(body, session.user.id);
 
-  if ("error" in result) {
-    const status =
-      result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND" ? 404 : 422;
-    return json(status, result);
-  }
+      if ("error" in result) {
+        const status =
+          result.error === "COURSE_NOT_FOUND" || result.error === "TOPIC_NOT_FOUND"
+            ? 404
+            : 422;
+        return json(status, result);
+      }
 
-  return json(201, result);
+      return json(201, result);
+    },
+  );
 }
