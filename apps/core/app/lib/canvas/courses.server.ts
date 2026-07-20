@@ -6,7 +6,12 @@ import {
 } from "~/lib/canvas/client.server";
 import { getCanvasIntegrationWithDecryptedKey } from "~/lib/canvas/integration.server";
 import type { CanvasCoursePickerItem } from "~/lib/canvas/schemas";
-import { ubcTermFromDate, inferStartDateFromTermName, inferUbcTermStartFromEndDate } from "~/lib/canvas/term.server";
+import {
+  ubcTermFromDate,
+  ubcAcademicYearFromDate,
+  inferStartDateFromTermName,
+  inferUbcTermStartFromEndDate,
+} from "~/lib/canvas/term.server";
 import prisma from "~/lib/prisma.server";
 
 export class CanvasNotConnectedError extends Error {
@@ -61,6 +66,7 @@ export function resolveCanvasCourseDates(canvasCourse: CanvasCourseApi): {
 
 export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
   const { startDate, endDate } = resolveCanvasCourseDates(canvasCourse);
+  const term = ubcTermFromDate(startDate);
 
   return {
     externalId: String(canvasCourse.id),
@@ -68,8 +74,10 @@ export function mapCanvasCourseToCoreFields(canvasCourse: CanvasCourseApi) {
     name: canvasCourse.name,
     code: canvasCourse.course_code?.trim() || canvasCourse.name,
     section: "001",
-    term: ubcTermFromDate(startDate),
-    year: startDate.getFullYear(),
+    term,
+    // Academic-year label, not calendar year — a W2 (Jan–Apr) course
+    // attributes to the previous year (#1088; see `ubcAcademicYearFromDate`).
+    year: ubcAcademicYearFromDate(startDate, term),
     startDate,
     endDate,
     lastSyncedAt: new Date(),

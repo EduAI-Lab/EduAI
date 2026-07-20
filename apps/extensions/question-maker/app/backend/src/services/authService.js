@@ -4,17 +4,19 @@
  * This service only maintains the thin local user record required for FK
  * integrity within QM (courses, canvas_integrations, canvas_course_mappings).
  */
-import { User, Course } from '../schema/index.js';
-import { seedCoursesForNewUser } from './seedNewUserService.js';
+import { User } from '../schema/index.js';
 
 /**
  * Find or create the local QM user record for a Core-authenticated user.
- * Creates the row on first login and seeds default courses for new users.
+ * Creates the row on first login. No demo courses are seeded here — every
+ * course a user sees must be Core-linked, and those only arrive through the
+ * Core-linked import/link flows (or Core auto-import for instructors on
+ * /auth/me).
  *
  * @param {{ id: string, email: string, name?: string }} coreUser
  */
 export async function findOrCreateUser(coreUser) {
-  const [user, created] = await User.findOrCreate({
+  const [user] = await User.findOrCreate({
     where: { id: coreUser.id },
     defaults: {
       id: coreUser.id,
@@ -22,19 +24,6 @@ export async function findOrCreateUser(coreUser) {
       name: coreUser.name ?? null,
     },
   });
-
-  if (!user.coursesSeededAt) {
-    // coursesSeededAt is NULL for: (a) brand-new users, (b) users created before this
-    // column existed. Only seed if they still have 0 courses — existing users with
-    // courses just need the flag backfilled.
-    // Instructors receive courses via Core auto-import on /auth/me — skip demo seeds.
-    const courseCount = await Course.count({ where: { userId: user.id } });
-    const role = coreUser.role ?? 'STUDENT';
-    if (courseCount === 0 && !['INSTRUCTOR', 'UNIT_ADMIN'].includes(role)) {
-      await seedCoursesForNewUser(user.id);
-    }
-    await user.update({ coursesSeededAt: new Date() });
-  }
 
   return user;
 }

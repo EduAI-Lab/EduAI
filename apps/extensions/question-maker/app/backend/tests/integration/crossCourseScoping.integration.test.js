@@ -35,7 +35,7 @@ describeDb('cross-course write scoping (integration, #1)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, Question_Metadata, Variants } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment, addQuestionToAssessment, removeQuestionFromAssessment } = await import(
       '../../src/services/assessmentService.js'
     ));

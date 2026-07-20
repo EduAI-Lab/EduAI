@@ -127,7 +127,6 @@ describe('api methods', () => {
       'me',
       'listCourses',
       'courseById',
-      'updateCourse',
       'modulesForCourse',
       'moduleById',
       'createModule',
