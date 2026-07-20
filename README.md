@@ -8,17 +8,33 @@ Quick map of the monorepo. For the full layout, Core internals, routes, schema, 
 
 ```text
 EduAI/
-├── apps/core/                       # EduAI Core — RAG chat, auth, central API
-├── apps/extensions/ai-tutor/        # AI Tutor (SPA + Express server)
-├── apps/extensions/question-maker/  # Question Maker (Vite frontend + Express API)
-├── apps/extensions/example-extension/ # Minimal Express extension demonstrating Core auth patterns (dev reference)
-├── packages/ui/                     # @eduai/ui — shared design system components
-├── packages/types/                  # @eduai/types — shared role / Canvas types
-├── docs/                            # Architecture and planning (start with ARCHITECTURE.md)
-├── infra/ · scripts/                # Ops scripts and repo utilities
-├── turbo.json · docker-compose.dev.yml
-├── CHANGELOG.md · TESTS.md
-└── …
+├── apps/
+│   ├── core/                        # EduAI — RAG chat platform and central API
+│   └── extensions/
+│       ├── ai-tutor/                # AI Tutor — two-agent tutoring with hierarchical course content
+│       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
+│       ├── question-maker/          # Question Maker — question bank authoring, Canvas integration
+│       │   └── app/
+│       │       ├── backend/         # Question Maker Express/Sequelize API
+│       │       └── frontend/        # Question Maker Vite/React frontend
+│       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
+├── packages/
+│   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
+│   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
+├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
+├── infra/
+│   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
+├── tools/
+│   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
+├── scripts/                         # Repo-level setup and dev utilities
+├── docs/                            # System-wide architecture and planning docs
+│   ├── rag-ai/                      # EduAI chat, RAG, latency (#203), routing (#197)
+│   └── implementations/             # schema-design, planned-core-tests, …
+├── turbo.json                       # Turborepo task pipeline configuration
+├── docker-compose.dev.yml           # Dev-only Postgres containers (apps run on the host)
+├── CHANGELOG.md                     # Unified changelog across all apps
+├── TESTS.md                         # Canonical test inventory across all apps
+└── .gitignore
 ```
 
 ## Apps
@@ -55,6 +71,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
+| [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
 
 ## Changelog
 
