@@ -302,6 +302,15 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     };
 
     await assessment.update(normalizedUpdates);
+
+    // `.update()` doesn't refresh the eager-loaded `course` association — if
+    // the update moved the assessment to another course, reload with the
+    // course include so the response's course/semester projection describes
+    // the NEW course, not the one loaded at the top.
+    if (updateData.courseId) {
+      await assessment.reload({ include: [{ model: Course, as: 'course' }] });
+    }
+
     return withDerivedSemester(await enrichRowWithCourse(assessment));
   } catch (error) {
     throw error;
