@@ -12,13 +12,8 @@ import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-vi
 import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
-import { isSandboxCourse } from '@/utils/courseDisplay';
 
 const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
-
-function isTestCourse(course: Course): boolean {
-  return isSandboxCourse(course);
-}
 
 function readTourCourseId(): number | null {
   try {
@@ -71,9 +66,6 @@ export const CourseSelectionPage = () => {
     const stored = readTourCourseId();
     if (stored != null && displayCourses.some((c) => c.id === stored)) return stored;
 
-    const sandbox = displayCourses.find(isTestCourse);
-    if (sandbox) return sandbox.id;
-
     return displayCourses[0]?.id ?? null;
   }, [displayCourses, location.state]);
 
@@ -81,10 +73,9 @@ export const CourseSelectionPage = () => {
     if (isStartingTour) return;
     setIsStartingTour(true);
     try {
-      // Course creation is owned by EduAI Core; the tour uses an existing course
-      // (preferring a sandbox if the user has one). With no courses, guide the
-      // user to link one from Core via the profile/link flow.
-      const tourCourse = displayCourses.find(isTestCourse) ?? displayCourses[0];
+      // Course creation is owned by EduAI Core; the tour uses an existing course.
+      // With no courses, guide the user to link one from Core via the profile flow.
+      const tourCourse = displayCourses[0];
       if (tourCourse?.id) {
         writeTourCourseId(tourCourse.id);
         setTourHighlightCourseId(tourCourse.id);

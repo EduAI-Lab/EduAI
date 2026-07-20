@@ -644,18 +644,18 @@ export function QuestionComposerPage() {
 
       if (mode === 'edit') {
         if (sourceQuestionId == null || !sourceVariant) throw new Error('Source question is not loaded.');
-        // §19 approved-variant lock: a reviewed variant rejects content edits with a 409
+        // §19/#1080 approved-variant lock: a reviewed variant rejects edits to its content
+        // (questionText/difficulty/secondaryTopics) AND, via the parent question, its
+        // type/primaryTopic — all fields that feed the Core push payload — with a 409
         // unless the same request reopens it as a draft. So when editing an already-approved
-        // question we force it back to draft for re-review (the only edit path the API allows).
+        // question we force it back to draft for re-review (the only edit path the API
+        // allows). The variant revert must land FIRST: it also clears coreQuestionId
+        // (#1080), which is what un-blocks the question-metadata update right after it —
+        // reversing this order would 409 on type/primaryTopic while the variant is still
+        // reviewed.
         const wasApproved = sourceVariant.isDraft === false;
         const nextIsDraft = wasApproved ? true : markAsReviewed ? false : undefined;
-        // Update the question metadata (description, topic, type) …
-        await questionService.updateQuestion(sourceQuestionId, {
-          description: form.description.trim() || createDescriptionFromText(form.questionText) || null,
-          primaryTopicId: form.primaryTopicId.trim(),
-          type: form.questionType,
-        });
-        // … and the variant content.
+        // Revert (if approved) + save the variant content …
         await questionService.updateVariant(sourceVariant.id, {
           questionText: form.questionText.trim(),
           difficulty: form.difficulty,
@@ -664,6 +664,18 @@ export function QuestionComposerPage() {
           choices,
           secondaryTopicsId: form.secondaryTopicIds.length ? form.secondaryTopicIds : undefined,
           isDraft: nextIsDraft,
+        });
+        // … then the question metadata (description, topic, type), now unlocked.
+        // Only send type/primaryTopicId when they actually changed: a question can have
+        // more than one variant, and reverting `sourceVariant` above doesn't unlock a
+        // *sibling* variant that's still reviewed — resending the unchanged value would
+        // otherwise 409 on an edit that never touched these fields (e.g. description-only).
+        const typeChanged = form.questionType !== sourceQuestion?.type;
+        const primaryTopicChanged = form.primaryTopicId.trim() !== (sourceQuestion?.primaryTopicId ?? '');
+        await questionService.updateQuestion(sourceQuestionId, {
+          description: form.description.trim() || createDescriptionFromText(form.questionText) || null,
+          ...(primaryTopicChanged && { primaryTopicId: form.primaryTopicId.trim() }),
+          ...(typeChanged && { type: form.questionType }),
         });
         toast(
           wasApproved

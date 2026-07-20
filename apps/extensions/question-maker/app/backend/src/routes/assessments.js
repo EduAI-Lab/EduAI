@@ -52,23 +52,22 @@ router.post(
   requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.courseId }),
   async (req, res, next) => {
     try {
-      const { type, name, semester, description, blueprintConfig } = req.body;
+      const { type, name, description, blueprintConfig } = req.body;
 
-      if (!type || !name || !semester) {
+      if (!type || !name) {
         return res.status(400).json({
           success: false,
-          error: 'Type, name, semester, and courseId are required'
+          error: 'Type, name, and courseId are required'
         });
       }
 
       const assessment = await createAssessment(req.qmCourse.userId, {
         type,
         name,
-        semester,
         description,
         courseId: req.qmCourse.id,
         blueprintConfig
-      });
+      }, { cookie: req.headers.cookie });
 
       res.status(201).json({
         success: true,
@@ -145,12 +144,11 @@ router.get('/:id', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment
 /** PUT /api/assessments/:id – updates assessment metadata/blueprint (instructor-only). */
 router.put('/:id', authenticateToken, requireRole(QM_AUTHORIZED), writeAssessment, async (req, res, next) => {
   try {
-    const { type, name, semester, description, courseId, blueprintConfig } = req.body;
+    const { type, name, description, courseId, blueprintConfig } = req.body;
 
     const assessment = await updateAssessment(req.params.id, {
       type,
       name,
-      semester,
       description,
       courseId,
       blueprintConfig

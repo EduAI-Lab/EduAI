@@ -4,7 +4,6 @@
  * (status stored on the error as .status, parsed body as .body).
  */
 import { config } from '../config/settings.js';
-import { normalizeCourseCode } from './courseCodeUtils.js';
 
 function serviceHeaders({ cookie } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -181,15 +180,22 @@ export async function getCourseEnrollmentsFromCore(coreCourseId, opts = {}) {
 }
 
 /**
- * GET /api/courses/:id via the service key — returns the Core course row
- * (including `department`, needed for the UNIT_ADMIN unit lock).
+ * GET /api/courses/:id — returns the Core course row (including `department`,
+ * needed for the UNIT_ADMIN unit lock).
  * Returns null when the course no longer exists in Core (404).
+ *
+ * `preferCookie` defaults to the caller's cookie presence (session-first, same
+ * as always) — pass `preferCookie: false` explicitly for pure FIELD reads that
+ * don't need the caller's identity (e.g. read-through enrichment): those should
+ * try the unscoped service key first so a caller-RBAC mismatch on Core's session
+ * branch (a 403 whose body doesn't match `isRetryableAuthFailure`) can't degrade
+ * a resolvable course to a placeholder (#1072 unified contract).
  */
 export async function getCourseFromCore(coreCourseId, opts = {}) {
   try {
     return await fetchFromCore(`/api/courses/${coreCourseId}`, {
       cookie: opts.cookie,
-      preferCookie: Boolean(opts.cookie),
+      preferCookie: opts.preferCookie ?? Boolean(opts.cookie),
     });
   } catch (err) {
     if (err.status === 404) return null;
@@ -215,27 +221,6 @@ export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
   const data = await listCoursesFromCore(cookieHeader);
   const courses = Array.isArray(data?.courses) ? data.courses : [];
   return courses.some((course) => course?.id === coreCourseId);
-}
-
-/**
- * Finds a Core course in the caller's scoped list by normalized course code (#578).
- * Used when a local QM row matches Core by code but was never link-core'd.
- */
-export async function findScopedCoreCourseByCode(courseCode, cookieHeader) {
-  const target = normalizeCourseCode(courseCode);
-  if (!target) return null;
-
-  const matchInList = (data) => {
-    const courses = Array.isArray(data?.courses) ? data.courses : [];
-    return courses.find((course) => normalizeCourseCode(course?.code) === target) ?? null;
-  };
-
-  try {
-    const scoped = await listCoursesFromCore(cookieHeader);
-    return matchInList(scoped);
-  } catch {
-    return null;
-  }
 }
 
 /**
