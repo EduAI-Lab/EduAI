@@ -69,7 +69,16 @@ async function provisionCourse(userId, course, cookie) {
 
   const topics = await Topics.findAll({ where: { courseId: course.id } });
   if (topics.length === 0) {
-    await Topics.create({ name: 'General', courseId: course.id });
+    // Two co-instructors can provision the same anchor at once and both see an
+    // empty topic list, so the loser would hit the unique (course_id, name)
+    // index and abort the rest of its provisioning. `findOrCreate` still races,
+    // so swallow the duplicate: the row we wanted exists either way.
+    try {
+      await Topics.create({ name: 'General', courseId: course.id });
+    } catch (err) {
+      const existing = await Topics.findOne({ where: { courseId: course.id, name: 'General' } });
+      if (!existing) throw err;
+    }
   }
 
   await ensurePracticeExam(userId, course.id);
