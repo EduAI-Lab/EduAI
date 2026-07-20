@@ -8,6 +8,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
 import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
+import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
+import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
 import {
   LOCAL_INFERENCE_PROVIDERS,
   mergeLocalInferenceFromEnv,
@@ -49,10 +51,14 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   // Ollama
   if (userSettings.ollama?.isEnabled) {
     const clientOllamaBaseUrl = userSettings.ollama?.baseUrl?.trim();
-    let baseURL =
-      clientOllamaBaseUrl ||
-      process.env.OLLAMA_BASE_URL ||
-      "http://localhost:11434";
+    // SSRF guard: only loopback or the deployment-configured OLLAMA_BASE_URL host
+    // is trusted
+    let baseURL: string;
+    try {
+      baseURL = resolveAllowedOllamaBaseUrl(clientOllamaBaseUrl);
+    } catch {
+      baseURL = resolveAllowedOllamaBaseUrl();
+    }
 
     // Ensure the URL ends with /api for Ollama compatibility
     if (!baseURL.endsWith("/api")) {
@@ -70,11 +76,15 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
 
   // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
   if (userSettings.vllm?.isEnabled) {
-    const vllmPort = process.env.VLLM_PORT || '8001';
-    let baseURL =
-      userSettings.vllm?.baseUrl ||
-      process.env.VLLM_BASE_URL ||
-      `http://localhost:${vllmPort}`;
+    const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
+    // SSRF guard: only loopback or a deployment-configured VLLM host (VLLM_BASE_URL /
+    // VLLM_FLEET_*) is trusted
+    let baseURL: string;
+    try {
+      baseURL = resolveAllowedVllmBaseUrl(clientVllmBaseUrl);
+    } catch {
+      baseURL = resolveAllowedVllmBaseUrl();
+    }
 
     baseURL = baseURL.replace(/\/$/, '');
     if (!baseURL.endsWith('/v1')) {
