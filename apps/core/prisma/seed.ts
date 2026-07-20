@@ -1642,8 +1642,10 @@ async function main() {
     '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with student_1–student_5 IDs) with default password',
   );
 
-  await seedCourses();
+  // Fail fast BEFORE any course row is written — a bad term literal must not
+  // leave the DB partially seeded.
   assertCanonicalTerms(COURSES);
+  await seedCourses();
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
 
   await seedBugReports();
