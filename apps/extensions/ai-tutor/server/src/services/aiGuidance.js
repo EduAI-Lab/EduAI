@@ -34,6 +34,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { setTimeout as wait } from 'node:timers/promises';
 import { prisma } from '../config/database.js';
 import { getEduAiChatUrl } from './eduaiClient.js';
 
@@ -42,14 +43,17 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
-// #999: bound how long a single EduAI round-trip can hang — without this, a
-// slow/stuck upstream call leaves the student staring at an unbounded
-// "Thinking..." spinner with no way out.
+// #999/#1001: bound the complete EduAI call, including the one permitted
+// retry, so a transient failure cannot turn into an unbounded wait.
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
+const EDUAI_RETRY_DELAY_MS = 250;
+const EDUAI_MAX_ATTEMPTS = 2;
+const RETRYABLE_EDUAI_STATUSES = new Set([429, 503]);
 const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
 
 /**
- * Single round-trip to the EduAI chat completion endpoint.
+ * Single logical call to the EduAI chat completion endpoint. Transient 429 or
+ * 503 responses receive one bounded retry within the existing timeout.
  *
  * Why both a cookie AND an apiKey: EduAI authenticates the *caller*
  * (this server, on behalf of a logged-in user) via the session cookie, but
@@ -113,40 +117,57 @@ async function callEduAI({
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        cookie,
-      },
-      body: JSON.stringify(requestBody),
-      // #999 review: forward the caller's cancellation (client disconnect /
-      // Stop button, propagated from the Express route) alongside our own
-      // timeout, so either one actually stops the upstream request instead
-      // of it running to completion in the background.
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
-        : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS),
-    });
+    // The same signal covers both attempts and the backoff, preserving the
+    // existing 45-second upper bound for the complete logical call.
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
+      : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[aiGuidance] API error:', response.status, errorText);
-      const error = new Error(`AI API returned status ${response.status}`);
-      error.status = response.status;
-      throw error;
+    for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie,
+        },
+        body: JSON.stringify(requestBody),
+        signal: requestSignal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const shouldRetry =
+          RETRYABLE_EDUAI_STATUSES.has(response.status) && attempt < EDUAI_MAX_ATTEMPTS;
+
+        if (shouldRetry) {
+          console.warn(
+            '[aiGuidance] Transient API error; retrying once:',
+            response.status,
+            errorText,
+          );
+          await wait(EDUAI_RETRY_DELAY_MS, undefined, { signal: requestSignal });
+          continue;
+        }
+
+        console.error('[aiGuidance] API error:', response.status, errorText);
+        const error = new Error(`AI API returned status ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      const data = await response.json();
+      if (data.content && typeof data.content === 'string') {
+        return {
+          message: data.content,
+          chatId: data.chatId || chatId || null,
+        };
+      }
+
+      console.error('[aiGuidance] Unexpected response format:', data);
+      throw new Error('Invalid response format from AI API');
     }
 
-    const data = await response.json();
-    if (data.content && typeof data.content === 'string') {
-      return {
-        message: data.content,
-        chatId: data.chatId || chatId || null,
-      };
-    }
-
-    console.error('[aiGuidance] Unexpected response format:', data);
-    throw new Error('Invalid response format from AI API');
+    throw new Error('EduAI retry loop exhausted unexpectedly');
   } catch (error) {
     if (signal?.aborted) {
       // The caller's own signal (not our timeout) fired — a genuine
