@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] test: Mutation testing (Stryker + `@stryker-mutator/vitest-runner`, `npm run test:mutation` in `apps/core`) scoped to the RBAC, auth, and Canvas-credential-encryption modules. Fixed all findable gaps in the two highest-severity files: `auth/guards.server.ts` 54.96% → 98.94% (127 gaps → 1 confirmed-equivalent) and `canvas/encryption.ts` 68.09% → 88.30% (30 gaps → 11, all confirmed equivalent/unreachable). Remaining lower-priority files' gaps tracked as follow-up issues (#1094–#1101). (#224, @GlowyBlack, 2026-07-19)
+- [core] test: Mutation testing (Stryker + `@stryker-mutator/vitest-runner`, `npm run test:mutation` in `apps/core`) scoped to the RBAC, auth, and Canvas-credential-encryption modules. Fixed all findable gaps in the two highest-severity files: `auth/guards.server.ts` 54.96% → 99.65% (127 gaps → 1 confirmed-equivalent) and `canvas/encryption.ts` 68.09% → 88.30% (30 gaps → 11, all confirmed equivalent/unreachable). Remaining lower-priority files' gaps tracked as follow-up issues (#1094–#1101). (#224, @GlowyBlack, 2026-07-19)
 
 ### Changed
 
