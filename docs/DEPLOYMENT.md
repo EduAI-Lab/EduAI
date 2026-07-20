@@ -191,7 +191,7 @@ DEV_SERVER_HMR_CLIENT_PORT="443"
 
 #### vLLM fleet routing (optional)
 
-When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
+When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. On inference failure to a picked host, Core **invalidates** that host’s health cache and **retries once** on another healthy host in the same pool (`fleetRetry: true` in logs; `X-Fleet-Server` is the final host). Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
 
 | Variable | Purpose |
 | -------- | ------- |
@@ -199,15 +199,17 @@ When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat request
 | `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.jobType: background`); falls back to chat pool when unset |
 | `VLLM_FLEET_DEFAULT_MODELS` | Expected model ids for health checks and smoke script (default: `qwen2.5-7b-instruct,qwen2.5-32b-instruct`) |
 | `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
+| `AI_MAX_INFLIGHT` | Max concurrent local-GPU chat slots in this Core process (default `8`; `0` = off) |
+| `AI_ADMISSION_WAIT_MS` | Max wait for an admission slot before **503** `AI_ADMISSION_TIMEOUT` (default `15000`) |
 
 Pre-flight from **`apps/core`** on a host that can reach cmps (e.g. s378):
 
 ```bash
 npm run fleet:smoke
-npx vitest run app/tests/unit/fleet-routing.test.ts
+npx vitest run app/tests/unit/fleet-routing.test.ts app/tests/unit/admission.server.test.ts
 ```
 
-Successful picks expose `X-Fleet-Server: cmps01` (or `cmps02`) on `/api/chat` responses. See [`MULTI_SERVER_ROUTING_PLAN.md`](rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) for architecture details.
+Successful picks expose `X-Fleet-Server: cmps01` (or `cmps02`) on `/api/chat` responses. Queued requests may include `X-Admission-Wait-Ms`. See [`MULTI_SERVER_ROUTING_PLAN.md`](rag-ai/routing/eduai-summer-2026/MULTI_SERVER_ROUTING_PLAN.md) for architecture details.
 
 **Note:** cmps02 may be unreachable from s378 until campus firewall rules are applied (IT ticket INC5196289). Fleet degrades gracefully — only healthy hosts participate in round-robin.
 
