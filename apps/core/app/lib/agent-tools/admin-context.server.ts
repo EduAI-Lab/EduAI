@@ -5,7 +5,12 @@ import { listAccessibleCourses, getAccessibleCourse, listAccessibleCourseTopics,
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
-const DEFAULT_LIST_LIMIT = 200;
+/**
+ * Keep list/tool payloads small enough for 16k-context admin chat multi-step
+ * turns (delete → listUsers previously returned 200 rows and blew the window).
+ */
+const DEFAULT_LIST_LIMIT = 25;
+const MAX_LIST_LIMIT = 50;
 
 function requirePlatformAdmin(user: RbacUser): ToolError | null {
   if (user.role !== "ADMIN") {
@@ -87,14 +92,36 @@ export async function resolveAdminCourseId(
   return { error: "courseId or courseCode required" };
 }
 
-/** ADMIN-only user directory (read-only). */
-export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT) {
+/** ADMIN-only user directory (read-only). Supports email / free-text search. */
+export async function listAdminUsers(
+  user: RbacUser,
+  opts: { limit?: number; email?: string; query?: string } | number = {},
+) {
   const denied = requirePlatformAdmin(user);
   if (denied) return denied;
 
-  const clampedLimit = Math.min(Math.max(Math.floor(limit), 1), DEFAULT_LIST_LIMIT);
+  // Back-compat: older callers passed a bare limit number.
+  const normalized = typeof opts === "number" ? { limit: opts } : opts;
+  const clampedLimit = Math.min(
+    Math.max(Math.floor(normalized.limit ?? DEFAULT_LIST_LIMIT), 1),
+    MAX_LIST_LIMIT,
+  );
 
-  const where = {};
+  const email = normalized.email?.trim().toLowerCase();
+  const query = normalized.query?.trim();
+
+  const where =
+    email && email.length > 0
+      ? { email: { equals: email, mode: "insensitive" as const } }
+      : query && query.length > 0
+        ? {
+            OR: [
+              { email: { contains: query, mode: "insensitive" as const } },
+              { name: { contains: query, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where,
@@ -118,6 +145,7 @@ export async function listAdminUsers(user: RbacUser, limit = DEFAULT_LIST_LIMIT)
     count: users.length,
     total,
     truncated: users.length < total,
+    filter: email ? { email } : query ? { query } : null,
   });
 }
 
@@ -126,6 +154,8 @@ export async function listAdminCourseEnrollments(
   user: RbacUser,
   courseId: string,
   opts: {
+    userId?: string;
+    userEmail?: string;
     enrolledSince?: string;
     enrolledBefore?: string;
     isActive?: boolean;
@@ -151,7 +181,15 @@ export async function listAdminCourseEnrollments(
     return gate;
   }
 
-  const clampedLimit = Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), DEFAULT_LIST_LIMIT);
+  // An exact user lookup (by id or email) always targets a single enrollment,
+  // regardless of the page-size limit — so an admin can still find/act on a
+  // roster row outside the newest page instead of the model guessing a
+  // similar-looking match from a truncated list.
+  const userId = opts.userId?.trim() || undefined;
+  const userEmail = opts.userEmail?.trim() || undefined;
+  const clampedLimit = userId || userEmail
+    ? 1
+    : Math.min(Math.max(Math.floor(opts.limit ?? DEFAULT_LIST_LIMIT), 1), MAX_LIST_LIMIT);
 
   const enrolledAtFilter =
     enrolledSince instanceof Date || enrolledBefore instanceof Date
@@ -163,6 +201,8 @@ export async function listAdminCourseEnrollments(
 
   const where = {
     courseId,
+    ...(userId ? { userId } : {}),
+    ...(userEmail ? { user: { email: { equals: userEmail, mode: "insensitive" as const } } } : {}),
     ...(typeof opts.isActive === "boolean" ? { isActive: opts.isActive } : {}),
     ...(enrolledAtFilter ? { enrolledAt: enrolledAtFilter } : {}),
   };

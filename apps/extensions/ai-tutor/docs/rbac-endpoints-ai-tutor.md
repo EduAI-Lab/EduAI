@@ -16,7 +16,7 @@ Grouped by path prefix. Auth uses matrix shorthand: **G** ADMIN, **D** UNIT_ADMI
 | GET | `/api/courses` | Role-divergent list | `student.tsx`, `instructor.tsx` |
 | GET | `/api/courses/:courseId` | Course member | Course drilldown routes |
 | POST | `/api/courses` | — (403) | Removed — create courses in EduAI Core (#632) |
-| PATCH | `/api/courses/:courseId` | C + admin roles | TBD metadata edit |
+| PATCH | `/api/courses/:courseId` | — (removed) | Removed — course metadata is Core-owned/read-through (#1072 step 3) |
 | PATCH | `/api/courses/:courseId/publish\|unpublish` | C + admin roles | `PublishStatusButton` (gated) |
 | POST | `/api/courses/:courseId/import` | C + admin roles | Module/lesson import panels |
 | GET | `/api/eduai/courses` | INSTRUCTOR | EduAI import panel |
