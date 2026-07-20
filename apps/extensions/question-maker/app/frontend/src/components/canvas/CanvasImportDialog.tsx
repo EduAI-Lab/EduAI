@@ -40,11 +40,7 @@ export const CanvasImportDialog = ({
   const [selectedTopicId, setSelectedTopicId] = useState<string>('');
   const [assessmentName, setAssessmentName] = useState<string>('');
   const [assessmentType, setAssessmentType] = useState<string>('Quiz');
-  const [semester, setSemester] = useState<string>(() => {
-    const now = new Date();
-    return `Fall ${now.getFullYear()}`;
-  });
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
@@ -267,7 +263,6 @@ export const CanvasImportDialog = ({
         {
           assessmentType,
           assessmentName: assessmentName.trim(),
-          semester,
           primaryTopicId: parseInt(selectedTopicId)
         }
       );
@@ -494,32 +489,20 @@ export const CanvasImportDialog = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="assessmentType">Assessment Type</Label>
-                  <Select value={assessmentType} onValueChange={setAssessmentType}>
-                    <SelectTrigger id="assessmentType">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Quiz">Quiz</SelectItem>
-                      <SelectItem value="Assignment">Assignment</SelectItem>
-                      <SelectItem value="Exam">Exam</SelectItem>
-                      <SelectItem value="Midterm">Midterm</SelectItem>
-                      <SelectItem value="Final">Final</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="semester">Semester</Label>
-                  <Input
-                    id="semester"
-                    placeholder="Fall 2024"
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="assessmentType">Assessment Type</Label>
+                <Select value={assessmentType} onValueChange={setAssessmentType}>
+                  <SelectTrigger id="assessmentType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Quiz">Quiz</SelectItem>
+                    <SelectItem value="Assignment">Assignment</SelectItem>
+                    <SelectItem value="Exam">Exam</SelectItem>
+                    <SelectItem value="Midterm">Midterm</SelectItem>
+                    <SelectItem value="Final">Final</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}

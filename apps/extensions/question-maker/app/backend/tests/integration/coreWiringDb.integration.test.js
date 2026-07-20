@@ -332,4 +332,106 @@ describeDb('Core wiring DB integration', () => {
       expect(res.body.data).toEqual({ id: 'cuid-core-q', testable: true });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // GET /api/course — ADMIN catalog materialization (#1074)
+  // ---------------------------------------------------------------------------
+  describe('GET /api/course — ADMIN catalog materialization', () => {
+    const ADMIN_USER = { id: 'cuid-admin-user', email: 'admin@test.com', role: 'ADMIN', name: 'Admin' };
+    const adminCookie = () => ({ Cookie: 'session=admin' });
+
+    // ADMIN materialization inserts a Course row owned by the admin — `userId`
+    // has a real FK to `users` (sync({ alter: true }) creates it), so the
+    // admin row must exist locally even though findOrCreateUser is mocked.
+    beforeEach(async () => {
+      await User.create({ id: ADMIN_USER.id, email: ADMIN_USER.email, name: ADMIN_USER.name });
+    });
+
+    function makeAdminFetch(...extraMocks) {
+      const sessionReply = { ok: true, json: () => Promise.resolve({ user: ADMIN_USER }) };
+      return vi.fn()
+        .mockResolvedValueOnce(sessionReply)
+        .mockImplementation(() => {
+          const next = extraMocks.shift();
+          return next
+            ? Promise.resolve(next)
+            : Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+    }
+
+    it('materializes a local anchor for a Core course no one has ever linked, and links by real local id', async () => {
+      // Core's catalog has one course (`cuid-core-only`) that has no local
+      // anchor at all — this is the #1074 gap: previously ADMIN's list only
+      // ever showed the pre-existing `courseId` row, never the Core-only one.
+      vi.stubGlobal(
+        'fetch',
+        makeAdminFetch(
+          coreOk({
+            courses: [
+              { id: 'cuid-core-course', name: 'Existing Course', code: 'COSC 111' },
+              { id: 'cuid-core-only', name: 'Core Only Course', code: 'MATH 200' },
+            ],
+          }),
+        ),
+      );
+      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+
+      const res = await request(app).get('/api/course').set(adminCookie());
+
+      expect(res.status).toBe(200);
+      const names = res.body.data.map((c) => c.name).sort();
+      expect(names).toEqual(['Core Only Course', 'Existing Course']);
+
+      // The materialized row is a real, queryable local anchor — not a
+      // synthesized response-only object — owned by the requesting admin.
+      const materialized = await Course.findOne({ where: { coreCourseId: 'cuid-core-only' } });
+      expect(materialized).not.toBeNull();
+      expect(materialized.userId).toBe(ADMIN_USER.id);
+
+      const returnedRow = res.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
+      expect(returnedRow.id).toBe(materialized.id);
+    });
+
+    it('is idempotent: a second request creates no duplicate anchor', async () => {
+      vi.stubGlobal(
+        'fetch',
+        makeAdminFetch(coreOk({ courses: [{ id: 'cuid-core-only', name: 'Core Only Course' }] })),
+      );
+
+      const first = await request(app).get('/api/course').set(adminCookie());
+      expect(first.status).toBe(200);
+      const firstRow = first.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
+      expect(firstRow).toBeTruthy();
+
+      vi.stubGlobal(
+        'fetch',
+        makeAdminFetch(coreOk({ courses: [{ id: 'cuid-core-only', name: 'Core Only Course' }] })),
+      );
+
+      const second = await request(app).get('/api/course').set(adminCookie());
+      expect(second.status).toBe(200);
+      const secondRow = second.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
+      expect(secondRow.id).toBe(firstRow.id);
+
+      const all = await Course.findAll({ where: { coreCourseId: 'cuid-core-only' } });
+      expect(all).toHaveLength(1);
+    });
+
+    it('does not materialize and does not error when Core is unreachable', async () => {
+      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      vi.stubGlobal(
+        'fetch',
+        makeAdminFetch(coreErr({ error: 'Service Unavailable' }, 503)),
+      );
+
+      const res = await request(app).get('/api/course').set(adminCookie());
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].coreUnavailable).toBe(true);
+
+      const total = await Course.count();
+      expect(total).toBe(1); // no new anchor materialized
+    });
+  });
 });

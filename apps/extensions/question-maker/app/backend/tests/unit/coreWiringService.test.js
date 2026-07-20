@@ -67,9 +67,35 @@ describe('pushVariantToCore', () => {
     expect(payload.type).toBe('SA');
     expect(payload.difficulty).toBe('MEDIUM');
     expect(payload.reasoningLevel).toBe('FACTUAL');
-    expect(payload.idempotencyKey).toBe('qm-variant-42');
+    expect(payload.idempotencyKey).toMatch(/^qm-variant-42-[0-9a-f]{12}$/);
     expect(payload.secondaryTopicIds).toEqual([]);
     expect(cookie).toBe('session=abc');
+  });
+
+  it('idempotency key is stable across identical calls but changes when content changes (#1080 follow-up)', async () => {
+    const topic = { ...mockPrimaryTopic, coreTopicId: 'cuid-t1' };
+
+    // First call.
+    Topics.findOne.mockResolvedValueOnce(topic);
+    pushQuestionToCore.mockResolvedValueOnce({ id: 'cuid-question-a' });
+    await pushVariantToCore(baseVariant, course, 'session=abc');
+    const [firstPayload] = pushQuestionToCore.mock.calls[0];
+
+    // Second call, identical content — same key (retry safety).
+    Topics.findOne.mockResolvedValueOnce(topic);
+    pushQuestionToCore.mockResolvedValueOnce({ id: 'cuid-question-a' });
+    await pushVariantToCore(baseVariant, course, 'session=abc');
+    const [secondPayload] = pushQuestionToCore.mock.calls[1];
+    expect(secondPayload.idempotencyKey).toBe(firstPayload.idempotencyKey);
+
+    // Third call, edited content (e.g. post-unreview edit) — different key.
+    Topics.findOne.mockResolvedValueOnce(topic);
+    pushQuestionToCore.mockResolvedValueOnce({ id: 'cuid-question-b' });
+    const editedVariant = { ...baseVariant, questionText: 'What is a binary search tree?' };
+    await pushVariantToCore(editedVariant, course, 'session=abc');
+    const [thirdPayload] = pushQuestionToCore.mock.calls[2];
+    expect(thirdPayload.idempotencyKey).not.toBe(firstPayload.idempotencyKey);
+    expect(thirdPayload.idempotencyKey).toMatch(/^qm-variant-42-[0-9a-f]{12}$/);
   });
 
   it('pushes primary topic to Core if coreTopicId is missing, then stores it', async () => {
