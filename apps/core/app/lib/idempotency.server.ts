@@ -6,6 +6,13 @@ import { apiError, jsonResponse } from "~/lib/api-error.server";
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const IDEMPOTENCY_HEADER = "idempotency-key";
 
+/**
+ * requestHash written by the entity-key → IdempotencyRecord backfill migration.
+ * Original POST bodies are not recoverable; treat any retry with the same key as
+ * a replay of the stored create response (prevents duplicate questions/enrollments).
+ */
+export const LEGACY_ENTITY_BACKFILL_HASH = "legacy-entity-backfill";
+
 export type IdempotencyClaimResult =
   | { kind: "claimed" }
   | { kind: "replay"; statusCode: number; responseBody: unknown }
@@ -119,7 +126,8 @@ export async function claimIdempotency(opts: {
     return claimIdempotency(opts);
   }
 
-  if (existing.requestHash !== requestHash) {
+  const isLegacyEntityBackfill = existing.requestHash === LEGACY_ENTITY_BACKFILL_HASH;
+  if (!isLegacyEntityBackfill && existing.requestHash !== requestHash) {
     return { kind: "mismatch" };
   }
 

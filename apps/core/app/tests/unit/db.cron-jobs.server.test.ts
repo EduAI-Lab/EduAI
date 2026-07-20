@@ -109,19 +109,19 @@ describe("listCronJobStatuses", () => {
 });
 
 describe("startCronRun", () => {
-  it("returns the generated run id from INSERT", async () => {
+  it("returns created:true with the generated run id from INSERT", async () => {
     mockQueryRaw.mockResolvedValue([{ id: "run-abc" }]);
-    const id = await startCronRun("backup-nightly");
-    expect(id).toBe("run-abc");
+    const result = await startCronRun("backup-nightly");
+    expect(result).toEqual({ runId: "run-abc", created: true });
     expect(mockQueryRaw).toHaveBeenCalledOnce();
   });
 
-  it("reclaims an existing RUNNING id when INSERT conflicts (empty RETURNING)", async () => {
+  it("returns created:false when INSERT conflicts (empty RETURNING)", async () => {
     mockQueryRaw
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: "run-existing" }]);
-    const id = await startCronRun("backup-nightly");
-    expect(id).toBe("run-existing");
+    const result = await startCronRun("backup-nightly");
+    expect(result).toEqual({ runId: "run-existing", created: false });
     expect(mockQueryRaw).toHaveBeenCalledTimes(2);
   });
 });

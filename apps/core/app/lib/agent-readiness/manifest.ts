@@ -259,6 +259,14 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     errorEnvelope: "standard",
     routeFile: "routes/api/courses.id.rag-settings.ts",
   }),
+  entry({
+    method: "PATCH",
+    path: "/api/courses/:id/response-style",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    note: "No GET — course detail loader supplies UI state (#782)",
+    routeFile: "routes/api/courses.id.response-style.ts",
+  }),
 
   // ── Enrollments ─────────────────────────────────────────────────────────────
   entry({
@@ -786,6 +794,34 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     adminChatTool: "getDashboardStats",
     routeFile: "routes/api/dashboard.stats.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/user-provider-settings",
+    readiness: "excluded",
+    reason: "User self-service provider API keys — not platform ops",
+    routeFile: "routes/api/user-provider-settings.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/user-provider-settings",
+    readiness: "excluded",
+    reason: "User self-service provider API keys — not platform ops",
+    routeFile: "routes/api/user-provider-settings.ts",
+  }),
+  entry({
+    method: "DELETE",
+    path: "/api/user-provider-settings",
+    readiness: "excluded",
+    reason: "User self-service provider API keys — not platform ops",
+    routeFile: "routes/api/user-provider-settings.ts",
+  }),
+  entry({
+    method: "POST",
+    path: "/api/cron/notify-api-key-expiry",
+    readiness: "excluded",
+    reason: "Service-key cron hook for API key expiry emails",
+    routeFile: "routes/api/cron.notify-api-key-expiry.ts",
   }),
   entry({
     method: "POST",

@@ -182,7 +182,8 @@ export async function runAdminWriteTool(
 
 /**
  * Gate admin write tools: confirmed=false registers a payload-bound preview;
- * confirmed=true only proceeds if that preview was registered (not LLM-only attestation).
+ * confirmed=true only proceeds if that preview was registered on an earlier
+ * chat turn (not LLM-only attestation within the same generation).
  */
 export async function runConfirmedAdminWriteTool(
   toolName: string,
@@ -190,6 +191,7 @@ export async function runConfirmedAdminWriteTool(
   confirmed: boolean,
   run: () => Promise<MutationResult>,
   payload: Record<string, unknown> = {},
+  turnId: string | null = null,
 ): Promise<MutationResult> {
   const {
     registerWritePreview,
@@ -201,7 +203,7 @@ export async function runConfirmedAdminWriteTool(
   const boundPayload = { __tool: toolName, ...payload };
 
   if (confirmed !== true) {
-    registerWritePreview(actor.id, toolName, boundPayload);
+    registerWritePreview(actor.id, toolName, boundPayload, undefined, turnId);
     console.info("[admin-chat:write]", {
       tool: toolName,
       actorId: actor.id,
@@ -211,17 +213,21 @@ export async function runConfirmedAdminWriteTool(
     return requireWriteConfirmation(false)!;
   }
 
-  if (!consumeWritePreview(actor.id, toolName, boundPayload)) {
+  const consumed = consumeWritePreview(actor.id, toolName, boundPayload, turnId);
+  if (consumed !== "ok") {
     console.info("[admin-chat:write]", {
       tool: toolName,
       actorId: actor.id,
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
+      reason: consumed,
     });
     return mutationFailure({
       error: "CONFIRMATION_REQUIRED",
       message:
-        "No matching preview for these arguments. Call with confirmed: false first (same args), wait for admin confirmation, then confirmed: true.",
+        consumed === "same_turn"
+          ? "Write not applied — confirmation must come after a new admin message in chat (same-generation confirmed:true is rejected)."
+          : "No matching preview for these arguments. Call with confirmed: false first (same args), wait for admin confirmation in a later message, then confirmed: true.",
     });
   }
 
