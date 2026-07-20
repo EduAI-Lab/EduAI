@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core, question-maker] fix: Clean up user-facing text — fix outdated "Applies to Core and AI Tutor" policy flag description (course creation is Core-only), replace RAG/embedding/Top-K jargon with plain language across course management UI, remove raw "metadata" field-name leaks and a raw server-error fallback from Question Maker, and replace raw JS error messages in Core toasts with plain, action-oriented fallbacks. (#1030, #1061, #1062, #1063, @evanbones, 2026-07-20) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core, question-maker] fix: Clean up user-facing text — fix outdated "Applies to Core and AI Tutor" policy flag description (course creation is Core-only), replace RAG/embedding/Top-K jargon with plain language across course management UI, remove raw "metadata" field-name leaks and a raw server-error fallback from Question Maker, and replace raw JS error messages in Core toasts with plain, action-oriented fallbacks. (#1030, #1061, #1062, #1063, @evanbones, 2026-07-20) — [#1126](https://github.com/EduAI-Lab/EduAI/pull/1126)
 
 ## [Week 11 — July 13–19, 2026]
 
