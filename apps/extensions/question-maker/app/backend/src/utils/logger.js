@@ -49,7 +49,7 @@ try {
   }
   logger = pino(pinoConfig);
 } catch {
-  // pino not installed (e.g. populate/seed run from root without backend node_modules)
+  // pino not installed (e.g. seed run from root without backend node_modules)
 }
 
 export { logger };

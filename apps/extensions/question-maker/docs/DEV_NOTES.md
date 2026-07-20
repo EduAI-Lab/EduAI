@@ -10,8 +10,8 @@ This file supplements `README.md` and the in-app **Help Center**. It captures be
    - Docker dev: `npm run dev:up`
    - Or local: run backend (`app/backend`) and frontend (`app/frontend`) in two terminals.
 3. Register/login a new user.
-   - The backend seeds a starter dataset (default courses/topics + sample questions) for newly registered users.
-   - Code pointer: `app/backend/src/services/seedNewUserService.js`.
+   - New users start with zero courses. Real courses arrive via the Core-linked import/link flows (e.g. "Import from Core" / "Link to Core" on a course), not automatic demo seeding.
+   - To get a populated course for local testing, use `npm run seed` (`app/backend/scripts/seedUnified.js`), which seeds Core-linked fixture data across Core/AI Tutor/QM together.
 
 ## Non-obvious product behaviors
 
@@ -57,9 +57,8 @@ Code pointer: `app/frontend/src/services/apiKeyStorage.ts`
 ### 5) Where “starter content” comes from
 
 If you can’t find starter courses/topics after first login:
-- The expected behavior is that newly registered users are seeded with default courses/topics/questions.
-
-Code pointer: `app/backend/src/services/seedNewUserService.js`
+- This is expected — newly registered users start with zero courses. Link or import a Core course to populate the course list; nothing is seeded automatically anymore.
+- For local dev fixture data, run `npm run seed` from `app/backend` (`scripts/seedUnified.js`).
 
 ## Troubleshooting quick checks
 

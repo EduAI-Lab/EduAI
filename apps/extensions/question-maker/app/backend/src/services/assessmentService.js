@@ -4,14 +4,38 @@
  */
 import { Assessments, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course, sequelize } from '../schema/index.js';
 import { Op } from 'sequelize';
+import {
+  enrichRowsWithCourse,
+  enrichRowWithCourse,
+  formatSemesterDisplay,
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
 
-/** Creates an assessment blueprint for the given user/course after validating inputs. */
-export const createAssessment = async (userId, assessmentData) => {
+/**
+ * Overwrites the transitional `semester` column value with the display string
+ * derived from the row's (already-enriched) course term/year (#1072 §4 step 8 /
+ * #1077). `semester` is never trusted as authoritative on read — every returned
+ * assessment recomputes it here.
+ */
+function withDerivedSemester(row) {
+  if (!row) return row;
+  return { ...row, semester: formatSemesterDisplay(row.course?.term, row.course?.year) };
+}
+
+/**
+ * Creates an assessment blueprint for the given user/course after validating inputs.
+ * `semester` is no longer accepted from callers, nor persisted — the `Assessments`
+ * table dropped the column (#1072 §4 step 10/#1077). It's still derived from the
+ * course's Core term for the immediate create-response (mirrors `withDerivedSemester`
+ * for the read seams); pass `cookie` to read through as the caller when available
+ * (falls back to the service key).
+ */
+export const createAssessment = async (userId, assessmentData, { cookie } = {}) => {
   try {
-    const { type, name, semester, courseId, description, blueprintConfig } = assessmentData;
+    const { type, name, courseId, description, blueprintConfig } = assessmentData;
 
-    if (!type || !name || !semester) {
-      throw new Error('Type, name, and semester are required');
+    if (!type || !name) {
+      throw new Error('Type and name are required');
     }
 
     if (!courseId) {
@@ -27,16 +51,17 @@ export const createAssessment = async (userId, assessmentData) => {
       throw new Error('Course not found');
     }
 
+    const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId, { cookie });
+
     const assessment = await Assessments.create({
       type,
       name,
-      semester,
       courseId,
       description: description?.trim() || null,
       blueprintConfig: blueprintConfig || null
     });
 
-    return assessment;
+    return { ...assessment.toJSON(), semester: semesterDisplay };
   } catch (error) {
     throw error;
   }
@@ -58,7 +83,10 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          // `coreCourseId` is what `enrichRowsWithCourse` needs to project
+          // name/code from Core below — `Course` has no local name/code to
+          // select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: courseWhere,
           required: true
         },
@@ -76,7 +104,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
                   model: Course,
                   as: 'course',
                   where: { userId: userId },
-                  attributes: ['id', 'name', 'code']
+                  // Ownership filter only — this nested course is never enriched/returned.
+                  attributes: ['id']
                 }
               ]
             }
@@ -103,7 +132,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
                         {
                           model: Course,
                           as: 'course',
-                          attributes: ['id', 'name', 'code'],
+                          // Ownership filter only — this nested course is never enriched/returned.
+                          attributes: ['id'],
                           where: { userId },
                           required: false
                         }
@@ -122,7 +152,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       offset: parseInt(offset)
     });
 
-    return assessments;
+    const enriched = await enrichRowsWithCourse(assessments);
+    return enriched.map(withDerivedSemester);
   } catch (error) {
     throw error;
   }
@@ -137,7 +168,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          // `coreCourseId` feeds `enrichRowWithCourse`'s Core projection below.
+          attributes: ['id', 'coreCourseId'],
           where: { userId },
           required: true
         },
@@ -155,7 +187,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
                   model: Course,
                   as: 'course',
                   where: { userId: userId },
-                  attributes: ['id', 'name', 'code']
+                  // Ownership filter only — this nested course is never enriched/returned.
+                  attributes: ['id']
                 }
               ]
             }
@@ -183,7 +216,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
                           model: Course,
                           as: 'course',
                           where: { userId },
-                          attributes: ['id', 'name', 'code'],
+                          // Ownership filter only — this nested course is never enriched/returned.
+                          attributes: ['id'],
                           required: false
                         }
                       ]
@@ -201,7 +235,7 @@ export const getAssessmentById = async (assessmentId, userId) => {
       throw new Error('Assessment not found');
     }
 
-    return assessment;
+    return withDerivedSemester(await enrichRowWithCourse(assessment));
   } catch (error) {
     throw error;
   }
@@ -254,8 +288,11 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
       }
     }
 
+    // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
+    // even if a legacy caller still sends one.
+    const { semester: _ignoredSemester, ...updateFields } = updateData;
     const normalizedUpdates = {
-      ...updateData,
+      ...updateFields,
       description: updateData.description !== undefined
         ? (updateData.description?.trim() || null)
         : assessment.description,
@@ -265,7 +302,16 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     };
 
     await assessment.update(normalizedUpdates);
-    return assessment;
+
+    // `.update()` doesn't refresh the eager-loaded `course` association — if
+    // the update moved the assessment to another course, reload with the
+    // course include so the response's course/semester projection describes
+    // the NEW course, not the one loaded at the top.
+    if (updateData.courseId) {
+      await assessment.reload({ include: [{ model: Course, as: 'course' }] });
+    }
+
+    return withDerivedSemester(await enrichRowWithCourse(assessment));
   } catch (error) {
     throw error;
   }
@@ -459,7 +505,9 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
           model: Course,
           as: 'course',
           where: { userId: userId },
-          attributes: ['id', 'name', 'code']
+          // Ownership filter only — this endpoint returns rows unenriched, and
+          // `Course` has no local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id']
         },
         {
           model: Variants,

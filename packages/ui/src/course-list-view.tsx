@@ -10,7 +10,7 @@ import { MultiSelect } from "./ui/combobox"
 import { Skeleton } from "./ui/skeleton"
 import {
   groupCoursesByTerm,
-  termFromMonth,
+  termInfoFromDate,
   termLabel,
   termSortKey,
   type TermInfo,
@@ -219,15 +219,7 @@ export function CourseListView<T>({
   // Jan–Apr W2, May–Jun S1, Jul–Aug S2, Sep–Dec W1) — not whichever term
   // happens to hold the most recently added course. A group chronologically
   // after today is "Upcoming term"; before today, "Previous term".
-  const nowSortKey = React.useMemo(() => {
-    const now = new Date()
-    const term = termFromMonth(now.getMonth())
-    // `year` is the academic-session label (S1/S2/W1 share their calendar
-    // year; W2 belongs to the *previous* label, since it falls in Jan–Apr of
-    // the following calendar year — see lib/term.ts's TERM_RANK comment).
-    const year = term === "W2" ? now.getFullYear() - 1 : now.getFullYear()
-    return termSortKey({ term, year })
-  }, [])
+  const nowSortKey = React.useMemo(() => termSortKey(termInfoFromDate(new Date())), [])
   const termRelative = React.useMemo(() => {
     const map = new Map<string, "current" | "upcoming" | "previous">()
     for (const group of termGroups) {

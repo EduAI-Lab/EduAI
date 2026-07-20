@@ -86,6 +86,7 @@ vi.mock("~/lib/prisma.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -140,6 +141,7 @@ function lastAbortSignal(): AbortSignal | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
