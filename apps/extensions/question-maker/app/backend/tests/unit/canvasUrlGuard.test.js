@@ -42,6 +42,9 @@ describe('validateCanvasUrl', () => {
     ['IPv6 unique local (fd00 prefix)', 'https://[fd00::1]/'],
     ['IPv6 unique local, upper /7 boundary (fdff)', 'https://[fdff::1]/'],
     ['IPv4-mapped IPv6 private', 'https://[::ffff:127.0.0.1]/'],
+    ['IPv4-compatible IPv6 loopback (deprecated form)', 'https://[::127.0.0.1]/'],
+    ['IPv4-compatible IPv6 loopback, already-normalized hex form', 'https://[::7f00:1]/'],
+    ['IPv4-compatible IPv6 private (10/8)', 'https://[::10.1.2.3]/'],
   ])('rejects %s (%s)', (_label, url) => {
     expect(() => validateCanvasUrl(url)).toThrow(CanvasUrlValidationError);
   });
@@ -57,6 +60,10 @@ describe('validateCanvasUrl', () => {
 
   it('does not reject a public IPv4 literal', () => {
     expect(() => validateCanvasUrl('https://8.8.8.8/')).not.toThrow();
+  });
+
+  it('does not reject a public IPv4-compatible IPv6 literal', () => {
+    expect(() => validateCanvasUrl('https://[::8.8.8.8]/')).not.toThrow();
   });
 
   it('does not treat a private-looking hostname (not an IP literal) as private', () => {
@@ -113,6 +120,24 @@ describe('createPinnedLookup', () => {
     await new Promise((resolve) => {
       lookup('canvas.example.edu', {}, (err) => {
         expect(err).toBeInstanceOf(CanvasUrlValidationError);
+        resolve();
+      });
+    });
+
+    vi.restoreAllMocks();
+  });
+
+  it('fails closed with a clean error when resolution returns no addresses', async () => {
+    vi.spyOn(dns, 'lookup').mockImplementation((_hostname, _options, cb) => {
+      cb(null, []);
+    });
+
+    const lookup = createPinnedLookup();
+    await new Promise((resolve) => {
+      lookup('canvas.example.edu', {}, (err, address) => {
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(TypeError);
+        expect(address).toBeUndefined();
         resolve();
       });
     });

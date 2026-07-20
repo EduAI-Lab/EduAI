@@ -129,11 +129,15 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     },
     // A hostname that passed validateCanvasUrl's IP-literal check can still
     // resolve (or later rebind) to a private address — pin the DNS lookup so
-    // the resolved address is re-validated at connection time, and refuse to
-    // follow redirects so a permitted host can't hand the request off to an
-    // unvalidated one.
+    // the resolved address is re-validated at connection time. Redirects are
+    // followed (Canvas hosts commonly sit behind a canonicalizing LB), but
+    // each hop is re-validated the same way before axios follows it, so a
+    // permitted host can't hand the request off to an unvalidated one.
     lookup: createPinnedLookup(),
-    maxRedirects: 0
+    maxRedirects: 5,
+    beforeRedirect: (redirectOptions) => {
+      validateCanvasUrl(`${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}`);
+    }
   };
 
   if (data) {

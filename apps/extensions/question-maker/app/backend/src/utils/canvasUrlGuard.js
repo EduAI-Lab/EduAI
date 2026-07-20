@@ -88,6 +88,16 @@ function isPrivateIPv6(address) {
   if (first >= 0xfe80 && first <= 0xfebf) return true;
   // fc00::/7: top 7 bits fixed => first group in [0xfc00, 0xfdff].
   if (first >= 0xfc00 && first <= 0xfdff) return true;
+  // Deprecated IPv4-compatible form (::a.b.c.d, no ffff group): first six
+  // groups zero. Node's URL parser normalizes the embedded IPv4 octets into
+  // the last two hex groups (e.g. `::127.0.0.1` -> `::7f00:1`), so pull them
+  // back out and re-check as IPv4 — this is how `::127.0.0.1` (loopback)
+  // slips past the checks above otherwise.
+  if (groups.slice(0, 6).every((g) => g === 0)) {
+    const [hi, lo] = groups.slice(6);
+    const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    if (isPrivateIPv4(ipv4)) return true;
+  }
   return false;
 }
 
@@ -131,6 +141,7 @@ export function createPinnedLookup() {
   return (hostname, options, callback) => {
     dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
       if (err) return callback(err);
+      if (!addresses.length) return callback(new Error(`No addresses found for ${hostname}`));
       for (const { address, family } of addresses) {
         const isPrivate = family === 4 ? isPrivateIPv4(address) : isPrivateIPv6(address);
         if (isPrivate) {
