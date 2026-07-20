@@ -1230,14 +1230,20 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                         if (!editPrimaryTopicId) return;
                                                         setSavingMetadata(true);
                                                         try {
+                                                            // #1080: type + primary topic feed the Core push payload just like
+                                                            // questionText/difficulty, so they're locked post-review — at the
+                                                            // QUESTION level, meaning an approved SIBLING variant locks them even
+                                                            // when the viewed variant is a draft. Send them only when actually
+                                                            // changed (mirrors QuestionComposerPage) so an untouched value never
+                                                            // trips a 409 VARIANT_LOCKED on e.g. a description-only edit.
+                                                            const typeChanged = editType !== viewEntry.questionType;
+                                                            const primaryTopicChanged =
+                                                                editPrimaryTopicId !== (viewEntry.primaryTopicId != null ? String(viewEntry.primaryTopicId) : '');
                                                             await questionService.updateQuestion(viewEntry.questionId, {
                                                                 description: editDescription || undefined,
                                                                 courseId: viewEntry.courseId,
-                                                                // #1080: type + primary topic feed the Core push payload just like
-                                                                // questionText/difficulty, so they're locked post-review too — omit
-                                                                // them entirely while approved (fields above are disabled, so these
-                                                                // can't have changed anyway; the server would 409 VARIANT_LOCKED).
-                                                                ...(!isApproved && { primaryTopicId: editPrimaryTopicId, type: editType }),
+                                                                ...(primaryTopicChanged && { primaryTopicId: editPrimaryTopicId }),
+                                                                ...(typeChanged && { type: editType }),
                                                             });
                                                             const variantUpdates = buildVariantMetadataUpdates({ isDraft: !isApproved, currentQuestionText: viewVariant.questionText ?? '', editQuestionText, currentDifficulty: (viewVariant.difficulty as QuestionDifficulty) ?? 'medium', editDifficulty });
                                                             // Secondary topics diverge Core once pushed, same as the primary topic —
