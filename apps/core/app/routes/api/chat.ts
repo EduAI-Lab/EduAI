@@ -17,11 +17,17 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import { startSidecarMeasurement } from "~/lib/ai/energy/measurement.server";
+import {
+  AdmissionTimeoutError,
+  acquireAiAdmission,
+  withAdmissionRelease,
+} from "~/lib/ai/admission.server";
 import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
 import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import {
   FleetUnavailableError,
   resolveFleetHost,
+  resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import {
@@ -1033,6 +1039,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // settings for (actingUser.id is the synthetic "service" id), so they
     // must still pass apiKeys in the body, same as before the DB migration.
     // Regular users' keys are always loaded from the DB.
+    let providerSettingsBase: Awaited<ReturnType<typeof getUserProviderSettings>>;
     let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
     if (isServiceKeyCaller) {
       if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
@@ -1057,14 +1064,16 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         );
       }
+      providerSettingsBase = toUserProviderSettings(apiKeysParsed.data);
       validatedApiKeys = mergeLocalInferenceFromEnv(
-        toUserProviderSettings(apiKeysParsed.data),
+        providerSettingsBase,
         resolvedModelId,
         fleetPick?.baseUrl,
       );
     } else {
+      providerSettingsBase = await getUserProviderSettings(actingUser.id);
       validatedApiKeys = mergeLocalInferenceFromEnv(
-        await getUserProviderSettings(actingUser.id),
+        providerSettingsBase,
         resolvedModelId,
         fleetPick?.baseUrl,
       );
@@ -1128,7 +1137,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    const registry = createAIProviderRegistry(validatedApiKeys);
+    let registry = createAIProviderRegistry(validatedApiKeys);
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
@@ -1622,11 +1631,45 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    const energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
+    let energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
     const sidecarTag = await startSidecarMeasurement(
       `chat-${chat.id}-${randomUUID()}`,
       { sidecarBaseUrl: energySidecarBaseUrl },
     );
+
+    const needsAdmission =
+      parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
+    let admissionRelease: (() => void) | null = null;
+    let admissionWaitedMs = 0;
+    if (needsAdmission) {
+      try {
+        const slot = await acquireAiAdmission();
+        admissionRelease = slot.release;
+        admissionWaitedMs = slot.waitedMs;
+      } catch (err) {
+        if (err instanceof AdmissionTimeoutError) {
+          return new Response(
+            JSON.stringify({
+              error: "Server busy — too many concurrent AI requests. Try again shortly.",
+              code: "AI_ADMISSION_TIMEOUT",
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+    const releaseAdmission = () => {
+      if (admissionRelease) {
+        admissionRelease();
+        admissionRelease = null;
+      }
+    };
+    const admissionHeaders = (): Record<string, string> =>
+      admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
     const persistTurnTelemetry = async (params: {
       responseText: string;
@@ -1657,9 +1700,8 @@ ${buildEmptyCourseRagBlock()}`;
       });
     };
 
-    let result;
-    try {
-      result = await streamText({
+    const runStreamText = () =>
+      streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
@@ -1704,26 +1746,100 @@ ${buildEmptyCourseRagBlock()}`;
           logStreamError(error, streamTrace);
         },
       });
+
+    let result;
+    let fleetRetry = false;
+    try {
+      result = await runStreamText();
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
+        releaseAdmission();
         return clientAbortResponse();
       }
-      if (chatMode === "admin") {
-        logStreamError(error, streamTrace);
-        const hint =
-          parsedModel.providerId === "vllm"
-            ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-            : "";
-        return chatApiReject(
-          502,
-          {
-            error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-            code: "LLM_STREAM_FAILED",
-          },
-          streamTrace,
-        );
+
+      // Slice 2: one inference retry on an alternate healthy fleet host.
+      if (fleetPick && parsedModel.providerId === "vllm") {
+        const failedPick = fleetPick;
+        try {
+          const nextPick = await resolveFleetHostAfterFailure({
+            failedPick,
+            resolvedModelId,
+            jobType,
+          });
+          if (nextPick) {
+            fleetPick = nextPick;
+            fleetRetry = true;
+            energySidecarBaseUrl = nextPick.energySidecarUrl;
+            validatedApiKeys = mergeLocalInferenceFromEnv(
+              providerSettingsBase,
+              resolvedModelId,
+              nextPick.baseUrl,
+            );
+            registry = createAIProviderRegistry(validatedApiKeys);
+            aiModel = registry.languageModel(resolvedModelId);
+            streamConfig.model = aiModel;
+            routerContext = {
+              ...(routerContext ?? {}),
+              ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+              fleetRetry: true,
+            };
+            console.log("[fleet] fleetRetry: true", {
+              from: failedPick.serverId,
+              to: nextPick.serverId,
+              model: resolvedModelId,
+            });
+            chatApiTrace("fleet retry host selected", {
+              fleetServerId: nextPick.serverId,
+              fleetReason: nextPick.reason,
+              previousServerId: failedPick.serverId,
+              fleetRetry: true,
+            });
+            result = await runStreamText();
+          } else {
+            throw error;
+          }
+        } catch (retryError) {
+          releaseAdmission();
+          if (isClientAbort(retryError, request.signal)) {
+            return clientAbortResponse();
+          }
+          if (chatMode === "admin") {
+            logStreamError(retryError, streamTrace);
+            const hint =
+              parsedModel.providerId === "vllm"
+                ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+                : "";
+            return chatApiReject(
+              502,
+              {
+                error: `LLM stream failed: ${formatStreamError(retryError)}.${hint}`,
+                code: "LLM_STREAM_FAILED",
+                fleetRetry,
+              },
+              streamTrace,
+            );
+          }
+          throw retryError;
+        }
+      } else {
+        releaseAdmission();
+        if (chatMode === "admin") {
+          logStreamError(error, streamTrace);
+          const hint =
+            parsedModel.providerId === "vllm"
+              ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+              : "";
+          return chatApiReject(
+            502,
+            {
+              error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+              code: "LLM_STREAM_FAILED",
+            },
+            streamTrace,
+          );
+        }
+        throw error;
       }
-      throw error;
     }
 
     if (needsOversight) {
@@ -1818,8 +1934,9 @@ ${buildEmptyCourseRagBlock()}`;
 
           await persistOverseenAssistantMessages(finalText);
 
+          releaseAdmission();
           return createDataStreamResponse({
-            headers,
+            headers: { ...headers, ...admissionHeaders() },
             execute: (dataStream) => {
               if (finalText) {
                 dataStream.write(formatDataStreamPart("text", finalText));
@@ -1835,6 +1952,7 @@ ${buildEmptyCourseRagBlock()}`;
 
         await persistOverseenAssistantMessages(finalText);
 
+        releaseAdmission();
         return new Response(
           JSON.stringify({
             content: finalText,
@@ -1851,11 +1969,13 @@ ${buildEmptyCourseRagBlock()}`;
             status: 200,
             headers: {
               "Content-Type": "application/json",
+              ...admissionHeaders(),
               ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
             },
           },
         );
       } catch (error) {
+        releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
@@ -1878,6 +1998,7 @@ ${buildEmptyCourseRagBlock()}`;
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
+        ...admissionHeaders(),
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
@@ -1893,21 +2014,26 @@ ${buildEmptyCourseRagBlock()}`;
           fleetPick?.serverId ?? null,
         ),
       );
-      return result.toDataStreamResponse({
-        headers,
-        ...(chatMode === "admin"
-          ? {
-              getErrorMessage: (error) => {
-                logStreamError(error, streamTrace);
-                const base = formatStreamError(error);
-                if (parsedModel.providerId === "vllm") {
-                  return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-                }
-                return base;
-              },
-            }
-          : {}),
-      });
+      const release = admissionRelease;
+      admissionRelease = null;
+      return withAdmissionRelease(
+        result.toDataStreamResponse({
+          headers,
+          ...(chatMode === "admin"
+            ? {
+                getErrorMessage: (error) => {
+                  logStreamError(error, streamTrace);
+                  const base = formatStreamError(error);
+                  if (parsedModel.providerId === "vllm") {
+                    return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
+                  }
+                  return base;
+                },
+              }
+            : {}),
+        }),
+        release,
+      );
     } else {
       try {
         await result.consumeStream();
@@ -1950,6 +2076,7 @@ ${buildEmptyCourseRagBlock()}`;
           finishReason: String(finishReason ?? "stop"),
         });
 
+        releaseAdmission();
         return new Response(
           JSON.stringify({
             content: text,
@@ -1966,11 +2093,13 @@ ${buildEmptyCourseRagBlock()}`;
             status: 200,
             headers: {
               "Content-Type": "application/json",
+              ...admissionHeaders(),
               ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
             },
           },
         );
       } catch (error) {
+        releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }

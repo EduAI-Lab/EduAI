@@ -1,7 +1,7 @@
 # EduAI — Spreading AI requests across multiple servers
 
 > **For:** EduAI dev team  
-> **Status:** Slice 1 implemented on `feat/fleet-routing` (pick-time routing + health cache); Slice 2 (inference retry) planned  
+> **Status:** Slice 1 implemented (pick-time routing + health cache); Slice 2 implemented (one inference retry on alternate host after failure)  
 > **Owner:** Saad (AI / infra)  
 > **See also:** [TEAM_ROUTING_LAYER_PLAN.md](./TEAM_ROUTING_LAYER_PLAN.md) (single-server Auto routing — research)
 
@@ -167,17 +167,17 @@ Health results are cached for **~30 seconds** per host so we do not ping `/v1/mo
 4. Round-robin among the rest.  
 5. If **no** host qualifies → **503** immediately with `"No healthy vLLM fleet server available"` (not silent).
 
-### During the stale cache window (Slice 2 — **planned**)
+### During the stale cache window (Slice 2 — **implemented**)
 
-If a host was marked healthy within the last ~30 s but **dies before the cache expires**, pick-time routing may still send traffic there. Planned behavior:
+If a host was marked healthy within the last ~30 s but **dies before the cache expires**, pick-time routing may still send traffic there. Behavior:
 
 1. **On inference failure** to that host (connection refused, reset, or timeout to vLLM) → **invalidate** that host’s cache entry immediately (do not wait for TTL).  
 2. **Retry the same request once** on the next eligible host in the same job-type pool.  
 3. If the retry succeeds → normal response (logged with `fleetRetry: true`).  
-4. If no host remains or the retry fails → **503** with a clear error.  
+4. If no host remains or the retry fails → existing chat error / **503** with a clear error.  
 5. Log `fleetServerId`, failure reason, and retry status — operators debugging a mid-class outage can see retries, not silent drops.
 
-Until Slice 2 ships, requests sent to a stale-healthy dead host will **fail at inference time** with the usual chat error; they are **not** automatically retried on another server.
+`X-Fleet-Server` reflects the **final** host after a successful retry.
 
 ---
 
@@ -189,7 +189,7 @@ Logged in `routerFeatures` (no schema migration required):
 - `jobType` — `"interactive"` or `"background"`
 - `fleetServerId` — e.g. `"cmps02"`
 - `fleetReason` — e.g. `"interactive-round-robin"`
-- `fleetRetry` — *(planned Slice 2)* whether inference was retried on another host
+- `fleetRetry` — whether inference was retried on another host (Slice 2)
 
 Optional response header: `X-Fleet-Server: cmps02`.
 
@@ -247,7 +247,7 @@ Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (
 | All fleet hosts unreachable | **503** `"No healthy vLLM fleet server available"` |
 | Model not on any host | **503** with model name in `details` |
 
-**Not yet implemented:** Slice 2 inference retry after a stale health cache — dead mid-window hosts fail at inference time without automatic retry.
+**Implemented:** Slice 2 inference retry after a stale health cache — dead mid-window hosts invalidate and retry once on another healthy host.
 
 ---
 
