@@ -18,11 +18,14 @@ describe("clientApiKeysBodySchema", () => {
     expect(clientApiKeysBodySchema.safeParse([]).success).toBe(false);
   });
 
-  it("rejects provider entries with invalid field types", () => {
+  it("coerces string booleans for isEnabled", () => {
     const result = clientApiKeysBodySchema.safeParse({
       openai: { isEnabled: "yes" },
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.openai.isEnabled).toBe(true);
+    }
   });
 });
 
