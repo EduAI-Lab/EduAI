@@ -15,7 +15,7 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   getEduAiBaseUrl: vi.fn(() => 'http://localhost:5174/api'),
   getEduAiChatUrl: vi.fn(() => 'http://localhost:5174/api/chat'),
   postCoreBugReport: vi.fn(),
-  listCoreAdminUsers: vi.fn().mockResolvedValue([]),
+  listCoreAdminUsers: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
   listCourseTestableQuestions: vi.fn(),
   patchCoreEnrollmentRole: vi.fn(),
   deleteCoreEnrollment: vi.fn(),
@@ -35,12 +35,31 @@ import {
   patchCoreEnrollmentRole,
 } from '../../src/services/eduaiClient.js';
 
+/**
+ * #1041: `listCoreAdminUsers` answers with Core's `{ data, total, page, pageSize }`
+ * envelope, and the enrollment route makes two calls per request — an `?ids=`
+ * lookup for enrolled users plus a role-scoped page for the picker. Stub both
+ * from one row set, honouring `ids` when it is passed.
+ */
+function stubCoreUsers(rows) {
+  listCoreAdminUsers.mockImplementation(async (_cookie, options = {}) => {
+    const data = rows
+      .filter((r) => (options.ids ? options.ids.includes(r.id) : true))
+      // Core applies `?role=` server-side now, so the stub must too.
+      .filter((r) => (options.role ? r.role === options.role : true));
+    return { data, total: data.length, page: 1, pageSize: data.length || 25 };
+  });
+}
+
 describe('Admin routes', () => {
   let admin;
   let adminApp;
 
   beforeEach(async () => {
     await truncateAll();
+    // stubCoreUsers() installs a persistent implementation — reset it per test
+    // so a stub never leaks into a case that expects an empty Core response.
+    stubCoreUsers([]);
     admin = makeAdmin();
     adminApp = await createApp({ mockUser: admin });
   });
@@ -57,7 +76,7 @@ describe('Admin routes', () => {
     });
 
     it('returns users proxied from Core', async () => {
-      listCoreAdminUsers.mockResolvedValueOnce([
+      stubCoreUsers([
         {
           id: 'user-1',
           name: 'EduAI Admin',
@@ -77,9 +96,13 @@ describe('Admin routes', () => {
       const res = await request(adminApp).get('/api/admin/users');
 
       expect(res.status).toBe(200);
-      expect(listCoreAdminUsers).toHaveBeenCalledWith(expect.any(String));
-      expect(res.body).toHaveLength(2);
-      expect(res.body[0]).toMatchObject({
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ page: 1, pageSize: 25 }),
+      );
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data[0]).toMatchObject({
         name: 'EduAI Admin',
         email: 'admin@eduai.local',
         role: 'ADMIN',
@@ -418,7 +441,7 @@ describe('Admin routes', () => {
         data: { courseOfferingId: coscCourse.id, userId: enrolledStudent.id, role: 'STUDENT' },
       });
 
-      listCoreAdminUsers.mockResolvedValueOnce([
+      stubCoreUsers([
         {
           id: enrolledStudent.id,
           name: enrolledStudent.name,
@@ -460,7 +483,7 @@ describe('Admin routes', () => {
         `/api/admin/courses/${coscCourse.id}/enrollments/${enrolledStudent.id}`,
       );
 
-      listCoreAdminUsers.mockResolvedValueOnce([
+      stubCoreUsers([
         {
           id: enrolledStudent.id,
           name: enrolledStudent.name,
@@ -495,7 +518,7 @@ describe('Admin routes', () => {
         data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
       });
 
-      listCoreAdminUsers.mockResolvedValueOnce([
+      stubCoreUsers([
         {
           id: student.id,
           name: student.name,
@@ -516,7 +539,7 @@ describe('Admin routes', () => {
         email: 'alex.patel@eduai.local',
       });
 
-      listCoreAdminUsers.mockResolvedValueOnce([]);
+      stubCoreUsers([]);
 
       const fallback = await request(unitAdminApp).get(
         `/api/admin/courses/${coscCourse.id}/enrollments`,

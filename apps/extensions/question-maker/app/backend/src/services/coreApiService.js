@@ -48,18 +48,36 @@ const CORE_PAGE_SIZE = 200;
 /** Safety stop for page-walks so a bad `total` cannot spin forever. */
 const CORE_MAX_PAGES = 50;
 
+/** GET a Core path with service-key headers, mirroring the pre-#1041 catalog read. */
+async function readServiceKeyPage(path) {
+  const res = await fetch(`${config.coreUrl}${path}`, { headers: serviceHeaders() });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw coreError(body.error || 'Core courses fetch failed', res.status, body);
+  }
+  return res.json();
+}
+
 /**
  * Read one page of `/api/courses`, or every page when `all` is set.
  * Returns the course array; Core's envelope is unwrapped here.
  */
-async function fetchCoursePages(authOptions, { all = false, page = 1, pageSize = CORE_PAGE_SIZE, search } = {}) {
+async function fetchCoursePages(
+  authOptions,
+  { all = false, page = 1, pageSize = CORE_PAGE_SIZE, search, serviceKeyOnly = false } = {},
+) {
   const readPage = async (pageNumber) => {
     const params = new URLSearchParams({
       page: String(pageNumber),
       pageSize: String(Math.min(pageSize, CORE_PAGE_SIZE)),
     });
     if (search) params.set('search', search);
-    const data = await fetchFromCore(`/api/courses?${params}`, authOptions);
+    // `serviceKeyOnly` keeps the pre-#1041 behaviour of the service-key catalog
+    // read: send `serviceHeaders()` and let Core answer, rather than refusing
+    // to call when no key is configured (`fetchFromCore` throws 503 there).
+    const data = serviceKeyOnly
+      ? await readServiceKeyPage(`/api/courses?${params}`)
+      : await fetchFromCore(`/api/courses?${params}`, authOptions);
     return {
       courses: Array.isArray(data?.data) ? data.data : [],
       total: typeof data?.total === 'number' ? data.total : 0,
@@ -326,36 +344,39 @@ export async function getMyProfileFromCore(cookieHeader) {
  * narrow by.
  */
 export async function getAllCoursesFromCore() {
-  return fetchCoursePages({}, { all: true });
+  return fetchCoursePages({}, { all: true, serviceKeyOnly: true });
 }
 
 /**
  * GET /api/courses?ids= — resolve a known set of Core courses in one unpaged
  * lookup (#1125). Chunked, since Core caps the id list.
  */
-export async function getCoursesByIdsFromCore(ids, authOptions = {}) {
+export async function getCoursesByIdsFromCore(ids, authOptions = {}, { serviceKeyOnly = false } = {}) {
   const unique = [...new Set((ids ?? []).filter(Boolean))];
   if (unique.length === 0) return [];
 
   const courses = [];
   for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
     const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
-    const data = await fetchFromCore(
-      `/api/courses?ids=${encodeURIComponent(chunk.join(','))}`,
-      authOptions,
-    );
+    const path = `/api/courses?ids=${encodeURIComponent(chunk.join(','))}`;
+    const data = serviceKeyOnly
+      ? await readServiceKeyPage(path)
+      : await fetchFromCore(path, authOptions);
     if (Array.isArray(data?.data)) courses.push(...data.data);
   }
   return courses;
 }
 
 /** GET /api/courses?search= — Core-side course search (#1125). */
-export async function searchCoursesFromCore(search, authOptions = {}) {
+export async function searchCoursesFromCore(search, authOptions = {}, { serviceKeyOnly = false } = {}) {
   const params = new URLSearchParams({
     page: '1',
     pageSize: String(CORE_PAGE_SIZE),
     search,
   });
-  const data = await fetchFromCore(`/api/courses?${params}`, authOptions);
+  const path = `/api/courses?${params}`;
+  const data = serviceKeyOnly
+    ? await readServiceKeyPage(path)
+    : await fetchFromCore(path, authOptions);
   return Array.isArray(data?.data) ? data.data : [];
 }

@@ -124,7 +124,9 @@ export async function enrichRowsWithCourse(rows) {
 
   let coreById = new Map();
   try {
-    const coreCourses = await getCoursesByIdsFromCore(wantedIds);
+    // Service-key read, as the `getAllCoursesFromCore` call this replaced was:
+    // the rows are already access-checked locally, this only resolves names.
+    const coreCourses = await getCoursesByIdsFromCore(wantedIds, {}, { serviceKeyOnly: true });
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
     // Core unreachable — rows still return; nested course degrades to placeholder.
@@ -212,6 +214,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
         ? await getAllCoursesFromCore()
         : await getCoursesByIdsFromCore(
             allCourses.map((c) => (c.toJSON ? c.toJSON() : c).coreCourseId),
+            {},
+            { serviceKeyOnly: true },
           );
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
@@ -366,7 +370,7 @@ export async function findCoursesByProjectedCode(codeQuery) {
     // #1125: let Core do the code match instead of pulling the catalog and
     // filtering here. The exact-match check below still applies, since Core's
     // `search` is a substring match.
-    const coreCourses = await searchCoursesFromCore(target);
+    const coreCourses = await searchCoursesFromCore(target, {}, { serviceKeyOnly: true });
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
     return []; // Core unreachable — no code-based match is possible; degrade to no access.

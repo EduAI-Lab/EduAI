@@ -67,6 +67,10 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   // `Course.code` no longer exists locally), so it needs a Core course whose
   // `code`/`id` line up with `COURSE.coreCourseId` below.
   getAllCoursesFromCore: vi.fn().mockResolvedValue([{ id: 'cuid-core', code: 'COSC 101', name: 'Test Course' }]),
+  // #1125: the projected-code match now asks Core to do the search rather than
+  // pulling the whole catalog, so this path needs its own mock.
+  searchCoursesFromCore: vi.fn().mockResolvedValue([{ id: 'cuid-core', code: 'COSC 101', name: 'Test Course' }]),
+  getCoursesByIdsFromCore: vi.fn().mockResolvedValue([{ id: 'cuid-core', code: 'COSC 101', name: 'Test Course' }]),
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core', department: 'COSC' }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),

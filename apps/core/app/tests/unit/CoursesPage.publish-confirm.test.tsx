@@ -71,6 +71,10 @@ vi.mock('~/hooks/api/use-courses', () => ({
         updatedAt: '2025-01-01T00:00:00.000Z',
       },
     ],
+    // #1041: the hook now owns one page and the route renders TablePagination.
+    total: 1,
+    pagination: { pageIndex: 0, pageSize: 25 },
+    setPagination: vi.fn(),
     loading: false,
     createCourse: vi.fn(),
     updateCourse: mockUpdateCourse,

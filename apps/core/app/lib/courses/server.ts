@@ -159,19 +159,23 @@ export async function getCourses(request: Request) {
 
   // Authenticate before parsing: an anonymous caller must see 401, not a 400
   // describing which query params this endpoint wants.
-  const isServiceKeyCall = request.headers.get("Authorization")?.startsWith("Bearer ") ?? false;
-  let session: Awaited<ReturnType<typeof auth.api.getSession>> = null;
-  if (isServiceKeyCall) {
+  type SessionUser = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>["user"];
+  type Caller = { kind: "serviceKey" } | { kind: "session"; user: SessionUser };
+
+  let caller: Caller;
+  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
+    caller = { kind: "serviceKey" };
   } else {
-    session = await auth.api.getSession({ headers: request.headers });
+    const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" } as const,
       });
     }
+    caller = { kind: "session", user: session.user };
   }
 
   // #1041: `page`/`pageSize` are required; `?ids=` is the unpaged batch-lookup
@@ -224,22 +228,22 @@ export async function getCourses(request: Request) {
   };
 
   // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
-  if (isServiceKeyCall) {
+  if (caller.kind === "serviceKey") {
     const { rows, total } = await listCourses(withSelectors({ deletedAt: null }));
     return pagination ? paginatedResponse(rows, total, pagination) : unpagedResponse(rows);
   }
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
   // soft-deleted courses. The flag is a no-op for every non-ADMIN caller.
-  const includeDeleted = wantsIncludeDeleted(request, session.user);
+  const includeDeleted = wantsIncludeDeleted(request, caller.user);
 
   const { rows: courses, total } = await listCourses(
-    withSelectors(await buildCourseListFilter(session.user, includeDeleted)),
+    withSelectors(await buildCourseListFilter(caller.user, includeDeleted)),
   );
 
   const enrollmentRows = await prisma.enrollment.findMany({
     where: {
-      userId: session.user.id,
+      userId: caller.user.id,
       isActive: true,
       courseId: { in: courses.map((course) => course.id) },
     },

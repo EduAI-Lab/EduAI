@@ -232,14 +232,16 @@ describe("GET /api/courses", () => {
     }
   });
 
-  it("returns 200 with a courses array for ADMIN", async () => {
+  it("returns 200 with a page envelope for ADMIN", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(ADMIN_SESSION as any);
     const res = await getCourses(makeGetRequest());
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("courses");
     expect(Array.isArray(body.data)).toBe(true);
+    expect(typeof body.total).toBe("number");
+    expect(typeof body.page).toBe("number");
+    expect(typeof body.pageSize).toBe("number");
   });
 
   it("includes the seeded course in the response", async () => {
