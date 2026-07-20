@@ -10,8 +10,16 @@ cd "$SCRIPT_DIR"
 SKIP_32B="${SKIP_32B:-0}"
 
 echo "=== Step 1: stop old containers ==="
-docker stop eduai-vllm eduai-vllm-t3 eduai-vllm-120b 2>/dev/null || true
-docker rm eduai-vllm eduai-vllm-t3 eduai-vllm-120b 2>/dev/null || true
+# Current canonical names + prior mid/xl layout (14B/72B) that still holds :18001/:18002.
+OLD_BACKENDS=(
+  eduai-vllm
+  eduai-vllm-t3
+  eduai-vllm-120b
+  eduai-vllm-mid
+  eduai-vllm-xl
+)
+docker stop "${OLD_BACKENDS[@]}" 2>/dev/null || true
+docker rm "${OLD_BACKENDS[@]}" 2>/dev/null || true
 docker compose down 2>/dev/null || true
 
 echo "=== Step 2: LiteLLM config (tiered) ==="
