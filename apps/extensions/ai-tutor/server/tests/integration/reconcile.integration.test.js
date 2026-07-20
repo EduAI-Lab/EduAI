@@ -29,7 +29,7 @@ describe('runReconciliation (integration)', () => {
 
   it('deletes the CourseOffering (and cascades to its children) when Core returns 404 — §802 reconcile safety net', async () => {
     const offering = await prisma.courseOffering.create({
-      data: { title: 'Test Course', description: 'test', isPublished: false, coreOfferingId: 'core-cuid-1' },
+      data: { coreOfferingId: 'core-cuid-1' },
     });
     const topic = await prisma.topic.create({
       data: { name: 'Test Topic', courseOfferingId: offering.id },
@@ -49,7 +49,7 @@ describe('runReconciliation (integration)', () => {
 
   it('nullifies coreTopicId when Core returns 404 for the topic, leaving the topic row intact', async () => {
     const offering = await prisma.courseOffering.create({
-      data: { title: 'Test Course', description: 'test', isPublished: false, coreOfferingId: 'core-cuid-1' },
+      data: { coreOfferingId: 'core-cuid-1' },
     });
     const topic = await prisma.topic.create({
       data: { name: 'Test Topic', courseOfferingId: offering.id, coreTopicId: 'core-topic-1' },
@@ -76,7 +76,7 @@ describe('runReconciliation (integration)', () => {
   // guarantee end-to-end on the AI Tutor side.
   it('removes the local mirror of a soft-deleted Core course so it cannot resurface (#315)', async () => {
     const offering = await prisma.courseOffering.create({
-      data: { title: 'Soft-deleted Upstream', description: 'test', isPublished: true, coreOfferingId: 'core-soft-del-1' },
+      data: { coreOfferingId: 'core-soft-del-1' },
     });
     const topic = await prisma.topic.create({
       data: { name: 'Linked Topic', courseOfferingId: offering.id, coreTopicId: 'core-topic-soft-1' },
@@ -93,24 +93,18 @@ describe('runReconciliation (integration)', () => {
     expect(await prisma.topic.findUnique({ where: { id: topic.id } })).toBeNull();
   });
 
-  it('skips topic whose courseOffering has lost its coreOfferingId', async () => {
-    const offering = await prisma.courseOffering.create({
-      data: { title: 'Test Course', description: 'test', isPublished: false },
-    });
-    const topic = await prisma.topic.create({
-      data: { name: 'Orphaned Topic', courseOfferingId: offering.id, coreTopicId: 'core-topic-99' },
-    });
-
-    await runReconciliation();
-
-    const unchanged = await prisma.topic.findUnique({ where: { id: topic.id } });
-    expect(unchanged.coreTopicId).toBe('core-topic-99');
-    expect(mockFetchCoreTopicSafe).not.toHaveBeenCalled();
-  });
+  // The "topic whose courseOffering has lost its coreOfferingId" scenario
+  // this test used to cover is no longer constructible: #1072 step 4 made
+  // `coreOfferingId` required + unique at the DB level, and no code path
+  // ever nulls it out post-creation (confirmed — nothing in `src` writes
+  // `coreOfferingId: null`). `reconcile.js`'s defensive
+  // `courseOffering.coreOfferingId` null-check (jobs/reconcile.js:44) is
+  // dead code now, harmlessly so; left in place rather than removed as part
+  // of this migration.
 
   it('leaves coreOfferingId intact when Core returns 5xx', async () => {
     const offering = await prisma.courseOffering.create({
-      data: { title: 'Test Course', description: 'test', isPublished: false, coreOfferingId: 'core-cuid-2' },
+      data: { coreOfferingId: 'core-cuid-2' },
     });
 
     const err = Object.assign(new Error('Service Unavailable'), { status: 503 });

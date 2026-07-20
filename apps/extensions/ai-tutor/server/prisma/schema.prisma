@@ -28,41 +28,33 @@ model PromptTemplate {
   activities Activity[]
 }
 
-/// A single offering of a course (e.g. "CPSC 110, Fall 2025").
+/// A pure anchor row for a single Core course offering (#1072 step 4).
 ///
-/// `isPublished` gates student visibility — unpublished offerings are
-/// invisible to STUDENT role even when an enrollment row exists. Instructors
-/// always see their own offerings regardless of this flag.
+/// `CourseOffering` holds NO Core-owned data — no title, description,
+/// department, dates, publish state, or external-system metadata. It exists
+/// only as a stable local id: an FK target for content (modules/lessons/
+/// activities/submissions/topics/instructors/enrollments) and the join key
+/// (`coreOfferingId`) back to Core's `Course.id`. Every real field is
+/// resolved live from Core on every read via `services/courseResolver.js` +
+/// `utils/mappers.js#mapCourseOffering` — never cached or mirrored locally.
 ///
-/// `externalId`, `externalSource`, and `externalMetadata` are populated when
-/// the offering was imported from an external system (currently EduAI/Core).
-/// Native offerings created in-app leave them null. The frontend uses
-/// `externalId` truthy-vs-null to decide whether to show "imported" badges
-/// and to suppress edit affordances that would diverge from the source.
-///
-/// `coreOfferingId` links this record to Core's Course.id across the DB
-/// boundary. Nullified by the daily cron reconciliation job on 404.
+/// `coreOfferingId` is required and unique: every offering originates in
+/// Core (anchor rows are created on-demand by
+/// `services/importTaughtCoursesService.js`); there is no such thing as a
+/// native, Core-less offering anymore. The `externalId`/`externalSource`
+/// pair from the pre-#1072 design was consolidated into this single field —
+/// they were always `'EDUAI'` plus a redundant copy of the same id, never a
+/// genuine second source like Canvas.
 model CourseOffering {
-  id               Int       @id @default(autoincrement())
-  title            String
-  description      String?
-  department       String?
-  startDate        DateTime?
-  endDate          DateTime?
-  isPublished      Boolean   @default(false)
-  externalId       String?
-  externalSource   String?
-  externalMetadata Json?
-  coreOfferingId   String?   @unique
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id             Int      @id @default(autoincrement())
+  coreOfferingId String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   modules     Module[]
   topics      Topic[]
   instructors CourseInstructor[]
   enrollments CourseEnrollment[]
-
-  @@index([externalId])
 }
 
 /// Instructor assignment for a course offering.

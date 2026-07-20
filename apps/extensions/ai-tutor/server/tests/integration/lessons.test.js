@@ -1,7 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeAdmin, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+
+// `isPublished` is Core-owned (#1072 step 4) — the "parent course is
+// published" gate on lesson publish resolves it live via
+// `fetchCoreCourseSafe`. Default every seeded course to published so
+// existing behavior holds; individual tests override this.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 describe('Lessons routes', () => {
   let prof;
@@ -13,6 +24,10 @@ describe('Lessons routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create and enroll a student ─────────────────────────

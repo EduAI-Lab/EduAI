@@ -82,7 +82,9 @@ export function resolveCompletionPrompt(
     return { error: `Unsupported message role: ${message.role}` };
   }
 
-  const baseSystem = systemFromBody ?? systemFromMessage;
+  // Truthy fallback — empty/whitespace body.systemPrompt must not block a real
+  // system message (sanitize usually nulls empties; `||` keeps the contract tight).
+  const baseSystem = systemFromBody || systemFromMessage;
   if (!baseSystem) {
     return { error: "systemPrompt is required (body field or one system message)" };
   }
@@ -174,33 +176,64 @@ export async function runCompletion(request: CompletionRequest) {
       ? Math.floor(request.maxTokens)
       : DEFAULT_MAX_TOKENS;
 
-  const result = await streamText({
-    model: aiModel,
-    system: resolved.system,
-    messages: resolved.messages as Parameters<typeof streamText>[0]["messages"],
-    temperature,
-    maxTokens,
-  });
+  let result;
+  try {
+    result = await streamText({
+      model: aiModel,
+      system: resolved.system,
+      messages: resolved.messages as Parameters<typeof streamText>[0]["messages"],
+      temperature,
+      maxTokens,
+    });
+  } catch (error) {
+    return {
+      ok: false as const,
+      status: 502,
+      error: `LLM stream failed: ${formatCompletionStreamError(error)}`,
+    };
+  }
 
   if (streaming) {
     return { ok: true as const, streaming: true as const, result };
   }
 
-  await result.consumeStream();
-  const [text, usage, finishReason] = await Promise.all([
-    result.text,
-    result.usage,
-    result.finishReason,
-  ]);
+  try {
+    await result.consumeStream();
+    const [text, usage, finishReason] = await Promise.all([
+      result.text,
+      result.usage,
+      result.finishReason,
+    ]);
 
-  return {
-    ok: true as const,
-    streaming: false as const,
-    body: {
-      content: text,
-      model: validatedModelId,
-      usage,
-      finishReason,
-    },
-  };
+    return {
+      ok: true as const,
+      streaming: false as const,
+      body: {
+        content: text,
+        model: validatedModelId,
+        usage,
+        finishReason,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      status: 502,
+      error: `LLM stream failed: ${formatCompletionStreamError(error)}`,
+    };
+  }
+}
+
+function formatCompletionStreamError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown stream error";
+  }
 }

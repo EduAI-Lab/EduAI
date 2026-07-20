@@ -4,6 +4,7 @@ import {
   CourseListView,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
   type CourseFilterGroup,
 } from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
@@ -71,7 +72,11 @@ export function CoursesGrid({
   ];
 
   const renderCard = (course: Course) => {
-    const colorIndex = course.id % 5;
+    // Cross-platform visual identity: the accent is keyed off the CORE course
+    // id (the one identity all three apps share), so the same course renders
+    // the same color in Core, AI Tutor, and QM. Local id only as a fallback
+    // for legacy unlinked rows.
+    const colorIndex = defaultColorIndexForCourse(course.coreCourseId ?? String(course.id));
     const synced = syncedLabel(course.updatedAt);
     const extraBadges = [course.coreCourseId ? 'EduAI Core' : 'Local', synced].filter(
       (b): b is string => Boolean(b),
@@ -102,7 +107,7 @@ export function CoursesGrid({
           description={course.description ?? undefined}
           term={course.term || ''}
           year={course.year}
-          isPublished={true}
+          isPublished={course.isPublished ?? false}
           department={showDepartment ? course.department : undefined}
           departmentLabel={
             showDepartment && course.department ? getDepartmentLabel(course.department) : undefined

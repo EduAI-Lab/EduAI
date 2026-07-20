@@ -26,8 +26,9 @@ import {
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
 } from '@eduai/ui'
-import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
+import { TERM_CODES, termName, termInfoFromDate } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -51,7 +52,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null)
   const [selectedDept, setSelectedDept] = useState<string>('')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termInfoFromDate(new Date()).term)
   const { options: departmentOptions, loading: deptLoading } = useDisciplines()
 
   const { isEnabled } = usePolicyGate()
@@ -90,7 +91,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
       instructorUserIds: [],
     })
     setSelectedDept('')
-    setSelectedTerm(termFromMonth(new Date().getMonth()))
+    setSelectedTerm(termInfoFromDate(new Date()).term)
     setCreateOpen(false)
   }
 
@@ -186,7 +187,8 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
                   </div>
                   <div className="grid gap-2">
                     <Label>Year</Label>
-                    <Input name="year" type="number" defaultValue={new Date().getFullYear()} required />
+                    {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
+                    <Input name="year" type="number" defaultValue={termInfoFromDate(new Date()).year} required />
                   </div>
                 </div>
                 <div className="grid gap-2">
@@ -254,7 +256,7 @@ export function CoursesInstructorView({ courses, onCreateCourse, onEditCourse, o
             year={course.year}
             isPublished={course.isPublished}
             department={course.department}
-            colorIndex={index}
+            colorIndex={defaultColorIndexForCourse(course.id)}
             href={`/courses/${course.id}`}
             LinkComponent={Link}
             actions={{

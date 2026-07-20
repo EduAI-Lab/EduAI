@@ -113,12 +113,12 @@ router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
     // Block manual topic creation for imported (external) courses
-    if (course.externalId) {
+    if (course.coreOfferingId) {
       return res.status(403).json({
         error: 'Topics for imported courses are managed by EduAI and cannot be added here',
       });
@@ -169,11 +169,11 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    if (!course.externalId) {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 
@@ -238,7 +238,7 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
