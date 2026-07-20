@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SortableProvider, SortableItem, DragHandle } from "../sortable";
@@ -50,5 +50,46 @@ describe("Sortable", () => {
     );
     screen.getByRole("button", { name: "Drag" }).click();
     expect(parentClick).not.toHaveBeenCalled();
+  });
+
+  it("DragHandle stops key activation from reaching a keyboard-clickable parent", () => {
+    const parentKeyDown = vi.fn();
+    const parentKeyUp = vi.fn();
+    render(
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={vi.fn()}
+        onKeyDown={parentKeyDown}
+        onKeyUp={parentKeyUp}
+      >
+        <DragHandle handleProps={{}} label="Drag" />
+      </div>,
+    );
+
+    const handle = screen.getByRole("button", { name: "Drag" });
+    for (const key of ["Enter", " "]) {
+      fireEvent.keyDown(handle, { key });
+      fireEvent.keyUp(handle, { key });
+    }
+
+    expect(parentKeyDown).not.toHaveBeenCalled();
+    expect(parentKeyUp).not.toHaveBeenCalled();
+  });
+
+  it("DragHandle still runs dnd-kit's own key/click listeners", () => {
+    const onKeyDown = vi.fn();
+    const onKeyUp = vi.fn();
+    const onClick = vi.fn();
+    render(<DragHandle handleProps={{ onKeyDown, onKeyUp, onClick }} label="Drag" />);
+
+    const handle = screen.getByRole("button", { name: "Drag" });
+    fireEvent.keyDown(handle, { key: "Enter" });
+    fireEvent.keyUp(handle, { key: "Enter" });
+    handle.click();
+
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(onKeyUp).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
