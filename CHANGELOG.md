@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Fixed
+
+- [core] fix: Course-access check on RAG settings endpoint (IDOR) — `GET`/`PATCH /api/courses/:id/rag-settings` authorized on the caller's global role only, never verifying they teach the target course; any INSTRUCTOR (or any authenticated user for GET) could read or mutate another course's RAG tuning values. Both handlers now use `resolveCourseAccessWithCourse` + a rank gate, matching sibling course-mutation routes. (#975, @GlowyBlack, 2026-07-20) — #PR
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
