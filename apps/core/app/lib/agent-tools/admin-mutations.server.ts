@@ -19,6 +19,40 @@ import {
   resolveAdminCourseId,
   resolveAdminUserId,
 } from "./admin-context.server";
+import {
+  connectCanvasForUser,
+  disconnectCanvasForUser,
+  linkCanvasRosterForUser,
+  syncCanvasForUser,
+} from "./admin-canvas.server";
+import {
+  createAdminInvitation,
+  resendAdminInvitation,
+  revokeAdminInvitation,
+} from "./admin-invitations.server";
+import {
+  addAdminCourseTA,
+  createAdminAiModel,
+  createAdminAiProvider,
+  createAdminCourse,
+  deleteAdminAiModel,
+  deleteAdminAiProvider,
+  deleteAdminCourse,
+  deleteAdminCourseMaterial,
+  removeAdminCourseTA,
+  renameAdminCourseMaterial,
+  setAdminCoursePublished,
+  startAdminCourseReEmbed,
+  syncAdminCanvasMaterials,
+  triggerAdminCronJob,
+  updateAdminAiModel,
+  updateAdminAiProvider,
+  updateAdminCourse,
+  updateAdminCourseEmbeddingSettings,
+  updateAdminCourseRagSettings,
+  updateAdminCronSchedule,
+  updateAdminPolicy,
+} from "./admin-platform.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 type MutationResult = Record<string, unknown> | ToolError;
@@ -34,6 +68,34 @@ export const ADMIN_WRITE_TOOL_NAMES = new Set([
   "createCourseTopic",
   "updateCourseTopic",
   "deleteCourseTopic",
+  "createInvitation",
+  "revokeInvitation",
+  "resendInvitation",
+  "connectCanvas",
+  "syncCanvasCourses",
+  "disconnectCanvas",
+  "linkCanvasRoster",
+  "createCourse",
+  "updateCourse",
+  "deleteCourse",
+  "publishCourse",
+  "unpublishCourse",
+  "updateCourseRagSettings",
+  "renameCourseMaterial",
+  "deleteCourseMaterial",
+  "updateCourseEmbeddingSettings",
+  "startCourseReEmbed",
+  "syncCanvasMaterials",
+  "addCourseTA",
+  "removeCourseTA",
+  "updatePolicy",
+  "createAiProvider",
+  "updateAiProvider",
+  "deleteAiProvider",
+  "createAiModel",
+  "updateAiModel",
+  "deleteAiModel",
+  "triggerCronJob",
 ]);
 
 export function isAdminWriteToolName(name: string): boolean {
@@ -80,7 +142,7 @@ export function userRefValidationError(opts: {
   });
 }
 
-/** When the model calls a write tool before the admin confirmed in chat. */
+/** When the model calls a write tool before a matching preview was registered. */
 export function requireWriteConfirmation(confirmed: boolean): MutationResult | null {
   if (confirmed === true) {
     return null;
@@ -88,7 +150,7 @@ export function requireWriteConfirmation(confirmed: boolean): MutationResult | n
   return mutationFailure({
     error: "CONFIRMATION_REQUIRED",
     message:
-      "Write not applied — wait for the admin to explicitly confirm in chat, then call this tool again with confirmed: true.",
+      "Write not applied — call once with confirmed: false (same arguments) to register a preview, wait for the admin to explicitly confirm in chat, then call again with confirmed: true.",
   });
 }
 
@@ -118,22 +180,57 @@ export async function runAdminWriteTool(
   return result;
 }
 
+/**
+ * Gate admin write tools: confirmed=false registers a payload-bound preview;
+ * confirmed=true only proceeds if that preview was registered on an earlier
+ * chat turn (not LLM-only attestation within the same generation).
+ */
 export async function runConfirmedAdminWriteTool(
   toolName: string,
   actor: RbacUser,
   confirmed: boolean,
   run: () => Promise<MutationResult>,
+  payload: Record<string, unknown> = {},
+  turnId: string | null = null,
 ): Promise<MutationResult> {
-  const gate = requireWriteConfirmation(confirmed);
-  if (gate) {
+  const {
+    registerWritePreview,
+    consumeWritePreview,
+  } = await import("./admin-write-confirmation.server");
+
+  // Always bind previews to tool name so confirmed=true cannot skip preview
+  // or reuse a preview from a different write tool.
+  const boundPayload = { __tool: toolName, ...payload };
+
+  if (confirmed !== true) {
+    registerWritePreview(actor.id, toolName, boundPayload, undefined, turnId);
     console.info("[admin-chat:write]", {
       tool: toolName,
       actorId: actor.id,
       writeSucceeded: false,
       error: "CONFIRMATION_REQUIRED",
     });
-    return gate;
+    return requireWriteConfirmation(false)!;
   }
+
+  const consumed = consumeWritePreview(actor.id, toolName, boundPayload, turnId);
+  if (consumed !== "ok") {
+    console.info("[admin-chat:write]", {
+      tool: toolName,
+      actorId: actor.id,
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+      reason: consumed,
+    });
+    return mutationFailure({
+      error: "CONFIRMATION_REQUIRED",
+      message:
+        consumed === "same_turn"
+          ? "Write not applied — confirmation must come after a new admin message in chat (same-generation confirmed:true is rejected)."
+          : "No matching preview for these arguments. Call with confirmed: false first (same args), wait for admin confirmation in a later message, then confirmed: true.",
+    });
+  }
+
   return runAdminWriteTool(toolName, actor, run);
 }
 
@@ -156,6 +253,9 @@ function mapEnrollmentResult(
           ? { currentInstructorCount: result.currentInstructorCount }
           : {}),
       });
+    }
+    if (result.status === "403" && "error" in result) {
+      return mutationFailure({ error: result.error });
     }
     if (result.status === "404") {
       return mutationFailure({ error: "NOT_FOUND" });
@@ -375,10 +475,15 @@ export async function createAdminEnrollment(
   }
 
   const mapped = mapEnrollmentResult(
-    await addEnrollment(resolved.courseId, {
-      userId: resolvedUser.userId,
-      role: opts.role,
-    }),
+    await addEnrollment(
+      resolved.courseId,
+      {
+        userId: resolvedUser.userId,
+        role: opts.role,
+      },
+      // Admin chat write tools are ADMIN-gated; platform admins are always rank 4.
+      4,
+    ),
   );
   if ("writeSucceeded" in mapped && mapped.writeSucceeded === false) {
     return mapped;
@@ -628,4 +733,318 @@ export async function deleteAdminCourseTopic(
       name: opts.name,
     }),
   );
+}
+
+function isToolError(result: { error?: string }): result is { error: string; fields?: Record<string, string> } {
+  return typeof result.error === "string";
+}
+
+function mapToolError(result: { error: string; fields?: Record<string, string> }): MutationResult {
+  return mutationFailure(result);
+}
+
+/** ADMIN — create invitation and send email (POST /api/invitations). */
+export async function createAdminInvitationMutation(
+  actor: RbacUser,
+  input: {
+    email: string;
+    name?: string;
+    role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
+    authorizedUnits?: string[];
+  },
+): Promise<MutationResult> {
+  const result = await createAdminInvitation(actor, input);
+  if (isToolError(result)) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — revoke a pending invitation (DELETE /api/invitations/:id). */
+export async function revokeAdminInvitationMutation(
+  actor: RbacUser,
+  invitationId: string,
+): Promise<MutationResult> {
+  const result = await revokeAdminInvitation(actor, invitationId);
+  if (isToolError(result)) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — resend invitation email (POST /api/invitations/:id). */
+export async function resendAdminInvitationMutation(
+  actor: RbacUser,
+  invitationId: string,
+): Promise<MutationResult> {
+  const result = await resendAdminInvitation(actor, invitationId);
+  if (isToolError(result)) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — connect Canvas for self or an instructor (POST /api/canvas/connect). */
+export async function connectAdminCanvas(
+  actor: RbacUser,
+  input: {
+    instructorUserId?: string;
+    instructorEmail?: string;
+    canvasUrl: string;
+    apiKey?: string;
+    isTestMode?: boolean;
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await connectCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — sync Canvas courses (POST /api/canvas/sync). */
+export async function syncAdminCanvasCourses(
+  actor: RbacUser,
+  input: {
+    instructorUserId?: string;
+    instructorEmail?: string;
+    canvasCourseIds: string[];
+  },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await syncCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — disconnect Canvas (DELETE /api/canvas/disconnect). */
+export async function disconnectAdminCanvas(
+  actor: RbacUser,
+  input: { instructorUserId?: string; instructorEmail?: string },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const result = await disconnectCanvasForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+/** ADMIN — link Canvas roster for a student/TA (POST /api/canvas/link-roster). */
+export async function linkAdminCanvasRoster(
+  actor: RbacUser,
+  input: { userId?: string; userEmail?: string; studentNumber: string },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+
+  const userRefError = userRefValidationError({
+    userId: input.userId,
+    userEmail: input.userEmail,
+  });
+  if (userRefError) {
+    return userRefError;
+  }
+
+  const result = await linkCanvasRosterForUser(actor, input);
+  if ("error" in result) {
+    return mapToolError(result);
+  }
+  return mutationPayload(result);
+}
+
+function wrapPlatformResult(result: Record<string, unknown> | ToolError): MutationResult {
+  if ("error" in result) {
+    return mutationFailure(result as ToolError & Record<string, unknown>);
+  }
+  return mutationPayload(result);
+}
+
+export async function createAdminCourseMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminCourse(actor, input));
+}
+
+export async function updateAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourse(actor, opts, input));
+}
+
+export async function deleteAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminCourse(actor, opts));
+}
+
+export async function publishAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await setAdminCoursePublished(actor, opts, true));
+}
+
+export async function unpublishAdminCourseMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await setAdminCoursePublished(actor, opts, false));
+}
+
+export async function updateAdminCourseRagSettingsMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourseRagSettings(actor, opts, input));
+}
+
+export async function renameAdminCourseMaterialMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    materialId: string;
+    name: string;
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await renameAdminCourseMaterial(actor, opts));
+}
+
+export async function deleteAdminCourseMaterialMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    materialId: string;
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminCourseMaterial(actor, opts));
+}
+
+export async function updateAdminCourseEmbeddingSettingsMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCourseEmbeddingSettings(actor, opts, input));
+}
+
+export async function startAdminCourseReEmbedMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null },
+): Promise<MutationResult> {
+  const denied = requirePlatformAdmin(actor);
+  if (denied) return denied;
+  const result = await startAdminCourseReEmbed(actor, opts);
+  if ("error" in result) return mutationFailure(result as ToolError);
+  return mutationPayload(result);
+}
+
+export async function syncAdminCanvasMaterialsMutation(
+  actor: RbacUser,
+  opts: {
+    courseId?: string;
+    courseCode?: string;
+    fallbackCourseId?: string | null;
+    canvasFileIds: string[];
+  },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await syncAdminCanvasMaterials(actor, opts));
+}
+
+export async function addAdminCourseTAMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await addAdminCourseTA(actor, opts));
+}
+
+export async function removeAdminCourseTAMutation(
+  actor: RbacUser,
+  opts: { courseId?: string; courseCode?: string; fallbackCourseId?: string | null; userId: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await removeAdminCourseTA(actor, opts));
+}
+
+export async function updateAdminPolicyMutation(
+  actor: RbacUser,
+  key: string,
+  value: boolean,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminPolicy(actor, key, value));
+}
+
+export async function createAdminAiProviderMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminAiProvider(actor, input));
+}
+
+export async function updateAdminAiProviderMutation(
+  actor: RbacUser,
+  providerId: string,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminAiProvider(actor, providerId, input));
+}
+
+export async function deleteAdminAiProviderMutation(
+  actor: RbacUser,
+  providerId: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminAiProvider(actor, providerId));
+}
+
+export async function createAdminAiModelMutation(
+  actor: RbacUser,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await createAdminAiModel(actor, input));
+}
+
+export async function updateAdminAiModelMutation(
+  actor: RbacUser,
+  modelId: string,
+  input: Record<string, unknown>,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminAiModel(actor, modelId, input));
+}
+
+export async function deleteAdminAiModelMutation(
+  actor: RbacUser,
+  modelId: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await deleteAdminAiModel(actor, modelId));
+}
+
+export async function triggerAdminCronJobMutation(
+  actor: RbacUser,
+  jobName: string,
+): Promise<MutationResult> {
+  return wrapPlatformResult(await triggerAdminCronJob(actor, jobName));
+}
+
+export async function updateAdminCronScheduleMutation(
+  actor: RbacUser,
+  input: { jobName: string; schedule: string; scheduleLabel: string },
+): Promise<MutationResult> {
+  return wrapPlatformResult(await updateAdminCronSchedule(actor, input));
 }

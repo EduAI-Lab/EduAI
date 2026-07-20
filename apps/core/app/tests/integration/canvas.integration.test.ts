@@ -165,14 +165,14 @@ describe("Canvas API — auth", () => {
     noSession();
     const res = await call("GET", "integration");
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ success: false, error: "Unauthorized" });
+    expect(await res.json()).toEqual({ success: false, error: "UNAUTHORIZED" });
   });
 
   it("returns 403 for STUDENT role", async () => {
     sessionFor(studentId, "STUDENT");
     const res = await call("GET", "integration");
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ success: false, error: "Forbidden: instructors only" });
+    expect(await res.json()).toEqual({ success: false, error: "FORBIDDEN" });
   });
 });
 
@@ -303,7 +303,7 @@ describe("Canvas API — connect / integration / disconnect", () => {
       context: {} as never,
     } as any);
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ success: false, error: "Invalid JSON body" });
+    expect(await res.json()).toEqual({ success: false, error: "INVALID_JSON" });
   });
 
   it("returns 200 on disconnect when no integration exists", async () => {
@@ -320,7 +320,7 @@ describe("Canvas API — connect / integration / disconnect", () => {
     sessionFor(instructorId, "INSTRUCTOR");
     const res = await call("PUT", "integration");
     expect(res.status).toBe(405);
-    expect(await res.json()).toEqual({ success: false, error: "Method not allowed" });
+    expect(await res.json()).toEqual({ success: false, error: "METHOD_NOT_ALLOWED" });
   });
 });
 

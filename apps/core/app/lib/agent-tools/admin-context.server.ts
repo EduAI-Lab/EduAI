@@ -1,7 +1,7 @@
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
-import { listAccessibleCourses, getAccessibleCourse, listAccessibleCourseTopics, getAccessibleCourseTopic } from "./course-context.server";
 import { listBugReports } from "~/lib/bug-reports/server";
+import { listAccessibleCourses, getAccessibleCourse, listAccessibleCourseTopics, getAccessibleCourseTopic } from "./course-context.server";
 
 type ToolError = { error: string; fields?: Record<string, string> };
 
