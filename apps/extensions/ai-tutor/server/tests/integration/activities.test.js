@@ -1126,37 +1126,11 @@ describe('Tutoring-flow: question consumption via Core', () => {
     }
   });
 
-  it('/teach omits courseId from EduAI chat body when the offering is unlinked (#1021)', async () => {
-    await prisma.courseOffering.update({
-      where: { id: seed.course.id },
-      data: { coreOfferingId: null },
-    });
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
-      }),
-    );
-
-    const res = await request(studentApp)
-      .post(`/api/activities/${activity.id}/teach`)
-      .set('Cookie', 'session=test-cookie')
-      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
-    expect(res.status).toBe(200);
-
-    const chatBodies = fetch.mock.calls
-      .filter(
-        ([url, opts]) =>
-          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
-      )
-      .map(([, opts]) => JSON.parse(opts.body));
-    expect(chatBodies.length).toBeGreaterThan(0);
-    for (const body of chatBodies) {
-      expect(body).not.toHaveProperty('courseId');
-    }
-  });
+  // The "coreOfferingId is null" scenario is no longer constructible: #1072
+  // step 4 made `coreOfferingId` required at the DB level, so every
+  // CourseOffering row is Core-linked by construction. Linked-course
+  // courseId forwarding is covered by the test above; omitting courseId for
+  // an unlinked offering cannot be integration-tested against Prisma.
 
   it('/teach proceeds with empty question bank and returns 200 when Core questions fetch fails', async () => {
     vi.stubGlobal(
