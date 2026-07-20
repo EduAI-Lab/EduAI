@@ -98,26 +98,6 @@ The creating professor is automatically assigned as `LEAD` instructor. If `sourc
 
 ---
 
-### `PATCH /api/courses/:courseId`
-
-Update course metadata.
-
-**Auth:** PROFESSOR (course instructor).
-
-**Body:**
-```json
-{
-  "title": "string",
-  "description": "string",
-  "startDate": "ISO 8601",
-  "endDate": "ISO 8601"
-}
-```
-
-**Response:** `Course`
-
----
-
 ### `PATCH /api/courses/:courseId/publish`
 
 Publish a course, making it visible to enrolled students.
@@ -166,9 +146,9 @@ List importable courses from the EduAI platform.
 
 **Auth:** PROFESSOR.
 
-**Behavior:** Returns courses from EduAI that have not yet been imported by this instructor.
+**Behavior:** Returns the caller's Core-scoped course descriptors (raw Core `GET /api/courses` shape) minus any course already anchored in AI Tutor.
 
-**Response:** `EduAiCourse[]`
+**Response:** array of Core course objects (`{ id, name, code, term, year, department, isPublished, ... }`) — the local `EduAiCourse` type was removed with the anchor refactor (#1072); Core's course payload is passed through as-is.
 
 ---
 
@@ -185,7 +165,7 @@ Import a course from the EduAI platform.
 }
 ```
 
-Creates a `CourseOffering` with `externalSource: 'EDUAI'`, then syncs topics and student enrollments from EduAI concurrently.
+Creates a `CourseOffering` anchor row (`coreOfferingId` set to the EduAI course id), then syncs topics and student enrollments from EduAI concurrently.
 
 **Response:** `201 Created` with `Course`
 

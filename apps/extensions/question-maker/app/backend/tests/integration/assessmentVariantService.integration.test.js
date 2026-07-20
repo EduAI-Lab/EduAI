@@ -38,7 +38,7 @@ describeDb('assessmentVariantService (integration)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants, VariantSelectionCursor } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({
       setAssessmentStudyRole,
       getBlueprintSnapshot,
