@@ -1,17 +1,20 @@
-/** Multi-server vLLM fleet routing — job types and pick results. */
+/** Multi-server vLLM fleet routing — job types, chat features, and pick results. */
 
 export type JobType = "interactive" | "background";
+export type WorkloadFeature = "chat" | "tutor" | "question-maker";
 
 export type FleetServer = {
   id: string;
   baseUrl: string;
   jobTypes: JobType[];
   models: string[];
+  energySidecarUrl: string;
 };
 
 export type FleetPick = {
   serverId: string;
   baseUrl: string;
+  energySidecarUrl: string;
   reason: string;
 };
 
@@ -22,7 +25,36 @@ export type FleetHealthResult = {
   error?: string;
 };
 
+const WORKLOAD_FEATURES: WorkloadFeature[] = ["chat", "tutor", "question-maker"];
 const JOB_TYPES: JobType[] = ["interactive", "background"];
+
+export function parseWorkloadFeature(routingContext: unknown): WorkloadFeature {
+  if (!routingContext || typeof routingContext !== "object") {
+    return "chat";
+  }
+  const feature = (routingContext as { feature?: unknown }).feature;
+  if (typeof feature === "string" && WORKLOAD_FEATURES.includes(feature as WorkloadFeature)) {
+    return feature as WorkloadFeature;
+  }
+  return "chat";
+}
+
+/** Map the legacy feature vocabulary onto the canonical fleet job types. */
+export function jobTypeForWorkloadFeature(feature: WorkloadFeature): JobType {
+  return feature === "question-maker" ? "background" : "interactive";
+}
+
+export function buildFleetRouterFeatures(
+  feature: WorkloadFeature,
+  fleetPick: FleetPick | null,
+): Record<string, unknown> {
+  return {
+    feature,
+    ...(fleetPick
+      ? { fleetServerId: fleetPick.serverId, fleetReason: fleetPick.reason }
+      : {}),
+  };
+}
 
 /** Parse validated `routingContext.jobType`; default interactive. */
 export function parseJobType(routingContext: unknown): JobType {
