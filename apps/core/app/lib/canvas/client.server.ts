@@ -91,10 +91,10 @@ const MOCK_CANVAS_COURSES: CanvasCourseApi[] = [
 
 const MOCK_CANVAS_ROSTER: Record<number, CanvasCourseUserApi[]> = {
   1: [
-    { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "student_1" },
-    { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "student_2" },
+    { id: 101, name: "Student One", email: "student1@example.com", sis_user_id: "10000001" },
+    { id: 102, name: "Student Two", email: "student2@example.com", sis_user_id: "10000002" },
   ],
-  2: [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "student_3" }],
+  2: [{ id: 103, name: "Student Three", email: "student3@example.com", sis_user_id: "10000003" }],
   3: [],
 };
 
