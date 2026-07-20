@@ -64,7 +64,7 @@ describe('makeCanvasRequest — SSRF re-validation at request time (#991)', () =
     expect(axiosRequest).toHaveBeenCalled();
   });
 
-  it('pins the DNS lookup and disables redirects, so a resolved/redirected private address cannot be reached', async () => {
+  it('pins the DNS lookup and re-validates each redirect hop, so a resolved/redirected private address cannot be reached', async () => {
     integrationFindOne.mockResolvedValue({
       isTestMode: false,
       canvasUrl: 'https://canvas.example.edu',
@@ -75,7 +75,41 @@ describe('makeCanvasRequest — SSRF re-validation at request time (#991)', () =
     await getCanvasCourses(42);
 
     const requestConfig = axiosRequest.mock.calls[0][0];
-    expect(requestConfig.maxRedirects).toBe(0);
+    expect(requestConfig.maxRedirects).toBeGreaterThan(0);
     expect(typeof requestConfig.lookup).toBe('function');
+    expect(typeof requestConfig.beforeRedirect).toBe('function');
+  });
+
+  it.each([
+    ['a private IP', { protocol: 'https:', hostname: '169.254.169.254', path: '/api/v1/courses' }],
+    ['a downgrade to http', { protocol: 'http:', hostname: 'canvas.example.edu', path: '/api/v1/courses' }],
+  ])('beforeRedirect rejects a redirect hop targeting %s', async (_label, redirectOptions) => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    expect(() => beforeRedirect(redirectOptions)).toThrow();
+  });
+
+  it('beforeRedirect allows a redirect hop to another valid https host', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    expect(() =>
+      beforeRedirect({ protocol: 'https:', hostname: 'canvas.example.edu', path: '/api/v1/courses/' })
+    ).not.toThrow();
   });
 });
