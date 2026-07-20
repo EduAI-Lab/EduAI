@@ -1,24 +1,10 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
+import { baseVitestConfig } from './vitest.shared';
 
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
-
-function findMonorepoRoot(startDir: string): string {
-  let dir = startDir;
-  while (!fs.existsSync(path.join(dir, 'packages', 'ui'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new Error(`Could not locate monorepo root (packages/ui) starting from ${startDir}`);
-    }
-    dir = parent;
-  }
-  return dir;
-}
-
-const rootDir = findMonorepoRoot(coreDir);
+const base = baseVitestConfig(coreDir);
 
 // Stryker's coverage-analysis dry run must run this suite's full include set
 // once, green, before mutating — and the whole 199-file app/tests/unit suite
@@ -28,24 +14,16 @@ const rootDir = findMonorepoRoot(coreDir);
 // the RBAC/auth/canvas-encryption modules Stryker mutates (found via grep
 // for imports of those modules across app/tests/unit).
 //
-// Deliberately NOT built via mergeConfig(baseConfig, {...}): vitest/vite's
-// mergeConfig concatenates array fields rather than overriding them, so
-// merging a narrow `include` onto vitest.config.ts's catch-all glob would
-// still match every file. Duplicating the base config's plugins/resolve/test
-// settings here keeps `include` a true override.
+// This list is a hand-curated snapshot, not automatically derived — it is
+// NOT kept in sync automatically if a test file starts or stops covering
+// one of the 11 modules listed in stryker.config.mjs's `mutate` array.
+// Re-grep app/tests/unit for imports of those modules before relying on a
+// new mutation baseline if either the mutate list or the test suite has
+// changed meaningfully since this was last derived.
 export default defineConfig({
-  plugins: [tsconfigPaths()],
-  resolve: {
-    alias: {
-      '@eduai/ui/term': path.resolve(rootDir, 'packages/ui/src/lib/term.ts'),
-      '@eduai/ui': path.resolve(rootDir, 'packages/ui/src/index.ts'),
-    },
-  },
+  ...base,
   test: {
-    globals: true,
-    environment: 'happy-dom',
-    fileParallelism: false,
-    setupFiles: ['./app/tests/setup.ts'],
+    ...base.test,
     include: [
       'app/tests/unit/admin-bug-reports.test.ts',
       'app/tests/unit/agent-tools.admin-context.test.ts',

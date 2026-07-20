@@ -6,9 +6,12 @@ const config = {
   coverageAnalysis: 'perTest',
   reporters: ['html', 'clear-text', 'progress'],
   vitest: {
-    // Excludes embedding.rag-settings.test.ts, which requires a local Ollama
-    // instance and fails in this environment regardless of mutation testing —
-    // a pre-existing gap unrelated to the modules mutated below.
+    // A separate, narrowed test config (not the main vitest.config.ts) —
+    // its `include` allowlists only the test files covering the modules
+    // mutated below. This is necessary because Stryker's dry run requires
+    // the entire included suite to pass, and the full app/tests/unit suite
+    // both times out here and includes embedding.rag-settings.test.ts,
+    // which requires a local Ollama instance (a pre-existing, unrelated gap).
     configFile: 'vitest.mutation.config.ts',
   },
   mutate: [
