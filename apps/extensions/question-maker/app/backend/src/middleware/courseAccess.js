@@ -39,8 +39,12 @@ export function minRank(min) {
  * UNIT_ADMIN callers don't carry `authorizedUnits` on the QM session (Core's
  * `/api/sessions/validate` returns only id/email/name/role) — fetch lazily via
  * `/api/me` with the caller's cookie. Returns [] if unavailable.
+ *
+ * Exported so `courseListService.listCoursesForUser` can reuse it for the
+ * UNIT_ADMIN unit-lock check in the batched list path (#1072 unified contract)
+ * without duplicating the "already on req.user vs fetch /api/me" logic.
  */
-async function getAuthorizedUnits(reqUser, cookie) {
+export async function getAuthorizedUnits(reqUser, cookie) {
   if (Array.isArray(reqUser.authorizedUnits)) return reqUser.authorizedUnits;
   const profile = await getMyProfileFromCore(cookie).catch(() => null);
   return Array.isArray(profile?.authorizedUnits) ? profile.authorizedUnits : [];
@@ -71,7 +75,10 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
   if (reqUser.role === 'UNIT_ADMIN') {
     let coreCourse = null;
     try {
-      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie });
+      // Unified contract (#1072): `department` is a FIELD read — service-key
+      // first, so the result never depends on the caller's own Core
+      // enrollment (cookie remains the fallback when no key is configured).
+      coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
     } catch {
       if (reqUser.id === course.userId) return LEVELS.instructor;
       // fall through to enrollment check

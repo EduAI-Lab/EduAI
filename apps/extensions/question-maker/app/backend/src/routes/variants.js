@@ -9,6 +9,13 @@
  *    (isDraft:false), and the approved-variant 409 lock.
  * Course scoping in the service layer keys off the authorized course's owner id
  * (`req.qmCourse.userId`); authorization itself is the middleware's job.
+ *
+ * #1080/#1072 §4 step 9: reviewed questions are immutable. The 409 lock below covers
+ * questionText/difficulty/secondaryTopicsId (variant fields); `type` + `primaryTopicId`
+ * live on Question_Metadata and are locked the same way in `questionService.updateQuestion`
+ * (same 409 VARIANT_LOCKED convention) whenever any sibling variant is still reviewed.
+ * Un-reviewing (isDraft:true) clears `coreQuestionId` in `updateVariant` so the next
+ * approval re-pushes instead of the state-based push guard below treating it as linked.
  */
 import express from 'express';
 import {

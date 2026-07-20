@@ -41,6 +41,13 @@ describe('getCoreCourseId wiring helper (#1021)', () => {
     expect(getCoreCourseId({ coreOfferingId: '   ' })).toBeNull();
     expect(getCoreCourseId({ coreOfferingId: 42 })).toBeNull();
   });
+
+  it('exposes trimNonEmpty for shared callEduAI / wiring trim', async () => {
+    const { trimNonEmpty } = await import('../../src/utils/coreCourseId.js');
+    expect(trimNonEmpty('  abc  ')).toBe('abc');
+    expect(trimNonEmpty('   ')).toBeNull();
+    expect(trimNonEmpty(null)).toBeNull();
+  });
 });
 
 describe('callEduAI courseId pass-through (#1021)', () => {

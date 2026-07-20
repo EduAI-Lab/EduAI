@@ -1,9 +1,30 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isRateLimited } from "~/lib/auth/rate-limit.server";
+import { isRateLimited, parseEnvInt, resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  resetRateLimitsForTests();
+});
+
+describe("parseEnvInt", () => {
+  it("returns the fallback when the value is undefined", () => {
+    expect(parseEnvInt(undefined, 20)).toBe(20);
+  });
+
+  it("returns the fallback — not 0 — when the value is an empty string", () => {
+    // Number(process.env.X ?? fallback) only guards null/undefined; an
+    // empty string skips the fallback and parses to 0.
+    expect(parseEnvInt("", 20)).toBe(20);
+  });
+
+  it("returns the fallback when the value is not a finite number", () => {
+    expect(parseEnvInt("not-a-number", 20)).toBe(20);
+  });
+
+  it("parses a valid numeric string", () => {
+    expect(parseEnvInt("42", 20)).toBe(42);
+  });
 });
 
 describe("isRateLimited", () => {
@@ -45,5 +66,89 @@ describe("isRateLimited", () => {
     isRateLimited("10.0.0.7");
     isRateLimited("10.0.0.7");
     expect(isRateLimited("10.0.0.7")).toBe(true);
+  });
+});
+
+// #990: the store must stay bounded even when many distinct keys never
+// return, instead of growing forever as a slow memory leak.
+describe("isRateLimited — bounded store (#990)", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("evicts stale keys once the store exceeds RATE_LIMIT_MAX_KEYS", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    // Three old keys that will never return...
+    isRateLimitedBounded("stale-1", 5, 1_000);
+    isRateLimitedBounded("stale-2", 5, 1_000);
+    isRateLimitedBounded("stale-3", 5, 1_000);
+
+    // ...advance well past STALE_ENTRY_MS (1h) so those keys are sweep-eligible.
+    vi.setSystemTime(start + 61 * 60_000);
+
+    // A fourth key pushes the store over the cap and triggers the sweep.
+    isRateLimitedBounded("fresh-1", 5, 1_000);
+
+    // The stale keys were evicted, so they behave like first-time callers again.
+    expect(isRateLimitedBounded("stale-1", 1, 1_000)).toBe(false);
+  });
+
+  it("falls back to evicting the oldest key when every entry is still hot", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "2");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    // Two hot keys, then a third — all within the window, so the sweep can't
+    // reclaim anything and the oldest-inserted key ("hot-1") must be evicted.
+    isRateLimitedBounded("hot-1", 5, 60_000);
+    isRateLimitedBounded("hot-2", 5, 60_000);
+    isRateLimitedBounded("hot-3", 5, 60_000);
+
+    // hot-1's hit count was dropped by the fallback eviction, so it now reads
+    // as a fresh key even though its most recent hit is still in-window.
+    expect(isRateLimitedBounded("hot-1", 1, 60_000)).toBe(false);
+  });
+
+  it("does not treat RATE_LIMIT_MAX_KEYS='' as a cap of 0", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    // A cap of 0 would trigger eviction on every single insert. With the
+    // empty string falling back to the 50k default, a handful of keys
+    // should coexist untouched.
+    isRateLimitedBounded("k1", 5, 60_000);
+    isRateLimitedBounded("k2", 5, 60_000);
+    expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
+  });
+
+  it("evicts below the cap (not just back to it) so a sweep isn't re-triggered on the very next insert", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    // Fill past the cap once, forcing the oldest-key fallback eviction.
+    for (let i = 0; i < 11; i++) {
+      isRateLimitedBounded(`hot-${i}`, 5, 60_000);
+    }
+
+    // The most recently inserted keys should have survived the eviction and
+    // still be tracked as repeat callers (not reset to fresh).
+    expect(isRateLimitedBounded("hot-10", 1, 60_000)).toBe(true);
   });
 });

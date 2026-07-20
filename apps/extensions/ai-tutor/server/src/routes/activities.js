@@ -49,6 +49,11 @@ import {
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { getEduAiBaseUrl, listCourseTestableQuestions } from '../services/eduaiClient.js';
 import {
+  isCoursePublishedLive,
+  resolveCoreCourseById,
+  resolveCoreCourseCatalog,
+} from '../services/courseResolver.js';
+import {
   ActivityFeedbackRequestSchema,
   CustomRequestSchema,
   GuideRequestSchema,
@@ -58,9 +63,6 @@ import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/sche
 import { getCoreCourseId } from '../utils/coreCourseId.js';
 
 const router = express.Router();
-
-// Re-export for unit tests that assert the activities → EduAI wiring helper.
-export { getCoreCourseId };
 
 const normalizeCustomPrompt = (value) => {
   if (typeof value !== 'string') return null;
@@ -74,14 +76,16 @@ const normalizeCustomPromptTitle = (value) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-function getCourseCode(course) {
-  return (
-    (course.externalMetadata &&
-      typeof course.externalMetadata === 'object' &&
-      typeof course.externalMetadata.code === 'string' &&
-      course.externalMetadata.code) ||
-    (typeof course.externalId === 'string' ? course.externalId : null)
-  );
+/**
+ * Course code for AI-prompt context. `code` is Core-owned (#1072 step 3) —
+ * no longer mirrored into `externalMetadata`/`externalId` — so this is a
+ * single fail-soft Core fetch keyed on the offering's `coreOfferingId`.
+ * Empty string (never a thrown error) when Core is unreachable or the
+ * offering has no Core link.
+ */
+async function getCourseCode(coreOfferingId) {
+  const { course } = await resolveCoreCourseById(coreOfferingId);
+  return typeof course?.code === 'string' ? course.code : '';
 }
 
 function getActivityAccess(course, authUser) {
@@ -191,10 +195,6 @@ async function loadActivityForChat(activityId) {
               courseOffering: {
                 select: {
                   id: true,
-                  isPublished: true,
-                  externalId: true,
-                  externalSource: true,
-                  externalMetadata: true,
                   coreOfferingId: true,
                   enrollments: { select: { userId: true } },
                 },
@@ -224,7 +224,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     return res.status(403).json({ error: 'Not enrolled in this course' });
   }
   const lesson = activity.lesson;
-  if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished) {
+  if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished) {
     return res.status(403).json({ error: 'Activity is not available' });
   }
 
@@ -264,10 +264,14 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
     const chatId = payload.chatId || existingSession?.chatId || null;
     const messageId = payload.messageId || randomUUID();
 
-    // Stage 4: fetch testable questions for the linked Core course (fail-soft).
-    const testableQuestions = course.coreOfferingId
-      ? await listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
-      : [];
+    // Stage 4: fetch testable questions + the course code, both from the
+    // linked Core course (fail-soft — empty/[] on any Core hiccup).
+    const [testableQuestions, courseCode] = await Promise.all([
+      course.coreOfferingId
+        ? listCourseTestableQuestions(course.coreOfferingId, { limit: 20 }).catch(() => [])
+        : Promise.resolve([]),
+      getCourseCode(course.coreOfferingId),
+    ]);
 
     // Stage 5: mode-specific EduAI call.
     const aiResult = await generateResponse({
@@ -278,7 +282,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       cookie,
       chatId,
       messageId,
-      courseCode: getCourseCode(course),
+      courseCode,
       courseId: getCoreCourseId(course),
       testableQuestions,
       signal: abortController.signal,
@@ -389,7 +393,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     );
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
     const isAdmin = authUser.role === 'ADMIN';
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
@@ -482,7 +486,7 @@ router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_AD
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === authUser.id,
     );
-    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
     if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
@@ -630,7 +634,7 @@ router.patch('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
-    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
     if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
@@ -867,7 +871,7 @@ router.delete('/activities/:activityId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     const isInstructor = activity.lesson.module.courseOffering.instructors.some(
       (assignment) => assignment.userId === instructor.id,
     );
-    const unitAdmin = isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(instructor, activity.lesson.module.courseOffering);
 
     if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this activity' });
@@ -926,7 +930,7 @@ router.post(
       }
 
       const course = activity.lesson.module.courseOffering;
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this activity' });
       }
 
@@ -988,7 +992,7 @@ router.post(
       }
 
       const targetCourse = targetLesson.module.courseOffering;
-      if (!isCourseAdmin(authUser, targetCourse)) {
+      if (!await isCourseAdmin(authUser, targetCourse)) {
         return res.status(403).json({ error: 'Not authorized for this lesson' });
       }
 
@@ -1013,7 +1017,7 @@ router.post(
       }
 
       const sourceCourse = sourceActivity.lesson.module.courseOffering;
-      if (!isCourseAdmin(authUser, sourceCourse)) {
+      if (!await isCourseAdmin(authUser, sourceCourse)) {
         return res.status(403).json({ error: 'Not authorized for the source activity' });
       }
 
@@ -1060,7 +1064,7 @@ router.get(
       if (!course) {
         return res.status(404).json({ error: 'Course not found' });
       }
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -1070,11 +1074,23 @@ router.get(
         const all = await prisma.courseOffering.findMany({ select: { id: true } });
         manageableCourseIds = all.map((c) => c.id);
       } else if (authUser.role === 'UNIT_ADMIN') {
+        // `department` is Core-owned (#1072 step 4) — a FIELD, so per the
+        // unified contract it joins one batched service-key catalog fetch,
+        // never the cookie-scoped list. Fail-soft: Core unavailable degrades
+        // the department scope to empty, not an error (courses this admin
+        // personally leads still show).
         const units = Array.isArray(authUser.authorizedUnits) ? authUser.authorizedUnits : [];
+        let deptCoreIds = [];
+        if (units.length > 0) {
+          const { courses: catalogCourses } = await resolveCoreCourseCatalog();
+          deptCoreIds = catalogCourses
+            .filter((c) => c?.department && units.includes(c.department))
+            .map((c) => c.id);
+        }
         const owned = await prisma.courseOffering.findMany({
           where: {
             OR: [
-              ...(units.length > 0 ? [{ department: { in: units } }] : []),
+              ...(deptCoreIds.length > 0 ? [{ coreOfferingId: { in: deptCoreIds } }] : []),
               { instructors: { some: { userId: authUser.id } } },
             ],
           },
@@ -1153,10 +1169,7 @@ router.post('/questions/:id/answer', async (req, res) => {
                 courseOffering: {
                   select: {
                     id: true,
-                    isPublished: true,
-                    externalId: true,
-                    externalSource: true,
-                    externalMetadata: true,
+                    coreOfferingId: true,
                     enrollments: { select: { userId: true } },
                   },
                 },
@@ -1180,7 +1193,7 @@ router.post('/questions/:id/answer', async (req, res) => {
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
     const answerLesson = activity.lesson;
-    if (!course.isPublished || !answerLesson.module.isPublished || !answerLesson.isPublished) {
+    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !answerLesson.module.isPublished || !answerLesson.isPublished) {
       return res.status(403).json({ error: 'Activity is not available' });
     }
 
@@ -1271,7 +1284,7 @@ router.post('/activities/:activityId/teach', async (req, res) => {
     if (!course.enrollments.some((e) => e.userId === authUser.id))
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
-    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
 
     let payload;
@@ -1342,7 +1355,7 @@ router.post('/activities/:activityId/guide', async (req, res) => {
     if (!course.enrollments.some((e) => e.userId === authUser.id))
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
-    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
 
     let payload;
@@ -1412,7 +1425,7 @@ router.post('/activities/:activityId/custom', async (req, res) => {
     if (!course.enrollments.some((e) => e.userId === authUser.id))
       return res.status(403).json({ error: 'Not enrolled in this course' });
     const lesson = activity.lesson;
-    if (!course.isPublished || !lesson?.module?.isPublished || !lesson?.isPublished)
+    if (!(await isCoursePublishedLive(course.coreOfferingId)) || !lesson?.module?.isPublished || !lesson?.isPublished)
       return res.status(403).json({ error: 'Activity is not available' });
 
     // Check if custom mode is enabled and has a prompt
@@ -1503,7 +1516,7 @@ router.get('/activities/:activityId/submissions', async (req, res) => {
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
-    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const unitAdmin = await isUnitAdminForCourse(authUser, course);
     const isAdmin = authUser.role === 'ADMIN';
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {
@@ -1596,7 +1609,7 @@ router.patch('/activities/:activityId/submissions/:submissionId', async (req, re
 
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
-    if (!isCourseAdmin(authUser, course) && !isTa) {
+    if (!await isCourseAdmin(authUser, course) && !isTa) {
       return res.status(403).json({ error: 'Not authorized for this submission' });
     }
 
@@ -1657,7 +1670,7 @@ router.get('/activities/:activityId/feedback', async (req, res) => {
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
     const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
-    const unitAdmin = isUnitAdminForCourse(authUser, course);
+    const unitAdmin = await isUnitAdminForCourse(authUser, course);
     const isAdmin = authUser.role === 'ADMIN';
 
     if (!isAdmin && !isInstructor && !isTa && !unitAdmin) {

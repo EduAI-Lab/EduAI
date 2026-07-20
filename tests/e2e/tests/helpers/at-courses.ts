@@ -17,7 +17,7 @@ function coreCourseForm(instrId: string, overrides: Record<string, string> = {})
     section: '001',
     term: 'W1',
     year: '2026',
-    startDate: '2026-08-15',
+    startDate: '2026-09-08',
     department: 'COSC',
     instructorUserIds: instrId,
     ...rest,
@@ -54,7 +54,9 @@ export async function importAtCourseForInstructor(
       const importRes = await instrCtx.post(`${AT}/api/courses/import-external`, {
         data: { externalCourseId: coreCourseId },
       });
-      expect(importRes.status()).toBe(201);
+      // Import is an idempotent ensure: 201 = created here, 200 = the
+      // throttled background mirror won the race and anchored it first.
+      expect([200, 201]).toContain(importRes.status());
       atCourse = await importRes.json();
     }
 
