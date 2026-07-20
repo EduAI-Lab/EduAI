@@ -194,7 +194,6 @@ export const questionService = {
     assessment?: {
       type: string;
       name: string;
-      semester: string;
     };
   }): Promise<{ questions: Question[]; assessmentId: number | null }> {
     const response = await api.post('/api/questions/extract/save', payload);

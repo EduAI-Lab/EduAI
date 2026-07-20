@@ -43,7 +43,7 @@ export function CourseSwitcher({
   // resolves; the fetched list replaces it once available.
   const options: CourseSwitcherOption[] =
     courses.length > 0
-      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title) }))
+      ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? 'Untitled course') }))
       : [{ id: courseId, ...splitTitle(currentTitle) }];
 
   return (

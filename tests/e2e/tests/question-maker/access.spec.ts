@@ -14,7 +14,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { CORE_URL, QM_BACKEND_URL } from '../../playwright.config';
-import { signUp, signOut, uniqueEmail, checkStatus } from '../helpers/auth';
+import { signUp, signOut, uniqueEmail, checkStatus, createInstructor } from '../helpers/auth';
+import { createQmCourseForInstructor } from '../helpers/qm-courses';
 
 // ---------------------------------------------------------------------------
 // Health / smoke
@@ -84,7 +85,7 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
     expect(body.user.isBugReportAdmin).toBe(false);
   });
 
-  test('GET /api/course returns an array for a new user (seeds default courses)', async ({
+  test('GET /api/course returns an empty array for a new user (no demo seeding)', async ({
     request,
   }) => {
     await signUp(request, { email: uniqueEmail('qm-courses') });
@@ -95,8 +96,9 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
     // Success envelope or direct array
     const list = Array.isArray(body) ? body : body?.data;
     expect(Array.isArray(list)).toBe(true);
-    // QM seeds default courses for every new user via findOrCreateUser
-    expect(list.length).toBeGreaterThan(0);
+    // #1072: QM no longer seeds demo courses on first login — every course is
+    // a caller-scoped anchor to a real Core course, created explicitly.
+    expect(list.length).toBe(0);
   });
 
   test('GET /api/questions is blocked for STUDENT (403)', async ({ request }) => {
@@ -107,22 +109,49 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
     expect(res.status()).toBe(403);
   });
 
-  test('can create and retrieve a QM course', async ({ request }) => {
-    await signUp(request, { email: uniqueEmail('qm-create-course') });
+  test('POST /api/course without coreCourseId returns 400', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('qm-create-missing') });
 
-    const createRes = await request.post(`${QM_BACKEND_URL}/api/course`, {
+    const res = await request.post(`${QM_BACKEND_URL}/api/course`, {
       data: { name: 'E2E Test Course', courseCode: 'E2E 101' },
     });
-    expect(createRes.status()).toBe(201);
-    const created = await createRes.json();
-    expect(created.success).toBe(true);
-    expect(created.data.name).toBe('E2E Test Course');
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+  });
+
+  test('POST /api/course with an unscoped coreCourseId returns 403', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('qm-create-unscoped') });
+
+    // A syntactically plausible Core course id the caller has no access to
+    // (not enrolled/teaching, not ADMIN) — isCoreCourseInScopedList rejects it.
+    const res = await request.post(`${QM_BACKEND_URL}/api/course`, {
+      data: { coreCourseId: 'nonexistent-or-unauthorized-course-id' },
+    });
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
+  });
+
+  test('can create a QM course anchor for a Core course the caller teaches, and retrieve it', async ({
+    request,
+    playwright,
+  }) => {
+    await createInstructor(request, { prefix: 'qm-create-course' });
+
+    const { coreCourseId, qmCourseId } = await createQmCourseForInstructor(playwright, request, {
+      name: 'E2E Test Course',
+      code: 'E2E 101',
+    });
+
+    expect(typeof qmCourseId).toBe('number');
 
     const listRes = await request.get(`${QM_BACKEND_URL}/api/course`);
     expect(listRes.status()).toBe(200);
     const listBody = await listRes.json();
     const list = Array.isArray(listBody) ? listBody : listBody?.data;
-    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list.some((c: any) => c.id === qmCourseId && c.coreCourseId === coreCourseId)).toBe(true);
   });
 });
 
@@ -168,16 +197,14 @@ test.describe('Question Maker RBAC', () => {
     const email = uniqueEmail('qm-no-questions');
     await signUp(request, { email });
 
-    // First create a course so we have a courseId
-    const courseRes = await request.post(`${QM_BACKEND_URL}/api/course`, {
-      data: { name: 'RBAC Course' },
-    });
-    const { data: course } = await courseRes.json();
-
+    // No course setup needed: the AUTHORS role guard fires before any DB
+    // access, so a literal courseId is enough (#1072 dropped local-only
+    // course creation, so POSTing {name} here would 400 before we even
+    // reach the assertion under test).
     const res = await request.post(`${QM_BACKEND_URL}/api/questions`, {
       data: {
         description: 'Test question',
-        courseId: course.id,
+        courseId: 1,
         primaryTopicId: 1,
         type: 'MCQ',
       },
