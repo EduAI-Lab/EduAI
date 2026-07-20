@@ -277,6 +277,7 @@ export type AiModel = {
   roleHint?: string | null;
   studentSelectable?: boolean;
   availability?: 'allowed' | 'admin-only' | 'blocked';
+  isDefaultTutor?: boolean;
 };
 
 export type SuggestedPrompt = {
