@@ -9,8 +9,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Cap and redact bug-report diagnostic fields before persist (screenshot rejected over 512KB chars; console/network logs redacted then truncated; context JSON sanitized + size-capped); admin list omits attachment blobs and exposes `has*` flags; `GET /api/admin/bug-reports/:id` returns full detail. Shared `redact.server` module extracted for key- and value-level scrubbing. (#979, @Ayyhab, 2026-07-20) — (#PR)
-- [ai-tutor] fix: Admin bug-report triage fetches attachment detail on demand (viewer/copy) so list responses stay lean after Core’s #979 change. (#979, @Ayyhab, 2026-07-20) — (#PR)
+- [core] fix: Cap and redact bug-report diagnostic fields before persist (screenshot rejected over 512KB chars; console/network logs redacted then truncated; context JSON sanitized + size-capped); admin list omits attachment blobs and exposes `has*` flags; `GET /api/admin/bug-reports/:id` returns full detail. Shared `redact.server` module extracted for key- and value-level scrubbing. (#979, @Ayyhab, 2026-07-20) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
+- [ai-tutor] fix: Admin bug-report triage fetches attachment detail on demand (viewer/copy) so list responses stay lean after Core’s #979 change. (#979, @Ayyhab, 2026-07-20) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
 
 ## [Week 10 — July 6–12, 2026]
 
@@ -648,8 +648,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] feat: ADHD Assist Phase 2 — mode-conditional system prompt. When `Chat.adhdAssist === true`, `POST /api/chat` prepends the verbatim policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 to the resolved system prompt before `streamText`. Style is the only IV — model, retrieval, tools, persistence, temperature, and streaming behavior are unchanged. New `apps/core/app/lib/ai/adhd-assist.ts` exports `ADHD_ASSIST_POLICY_BLOCK` and `composeSystemPrompt(base, { adhdAssist })`. Single call site in `chat.ts` covers both the tool-supporting and no-tool RAG branches. (#255, #256, #258, @Ayyhab, 2026-05-29)
 - [core] tests: Unit tests for `composeSystemPrompt` covering identity, prepend, course-context preservation, empty/whitespace base, and verbatim policy-block anchors at `apps/core/app/tests/unit/adhd-assist.test.ts`. (#255, @Ayyhab, 2026-05-29)
 - [core] tooling: Add `apps/core/scripts/eval-adhd-assist.mjs` and `npm run eval:adhd` — pure-Node runner that drives Form A S1/S2/S3 (+ optional S5) through `POST /api/chat` twice each (Baseline vs ADHD Assist) and emits a results matrix (markdown table, per-pair transcripts, `results.csv`, `run-meta.json` with git SHA and redacted env presence booleans). Adds `eval-runs/` to root `.gitignore` so research outputs stay out of git. (#258, @Ayyhab, 2026-05-29)
-- [core] feat: OpenRouter embedding provider — `OPENROUTER_API_KEY` routes RAG indexing and query embeds through OpenRouter (`google/gemini-embedding-001`, 3072-dim) before direct Google/OpenAI fallbacks; add `npm run test:embedding` smoke script. Docs: [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), dev server runbook. (#PR)
-- [core] tests: Unit tests for `forward-session-cookies` and `auth-handler-request` (auth cookie forwarding and sign-in/sign-out sub-requests). (#PR)
+- [core] feat: OpenRouter embedding provider — `OPENROUTER_API_KEY` routes RAG indexing and query embeds through OpenRouter (`google/gemini-embedding-001`, 3072-dim) before direct Google/OpenAI fallbacks; add `npm run test:embedding` smoke script. Docs: [`EMBEDDINGS.md`](docs/rag-ai/EMBEDDINGS.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), dev server runbook. [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
+- [core] tests: Unit tests for `forward-session-cookies` and `auth-handler-request` (auth cookie forwarding and sign-in/sign-out sub-requests). [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
 - [monorepo] docs: Add `docs/implementations/shared-component-library-audit.md` — audit of UI components that are candidates for a shared component library across AI Tutor, Question Maker, and EduAI; covers component structure, behaviour, accessibility requirements, and UBC brand token constraints. (#376, @yta3216, 2026-05-29)
 
 ### Changed
@@ -659,7 +659,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 - [core] fix: Phase 2.5 §3b review feedback (#443) — session char budget now counts tool-call/result payloads via `estimateMessageCharsForModel`, so the digest triggers and `messageTextChars` is accurate on tool-heavy threads; `prepareBoundedSessionContext` enforces the final char budget over digest + recent tail and truncates a single over-budget message. Shared tool-output limits extracted to `apps/core/app/lib/ai/tool-output-limits.ts` (imported by `fetch-page.ts`/`chat-rag.ts`). Adds unit tests for tool-invocation shapes and budget enforcement; documents `CHAT_*` chat-context vars in `.env.example`, [`CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md), and [`MODEL_LATENCY_TRACKER.md`](docs/rag-ai/latency/MODEL_LATENCY_TRACKER.md) (corrects stale `10000` default to `6000`). (#259, #260, review feedback from @superbolt08, @Ayyhab, 2026-06-05)
-- [core] fix: Better Auth on HTTPS dev host — top-level `baseURL`/`secret`, `useSecureCookies`, disable cross-subdomain cookies unless `COOKIE_DOMAIN` is set; forward all session cookies on login/register redirect; server `POST /auth/logout`; omit stale cookies on sign-in. Dev runbook: [`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md). (#PR)
+- [core] fix: Better Auth on HTTPS dev host — top-level `baseURL`/`secret`, `useSecureCookies`, disable cross-subdomain cookies unless `COOKIE_DOMAIN` is set; forward all session cookies on login/register redirect; server `POST /auth/logout`; omit stale cookies on sign-in. Dev runbook: [`HOW_TO_USE_DEV_SERVER.md`](docs/rag-ai/HOW_TO_USE_DEV_SERVER.md). [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
 
 ---
 
