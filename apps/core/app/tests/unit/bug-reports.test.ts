@@ -10,7 +10,7 @@ const prismaMock = vi.hoisted(() => ({
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
-import { createBugReport } from "~/lib/bug-reports/server";
+import { createBugReport, BUG_REPORT_FIELD_LIMITS } from "~/lib/bug-reports/server";
 
 const VALID_USER = { id: "user-cuid-abc" };
 
@@ -241,5 +241,82 @@ describe("createBugReport — optional fields", () => {
     expect(data.consoleLogs).toBeNull();
     expect(data.screenshot).toBeNull();
     expect(data.context).toEqual(Prisma.DbNull);
+  });
+});
+
+describe("createBugReport — field caps and redaction (#979)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
+    prismaMock.bugReport.create.mockResolvedValue({});
+  });
+
+  it("rejects oversized screenshots without truncating", async () => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      screenshot: "x".repeat(BUG_REPORT_FIELD_LIMITS.screenshot + 1),
+    });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { screenshot: expect.stringContaining("exceeds") },
+    });
+    expect(prismaMock.bugReport.create).not.toHaveBeenCalled();
+  });
+
+  it("truncates oversized console logs after redaction", async () => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      consoleLogs: "y".repeat(BUG_REPORT_FIELD_LIMITS.consoleLogs + 50),
+    });
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.consoleLogs).toHaveLength(BUG_REPORT_FIELD_LIMITS.consoleLogs);
+  });
+
+  it("redacts Authorization headers in network logs before persist", async () => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      networkLogs: JSON.stringify([
+        {
+          url: "https://api.example.com/x",
+          requestHeaders: { Authorization: "Bearer super-secret-token" },
+        },
+      ]),
+    });
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    const parsed = JSON.parse(data.networkLogs);
+    expect(parsed[0].requestHeaders.Authorization).toBe("[REDACTED]");
+  });
+
+  it("redacts secrets embedded in context JSON", async () => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      context: {
+        courseId: "c1",
+        apiKey: "should-not-persist",
+        callback: "https://x.com?access_token=sekret",
+      },
+    });
+    expect(r).toEqual({ ok: true });
+    const data = prismaMock.bugReport.create.mock.calls[0][0].data;
+    expect(data.context).toEqual({
+      courseId: "c1",
+      apiKey: "[REDACTED]",
+      callback: "https://x.com?access_token=[REDACTED]",
+    });
+  });
+
+  it("rejects oversized context objects", async () => {
+    const r = await createBugReport({
+      ...BASE_PAYLOAD,
+      context: { blob: "z".repeat(BUG_REPORT_FIELD_LIMITS.contextJson) },
+    });
+    expect(r).toMatchObject({
+      ok: false,
+      error: "VALIDATION_ERROR",
+      fields: { context: expect.stringContaining("exceeds") },
+    });
   });
 });
