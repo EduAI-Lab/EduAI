@@ -32,7 +32,9 @@ import {
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
+import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
   deleteCoreEnrollment,
   listCoreAdminUsers,
@@ -67,12 +69,27 @@ router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res)
   return res.status(410).json({ error: 'Roles are managed in EduAI' });
 });
 
-router.get('/admin/courses', requireRole('ADMIN'), async (_req, res) => {
+router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
   try {
+    // Unified contract (#1072): fields come from ONE service-key catalog
+    // fetch, joined against the local anchors — same read-through shape as
+    // `GET /courses`'s ADMIN branch. No cookie-scoped call: nothing here
+    // consumes `callerEnrollmentRole`.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+    // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
+    // Core course before listing, so this shows Core's full catalog rather
+    // than whatever happened to already have a local row.
+    if (!coreUnavailable && catalogCourses.length > 0) {
+      await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
+    }
     const courses = await prisma.courseOffering.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
-    res.json(courses.map(mapCourseOffering));
+    res.json(courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -111,15 +128,15 @@ router.get(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
       let coreEnrollmentMap = new Map();
-      if (course.externalId) {
+      if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
@@ -210,7 +227,7 @@ router.post(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -262,19 +279,19 @@ router.delete(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
       // Write through to Core first, so a later sync doesn't re-import the student (#812).
-      if (course.externalId && course.externalSource === 'EDUAI') {
-        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+      if (course.coreOfferingId) {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
           return res.status(404).json({ error: 'Enrollment not found in Core' });
         }
         const cookie = getEduAiCookieForRequest(req);
-        await deleteCoreEnrollment(course.externalId, coreEnrollment.id, cookie);
+        await deleteCoreEnrollment(course.coreOfferingId, coreEnrollment.id, cookie);
       }
 
       await prisma.courseEnrollment.deleteMany({
@@ -333,7 +350,7 @@ router.patch(
         return res.status(404).json({ error: 'Course not found' });
       }
 
-      if (!isCourseAdmin(authUser, course)) {
+      if (!await isCourseAdmin(authUser, course)) {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
@@ -346,16 +363,16 @@ router.patch(
       }
 
       let coreRollback = null;
-      if (course.externalId && course.externalSource === 'EDUAI') {
-        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+      if (course.coreOfferingId) {
+        const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
         const coreEnrollment = coreEnrollments.find((e) => e.studentId === userId);
         if (!coreEnrollment) {
           return res.status(404).json({ error: 'Enrollment not found in Core' });
         }
         const cookie = getEduAiCookieForRequest(req);
-        await patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, rawRole, cookie);
+        await patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, rawRole, cookie);
         coreRollback = () =>
-          patchCoreEnrollmentRole(course.externalId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
+          patchCoreEnrollmentRole(course.coreOfferingId, coreEnrollment.id, enrollment.role, cookie).catch(() => {});
       }
 
       try {
@@ -461,8 +478,8 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
 /**
  * GET /admin/ai-traces — recent AiInteractionTrace rows for oversight.
  *
- * Auth: UNIT_ADMIN (scoped to `authorizedUnits` via CourseOffering.department),
- *   ADMIN (unscoped).
+ * Auth: UNIT_ADMIN (scoped to `authorizedUnits` via the Core course's live
+ *   `department`), ADMIN (unscoped).
  * Query params: `unit` (department filter — for UNIT_ADMIN it must be one of
  *   their authorized units), `courseId` (numeric CourseOffering id), `limit`
  *   (default 50, max 200).
@@ -470,7 +487,12 @@ router.put('/admin/settings/ai-model-policy', requireRole('ADMIN'), async (req, 
  * Why: `AiInteractionTrace.userId` has no local FK (User is owned by Core), so
  * display names are resolved the same way `/admin/courses/:courseId/enrollments`
  * already does — via `listCoreAdminUsers` and an id->name map — rather than a
- * Prisma include that can't exist.
+ * Prisma include that can't exist. `department` and `courseTitle` are
+ * Core-owned too (#1072 step 4, no local column): both are resolved by
+ * joining one batched `GET /api/courses` fetch against the local anchor rows
+ * by `coreOfferingId`, same pattern as `routes/courses.js`. Fail-soft: a
+ * Core outage degrades UNIT_ADMIN's department scope to empty (never a hard
+ * error or an unscoped leak).
  */
 router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const authUser = req.user;
@@ -488,6 +510,14 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
 
   try {
+    // Unified contract (#1072): department/courseTitle are fields — one
+    // service-key catalog fetch, no cookie-scoped call.
+    const { courses: catalogCourses, coreUnavailable } = await resolveCoreCourseCatalog();
+    const coreCoursesById = indexCoreCoursesById(catalogCourses);
+    if (coreUnavailable) {
+      res.set('X-Core-Status', 'unavailable');
+    }
+
     const courseOfferingWhere = {};
 
     if (authUser.role === 'UNIT_ADMIN') {
@@ -499,13 +529,18 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
         if (!units.includes(unit)) {
           return res.status(403).json({ error: 'Not authorized for this unit' });
         }
-        courseOfferingWhere.department = unit;
+        const deptCoreIds = catalogCourses.filter((c) => c?.department === unit).map((c) => c.id);
+        courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       } else {
-        courseOfferingWhere.department = { in: units };
+        const deptCoreIds = catalogCourses
+          .filter((c) => c?.department && units.includes(c.department))
+          .map((c) => c.id);
+        courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
       }
     } else if (unit) {
       // ADMIN scoping by unit is optional filtering, not an authorization boundary.
-      courseOfferingWhere.department = unit;
+      const deptCoreIds = catalogCourses.filter((c) => c?.department === unit).map((c) => c.id);
+      courseOfferingWhere.coreOfferingId = { in: deptCoreIds };
     }
 
     if (numericCourseId !== null) {
@@ -528,7 +563,7 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
                 module: {
                   select: {
                     courseOfferingId: true,
-                    courseOffering: { select: { title: true } },
+                    courseOffering: { select: { coreOfferingId: true } },
                   },
                 },
               },
@@ -564,7 +599,8 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
       user: { id: t.userId, name: userNameMap.get(t.userId) ?? null },
       activity: { id: t.activity.id, title: t.activity.title },
       courseId: t.activity.lesson.module.courseOfferingId,
-      courseTitle: t.activity.lesson.module.courseOffering?.title ?? null,
+      courseTitle:
+        coreCoursesById.get(t.activity.lesson.module.courseOffering?.coreOfferingId)?.name ?? null,
     }));
 
     res.json(result);
@@ -585,7 +621,7 @@ router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), a
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    if (!course.externalId || course.externalSource !== 'EDUAI') {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 

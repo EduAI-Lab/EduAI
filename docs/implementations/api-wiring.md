@@ -458,5 +458,17 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 
 | Item | Status |
 |---|---|
-| Admin chatbot + tool coverage snapshot | ✅ [`AGENT_READINESS.md`](../rag-ai/AGENT_READINESS.md) |
+| Admin chatbot + tool coverage snapshot | ✅ [`AGENT_READINESS.md`](../AGENT_READINESS.md) |
 | API hygiene — JSON course create, error envelope, enrollment idempotency ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) | ✅ |
+| Automated agent-readiness tests (full API manifest + JSON envelope + email) ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)) | ✅ `app/lib/agent-readiness/manifest.ts` — all `/api/*` endpoints inventoried |
+| Centralized idempotency layer ([#828](https://github.com/EduAI-Lab/EduAI/issues/828)) | ✅ Phase 1–3 (`POST /api/users`, enrollments, questions) |
+
+### Centralized idempotency ([#828](https://github.com/EduAI-Lab/EduAI/issues/828))
+
+Retry-safe POST creates may opt into `withIdempotency()` (`app/lib/idempotency.server.ts`). Clients send **`Idempotency-Key`** (preferred) or body `idempotencyKey`. The wrapper atomically claims `(key, route)`, replays cached responses on retry, returns `422 IDEMPOTENCY_KEY_MISMATCH` when the body hash differs, and `409 IDEMPOTENCY_IN_PROGRESS` for concurrent duplicates.
+
+| Route | Status |
+|---|---|
+| `POST /api/users` | ✅ Centralized layer |
+| `POST /api/courses/:id/enrollments` | Entity-column `idempotencyKey` (migrate in phase 3) |
+| `POST /api/questions` | Entity-column `idempotencyKey` (migrate in phase 3) |

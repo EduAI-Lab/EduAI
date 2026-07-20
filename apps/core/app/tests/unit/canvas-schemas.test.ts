@@ -45,11 +45,18 @@ describe("SyncCanvasCoursesSchema", () => {
 });
 
 describe("LinkRosterSchema", () => {
-  it("trims student numbers", () => {
-    const result = LinkRosterSchema.safeParse({ studentNumber: " 12345 " });
+  it("trims and accepts 8-digit student numbers", () => {
+    const result = LinkRosterSchema.safeParse({ studentNumber: " 12345678 " });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.studentNumber).toBe("12345");
+      expect(result.data.studentNumber).toBe("12345678");
     }
+  });
+
+  it("rejects short, long, and non-numeric student numbers", () => {
+    expect(LinkRosterSchema.safeParse({ studentNumber: "9" }).success).toBe(false);
+    expect(LinkRosterSchema.safeParse({ studentNumber: "1234567" }).success).toBe(false);
+    expect(LinkRosterSchema.safeParse({ studentNumber: "123456789" }).success).toBe(false);
+    expect(LinkRosterSchema.safeParse({ studentNumber: "abc12345" }).success).toBe(false);
   });
 });

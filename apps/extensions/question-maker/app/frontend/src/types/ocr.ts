@@ -28,11 +28,11 @@ export interface OCRJob {
   questionsCount?: number; // Number of extracted questions
   // Only store minimal question data for recovery
   storedQuestions?: StoredQuestion[];
-  // Assessment details for recovery
+  // Assessment details for recovery. Semester is no longer stored here — it's
+  // derived from the course's Core term at creation (#1072 §4 step 8 / #1077).
   assessmentDetails?: {
     type: string;
     name: string;
-    semester: string;
   };
 }
 

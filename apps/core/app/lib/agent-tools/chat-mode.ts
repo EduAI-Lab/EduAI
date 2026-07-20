@@ -8,6 +8,11 @@ export type ChatToolContext = {
   effectiveCourseCode?: string | null;
   /** #839: when true (student caller), exclude hidden/scheduled materials from RAG. */
   restrictToStudentVisible?: boolean;
+  /**
+   * Unique id for this HTTP chat turn. Admin write confirms must use a later
+   * turn than the preview (rejects same-generation confirmed:true).
+   */
+  turnId?: string;
 };
 
 export function parseChatMode(value: unknown): ChatMode {
@@ -97,8 +102,8 @@ export function formatAdminWriteSafetyRules(): string {
 
 Write safety:
 1. Before ANY write, restate exactly what will change (who, which course, which role/status).
-2. Wait for the admin to explicitly confirm (e.g. "yes, do it") in the conversation.
-3. Only then call the write tool with confirmed: true. If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
+2. Call the write tool once with confirmed: false to register a preview, then wait for the admin to explicitly confirm in a *new* chat message (e.g. "yes, do it"). Same-turn confirmed:true after confirmed:false is rejected.
+3. Only after that later admin message, call the write tool again with confirmed: true (same arguments). If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
 4. A write ONLY succeeded if the tool result JSON contains writeSucceeded: true. If writeSucceeded is false or error is CONFIRMATION_REQUIRED, tell the admin the write was not applied yet.
 5. After a successful write (writeSucceeded: true), call the matching read tool to show the updated database state. Prefer listUsers with email=… (or query) instead of an unfiltered directory dump.
 6. For user-targeting writes, pass userEmail when the admin gave an email, or userId from a tool result — never invent ids or substitute a similar-looking email.
