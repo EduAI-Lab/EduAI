@@ -7,6 +7,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 10 — July 6–12, 2026]
 
+### Fixed
+
+- [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — [#929](https://github.com/EduAI-Lab/EduAI/pull/929)
 ### Added
 
 - [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
