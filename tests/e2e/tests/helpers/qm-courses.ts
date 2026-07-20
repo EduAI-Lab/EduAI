@@ -40,7 +40,9 @@ function coreCourseForm(instrId: string, overrides: Record<string, string> = {})
     section: '001',
     term: 'W1',
     year: '2026',
-    startDate: '2026-08-15',
+    // September start — must agree with `term` above (August maps to S2 via
+    // `termFromMonth`, the exact literal/startDate mismatch #1011 outlaws).
+    startDate: '2026-09-08',
     department: 'COSC',
     instructorUserIds: instrId,
     ...rest,
