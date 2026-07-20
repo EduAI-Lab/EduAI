@@ -36,7 +36,7 @@ describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, CanvasIntegration, Question_Metadata } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     canvas = await import('../../src/services/canvasService.js');
 
     vi.spyOn(console, 'log').mockImplementation(() => {});

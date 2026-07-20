@@ -117,6 +117,7 @@ export {
   isTermCode,
   termFromMonth,
   termFromDate,
+  termInfoFromDate,
   normalizeTerm,
   termName,
   termLabel,

@@ -282,11 +282,6 @@ export const QuestionUploadDialog = ({
     const [lastFileName, setLastFileName] = useState<string>('');
     const [assessmentType, setAssessmentType] = useState<typeof assessmentTypes[number]>('Assignment');
     const [assessmentName, setAssessmentName] = useState('Uploaded Assessment');
-    const [assessmentSemester, setAssessmentSemester] = useState(() => {
-        const now = new Date();
-        const year = now.getFullYear();
-        return `Fall ${year}`;
-    });
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
     const [aiModel, setAiModel] = useState('ollama:gpt-oss:120b');
     const [providerApiKey, setProviderApiKey] = useState('');
@@ -344,11 +339,6 @@ export const QuestionUploadDialog = ({
             setProgress(0);
             setLastFileName('');
         }
-        setAssessmentSemester(() => {
-            const now = new Date();
-            const year = now.getFullYear();
-            return `Fall ${year}`;
-        });
     }, [open, providedTopics, initialDraftQuestions]);
 
     useEffect(() => {
@@ -543,7 +533,6 @@ export const QuestionUploadDialog = ({
             assessmentDetails: {
                 type: assessmentType,
                 name: assessmentName,
-                semester: assessmentSemester,
             },
         });
         setCurrentJobId(jobId);
@@ -584,7 +573,7 @@ export const QuestionUploadDialog = ({
                 duration: Number.POSITIVE_INFINITY,
             });
         }
-    }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName, assessmentSemester]);
+    }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName]);
 
     const updateDraft = useCallback((id: string, updates: Partial<DraftQuestion>) => {
         setDraftQuestions((prev) =>
@@ -649,11 +638,10 @@ export const QuestionUploadDialog = ({
         if (!courseId) return false;
         if (includedDrafts.length === 0) return false;
         if (saveTarget === 'bank') return true;
-        if (!assessmentType || !assessmentName.trim() || !assessmentSemester.trim()) return false;
+        if (!assessmentType || !assessmentName.trim()) return false;
         return true;
     }, [
         assessmentName,
-        assessmentSemester,
         assessmentType,
         courseId,
         includedDrafts.length,
@@ -670,7 +658,6 @@ export const QuestionUploadDialog = ({
             if (saveTarget === 'assessment') {
                 if (!assessmentType) reasons.push('assessment type');
                 if (!assessmentName.trim()) reasons.push('assessment name');
-                if (!assessmentSemester.trim()) reasons.push('assessment semester');
             }
 
             if (reasons.length > 0) {
@@ -763,7 +750,6 @@ export const QuestionUploadDialog = ({
         if (job.assessmentDetails) {
             setAssessmentType(job.assessmentDetails.type as typeof assessmentTypes[number]);
             setAssessmentName(job.assessmentDetails.name);
-            setAssessmentSemester(job.assessmentDetails.semester);
         }
         toast({
             title: 'Questions restored',
@@ -862,8 +848,8 @@ export const QuestionUploadDialog = ({
             setError('Each question must include the AI-generated summary before saving.');
             return;
         }
-        if (saveTarget === 'assessment' && (!assessmentType || !assessmentName.trim() || !assessmentSemester.trim())) {
-            setError('Assessment type, name, and semester are required.');
+        if (saveTarget === 'assessment' && (!assessmentType || !assessmentName.trim())) {
+            setError('Assessment type and name are required.');
             return;
         }
         setProcessingStage('saving');
@@ -885,8 +871,7 @@ export const QuestionUploadDialog = ({
                     ? {
                           assessment: {
                               type: assessmentType,
-                              name: assessmentName.trim(),
-                              semester: assessmentSemester.trim()
+                              name: assessmentName.trim()
                           }
                       }
                     : {})
@@ -913,7 +898,6 @@ export const QuestionUploadDialog = ({
         }
     }, [
         assessmentName,
-        assessmentSemester,
         assessmentType,
         canSave,
         courseId,
@@ -937,11 +921,6 @@ export const QuestionUploadDialog = ({
         setNewTopicName(topics.length > 0 ? '' : 'Uploaded Questions');
         setAssessmentType('Assignment');
         setAssessmentName('Assignment 1');
-        setAssessmentSemester(() => {
-            const now = new Date();
-            const year = now.getFullYear();
-            return `Fall ${year}`;
-        });
     }, [topics]);
 
     if (!courseId) {
@@ -1043,15 +1022,6 @@ export const QuestionUploadDialog = ({
                                         placeholder="e.g. Midterm Review Set"
                                         value={assessmentName}
                                         onChange={(event) => setAssessmentName(event.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="assessment-semester">Semester</Label>
-                                    <Input
-                                        id="assessment-semester"
-                                        placeholder="e.g. Fall 2024"
-                                        value={assessmentSemester}
-                                        onChange={(event) => setAssessmentSemester(event.target.value)}
                                     />
                                 </div>
                             </CardContent>

@@ -1,5 +1,6 @@
 /**
- * Shared seed data for development (populateDatabase.js) and production (seedProductionQuestions.js).
+ * Shared seed data for the test-only fixture (tests/helpers/seedCoursesFixture.js)
+ * and production (seedProductionQuestions.js).
  * Single source of truth for topic names and question content.
  */
 
