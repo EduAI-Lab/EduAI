@@ -16,6 +16,9 @@
  *     fields. This component only RENDERS; the masking is server-side. The
  *     `getReporterLabel` helper still falls through to the userId so admins
  *     can correlate without seeing the name/email.
+ *   - **List vs detail (#979)**: list rows omit console/network/screenshot
+ *     bodies and only carry `has*` flags. Opening a viewer or copying a dossier
+ *     fetches `GET /api/admin/bug-reports/:id` for the full payloads.
  *   - **Sort**: `createdAt` sorts as Date timestamps; everything else uses
  *     `String(...).localeCompare` (case-insensitive via locale). Null/undefined
  *     fields fall through to `''` to keep them at the start of asc / end of desc.
@@ -75,6 +78,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const [error, setError] = useState<string | null>(null);
   const [viewerType, setViewerType] = useState<ViewerType>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [detailReport, setDetailReport] = useState<AdminBugReportRow | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
@@ -103,9 +107,31 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   const selectedReport =
-    selectedReportId === null
-      ? null
-      : (reports.find((report) => report.id === selectedReportId) ?? null);
+    detailReport && detailReport.id === selectedReportId
+      ? detailReport
+      : selectedReportId === null
+        ? null
+        : (reports.find((report) => report.id === selectedReportId) ?? null);
+
+  /** List rows omit diagnostic blobs (#979); load full detail on demand. */
+  const loadReportDetail = async (reportId: string): Promise<AdminBugReportRow> => {
+    const detailed = await api.getAdminBugReport(reportId);
+    setReports((current) =>
+      current.map((report) =>
+        report.id === reportId
+          ? {
+              ...report,
+              ...detailed,
+              hasConsoleLogs: detailed.hasConsoleLogs ?? Boolean(detailed.consoleLogs),
+              hasNetworkLogs: detailed.hasNetworkLogs ?? Boolean(detailed.networkLogs),
+              hasScreenshot: detailed.hasScreenshot ?? Boolean(detailed.screenshot),
+            }
+          : report,
+      ),
+    );
+    setDetailReport(detailed);
+    return detailed;
+  };
 
   const toggleSort = (nextSortKey: SortKey) => {
     if (sortKey === nextSortKey) {
@@ -117,14 +143,24 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
     setSortDirection(nextSortKey === 'createdAt' ? 'desc' : 'asc');
   };
 
-  const openViewer = (type: Exclude<ViewerType, null>, reportId: string) => {
+  const openViewer = async (type: Exclude<ViewerType, null>, reportId: string) => {
+    setError(null);
     setSelectedReportId(reportId);
     setViewerType(type);
+    try {
+      await loadReportDetail(reportId);
+    } catch {
+      setError('Could not load bug report details. Please try again.');
+      setViewerType(null);
+      setSelectedReportId(null);
+      setDetailReport(null);
+    }
   };
 
   const closeViewer = () => {
     setViewerType(null);
     setSelectedReportId(null);
+    setDetailReport(null);
   };
 
   const onStatusChange = async (reportId: string, status: BugReportStatus) => {
@@ -145,7 +181,12 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const onCopyReport = async (report: AdminBugReportRow) => {
     setError(null);
     try {
-      await copyTextToClipboard(buildBugReportCopyText(report));
+      // Copy dossier needs diagnostic blobs; list rows may only have has* flags.
+      const detailed =
+        report.consoleLogs != null || report.networkLogs != null || report.screenshot != null
+          ? report
+          : await loadReportDetail(report.id);
+      await copyTextToClipboard(buildBugReportCopyText(detailed));
       setCopiedReportId(report.id);
       window.setTimeout(() => {
         setCopiedReportId((current) => (current === report.id ? null : current));

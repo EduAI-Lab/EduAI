@@ -57,6 +57,15 @@ export function mapCoreAdminBugReportRow(report) {
     consoleLogs: report.consoleLogs ?? null,
     networkLogs: report.networkLogs ?? null,
     screenshot: report.screenshot ?? null,
+    hasConsoleLogs: Boolean(
+      report.hasConsoleLogs ?? (report.consoleLogs != null && report.consoleLogs !== ''),
+    ),
+    hasNetworkLogs: Boolean(
+      report.hasNetworkLogs ?? (report.networkLogs != null && report.networkLogs !== ''),
+    ),
+    hasScreenshot: Boolean(
+      report.hasScreenshot ?? (report.screenshot != null && report.screenshot !== ''),
+    ),
     pageUrl: report.pageUrl ?? null,
     userAgent: report.userAgent ?? null,
     isAnonymous,

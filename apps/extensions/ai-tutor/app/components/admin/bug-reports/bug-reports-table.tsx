@@ -121,7 +121,7 @@ export function BugReportsTable({
   hasActiveFilters: boolean;
   onStatusChange: (reportId: string, status: BugReportStatus) => void;
   onCopyReport: (report: AdminBugReportRow) => void;
-  onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void;
+  onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void | Promise<void>;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -285,7 +285,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('console', report.id)}
-                      disabled={!report.consoleLogs}
+                      disabled={!(report.hasConsoleLogs ?? Boolean(report.consoleLogs))}
                     >
                       Console
                     </Button>
@@ -294,7 +294,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('network', report.id)}
-                      disabled={!report.networkLogs}
+                      disabled={!(report.hasNetworkLogs ?? Boolean(report.networkLogs))}
                     >
                       Network
                     </Button>
@@ -303,7 +303,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('screenshot', report.id)}
-                      disabled={!report.screenshot}
+                      disabled={!(report.hasScreenshot ?? Boolean(report.screenshot))}
                     >
                       Screenshot
                     </Button>
