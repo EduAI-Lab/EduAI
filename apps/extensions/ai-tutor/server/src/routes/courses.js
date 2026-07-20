@@ -518,12 +518,26 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
   }
 
   try {
+    // UNIT_ADMIN department checks resolve from Core — one batched catalog
+    // fetch reused for the destination course, the module source course, and
+    // every lesson source course below, instead of a live Core lookup per
+    // course (#1072 unified contract; ADMIN/INSTRUCTOR never call Core here).
+    let catalogById = null;
+    if (authUser.role === 'UNIT_ADMIN') {
+      const { courses: catalogCourses } = await resolveCoreCourseCatalog();
+      catalogById = new Map(catalogCourses.map((c) => [c.id, c]));
+    }
+    // undefined = "resolve yourself" (non-UNIT_ADMIN, no Core call happens);
+    // null = "resolved, not in catalog" (fail-closed department mismatch).
+    const resolveFromCatalog = (row) =>
+      catalogById ? (catalogById.get(row?.coreOfferingId) ?? null) : undefined;
+
     const destCourse = await prisma.courseOffering.findUnique({
       where: { id: courseId },
       include: { instructors: { select: { userId: true } } },
     });
     if (!destCourse) return res.status(404).json({ error: 'Course not found' });
-    if (!await isCourseAdmin(authUser, destCourse)) {
+    if (!await isCourseAdmin(authUser, destCourse, resolveFromCatalog(destCourse))) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
@@ -536,7 +550,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
         where: { id: numericSourceCourseId },
         include: { instructors: { select: { userId: true } } },
       });
-      if (!sourceCourse || !await isCourseAdmin(authUser, sourceCourse)) {
+      if (!sourceCourse || !await isCourseAdmin(authUser, sourceCourse, resolveFromCatalog(sourceCourse))) {
         return res.status(403).json({ error: 'Not authorized for source course' });
       }
 
@@ -592,7 +606,7 @@ router.post('/courses/:courseId/import', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
           where: { id: scId },
           include: { instructors: { select: { userId: true } } },
         });
-        if (!sc || !await isCourseAdmin(authUser, sc)) {
+        if (!sc || !await isCourseAdmin(authUser, sc, resolveFromCatalog(sc))) {
           return res.status(403).json({ error: 'Not authorized for lesson source course' });
         }
       }
