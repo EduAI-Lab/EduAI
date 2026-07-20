@@ -130,9 +130,13 @@ describe('INSTRUCTOR authoring path (§17)', () => {
     const res = await request(app)
       .post('/api/assessments')
       .set('Cookie', 'session=v')
-      .send({ type: 'EXAM', name: 'Midterm', semester: 'F25', courseId: 1 });
+      .send({ type: 'EXAM', name: 'Midterm', courseId: 1 });
     expect(res.status).toBe(201);
-    expect(svc.createAssessment).toHaveBeenCalledWith('owner-1', expect.objectContaining({ courseId: 1 }));
+    expect(svc.createAssessment).toHaveBeenCalledWith(
+      'owner-1',
+      expect.objectContaining({ courseId: 1 }),
+      expect.objectContaining({ cookie: 'session=v' })
+    );
   });
 
   it('updates an assessment → 200', async () => {

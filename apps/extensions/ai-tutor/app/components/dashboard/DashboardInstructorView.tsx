@@ -18,13 +18,13 @@ type DashboardInstructorViewProps = {
 export function DashboardInstructorView({ courses, dashboardStats }: DashboardInstructorViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const drafts = courses.filter((c) => !c.isPublished);
-  const synced = courses.filter((c) => c.externalSource === 'EDUAI');
+  const synced = courses.filter((c) => !!c.coreOfferingId);
 
   const stats = [
     { label: 'Courses teaching', value: dashboardStats?.yourCourses ?? courses.length },
     { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
     { label: 'Drafts', value: dashboardStats?.draftCourses ?? drafts.length },
-    { label: 'Synced from Core', value: synced.length },
+    { label: 'Synced from EduAI', value: synced.length },
   ];
 
   const statusSegments: DonutSegment[] = [
@@ -59,7 +59,7 @@ export function DashboardInstructorView({ courses, dashboardStats }: DashboardIn
     },
     {
       label: 'Publish content',
-      description: firstDraft ? `Review ${firstDraft.title}.` : 'Everything is already published.',
+      description: firstDraft ? `Review ${firstDraft.title ?? 'Untitled course'}.` : 'Everything is already published.',
       href: firstDraft ? `/instructor/courses/${firstDraft.id}` : '/instructor',
       icon: <IconUpload size={16} stroke={1.75} />,
     },

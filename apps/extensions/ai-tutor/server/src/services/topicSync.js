@@ -36,7 +36,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
 
   const course = await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } });
   if (!course) return [];
-  if (!course.externalId) {
+  if (!course.coreOfferingId) {
     // Not an external course; nothing to sync
     const local = await prisma.topic.findMany({
       where: { courseOfferingId },
@@ -59,7 +59,7 @@ export async function syncExternalCourseTopics(courseOfferingId, options = {}) {
   // Fetch topics from Core using the service key
   let externalTopics;
   try {
-    externalTopics = await listEduAiCourseTopics(course.externalId, { signal: options.signal });
+    externalTopics = await listEduAiCourseTopics(course.coreOfferingId, { signal: options.signal });
   } catch (e) {
     e.phase = e.phase || 'fetch';
     throw e;

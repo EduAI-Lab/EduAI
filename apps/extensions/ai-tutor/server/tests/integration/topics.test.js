@@ -73,34 +73,27 @@ describe('Topics routes', () => {
       expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
     });
 
+    // #1072 step 4: every CourseOffering is a Core anchor (`coreOfferingId`
+    // required + unique) — `seedMinimalCourse` already sets one, so there's
+    // no "locally-authored course" state left to cover separately from the
+    // imported-course cases below.
+
     it('auto-pulls the latest topics from Core for an imported course (#1031)', async () => {
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { externalId: 'ext-123', externalSource: 'eduai' },
-      });
       listEduAiCourseTopics.mockResolvedValue([{ id: 'core-1', name: 'Core-only Topic' }]);
 
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
-      expect(listEduAiCourseTopics).toHaveBeenCalledWith('ext-123', expect.objectContaining({ signal: expect.anything() }));
+      expect(listEduAiCourseTopics).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        expect.objectContaining({ signal: expect.anything() }),
+      );
       const names = res.body.map((t) => t.name);
       expect(names).toContain('Test Topic');
       expect(names).toContain('Core-only Topic');
     });
 
-    it('does not call Core for a locally-authored course', async () => {
-      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
-
-      expect(res.status).toBe(200);
-      expect(listEduAiCourseTopics).not.toHaveBeenCalled();
-    });
-
     it('falls back to the local mirror when Core is unreachable', async () => {
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { externalId: 'ext-123', externalSource: 'eduai' },
-      });
       listEduAiCourseTopics.mockRejectedValue(new Error('Core unavailable'));
 
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
@@ -113,27 +106,13 @@ describe('Topics routes', () => {
   // ── POST /api/courses/:courseId/topics ─────────────────────────────
 
   describe('POST /api/courses/:courseId/topics', () => {
-    it('creates a new topic and returns 201', async () => {
-      const res = await request(app)
-        .post(`/api/courses/${seed.course.id}/topics`)
-        .send({ name: 'New Topic' });
-
-      expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({
-        name: 'New Topic',
-        courseOfferingId: seed.course.id,
-      });
-      expect(res.body.id).toBeDefined();
-    });
-
-    it('returns 409 on duplicate topic name', async () => {
-      const res = await request(app)
-        .post(`/api/courses/${seed.course.id}/topics`)
-        .send({ name: 'Test Topic' }); // already seeded
-
-      expect(res.status).toBe(409);
-      expect(res.body.error).toMatch(/already exists/i);
-    });
+    // #1072 step 4: `CourseOffering` is a pure anchor with a required,
+    // unique `coreOfferingId` — every course is Core-linked ("imported") by
+    // construction now, so the "native course, manual topic creation"
+    // scenario this endpoint was built for can no longer occur. Manual
+    // topic creation is unconditionally blocked (see the "imported courses"
+    // test below); the former 201/409-on-duplicate cases tested a course
+    // shape that no longer exists.
 
     it('returns 400 on empty name', async () => {
       const res = await request(app)
@@ -155,13 +134,7 @@ describe('Topics routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('returns 403 for imported courses (externalId set)', async () => {
-      // Set externalId on the course to make it "imported"
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { externalId: 'ext-123', externalSource: 'eduai' },
-      });
-
+    it('returns 403 for imported courses (coreOfferingId set) — the only shape a CourseOffering can have (#1072 step 4)', async () => {
       const res = await request(app)
         .post(`/api/courses/${seed.course.id}/topics`)
         .send({ name: 'Blocked Topic' });

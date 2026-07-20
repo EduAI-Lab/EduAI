@@ -242,6 +242,39 @@ export async function findEduAiCourseById(courseId, options = {}) {
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
+/**
+ * Lists every Core course under the service key (#1082) — an UNSCOPED read of
+ * the full non-deleted catalog (Core's `getCourses` service-key branch:
+ * `prisma.course.findMany({ where: { deletedAt: null } })`), no enrollment/
+ * publish/RBAC filtering and no `callerEnrollmentRole` (that field is
+ * computed against the caller's own enrollments, which don't apply to a
+ * service-key call).
+ *
+ * Use ONLY as a fallback for AT-enrolled courses missing from a caller's
+ * cookie-scoped list (`listEduAiCourses`) — AT and Core enrollment are
+ * intentionally independent tracks, so a miss there means "caller isn't
+ * Core-scoped for it," not "doesn't exist." Never use this as the primary/
+ * oracle source for a caller-facing list.
+ */
+export async function listEduAiCoursesServiceKey() {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const data = await requestEduAi('/courses', {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
+  try {
+    const parsed = EduAiCourseListSchema.parse(data);
+    return parsed.courses;
+  } catch (e) {
+    const err = new Error('Invalid response when fetching EduAI courses (service key)');
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
+}
+
 export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;

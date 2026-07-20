@@ -106,7 +106,7 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
           section: '001',
           term: 'W1',
           year: '2026',
-          startDate: '2026-08-15',
+          startDate: '2026-09-08',
           department: 'COSC',
           instructorUserIds: instrId,
         },
