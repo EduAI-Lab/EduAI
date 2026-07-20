@@ -2,7 +2,7 @@
  * Resolve campus vs cloud models from Core's /api/ai-models payload.
  * Avoid hardcoding served-model names so GPU catalog changes don't break QM.
  */
-import { modelSizeRankFromText } from '../../../shared/modelSizeRanks.js';
+import { modelSizeRankFromText } from '../utils/modelSizeRanks.js';
 
 const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
 export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';

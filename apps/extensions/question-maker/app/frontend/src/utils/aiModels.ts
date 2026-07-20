@@ -3,7 +3,7 @@
  * Prefer campus (vllm/ollama) models; avoid hardcoding specific model ids.
  */
 import type { EduAIModelOption } from '../services/eduaiService';
-import { modelSizeRankFromText } from '../../../shared/modelSizeRanks.js';
+import { modelSizeRankFromText } from './modelSizeRanks';
 
 export const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
 
