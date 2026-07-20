@@ -91,6 +91,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |
 | `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Rate limit for `POST /api/sessions/validate` |
+| `CHAT_RATE_LIMIT`, `CHAT_RATE_WINDOW_MS` | optional (default 20 per 60000ms) | dev/prod | Per-user rate limit for `POST /api/chat` |
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `UBC_TIMEZONE` | optional (default America/Vancouver) | dev/prod | IANA timezone for academic term-code derivation |
