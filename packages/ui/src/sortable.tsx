@@ -133,20 +133,44 @@ export interface DragHandleProps {
   className?: string
 }
 
+/**
+ * Wrap one of dnd-kit's event listeners so it still runs, but the event never
+ * reaches an interactive ancestor. Cards that wrap a handle are usually
+ * clickable *and* keyboard-activatable, so Enter/Space on the grip must start a
+ * drag without also firing the card's navigation handler.
+ */
+function isolate<E extends React.SyntheticEvent>(
+  handler: unknown,
+): (event: E) => void {
+  return (event: E) => {
+    if (typeof handler === "function") (handler as (e: E) => void)(event)
+    event.stopPropagation()
+  }
+}
+
 export function DragHandle({ handleProps, label = "Drag to reorder", className }: DragHandleProps) {
+  const { onClick, onKeyDown, onKeyUp, ...rest } = handleProps as {
+    onClick?: unknown
+    onKeyDown?: unknown
+    onKeyUp?: unknown
+  } & Record<string, unknown>
+
   return (
     <button
       type="button"
       aria-label={label}
-      // Keep a click on the handle from bubbling to a clickable parent card.
-      onClick={(event) => event.stopPropagation()}
       className={cn(
         "flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md " +
           "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground " +
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing",
         className,
       )}
-      {...handleProps}
+      {...rest}
+      // Composed last so dnd-kit's own handlers still run, but neither a click
+      // nor a key activation bubbles into a clickable parent card.
+      onClick={isolate<React.MouseEvent>(onClick)}
+      onKeyDown={isolate<React.KeyboardEvent>(onKeyDown)}
+      onKeyUp={isolate<React.KeyboardEvent>(onKeyUp)}
     >
       <IconGripVertical size={16} aria-hidden="true" />
     </button>
