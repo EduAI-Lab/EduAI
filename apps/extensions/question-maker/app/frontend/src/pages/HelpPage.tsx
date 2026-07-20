@@ -71,7 +71,7 @@ const ARTICLES: HelpArticle[] = [
     {
         id: 'onboarding',
         title: 'Onboarding: courses and topics',
-        keywords: 'onboarding courses topics core sync sandbox logout',
+        keywords: 'onboarding courses topics core sync logout',
         body: (
             <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">
@@ -80,8 +80,7 @@ const ARTICLES: HelpArticle[] = [
                 <ol className="list-inside list-decimal space-y-1">
                     <li>After login, your taught courses from Core appear on the dashboard.</li>
                     <li>Topics are kept in sync with Core automatically.</li>
-                    <li>For practice without Core, create a Sandbox course from your profile menu.</li>
-                    <li>(Optional) Use Logout in the profile menu to end the session.</li>
+                                        <li>(Optional) Use Logout in the profile menu to end the session.</li>
                 </ol>
                 <p className="text-sm">Tip: wait for courses to load before creating questions or assessments.</p>
             </div>
@@ -161,7 +160,7 @@ const ARTICLES: HelpArticle[] = [
                 </p>
                 <ol className="list-inside list-decimal space-y-1">
                     <li>From the Questions tab, select “Upload Questions”.</li>
-                    <li>Fill assessment details (Type, Name, Semester) — required to save.</li>
+                    <li>Fill assessment details (Type, Name) — required to save; the semester is derived from the course's term.</li>
                     <li>Pick an AI model (campus-hosted by default; external allowed with API key).</li>
                     <li>Upload PDF or image; progress shows OCR → extraction.</li>
                     <li>Review extracted drafts: edit fields, include/exclude per question, remove unwanted entries.</li>
@@ -179,7 +178,7 @@ const ARTICLES: HelpArticle[] = [
             <div className="space-y-3">
                 <p className="text-sm">
                     <span className="font-medium text-foreground">Create a blueprint:</span> Assessments tab → “Add
-                    Assessment”. Provide Name, Type, Semester, Description, and seed Primary/Secondary/Excluded topics.
+                    Assessment”. Provide Name, Type, Description, and seed Primary/Secondary/Excluded topics.
                 </p>
                 <p className="text-sm">
                     <span className="font-medium text-foreground">Edit a blueprint:</span> open an assessment → “Edit
