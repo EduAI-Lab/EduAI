@@ -17,10 +17,12 @@ vi.mock("~/lib/prisma.server", () => ({
   default: {
     bugReport: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
     },
     user: { findUnique: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -69,6 +71,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.bugReport.findMany).mockResolvedValue([REPORT] as never);
   vi.mocked(prisma.bugReport.count).mockResolvedValue(1);
+  vi.mocked(prisma.$queryRaw).mockResolvedValue([
+    {
+      id: "br-1",
+      hasConsoleLogs: false,
+      hasNetworkLogs: false,
+      hasScreenshot: false,
+    },
+  ] as never);
 });
 
 describe("GET /api/admin/bug-reports (#304)", () => {
@@ -95,7 +105,39 @@ describe("GET /api/admin/bug-reports (#304)", () => {
       userId: "u1",
       userEmail: "reporter@test.com",
       userName: "Reporter",
+      consoleLogs: null,
+      networkLogs: null,
+      screenshot: null,
+      hasConsoleLogs: false,
+      hasNetworkLogs: false,
+      hasScreenshot: false,
     });
+  });
+
+  it("returns a single full report for GET /:id", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue({
+      ...REPORT,
+      consoleLogs: '[{"level":"error"}]',
+      screenshot: "data:image/png;base64,abc",
+    } as never);
+    const res = await adminLoader(makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      id: "br-1",
+      consoleLogs: '[{"level":"error"}]',
+      screenshot: "data:image/png;base64,abc",
+      hasConsoleLogs: true,
+      hasScreenshot: true,
+    });
+  });
+
+  it("returns 404 when GET /:id misses", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue(null);
+    const res = await adminLoader(makeArgs("/api/admin/bug-reports/missing", "GET", undefined, { id: "missing" }));
+    expect(res.status).toBe(404);
   });
 
   it("masks userId/email/name when isAnonymous=true (§11)", async () => {
