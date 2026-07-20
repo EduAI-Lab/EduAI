@@ -100,10 +100,26 @@ gradient-descent
 
 Outro`,
     };
-    const { container } = render(<ChatMessage message={withDiagram} />);
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
     expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /replay/i })).toBeInTheDocument();
     expect(screen.queryByText(/```eduai-diagram/)).not.toBeInTheDocument();
+  });
+
+  it("does not turn eduai-diagram fences into widgets outside Assist mode", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: Baseline
+Introduce: Step one
+\`\`\``,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector("[data-eduai-diagram]")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /replay/i })).not.toBeInTheDocument();
   });
 
   it("renders labeled process-flow stages and shows detail on tap", () => {
@@ -118,12 +134,15 @@ Floor vote: Chamber decides
 Become law: President signs
 \`\`\``,
     };
-    const { container } = render(<ChatMessage message={withDiagram} />);
-    expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
+    expect(diagram).toBeInTheDocument();
     expect(screen.getByText("How a bill becomes law")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Committee" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Committee" }));
-    expect(screen.getByText(/Experts study and amend/)).toBeInTheDocument();
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+Experts study and amend/);
   });
 
   it("keeps process-flow stage selection after autoplay timers fire", () => {
@@ -139,7 +158,9 @@ Vote: decide
 Law: sign
 \`\`\``,
     };
-    const { container } = render(<ChatMessage message={withDiagram} />);
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Committee" }));
     const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
     expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
@@ -161,10 +182,13 @@ Compute slope: Measure steepness
 Step downhill: Move opposite the slope
 \`\`\``,
     };
-    const { container } = render(<ChatMessage message={withDiagram} />);
-    expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    const diagram = container.querySelector('[data-eduai-diagram="gradient-descent"]');
+    expect(diagram).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Compute slope" }));
-    expect(screen.getByText(/Measure steepness/)).toBeInTheDocument();
+    expect(diagram?.textContent).toMatch(/Compute slope\s+—\s+Measure steepness/);
   });
 
   it("renders hierarchy and compare stage detail on tap", () => {
@@ -179,9 +203,13 @@ Dendrites: Receive
 Axon: Send
 \`\`\``,
     };
-    const { unmount } = render(<ChatMessage message={hierarchy} />);
+    const { container, unmount } = render(
+      <ChatMessage message={hierarchy} assistiveDisplay />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Dendrites" }));
-    expect(screen.getByText(/Receive/)).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-eduai-diagram="hierarchy"]')?.textContent,
+    ).toMatch(/Dendrites\s+—\s+Receive/);
     unmount();
 
     const compare: Message = {
@@ -194,9 +222,14 @@ TCP: Reliable
 UDP: Fast
 \`\`\``,
     };
-    render(<ChatMessage message={compare} />);
+    const compareRender = render(
+      <ChatMessage message={compare} assistiveDisplay />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "UDP" }));
-    expect(screen.getByText(/Fast/)).toBeInTheDocument();
+    expect(
+      compareRender.container.querySelector('[data-eduai-diagram="compare"]')
+        ?.textContent,
+    ).toMatch(/UDP\s+—\s+Fast/);
   });
 
   it("falls back unknown type ids to process-flow animation", () => {
@@ -204,7 +237,9 @@ UDP: Fast
       ...aiMessage,
       content: "```eduai-diagram\nphotosynthesis-cycle\n```",
     };
-    const { container } = render(<ChatMessage message={withDiagram} />);
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
     expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
   });
 });
