@@ -3,6 +3,10 @@ import { IconLoader, IconLock, IconSchool } from "@tabler/icons-react";
 
 import { linkCanvasRoster } from "~/lib/canvas/client";
 import {
+  isValidUbcStudentNumber,
+  UBC_STUDENT_NUMBER_MESSAGE,
+} from "~/lib/canvas/schemas";
+import {
   Button,
   Card,
   CardContent,
@@ -27,6 +31,7 @@ export function StudentNumberSettings({
   const [success, setSuccess] = useState<string | null>(null);
 
   const trimmed = studentNumber.trim();
+  const formatValid = isValidUbcStudentNumber(trimmed);
   const unchanged = trimmed === savedStudentNumber.trim();
   // Once a student number is linked it cannot be self-edited (the backend
   // rejects reassignment with a 409). Show a locked, read-only view instead of
@@ -35,6 +40,11 @@ export function StudentNumberSettings({
   const isLocked = savedStudentNumber.trim().length > 0;
 
   const handleSave = async () => {
+    if (!formatValid) {
+      setError(UBC_STUDENT_NUMBER_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -106,23 +116,31 @@ export function StudentNumberSettings({
               <Input
                 id="settings-studentNumber"
                 value={studentNumber}
-                onChange={(e) => setStudentNumber(e.target.value)}
+                onChange={(e) => {
+                  setStudentNumber(e.target.value);
+                  if (error === UBC_STUDENT_NUMBER_MESSAGE) setError(null);
+                }}
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
                 placeholder="e.g. 12345678"
+                minLength={8}
+                maxLength={8}
+                pattern="\d{8}"
+                title={UBC_STUDENT_NUMBER_MESSAGE}
                 disabled={saving}
               />
               <p className="text-xs text-muted-foreground">
-                Must match your student ID in Canvas. You can link before your
-                instructor syncs; enrollments appear after they sync the course.
-                Once saved, only an administrator can change it.
+                Must be exactly 8 digits and match your student ID in Canvas. You
+                can link before your instructor syncs; enrollments appear after
+                they sync the course. Once saved, only an administrator can
+                change it.
               </p>
             </div>
 
             <Button
               onClick={() => void handleSave()}
-              disabled={saving || !trimmed || unchanged}
+              disabled={saving || !trimmed || !formatValid || unchanged}
             >
               {saving ? (
                 <>
@@ -139,3 +157,4 @@ export function StudentNumberSettings({
     </Card>
   );
 }
+

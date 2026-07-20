@@ -1,6 +1,6 @@
 import { prisma, seedUsers } from './seed';
 
-console.log('[auto-seed] Backfilling seed student IDs (student_1–student_5)...');
+console.log('[auto-seed] Backfilling seed student IDs (10000001–10000005)...');
 
 try {
   await seedUsers();
