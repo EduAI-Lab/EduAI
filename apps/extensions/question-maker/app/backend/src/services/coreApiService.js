@@ -41,6 +41,44 @@ function isRetryableAuthFailure(status, body) {
 }
 
 /**
+ * Core caps `pageSize` at 200 (#1041); page-walks and `?ids=` chunks use it.
+ */
+const CORE_PAGE_SIZE = 200;
+
+/** Safety stop for page-walks so a bad `total` cannot spin forever. */
+const CORE_MAX_PAGES = 50;
+
+/**
+ * Read one page of `/api/courses`, or every page when `all` is set.
+ * Returns the course array; Core's envelope is unwrapped here.
+ */
+async function fetchCoursePages(authOptions, { all = false, page = 1, pageSize = CORE_PAGE_SIZE, search } = {}) {
+  const readPage = async (pageNumber) => {
+    const params = new URLSearchParams({
+      page: String(pageNumber),
+      pageSize: String(Math.min(pageSize, CORE_PAGE_SIZE)),
+    });
+    if (search) params.set('search', search);
+    const data = await fetchFromCore(`/api/courses?${params}`, authOptions);
+    return {
+      courses: Array.isArray(data?.data) ? data.data : [],
+      total: typeof data?.total === 'number' ? data.total : 0,
+    };
+  };
+
+  const first = await readPage(page);
+  if (!all) return first.courses;
+
+  const courses = [...first.courses];
+  const size = Math.min(pageSize, CORE_PAGE_SIZE);
+  const pageCount = Math.min(Math.ceil(first.total / size) || 1, CORE_MAX_PAGES);
+  for (let next = page + 1; next <= pageCount; next += 1) {
+    courses.push(...(await readPage(next)).courses);
+  }
+  return courses;
+}
+
+/**
  * Calls Core with service-key and/or session-cookie auth.
  * When both are available, retries with the alternate auth mode on auth failures
  * so a stale EDUAI_API_KEY does not block user-session reads — unless `cookieOnly`
@@ -207,19 +245,31 @@ export async function getCourseFromCore(coreCourseId, opts = {}) {
  * GET /api/courses — session-scoped course list for instructor UI flows (#578).
  * Forwards the caller's Core session cookie so Core applies `buildCourseListFilter`
  * (INSTRUCTOR/TA enrollments, etc.). Do not use the service key for course pickers.
+ *
+ * Core requires `page`/`pageSize` (#1041) and answers with
+ * `{ data, total, page, pageSize }`. Callers that need the caller's complete
+ * visible set pass `all: true` and pay for the page-walk explicitly.
  */
-export async function listCoursesFromCore(cookieHeader) {
-  return fetchFromCore('/api/courses', {
+export async function listCoursesFromCore(cookieHeader, options = {}) {
+  return fetchCoursePages(
+    { cookie: cookieHeader, preferCookie: true, cookieOnly: true },
+    options,
+  );
+}
+
+/**
+ * Returns true when `coreCourseId` is in the caller's scoped Core list (#578).
+ *
+ * Uses the `?ids=` lookup (#1125): one request for the single course in
+ * question, still cookie-scoped so Core answers empty when the caller cannot
+ * see it. This used to scan the caller's whole course list.
+ */
+export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
+  const courses = await getCoursesByIdsFromCore([coreCourseId], {
     cookie: cookieHeader,
     preferCookie: true,
     cookieOnly: true,
   });
-}
-
-/** Returns true when `coreCourseId` appears in the caller's scoped Core course list (#578). */
-export async function isCoreCourseInScopedList(coreCourseId, cookieHeader) {
-  const data = await listCoursesFromCore(cookieHeader);
-  const courses = Array.isArray(data?.courses) ? data.courses : [];
   return courses.some((course) => course?.id === coreCourseId);
 }
 
@@ -267,15 +317,45 @@ export async function getMyProfileFromCore(cookieHeader) {
   return res.json();
 }
 
-/** GET /api/courses via service key — all Core courses (for QM list enrichment/filtering). */
+/**
+ * GET /api/courses via service key — Core's whole catalog, page-walked (#1041).
+ *
+ * Prefer `getCoursesByIdsFromCore` whenever the caller already knows which
+ * `coreCourseId`s it wants to join against; this walk exists for the ADMIN list,
+ * which materializes a local anchor per Core course and so has no id set to
+ * narrow by.
+ */
 export async function getAllCoursesFromCore() {
-  const res = await fetch(`${config.coreUrl}/api/courses`, {
-    headers: serviceHeaders(),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw coreError(body.error || 'Core courses fetch failed', res.status, body);
+  return fetchCoursePages({}, { all: true });
+}
+
+/**
+ * GET /api/courses?ids= — resolve a known set of Core courses in one unpaged
+ * lookup (#1125). Chunked, since Core caps the id list.
+ */
+export async function getCoursesByIdsFromCore(ids, authOptions = {}) {
+  const unique = [...new Set((ids ?? []).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const courses = [];
+  for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
+    const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
+    const data = await fetchFromCore(
+      `/api/courses?ids=${encodeURIComponent(chunk.join(','))}`,
+      authOptions,
+    );
+    if (Array.isArray(data?.data)) courses.push(...data.data);
   }
-  const data = await res.json();
-  return Array.isArray(data.courses) ? data.courses : [];
+  return courses;
+}
+
+/** GET /api/courses?search= — Core-side course search (#1125). */
+export async function searchCoursesFromCore(search, authOptions = {}) {
+  const params = new URLSearchParams({
+    page: '1',
+    pageSize: String(CORE_PAGE_SIZE),
+    search,
+  });
+  const data = await fetchFromCore(`/api/courses?${params}`, authOptions);
+  return Array.isArray(data?.data) ? data.data : [];
 }

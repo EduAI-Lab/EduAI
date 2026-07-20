@@ -12,14 +12,18 @@ import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
 
 export function DashboardUnitAdminView() {
-  const { courses, loading: coursesLoading } = useCourses();
+  // Course cards come from the first page; both counts come from the server so
+  // they describe the unit, not the page (#1041).
+  const { courses, total: courseTotal, loading: coursesLoading } = useCourses();
+  const { total: activeCourseTotal, loading: activeCoursesLoading } = useCourses({
+    pageSize: 1,
+    isActive: true,
+  });
   const { chats, isLoading: chatsLoading } = useRecentChats();
   const { stats, isLoading: statsLoading } = useDashboardStats();
 
-  const courseCount = coursesLoading ? "—" : String(courses.length);
-  const activeCourses = coursesLoading
-    ? "—"
-    : String(courses.filter((c) => c.isActive).length);
+  const courseCount = coursesLoading ? "—" : String(courseTotal);
+  const activeCourses = activeCoursesLoading ? "—" : String(activeCourseTotal);
   const instructorCount = statsLoading ? "—" : String(stats?.instructorCount ?? 0);
   const aiSessions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
 

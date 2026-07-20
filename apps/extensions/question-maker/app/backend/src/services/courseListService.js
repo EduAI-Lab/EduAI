@@ -7,7 +7,13 @@
  */
 import { Course } from '../schema/index.js';
 import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
-import { getAllCoursesFromCore, getCourseFromCore, listCoursesFromCore } from './coreApiService.js';
+import {
+  getAllCoursesFromCore,
+  getCourseFromCore,
+  getCoursesByIdsFromCore,
+  listCoursesFromCore,
+  searchCoursesFromCore,
+} from './coreApiService.js';
 import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
@@ -104,15 +110,21 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
 /**
  * Batched read-through for arrays of rows carrying a nested `course` object
  * (question/assessment lists, e.g. `getQuestionsByUser`/`getAssessmentsByUser`).
- * ONE `getAllCoursesFromCore` call regardless of row count — never a per-row
- * Core fetch (locked decision: no N+1) — mirroring `listCoursesForUser`.
+ * ONE `?ids=` lookup regardless of row count — never a per-row Core fetch
+ * (locked decision: no N+1) — mirroring `listCoursesForUser`. #1041 removed the
+ * full-catalog read this used to do; the ids come from the rows themselves.
  * Rows without a `course` field (or whose nested course lacks `coreCourseId`
  * in its `attributes`) pass through unchanged.
  */
 export async function enrichRowsWithCourse(rows) {
+  const wantedIds = rows
+    .map((row) => (row.toJSON ? row.toJSON() : row))
+    .map((plain) => plain.course?.coreCourseId)
+    .filter(Boolean);
+
   let coreById = new Map();
   try {
-    const coreCourses = await getAllCoursesFromCore();
+    const coreCourses = await getCoursesByIdsFromCore(wantedIds);
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
     // Core unreachable — rows still return; nested course degrades to placeholder.
@@ -192,7 +204,15 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 
   let coreById = new Map();
   try {
-    const coreCourses = await getAllCoursesFromCore();
+    // #1041: ADMIN's list is Core's whole catalog (it materializes an anchor per
+    // Core course below), so that branch still walks every page. Everyone else
+    // only ever joins against the local rows, so an `?ids=` lookup suffices.
+    const coreCourses =
+      reqUser.role === 'ADMIN'
+        ? await getAllCoursesFromCore()
+        : await getCoursesByIdsFromCore(
+            allCourses.map((c) => (c.toJSON ? c.toJSON() : c).coreCourseId),
+          );
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
     // Core unreachable — list still works without department enrichment.
@@ -246,8 +266,9 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
   // request was never the problem.
   let roleByCoreId = new Map();
   try {
-    const data = await listCoursesFromCore(cookie);
-    const scopedCourses = Array.isArray(data?.courses) ? data.courses : [];
+    // #1041: `callerEnrollmentRole` is only on the cookie-scoped list, and every
+    // local row needs a verdict, so this walks the caller's pages.
+    const scopedCourses = await listCoursesFromCore(cookie, { all: true });
     roleByCoreId = new Map(scopedCourses.map((c) => [c.id, c.callerEnrollmentRole ?? null]));
   } catch {
     // Core unreachable — every row falls through to the owner-fallback below,
@@ -330,7 +351,7 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
  * (`routes/eduai.js`) to authorize a client-supplied course code against a
  * real course — `code` is Core-owned and no longer stored locally (#1072 §4
  * step 10), so matching must read through Core rather than querying the
- * dropped `courses.code` column. One batched `getAllCoursesFromCore` call
+ * dropped `courses.code` column. One Core-side `?search=` call (#1125)
  * regardless of row count (no N+1, mirrors `listCoursesForUser`).
  *
  * Returns raw `Course` model instances (not enriched rows) so callers can
@@ -342,7 +363,10 @@ export async function findCoursesByProjectedCode(codeQuery) {
 
   let coreById = new Map();
   try {
-    const coreCourses = await getAllCoursesFromCore();
+    // #1125: let Core do the code match instead of pulling the catalog and
+    // filtering here. The exact-match check below still applies, since Core's
+    // `search` is a substring match.
+    const coreCourses = await searchCoursesFromCore(target);
     coreById = new Map(coreCourses.map((c) => [c.id, c]));
   } catch {
     return []; // Core unreachable — no code-based match is possible; degrade to no access.

@@ -309,14 +309,17 @@ describe('listCoursesFromCore', () => {
   it('forwards the caller cookie (no service key) and returns scoped courses', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
+      vi.fn().mockResolvedValueOnce(
+        ok({ data: [{ id: 'cuid-1', code: 'COSC 111' }], total: 1, page: 1, pageSize: 200 }),
+      ),
     );
 
     const result = await listCoursesFromCore('session=abc');
 
-    expect(result).toEqual({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] });
+    // #1041: paging is required and the envelope is unwrapped to a plain array.
+    expect(result).toEqual([{ id: 'cuid-1', code: 'COSC 111' }]);
     const [url, opts] = fetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/courses');
+    expect(url).toBe('http://core.test/api/courses?page=1&pageSize=200');
     expect(opts.headers.cookie).toBe('session=abc');
     expect(opts.headers.Authorization).toBeUndefined();
   });
@@ -343,17 +346,18 @@ describe('isCoreCourseInScopedList', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }, { id: 'cuid-2', code: 'MATH 101' }] }),
+        ok({ data: [{ id: 'cuid-2', code: 'MATH 101' }], total: 1, page: 1, pageSize: 1 }),
       ),
     );
 
+    // #1125: resolved through the `?ids=` lookup, not by scanning a full list.
     await expect(isCoreCourseInScopedList('cuid-2', 'session=abc')).resolves.toBe(true);
   });
 
   it('returns false when the course id is not in the scoped list', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(ok({ courses: [{ id: 'cuid-1', code: 'COSC 111' }] })),
+      vi.fn().mockResolvedValueOnce(ok({ data: [], total: 0, page: 1, pageSize: 0 })),
     );
 
     await expect(isCoreCourseInScopedList('cuid-missing', 'session=abc')).resolves.toBe(false);

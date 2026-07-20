@@ -11,6 +11,7 @@ import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-vi
 import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
 import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
 import { useCourses } from '~/hooks/api/use-courses'
+import { TablePagination } from '~/components/ui/table-pagination'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -69,7 +70,16 @@ export default function CoursesPage() {
   const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
   const accessDenied = searchParams.get('access') === 'denied'
-  const { courses, loading, createCourse, updateCourse, deleteCourse } = useCourses()
+  const {
+    courses,
+    total: courseTotal,
+    pagination,
+    setPagination,
+    loading,
+    createCourse,
+    updateCourse,
+    deleteCourse,
+  } = useCourses()
 
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
@@ -136,9 +146,9 @@ export default function CoursesPage() {
           />
         ) : isUnitAdmin ? (
           <CoursesUnitAdminView
-            courses={courses.filter(
-              (c) => c.department !== null && authorizedUnits.includes(c.department)
-            )}
+            // `/api/courses` already scopes UNIT_ADMIN to their authorized units,
+            // and re-filtering here would silently drop rows from a page (#1041).
+            courses={courses}
             authorizedUnits={authorizedUnits}
             instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
@@ -161,6 +171,13 @@ export default function CoursesPage() {
             enrolledCourseIds={enrolledCourseIds}
           />
         )}
+        <div className="mt-4">
+          <TablePagination
+            pagination={pagination}
+            onPaginationChange={setPagination}
+            total={courseTotal}
+          />
+        </div>
       </div>
       <ConfirmDialog
         open={pendingPublish !== null}

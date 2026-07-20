@@ -130,8 +130,8 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
   let coreCourses;
   try {
-    const data = await listCoursesFromCore(cookie ?? '');
-    coreCourses = Array.isArray(data?.courses) ? data.courses : [];
+    // #1041: import reconciles against every course the caller can see.
+    coreCourses = await listCoursesFromCore(cookie ?? '', { all: true });
   } catch (err) {
     logger.warn({ err, userId }, 'Auto-import skipped: could not list Core courses');
     return { imported: 0, skipped: 0, error: err.message };

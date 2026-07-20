@@ -6,11 +6,13 @@ import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef } from "~/components/dashboard/dashboard-view";
 
 export function DashboardStudentView() {
-  const { courses, loading: coursesLoading } = useCourses();
+  // The panel shows a first page of course cards; the count comes from the
+  // server's total, not the rows on screen (#1041).
+  const { courses, total: courseTotal, loading: coursesLoading } = useCourses();
   const { chats, isLoading: chatsLoading } = useRecentChats();
   const { stats, isLoading: statsLoading } = useDashboardStats();
 
-  const courseCount = coursesLoading ? "—" : String(courses.length);
+  const courseCount = coursesLoading ? "—" : String(courseTotal);
   const weeklyChats = statsLoading ? "—" : String(stats?.chatCountWeek ?? 0);
   const materialsAvailable = statsLoading ? "—" : String(stats?.materialCount ?? 0);
 

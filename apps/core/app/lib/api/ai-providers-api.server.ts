@@ -5,6 +5,7 @@ import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { paginatedResponse, parsePaginationParams } from "~/lib/pagination.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -41,21 +42,26 @@ export async function handleAiProvidersApiRequest(request: Request) {
         });
       }
 
-      const providers = await prisma.aIProvider.findMany({
-        include: {
-          models: {
-            orderBy: { name: "asc" },
+      // #1041: pagination is required. The nested `models` include was unbounded
+      // per provider and unused by every caller — only `_count.models` is read.
+      const paginationResult = parsePaginationParams(url.searchParams);
+      if ("response" in paginationResult) return paginationResult.response;
+      const { pagination } = paginationResult;
+
+      const [total, providers] = await prisma.$transaction([
+        prisma.aIProvider.count(),
+        prisma.aIProvider.findMany({
+          include: {
+            _count: {
+              select: { models: true },
+            },
           },
-          _count: {
-            select: { models: true },
-          },
-        },
-        orderBy: { name: "asc" },
-      });
-      return new Response(JSON.stringify(providers), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+          orderBy: { name: "asc" },
+          skip: pagination.skip,
+          take: pagination.take,
+        }),
+      ]);
+      return paginatedResponse(providers, total, pagination);
     }
 
     case "POST": {

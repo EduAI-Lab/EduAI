@@ -78,6 +78,18 @@ export type AdminUser = {
   createdAt: string;
 };
 
+/**
+ * Core's paginated user envelope, proxied by `GET /api/admin/users` (#1041).
+ * `stats` is platform-wide and unaffected by the current page.
+ */
+export type AdminUserPage = {
+  data: AdminUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+  stats: { total: number; active: number; byRole: Record<string, number> };
+};
+
 export type EnrolledStudent = AdminUser & {
   role?: EnrollmentRole;
 };

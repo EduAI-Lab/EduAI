@@ -9,6 +9,10 @@ import { useNavigate } from "react-router";
 
 import { CourseSwitcher as SharedCourseSwitcher, type CourseSwitcherOption } from "@eduai/ui";
 
+/** One bounded page at the API's max `pageSize`, for course pickers (#1041). */
+const COURSE_PICKER_QUERY = "page=1&pageSize=200";
+
+
 type CoreCourse = { id: string; code: string; name: string };
 
 export function CourseSwitcher({
@@ -27,10 +31,12 @@ export function CourseSwitcher({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch("/api/courses");
+        // #1041: `/api/courses` requires paging. The switcher is a picker, not
+        // a table, so it takes one bounded page at the API's maximum size.
+        const res = await fetch(`/api/courses?${COURSE_PICKER_QUERY}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { courses?: CoreCourse[] };
-        if (!cancelled) setCourses(data.courses ?? []);
+        const data = (await res.json()) as { data?: CoreCourse[] };
+        if (!cancelled) setCourses(data.data ?? []);
       } catch {
         // Non-fatal: the switcher still shows the current course.
       }
