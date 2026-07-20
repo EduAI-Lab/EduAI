@@ -6,6 +6,9 @@ import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateA
 vi.mock('../../src/services/eduaiClient.js', () => ({
   listEduAiCourseEnrollmentsServiceKey: vi.fn(),
   listEduAiCourses: vi.fn(),
+  // Unified contract (#1072): fields/department come from the service-key
+  // catalog — the admin course list and ai-traces routes read this one.
+  listEduAiCoursesServiceKey: vi.fn(),
   findEduAiCourseById: vi.fn(),
   listEduAiCourseTopics: vi.fn(),
   listEduAiModels: vi.fn(),
@@ -16,12 +19,19 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   listCourseTestableQuestions: vi.fn(),
   patchCoreEnrollmentRole: vi.fn(),
   deleteCoreEnrollment: vi.fn(),
+  // `department` is Core-owned (#1072 step 4) — `isCourseAdmin`'s
+  // self-resolve path and the ai-traces route both resolve it live via
+  // these two, so UNIT_ADMIN-scoped tests below stub them per course.
+  fetchCoreCourseSafe: vi.fn(),
 }));
 
 import {
   deleteCoreEnrollment,
+  fetchCoreCourseSafe,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
+  listEduAiCourses,
+  listEduAiCoursesServiceKey,
   patchCoreEnrollmentRole,
 } from '../../src/services/eduaiClient.js';
 
@@ -83,7 +93,7 @@ describe('Admin routes', () => {
     it('returns course list for admin', async () => {
       await import('../helpers.js').then(({ prisma }) =>
         prisma.courseOffering.create({
-          data: { title: 'Admin Test Course', description: 'desc', isPublished: true },
+          data: { coreOfferingId: 'core-admin-test-course' },
         }),
       );
 
@@ -102,6 +112,23 @@ describe('Admin routes', () => {
       const profApp = await createApp({ mockUser: prof });
       const res = await request(profApp).get('/api/admin/courses');
       expect(res.status).toBe(403);
+    });
+
+    it('materializes an anchor for a Core course with no local row yet — create-on-open (#1072 step 3 / #1074)', async () => {
+      const UNANCHORED_CORE_ID = 'core-cuid-admin-unanchored';
+      vi.mocked(listEduAiCoursesServiceKey).mockResolvedValueOnce([
+        { id: UNANCHORED_CORE_ID, code: 'MATH 200', name: 'Not Yet Imported' },
+      ]);
+
+      const res = await request(adminApp).get('/api/admin/courses');
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
+
+      const anchor = await prisma.courseOffering.findFirst({
+        where: { coreOfferingId: UNANCHORED_CORE_ID },
+      });
+      expect(anchor).not.toBeNull();
     });
   });
 
@@ -150,13 +177,7 @@ describe('Admin routes', () => {
       vi.clearAllMocks();
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
       externalCourse = await prisma.courseOffering.create({
-        data: {
-          title: 'EduAI Course',
-          description: 'imported',
-          isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
-        },
+        data: { coreOfferingId: 'core-cuid-ext-1' },
       });
     });
 
@@ -197,37 +218,11 @@ describe('Admin routes', () => {
       expect(res.body.error).toMatch(/not found/i);
     });
 
-    it('returns 400 when course is native (no externalId)', async () => {
-      const nativeCourse = await prisma.courseOffering.create({
-        data: { title: 'Native', description: '', isPublished: false },
-      });
-
-      const res = await request(adminApp).post(
-        `/api/admin/courses/${nativeCourse.id}/sync-enrollments`,
-      );
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/not imported/i);
-    });
-
-    it('returns 400 when externalSource is not EDUAI', async () => {
-      const canvasCourse = await prisma.courseOffering.create({
-        data: {
-          title: 'Canvas Course',
-          description: '',
-          isPublished: false,
-          externalId: 'canvas-123',
-          externalSource: 'CANVAS',
-        },
-      });
-
-      const res = await request(adminApp).post(
-        `/api/admin/courses/${canvasCourse.id}/sync-enrollments`,
-      );
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/not imported/i);
-    });
+    // The "native course, no coreOfferingId" scenario this test covered is no
+    // longer constructible: #1072 step 4 made `coreOfferingId` required at the
+    // DB level, so every CourseOffering row is Core-linked by construction.
+    // The route's `!course.coreOfferingId` guard is dead code now, harmlessly
+    // so; left in place rather than removed as part of this migration.
 
     it('creates enrollment rows for new Core members and returns correct counts', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
@@ -381,13 +376,21 @@ describe('Admin routes', () => {
     let unitAdmin;
     let unitAdminApp;
 
+    // `department` is Core-owned (#1072 step 4) — `isCourseAdmin` resolves it
+    // live via `fetchCoreCourseSafe`, stubbed here per `coreOfferingId`.
+    const departmentByCoreOfferingId = { 'core-cosc-101': 'COSC', 'core-math-101': 'MATH' };
+
     beforeEach(async () => {
       coscCourse = await prisma.courseOffering.create({
-        data: { title: 'COSC 101', isPublished: true, department: 'COSC' },
+        data: { coreOfferingId: 'core-cosc-101' },
       });
       mathCourse = await prisma.courseOffering.create({
-        data: { title: 'MATH 101', isPublished: true, department: 'MATH' },
+        data: { coreOfferingId: 'core-math-101' },
       });
+      fetchCoreCourseSafe.mockImplementation(async (coreOfferingId) => ({
+        id: coreOfferingId,
+        department: departmentByCoreOfferingId[coreOfferingId] ?? null,
+      }));
       unitAdmin = makeUnitAdmin(['COSC']);
       unitAdminApp = await createApp({ mockUser: unitAdmin });
     });
@@ -447,6 +450,12 @@ describe('Admin routes', () => {
       expect(res.body.availableStudents).toHaveLength(1);
       expect(res.body.availableStudents[0].id).toBe(availableStudent.id);
 
+      // Every course has a coreOfferingId now (#1072 step 4), so the DELETE
+      // route's Core write-through always runs — stub it to find the
+      // enrollment being removed.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValueOnce([
+        { studentId: enrolledStudent.id, id: 'core-enrollment-remove-1' },
+      ]);
       await request(unitAdminApp).delete(
         `/api/admin/courses/${coscCourse.id}/enrollments/${enrolledStudent.id}`,
       );
@@ -567,6 +576,11 @@ describe('Admin routes', () => {
         data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
       });
 
+      // Every course has a coreOfferingId now (#1072 step 4), so the DELETE
+      // route's Core write-through always runs.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValueOnce([
+        { studentId: student.id, id: 'core-enrollment-remove-2' },
+      ]);
       const res = await request(unitAdminApp).delete(
         `/api/admin/courses/${coscCourse.id}/enrollments/${student.id}`,
       );
@@ -598,6 +612,11 @@ describe('Admin routes', () => {
         data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
       });
 
+      // Every course has a coreOfferingId now (#1072 step 4), so the PATCH
+      // route's Core write-through always runs.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValueOnce([
+        { studentId: student.id, id: 'core-enrollment-role-1' },
+      ]);
       const res = await request(unitAdminApp)
         .patch(`/api/admin/courses/${coscCourse.id}/enrollments/${student.id}/role`)
         .send({ role: 'TA' });
@@ -618,6 +637,11 @@ describe('Admin routes', () => {
         data: { courseOfferingId: coscCourse.id, userId: ta.id, role: 'TA' },
       });
 
+      // Every course has a coreOfferingId now (#1072 step 4), so the PATCH
+      // route's Core write-through always runs.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValueOnce([
+        { studentId: ta.id, id: 'core-enrollment-role-2' },
+      ]);
       const res = await request(unitAdminApp)
         .patch(`/api/admin/courses/${coscCourse.id}/enrollments/${ta.id}/role`)
         .send({ role: 'STUDENT' });
@@ -671,13 +695,7 @@ describe('Admin routes', () => {
       vi.clearAllMocks();
       student = makeStudent();
       externalCourse = await prisma.courseOffering.create({
-        data: {
-          title: 'EduAI Course',
-          description: 'imported',
-          isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
-        },
+        data: { coreOfferingId: 'core-cuid-ext-1' },
       });
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: externalCourse.id, userId: student.id, role: 'STUDENT' },
@@ -760,13 +778,7 @@ describe('Admin routes', () => {
       vi.clearAllMocks();
       student = makeStudent();
       externalCourse = await prisma.courseOffering.create({
-        data: {
-          title: 'EduAI Course',
-          description: 'imported',
-          isPublished: true,
-          externalId: 'core-cuid-ext-1',
-          externalSource: 'EDUAI',
-        },
+        data: { coreOfferingId: 'core-cuid-ext-1' },
       });
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: externalCourse.id, userId: student.id, role: 'STUDENT' },
@@ -862,10 +874,12 @@ describe('Admin routes', () => {
     beforeEach(async () => {
       const prof = makeProfessor();
       seed = await seedMinimalCourse(prof.id);
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { department: 'CPSC' },
-      });
+      // `department` is Core-owned (#1072 step 4) — the ai-traces route
+      // resolves it from one batched service-key catalog fetch (unified
+      // contract), not a local column.
+      listEduAiCoursesServiceKey.mockResolvedValue([
+        { id: seed.course.coreOfferingId, name: 'Seeded Course', department: 'CPSC' },
+      ]);
       activity = await prisma.activity.create({
         data: {
           lessonId: seed.lesson.id,
