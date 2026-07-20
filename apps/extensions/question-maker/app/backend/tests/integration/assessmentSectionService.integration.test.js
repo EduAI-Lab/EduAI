@@ -28,7 +28,7 @@ describeDb('assessmentSectionService (integration)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, Question_Metadata, Variants, AssessmentSections, SectionVariants } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment } = await import('../../src/services/assessmentService.js'));
     svc = await import('../../src/services/assessmentSectionService.js');
   });

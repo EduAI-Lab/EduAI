@@ -22,8 +22,7 @@ import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
 
 const COURSE = {
   id: 1,
-  externalId: 'core-course-cuid-1',
-  externalSource: 'EDUAI',
+  coreOfferingId: 'core-course-cuid-1',
 };
 
 const ACTIVE_ENROLLMENT = {
@@ -71,15 +70,8 @@ describe('syncCourseEnrollments', () => {
       expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
     });
 
-    it('returns zeros when course has no externalId', async () => {
-      prisma.courseOffering.findUnique.mockResolvedValue({ ...COURSE, externalId: null });
-      const result = await syncCourseEnrollments(1);
-      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
-      expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
-    });
-
-    it('returns zeros when externalSource is not EDUAI', async () => {
-      prisma.courseOffering.findUnique.mockResolvedValue({ ...COURSE, externalSource: 'CANVAS' });
+    it('returns zeros when course has no coreOfferingId', async () => {
+      prisma.courseOffering.findUnique.mockResolvedValue({ ...COURSE, coreOfferingId: null });
       const result = await syncCourseEnrollments(1);
       expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
       expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
@@ -259,8 +251,8 @@ describe('syncCourseEnrollments', () => {
     });
   });
 
-  describe('externalId passed to Core', () => {
-    it('calls Core with the course externalId not the local offering id', async () => {
+  describe('coreOfferingId passed to Core', () => {
+    it('calls Core with the course coreOfferingId not the local offering id', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
 
       await syncCourseEnrollments(1);
