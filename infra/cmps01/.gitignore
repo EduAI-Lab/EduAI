@@ -1,0 +1,4 @@
+# Generated on cmps01 by deploy-edge-proxy.sh — never commit secrets or rendered configs.
+.env
+nginx.conf
+internal-allow.conf

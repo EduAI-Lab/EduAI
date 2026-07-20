@@ -191,7 +191,7 @@ describe('courseCloning service', () => {
     it('does nothing when source has no modules', async () => {
       // Create an empty course
       const emptyCourse = await prisma.courseOffering.create({
-        data: { title: 'Empty Course', isPublished: true },
+        data: { coreOfferingId: 'core-empty-course' },
       });
 
       const moduleCountBefore = await prisma.module.count({

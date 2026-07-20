@@ -176,7 +176,6 @@ export const canvasService = {
     options: {
       assessmentType?: string;
       assessmentName?: string;
-      semester?: string;
       primaryTopicId: number;
     }
   ): Promise<CanvasImportResult> {

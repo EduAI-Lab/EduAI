@@ -1,0 +1,777 @@
+{
+  "version": 1,
+  "generated_at": "2026-06-16T19:18:55.308Z",
+  "source_labels": "C:\\Users\\SyedS\\Documents\\UBCO Courses\\URA\\docs\\research\\data\\runs\\labels.v1.jsonl",
+  "split": "dev",
+  "exemplar_count": 96,
+  "exemplars": [
+    {
+      "prompt": "What is decomposition in computational thinking?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define an algorithm in simple terms.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a bit?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Who is Alan Turing?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is object-oriented programming?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define Big-O notation.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a derivative?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is photosynthesis?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define utilitarianism.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a linked list?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define recursion.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is p-value in statistics?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is an eigenvalue?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define a confidence interval.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Explain why algorithm efficiency matters even when computers are fast.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Explain the difference between stack and heap memory in one paragraph.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "When should I prefer a vector over a list in C++?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Can you summarize the key ideas from the recursion unit?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Explain the power rule for derivatives with an example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "What is the chain rule and how do I apply it?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Explain Type I vs Type II errors.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Write a Python function that returns the nth Fibonacci number iteratively.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "code"
+      ]
+    },
+    {
+      "prompt": "Explain how binary search works and give its time complexity.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "What is the difference between supervised and unsupervised learning?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "tool_requiring"
+      ]
+    },
+    {
+      "prompt": "Fetch the page at https://example.com and list the main headings.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "tool_requiring"
+      ]
+    },
+    {
+      "prompt": "Explain train/validation/test splits and why we use all three.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Explain Kant's categorical imperative with one classroom-friendly example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Debug this code: `for i in range(10): print(i); i = i + 1` — why might the loop behave unexpectedly?",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "debugging"
+      ]
+    },
+    {
+      "prompt": "Given a BST, write steps to delete a node with two children and justify correctness.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Prove by induction that 1+2+...+n = n(n+1)/2.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Refactor this Java method to avoid NullPointerException while preserving behavior when profile or name is null: public String format(User u) { return u.getProfile().getName().toUpperCase(); }",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "code"
+      ]
+    },
+    {
+      "prompt": "For the pendulum lab, how do I propagate uncertainty when calculating g from period and length?",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Write a unit test plan for the EduAI Auto router covering images, tools, short factual, and strong RAG rules.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "What is computational thinking?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define abstraction in computer science.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a variable in a program?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is an IP address?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define polymorphism in object-oriented programming.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a hash table?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define osmosis in biology.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "State Newton's first law of motion.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is momentum in physics?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is classical conditioning in psychology?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define operant conditioning.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a thesis statement in academic writing?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What was the Industrial Revolution?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define plagiarism in academic work.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "What is a database index used for?",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Define pattern recognition in machine learning.",
+      "tier": 1,
+      "tags": [
+        "easy",
+        "definition"
+      ]
+    },
+    {
+      "prompt": "Explain test-driven development and when unit tests are written.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "What is the role of the TLB in virtual memory?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Why do branch mispredictions hurt more in very deep pipelines?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "State the definition of a partial derivative at a point (a, b).",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "When can I switch the order of integration in a double integral?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "When is a vector field conservative on a simply connected domain?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Define an unbiased estimator and give a short example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "What does R-squared represent in ordinary least squares regression?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Why do we need both a validation set and a test set?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "For imbalanced binary classification, which single metric is least informative on its own?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Describe encoding, storage, and retrieval with one failure example for each.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "State the work-energy theorem and give a one-line application example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Which factor was NOT a driver of Britain's early Industrial Revolution?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "What makes evidence use strong versus weak in an argument essay?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "What are three considerations for evaluating trustworthiness of an online source?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Explain how merge sort works and state its average time complexity.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Compare stack versus queue data structures with one real use case for each.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Explain the difference between precision and recall for a binary classifier.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Solve: find the gradient of f(x,y) = x^2 y + 3xy at the point (1, 2).",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Write an SQL query that counts active enrollments per course_id from an enrollments table.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "code"
+      ]
+    },
+    {
+      "prompt": "Walk through one partition step of quicksort on [3, 6, 8, 10, 1, 2, 1] using the last element as pivot.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Explain the central limit theorem in plain language with a classroom example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Explain Type I and Type II errors with a medical screening example.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Find the eigenvalues of the matrix [[2, 1], [1, 2]] and show your steps.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Explain how CPU caches exploit temporal locality and spatial locality.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Describe the difference between iterative and recursive binary search implementations.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "explanation"
+      ]
+    },
+    {
+      "prompt": "Look up current UBC Okanagan library Friday closing hours and summarize them.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "tool_requiring"
+      ]
+    },
+    {
+      "prompt": "Find a recent reputable estimate of BC electricity grid carbon intensity and state the value with source.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "tool_requiring"
+      ]
+    },
+    {
+      "prompt": "Outline why every continuous function on a closed bounded interval is Riemann integrable.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Write pseudocode for Dijkstra's algorithm and justify correctness for graphs with non-negative edge weights.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Describe how cyclin-CDK complexes control the G1/S transition.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Describe two ways late-20th-century globalization differed from earlier global trade networks.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Analyze time and space complexity of naive triple-loop matrix multiplication and suggest one practical optimization.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "A React component uses eight useEffect hooks with overlapping dependencies—outline a refactor strategy without changing behavior.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "code"
+      ]
+    },
+    {
+      "prompt": "Propose property-based tests for a min-heap priority queue implementation (insert and extract-min).",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Construct an input that forces quicksort with last-element pivot into O(n^2) behavior and explain why.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Using available tools, find a current BC grid emissions factor (g CO2e/kWh), compare to EduAI defaults, and note key assumptions.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "tool_requiring"
+      ]
+    },
+    {
+      "prompt": "Give an example that violates the Liskov substitution principle and show a corrected design.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Draft an integration test matrix for EduAI /api/chat covering Auto routing, strong RAG, tool calls, and image payloads.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "What's the time complexity of linear search on an unsorted list?",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Solve: If f(x)=3x^2+2x, find f'(x) and evaluate at x=1.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Multi-step: derive the integral of x*sin(x) using integration by parts, showing each step.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Walk through Dijkstra's algorithm on a small 5-node graph example.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "A student claims quicksort is always O(n log n). Construct a counterexample input and explain.",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "problem_solving"
+      ]
+    },
+    {
+      "prompt": "Summarize utilitarianism and one standard objection.",
+      "tier": 1,
+      "tags": [
+        "medium",
+        "rag_grounded"
+      ]
+    },
+    {
+      "prompt": "Apply Green's theorem to evaluate the line integral around the unit circle for F = (-y, x).",
+      "tier": 1,
+      "tags": [
+        "hard",
+        "rag_grounded"
+      ]
+    }
+  ]
+}

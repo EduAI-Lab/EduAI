@@ -147,16 +147,16 @@ describe("POST /api/invitations (create)", () => {
     expect(sendEmailMock.mock.calls[0][0].text).toContain(body.acceptUrl);
   });
 
-  it("rejects a UNIT_ADMIN invite without units (400)", async () => {
+  it("rejects a UNIT_ADMIN invite without units (422)", async () => {
     asAdmin();
     const res = await createAction(createReq({ email: uniqueEmail(), role: "UNIT_ADMIN" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
-  it("rejects a non-UBC invite email (400, #567)", async () => {
+  it("rejects a non-UBC invite email (422, #567)", async () => {
     asAdmin();
     const res = await createAction(createReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it("409s when a user with that email already exists", async () => {
@@ -335,11 +335,11 @@ describe("unit-admin invitations (unitAdmins.canInvite)", () => {
     expect(await res.json()).toEqual({ error: "FORBIDDEN_ROLE" });
   });
 
-  it("rejects a non-UBC student invite from a unit admin (400, #567)", async () => {
+  it("rejects a non-UBC student invite from a unit admin (422, #567)", async () => {
     await setPolicy("unitAdmins.canInvite", true, adminId);
     asUnitAdmin();
     const res = await createAction(createReq({ email: "stu@gmail.com", role: "STUDENT" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 
   it("scopes the list to invitations the unit admin sent", async () => {

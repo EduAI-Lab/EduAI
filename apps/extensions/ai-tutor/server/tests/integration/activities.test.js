@@ -3,6 +3,18 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeStudent, makeTA, makeAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
+// `isPublished` (and `code`, used for AI-prompt context) are Core-owned
+// (#1072 step 2/4) — the publish gate on every question/AI-tutoring route
+// below resolves them live via `fetchCoreCourseSafe`, not a local column.
+// Default every seeded course to published so the bulk of these tests keep
+// their pre-#1072 behavior; individual "unpublished" tests override this.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+
 describe('Activities routes', () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
@@ -13,6 +25,10 @@ describe('Activities routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create an activity directly in DB ───────────────────
@@ -156,7 +172,7 @@ describe('Activities routes', () => {
     it('returns 400 for cross-course topic', async () => {
       // Create a topic in a different course
       const otherCourse = await prisma.courseOffering.create({
-        data: { title: 'Other Course', description: 'Other', isPublished: true },
+        data: { coreOfferingId: 'core-other-course' },
       });
       const otherTopic = await prisma.topic.create({
         data: { name: 'Alien Topic', courseOfferingId: otherCourse.id },
@@ -393,7 +409,7 @@ describe('Activities routes', () => {
     });
 
     it('returns 403 when course is unpublished', async () => {
-      await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: false });
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
@@ -1036,30 +1052,12 @@ describe('Tutoring-flow: question consumption via Core', () => {
     expect(bankInjected).toBe(true);
   });
 
-  it('/teach skips question fetch when coreOfferingId is null and proceeds normally', async () => {
-    await prisma.courseOffering.update({
-      where: { id: seed.course.id },
-      data: { coreOfferingId: null },
-    });
-
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
-    }));
-
-    const res = await request(studentApp)
-      .post(`/api/activities/${activity.id}/teach`)
-      .set('Cookie', 'session=test-cookie')
-      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
-
-    expect(res.status).toBe(200);
-
-    // No Core questions call should have been made
-    const questionsFetchCall = fetch.mock.calls.find(
-      ([url]) => typeof url === 'string' && url.includes('/questions'),
-    );
-    expect(questionsFetchCall).toBeUndefined();
-  });
+  // The "coreOfferingId is null" scenario this test used to cover is no
+  // longer constructible: #1072 step 4 made `coreOfferingId` required at the
+  // DB level, so every CourseOffering row is Core-linked by construction.
+  // `getCourseCode`'s falsy-coreOfferingId short-circuit (via
+  // `resolveCoreCourseById`) is dead code now, harmlessly so; left in place
+  // rather than removed as part of this migration.
 
   // #1021 review: assert the activities → EduAI wiring layer, not only
   // generate*Response with an explicitly passed courseId.
@@ -1317,7 +1315,7 @@ describe('teach/guide/custom: enrollment and publish gate (§308)', () => {
   });
 
   it('enrolled STUDENT gets 403 on /teach when course is unpublished', async () => {
-    await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: false });
     const student = makeStudent();
     await prisma.courseEnrollment.create({
       data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },
