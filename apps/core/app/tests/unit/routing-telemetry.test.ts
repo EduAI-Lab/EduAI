@@ -2,9 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   coalesceTokenUsage,
   normalizeTokenUsage,
-  persistAiInteractionTelemetry,
   splitRegistryModelId,
 } from "~/lib/ai/routing/telemetry";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
 import { numToRouterTier, routerTierToNum } from "~/lib/ai/routing/tiers";
 
 vi.mock("~/lib/prisma.server", () => ({
