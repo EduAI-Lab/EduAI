@@ -1,6 +1,6 @@
 /**
- * Shared campus-model size ranking for QM frontend + backend pickers/probes.
- * Keep both consumers on this table so a new size (e.g. 70b) only lands once.
+ * Campus-model size ranking for QM backend pickers/probes.
+ * Keep in sync with frontend `src/utils/modelSizeRanks.ts` when adding sizes.
  */
 
 /** @type {ReadonlyArray<readonly [RegExp, number]>} */
