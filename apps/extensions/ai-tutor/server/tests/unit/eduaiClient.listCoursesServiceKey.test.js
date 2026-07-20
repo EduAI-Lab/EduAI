@@ -34,7 +34,7 @@ describe('listEduAiCoursesServiceKey', () => {
       ok: true,
       status: 200,
       text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ courses: [] }),
+      json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 200 }),
     });
     vi.stubGlobal('fetch', mockFetch);
 
@@ -42,7 +42,8 @@ describe('listEduAiCoursesServiceKey', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/courses');
+    // #1041: Core requires paging params on every list read.
+    expect(url).toBe('http://core.test/api/courses?page=1&pageSize=200');
     expect(options.headers.Authorization).toBe('Bearer test-service-key-abc');
   });
 
@@ -58,7 +59,7 @@ describe('listEduAiCoursesServiceKey', () => {
         ok: true,
         status: 200,
         text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ courses }),
+        json: () => Promise.resolve({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
       }),
     );
 
@@ -67,7 +68,7 @@ describe('listEduAiCoursesServiceKey', () => {
     expect(result).toEqual(courses);
   });
 
-  it('throws a 502 when the response is missing the courses envelope (schema mismatch)', async () => {
+  it('throws a 502 when the response is missing the paginated envelope (schema mismatch)', async () => {
     process.env.EDUAI_API_KEY = 'test-service-key-abc';
     vi.stubGlobal(
       'fetch',
@@ -75,7 +76,7 @@ describe('listEduAiCoursesServiceKey', () => {
         ok: true,
         status: 200,
         text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ data: 'unexpected shape' }),
+        json: () => Promise.resolve({ courses: 'unexpected legacy shape' }),
       }),
     );
 

@@ -41,13 +41,18 @@ const QUICK_ACTIONS: DashboardQuickAction[] = [
 ];
 
 export function DashboardAdminView() {
-  const { users, isLoading: usersLoading } = useUsers();
-  const { courses, loading: coursesLoading } = useCourses();
+  // Both dashboards want aggregates, not rows: ask for the smallest page and
+  // read the server's counts (#1041).
+  const { stats: userStats, isLoading: usersLoading } = useUsers({ pageSize: 1 });
+  const { total: activeCourseCount, loading: coursesLoading } = useCourses({
+    pageSize: 1,
+    isActive: true,
+  });
   const { chats, isLoading: chatsLoading } = useRecentChats();
   const { stats, isLoading: statsLoading } = useDashboardStats();
 
-  const totalUsers = usersLoading ? "—" : String(users.length);
-  const activeCourses = coursesLoading ? "—" : String(courses.filter((c) => c.isActive).length);
+  const totalUsers = usersLoading ? "—" : String(userStats.total);
+  const activeCourses = coursesLoading ? "—" : String(activeCourseCount);
   const aiSessions = statsLoading ? "—" : String(stats?.chatCount ?? 0);
   const materialsUploaded = statsLoading ? "—" : String(stats?.materialCount ?? 0);
 

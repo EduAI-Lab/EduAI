@@ -47,10 +47,27 @@ const router = express.Router();
 
 router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
   try {
+    // #1041: Core requires paging here, so this route pages too rather than
+    // proxying a full table. Paging params pass straight through.
     const cookie = req.headers.cookie ?? '';
-    const users = await listCoreAdminUsers(cookie);
-    const rows = Array.isArray(users) ? users : [];
-    res.json(rows.map(mapCoreAdminUser));
+    const page = Number(req.query.page) || 1;
+    const pageSize = Number(req.query.pageSize) || 25;
+    const envelope = await listCoreAdminUsers(cookie, {
+      page,
+      pageSize,
+      ...(req.query.search ? { search: String(req.query.search) } : {}),
+      ...(req.query.role ? { role: String(req.query.role) } : {}),
+    });
+    const rows = Array.isArray(envelope?.data) ? envelope.data : [];
+    res.json({
+      data: rows.map(mapCoreAdminUser),
+      total: envelope?.total ?? rows.length,
+      page: envelope?.page ?? page,
+      pageSize: envelope?.pageSize ?? pageSize,
+      // Platform-wide counts from Core (#1041) — the dashboard's role breakdown
+      // used to be derived by counting a full user list.
+      stats: envelope?.stats ?? { total: 0, active: 0, byRole: {} },
+    });
   } catch (e) {
     const status = typeof e?.status === 'number' ? e.status : 500;
     res.status(status).json({ error: String(e.message ?? e) });
@@ -151,14 +168,20 @@ router.get(
 
       try {
         const cookie = req.headers.cookie ?? '';
-        const coreUsers = await listCoreAdminUsers(cookie);
-        const rows = Array.isArray(coreUsers) ? coreUsers : [];
-        for (const user of rows.map(mapCoreAdminUser)) {
+        // #1041/#1125: two targeted reads instead of one full-table fetch —
+        // an `?ids=` lookup for the enrolled users' display names, and a
+        // role-scoped page for the "add a student" picker.
+        const enrolledIds = [...enrolledUserIds];
+        const [enrolledEnvelope, studentEnvelope] = await Promise.all([
+          listCoreAdminUsers(cookie, { ids: enrolledIds }),
+          listCoreAdminUsers(cookie, { role: 'STUDENT', page: 1, pageSize: 200 }),
+        ]);
+        for (const user of (enrolledEnvelope?.data ?? []).map(mapCoreAdminUser)) {
           coreUserMap.set(user.id, { name: user.name, email: user.email });
         }
-        availableStudents = rows
+        availableStudents = (studentEnvelope?.data ?? [])
           .map(mapCoreAdminUser)
-          .filter((user) => user.role === 'STUDENT' && !enrolledUserIds.has(user.id))
+          .filter((user) => !enrolledUserIds.has(user.id))
           .toSorted((a, b) => a.name.localeCompare(b.name));
       } catch (err) {
         console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
@@ -578,9 +601,11 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
     let userNameMap = new Map();
     try {
       const cookie = req.headers.cookie ?? '';
-      const coreUsers = await listCoreAdminUsers(cookie);
-      const rows = Array.isArray(coreUsers) ? coreUsers : [];
-      for (const u of rows) {
+      // #1125: resolve only the users these traces reference. Fetching the whole
+      // table to build this map would mean page-looping it under #1041.
+      const traceUserIds = [...new Set(traces.map((t) => t.userId).filter(Boolean))];
+      const envelope = await listCoreAdminUsers(cookie, { ids: traceUserIds });
+      for (const u of envelope?.data ?? []) {
         userNameMap.set(u.id, u.name ?? '');
       }
     } catch (err) {

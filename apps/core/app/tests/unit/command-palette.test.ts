@@ -43,7 +43,11 @@ describe("loadPaletteCourses", () => {
   });
 
   const jsonRes = (courses: { id: string; code: string; name: string }[]) =>
-    ({ ok: true, json: async () => ({ courses }) }) as unknown as Response;
+    // #1041: Core answers `{ data, total, page, pageSize }`.
+    ({
+      ok: true,
+      json: async () => ({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
+    }) as unknown as Response;
 
   it("loads courses once and sets them", async () => {
     const ref = { current: false };

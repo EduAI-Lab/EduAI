@@ -28,6 +28,7 @@ import type {
   AdminEnrollmentData,
   AdminAiModelPolicy,
   AdminUser,
+  AdminUserPage,
   Activity,
   ActivityAnswerResult,
   ActivityAnalyticsRow,
@@ -530,7 +531,14 @@ export const api = {
     });
     return (result?.policy ?? result) as AdminAiModelPolicy;
   },
-  listAdminUsers: () => http('/api/admin/users') as Promise<AdminUser[]>,
+  /**
+   * Paged platform users from Core (#1041). Returns the envelope, not an array —
+   * `stats` carries the platform-wide totals the dashboard needs.
+   */
+  listAdminUsers: (params: { page?: number; pageSize?: number } = {}) =>
+    http(
+      `/api/admin/users?page=${params.page ?? 1}&pageSize=${params.pageSize ?? 25}`,
+    ) as Promise<AdminUserPage>,
   listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
   getAdminCourseEnrollments: (courseId: number) =>
     http(`/api/admin/courses/${courseId}/enrollments`) as Promise<AdminEnrollmentData>,

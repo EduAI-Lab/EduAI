@@ -38,7 +38,7 @@ describe('resolveCoreCourseList', () => {
 
     expect(result).toEqual({ courses, coreUnavailable: false });
     expect(listEduAiCourses).toHaveBeenCalledTimes(1);
-    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
+    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc', all: true });
   });
 
   it('degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)', async () => {

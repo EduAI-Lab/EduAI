@@ -1,5 +1,13 @@
-import { UserRole } from "@prisma/client";
+import { UserRole, type Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import {
+  paginatedResponse,
+  parseIdsParam,
+  parsePaginationParams,
+  parseSearchParam,
+  unpagedResponse,
+  type Pagination,
+} from "~/lib/pagination.server";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { apiError, jsonResponse, validationErrorFromZod } from "~/lib/api-error.server";
@@ -139,34 +147,95 @@ export function invalidateCourseRagSettingsCache(courseId: string): void {
  *     to list importable courses without requiring an admin session.
  *   - User session: scoped to the caller (§5): ADMIN all;
  *     UNIT_ADMIN authorized units; INSTRUCTOR/TA enrolled; STUDENT enrolled + published.
+ *
+ * Paging (#1041): `page` and `pageSize` are required and the response is the
+ * standard `{ data, total, page, pageSize }` envelope. `?ids=` and `?search=`
+ * are the lookup surfaces (#1125); `ids` replaces paging rather than combining
+ * with it. Access scoping is applied before the selectors, so `ids`/`search`
+ * can never widen what a caller may see.
  */
 export async function getCourses(request: Request) {
-  // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
-  if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
+  const searchParams = new URL(request.url).searchParams;
+
+  // Authenticate before parsing: an anonymous caller must see 401, not a 400
+  // describing which query params this endpoint wants.
+  const isServiceKeyCall = request.headers.get("Authorization")?.startsWith("Bearer ") ?? false;
+  let session: Awaited<ReturnType<typeof auth.api.getSession>> = null;
+  if (isServiceKeyCall) {
     const serviceKeyGuard = await requireServiceKey(request);
     if (serviceKeyGuard) return serviceKeyGuard;
-    const courses = await prisma.course.findMany({ where: { deletedAt: null } });
-    return new Response(JSON.stringify({ courses }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+  } else {
+    session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" } as const,
+      });
+    }
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session?.user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" } as const,
-    });
+  // #1041: `page`/`pageSize` are required; `?ids=` is the unpaged batch-lookup
+  // escape hatch for callers resolving a known set of courses (#1125).
+  const idsResult = parseIdsParam(searchParams);
+  if ("response" in idsResult) return idsResult.response;
+
+  const search = parseSearchParam(searchParams);
+
+  let pagination: Pagination | null = null;
+  if (!idsResult.ids) {
+    const paginationResult = parsePaginationParams(searchParams);
+    if ("response" in paginationResult) return paginationResult.response;
+    pagination = paginationResult.pagination;
+  }
+
+  const isActiveParam = searchParams.get("isActive");
+
+  /** Narrow an access-scoped filter with the caller's `ids`/`search` selectors. */
+  const withSelectors = (base: Prisma.CourseWhereInput): Prisma.CourseWhereInput => {
+    const and: Prisma.CourseWhereInput[] = [base];
+    if (idsResult.ids) and.push({ id: { in: idsResult.ids } });
+    if (isActiveParam !== null) and.push({ isActive: isActiveParam === "true" });
+    if (search) {
+      and.push({
+        OR: [
+          { code: { contains: search, mode: "insensitive" } },
+          { name: { contains: search, mode: "insensitive" } },
+        ],
+      });
+    }
+    return and.length === 1 ? base : { AND: and };
+  };
+
+  const listCourses = async (where: Prisma.CourseWhereInput) => {
+    if (!pagination) {
+      const rows = await prisma.course.findMany({ where, orderBy: { code: "asc" } });
+      return { rows, total: rows.length };
+    }
+    const [total, rows] = await prisma.$transaction([
+      prisma.course.count({ where }),
+      prisma.course.findMany({
+        where,
+        orderBy: { code: "asc" },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+    return { rows, total };
+  };
+
+  // Service key path: AI Tutor and other extensions call this with Authorization: Bearer
+  if (isServiceKeyCall) {
+    const { rows, total } = await listCourses(withSelectors({ deletedAt: null }));
+    return pagination ? paginatedResponse(rows, total, pagination) : unpagedResponse(rows);
   }
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
   // soft-deleted courses. The flag is a no-op for every non-ADMIN caller.
   const includeDeleted = wantsIncludeDeleted(request, session.user);
 
-  const courses = await prisma.course.findMany({
-    where: await buildCourseListFilter(session.user, includeDeleted),
-  });
+  const { rows: courses, total } = await listCourses(
+    withSelectors(await buildCourseListFilter(session.user, includeDeleted)),
+  );
 
   const enrollmentRows = await prisma.enrollment.findMany({
     where: {
@@ -182,10 +251,9 @@ export async function getCourses(request: Request) {
     callerEnrollmentRole: roleByCourseId.get(course.id) ?? null,
   }));
 
-  return new Response(JSON.stringify({ courses: coursesWithCallerRole }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" } as const,
-  });
+  return pagination
+    ? paginatedResponse(coursesWithCallerRole, total, pagination)
+    : unpagedResponse(coursesWithCallerRole);
 }
 
 /**

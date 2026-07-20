@@ -28,6 +28,8 @@ const user = {
   },
 } satisfies PlatformUser;
 
+const LIST_URL = "/api/users?page=1&pageSize=25&sortBy=name&sortDir=asc";
+
 describe("useUsers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,10 +42,18 @@ describe("useUsers", () => {
       _count: { ...user._count, assistedCourses: 1 },
     } satisfies PlatformUser;
 
+    const page = (rows: PlatformUser[]) => ({
+      data: rows,
+      total: rows.length,
+      page: 1,
+      pageSize: 25,
+      stats: { total: rows.length, active: rows.length },
+    });
+
     vi.mocked(apiFetch)
-      .mockResolvedValueOnce([user])
+      .mockResolvedValueOnce(page([user]))
       .mockResolvedValueOnce(updatedUser)
-      .mockResolvedValueOnce([updatedUser]);
+      .mockResolvedValueOnce(page([updatedUser]));
 
     const { result } = renderHook(() => useUsers());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -53,12 +63,13 @@ describe("useUsers", () => {
     });
 
     expect(apiFetch).toHaveBeenCalledTimes(3);
-    expect(apiFetch).toHaveBeenNthCalledWith(1, "/api/users");
+    // #1041: paging params are required and always present on the list read.
+    expect(apiFetch).toHaveBeenNthCalledWith(1, LIST_URL);
     expect(apiFetch).toHaveBeenNthCalledWith(2, "/api/users/" + user.id, {
       method: "PATCH",
       body: JSON.stringify({ taCourseIds: ["course-2"] }),
     });
-    expect(apiFetch).toHaveBeenNthCalledWith(3, "/api/users");
+    expect(apiFetch).toHaveBeenNthCalledWith(3, LIST_URL);
     expect(result.current.users).toEqual([updatedUser]);
   });
 });

@@ -25,8 +25,12 @@ import { setPolicy, invalidatePolicyCache } from "~/lib/policy.server";
 // Helpers
 // ---------------------------------------------------------------------------
 
+// #1041: `page`/`pageSize` are required on GET /api/courses, and the response is
+// the `{ data, total, page, pageSize }` envelope.
+const PAGED = "page=1&pageSize=200";
+
 function makeGetRequest() {
-  return new Request("http://localhost/api/courses", { method: "GET" });
+  return new Request(`http://localhost/api/courses?${PAGED}`, { method: "GET" });
 }
 
 function makeFormDataPost(fields: Record<string, string | number>) {
@@ -137,14 +141,14 @@ describe("GET /api/courses", () => {
 
       // Default read: soft-deleted course is invisible even to ADMIN.
       const defaultRes = await getCourses(makeGetRequest());
-      const defaultIds = (await defaultRes.json()).courses.map((c: { id: string }) => c.id);
+      const defaultIds = (await defaultRes.json()).data.map((c: { id: string }) => c.id);
       expect(defaultIds).not.toContain(deleted.id);
 
       // ADMIN forensics opt-in: soft-deleted course appears.
       const inclRes = await getCourses(
-        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+        new Request(`http://localhost/api/courses?includeDeleted=true&${PAGED}`, { method: "GET" }),
       );
-      const inclIds = (await inclRes.json()).courses.map((c: { id: string }) => c.id);
+      const inclIds = (await inclRes.json()).data.map((c: { id: string }) => c.id);
       expect(inclIds).toContain(deleted.id);
     } finally {
       await cleanupRbac({ userIds: [admin.id], courseIds: [deleted.id] });
@@ -163,9 +167,9 @@ describe("GET /api/courses", () => {
     try {
       mockSession(instructor);
       const res = await getCourses(
-        new Request("http://localhost/api/courses?includeDeleted=true", { method: "GET" }),
+        new Request(`http://localhost/api/courses?includeDeleted=true&${PAGED}`, { method: "GET" }),
       );
-      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      const ids = (await res.json()).data.map((c: { id: string }) => c.id);
       expect(ids).not.toContain(deleted.id);
     } finally {
       await cleanupRbac({ userIds: [instructor.id], courseIds: [deleted.id] });
@@ -177,12 +181,12 @@ describe("GET /api/courses", () => {
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
-    const ids = body.courses.map((c: { id: string }) => c.id);
+    const ids = body.data.map((c: { id: string }) => c.id);
     // Enrolled as INSTRUCTOR in the seeded (unpublished) course — visible.
     expect(ids).toContain(courseId);
     // Sees ONLY enrolled courses, not the whole catalog.
     expect(
-      body.courses.every((c: { id: string }) => ids.includes(c.id) && c.id !== "nonexistent"),
+      body.data.every((c: { id: string }) => ids.includes(c.id) && c.id !== "nonexistent"),
     ).toBe(true);
   });
 
@@ -198,7 +202,7 @@ describe("GET /api/courses", () => {
       mockSession(gradTa);
       const res = await getCourses(makeGetRequest());
       expect(res.status).toBe(200);
-      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      const ids = (await res.json()).data.map((c: { id: string }) => c.id);
       expect(ids).toContain(courseA.id); // TA: publish gate exempt
       expect(ids).not.toContain(courseB.id); // STUDENT: unpublished hidden
     } finally {
@@ -216,7 +220,7 @@ describe("GET /api/courses", () => {
       mockSession(unitAdmin);
       const res = await getCourses(makeGetRequest());
       expect(res.status).toBe(200);
-      const ids = (await res.json()).courses.map((c: { id: string }) => c.id);
+      const ids = (await res.json()).data.map((c: { id: string }) => c.id);
       expect(ids).toContain(coscCourse.id);
       expect(ids).not.toContain(mathCourse.id);
       expect(ids).not.toContain(noDeptCourse.id); // §19: null department never matches
@@ -235,7 +239,7 @@ describe("GET /api/courses", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("courses");
-    expect(Array.isArray(body.courses)).toBe(true);
+    expect(Array.isArray(body.data)).toBe(true);
   });
 
   it("includes the seeded course in the response", async () => {
@@ -243,7 +247,7 @@ describe("GET /api/courses", () => {
     const res = await getCourses(makeGetRequest());
 
     const body = await res.json();
-    const found = body.courses.find((c: { id: string }) => c.id === courseId);
+    const found = body.data.find((c: { id: string }) => c.id === courseId);
     expect(found).toBeDefined();
     expect(found.name).toBe("Integration Test Course");
     expect(found.code).toBe("INT 999");
@@ -265,7 +269,7 @@ describe("GET /api/courses", () => {
 
     const res = await getCourses(makeGetRequest());
     const body = await res.json();
-    const found = body.courses.find((c: { id: string }) => c.id === deleted.id);
+    const found = body.data.find((c: { id: string }) => c.id === deleted.id);
     expect(found).toBeUndefined();
 
     await prisma.course.delete({ where: { id: deleted.id } });
@@ -441,7 +445,7 @@ describe("DELETE /api/courses/:id", () => {
 
       mockSession(instructor);
       const list = await getCourses(makeGetRequest());
-      const ids = (await list.json()).courses.map((c: { id: string }) => c.id);
+      const ids = (await list.json()).data.map((c: { id: string }) => c.id);
       expect(ids).not.toContain(course.id);
     } finally {
       await cleanupRbac({ userIds: [instructor.id], courseIds: [course.id] });

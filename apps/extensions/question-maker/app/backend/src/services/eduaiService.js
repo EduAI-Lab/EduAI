@@ -7,6 +7,9 @@ import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
+/** Core caps `pageSize` at 200 (#1041). */
+const CORE_PAGE_SIZE = 200;
+
 const DEBUG_PREFIX = "[EduAI]";
 
 /**
@@ -783,7 +786,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       );
     }
 
-    const url = `${this.baseURL}/api/courses`;
+    // #1041: Core requires paging and answers `{ data, total, page, pageSize }`.
+    // The picker only needs a browsable page, so take the API's maximum.
+    const url = `${this.baseURL}/api/courses?page=1&pageSize=${CORE_PAGE_SIZE}`;
 
     try {
       const response = await axios.get(url, {
@@ -794,28 +799,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         timeout: 60000, // 60 second timeout
       });
 
-      const data = response.data;
+      const courses = Array.isArray(response.data?.data) ? response.data.data : [];
       const ignored = (config.eduaiIgnoredCourseCodes || []).map((c) =>
         String(c).replace(/\s+/g, "").toLowerCase()
       );
       if (ignored.length === 0) {
-        return data;
+        return courses;
       }
 
       const normalize = (v) => (v == null ? "" : String(v).replace(/\s+/g, "").toLowerCase());
-      const filterCourse = (course) => {
+      return courses.filter((course) => {
         const code = normalize(course.code);
         const id = normalize(course.id);
         return !ignored.some((k) => code === k || id === k);
-      };
-
-      if (Array.isArray(data)) {
-        return data.filter(filterCourse);
-      }
-      if (data && Array.isArray(data.courses)) {
-        return { ...data, courses: data.courses.filter(filterCourse) };
-      }
-      return data;
+      });
     } catch (error) {
       if (error.response) {
         const errorMessage =
@@ -896,7 +893,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       );
     }
 
-    const url = `${this.baseURL}/api/ai-models`;
+    // #1041: paged upstream; one max-size page is plenty for a model picker.
+    const url = `${this.baseURL}/api/ai-models?page=1&pageSize=${CORE_PAGE_SIZE}`;
     const headerVariants = [];
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
@@ -917,7 +915,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           },
           timeout: 60000,
         });
-        return response.data;
+        return Array.isArray(response.data?.data) ? response.data.data : [];
       } catch (error) {
         lastError = error;
       }

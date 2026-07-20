@@ -6,6 +6,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mockFindAll = vi.fn();
 const mockBulkCreate = vi.fn();
 const mockGetAllCoursesFromCore = vi.fn();
+const mockGetCoursesByIdsFromCore = vi.fn();
+const mockSearchCoursesFromCore = vi.fn();
 const mockListCoursesFromCore = vi.fn();
 const mockGetAuthorizedUnits = vi.fn();
 const mockGetCourseFromCore = vi.fn();
@@ -30,6 +32,8 @@ vi.mock('../../src/middleware/courseAccess.js', () => ({
 
 vi.mock('../../src/services/coreApiService.js', () => ({
   getAllCoursesFromCore: (...args) => mockGetAllCoursesFromCore(...args),
+  getCoursesByIdsFromCore: (...args) => mockGetCoursesByIdsFromCore(...args),
+  searchCoursesFromCore: (...args) => mockSearchCoursesFromCore(...args),
   getCourseFromCore: (...args) => mockGetCourseFromCore(...args),
   listCoursesFromCore: (...args) => mockListCoursesFromCore(...args),
 }));
@@ -41,11 +45,19 @@ const { listCoursesForUser, enrichCourseDetail } = await import(
 describe('listCoursesForUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAllCoursesFromCore.mockResolvedValue([
+    const CORE_CATALOG = [
       { id: 'core-1', name: 'Core Course One', code: 'STUDY3', department: 'COSC' },
       { id: 'core-2', name: 'Core Course Two', code: 'MATH100', department: 'MATH' },
-    ]);
-    mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+    ];
+    mockGetAllCoursesFromCore.mockResolvedValue(CORE_CATALOG);
+    // #1041/#1125: non-ADMIN callers resolve Core fields through the `?ids=`
+    // lookup instead of pulling the whole catalog.
+    mockGetCoursesByIdsFromCore.mockImplementation(async (ids) =>
+      CORE_CATALOG.filter((c) => (ids ?? []).includes(c.id)),
+    );
+    mockSearchCoursesFromCore.mockResolvedValue(CORE_CATALOG);
+    // The cookie-scoped list is unwrapped to a plain array (#1041).
+    mockListCoursesFromCore.mockResolvedValue([]);
     mockGetAuthorizedUnits.mockResolvedValue([]);
     mockGetCourseFromCore.mockResolvedValue({ id: 'core-1', name: 'Core Course One' });
   });
@@ -179,33 +191,31 @@ describe('listCoursesForUser', () => {
   });
 
   describe('non-ADMIN access derivation (#1072 unified contract — no per-row Core call)', () => {
-    it('makes exactly one service-key catalog call and one cookie-scoped roles call, regardless of row count', async () => {
+    it('makes exactly one ids lookup and one cookie-scoped roles call, regardless of row count', async () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'inst-1', coreCourseId: 'core-1' }) },
         { toJSON: () => ({ id: 2, userId: 'inst-1', coreCourseId: 'core-2' }) },
         { toJSON: () => ({ id: 3, userId: 'someone-else', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({
-        courses: [
+      mockListCoursesFromCore.mockResolvedValue([
           { id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' },
           { id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' },
-        ],
-      });
+        ]);
 
       await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' }, { cookie: 'session=x' });
 
-      expect(mockGetAllCoursesFromCore).toHaveBeenCalledTimes(1);
+      // Non-ADMIN: one `?ids=` lookup for fields, one cookie-scoped walk for roles.
+      expect(mockGetAllCoursesFromCore).not.toHaveBeenCalled();
+      expect(mockGetCoursesByIdsFromCore).toHaveBeenCalledTimes(1);
       expect(mockListCoursesFromCore).toHaveBeenCalledTimes(1);
-      expect(mockListCoursesFromCore).toHaveBeenCalledWith('session=x');
+      expect(mockListCoursesFromCore).toHaveBeenCalledWith('session=x', { all: true });
     });
 
     it('grants instructor access from an INSTRUCTOR callerEnrollmentRole', async () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({
-        courses: [{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }],
-      });
+      mockListCoursesFromCore.mockResolvedValue([{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }]);
 
       const rows = await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' });
       expect(rows).toHaveLength(1);
@@ -220,9 +230,7 @@ describe('listCoursesForUser', () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({
-        courses: [{ id: 'core-1', callerEnrollmentRole: 'TA' }],
-      });
+      mockListCoursesFromCore.mockResolvedValue([{ id: 'core-1', callerEnrollmentRole: 'TA' }]);
 
       const rows = await listCoursesForUser({ id: 'ta-1', role: 'TA' });
       expect(rows).toHaveLength(0);
@@ -232,9 +240,7 @@ describe('listCoursesForUser', () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'other-owner', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({
-        courses: [{ id: 'core-1', callerEnrollmentRole: 'STUDENT' }],
-      });
+      mockListCoursesFromCore.mockResolvedValue([{ id: 'core-1', callerEnrollmentRole: 'STUDENT' }]);
 
       const rows = await listCoursesForUser({ id: 'stu-1', role: 'STUDENT' });
       expect(rows).toHaveLength(0);
@@ -247,7 +253,7 @@ describe('listCoursesForUser', () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+      mockListCoursesFromCore.mockResolvedValue([]);
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
       expect(rows).toHaveLength(1);
@@ -258,7 +264,7 @@ describe('listCoursesForUser', () => {
       mockFindAll.mockResolvedValue([
         { toJSON: () => ({ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }) },
       ]);
-      mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+      mockListCoursesFromCore.mockResolvedValue([]);
 
       const rows = await listCoursesForUser({ id: 'stranger-1', role: 'INSTRUCTOR' });
       expect(rows).toHaveLength(0);
@@ -292,7 +298,7 @@ describe('listCoursesForUser', () => {
           { toJSON: () => ({ id: 1, userId: 'someone-else', coreCourseId: 'core-1' }) },
         ]);
         mockGetAuthorizedUnits.mockResolvedValue(['COSC']);
-        mockListCoursesFromCore.mockResolvedValue({ courses: [] });
+        mockListCoursesFromCore.mockResolvedValue([]);
 
         const rows = await listCoursesForUser({ id: 'ua-1', role: 'UNIT_ADMIN' });
         expect(rows).toHaveLength(1);
@@ -306,9 +312,7 @@ describe('listCoursesForUser', () => {
           { toJSON: () => ({ id: 1, userId: 'someone-else', coreCourseId: 'core-2' }) },
         ]);
         mockGetAuthorizedUnits.mockResolvedValue(['COSC']);
-        mockListCoursesFromCore.mockResolvedValue({
-          courses: [{ id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' }],
-        });
+        mockListCoursesFromCore.mockResolvedValue([{ id: 'core-2', callerEnrollmentRole: 'INSTRUCTOR' }]);
 
         const rows = await listCoursesForUser({ id: 'ua-1', role: 'UNIT_ADMIN' });
         expect(rows).toHaveLength(1);
@@ -319,9 +323,7 @@ describe('listCoursesForUser', () => {
         mockFindAll.mockResolvedValue([
           { toJSON: () => ({ id: 1, userId: 'inst-1', coreCourseId: 'core-1' }) },
         ]);
-        mockListCoursesFromCore.mockResolvedValue({
-          courses: [{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }],
-        });
+        mockListCoursesFromCore.mockResolvedValue([{ id: 'core-1', callerEnrollmentRole: 'INSTRUCTOR' }]);
 
         await listCoursesForUser({ id: 'inst-1', role: 'INSTRUCTOR' });
         expect(mockGetAuthorizedUnits).not.toHaveBeenCalled();

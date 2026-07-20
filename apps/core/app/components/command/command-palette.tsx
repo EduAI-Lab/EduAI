@@ -40,6 +40,10 @@ import type { User } from "~/lib/auth/types";
 import type { NavItem, NavGroupItem, NavItemKey } from "~/lib/rbac/types";
 import { getNavForUser, getNavSecondaryForUser } from "~/lib/rbac/nav";
 
+/** One bounded page at the API's max `pageSize`, for course pickers (#1041). */
+const COURSE_PICKER_QUERY = "page=1&pageSize=200";
+
+
 /** Window event that opens the palette — dispatched by the header search button. */
 export const CORE_COMMAND_EVENT = "eduai:open-command";
 
@@ -99,13 +103,15 @@ export async function loadPaletteCourses(
   if (!open || loadedRef.current) return;
   loadedRef.current = true;
   try {
-    const res = await fetch("/api/courses");
+    // #1041: `/api/courses` requires paging. One bounded page at the API's
+    // maximum size is enough for a palette group.
+    const res = await fetch(`/api/courses?${COURSE_PICKER_QUERY}`);
     if (!res.ok) {
       loadedRef.current = false; // allow a retry after an HTTP error
       return;
     }
-    const data = (await res.json()) as { courses?: PaletteCourse[] };
-    setCourses(data.courses ?? []);
+    const data = (await res.json()) as { data?: PaletteCourse[] };
+    setCourses(data.data ?? []);
   } catch {
     loadedRef.current = false; // allow a retry on a network/parse error
   }
