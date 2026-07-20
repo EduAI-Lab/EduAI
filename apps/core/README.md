@@ -36,6 +36,7 @@ A production-ready chat platform with Retrieval-Augmented Generation (RAG) capab
 - **Vector Storage**: PGVector-powered embeddings on PostgreSQL for efficient similarity search
 - **Role-based Access**: Support for students, professors, and administrators
 - **Persisted Chat Preferences**: Assistive mode and the selected course are saved per user, restored on every page load and new chat, and cleared on logout
+- **Admin Chatbot**: ADMIN-only assistant at `/admin/chat` (`chatMode: "admin"`) with confirmed write tools, exact user/enrollment lookups, and 16k-context token budgeting for vLLM
 - **Account-level Assistive Mode**: Shell-wide `AssistiveUiProvider` sets `data-assistive` on `<html>` when ON (absent when OFF so baseline CSS is unchanged); preference persists via `UserPreference.assistDefault` and syncs with the `/chat` header toggle
 - **Assistive active highlighting**: On `/chat`, emphasizes the latest assistant reply, de-emphasizes older messages, anchors the composer, auto-focuses input after responses, and offers optional focus mode to hide non-essential chrome
 
@@ -100,9 +101,17 @@ GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path onl
 EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
 EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
 OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
-OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
+OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:8001/ollama (requires CMPS01_INTERNAL_KEY)
 # VLLM_PORT=8001
-# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # LiteLLM edge on cmps01; see infra/cmps01/README.md
+# CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
+# ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
+# ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
+# ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
+# Multi-server fleet (optional) — see docs/DEPLOYMENT.md:
+# VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# npm run fleet:smoke  # from apps/core — pre-flight health check
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
@@ -134,11 +143,11 @@ INVITE_EXPIRY_HOURS="72" # invitation link lifetime in hours
 
 ### Programmatic Access
 
-Core API routes authenticate via **session cookie** (user-context calls) or **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls). The legacy `x-api-key` Better Auth API-key plugin has been removed (#158). Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls.
+Core API routes authenticate via **session cookie** (user-context calls), **`Authorization: Bearer <EDUAI_API_KEY>`** service key (server-to-server calls), or an admin-owned **`x-api-key`** on supported routes. Better Auth's API-key plugin verifies `x-api-key`; `enforceAdminIfApiKey` restricts it to active ADMIN owners on `/api/chat`, `/api/me`, `/api/users`, `/api/ai-providers`, and `/api/ai-models`. Extensions should use `getEduAiCookieForRequest` for user-context calls and the `EDUAI_API_KEY` service key for server-to-server calls.
 
 ## API Documentation
 
-Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. See `app/lib/auth/guards.server.ts` (`requireServiceKey`) for the service-key implementation.
+Note on authentication: User-facing routes require a valid session cookie. Server-to-server calls from extensions use `Authorization: Bearer <EDUAI_API_KEY>`. Supported admin automation routes also accept an active ADMIN user's `x-api-key` through Better Auth and `enforceAdminIfApiKey`. See `app/lib/auth/guards.server.ts` for both guards.
 
 ### Chat Endpoint
 
@@ -156,9 +165,15 @@ Send chat messages with course context for grounded responses.
 - `messages` (array): Chat message history
 - `model` (string): AI model identifier
 - `apiKeys` (object): Provider-specific API keys
-- `courseCode` (string): Target course identifier
+- `courseCode` (string): Target course identifier (required for learning chat; omitted for admin chat)
+- `chatMode` (string, optional): `"learning"` (default) or `"admin"`. Admin mode is ADMIN-only (`/admin/chat`), uses a separate `ChatbotType.ADMIN` session, and requires a tool-capable model. Learning mode remains course-scoped RAG chat.
 - `streaming` (boolean): Enable response streaming
 - `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it). When Assist is ON, Phase 3 oversight (`ADHD_ASSIST_OVERSIGHT` env, default enabled) audits the full draft for structural compliance (`**Top summary**`, `**Next?**`, word cap) before emit; set `ADHD_ASSIST_OVERSIGHT=false` to disable the rewrite pass.
+
+**Admin chat (`chatMode: "admin"`)**:
+- Write tools only mutate after the admin confirms in chat and the model retries with `confirmed: true`. Write-safety rules are always appended to the system prompt — including when a custom `systemPrompt` is set.
+- List tools keep payloads small for 16k-context vLLM models (default 25 rows, max 50). Use `listUsers` with `email` / `query`, and `listCourseEnrollments` with `userId` / `userEmail`, for exact lookups so older rows outside the newest page stay reachable for update/deactivate flows.
+- On ≤16k windows the route reserves tool-schema + mid-turn tool-result headroom, re-caps `maxTokens` after the security prompt, and returns `400 ADMIN_CONTEXT_TOO_LARGE` when the prompt still cannot fit.
 
 #### Examples
 
@@ -355,6 +370,26 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   }'
 ```
 
+### Course Response Style Endpoint
+
+Update per-course AI response style tags and optional additional instructions. Instructors and admins may always PATCH; TAs may PATCH only when the `tas.canSetAiInstructions` policy grant is on. There is no GET handler — the course detail page loader supplies initial values to the settings UI, and omitting GET prevents leaking private instructor prompts to students.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `PATCH` | `/api/courses/:id/response-style` | Update `responseStyleTags` and/or `aiInstructions` |
+
+**Body** (`PATCH /api/courses/:id/response-style`):
+
+```json
+{
+  "responseStyleTags": ["socratic", "concise"],
+  "aiInstructions": "Use course notation for proofs."
+}
+```
+
+Either field may be omitted for a partial update; at least one must be present (422 otherwise).
+Tag ids must be from the predefined catalog (`socratic`, `concise`, `step-by-step`, `encouraging`, `formal`, `example-driven`, `scaffolded`). At runtime, selected tags and instructions are injected into the chat system prompt; students see tag labels on the course overview only.
+
 ### User Preferences Endpoints
 
 Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie**. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.
@@ -477,6 +512,19 @@ app/tests/
 **Component test coverage:** 29 domain components have dedicated RTL tests (all required components except three optional shadcn demo orphans: `section-cards`, `chart-area-interactive`, `data-table`).
 
 See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full test inventory.
+
+### Routing (Auto model)
+
+Sustainability-aware tier routing lives under `app/lib/ai/routing/`. When `ROUTER_AUTO_DEFAULT=true` or `VLLM_BASE_URL` is set, the chat model picker shows **Auto** (rules) and **Auto (LLM)** entries. Configure modes via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and offline evaluation via:
+
+```bash
+npm run research:embed-knn-exemplars
+npm run research:eval-knn    # needs RESEARCH_LABEL_IN or docs/research labels
+npm run research:eval-llm    # needs vLLM + ROUTING_LLM_CLASSIFIER_MODEL
+npm run vllm:smoke           # LiteLLM health check against VLLM_BASE_URL
+```
+
+See `docs/rag-ai/routing/eduai-summer-2026/` and `infra/cmps01/README.md` for cmps01 edge proxy setup.
 
 ### Notes
 

@@ -38,7 +38,7 @@ test.describe('Course deletion in Core cascades to QM and AI Tutor', () => {
           section: '001',
           term: 'W1',
           year: '2026',
-          startDate: '2026-08-15',
+          startDate: '2026-09-08',
           department: 'COSC',
           instructorUserIds: instrId,
         },
@@ -52,7 +52,8 @@ test.describe('Course deletion in Core cascades to QM and AI Tutor', () => {
       const atImportRes = await instrCtx.post(`${AT}/api/courses/import-external`, {
         data: { externalCourseId: coreCourseId },
       });
-      expect(atImportRes.status()).toBe(201);
+      // Idempotent ensure: 201 = created, 200 = background mirror anchored it first.
+      expect([200, 201]).toContain(atImportRes.status());
       const { id: atCourseId } = await atImportRes.json();
 
       // Sanity check: both mirrors are visible before the delete.

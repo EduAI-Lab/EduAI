@@ -132,6 +132,37 @@ describe("CanvasMaterialSyncDialog", () => {
     });
   });
 
+  it("shows skipped file details with reason after refresh", async () => {
+    vi.mocked(syncCanvasMaterials).mockResolvedValue({
+      imported: 0,
+      updated: 0,
+      skipped: 1,
+      failed: [],
+      skippedItems: [{ canvasFileId: "1002", reason: "not-modified" }],
+    });
+
+    render(
+      <CanvasMaterialSyncDialog
+        courseId="course-1"
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Lecture 1.txt")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /sync selected/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("1 skipped");
+      expect(
+        screen.getByText(/Week 1 Notes\.txt: skipped — unchanged since last import/),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("disables the checkbox and shows a badge for an unpublished file", async () => {
     vi.mocked(discoverCanvasMaterials).mockResolvedValue([
       {

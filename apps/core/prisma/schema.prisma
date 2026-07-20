@@ -31,6 +31,7 @@ model User {
   questions         Question[]
   sessions          Session[]
   providerSettings  UserProviderSettings[]
+  apiKeys           apikey[]
   chats             Chat[]
   externalUsers     ExternalUser[]
   preference        UserPreference?
@@ -133,6 +134,8 @@ model Course {
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   aiInstructions         String               @default("")
+  /// Instructor-selected response style tag ids (e.g. socratic, concise). Injected at chat time.
+  responseStyleTags      String[]             @default([])
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
@@ -217,6 +220,7 @@ model AIInteraction {
   durationMs       Int?
   promptTokens     Int?
   completionTokens Int?
+  totalTokens      Int?
   estInputCostUsd  Float?
   estOutputCostUsd Float?
   energyJoules     Float?
@@ -481,6 +485,34 @@ model MaterialEmbedding {
 }
 
 
+model apikey {
+  id                  String    @id @default(cuid())
+  name                String?
+  start               String?
+  prefix              String?
+  key                 String
+  userId              String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean   @default(true)
+  rateLimitEnabled    Boolean   @default(false)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int       @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  permissions         Json?
+  metadata            Json?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("apiKey")
+}
+
 enum ChatbotType {
   LEARNING
   ADMIN
@@ -702,6 +734,7 @@ enum RouterTier {
 enum EnergyMeasurementSource {
   RAPL_CPU
   NVML_GPU
+  RAPL_PLUS_NVML
   OLLAMA_METRICS
   ESTIMATED_FROM_TOKENS
   ESTIMATED_FROM_DURATION
