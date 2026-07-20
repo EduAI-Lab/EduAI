@@ -38,9 +38,9 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
       try {
         const data = await getCanvasIntegration();
         if (!cancelled) setIntegration(data);
-      } catch (e) {
+      } catch {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load Canvas status");
+          setError("Could not load Canvas status. Please try again.");
         }
       } finally {
         if (!cancelled) setLoading(false);

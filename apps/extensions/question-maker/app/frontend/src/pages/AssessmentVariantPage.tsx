@@ -998,7 +998,7 @@ export function AssessmentVariantPage() {
                                         <td className="p-2">{row.order}</td>
                                         <td className="p-2">
                                           <span className="line-clamp-2" title={row.description ?? undefined}>
-                                            {row.description?.trim() || `Metadata #${row.questionMetadataId}`}
+                                            {row.description?.trim() || 'Untitled question'}
                                           </span>
                                           {row.questionType && (
                                             <span className="text-xs text-muted-foreground"> · {row.questionType}</span>
