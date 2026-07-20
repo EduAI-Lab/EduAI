@@ -1,0 +1,29 @@
+# Run on cmps01 (GPU host). Uses host network + NVIDIA runtime — no apt on host.
+#
+#   cd tools/energy-meter
+#   docker compose up -d --build
+#
+# s378 research: ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
+# (routed via nginx on the same :8001 port as vLLM — no extra firewall ticket)
+
+services:
+  eduai-energy-meter:
+    build: .
+    container_name: eduai-energy-meter
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      ENERGY_METER_HOST: "127.0.0.1"
+      ENERGY_METER_PORT: "9100"
+      ENERGY_GPU_INDICES: "0,1"
+      ENERGY_SAMPLE_MS: "1000"
+      LOCAL_GRID_GCO2_PER_KWH: "12"
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
