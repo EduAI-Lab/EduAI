@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const generateQuestions = vi.fn();
 const findByPk = vi.fn();
 const findAll = vi.fn();
+const enrichCourseDetail = vi.fn();
 
 vi.mock('../../src/services/eduaiService.js', () => ({
   default: {
@@ -21,6 +22,10 @@ vi.mock('../../src/schema/index.js', () => ({
   Topics: { findAll },
 }));
 
+vi.mock('../../src/services/courseListService.js', () => ({
+  enrichCourseDetail,
+}));
+
 const { extractQuestionsFromText } = await import('../../src/services/aiService.js');
 
 describe('extractQuestionsFromText (EduAI mocked)', () => {
@@ -28,10 +33,22 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
     generateQuestions.mockReset();
     findByPk.mockReset();
     findAll.mockReset();
+    enrichCourseDetail.mockReset();
+    // `code`/`name` are Core-owned and no longer stored locally (#1072 §4
+    // step 10) — a course with no `coreCourseId` degrades to a placeholder
+    // display code via enrichCourseDetail.
     findByPk.mockResolvedValue({
       id: 7,
-      code: 'CS 101',
-      name: 'Intro',
+      coreCourseId: null,
+    });
+    enrichCourseDetail.mockImplementation(async (course) => {
+      const row = course?.toJSON ? course.toJSON() : course;
+      return {
+        ...row,
+        code: null,
+        name: 'Unavailable (Core offline)',
+        coreUnavailable: true,
+      };
     });
     findAll.mockResolvedValue([]);
   });
@@ -51,11 +68,11 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
 
     const out = await extractQuestionsFromText('Exam paper snippet with a question.', 7, 'test:model', {});
 
-    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'code', 'name', 'coreCourseId'] });
+    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'coreCourseId'] });
     expect(findAll).toHaveBeenCalled();
     expect(generateQuestions).toHaveBeenCalled();
     const call = generateQuestions.mock.calls[0][0];
-    expect(call.courseCode).toBe('CS 101');
+    expect(call.courseCode).toBe('COURSE-7');
     expect(call.courseId).toBeUndefined();
     expect(out).toHaveLength(1);
     expect(out[0].question).toContain('2+2');
@@ -88,9 +105,13 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
   it('forwards Core courseId when the QM course is linked', async () => {
     findByPk.mockResolvedValue({
       id: 7,
+      coreCourseId: 'cuid-core-cosc121',
+    });
+    enrichCourseDetail.mockResolvedValue({
+      id: 7,
+      coreCourseId: 'cuid-core-cosc121',
       code: 'COSC 121',
       name: 'Intro',
-      coreCourseId: 'cuid-core-cosc121',
     });
     generateQuestions.mockResolvedValue([
       {

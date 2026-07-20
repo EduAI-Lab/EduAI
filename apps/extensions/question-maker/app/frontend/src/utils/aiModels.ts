@@ -3,6 +3,7 @@
  * Prefer campus (vllm/ollama) models; avoid hardcoding specific model ids.
  */
 import type { EduAIModelOption } from '../services/eduaiService';
+import { modelSizeRankFromText } from '../../../shared/modelSizeRanks.js';
 
 export const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
 
@@ -16,12 +17,7 @@ export function isCampusModel(model: Pick<EduAIModelOption, 'provider' | 'id'>):
 }
 
 function sizeRank(model: EduAIModelOption): number {
-  const text = `${model.id} ${model.label}`.toLowerCase();
-  if (/\b32b\b/.test(text)) return 32;
-  if (/\b14b\b/.test(text)) return 14;
-  if (/\b7b\b/.test(text)) return 7;
-  if (/\b3b\b/.test(text)) return 3;
-  return 0;
+  return modelSizeRankFromText(`${model.id} ${model.label}`);
 }
 
 /** Preferred model for OCR / generation: largest campus model, else first catalog entry. */
@@ -29,8 +25,6 @@ export function pickPreferredGenerationModel(models: EduAIModelOption[]): string
   if (!models.length) return FALLBACK_GENERATION_MODEL;
   const campus = models.filter(isCampusModel);
   const pool = campus.length > 0 ? campus : models;
-  const marked = pool.find((m) => m.isDefault);
-  if (marked) return marked.id;
   const ranked = [...pool].sort((a, b) => sizeRank(b) - sizeRank(a));
   return ranked[0]?.id ?? FALLBACK_GENERATION_MODEL;
 }

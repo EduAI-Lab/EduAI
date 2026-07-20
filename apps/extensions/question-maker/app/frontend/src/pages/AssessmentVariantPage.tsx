@@ -1041,9 +1041,12 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="__loading" disabled>
-                                Loading models…
-                              </SelectItem>
+                              <>
+                                <SelectItem value={variantModel}>{variantModel}</SelectItem>
+                                <SelectItem value="__loading" disabled>
+                                  Loading models…
+                                </SelectItem>
+                              </>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>
@@ -1254,9 +1257,12 @@ export function AssessmentVariantPage() {
                           </SelectTrigger>
                           <SelectContent>
                             {availableModels.length === 0 ? (
-                              <SelectItem value="__loading" disabled>
-                                Loading models…
-                              </SelectItem>
+                              <>
+                                <SelectItem value={aiReviewModel}>{aiReviewModel}</SelectItem>
+                                <SelectItem value="__loading" disabled>
+                                  Loading models…
+                                </SelectItem>
+                              </>
                             ) : (
                               availableModels.map((model) => (
                                 <SelectItem key={model.id} value={model.id}>

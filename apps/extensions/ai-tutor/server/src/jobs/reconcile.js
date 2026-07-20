@@ -11,14 +11,16 @@ import { fetchCoreCourseSafe, fetchCoreTopicSafe } from '../services/eduaiClient
 export async function runReconciliation() {
   console.log('[reconcile] Starting daily reconciliation');
 
-  // Phase 1 — CourseOffering rows linked to Core. A 404 here means the course
-  // was deleted in Core, so the whole local CourseOffering is cascade-deleted
-  // (modules, lessons, activities, submissions, chat sessions, etc. all carry
-  // `onDelete: Cascade` FKs — see schema.prisma) rather than just unlinked.
-  // This is the safety net for §802's live push: if Core's cascade call to
-  // AI Tutor was missed (server down, network partition), this run catches it.
+  // Phase 1 — every CourseOffering row is linked to Core by construction
+  // (#1072 step 4 made `coreOfferingId` required + unique — there is no
+  // "unlinked" row anymore, so no `where` filter is needed). A 404 here means
+  // the course was deleted in Core, so the whole local CourseOffering is
+  // cascade-deleted (modules, lessons, activities, submissions, chat
+  // sessions, etc. all carry `onDelete: Cascade` FKs — see schema.prisma)
+  // rather than just unlinked. This is the safety net for §802's live push:
+  // if Core's cascade call to AI Tutor was missed (server down, network
+  // partition), this run catches it.
   const offerings = await prisma.courseOffering.findMany({
-    where: { coreOfferingId: { not: null } },
     select: { id: true, coreOfferingId: true },
   });
 

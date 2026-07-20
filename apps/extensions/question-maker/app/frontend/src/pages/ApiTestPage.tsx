@@ -25,11 +25,6 @@ export const ApiTestPage = () => {
   const { toast } = useToast();
   const eduaiStatus = useEduAIStatus();
 
-  const [courseForm, setCourseForm] = useState({
-    name: '',
-    code: ''
-  });
-  const [courseResult, setCourseResult] = useState<ResultState>(defaultResult);
   const [courseListResult, setCourseListResult] = useState<ResultState>(defaultResult);
 
   const [topicForm, setTopicForm] = useState({
@@ -49,8 +44,7 @@ export const ApiTestPage = () => {
 
   const [assessmentForm, setAssessmentForm] = useState({
     name: '',
-    type: 'Assignment',
-    semester: ''
+    type: 'Assignment'
   });
   const [assessmentResult, setAssessmentResult] = useState<ResultState>(defaultResult);
 
@@ -179,62 +173,12 @@ export const ApiTestPage = () => {
         </header>
 
         <section className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Create Course</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor="course-name">Name</Label>
-                  <Input
-                    id="course-name"
-                    placeholder="e.g. Computer Science 101"
-                    value={courseForm.name}
-                    onChange={(event) => setCourseForm((prev) => ({ ...prev, name: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="course-code">Course Code (optional)</Label>
-                  <Input
-                    id="course-code"
-                    placeholder="e.g. CS101"
-                    value={courseForm.code}
-                    onChange={(event) => setCourseForm((prev) => ({ ...prev, code: event.target.value }))}
-                  />
-                </div>
-              </div>
-              <Button
-                onClick={() => {
-                  if (!courseForm.name.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course name is required.'
-                    });
-                    return;
-                  }
-
-                  handleApiCall(
-                    () =>
-                      api.post('/api/course', {
-                        name: courseForm.name,
-                        courseCode: courseForm.code || undefined
-                      }),
-                    (data) => {
-                      setCourseResult({ status: 'success', payload: data });
-                      toast({ title: 'Course created' });
-                    },
-                    (message) => setCourseResult({ status: 'error', message })
-                  );
-                }}
-              >
-                Create Course
-              </Button>
-              <div>{renderResult(courseResult)}</div>
-            </CardContent>
-          </Card>
-
+          {/*
+            Local course creation is retired (#1072 §4 step 7) — every QM course
+            must originate in Core with a validated coreCourseId. This dev-only
+            bench no longer exposes a raw create-course form; use "Add Courses"
+            from the profile menu to link a Core course into the library.
+          */}
           <Card>
             <CardHeader>
               <CardTitle>List Courses (includeStats)</CardTitle>
@@ -450,21 +394,13 @@ export const ApiTestPage = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="assessment-semester">Semester</Label>
-                <Input
-                  id="assessment-semester"
-                  value={assessmentForm.semester}
-                  onChange={(event) => setAssessmentForm((prev) => ({ ...prev, semester: event.target.value }))}
-                />
-              </div>
               <Button
                 onClick={() => {
-                  if (!assessmentForm.name.trim() || !assessmentForm.semester.trim()) {
+                  if (!assessmentForm.name.trim()) {
                     toast({
                       variant: 'destructive',
                       title: 'Missing required fields',
-                      description: 'Name and semester are required.'
+                      description: 'Name is required.'
                     });
                     return;
                   }
@@ -473,8 +409,7 @@ export const ApiTestPage = () => {
                     () =>
                       api.post('/api/assessments', {
                         name: assessmentForm.name,
-                        type: assessmentForm.type,
-                        semester: assessmentForm.semester
+                        type: assessmentForm.type
                       }),
                     (data) => {
                       setAssessmentResult({ status: 'success', payload: data });

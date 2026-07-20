@@ -1,8 +1,6 @@
-# LiteLLM proxy on cmps01 — one public port (8001) for all vLLM models.
-# vLLM backend containers are started separately (see README.md).
-#
-# network_mode: host — required because backends bind 127.0.0.1:18001/18002 on the
-# host. Bridge networking + host.docker.internal cannot reach loopback-only ports.
+# cmps01 public :8001 — nginx edge routes vLLM + research energy (single firewall port).
+# LiteLLM listens on 127.0.0.1:18091 only; nginx binds :8001.
+# vLLM backends are started separately (see README.md).
 
 services:
   eduai-vllm-proxy:
@@ -12,4 +10,15 @@ services:
     network_mode: host
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
-    command: ["--config", "/app/config.yaml", "--port", "8001", "--host", "0.0.0.0"]
+    command: ["--config", "/app/config.yaml", "--port", "18091", "--host", "127.0.0.1"]
+
+  eduai-edge-proxy:
+    image: nginx:1.27-alpine
+    container_name: eduai-edge-proxy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./internal-allow.conf:/etc/nginx/conf.d/internal-allow.conf:ro
+    depends_on:
+      - eduai-vllm-proxy

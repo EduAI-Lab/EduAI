@@ -170,7 +170,6 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    semesterOverride?: string;
     assessmentTypeOverride?: string;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-variants`, payload);
@@ -184,7 +183,6 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    semesterOverride?: string;
     assessmentTypeOverride?: string;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-by-metadata`, payload);

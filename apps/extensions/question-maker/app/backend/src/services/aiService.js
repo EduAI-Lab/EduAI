@@ -6,6 +6,7 @@ import axios from "axios";
 import { config } from "../config/settings.js";
 import { Question_Metadata, Topics, Course } from "../schema/index.js";
 import eduaiService from "./eduaiService.js";
+import { enrichCourseDetail } from "./courseListService.js";
 import {
   normalizeExtractText,
   chunkText,
@@ -716,11 +717,12 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
     return [];
   }
 
-  const course = await Course.findByPk(courseId, {
-    attributes: ["id", "code", "name", "coreCourseId"],
-  });
+  // `code`/`name` are Core-owned and no longer stored locally (#1072 §4 step
+  // 10) — read through Core for the display code used in the extraction prompt.
+  const course = await Course.findByPk(courseId, { attributes: ["id", "coreCourseId"] });
+  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
 
-  const extracted = await extractQuestionsWithEduAI(normalized, course, model, apiKeys, { cookie });
+  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, { cookie });
   return extracted;
 };
 

@@ -2,6 +2,7 @@
  * Resolve campus vs cloud models from Core's /api/ai-models payload.
  * Avoid hardcoding served-model names so GPU catalog changes don't break QM.
  */
+import { modelSizeRankFromText } from '../../../shared/modelSizeRanks.js';
 
 const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
 export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';
@@ -32,12 +33,7 @@ function normalizeModels(rawModels) {
 }
 
 function sizeRank(model) {
-  const text = `${model.id} ${model.label}`.toLowerCase();
-  if (/\b32b\b/.test(text)) return 32;
-  if (/\b14b\b/.test(text)) return 14;
-  if (/\b7b\b/.test(text)) return 7;
-  if (/\b3b\b/.test(text)) return 3;
-  return 0;
+  return modelSizeRankFromText(`${model.id} ${model.label}`);
 }
 
 export function isCampusModel(model) {

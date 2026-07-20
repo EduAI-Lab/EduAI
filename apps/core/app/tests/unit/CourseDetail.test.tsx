@@ -245,7 +245,6 @@ describe('CourseDetailManagerView', () => {
 const TA_PROPS = {
   onCreateTopic: NOOP,
   onDeleteTopic: NOOP,
-  onUpdateAiInstructions: NOOP,
 }
 
 describe('CourseDetailTaView', () => {
