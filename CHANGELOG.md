@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] refactor: Wire `useCourseMaterials.deleteMaterial` to the live `DELETE /api/courses/:courseId/materials/:materialId` endpoint and route the course-detail manager/TA delete flows through the hook instead of inline `fetch`. (#559, @mochi_21, 2026-07-20) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
