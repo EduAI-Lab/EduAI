@@ -55,7 +55,7 @@ export function CourseTopicsHeroAction({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const isEduAiCourse = !!course.externalId || course.externalSource === 'EDUAI';
+  const isEduAiCourse = !!course.coreOfferingId;
 
   if (!perms.canManageTopics) return null;
 

@@ -1,5 +1,5 @@
 import type { Course } from '~/lib/types';
-import { accentForCourse, courseCode, courseTerm, courseYear } from '~/lib/course-display';
+import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '~/lib/course-display';
 import type { DashboardCourseRow } from './DashboardView';
 
 /** Time-of-day greeting — mirrors Core's dashboard hero (`apps/core/app/routes/dashboard.tsx`)
@@ -24,7 +24,7 @@ export function toDashboardCourseRow(course: Course): DashboardCourseRow {
   return {
     id: course.id,
     code: courseCode(course),
-    name: course.title,
+    name: courseName(course),
     term: courseTerm(course),
     year: courseYear(course),
     accentColor: accentForCourse(course),

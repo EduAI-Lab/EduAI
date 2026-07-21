@@ -411,9 +411,11 @@ async function seed() {
   let linkedVariantCount = 0;
 
   for (const course of COURSES) {
+    // `name`/`code` are Core-owned and no longer stored locally (#1072 §4
+    // step 10) — the anchor row is just userId + coreCourseId; `course.name`/
+    // `course.code` above stay in this file's own COURSES literal purely as
+    // seed-data documentation.
     const createdCourse = await Course.create({
-      name: course.name,
-      code: course.code,
       userId: course.ownerId,
       coreCourseId: course.coreCourseId,
     });
@@ -430,11 +432,12 @@ async function seed() {
       topicCount += 1;
     }
 
+    // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077) —
+    // it's derived from the course's Core term at the read seam.
     const assessment = await Assessments.create({
       courseId: createdCourse.id,
       type: 'Quiz',
       name: course.assessmentName,
-      semester: 'Fall 2026',
     });
 
     for (const [qIdx, question] of course.questions.entries()) {

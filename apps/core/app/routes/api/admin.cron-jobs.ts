@@ -66,10 +66,18 @@ export async function action({ request }: ActionFunctionArgs) {
       return data({ error: `Job "${jobName}" is managed by an extension server and cannot be triggered from Core` }, { status: 400 });
     }
 
-    const runId = await startCronRun(jobName);
-    triggerCronJobAsync(jobName, job.script, runId);
+    const { findRunningCronRun } = await import("~/lib/db.cron-jobs.server");
+    const alreadyRunning = await findRunningCronRun(jobName);
+    if (alreadyRunning) {
+      return data({ runId: alreadyRunning.id, reused: true });
+    }
 
-    return data({ runId });
+    const { runId, created } = await startCronRun(jobName);
+    if (created) {
+      triggerCronJobAsync(jobName, job.script, runId);
+    }
+
+    return data({ runId, reused: !created });
   }
 
   if (intent === "update-schedule" && jobName) {
