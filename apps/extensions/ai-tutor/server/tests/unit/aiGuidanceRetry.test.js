@@ -26,21 +26,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function failedResponse(status) {
+function failedResponse(status, chatId = null) {
   return {
     ok: false,
     status,
+    headers: new Headers(chatId ? { 'X-Chat-Id': chatId } : {}),
     text: () => Promise.resolve(`Upstream returned ${status}`),
   };
 }
 
-function successfulResponse() {
+function successfulResponse(chatId = 'chat-after-retry') {
   return {
     ok: true,
     json: () =>
       Promise.resolve({
         content: 'Start by identifying the base case.',
-        chatId: 'chat-after-retry',
+        chatId,
       }),
   };
 }
@@ -87,6 +88,21 @@ describe('callEduAI transient failure retry (#1001)', () => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('reuses the chat Core persisted before retrying an initial request after a 503', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(failedResponse(503, 'chat-created-on-attempt-one'))
+      .mockResolvedValueOnce(successfulResponse('chat-created-on-attempt-one'));
+
+    const result = await generateResponse();
+    const firstRequestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const secondRequestBody = JSON.parse(global.fetch.mock.calls[1][1].body);
+
+    expect(firstRequestBody).not.toHaveProperty('chatId');
+    expect(secondRequestBody.chatId).toBe('chat-created-on-attempt-one');
+    expect(result.chatId).toBe('chat-created-on-attempt-one');
+  });
 
   it('stops after one retry when both attempts return a transient failure', async () => {
     global.fetch = vi
