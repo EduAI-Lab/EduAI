@@ -1,12 +1,15 @@
 /**
  * Loads local QM courses plus the caller's Core course list, then filters to
- * Core-linked (and sandbox) courses when Core enrollments exist.
+ * Core-linked (and sandbox) courses when Core enrollments exist. Course
+ * metadata (name/code/term/year/description) is already read through from
+ * Core server-side (`courseListService.js` #1076/#1072 §3) — no client-side
+ * re-enrichment needed.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useCourses } from './useCourses';
 import { useAuth } from '../contexts/AuthContext';
 import { eduaiService } from '../services/eduaiService';
-import { filterCoursesForCourseSelection, enrichCoursesWithCoreMetadata } from '../utils/courseDisplay';
+import { filterCoursesForCourseSelection } from '../utils/courseDisplay';
 
 export function useDisplayCourses() {
   const { user } = useAuth();
@@ -42,17 +45,12 @@ export function useDisplayCourses() {
     };
   }, []);
 
-  const { courses: filteredCourses, showMockLabel } = useMemo(
+  const { courses: displayCourses, showMockLabel } = useMemo(
     () =>
       filterCoursesForCourseSelection(courses, coreCourses, {
         bypassCoreEnrollmentFilter: user?.role === 'ADMIN',
       }),
     [courses, coreCourses, user?.role]
-  );
-
-  const displayCourses = useMemo(
-    () => enrichCoursesWithCoreMetadata(filteredCourses, coreCourses),
-    [filteredCourses, coreCourses]
   );
 
   return {

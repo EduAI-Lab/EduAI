@@ -179,15 +179,8 @@ type ModuleFixture = {
 type CourseFixture = {
   /** Local-only label; Core does not see this. */
   internalKey: string;
-  title: string;
-  description: string;
-  startDate: Date;
-  endDate: Date;
-  isPublished: boolean;
   /** Core CUID — this offering imports from this Core course. */
   coreCourseId: string;
-  /** Department code matching Core (used for UNIT_ADMIN scoping). */
-  department: string;
   /** Core CUID of the primary instructor (mirrors Core seed). */
   instructorId: string;
   /** Core CUIDs of students to enroll (subset of seed students). */
@@ -200,13 +193,7 @@ type CourseFixture = {
 const COURSE_FIXTURES: CourseFixture[] = [
   {
     internalKey: 'cosc101',
-    title: 'Computer Studies (Tutor View)',
-    description: 'AI Tutor mirror of Core COSC 101.',
-    startDate: new Date('2026-09-08'),
-    endDate: new Date('2026-12-12'),
-    isPublished: true,
     coreCourseId: CORE.courses.cosc101,
-    department: 'COSC',
     instructorId: CORE.users.instructorCS,
     studentIds: [CORE.users.student1, CORE.users.student2, CORE.users.student3],
     topics: [
@@ -279,13 +266,7 @@ const COURSE_FIXTURES: CourseFixture[] = [
   },
   {
     internalKey: 'cosc121',
-    title: 'Computer Programming II (Tutor View)',
-    description: 'AI Tutor mirror of Core COSC 121.',
-    startDate: new Date('2026-01-05'),
-    endDate: new Date('2026-04-24'),
-    isPublished: true,
     coreCourseId: CORE.courses.cosc121,
-    department: 'COSC',
     instructorId: CORE.users.instructorCS,
     studentIds: [CORE.users.student1, CORE.users.student2, CORE.users.student4, CORE.users.student5],
     topics: [
@@ -370,13 +351,7 @@ const COURSE_FIXTURES: CourseFixture[] = [
   },
   {
     internalKey: 'math200',
-    title: 'Calculus III (Tutor View)',
-    description: 'AI Tutor mirror of Core MATH 200.',
-    startDate: new Date('2026-09-08'),
-    endDate: new Date('2026-12-12'),
-    isPublished: true,
     coreCourseId: CORE.courses.math200,
-    department: 'MATH',
     instructorId: CORE.users.instructorMath,
     studentIds: [CORE.users.student3, CORE.users.student4, CORE.users.student5],
     topics: [
@@ -493,32 +468,15 @@ async function seedCourses(promptTemplateIds: Record<string, number>) {
       await prisma.module.deleteMany({ where: { id: { in: moduleIds.map((m) => m.id) } } });
       await prisma.topic.deleteMany({ where: { courseOfferingId: offering.id } });
 
-      offering = await prisma.courseOffering.update({
-        where: { id: offering.id },
-        data: {
-          title: course.title,
-          description: course.description,
-          startDate: course.startDate,
-          endDate: course.endDate,
-          isPublished: course.isPublished,
-          externalId: course.coreCourseId,
-          externalSource: 'EDUAI',
-          coreOfferingId: course.coreCourseId,
-          department: course.department,
-        },
-      });
+      // #1072 step 4: `offering` is a pure anchor row — it was already found
+      // by `coreOfferingId`, so there is nothing left to update. Every real
+      // field (title/description/dates/isPublished/department) is Core-owned
+      // and read-through via `mapCourseOffering`; this seed never writes any
+      // of them onto the local row.
     } else {
       offering = await prisma.courseOffering.create({
         data: {
-          title: course.title,
-          description: course.description,
-          startDate: course.startDate,
-          endDate: course.endDate,
-          isPublished: course.isPublished,
-          externalId: course.coreCourseId,
-          externalSource: 'EDUAI',
           coreOfferingId: course.coreCourseId,
-          department: course.department,
         },
       });
     }

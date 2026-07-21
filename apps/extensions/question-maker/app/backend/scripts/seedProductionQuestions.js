@@ -78,23 +78,11 @@ const { Course, Topics, Question_Metadata, Assessments, Variants } = schemaModul
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
-// Map real course codes to the same templates used in development populate:
-// 0: COSC 211 (Machine Architecture)
-// 1: COSC 121 (Computer Programming II)
-// 2: STUDY1 (Introduction to Statistics)
-// 3: STUDY3 (Discrete Math)
-// 4: STUDY2 (Introduction to Psychology)
-// 5: STUDY4 (Introduction to Nursing)
-// 6: STUDY5 (Scientific Research Methods)
-const TEMPLATE_BY_COURSE_CODE = {
-  'COSC 211': 0,
-  'COSC 121': 1,
-  STUDY1: 2,
-  STUDY3: 3,
-  STUDY2: 4,
-  STUDY4: 5,
-  STUDY5: 6,
-};
+// Course-code-based template mapping was retired with `Course.code` (#1072
+// §4 step 10) — matching by code is exactly the "code as an identity key"
+// pattern the parent issue's step 6 deleted elsewhere. Templates now just
+// cycle by row order (`courseIndex % NUM_TEMPLATES`), same fallback this
+// script already used for any unmapped code.
 
 const run = async () => {
   try {
@@ -117,14 +105,10 @@ const run = async () => {
 
     for (let courseIndex = 0; courseIndex < courses.length; courseIndex++) {
       const course = courses[courseIndex];
-      const code = (course.code || '').trim();
-      const mappedTemplate = Object.prototype.hasOwnProperty.call(TEMPLATE_BY_COURSE_CODE, code)
-        ? TEMPLATE_BY_COURSE_CODE[code]
-        : null;
-      const templateIndex = mappedTemplate ?? (courseIndex % NUM_TEMPLATES);
+      const templateIndex = courseIndex % NUM_TEMPLATES;
       const topicNames = TOPIC_NAMES_BY_TEMPLATE[templateIndex];
       const questions = SEED_QUESTIONS_BY_TEMPLATE[templateIndex];
-      const courseLabel = `${course.name} (${course.code || course.id})`;
+      const courseLabel = `Course #${course.id}`;
       console.log(`  Course: ${courseLabel} (template ${templateIndex}: ${topicNames.length} topics, ${questions.length} questions)`);
 
       // Ensure all template topics exist for this course (find or create by name)
@@ -140,11 +124,11 @@ const run = async () => {
 
       let assessment = await Assessments.findOne({ where: { courseId: course.id }, order: [['id', 'ASC']] });
       if (!assessment) {
+        // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077).
         assessment = await Assessments.create({
           courseId: course.id,
           type: 'Quiz',
-          name: 'Practice Exam',
-          semester: 'Fall 2026'
+          name: 'Practice Exam'
         });
         totalAssessments++;
         console.log(`    Created assessment "Practice Exam"`);
