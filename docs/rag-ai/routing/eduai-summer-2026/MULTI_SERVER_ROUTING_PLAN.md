@@ -177,7 +177,12 @@ If a host was marked healthy within the last ~30 s but **dies before the cache e
 4. If no host remains or the retry fails → existing chat error / **503** with a clear error.  
 5. Log `fleetServerId`, failure reason, and retry status — operators debugging a mid-class outage can see retries, not silent drops.
 
-For **streaming** chat, Core waits briefly for the first stream chunk/step (or an `onError`) before returning the HTTP response, so connection failures can still trigger Slice 2. Soft timeout: `FLEET_STREAM_PROBE_MS` (default 10000) — if the host is merely slow, the probe resolves without retrying.
+**Startup probe (Slice 2 scope):** For every fleet `vllm:*` turn (streaming, non-streaming / `consumeStream`, and ADHD oversight), Core waits briefly for the first stream chunk/step (or an `onError`) before treating the host as usable, so connection/startup failures still throw inside the retry `try/catch`. Soft timeout: `FLEET_STREAM_PROBE_MS` (default `10000`).
+
+**Deliberate tradeoffs (not retried):**
+
+- Soft-timeout marks a silent/slow host as **ready** so TTFT is not blocked forever. After that, a late `onError` cannot trigger another host retry — the client sees the bad/hung stream. Operators who prefer fail-closed on dead hosts can lower `FLEET_STREAM_PROBE_MS`.
+- Failures **after** the probe has settled (mid-stream disconnect, oversight rewrite errors, etc.) do **not** get a second host. Slice 2 is **startup-failure retry**, not full mid-stream failover.
 
 `X-Fleet-Server` reflects the **final** host after a successful retry.
 

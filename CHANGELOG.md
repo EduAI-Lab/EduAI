@@ -12,6 +12,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] feat: Fleet Slice 2 — retry once on an alternate healthy vLLM host after inference failure (streaming startup probe + health invalidate); process-local `AI_MAX_INFLIGHT` admission with stream-safe release. Closes #876. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
 - [core] tests: `admission.server` + `fleet-probe-stream` unit coverage; fleet-routing exclude/retry cases. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
 
+### Changed
+
+- [core] fix: Fleet Slice 2 startup probe now runs for non-streaming and oversight turns (not only streaming); docs call out soft-timeout / mid-stream non-retry tradeoffs. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
