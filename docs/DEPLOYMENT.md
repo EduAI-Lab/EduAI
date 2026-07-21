@@ -201,6 +201,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat request
 | `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
 | `AI_MAX_INFLIGHT` | Max concurrent local-GPU chat slots in this Core process (default `8`; `0` = off) |
 | `AI_ADMISSION_WAIT_MS` | Max wait for an admission slot before **503** `AI_ADMISSION_TIMEOUT` (default `15000`) |
+| `FLEET_STREAM_PROBE_MS` | Soft-timeout waiting for first stream chunk/step before treating the host as ready for Slice 2 retry (default `10000`) |
 
 Pre-flight from **`apps/core`** on a host that can reach cmps (e.g. s378):
 
