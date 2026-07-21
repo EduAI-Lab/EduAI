@@ -1712,11 +1712,11 @@ ${buildEmptyCourseRagBlock()}`;
     };
 
     const fleetStreamProbeMs = parseEnvInt(process.env.FLEET_STREAM_PROBE_MS, 10_000);
+    // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
+    // connection/startup failures throw from runStreamText and Slice 2 can retry.
+    // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
     const shouldProbeFleetStream =
-      Boolean(fleetPick) &&
-      parsedModel.providerId === "vllm" &&
-      streaming &&
-      !needsOversight;
+      Boolean(fleetPick) && parsedModel.providerId === "vllm";
 
     const runStreamText = async () => {
       const probe = shouldProbeFleetStream

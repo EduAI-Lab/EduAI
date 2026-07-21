@@ -191,7 +191,7 @@ DEV_SERVER_HMR_CLIENT_PORT="443"
 
 #### vLLM fleet routing (optional)
 
-When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. On inference failure to a picked host, Core **invalidates** that host’s health cache and **retries once** on another healthy host in the same pool (`fleetRetry: true` in logs; `X-Fleet-Server` is the final host). Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
+When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat requests across healthy GPU hosts (round-robin with a 30s health cache). Unhealthy hosts are skipped; if no host qualifies, `/api/chat` returns **503**. On **startup** inference failure to a picked host (connection / first-chunk probe), Core **invalidates** that host’s health cache and **retries once** on another healthy host in the same pool (`fleetRetry: true` in logs; `X-Fleet-Server` is the final host). Soft-timeout (`FLEET_STREAM_PROBE_MS`) treats a slow host as ready without retry — mid-stream failures after that are not retried. Fleet applies only to vLLM models — Ollama and cloud providers are unchanged.
 
 | Variable | Purpose |
 | -------- | ------- |
@@ -201,7 +201,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat request
 | `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
 | `AI_MAX_INFLIGHT` | Max concurrent local-GPU chat slots in this Core process (default `8`; `0` = off) |
 | `AI_ADMISSION_WAIT_MS` | Max wait for an admission slot before **503** `AI_ADMISSION_TIMEOUT` (default `15000`) |
-| `FLEET_STREAM_PROBE_MS` | Soft-timeout waiting for first stream chunk/step before treating the host as ready for Slice 2 retry (default `10000`) |
+| `FLEET_STREAM_PROBE_MS` | Soft-timeout waiting for first stream chunk/step before treating the host as ready (default `10000`). After soft-timeout, Slice 2 will **not** retry on a late error — lower this to fail faster on hung hosts |
 
 Pre-flight from **`apps/core`** on a host that can reach cmps (e.g. s378):
 

@@ -28,7 +28,7 @@ describe("createStreamStartupProbe", () => {
     await expect(waited).resolves.toBeUndefined();
   });
 
-  it("soft-times out as ready so slow hosts are not failed", async () => {
+  it("soft-times out as ready (deliberate: slow hosts are not retried; late errors after this cannot retry)", async () => {
     vi.useFakeTimers();
     const probe = createStreamStartupProbe({ timeoutMs: 50 });
     const waited = probe.wait();
