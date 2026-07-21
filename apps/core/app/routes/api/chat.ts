@@ -16,7 +16,10 @@ import {
   type RouterDecision,
   type RouterMode,
 } from "~/lib/ai/routing/router";
-import { startSidecarMeasurement } from "~/lib/ai/energy/measurement.server";
+import {
+  startSidecarMeasurement,
+  stopSidecarMeasurement,
+} from "~/lib/ai/energy/measurement.server";
 import {
   AdmissionTimeoutError,
   acquireAiAdmission,
@@ -29,6 +32,7 @@ import {
   resolveFleetHost,
   resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
+import { createStreamStartupProbe } from "~/lib/ai/routing/fleet/probe-stream";
 import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
 import {
   buildFleetRouterFeatures,
@@ -1632,10 +1636,7 @@ ${buildEmptyCourseRagBlock()}`;
     };
 
     let energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
-    const sidecarTag = await startSidecarMeasurement(
-      `chat-${chat.id}-${randomUUID()}`,
-      { sidecarBaseUrl: energySidecarBaseUrl },
-    );
+    let sidecarTag: string | null = null;
 
     const needsAdmission =
       parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
@@ -1671,6 +1672,16 @@ ${buildEmptyCourseRagBlock()}`;
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
+    // Start energy measurement only after admission so timeout 503 cannot leak sessions.
+    sidecarTag = await startSidecarMeasurement(`chat-${chat.id}-${randomUUID()}`, {
+      sidecarBaseUrl: energySidecarBaseUrl,
+    });
+
+    const abandonSidecar = (baseUrl: string | null, tag: string | null) => {
+      if (!tag || !baseUrl) return;
+      void stopSidecarMeasurement(tag, { sidecarBaseUrl: baseUrl }).catch(() => undefined);
+    };
+
     const persistTurnTelemetry = async (params: {
       responseText: string;
       usage:
@@ -1700,12 +1711,29 @@ ${buildEmptyCourseRagBlock()}`;
       });
     };
 
-    const runStreamText = () =>
-      streamText({
+    const fleetStreamProbeMs = parseEnvInt(process.env.FLEET_STREAM_PROBE_MS, 10_000);
+    const shouldProbeFleetStream =
+      Boolean(fleetPick) &&
+      parsedModel.providerId === "vllm" &&
+      streaming &&
+      !needsOversight;
+
+    const runStreamText = async () => {
+      const probe = shouldProbeFleetStream
+        ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
+        : null;
+
+      const result = streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
         providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
+        onChunk: probe
+          ? () => {
+              probe.hooks.signalReady();
+            }
+          : undefined,
         onStepFinish: ({ toolCalls, toolResults }) => {
+          probe?.hooks.signalReady();
           if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
             adhdToolsUsed = true;
           }
@@ -1713,6 +1741,7 @@ ${buildEmptyCourseRagBlock()}`;
         onFinish: needsOversight
           ? undefined
           : async ({ text, usage, finishReason, response }) => {
+              probe?.hooks.signalReady();
               if (!streaming) {
                 return;
               }
@@ -1744,8 +1773,15 @@ ${buildEmptyCourseRagBlock()}`;
             },
         onError: ({ error }) => {
           logStreamError(error, streamTrace);
+          probe?.hooks.signalError(error);
         },
       });
+
+      if (probe) {
+        await probe.wait();
+      }
+      return result;
+    };
 
     let result;
     let fleetRetry = false;
@@ -1753,6 +1789,7 @@ ${buildEmptyCourseRagBlock()}`;
       result = await runStreamText();
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
+        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -1767,9 +1804,14 @@ ${buildEmptyCourseRagBlock()}`;
             jobType,
           });
           if (nextPick) {
+            abandonSidecar(failedPick.energySidecarUrl, sidecarTag);
             fleetPick = nextPick;
             fleetRetry = true;
             energySidecarBaseUrl = nextPick.energySidecarUrl;
+            sidecarTag = await startSidecarMeasurement(
+              `chat-${chat.id}-${randomUUID()}`,
+              { sidecarBaseUrl: energySidecarBaseUrl },
+            );
             validatedApiKeys = mergeLocalInferenceFromEnv(
               providerSettingsBase,
               resolvedModelId,
@@ -1799,6 +1841,7 @@ ${buildEmptyCourseRagBlock()}`;
             throw error;
           }
         } catch (retryError) {
+          abandonSidecar(energySidecarBaseUrl, sidecarTag);
           releaseAdmission();
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
@@ -1822,6 +1865,7 @@ ${buildEmptyCourseRagBlock()}`;
           throw retryError;
         }
       } else {
+        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         if (chatMode === "admin") {
           logStreamError(error, streamTrace);
