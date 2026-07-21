@@ -5,6 +5,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Fixed
+
+- [core] fix: Block SSRF via client-supplied provider `baseUrl` in chat — `createAIProviderRegistry` no longer trusts the client-supplied Ollama/vLLM `baseUrl` from `/api/chat`; a new `resolveAllowedVllmBaseUrl` (mirroring the existing Ollama guard from #849) restricts it to loopback or a deployment-configured host (`VLLM_BASE_URL`/`VLLM_FLEET_*`), silently falling back to the server default otherwise. Previously any authenticated user — including students — could point `baseUrl` at an internal host or the cloud-metadata endpoint and have Core relay the response back. (#972, @evanbones, 2026-07-21) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] fix: Block SSRF via Canvas base URL — `parseAndValidateCanvasUrl` previously allowed any HTTPS host with no private-network check. A new shared `assertPublicHostname` guard (`app/lib/net/ssrf-guard.server.ts`) DNS-resolves the host and rejects RFC1918/loopback/link-local/CGNAT/IPv6-ULA ranges (including cloud metadata endpoints), re-checked on every real Canvas request (credential verification, course/roster/file listing, file downloads) rather than once at connect time. (#977, @evanbones, 2026-07-21) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
