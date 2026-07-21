@@ -85,7 +85,10 @@ export const updateUserSchema = z.object({
   taCourseIds: z.array(z.string().min(1)).optional(),
   studentId: z
     .union([
-      z.string().min(1).max(32).transform((value) => value.trim()),
+      z
+        .string()
+        .trim()
+        .regex(/^\d{8}$/, "Student number must be 8 digits"),
       z.null(),
     ])
     .optional(),

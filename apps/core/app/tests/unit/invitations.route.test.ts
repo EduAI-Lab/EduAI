@@ -123,15 +123,16 @@ describe("POST /api/invitations", () => {
     expect(createInvitation).toHaveBeenCalled();
   });
 
-  it("rejects a non-UBC invite email at the schema (400, #567)", async () => {
+  it("rejects a non-UBC invite email at the schema (422, #567)", async () => {
     asInviter("ADMIN", "a1");
     const res = await action(postReq({ email: "prof@gmail.com", role: "INSTRUCTOR" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(createInvitation).not.toHaveBeenCalled();
-    // The UBC reason must ride in details.fieldErrors.email so the form can show
-    // it instead of a generic message (#567 / PR 692 review).
+    // The UBC reason must ride in fields.email so the form can show it instead of
+    // a generic message (#567 / PR 692 review).
     const body = await res.json();
-    expect(body.details.fieldErrors.email[0]).toMatch(/UBC address/);
+    expect(body.error).toBe("VALIDATION_ERROR");
+    expect(body.fields.email).toMatch(/UBC address/);
   });
 
   it("UNIT_ADMIN may invite an INSTRUCTOR", async () => {

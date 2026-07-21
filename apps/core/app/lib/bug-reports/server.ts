@@ -23,7 +23,7 @@ export const BUG_REPORT_FIELD_LIMITS = {
 } as const;
 
 export type CreateBugReportResult =
-  | { ok: true }
+  | { ok: true; report: { id: string } }
   | { ok: false; status: 422; error: "VALIDATION_ERROR"; fields: Record<string, string> }
   | { ok: false; status: 422; error: "USER_NOT_FOUND" };
 
@@ -164,7 +164,7 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
     return { ok: false, status: 422, error: "USER_NOT_FOUND" };
   }
 
-  await prisma.bugReport.create({
+  const report = await prisma.bugReport.create({
     data: {
       source: p.source as BugReportSource,
       userId,
@@ -180,7 +180,7 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
     },
   });
 
-  return { ok: true };
+  return { ok: true, report: { id: report.id } };
 }
 
 const VALID_STATUSES = ["UNHANDLED", "IN_PROGRESS", "RESOLVED"] as const;

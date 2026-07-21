@@ -31,6 +31,7 @@ vi.mock("~/lib/agent-tools/admin-mutations.server", async (importOriginal) => {
 });
 
 import { createAdminChatTools } from "~/lib/agent-tools/create-admin-chat-tools";
+import { agentReadyEndpoints } from "~/lib/agent-readiness/manifest";
 import {
   listAdminCourseEnrollments,
   listAdminCourseTopics,
@@ -51,6 +52,20 @@ const ctx = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("createAdminChatTools manifest coverage", () => {
+  it("exposes every adminChatTool named on a ready endpoint", () => {
+    const tools = createAdminChatTools(ctx);
+    const expected = new Set(
+      agentReadyEndpoints()
+        .map((e) => e.adminChatTool)
+        .filter((name): name is string => Boolean(name)),
+    );
+    for (const name of expected) {
+      expect(tools, `missing tool ${name}`).toHaveProperty(name);
+    }
+  });
 });
 
 describe("createAdminChatTools read execute", () => {
@@ -119,6 +134,22 @@ describe("createAdminChatTools read execute", () => {
       error: "CONFIRMATION_REQUIRED",
     });
   });
+
+  it("returns CONFIRMATION_REQUIRED for createInvitation when confirmed is false", async () => {
+    const tools = createAdminChatTools(ctx);
+    const result = await tools.createInvitation.execute(
+      {
+        confirmed: false,
+        email: "invite@test.com",
+        role: "INSTRUCTOR",
+      },
+      { toolCallId: "test", messages: [] },
+    );
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
 });
 
 describe("createAdminChatTools write execute", () => {
@@ -130,6 +161,7 @@ describe("createAdminChatTools write execute", () => {
         name: "Test User",
         email: "test@example.com",
         role: "STUDENT",
+        idempotencyKey: "create-test-user",
       },
       { toolCallId: "test", messages: [] },
     );
@@ -165,13 +197,86 @@ describe("createAdminChatTools write execute", () => {
 });
 
 describe("runConfirmedAdminWriteTool", () => {
-  it("delegates to mutation when confirmed", async () => {
+  beforeEach(async () => {
+    const { resetWritePreviewsForTests } = await import(
+      "~/lib/agent-tools/admin-write-confirmation.server"
+    );
+    resetWritePreviewsForTests();
+  });
+
+  it("registers a preview and does not mutate when confirmed is false", async () => {
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      run,
+      { email: "a@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
+
+  it("rejects confirmed=true without a matching preview", async () => {
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      true,
+      run,
+      { email: "a@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
+    });
+  });
+
+  it("runs the mutation after matching confirmed=false then confirmed=true on a later turn", async () => {
     vi.mocked(createAdminUser).mockResolvedValue({
       writeSucceeded: true,
       ok: true,
       dataSource: "database",
       mutation: true,
       appliedAt: new Date().toISOString(),
+    });
+
+    const payload = { name: "A", email: "a@test.com", role: "STUDENT" };
+    await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      () =>
+        createAdminUser(ADMIN, {
+          name: "A",
+          email: "a@test.com",
+          role: "STUDENT",
+        }),
+      payload,
+      "turn-preview",
+    );
+
+    const sameTurn = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      true,
+      () =>
+        createAdminUser(ADMIN, {
+          name: "A",
+          email: "a@test.com",
+          role: "STUDENT",
+        }),
+      payload,
+      "turn-preview",
+    );
+    expect(createAdminUser).not.toHaveBeenCalled();
+    expect(sameTurn).toMatchObject({
+      writeSucceeded: false,
+      error: "CONFIRMATION_REQUIRED",
     });
 
     const result = await runConfirmedAdminWriteTool(
@@ -184,8 +289,30 @@ describe("runConfirmedAdminWriteTool", () => {
           email: "a@test.com",
           role: "STUDENT",
         }),
+      payload,
+      "turn-confirm",
     );
     expect(createAdminUser).toHaveBeenCalled();
     expect(result).toMatchObject({ writeSucceeded: true });
+  });
+
+  it("rejects confirmed=true when the payload differs from the preview", async () => {
+    await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      false,
+      async () => ({ writeSucceeded: true }),
+      { email: "a@test.com" },
+    );
+    const run = vi.fn().mockResolvedValue({ writeSucceeded: true });
+    const result = await runConfirmedAdminWriteTool(
+      "createUser",
+      ADMIN,
+      true,
+      run,
+      { email: "b@test.com" },
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ error: "CONFIRMATION_REQUIRED" });
   });
 });

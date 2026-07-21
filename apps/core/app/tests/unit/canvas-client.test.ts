@@ -182,7 +182,7 @@ describe("listCanvasCourseStudents test mode", () => {
     );
 
     expect(students).toHaveLength(2);
-    expect(students[0]?.sis_user_id).toBe("student_1");
+    expect(students[0]?.sis_user_id).toBe("10000001");
   });
 });
 
