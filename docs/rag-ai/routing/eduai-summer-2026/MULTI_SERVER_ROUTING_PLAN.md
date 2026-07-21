@@ -177,6 +177,8 @@ If a host was marked healthy within the last ~30 s but **dies before the cache e
 4. If no host remains or the retry fails → existing chat error / **503** with a clear error.  
 5. Log `fleetServerId`, failure reason, and retry status — operators debugging a mid-class outage can see retries, not silent drops.
 
+For **streaming** chat, Core waits briefly for the first stream chunk/step (or an `onError`) before returning the HTTP response, so connection failures can still trigger Slice 2. Soft timeout: `FLEET_STREAM_PROBE_MS` (default 10000) — if the host is merely slow, the probe resolves without retrying.
+
 `X-Fleet-Server` reflects the **final** host after a successful retry.
 
 ---
