@@ -47,7 +47,9 @@ const TS_PROJECTS = {
 };
 
 console.error("== jscpd (duplication) ==");
-console.error(sh(`${BIN}/jscpd ${Object.values(SRC).map((s) => s.path).join(" ")}`));
+// --output overrides the hard-coded path in .jscpd.json so before/after runs honor PERF_OUT
+// and don't clobber each other.
+console.error(sh(`${BIN}/jscpd --output ${OUT}/duplication ${Object.values(SRC).map((s) => s.path).join(" ")}`));
 
 console.error("== madge (circular + graphs) ==");
 let circular = `madge circular-dependency check — ${new Date().toISOString()}\nTool: madge 8.0.0.  Command per app: madge --circular --extensions <ext> <path>\n`;

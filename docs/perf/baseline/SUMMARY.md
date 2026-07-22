@@ -105,10 +105,10 @@ and warns when a pool is below `PERF_MUT_SAMPLES`). Design notes:
 - me / preferences / bug-reports run as a dedicated password-backed **perf actor** user, so the known
   seed users are never mutated. Core invitations use non-routable `*@perf.local` addresses.
 
-> **`response-times.json` currently in this folder is a PRIOR partial capture** (51 endpoints, the
-> earlier self-replenishing design) taken before the full-coverage rebuild. Re-run
-> `npm run db:seed:perf && npm run perf:endpoints` against the seeded stack to regenerate it at full
-> coverage.
+> **`response-times.json` is not committed in this PR.** A localhost capture hides the N+1s this
+> baseline exists to measure (small seed pools, warm PG cache, no network hop), so it isn't a valid
+> baseline. It's regenerated against the seeded UBC dev server after this PR merges — run
+> `npm run db:seed:perf && npm run perf:endpoints` there. Until then this section is the spec, not data.
 
 **Two real app bugs surfaced by an earlier run (both fixed this session):**
 - `core GET /api/courses/:id/materials` → 500 `Headers is required` — loader passed a raw `Request` to
@@ -117,8 +117,6 @@ and warns when a pool is below `PERF_MUT_SAMPLES`). Design notes:
 - `qm GET /api/questions/stats` → 500 ambiguous/GROUP-BY `id` — `COUNT(col('id'))` unqualified while the
   query JOINs `Course`; fixed to `col('Question_Metadata.id')`
   (`apps/extensions/question-maker/app/backend/src/services/questionService.js`).
-- `response-times.json` in this folder is the **pre-fix** capture; the `qm /api/questions/stats` 500 will
-  clear on the next run.
 
 **Caveat (record with the numbers):** local/dev numbers are for **relative before/after deltas**,
 not prod SLAs. For the DB-round-trip-heavy endpoints that dominate the fix list, local *under-states*

@@ -20,6 +20,7 @@ const before = JSON.parse(readFileSync(beforePath, "utf8"));
 const after = JSON.parse(readFileSync(afterPath, "utf8"));
 
 const key = (r) => `${r.app} ${r.method} ${r.path}`;
+const round = (n) => (n == null ? null : Math.round(n * 100) / 100);
 const bMap = new Map(before.results.map((r) => [key(r), r]));
 const rows = [];
 for (const a of after.results) {
@@ -33,7 +34,6 @@ for (const a of after.results) {
   rows.push({ key: key(a), p50: d("p50"), p95: d("p95"), p99: d("p99"),
     bytes: { before: b.payload_bytes.avg, after: a.payload_bytes.avg } });
 }
-const round = (n) => (n == null ? null : Math.round(n * 100) / 100);
 
 rows.sort((x, y) => (y.p95.delta ?? 0) - (x.p95.delta ?? 0)); // biggest regressions first
 
