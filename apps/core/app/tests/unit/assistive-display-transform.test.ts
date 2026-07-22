@@ -333,6 +333,93 @@ Law: sign
     expect(displayed).not.toContain("Unrelated one");
   });
 
+  it("preserves substantive remainder prose alongside Step ladder and diagram (#1091 review)", () => {
+    const stored = `**Top summary**
+- **Introduce Bill** — propose the idea
+- **Committee Review** — study and amend
+
+The key idea is that a bill must survive several veto points before it becomes law. Most bills die in committee because the chair never schedules a hearing, which is why lobbying effort concentrates at that stage.
+
+### Step ladder
+1. Introduce Bill: A member files the proposal.
+2. Committee Review: Experts study and amend.
+
+\`\`\`eduai-diagram
+process-flow
+title: How a Bill Becomes a Law
+Introduce Bill: Member files the proposal
+Committee Review: Experts study and amend
+\`\`\`
+
+**Next?** Want the Floor Vote stage too?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toContain(
+      "The key idea is that a bill must survive several veto points",
+    );
+    expect(displayed).toContain("lobbying effort concentrates at that stage");
+    // Remainder prose sits between the diagram and the TLDR.
+    expect(displayed.indexOf("```eduai-diagram")).toBeLessThan(
+      displayed.indexOf("The key idea"),
+    );
+    expect(displayed.indexOf("The key idea")).toBeLessThan(
+      displayed.indexOf("**TLDR**"),
+    );
+    expect(displayed.indexOf("**TLDR**")).toBeLessThan(
+      displayed.indexOf("**Continue**"),
+    );
+  });
+
+  it("keeps substantive prose but drops remainder blocks duplicating the diagram stages", () => {
+    const stored = `**Top summary**
+- **Introduce Bill** — propose
+- **Committee Review** — study
+
+Committees can rewrite a bill entirely before it ever reaches the floor, so the version voted on often differs from what was introduced.
+
+Here's the flow at a glance:
+- Introduce Bill: propose
+- Committee Review: study
+
+### Step ladder
+1. Introduce Bill: A member files the proposal.
+2. Committee Review: Experts study and amend.
+
+\`\`\`eduai-diagram
+process-flow
+title: Bill
+Introduce Bill: Member files the proposal
+Committee Review: Experts study and amend
+\`\`\`
+
+**Next?** More?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toContain("Committees can rewrite a bill entirely");
+    expect(displayed).not.toContain("Here's the flow at a glance");
+    expect(displayed).not.toContain("- Introduce Bill: propose");
+  });
+
+  it("still keeps Sources / Connects to / Quick check footers in the remainder", () => {
+    const stored = `**Top summary**
+- **Alpha** — first
+- **Beta** — second
+
+**Sources**: Course notes, week 3.
+
+\`\`\`eduai-diagram
+compare
+title: Pair
+Alpha: first
+Beta: second
+\`\`\`
+
+**Next?** More?`;
+
+    const displayed = transformAssistiveDisplayCopy(stored);
+    expect(displayed).toContain("**Sources**: Course notes, week 3.");
+  });
+
   it("leaves redirect-style turns without Top summary unchanged except Next? relabel", () => {
     const stored = `That's a separate question — want to come back to gradients first, or switch?
 
