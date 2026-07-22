@@ -12,6 +12,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Changed
+
+- [ci] chore: Coverage-report workflow reworked per #1153 — now runs weekly (Mondays 09:00 UTC + manual dispatch) instead of on every push to `development`, commits the report to a clearer `docs/coverage` branch (was `eduai-summer-2026`), and covers all six test suites instead of backends only: added `test:coverage` (V8, `json-summary`) to `@eduai/ui`, the AI Tutor client, and the Question Maker frontend (whose script previously ran vitest in watch mode with no config — it hung and produced nothing; now a `vitest.coverage.config.ts` aggregates its unit + integration projects like core). Root `npm run test:coverage` aggregates all six. (#1153, @yta3216, 2026-07-22) — #PR
+
 ### Fixed
 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
