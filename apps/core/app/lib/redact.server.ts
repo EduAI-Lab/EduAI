@@ -29,9 +29,16 @@ const REDACT_KEY_SUBSTRINGS = [
 
 // Value-level patterns for secrets embedded under innocuous keys or in free-form log text.
 // Keep these linear-time: unbounded `\w+` / `[a-z]*` before a literal causes ReDoS on long blobs.
-const BEARER_TOKEN_RE = /\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi;
-/** HTTP Basic credentials (often captured as `Authorization: Basic …`). */
-const BASIC_AUTH_RE = /\bBasic\s+[A-Za-z0-9+/=_-]+/gi;
+//
+// Bearer/Basic are anchored so console prose like "Basic setup complete" or
+// "Bearer of bad news" is not mangled (#1116 review):
+//   1. In an `Authorization:` header context (plain or JSON-quoted), any
+//      credential after the scheme is redacted regardless of length.
+//   2. Standalone `Bearer/Basic <token>` is only redacted when the token is
+//      long enough (16+ chars) to be a credential rather than English words.
+const AUTH_HEADER_CREDENTIAL_RE =
+  /\b(Authorization["']?\s*[:=]\s*["']?(?:Bearer|Basic))\s+[A-Za-z0-9\-._~+/]+=*/gi;
+const STANDALONE_AUTH_TOKEN_RE = /\b(Bearer|Basic)\s+[A-Za-z0-9\-._~+/]{16,}=*/gi;
 /** Raw Cookie / Set-Cookie header lines in console or network text captures. */
 const COOKIE_HEADER_RE = /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
 /** Common API-key header lines (HAR / fetch dumps). */
@@ -75,8 +82,8 @@ export function shouldRedactKey(key: string): boolean {
  */
 export function redactSecretValuesInString(text: string): string {
   return text
-    .replace(BEARER_TOKEN_RE, `Bearer ${REDACTED_VALUE}`)
-    .replace(BASIC_AUTH_RE, `Basic ${REDACTED_VALUE}`)
+    .replace(AUTH_HEADER_CREDENTIAL_RE, `$1 ${REDACTED_VALUE}`)
+    .replace(STANDALONE_AUTH_TOKEN_RE, `$1 ${REDACTED_VALUE}`)
     .replace(COOKIE_HEADER_RE, (match) => {
       const prefix = match.split(":")[0] ?? "Cookie";
       return `${prefix}: ${REDACTED_VALUE}`;
