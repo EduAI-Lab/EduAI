@@ -64,7 +64,7 @@ flowchart LR
 - UI: `pages/LoginPage.tsx`.
 - Backend: `routes/auth.js` -> `services/authService.js`.
 - Notes:
-  - New users are seeded with starter data (`seedNewUserService.js`).
+  - New users start with zero courses; no starter data is seeded on login. Courses arrive via the Core-linked import/link flows below.
   - Public auth payload includes `isBugReportAdmin` derived from email.
 
 ### 2) Course selection + onboarding

@@ -79,22 +79,38 @@ export function mapCoreAdminUser(user) {
 /**
  * Map a CourseOffering row to its public DTO.
  *
- * Why: The `external*` fields are nullable for native courses but populated
- * for EduAI-imported courses. They are coerced to explicit `null` (rather
- * than left as `undefined`) so the client can detect "imported" vs "native"
- * with a simple truthy check on `externalId`.
+ * Why: Course-owned fields (title/description/department/dates/isPublished/
+ * term/year/aiInstructions) live in Core (#1072 step 2, closes #819's read
+ * path) — `coreCourse` is the resolved Core course for this offering
+ * (`services/courseResolver.js`), and every one of those fields is sourced
+ * from it exclusively. `CourseOffering` is a pure anchor as of #1072 step 4
+ * (id, `coreOfferingId`, timestamps — no Core-owned columns left to fall
+ * back to), so when `coreCourse` is `null`/`undefined` (Core unreachable, or
+ * no `coreOfferingId` to resolve) every Core-owned field degrades to
+ * `null`/`false` rather than a stale local copy — an explicit "unresolved"
+ * placeholder, consistent with the parent issue's degrade-gracefully rule.
+ *
+ * `coreOfferingId` is the ONLY Core-link field on the wire (#1072 step 3
+ * consolidated the old `externalId`/`externalSource` pair into it — they
+ * were always `'EDUAI'` plus a redundant copy of the same id, never a
+ * genuine second source like Canvas). The client detects "Core-linked" with
+ * a truthy check on `coreOfferingId` instead.
  */
-export function mapCourseOffering(offering) {
+export function mapCourseOffering(offering, coreCourse) {
+  const core = coreCourse ?? null;
   return {
     id: offering.id,
-    title: offering.title,
-    description: offering.description,
-    isPublished: offering.isPublished,
-    startDate: offering.startDate,
-    endDate: offering.endDate,
-    externalId: offering.externalId ?? null,
-    externalSource: offering.externalSource ?? null,
-    externalMetadata: offering.externalMetadata ?? null,
+    coreOfferingId: offering.coreOfferingId ?? null,
+    title: core?.name ?? null,
+    code: core?.code ?? null,
+    description: core?.description ?? null,
+    department: core?.department ?? null,
+    isPublished: typeof core?.isPublished === 'boolean' ? core.isPublished : false,
+    startDate: core?.startDate ?? null,
+    endDate: core?.endDate ?? null,
+    term: core?.term ?? null,
+    year: typeof core?.year === 'number' ? core.year : null,
+    aiInstructions: typeof core?.aiInstructions === 'string' ? core.aiInstructions : null,
   };
 }
 

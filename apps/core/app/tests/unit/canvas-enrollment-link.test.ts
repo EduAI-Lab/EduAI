@@ -89,8 +89,8 @@ describe("linkEnrollmentsFromStagingForCourse", () => {
     const { prepareRosterSisUserIdStorage, prepareStudentIdStorage } = await import(
       "~/lib/canvas/student-id.server"
     );
-    const roster = prepareRosterSisUserIdStorage("student_1");
-    const user = prepareStudentIdStorage("student_1");
+    const roster = prepareRosterSisUserIdStorage("10000001");
+    const user = prepareStudentIdStorage("10000001");
 
     vi.mocked(prisma.canvasRosterMember.findMany).mockResolvedValue([
       {
@@ -128,7 +128,7 @@ describe("resolveCanvasEnrollmentsForUser", () => {
 
   it("links all active staging rows for the user's studentId", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
-      studentId: "student_2",
+      studentId: "10000002",
       studentIdLookup: null,
     } as never);
     vi.mocked(prisma.user.update).mockResolvedValue({} as never);

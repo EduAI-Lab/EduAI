@@ -134,6 +134,8 @@ model Course {
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
   aiInstructions         String               @default("")
+  /// Instructor-selected response style tag ids (e.g. socratic, concise). Injected at chat time.
+  responseStyleTags      String[]             @default([])
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.
@@ -188,7 +190,6 @@ model Enrollment {
   enrolledAt     DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   isActive       Boolean        @default(true)
-  idempotencyKey String?        @unique
   externalId     String?
   externalSource String?
   course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -219,6 +220,7 @@ model AIInteraction {
   durationMs       Int?
   promptTokens     Int?
   completionTokens Int?
+  totalTokens      Int?
   estInputCostUsd  Float?
   estOutputCostUsd Float?
   energyJoules     Float?
@@ -411,7 +413,6 @@ model Question {
   choices         Json?
   answer          String?
   testable        Boolean                  @default(false)
-  idempotencyKey  String?                  @unique
   deletedAt       DateTime?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
@@ -733,6 +734,7 @@ enum RouterTier {
 enum EnergyMeasurementSource {
   RAPL_CPU
   NVML_GPU
+  RAPL_PLUS_NVML
   OLLAMA_METRICS
   ESTIMATED_FROM_TOKENS
   ESTIMATED_FROM_DURATION
@@ -894,6 +896,8 @@ model CronJobRun {
   createdAt  DateTime      @default(now())
 
   @@index([jobName, startedAt])
+  /// Partial unique index (one RUNNING per jobName) lives in SQL migration —
+  /// Prisma cannot express WHERE status = 'RUNNING' in schema.
   @@map("cron_job_runs")
 }
 
@@ -904,4 +908,29 @@ model CronJobScheduleOverride {
   updatedAt     DateTime @updatedAt
 
   @@map("cron_job_schedule_overrides")
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Centralized idempotency store for retry-safe POST creates (#828).
+model IdempotencyRecord {
+  id           String            @id @default(cuid())
+  key          String
+  route        String
+  actorId      String
+  requestHash  String
+  status       IdempotencyStatus
+  statusCode   Int?
+  responseBody Json?
+  expiresAt    DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([key, route, actorId])
+  @@index([expiresAt])
+  @@map("idempotency_records")
 }

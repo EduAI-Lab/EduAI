@@ -12,6 +12,16 @@ export const EduAiCourseSchema = z
     isPublished: z.boolean().nullable().optional(),
     aiInstructions: z.string().nullable().optional(),
     department: z.string().nullable().optional(),
+    // #1072 step 2: read-through source for CourseOffering.startDate/endDate.
+    // Left as the raw JSON-serialized value (ISO string) rather than coerced
+    // to `Date` — the single-course detail fetch (`fetchCoreCourseSafe`)
+    // doesn't run through this schema at all, so coercing here would make
+    // the field's type diverge between the list and detail read paths.
+    startDate: z.union([z.string(), z.null()]).optional(),
+    endDate: z.union([z.string(), z.null()]).optional(),
+    // Present on `GET /api/courses` list rows only (Core computes it from the
+    // caller's own enrollments); absent on the single-course detail fetch.
+    callerEnrollmentRole: z.string().nullable().optional(),
   })
   .passthrough();
 

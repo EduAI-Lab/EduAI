@@ -15,7 +15,6 @@ import { assessmentService } from '../../services/assessmentService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
-import { normalizeCourseCode } from '../../utils/courseDisplay';
 
 interface ProfileCoursesDialogProps {
     open: boolean;
@@ -41,23 +40,18 @@ export const ProfileCoursesDialog = ({
     const { logout, user } = useAuth();
     const eduaiStatus = useEduAIStatus();
 
-    const existingCourseCodeSet = useMemo(() => {
-        const codes = new Set<string>();
+    // Identity for "already added" is the Core course id (#1072 §4 step 6 — no
+    // code-matching). Every QM course is created already linked, so a course
+    // the caller has added always carries the same `coreCourseId` as the Core
+    // option it was created from.
+    const existingCoreCourseIdSet = useMemo(() => {
+        const ids = new Set<string>();
         existingCourses.forEach((course) => {
-            const candidates = [
-                course.courseCode,
-                course.code,
-                course.subject,
-                course.name
-            ];
-            candidates.forEach((candidate) => {
-                const normalized = normalizeCourseCode(candidate ?? '');
-                if (normalized) {
-                    codes.add(normalized);
-                }
-            });
+            if (course.coreCourseId) {
+                ids.add(course.coreCourseId);
+            }
         });
-        return codes;
+        return ids;
     }, [existingCourses]);
 
     useEffect(() => {
@@ -116,16 +110,8 @@ export const ProfileCoursesDialog = ({
         }
     };
 
-    const findLocalCourseByCode = (code: string | null | undefined) => {
-        const normalized = normalizeCourseCode(code);
-        if (!normalized) return undefined;
-        return existingCourses.find((course) => {
-            const candidates = [course.code, course.courseCode, course.subject, course.name];
-            return candidates.some(
-                (candidate) => normalizeCourseCode(candidate ?? '') === normalized
-            );
-        });
-    };
+    const findLocalCourseByCoreId = (coreCourseId: string) =>
+        existingCourses.find((course) => course.coreCourseId === coreCourseId);
 
     const loadTopicsForCourse = async (coreCourseId: string) => {
         if (topicsByCourse[coreCourseId]) return;
@@ -134,11 +120,11 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleResyncCourse = async (option: EduAICourseOption) => {
-        const localCourse = findLocalCourseByCode(option.code);
+        const localCourse = findLocalCourseByCoreId(option.id);
         if (!localCourse?.id) {
             toast({
                 title: 'Local course not found',
-                description: 'Could not match this Core course to a Question Maker course by code.',
+                description: 'Could not find the Question Maker course linked to this Core course.',
                 variant: 'destructive'
             });
             return;
@@ -147,17 +133,18 @@ export const ProfileCoursesDialog = ({
         setResyncingCoreId(option.id);
         setError(null);
         try {
-            await courseService.linkAndSyncFromCore(localCourse.id, option.id);
+            // Already linked (matched by coreCourseId above) — just refresh topics.
+            await courseService.syncTopicsFromCore(localCourse.id);
             if (onCoursesAdded) {
                 await onCoursesAdded();
             }
             toast({
                 title: 'Course re-synced',
-                description: `${option.code} is linked to Core and topics are updated.`
+                description: `${option.code} topics are updated from Core.`
             });
         } catch (err) {
             console.error('Failed to re-sync course from Core', err);
-            setError('Unable to re-sync this course from Core. Check EDUAI_API_KEY and try again.');
+            setError('Unable to re-sync this course. Please try again.');
         } finally {
             setResyncingCoreId(null);
         }
@@ -169,14 +156,12 @@ export const ProfileCoursesDialog = ({
     };
 
     const handleSave = async () => {
-        const targetCourseIds = selectedCourseIds.filter((id) => {
-            const option = courseOptions.find((item) => item.id === id);
-            if (!option) {
-                return false;
-            }
-            const normalized = normalizeCourseCode(option.code);
-            return normalized && !existingCourseCodeSet.has(normalized);
-        });
+        // Selected ids are already unique (checkbox toggle) and already
+        // Core-course ids, so identity is just a set-membership check —
+        // no code matching needed (#1072 §4 step 6).
+        const targetCourseIds = selectedCourseIds.filter(
+            (id) => !existingCoreCourseIdSet.has(id)
+        );
 
         if (targetCourseIds.length === 0) {
             toast({
@@ -188,21 +173,16 @@ export const ProfileCoursesDialog = ({
 
         setIsSaving(true);
         try {
-            const updatedCodes = new Set(existingCourseCodeSet);
             let createdCount = 0;
 
             for (const courseId of targetCourseIds) {
                 const option = courseOptions.find((item) => item.id === courseId);
                 if (!option) continue;
 
-                const normalizedCode = normalizeCourseCode(option.code);
-                if (normalizedCode && updatedCodes.has(normalizedCode)) {
-                    continue;
-                }
-
+                // `name`/`code` are Core-owned and never sent to create — the
+                // anchor row is just the Core link (#1072 §4 step 10).
                 const createdCourse = await courseService.createCourse({
-                    name: option.name,
-                    courseCode: option.code
+                    coreCourseId: courseId
                 });
 
                 try {
@@ -210,10 +190,6 @@ export const ProfileCoursesDialog = ({
                 } catch (linkError) {
                     await courseService.deleteCourse(createdCourse.id).catch(() => undefined);
                     throw linkError;
-                }
-
-                if (normalizedCode) {
-                    updatedCodes.add(normalizedCode);
                 }
 
                 try {
@@ -288,8 +264,7 @@ export const ProfileCoursesDialog = ({
                     ) : (
                         <div className="max-h-80 space-y-3 overflow-y-auto pr-1" data-tour-id="profile-course-list">
                             {courseOptions.map((option) => {
-                                const normalized = normalizeCourseCode(option.code);
-                                const isAdded = normalized ? existingCourseCodeSet.has(normalized) : false;
+                                const isAdded = existingCoreCourseIdSet.has(option.id);
                                 const isSelected = selectedCourseIds.includes(option.id);
                                 const topics = topicsByCourse[option.id] ?? [];
                                 const isResyncing = resyncingCoreId === option.id;
@@ -381,9 +356,9 @@ export const ProfileCoursesDialog = ({
 
                             {courseOptions.length === 0 && !isLoading && (
                                 <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                                    {error 
-                                        ? 'Unable to load courses from the AI service. You can still create a test course above.'
-                                        : 'No courses available from the AI service right now. You can create a test course above to get started.'}
+                                    {error
+                                        ? 'Unable to load courses from the AI service. Please try again.'
+                                        : 'No courses available from the AI service right now. Ask an administrator to enroll you in a course.'}
                                 </div>
                             )}
                         </div>
