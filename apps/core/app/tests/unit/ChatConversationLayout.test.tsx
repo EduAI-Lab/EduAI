@@ -46,6 +46,14 @@ describe("ChatConversationLayout — empty state layout", () => {
     const safeCentered = container.querySelector(".my-auto");
     expect(safeCentered).not.toBeNull();
   });
+
+  it("fills the shell pane instead of re-calculating 100vh (no scroll past composer)", () => {
+    const { container } = render(<ChatConversationLayout {...baseProps} />);
+    const root = container.firstElementChild as HTMLElement | null;
+    expect(root?.className).toMatch(/\bh-full\b/);
+    expect(root?.className).toMatch(/\bmin-h-0\b/);
+    expect(root?.className).not.toMatch(/100vh/);
+  });
 });
 
 describe("ChatConversationLayout — routed model labels", () => {
