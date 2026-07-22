@@ -15,6 +15,30 @@ describe("redactSecretValuesInString", () => {
     );
   });
 
+  it("redacts Basic authorization credentials", () => {
+    expect(redactSecretValuesInString("Authorization: Basic dXNlcjpwYXNz")).toBe(
+      `Authorization: Basic ${REDACTED_VALUE}`,
+    );
+  });
+
+  it("redacts raw Cookie and Set-Cookie header lines", () => {
+    expect(redactSecretValuesInString("Cookie: session=abc; theme=dark")).toBe(
+      `Cookie: ${REDACTED_VALUE}`,
+    );
+    expect(redactSecretValuesInString("Set-Cookie: sid=xyz; Path=/")).toBe(
+      `Set-Cookie: ${REDACTED_VALUE}`,
+    );
+  });
+
+  it("redacts X-Api-Key header lines", () => {
+    expect(redactSecretValuesInString("X-Api-Key: super-secret")).toBe(
+      `X-Api-Key: ${REDACTED_VALUE}`,
+    );
+    expect(redactSecretValuesInString("x-api-key: super-secret")).toBe(
+      `X-Api-Key: ${REDACTED_VALUE}`,
+    );
+  });
+
   it("redacts token query params", () => {
     expect(
       redactSecretValuesInString("https://api.example.com/x?access_token=sekret&ok=1"),
@@ -63,6 +87,22 @@ describe("sanitizeSensitiveData (key + value)", () => {
       note: "ok",
     });
   });
+
+  it("redacts HAR-style { name, value } header entries", () => {
+    expect(
+      sanitizeSensitiveData([
+        { name: "Cookie", value: "session=abc" },
+        { name: "Authorization", value: "Basic dXNlcjpwYXNz" },
+        { name: "x-api-key", value: "sekret" },
+        { name: "Accept", value: "application/json" },
+      ]),
+    ).toEqual([
+      { name: "Cookie", value: REDACTED_VALUE },
+      { name: "Authorization", value: REDACTED_VALUE },
+      { name: "x-api-key", value: REDACTED_VALUE },
+      { name: "Accept", value: "application/json" },
+    ]);
+  });
 });
 
 describe("redactDiagnosticLogString", () => {
@@ -84,5 +124,20 @@ describe("redactDiagnosticLogString", () => {
 
   it("falls back to value-level scrubbing for non-JSON text", () => {
     expect(redactDiagnosticLogString("got Bearer tok123")).toBe(`got Bearer ${REDACTED_VALUE}`);
+  });
+
+  it("scrubs Cookie / Basic / x-api-key text captures before persist", () => {
+    const raw = [
+      "Cookie: session=abc",
+      "Authorization: Basic dXNlcjpwYXNz",
+      "X-Api-Key: super-secret",
+    ].join("\n");
+    const redacted = redactDiagnosticLogString(raw);
+    expect(redacted).toContain(`Cookie: ${REDACTED_VALUE}`);
+    expect(redacted).toContain(`Basic ${REDACTED_VALUE}`);
+    expect(redacted).toContain(`X-Api-Key: ${REDACTED_VALUE}`);
+    expect(redacted).not.toContain("session=abc");
+    expect(redacted).not.toContain("dXNlcjpwYXNz");
+    expect(redacted).not.toContain("super-secret");
   });
 });

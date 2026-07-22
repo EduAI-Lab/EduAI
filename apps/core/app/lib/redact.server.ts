@@ -30,10 +30,31 @@ const REDACT_KEY_SUBSTRINGS = [
 // Value-level patterns for secrets embedded under innocuous keys or in free-form log text.
 // Keep these linear-time: unbounded `\w+` / `[a-z]*` before a literal causes ReDoS on long blobs.
 const BEARER_TOKEN_RE = /\bBearer\s+[A-Za-z0-9\-._~+/]+=*/gi;
+/** HTTP Basic credentials (often captured as `Authorization: Basic …`). */
+const BASIC_AUTH_RE = /\bBasic\s+[A-Za-z0-9+/=_-]+/gi;
+/** Raw Cookie / Set-Cookie header lines in console or network text captures. */
+const COOKIE_HEADER_RE = /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
+/** Common API-key header lines (HAR / fetch dumps). */
+const X_API_KEY_HEADER_RE = /\bX-Api-Key\s*:\s*[^\r\n]*/gi;
 const TOKEN_QUERY_PARAM_RE =
   /([?&](?:access_token|id_token|refresh_token|api_key|apikey|token)=)[^&\s"']+/gi;
 /** Matches `://user:pass@` (scheme already scanned past). Linear in input length. */
 const URL_USERINFO_RE = /\/\/[^/@\s"']+:[^@\s"']+@/g;
+
+/**
+ * HAR / DevTools network captures often store headers as `{ name, value }` instead of
+ * `{ Cookie: "…" }`. Key-level scrubbing only sees `name`/`value`, so we treat a sensitive
+ * `name` as if the key itself were that header.
+ */
+function isHarHeaderEntry(
+  value: Record<string, unknown>,
+): value is { name: string; value: unknown } {
+  return (
+    typeof value.name === "string" &&
+    Object.prototype.hasOwnProperty.call(value, "value") &&
+    Object.keys(value).every((key) => key === "name" || key === "value" || key === "comment")
+  );
+}
 
 export function shouldRedactKey(key: string): boolean {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -55,6 +76,12 @@ export function shouldRedactKey(key: string): boolean {
 export function redactSecretValuesInString(text: string): string {
   return text
     .replace(BEARER_TOKEN_RE, `Bearer ${REDACTED_VALUE}`)
+    .replace(BASIC_AUTH_RE, `Basic ${REDACTED_VALUE}`)
+    .replace(COOKIE_HEADER_RE, (match) => {
+      const prefix = match.split(":")[0] ?? "Cookie";
+      return `${prefix}: ${REDACTED_VALUE}`;
+    })
+    .replace(X_API_KEY_HEADER_RE, `X-Api-Key: ${REDACTED_VALUE}`)
     .replace(TOKEN_QUERY_PARAM_RE, `$1${REDACTED_VALUE}`)
     .replace(URL_USERINFO_RE, `//${REDACTED_VALUE}@`);
 }
@@ -141,13 +168,27 @@ export function sanitizeSensitiveData(
   } else if (value instanceof Set) {
     result = Array.from(value, (entry) => sanitizeSensitiveData(entry, seen));
   } else {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      sanitized[key] = shouldRedactKey(key)
-        ? REDACTED_VALUE
-        : sanitizeSensitiveData(entry, seen);
+    const record = value as Record<string, unknown>;
+    // HAR-style header rows: `{ name: "Cookie", value: "session=…" }`
+    if (isHarHeaderEntry(record) && shouldRedactKey(record.name)) {
+      result = {
+        ...Object.fromEntries(
+          Object.entries(record).map(([key, entry]) =>
+            key === "value"
+              ? [key, REDACTED_VALUE]
+              : [key, typeof entry === "string" ? redactSecretValuesInString(entry) : entry],
+          ),
+        ),
+      };
+    } else {
+      const sanitized: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(record)) {
+        sanitized[key] = shouldRedactKey(key)
+          ? REDACTED_VALUE
+          : sanitizeSensitiveData(entry, seen);
+      }
+      result = sanitized;
     }
-    result = sanitized;
   }
 
   seen.delete(obj);

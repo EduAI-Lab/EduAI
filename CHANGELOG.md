@@ -10,7 +10,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [core] fix: Cap and redact bug-report diagnostic fields before persist (screenshot rejected over 512KB chars; console/network logs redacted then truncated; context JSON sanitized + size-capped); admin list omits attachment blobs and exposes `has*` flags; `GET /api/admin/bug-reports/:id` returns full detail. Shared `redact.server` module extracted for key- and value-level scrubbing. (#979, @Ayyhab, 2026-07-20) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
+- [core] fix: Expand bug-report log redaction to Cookie / Set-Cookie header lines, Basic authorization, `X-Api-Key` headers, and HAR-style `{ name, value }` header entries before persist. (#979, @Ayyhab, 2026-07-21) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
 - [ai-tutor] fix: Admin bug-report triage fetches attachment detail on demand (viewer/copy) so list responses stay lean after Core’s #979 change. (#979, @Ayyhab, 2026-07-20) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
+- [question-maker] fix: Admin bug-report triage mirrors AI Tutor — `GET /api/admin/bug-reports/:id` proxy + on-demand attachment fetch using Core `has*` flags so Console/Network/Screenshot stay usable after lean list responses. (#979, @Ayyhab, 2026-07-21) — [#1116](https://github.com/EduAI-Lab/EduAI/pull/1116)
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
 
 ## [Week 11 — July 13–19, 2026]
