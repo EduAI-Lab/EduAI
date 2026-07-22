@@ -32,6 +32,7 @@ import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../m
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { Assessments } from '../schema/index.js';
 import { config } from '../config/settings.js';
+import { parseLimitOffset } from '../utils/listPagination.js';
 
 const router = express.Router();
 
@@ -126,7 +127,7 @@ router.post(
  */
 router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const { courseId, classId, search, limit, offset } = req.query;
+    const { courseId, classId, search } = req.query;
     const requestedCourseId = courseId ?? classId;
     const normalizedCourseId = requestedCourseId === undefined || requestedCourseId === '' ? undefined : requestedCourseId;
 
@@ -148,7 +149,8 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       scopeCourseId = course.id;
     }
 
-    const questions = await getQuestionsByUser(scopeUserId, {
+    const { limit, offset } = parseLimitOffset(req.query);
+    const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
       search,
       limit,
@@ -157,7 +159,7 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 
     res.json({
       success: true,
-      data: questions
+      data: page
     });
   } catch (error) {
     next(error);
@@ -219,11 +221,13 @@ router.get('/export', authenticateToken, requireRole(QM_AUTHORIZED), async (req,
     }
 
     // Owner-scope so an enrolled non-owner viewer still exports the full bank.
-    const questions = await getQuestionsByUser(course.userId, {
+    // Export intentionally bypasses the list max-limit clamp (#1040).
+    const page = await getQuestionsByUser(course.userId, {
       courseId: course.id,
       limit: 100000,
       offset: 0
     });
+    const questions = page.items;
 
     if (normalizedFormat === 'json') {
       return res.json({ success: true, data: questions });
