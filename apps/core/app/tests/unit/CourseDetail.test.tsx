@@ -317,6 +317,19 @@ describe('CourseDetailStudentView', () => {
     expect(screen.queryByTestId('upload-widget')).not.toBeInTheDocument()
   })
 
+  it('does NOT render upload widget for students when upload policy is disabled even if onFileSelect is provided', () => {
+  wrap(
+    <CourseDetailStudentView
+      course={COURSE}
+      materials={[]}
+      topics={[]}
+      onFileSelect={onFileSelect}
+    />
+  )
+
+  expect(screen.queryByTestId('upload-widget')).not.toBeInTheDocument()
+})
+
   it('does NOT have a Topics management tab', () => {
     wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[TOPIC]} />)
     expect(screen.queryByRole('tab', { name: /^topics$/i })).not.toBeInTheDocument()
