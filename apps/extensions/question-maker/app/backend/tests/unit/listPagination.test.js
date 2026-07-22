@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseLimitOffset,
+  sanitizeLikeLiteral,
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
 } from '../../src/utils/listPagination.js';
@@ -36,5 +37,9 @@ describe('parseLimitOffset (#1040)', () => {
       limit: DEFAULT_LIST_LIMIT,
       offset: 0,
     });
+  });
+
+  it('strips LIKE wildcards from search literals', () => {
+    expect(sanitizeLikeLiteral('100%_done')).toBe('100done');
   });
 });

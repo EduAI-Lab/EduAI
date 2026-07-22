@@ -103,4 +103,37 @@ describe('question/assessment list pagination (#1040)', () => {
     expect(all).toHaveLength(2);
     expect(getMock.mock.calls[0][1].params).toMatchObject({ courseId: 7, limit: 100, offset: 0 });
   });
+
+  it('getQuestions with limit above server max page-loops instead of silently clamping', async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      description: `Q${i + 1}`,
+      type: 'MCQ',
+      courseId: 1,
+      createdAt: 'a',
+      updatedAt: 'b',
+      variants: [],
+    }));
+    const page2 = Array.from({ length: 50 }, (_, i) => ({
+      id: 101 + i,
+      description: `Q${101 + i}`,
+      type: 'MCQ',
+      courseId: 1,
+      createdAt: 'a',
+      updatedAt: 'b',
+      variants: [],
+    }));
+
+    getMock
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: page1, total: 150, limit: 100, offset: 0 } },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: page2, total: 150, limit: 100, offset: 100 } },
+      });
+
+    const all = await questionService.getQuestions({ courseId: 1, limit: 500 });
+    expect(all).toHaveLength(150);
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
 });
