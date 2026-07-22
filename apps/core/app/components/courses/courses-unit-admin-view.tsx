@@ -15,8 +15,9 @@ import {
   buildStatusFilterGroup,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
 } from '@eduai/ui'
-import { TERM_CODES, termName, termFromMonth } from '@eduai/ui'
+import { TERM_CODES, termName, termFromDate, termInfoFromDate } from '@eduai/ui'
 import { useDisciplines } from '~/hooks/api/use-disciplines'
 import { DepartmentCombobox } from '~/components/courses/department-combobox'
 import type { Course, CreateCourseInput, UpdateCourseInput } from '~/hooks/api/use-courses'
@@ -59,7 +60,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
   // disabled state reads as an admin choice rather than a missing feature.
   const canDelete = isEnabled('unitAdmins.canDeleteCourses')
   const [selectedDept, setSelectedDept] = useState<string>(authorizedDepts[0]?.code ?? '')
-  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromMonth(new Date().getMonth()))
+  const [selectedTerm, setSelectedTerm] = useState<string>(() => termFromDate(new Date()))
   const [selectedInstructor, setSelectedInstructor] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
 
@@ -106,7 +107,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
       aiInstructions: (fd.get('aiInstructions') as string) || undefined,
       instructorUserIds: selectedInstructor ? [selectedInstructor] : [],
     })
-    setSelectedTerm(termFromMonth(new Date().getMonth()))
+    setSelectedTerm(termFromDate(new Date()))
     setSelectedInstructor('')
     setCreateOpen(false)
   }
@@ -215,7 +216,8 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
                 </div>
                 <div className="grid gap-2">
                   <Label>Year</Label>
-                  <Input name="year" type="number" defaultValue={new Date().getFullYear()} required />
+                  {/* Academic-year label, not calendar year — matches selectedTerm's default (#1088). */}
+                  <Input name="year" type="number" defaultValue={termInfoFromDate(new Date()).year} required />
                 </div>
               </div>
               <div className="grid gap-2">
@@ -293,7 +295,7 @@ export function CoursesUnitAdminView({ courses, authorizedUnits, instructors = [
             isPublished={course.isPublished}
             department={course.department}
             departmentLabel={course.department ? getDepartmentLabel(course.department) : undefined}
-            colorIndex={index}
+            colorIndex={defaultColorIndexForCourse(course.id)}
             href={`/courses/${course.id}`}
             LinkComponent={Link}
             actions={{

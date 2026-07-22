@@ -16,10 +16,22 @@ vi.mock("~/lib/courses/server", () => ({
   getCourse: vi.fn(),
 }));
 
-vi.mock("~/lib/courses/enrollments.server", () => ({
-  getCourseEnrollments: vi.fn(),
-  addEnrollment: vi.fn(),
-}));
+vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/courses/enrollments.server")>();
+  return {
+    ...actual,
+    getCourseEnrollments: vi.fn(),
+    addEnrollment: vi.fn(),
+  };
+});
+
+vi.mock("~/lib/idempotency.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/idempotency.server")>();
+  return {
+    ...actual,
+    withIdempotency: vi.fn(actual.withIdempotency),
+  };
+});
 
 // getPolicy resolves to each flag's real code default unless a test overrides it.
 vi.mock("~/lib/policy.server", async (importOriginal) => {
@@ -38,6 +50,7 @@ import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
 import { getCourseEnrollments, addEnrollment } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
+import { withIdempotency } from "~/lib/idempotency.server";
 
 const VALID_KEY = "test-service-key";
 
@@ -308,7 +321,7 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
     mockAccess({ level: "instructor", rank: 2 });
     const res = await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
     expect(res.status).toBe(201);
-    expect(addEnrollment).toHaveBeenCalledWith("course-1", { userId: "u9", role: "STUDENT" });
+    expect(addEnrollment).toHaveBeenCalledWith("course-1", { userId: "u9", role: "STUDENT" }, 2);
   });
 
   it("lets an INSTRUCTOR add a TA", async () => {
@@ -370,5 +383,25 @@ describe("POST /api/courses/:id/enrollments action (#305)", () => {
     mockAccess(null, null);
     const res = await action(makePost("missing", { userId: "u9", role: "STUDENT" }));
     expect(res.status).toBe(404);
+  });
+
+  it("wraps POST in withIdempotency using the course route and actor id", async () => {
+    mockAccess({ level: "instructor", rank: 2 });
+    await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(withIdempotency).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: "POST /api/courses/course-1/enrollments",
+        actorId: "actor",
+        body: { userId: "u9", role: "STUDENT" },
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("does not claim idempotency when RBAC denies the enrollment", async () => {
+    mockAccess({ level: "ta", rank: 1 });
+    await action(makePost("course-1", { userId: "u9", role: "STUDENT" }));
+    expect(withIdempotency).not.toHaveBeenCalled();
+    expect(addEnrollment).not.toHaveBeenCalled();
   });
 });

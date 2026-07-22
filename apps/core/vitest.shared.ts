@@ -34,6 +34,10 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
     resolve: {
       alias: {
         // More specific subpath must precede the barrel alias (prefix match).
+        '@eduai/ui/term-boundary-fixtures': path.resolve(
+          rootDir,
+          'packages/ui/src/tests/fixtures/term-boundary-fixtures.ts',
+        ),
         '@eduai/ui/term': path.resolve(rootDir, 'packages/ui/src/lib/term.ts'),
         '@eduai/ui': path.resolve(rootDir, 'packages/ui/src/index.ts'),
       },

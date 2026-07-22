@@ -1,5 +1,10 @@
 import { auth } from "~/lib/auth/server";
 import type { LoaderFunctionArgs } from "react-router";
+import {
+  InvalidOllamaBaseUrlError,
+  ollamaTagsUrl,
+  resolveAllowedOllamaBaseUrl,
+} from "~/lib/ai/ollama-url.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   // Check admin authorization
@@ -9,14 +14,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const url = new URL(request.url);
-  const baseUrl = url.searchParams.get('baseUrl') ||
-                  process.env.OLLAMA_BASE_URL ||
-                  'http://localhost:11434/api';
+  const requestedBaseUrl = url.searchParams.get("baseUrl");
+  let baseUrl: string;
+  let ollamaUrl: string;
+  try {
+    baseUrl = resolveAllowedOllamaBaseUrl(requestedBaseUrl);
+    ollamaUrl = ollamaTagsUrl(requestedBaseUrl);
+  } catch (error) {
+    if (error instanceof InvalidOllamaBaseUrlError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw error;
+  }
 
   try {
-    // Remove '/api' suffix if present and add '/api/tags'
-    const ollamaUrl = baseUrl.replace(/\/api$/, '') + '/api/tags';
-
     const response = await fetch(ollamaUrl, {
       method: 'GET',
       headers: {

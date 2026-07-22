@@ -26,6 +26,7 @@ import { CANVAS_ROLES } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
 import { Topics } from '../schema/index.js';
+import { validateCanvasUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
 
 const router = express.Router();
 
@@ -76,14 +77,18 @@ router.post('/connect', authenticateToken, requireRole(CANVAS_ROLES), async (req
       });
     }
 
-    // Validate URL format
+    // Validate URL format and block SSRF targets (#991) — private/link-local/
+    // loopback IPs and non-HTTPS schemes.
     try {
-      new URL(canvasUrl);
+      validateCanvasUrl(canvasUrl);
     } catch (e) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid Canvas URL format'
-      });
+      if (e instanceof CanvasUrlValidationError) {
+        return res.status(400).json({
+          success: false,
+          error: e.message
+        });
+      }
+      throw e;
     }
 
     const integration = await saveCanvasIntegration(req.user.id, {
@@ -234,7 +239,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { canvasCourseId, quizId } = req.params;
-      const { assessmentType, assessmentName, semester, primaryTopicId } = req.body;
+      const { assessmentType, assessmentName, primaryTopicId } = req.body;
 
       if (!primaryTopicId) {
         return res.status(400).json({
@@ -264,7 +269,6 @@ router.post(
         {
           assessmentType,
           assessmentName,
-          semester,
           primaryTopicId
         },
         req.qmCourse.userId

@@ -107,52 +107,95 @@ describe('mapCoreAdminUser', () => {
 // mapCourseOffering
 // ---------------------------------------------------------------------------
 describe('mapCourseOffering', () => {
-  it('maps all core fields', () => {
-    const offering = {
+  // #1072 step 4: CourseOffering is a pure anchor — `id`, `coreOfferingId`,
+  // timestamps only. No local fallback columns exist anymore.
+  const anchorOffering = {
+    id: 1,
+    coreOfferingId: null,
+  };
+
+  it('degrades every Core-owned field to null/false when no Core course resolves', () => {
+    const offering = { id: 10, coreOfferingId: null };
+    expect(mapCourseOffering(offering)).toEqual({
       id: 10,
-      title: 'CS101',
-      description: 'Intro',
+      coreOfferingId: null,
+      title: null,
+      code: null,
+      description: null,
+      department: null,
+      isPublished: false,
+      startDate: null,
+      endDate: null,
+      term: null,
+      year: null,
+      aiInstructions: null,
+    });
+  });
+
+  it('sources title/description/department/dates/isPublished/term/year/aiInstructions from the resolved Core course (#1072 step 2/4)', () => {
+    const offering = { id: 5, coreOfferingId: 'core-5' };
+    const coreCourse = {
+      id: 'core-5',
+      code: 'COSC 101',
+      name: 'Fresh Title',
+      description: 'Fresh description',
+      department: 'COSC',
       isPublished: true,
-      startDate: '2025-01-01',
-      endDate: '2025-06-01',
-      externalId: 'ext-1',
-      externalSource: 'canvas',
-      externalMetadata: { foo: 'bar' },
+      startDate: '2026-01-05',
+      endDate: '2026-04-15',
+      term: 'W1',
+      year: 2026,
+      aiInstructions: 'Be encouraging.',
     };
-    expect(mapCourseOffering(offering)).toEqual(offering);
+    const result = mapCourseOffering(offering, coreCourse);
+    expect(result).toMatchObject({
+      id: 5,
+      coreOfferingId: 'core-5',
+      title: 'Fresh Title',
+      code: 'COSC 101',
+      description: 'Fresh description',
+      department: 'COSC',
+      isPublished: true,
+      startDate: '2026-01-05',
+      endDate: '2026-04-15',
+      term: 'W1',
+      year: 2026,
+      aiInstructions: 'Be encouraging.',
+    });
   });
 
-  it('defaults externalId, externalSource, externalMetadata to null when undefined', () => {
-    const offering = {
-      id: 1,
-      title: 't',
-      description: 'd',
-      isPublished: false,
-      startDate: null,
-      endDate: null,
-    };
-    const result = mapCourseOffering(offering);
-    expect(result.externalId).toBeNull();
-    expect(result.externalSource).toBeNull();
-    expect(result.externalMetadata).toBeNull();
+  it('reports Core isPublished=false when the Core course resolves', () => {
+    const offering = { ...anchorOffering, coreOfferingId: 'core-1' };
+    const result = mapCourseOffering(offering, { id: 'core-1', isPublished: false });
+    expect(result.isPublished).toBe(false);
   });
 
-  it('preserves explicit null external fields', () => {
-    const offering = {
-      id: 1,
-      title: 't',
-      description: 'd',
-      isPublished: false,
-      startDate: null,
-      endDate: null,
-      externalId: null,
-      externalSource: null,
-      externalMetadata: null,
-    };
-    const result = mapCourseOffering(offering);
-    expect(result.externalId).toBeNull();
-    expect(result.externalSource).toBeNull();
-    expect(result.externalMetadata).toBeNull();
+  it('reports Core isPublished=true when the Core course resolves', () => {
+    const offering = { ...anchorOffering, coreOfferingId: 'core-1' };
+    const result = mapCourseOffering(offering, { id: 'core-1', isPublished: true });
+    expect(result.isPublished).toBe(true);
+  });
+
+  it('fails closed to false when the Core course omits isPublished', () => {
+    const offering = { ...anchorOffering, coreOfferingId: 'core-1' };
+    const result = mapCourseOffering(offering, { id: 'core-1' });
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('never emits externalId/externalSource/externalMetadata — consolidated into coreOfferingId (#1072 step 3)', () => {
+    const result = mapCourseOffering(anchorOffering);
+    expect(result).not.toHaveProperty('externalId');
+    expect(result).not.toHaveProperty('externalSource');
+    expect(result).not.toHaveProperty('externalMetadata');
+  });
+
+  it('defaults coreOfferingId, code, term, year, aiInstructions to null with no Core course', () => {
+    const result = mapCourseOffering(anchorOffering);
+    expect(result.coreOfferingId).toBeNull();
+    expect(result.code).toBeNull();
+    expect(result.term).toBeNull();
+    expect(result.year).toBeNull();
+    expect(result.aiInstructions).toBeNull();
   });
 });
 
