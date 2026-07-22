@@ -743,7 +743,10 @@ export const CourseDetailPage = () => {
             course.coreCourseId ? 'EduAI Core' : 'Local',
             ...(writesDisabled ? ['Read-only'] : []),
           ]}
-          accentColor={resolvePaletteAccent(String(course.id))}
+          /* Cross-platform visual identity: key the accent off the CORE course
+             id when linked (same as CoursesGrid), so the hero matches the
+             course's color in Core and AI Tutor. */
+          accentColor={resolvePaletteAccent(String(course.coreCourseId ?? course.id))}
           topicsAction={
             <CourseTopicsHeroAction
               courseId={course.id}

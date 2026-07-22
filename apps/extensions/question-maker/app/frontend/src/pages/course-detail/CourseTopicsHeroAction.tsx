@@ -4,18 +4,20 @@
  *
  * The topic chips themselves render via the shared CourseHeroCard's `topics`
  * prop; this wires QM's own data layer (courseService + local toast) into the
- * shared presentational component. Courses linked to EduAI Core get a
- * one-click pull ("Sync"); every course gets a create-topic dialog. Topic
- * deletion stays in Core (source of truth) and is not exposed.
+ * shared presentational component. No manual sync affordance: the backend
+ * already pulls topics from Core on every `GET /api/course/:id/topics`, so
+ * linked courses render nothing here (matching ai-tutor) and local courses
+ * get a create-topic dialog. Topic deletion stays in Core (source of truth)
+ * and is not exposed.
  */
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { CourseTopicsHeroAction as SharedCourseTopicsHeroAction } from '@eduai/ui';
 import { courseService } from '../../services/courseService';
 import { useToast } from '../../components/ui/use-toast';
 
 interface CourseTopicsHeroActionProps {
   courseId: number;
-  /** True when the course is linked to an EduAI Core course (sync available). */
+  /** True when the course is linked to an EduAI Core course (topics auto-sync on read). */
   isLinked: boolean;
   canManage: boolean;
   onTopicsChange: () => void;
@@ -28,28 +30,6 @@ export const CourseTopicsHeroAction = ({
   onTopicsChange,
 }: CourseTopicsHeroActionProps) => {
   const { toast } = useToast();
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const handleSync = useCallback(async () => {
-    setIsSyncing(true);
-    try {
-      const { synced } = await courseService.syncTopicsFromCore(courseId);
-      toast({
-        title: 'Topics synced',
-        description: `${synced} topic${synced === 1 ? '' : 's'} pulled from Core.`,
-      });
-      onTopicsChange();
-    } catch (error) {
-      console.error('Failed to sync topics from Core:', error);
-      toast({
-        title: 'Sync failed',
-        description: 'Could not sync topics from Core. Make sure the course is linked.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [courseId, toast, onTopicsChange]);
 
   const handleCreateTopic = useCallback(
     async (name: string) => {
@@ -63,9 +43,6 @@ export const CourseTopicsHeroAction = ({
     <SharedCourseTopicsHeroAction
       canManage={canManage}
       isLinked={isLinked}
-      onSync={handleSync}
-      isSyncing={isSyncing}
-      syncTooltip="Sync topics from EduAI Core"
       createTooltip="Create a course topic"
       createDialogDescription="Add a new topic to organize questions for this course."
       showInlineCreateError={false}
