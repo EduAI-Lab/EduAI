@@ -1,5 +1,9 @@
+import {
+  jobTypeForWorkloadFeature,
+  parseWorkloadFeature,
+  type JobType,
+} from "~/lib/ai/routing/fleet/types";
 import { enqueue } from "./enqueue.server";
-import { JobTypeSchema, type JobType } from "./job-schema";
 
 /**
  * Guarded producer branch for the `/api/chat` question-generation call site
@@ -10,7 +14,7 @@ import { JobTypeSchema, type JobType } from "./job-schema";
  * drain the queue.
  *
  * Integration seam: QM's `eduaiService` must send `{ enqueue: true, source,
- * feature }` for this to fire — not flipped in #914.
+ * routingContext }` for this to fire — not flipped in #914.
  */
 export function isEnqueueRequested(body: unknown): boolean {
   if (process.env.QUEUE_ENQUEUE_ENABLED !== "true") {
@@ -19,11 +23,19 @@ export function isEnqueueRequested(body: unknown): boolean {
   return typeof body === "object" && body !== null && (body as { enqueue?: unknown }).enqueue === true;
 }
 
-// featureToJobType shim. `question-generation` is background work by default.
-// TODO(#168): replace with the fleet's `featureToJobType()` from fleet/types.ts.
-function resolveJobType(feature: unknown): JobType {
-  const parsed = JobTypeSchema.safeParse(feature);
-  return parsed.success ? parsed.data : "background";
+// Resolve the fleet job type (interactive | background) from the request's
+// routingContext — the same input the sync router reads (fleet/types.ts). An
+// explicit `routingContext.jobType` wins; otherwise it is derived from the
+// workload feature (question-maker => background), never from misreading a
+// feature string as a job type.
+function resolveJobType(routingContext: unknown): JobType {
+  if (routingContext && typeof routingContext === "object") {
+    const jobType = (routingContext as { jobType?: unknown }).jobType;
+    if (jobType === "interactive" || jobType === "background") {
+      return jobType;
+    }
+  }
+  return jobTypeForWorkloadFeature(parseWorkloadFeature(routingContext));
 }
 
 /** Best-effort extraction of the latest user prompt from a chat `messages` array. */
@@ -64,7 +76,7 @@ export type ChatEnqueueParams = {
  */
 export async function enqueueQuestionGeneration(params: ChatEnqueueParams): Promise<{ jobId: string }> {
   const { body, messages, userId, courseId, requestedModel } = params;
-  const type = resolveJobType(body.feature);
+  const type = resolveJobType(body.routingContext);
   const rawCount = body.count;
   const count = typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : 1;
 

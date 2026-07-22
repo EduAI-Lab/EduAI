@@ -1,6 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
+import { ZodError } from "zod";
 import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import {
   createAIProviderRegistry,
@@ -621,34 +622,6 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
-    // request opts in with `enqueue: true`, push the work onto the AI-job queue and
-    // return a durable job id instead of streaming. Normal chat skips this entirely;
-    // the dispatch worker (#168) drains it later. See lib/queue/chat-producer.server.
-    if (isEnqueueRequested(body)) {
-      try {
-        const { jobId } = await enqueueQuestionGeneration({
-          body,
-          messages: rawMessages,
-          userId: actingUser.id,
-          courseId: resolvedCourseId ?? courseId,
-          requestedModel: model,
-        });
-        return new Response(JSON.stringify({ jobId }), {
-          status: 202,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        return chatApiReject(
-          400,
-          {
-            error: "Failed to enqueue AI job",
-            details: error instanceof Error ? error.message : "Unknown error",
-          },
-          { chatMode, userId: actingUser.id },
-        );
-      }
-    }
     // Load the owned chat up front so a follow-up turn that sends a `chatId`
     // but no `courseId`/`courseCode` can inherit the course from the persisted
     // chat row, instead of failing COURSE_REQUIRED below (#685 review).
@@ -751,6 +724,39 @@ export async function action({ request }: ActionFunctionArgs) {
         responseStyleTags: course.responseStyleTags ?? [],
         aiInstructions: course.aiInstructions ?? null,
       };
+    }
+
+    // #914 producer (guarded, off by default): when QUEUE_ENQUEUE_ENABLED and the
+    // request opts in with `enqueue: true`, push the work onto the AI-job queue and
+    // return a durable job id instead of streaming. Placed after the same course
+    // access gate as sync chat so an enqueue can never bypass authz. Normal chat
+    // skips this entirely; the dispatch worker (#168) drains it later.
+    if (isEnqueueRequested(body)) {
+      try {
+        const { jobId } = await enqueueQuestionGeneration({
+          body,
+          messages: rawMessages,
+          userId: actingUser.id,
+          courseId: effectiveCourseId ?? undefined,
+          requestedModel: model,
+        });
+        return new Response(JSON.stringify({ jobId }), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        // Invalid payload is the caller's fault (400); a queue/Redis failure is
+        // ours (502) — never mask an infra outage as a client error.
+        const isValidationError = error instanceof ZodError;
+        return chatApiReject(
+          isValidationError ? 400 : 502,
+          {
+            error: isValidationError ? "Invalid AI job payload" : "Failed to enqueue AI job",
+            details: error instanceof Error ? error.message : "Unknown error",
+          },
+          { chatMode, userId: actingUser.id },
+        );
+      }
     }
 
     // §839: students must not see materials that are hidden or scheduled for a
