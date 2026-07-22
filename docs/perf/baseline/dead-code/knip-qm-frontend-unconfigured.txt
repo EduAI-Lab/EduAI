@@ -1,0 +1,178 @@
+[93m[4mUnused files[24m[39m (5)
+scripts/migrate-to-eduai-ui-pass2.mjs       
+scripts/migrate-to-eduai-ui.mjs             
+src/components/courses/CourseAccessBadge.tsx
+src/components/home/QmHomeShell.tsx         
+src/components/rbac/QmRoleBanner.tsx        
+[93m[4mUnused dependencies[24m[39m (18)
+@eduai/ui                     package.json:7:6 
+next-themes                   package.json:8:6 
+question-maker-backend        package.json:9:6 
+@radix-ui/react-alert-dialog  package.json:10:6
+@radix-ui/react-dialog        package.json:11:6
+@radix-ui/react-label         package.json:12:6
+@radix-ui/react-progress      package.json:13:6
+@radix-ui/react-scroll-area   package.json:14:6
+@radix-ui/react-select        package.json:15:6
+@radix-ui/react-separator     package.json:16:6
+@radix-ui/react-slot          package.json:17:6
+@radix-ui/react-tabs          package.json:18:6
+class-variance-authority      package.json:20:6
+clsx                          package.json:21:6
+lucide-react                  package.json:24:6
+react-dropzone                package.json:28:6
+react-markdown                package.json:29:6
+tailwind-merge                package.json:32:6
+[93m[4mUnused devDependencies[24m[39m (1)
+@testing-library/react  package.json:38:6
+[93m[4mUnlisted dependencies[24m[39m (39)
+@tabler/icons-react  src/components/assessments/AssessmentBuilder.tsx:3:43            
+@tabler/icons-react  src/components/assessments/AssessmentQuestionPicker.tsx:25:70    
+@tabler/icons-react  src/components/assessments/AssessmentSection.tsx:45:9            
+@tabler/icons-react  src/components/assessments/AssessmentSectionCard.tsx:29:9        
+@tabler/icons-react  src/components/assessments/GeneratedVariantsReviewDialog.tsx:12:9
+@tabler/icons-react  src/components/command/CommandPalette.tsx:32:9                   
+@tabler/icons-react  src/components/composer/QuestionTypeSelector.tsx:10:66           
+@tabler/icons-react  src/components/courses/CoursesGrid.tsx:3:28                      
+@tabler/icons-react  src/components/dashboard/QmDashboardView.tsx:14:9                
+@tabler/icons-react  src/components/eduai/AIServiceIndicators.tsx:12:28               
+@tabler/icons-react  src/components/layout/CourseSwitcher.tsx:16:61                   
+@tabler/icons-react  src/components/layout/QmAppLayout.tsx:28:9                       
+@tabler/icons-react  src/components/ocr/OCRHistoryPanel.tsx:4:83                      
+@tabler/icons-react  src/components/ocr/OCRJobCard.tsx:11:9                           
+@tabler/icons-react  src/components/ocr/UnsavedChangesDialog.tsx:3:36                 
+@tabler/icons-react  src/components/profile/ProfileCoursesDialog.tsx:10:42            
+@tabler/icons-react  src/components/question-bank/QuestionBank.tsx:18:9               
+@tabler/icons-react  src/components/question-bank/QuestionCard.tsx:17:37              
+@tabler/icons-react  src/components/question-bank/QuestionFilterToolbar.tsx:25:64     
+@tabler/icons-react  src/components/question-bank/QuestionPreviewSheet.tsx:19:73      
+@tabler/icons-react  src/components/question-bank/QuestionUploadDialog.tsx:9:147      
+@tabler/icons-react  src/components/questions/AddQuestionDialog.tsx:37:180            
+@tabler/icons-react  src/components/questions/MCQChoicesField.tsx:7:24                
+@tabler/icons-react  src/components/questions/QuestionAIControls.tsx:11:48            
+@tabler/icons-react  src/components/questions/QuestionOutputPanel.tsx:8:50            
+@tabler/icons-react  src/components/ui/DeleteConfirmationModal.tsx:16:36              
+@tabler/icons-react  src/lib/apps.tsx:1:60                                            
+@tabler/icons-react  src/pages/AssessmentBuilderPage.tsx:38:9                         
+@tabler/icons-react  src/pages/AssessmentVariantPage.tsx:14:9                         
+@tabler/icons-react  src/pages/BugReportsAdminPage.tsx:6:48                           
+@tabler/icons-react  src/pages/course-detail/CourseCanvasTab.tsx:16:9                 
+@tabler/icons-react  src/pages/course-detail/CourseOverviewTab.tsx:13:9               
+@tabler/icons-react  src/pages/course-detail/CourseTopicsTab.tsx:30:9                 
+@tabler/icons-react  src/pages/CourseDetailPage.tsx:14:30                             
+@tabler/icons-react  src/pages/DashboardPage.tsx:11:9                                 
+@tabler/icons-react  src/pages/HelpPage.tsx:10:9                                      
+@tabler/icons-react  src/pages/QuestionBankPage.tsx:18:9                              
+@tabler/icons-react  src/pages/QuestionComposerPage.tsx:31:9                          
+@tabler/icons-react  src/pages/SettingsPage.tsx:11:9                                  
+[93m[4mUnlisted binaries[24m[39m (3)
+tsc     package.json
+vitest  package.json
+eslint  package.json
+[93m[4mUnused exports[24m[39m (52)
+default                                             src/components/assessments/AssessmentSection.tsx:458:16            
+GenerateAssessmentModal                             src/components/assessments/GenerateAssessmentModal.tsx:50:14       
+default                                             src/components/assessments/GeneratedVariantsReviewDialog.tsx:389:16
+default                                             src/components/canvas/CanvasExportDialog.tsx:273:16                
+default                                             src/components/canvas/CanvasImportDialog.tsx:572:16                
+default                                             src/components/eduai/AIServiceIndicators.tsx:131:16                
+countActiveFilters                        function  src/components/question-bank/QuestionFilterToolbar.tsx:63:17       
+CardSkeleton                              function  src/components/shared/Skeletons.tsx:8:17                           
+StatRowSkeleton                           function  src/components/shared/Skeletons.tsx:66:17                          
+BugReportContext                                    src/contexts/BugReportContext.tsx:12:14                            
+setQuestionGenerationPhase                          src/hooks/useEduAIStatus.ts:124:14                                 
+refreshEduAIStatus                                  src/hooks/useEduAIStatus.ts:130:14                                 
+default                                             src/hooks/useEduAIStatus.ts:164:16                                 
+useQmPermissions                          function  src/hooks/useQmPermissions.ts:15:17                                
+difficultyBorderClass                               src/lib/difficulty.ts:52:14                                        
+shouldShowAccessBadge                     function  src/lib/rbac/course-labels.ts:34:17                                
+shouldShowRelationshipBadge               function  src/lib/rbac/course-labels.ts:38:17                                
+QM_AUTHORIZED_ROLES                                 src/lib/rbac/index.ts:2:10                                         
+canAccessQm                                         src/lib/rbac/index.ts:2:31                                         
+isAuthoringAccess                                   src/lib/rbac/index.ts:3:39                                         
+canDeleteVariant                                    src/lib/rbac/index.ts:7:3                                          
+canEditDraftVariant                                 src/lib/rbac/index.ts:8:3                                          
+canEditQuestionMetadata                             src/lib/rbac/index.ts:9:3                                          
+canExportAssessment                                 src/lib/rbac/index.ts:10:3                                         
+canManageCanvasIntegration                          src/lib/rbac/index.ts:13:3                                         
+canRunAiReview                                      src/lib/rbac/index.ts:14:3                                         
+canUseVariantWorkflow                               src/lib/rbac/index.ts:16:3                                         
+getFooterNavForUser                                 src/lib/rbac/index.ts:19:10                                        
+getNavForUser                                       src/lib/rbac/index.ts:19:31                                        
+getRoleViewLabel                                    src/lib/rbac/index.ts:19:46                                        
+formatCourseAccessLevel                             src/lib/rbac/index.ts:21:3                                         
+formatCourseRelationship                            src/lib/rbac/index.ts:22:3                                         
+getCourseRelationship                               src/lib/rbac/index.ts:23:3                                         
+shouldShowAccessBadge                               src/lib/rbac/index.ts:24:3                                         
+shouldShowRelationshipBadge                         src/lib/rbac/index.ts:25:3                                         
+getFooterNavForUser                       function  src/lib/rbac/nav.ts:74:17                                          
+getRoleViewLabel                          function  src/lib/rbac/nav.ts:85:17                                          
+canShowAssessmentWriteNav                 function  src/lib/rbac/nav.ts:98:17                                          
+canEditQuestionMetadata      permissions  function  src/lib/rbac/permissions.ts:23:17                                  
+QM_AUTHORIZED_ROLES                                 src/lib/rbac/roles.ts:1:14                                         
+UNITS                                               src/lib/units.ts:1:14                                              
+UNIT_LABELS                                         src/lib/units.ts:86:14                                             
+UNIT_OPTIONS                                        src/lib/units.ts:173:14                                            
+default                                             src/pages/ApiTestPage.tsx:975:16                                   
+QUESTION_TYPES                                      src/pages/assessments/assessmentViewTypes.ts:20:14                 
+QUESTION_TYPE_LABELS                                src/pages/assessments/assessmentViewTypes.ts:22:14                 
+api                                                 src/services/api.ts:5:14                                           
+assessmentVariantService                            src/services/assessmentVariantService.ts:148:14                    
+default                                             src/services/topicsService.ts:32:16                                
+SANDBOX_COURSE_CODE                                 src/utils/courseDisplay.ts:8:14                                    
+formatCourseTermYear                      function  src/utils/courseDisplay.ts:15:17                                   
+formatCourseNavLabel                      function  src/utils/courseDisplay.ts:27:17                                   
+[93m[4mUnused exported types[24m[39m (37)
+QmDashboardViewProps             type       src/components/dashboard/QmDashboardView.tsx:54:13          
+OnExtractionComplete             type       src/components/question-bank/QuestionUploadDialog.tsx:107:13
+BackgroundExtractionParams       interface  src/components/question-bank/QuestionUploadDialog.tsx:113:18
+AddQuestionDialogProps           type       src/components/questions/AddQuestionDialog.tsx:140:13       
+MCQChoicesFieldProps             interface  src/components/questions/MCQChoicesField.tsx:21:18          
+QuestionAIControlsValue          interface  src/components/questions/QuestionAIControls.tsx:15:18       
+QuestionMetadataPanelValue       interface  src/components/questions/QuestionMetadataPanel.tsx:18:18    
+QuestionModalProps               type       src/components/questions/QuestionModal.tsx:8:13             
+EmptyStateAction                 interface  src/components/shared/EmptyState.tsx:11:18                  
+EmptyStateProps                  interface  src/components/shared/EmptyState.tsx:19:18                  
+UseOCRHistoryReturn              interface  src/hooks/use-ocr-history.ts:14:18                          
+DifficultyMeta                   interface  src/lib/difficulty.ts:16:18                                 
+CourseRelationship               type       src/lib/rbac/course-labels.ts:19:13                         
+QmNavItem                        type       src/lib/rbac/index.ts:1:31                                  
+QmNavItemKey                     type       src/lib/rbac/index.ts:1:42                                  
+QmPlatformRole                   type       src/lib/rbac/index.ts:1:56                                  
+QmAuthorizedRole                 type       src/lib/rbac/roles.ts:3:13                                  
+QmPlatformRole                   type       src/lib/rbac/types.ts:2:13                                  
+Unit                             type       src/lib/units.ts:84:13                                      
+QuestionSearchFilters            type       src/pages/assessments/assessmentViewTypes.ts:6:13           
+DeleteActionType                 type       src/pages/assessments/assessmentViewTypes.ts:15:13          
+StudyRole                        type       src/services/assessmentVariantService.ts:8:13               
+BlueprintSlot                    interface  src/services/assessmentVariantService.ts:10:18              
+BlueprintSnapshot                interface  src/services/assessmentVariantService.ts:20:18              
+AssembleVariantsResult           interface  src/services/assessmentVariantService.ts:37:18              
+SubmitBugReportPayload           interface  src/services/bugReportApi.ts:30:18                          
+CanvasExportResult               interface  src/services/canvasService.ts:19:18                         
+CanvasQuestion                   interface  src/services/canvasService.ts:34:18                         
+CanvasImportResult               interface  src/services/canvasService.ts:54:18                         
+EduAIMessage                     interface  src/services/eduaiService.ts:8:18                           
+EduAIChatRequest                 interface  src/services/eduaiService.ts:13:18                          
+EduAIChatResponse                interface  src/services/eduaiService.ts:21:18                          
+EduAIQuestionGenerationRequest   interface  src/services/eduaiService.ts:31:18                          
+EduAIQuestionGenerationResponse  interface  src/services/eduaiService.ts:51:18                          
+EduAITestResponse                interface  src/services/eduaiService.ts:125:18                         
+AssessmentExportBlock            type       src/utils/assessmentExport.ts:7:13                          
+VariantMetadataUpdateInput       type       src/utils/questionMetadataEdit.ts:3:13                      
+[93m[4mDuplicate exports[24m[39m (15)
+AssessmentSection|default              src/components/assessments/AssessmentSection.tsx            
+GenerateAssessmentModal|default        src/components/assessments/GenerateAssessmentModal.tsx      
+GeneratedVariantsReviewDialog|default  src/components/assessments/GeneratedVariantsReviewDialog.tsx
+CanvasExportDialog|default             src/components/canvas/CanvasExportDialog.tsx                
+CanvasImportDialog|default             src/components/canvas/CanvasImportDialog.tsx                
+AIServiceIndicators|default            src/components/eduai/AIServiceIndicators.tsx                
+useEduAIStatus|default                 src/hooks/useEduAIStatus.ts                                 
+ApiTestPage|default                    src/pages/ApiTestPage.tsx                                   
+api|default                            src/services/api.ts                                         
+apiKeyStorage|default                  src/services/apiKeyStorage.ts                               
+assessmentService|default              src/services/assessmentService.ts                           
+assessmentVariantService|default       src/services/assessmentVariantService.ts                    
+canvasService|default                  src/services/canvasService.ts                               
+eduaiService|default                   src/services/eduaiService.ts                                
+topicsService|default                  src/services/topicsService.ts                               
