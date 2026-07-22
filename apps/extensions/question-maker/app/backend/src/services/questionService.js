@@ -733,16 +733,21 @@ export const getQuestionStats = async (userId) => {
     const typeStats = await Question_Metadata.findAll({
       attributes: [
         'type',
-        [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('id')), 'count']
+        [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('Question_Metadata.id')), 'count']
       ],
       include: [
         {
           model: Course,
           as: 'course',
-          where: { userId: userId }
+          where: { userId: userId },
+          // Filter-only join: selecting no course columns keeps `course.id` out of
+          // the SELECT so it need not appear in GROUP BY (Postgres rejects otherwise).
+          attributes: []
         }
       ],
-      group: ['type']
+      group: ['type'],
+      subQuery: false,
+      raw: true
     });
 
     return {
