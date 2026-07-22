@@ -35,6 +35,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
+import { parseLimitOffset } from '../utils/listPagination.js';
 
 const router = express.Router();
 
@@ -91,7 +92,7 @@ router.post(
  */
 router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const { limit, offset, courseId } = req.query;
+    const { courseId } = req.query;
 
     let scopeUserId = req.user.id;
     let scopeCourseId = courseId ? Number(courseId) : undefined;
@@ -111,16 +112,17 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       scopeCourseId = course.id;
     }
 
-    const assessments = await getAssessmentsByUser(scopeUserId, {
-      limit: parseInt(limit) || 50,
-      offset: parseInt(offset) || 0,
+    const { limit, offset } = parseLimitOffset(req.query);
+    const page = await getAssessmentsByUser(scopeUserId, {
+      limit,
+      offset,
       courseId: scopeCourseId,
       isAdmin: req.user.role === 'ADMIN'
     });
 
     res.json({
       success: true,
-      data: assessments
+      data: page
     });
   } catch (error) {
     next(error);

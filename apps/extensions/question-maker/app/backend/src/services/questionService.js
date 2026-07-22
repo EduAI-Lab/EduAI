@@ -2,6 +2,7 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
+import { Op } from 'sequelize';
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
 import {
@@ -205,14 +206,19 @@ export const createQuestion = async (userId, questionData) => {
   }
 };
 
-/** Returns questions (with course + variant associations) scoped to the requesting user. */
+/**
+ * Returns a paginated question list (with course + variant associations)
+ * scoped to the requesting user. Shape: `{ items, total, limit, offset }` (#1040).
+ */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
     const { courseId, search, limit = 50, offset = 0 } = options;
-    
+    const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
+    const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+
     // Build where clause for Question_Metadata
     const whereClause = {};
-    
+
     if (courseId) {
       const parsedCourseId = Number(courseId);
       if (Number.isInteger(parsedCourseId)) {
@@ -220,45 +226,51 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       }
     }
 
-    const questions = await Question_Metadata.findAll({
-      where: whereClause,
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` feeds the Core projection below — `Course` has no
-          // local name/code to select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: { userId: userId } // Filter by user through course relationship
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
-          include: [
-            {
-              model: Assessments,
-              as: 'assessment',
-              attributes: ['id', 'name', 'type']
-            }
-          ]
-        }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    // Apply search filter if provided
-    let filteredQuestions = questions;
-    if (search) {
-      filteredQuestions = questions.filter(q =>
-        q.description.toLowerCase().includes(search.toLowerCase())
-      );
+    // Apply search in SQL before limit/offset so pagination stays correct (#1040).
+    if (search && String(search).trim()) {
+      whereClause.description = { [Op.iLike]: `%${String(search).trim()}%` };
     }
 
-    const enriched = await enrichRowsWithCourse(filteredQuestions);
-    return enriched.map(withDerivedVariantSemesters);
+    const include = [
+      {
+        model: Course,
+        as: 'course',
+        // `coreCourseId` feeds the Core projection below — `Course` has no
+        // local name/code to select anymore (#1072 §4 step 10).
+        attributes: ['id', 'coreCourseId'],
+        where: { userId: userId } // Filter by user through course relationship
+      },
+      {
+        model: Variants,
+        as: 'variants',
+        attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
+        include: [
+          {
+            model: Assessments,
+            as: 'assessment',
+            attributes: ['id', 'name', 'type']
+          }
+        ]
+      }
+    ];
+
+    const { count, rows } = await Question_Metadata.findAndCountAll({
+      where: whereClause,
+      include,
+      distinct: true,
+      col: 'id',
+      order: [['createdAt', 'DESC']],
+      limit: appliedLimit,
+      offset: appliedOffset
+    });
+
+    const enriched = await enrichRowsWithCourse(rows);
+    return {
+      items: enriched.map(withDerivedVariantSemesters),
+      total: count,
+      limit: appliedLimit,
+      offset: appliedOffset,
+    };
   } catch (error) {
     throw error;
   }

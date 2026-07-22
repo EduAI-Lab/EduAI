@@ -67,93 +67,106 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
   }
 };
 
-/** Lists assessments owned by a user with optional filters and eager-loaded relations. */
+/** Lists assessments owned by a user with optional filters and eager-loaded relations.
+ * Returns `{ items, total, limit, offset }` (#1040).
+ */
 export const getAssessmentsByUser = async (userId, options = {}) => {
   try {
     const { limit = 50, offset = 0, courseId, isAdmin = false } = options;
+    const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
+    const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
 
     // If user is admin without a courseId constraint, allow all assessments; otherwise scope to owner
     const courseWhere = isAdmin ? {} : { userId };
 
-    const assessments = await Assessments.findAll({
+    const include = [
+      {
+        model: Course,
+        as: 'course',
+        // `coreCourseId` is what `enrichRowsWithCourse` needs to project
+        // name/code from Core below — `Course` has no local name/code to
+        // select anymore (#1072 §4 step 10).
+        attributes: ['id', 'coreCourseId'],
+        where: courseWhere,
+        required: true
+      },
+      {
+        model: Variants,
+        as: 'variants',
+        attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
+        include: [
+          {
+            model: Question_Metadata,
+            as: 'questionMetadata',
+            attributes: ['id', 'description', 'type', 'questionOrder'],
+            include: [
+              {
+                model: Course,
+                as: 'course',
+                where: { userId: userId },
+                // Ownership filter only — this nested course is never enriched/returned.
+                attributes: ['id']
+              }
+            ]
+          }
+        ]
+      },
+      {
+        model: AssessmentSections,
+        as: 'sections',
+        include: [
+          {
+            model: SectionVariants,
+            as: 'sectionVariants',
+            include: [
+              {
+                model: Variants,
+                as: 'variant',
+                attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
+                include: [
+                  {
+                    model: Question_Metadata,
+                    as: 'questionMetadata',
+                    attributes: ['id', 'description', 'type', 'questionOrder'],
+                    include: [
+                      {
+                        model: Course,
+                        as: 'course',
+                        // Ownership filter only — this nested course is never enriched/returned.
+                        attributes: ['id'],
+                        where: { userId },
+                        required: false
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        order: [['position', 'ASC']]
+      }
+    ];
+
+    const { count, rows } = await Assessments.findAndCountAll({
       where: {
         ...(courseId && { courseId })
       },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` is what `enrichRowsWithCourse` needs to project
-          // name/code from Core below — `Course` has no local name/code to
-          // select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: courseWhere,
-          required: true
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              attributes: ['id', 'description', 'type', 'questionOrder'],
-              include: [
-                {
-                  model: Course,
-                  as: 'course',
-                  where: { userId: userId },
-                  // Ownership filter only — this nested course is never enriched/returned.
-                  attributes: ['id']
-                }
-              ]
-            }
-          ]
-        },
-        {
-          model: AssessmentSections,
-          as: 'sections',
-          include: [
-            {
-              model: SectionVariants,
-              as: 'sectionVariants',
-              include: [
-                {
-                  model: Variants,
-                  as: 'variant',
-                  attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-                  include: [
-                    {
-                      model: Question_Metadata,
-                      as: 'questionMetadata',
-                      attributes: ['id', 'description', 'type', 'questionOrder'],
-                      include: [
-                        {
-                          model: Course,
-                          as: 'course',
-                          // Ownership filter only — this nested course is never enriched/returned.
-                          attributes: ['id'],
-                          where: { userId },
-                          required: false
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ],
-          order: [['position', 'ASC']]
-        }
-      ],
+      include,
+      distinct: true,
+      col: 'id',
       order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      limit: appliedLimit,
+      offset: appliedOffset
     });
 
-    const enriched = await enrichRowsWithCourse(assessments);
-    return enriched.map(withDerivedSemester);
+    const enriched = await enrichRowsWithCourse(rows);
+    return {
+      items: enriched.map(withDerivedSemester),
+      total: count,
+      limit: appliedLimit,
+      offset: appliedOffset,
+    };
   } catch (error) {
     throw error;
   }

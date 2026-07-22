@@ -70,14 +70,42 @@ const mapQuestion = (item: any): Question => ({
   variants: Array.isArray(item.variants) ? item.variants.map(mapVariant) : []
 });
 
+export type PaginatedList<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const PAGE_FETCH_SIZE = 100;
+
+/** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
+function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): PaginatedList<T> {
+  if (Array.isArray(data)) {
+    const items = data.map(mapItem);
+    return { items, total: items.length, limit: items.length, offset: 0 };
+  }
+  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+    const page = data as { items: any[]; total?: number; limit?: number; offset?: number };
+    const items = page.items.map(mapItem);
+    return {
+      items,
+      total: typeof page.total === 'number' ? page.total : items.length,
+      limit: typeof page.limit === 'number' ? page.limit : items.length,
+      offset: typeof page.offset === 'number' ? page.offset : 0,
+    };
+  }
+  return { items: [], total: 0, limit: 50, offset: 0 };
+}
+
 export const questionService = {
-  /** Fetches questions with optional filters and maps them to frontend shape. */
-  async getQuestions(options: {
+  /** Fetches one page of questions with pagination metadata (#1040). */
+  async getQuestionsPage(options: {
     courseId?: number;
     search?: string;
     limit?: number;
     offset?: number;
-  } = {}): Promise<Question[]> {
+  } = {}): Promise<PaginatedList<Question>> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.search !== undefined) params.search = options.search;
@@ -85,7 +113,42 @@ export const questionService = {
     if (options.offset !== undefined) params.offset = options.offset;
 
     const response = await api.get('/api/questions', { params });
-    return (response.data.data || []).map(mapQuestion);
+    return unwrapPaginatedList(response.data.data, mapQuestion);
+  },
+
+  /**
+   * Fetches questions for UI consumers.
+   * - With an explicit `limit`: returns that single page's items.
+   * - Without `limit`: page-loops until all matching rows are loaded (fixes silent 50-cap).
+   */
+  async getQuestions(options: {
+    courseId?: number;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<Question[]> {
+    if (options.limit !== undefined) {
+      const page = await this.getQuestionsPage(options);
+      return page.items;
+    }
+
+    const all: Question[] = [];
+    let offset = options.offset ?? 0;
+    let total = Infinity;
+    while (all.length < total) {
+      const page = await this.getQuestionsPage({
+        courseId: options.courseId,
+        search: options.search,
+        limit: PAGE_FETCH_SIZE,
+        offset,
+      });
+      all.push(...page.items);
+      total = page.total;
+      if (page.items.length === 0) break;
+      offset += page.items.length;
+      if (offset >= total) break;
+    }
+    return all;
   },
 
   /** Retrieves a single question by ID. */

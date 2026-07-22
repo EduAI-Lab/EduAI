@@ -188,8 +188,8 @@ export const CourseDetailPage = () => {
     try {
       setIsAssessmentsLoading(true);
       setAssessmentsError(null);
-      const data = await assessmentService.getAssessments();
-      setAssessments(data.filter((a) => a.courseId === courseId));
+      const data = await assessmentService.getAssessments({ courseId });
+      setAssessments(data);
     } catch (error: any) {
       setAssessments([]);
       setAssessmentsError(error?.response?.data?.error || 'Failed to load assessments');
