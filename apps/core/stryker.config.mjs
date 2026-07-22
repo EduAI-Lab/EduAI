@@ -5,6 +5,14 @@ const config = {
   testRunner: 'vitest',
   coverageAnalysis: 'perTest',
   reporters: ['html', 'clear-text', 'progress'],
+  // Local fail-closed gate (not CI). Tied to the documented overall baseline
+  // of ~73.65% across the 11 mutate targets (PR #1102 / issue #224), with a
+  // small cushion so noise doesn't flake while still catching score regressions.
+  thresholds: {
+    high: 80,
+    low: 70,
+    break: 70,
+  },
   vitest: {
     // A separate, narrowed test config (not the main vitest.config.ts) —
     // its `include` allowlists only the test files covering the modules

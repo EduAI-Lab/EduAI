@@ -542,7 +542,8 @@ actually catches regressions in that code, not just covers it. It reuses `vitest
 running the full 199-file suite would exceed Stryker's dry-run timeout and pull in an
 unrelated, pre-existing Ollama-dependent test failure. Results are written to
 `reports/mutation/mutation.html` (gitignored, not committed). This is a local/on-demand
-command — it is not run in CI.
+command — it is not run in CI. `stryker.config.mjs` sets a local `thresholds.break` of 70
+(tied to the ~73.65% overall baseline) so score regressions fail the command locally.
 
 To re-check a single file after adding tests: `npx stryker run --mutate <path/to/file.ts>`.
 
