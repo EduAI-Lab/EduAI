@@ -7,6 +7,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Changed
+
+- [core] perf: Pin a stable `vendor-react` manualChunks split for the Core client bundle (shiki/streamdown/katex left unpinned to preserve their internal lazy splitting), emit the Vite manifest, and add `scripts/bundle-report.mjs` + opt-in `ANALYZE=1` treemap for per-route initial-JS measurement. (#1039, @mochi_21, 2026-07-21) — [#1146](https://github.com/EduAI-Lab/EduAI/pull/1146)
+- [core] perf: Stop the `@eduai/ui` barrel shipping ~264KB of unused components to every page — add `"sideEffects": ["*.css"]` to the package, import root-shell deps via subpath exports (`/sonner`, `/page-loader`, `/theme-sync-initializer`, `/theme-provider`, new `/tooltip`), and lazy-load `marked` in `markdown.tsx`, cutting unauthenticated login initial JS from ~600KB to ~258KB. (#1038, @mochi_21, 2026-07-21) — [#1146](https://github.com/EduAI-Lab/EduAI/pull/1146)
+
 ### Fixed
 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
