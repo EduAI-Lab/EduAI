@@ -3,8 +3,8 @@
 > **Scope: backend packages only** — `core`, `ai-tutor-server`, and `question-maker-backend`.
 > Frontend suites (ai-tutor app, question-maker frontend) are excluded. Figures cover the unit **and** integration suites in one pass.
 
-- Generated: `2026-07-21T19:12:46-07:00`
-- Commit: `8258fd7b8eee1e572b291da73cd5b329db654f88`
+- Generated: `2026-07-21T19:41:46-07:00`
+- Commit: `3b69a2723f99cb03447a833600ac38cbcbe24714`
 
 | Backend | Statements | Branches | Functions | Lines |
 | --- | --- | --- | --- | --- |
