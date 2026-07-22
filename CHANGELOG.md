@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [question-maker] fix: Stop silently truncating questions/assessments lists at 50 rows — list APIs now return `{ items, total, limit, offset }`, search is applied in SQL before paging, and the frontend page-loops (or scopes by `courseId`) so CourseDetail / builder / bank views load the full set. (#1040, @Ayyhab, 2026-07-21) — (#PR)
+- [question-maker] fix: Stop silently truncating questions/assessments lists at 50 rows — list APIs now return `{ items, total, limit, offset }`, search is applied in SQL before paging, and the frontend page-loops (or scopes by `courseId`) so CourseDetail / builder / bank views load the full set. (#1040, @Ayyhab, 2026-07-21) — [#1140](https://github.com/EduAI-Lab/EduAI/pull/1140)
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
 
 ## [Week 11 — July 13–19, 2026]
