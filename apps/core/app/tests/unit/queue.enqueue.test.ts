@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { JobPayload } from "~/lib/queue/job-schema";
 
 const prismaMock = vi.hoisted(() => ({
-  aiJob: { create: vi.fn(), update: vi.fn() },
+  aiJob: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
 }));
 
 const queueAdd = vi.hoisted(() => vi.fn());
@@ -32,6 +32,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.aiJob.create.mockResolvedValue({ id: "aijob_1" });
   prismaMock.aiJob.update.mockResolvedValue({});
+  prismaMock.aiJob.findUnique.mockResolvedValue(null);
+  prismaMock.aiJob.delete.mockResolvedValue({});
   queueAdd.mockResolvedValue({ id: "bull_1" });
 });
 
@@ -63,11 +65,24 @@ describe("enqueue", () => {
 
   it("passes idempotencyKey through as the BullMQ jobId", async () => {
     await enqueue({ ...job, idempotencyKey: "idem-9" });
+    expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { bullJobId: "idem-9" } }),
+    );
     expect(queueAdd).toHaveBeenCalledWith(
       "question-generation",
       expect.anything(),
       expect.objectContaining({ jobId: "idem-9" }),
     );
+  });
+
+  it("returns the existing row for a repeated idempotencyKey without creating a new one", async () => {
+    prismaMock.aiJob.findUnique.mockResolvedValueOnce({ id: "aijob_existing" });
+
+    const result = await enqueue({ ...job, idempotencyKey: "idem-9" });
+
+    expect(result).toEqual({ jobId: "aijob_existing" });
+    expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
+    expect(queueAdd).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid payload before touching the DB", async () => {
