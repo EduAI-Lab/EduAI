@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Added
+
+- [core] test: Close remaining mutation testing gaps from #224's epic follow-ups — `password-history.server.ts` 46.00% → 100% (27 gaps), `password-policy.ts` 73.91% → 100% (14 gaps, including two previously timeout-prone mutants on `PASSWORD_POLICY_MESSAGE`), `password-expiry.server.ts` 76.19% → 100% (10 gaps), and `canvas/guards.server.ts` 76.32% → 97.37% (8 of 9 gaps; the remaining mutant is a documented equivalent). (#1094, #1095, #1097, #1098, @GlowyBlack, 2026-07-22) — [#PR](https://github.com/EduAI-Lab/EduAICore/pull/PR)
+
 ### Fixed
 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
