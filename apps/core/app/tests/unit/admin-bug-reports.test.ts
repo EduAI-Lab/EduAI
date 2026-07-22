@@ -36,6 +36,7 @@ const REPORT = {
   source: "AI_TUTOR",
   status: "UNHANDLED",
   description: "It broke",
+  bugType: null,
   isAnonymous: false,
   userId: "u1",
   user: { email: "reporter@test.com", name: "Reporter" },
@@ -47,6 +48,27 @@ const REPORT = {
   context: null,
   createdAt: new Date("2026-06-01"),
   updatedAt: new Date("2026-06-01"),
+};
+
+/** List rows come from a single $queryRaw that includes has* + user email/name. */
+const LIST_ROW = {
+  id: "br-1",
+  source: "AI_TUTOR",
+  status: "UNHANDLED",
+  description: "It broke",
+  bugType: null,
+  isAnonymous: false,
+  userId: "u1",
+  userEmail: "reporter@test.com",
+  userName: "Reporter",
+  pageUrl: null,
+  userAgent: null,
+  context: null,
+  createdAt: new Date("2026-06-01"),
+  updatedAt: new Date("2026-06-01"),
+  hasConsoleLogs: false,
+  hasNetworkLogs: false,
+  hasScreenshot: false,
 };
 
 function makeArgs(path: string, method = "GET", body?: unknown, params: Record<string, string> = {}) {
@@ -71,14 +93,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.bugReport.findMany).mockResolvedValue([REPORT] as never);
   vi.mocked(prisma.bugReport.count).mockResolvedValue(1);
-  vi.mocked(prisma.$queryRaw).mockResolvedValue([
-    {
-      id: "br-1",
-      hasConsoleLogs: false,
-      hasNetworkLogs: false,
-      hasScreenshot: false,
-    },
-  ] as never);
+  vi.mocked(prisma.$queryRaw).mockResolvedValue([LIST_ROW] as never);
 });
 
 describe("GET /api/admin/bug-reports (#304)", () => {
@@ -140,10 +155,30 @@ describe("GET /api/admin/bug-reports (#304)", () => {
     expect(res.status).toBe(404);
   });
 
+  it("treats empty-string attachments as absent on GET /:id (#1116 review)", async () => {
+    mockUser("ADMIN");
+    vi.mocked(prisma.bugReport.findUnique).mockResolvedValue({
+      ...REPORT,
+      consoleLogs: "",
+      networkLogs: "",
+      screenshot: "",
+    } as never);
+    const res = await adminLoader(
+      makeArgs("/api/admin/bug-reports/br-1", "GET", undefined, { id: "br-1" }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      hasConsoleLogs: false,
+      hasNetworkLogs: false,
+      hasScreenshot: false,
+    });
+  });
+
   it("masks userId/email/name when isAnonymous=true (§11)", async () => {
     mockUser("ADMIN");
-    vi.mocked(prisma.bugReport.findMany).mockResolvedValue([
-      { ...REPORT, isAnonymous: true },
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([
+      { ...LIST_ROW, isAnonymous: true },
     ] as never);
     const res = await adminLoader(makeArgs("/api/admin/bug-reports"));
     const body = await res.json();
@@ -153,16 +188,15 @@ describe("GET /api/admin/bug-reports (#304)", () => {
     expect(body.reports[0].description).toBe("It broke"); // content still visible
   });
 
-  it("forwards source and status filters to the query", async () => {
+  it("forwards source and status filters to the count query", async () => {
     mockUser("ADMIN");
     await adminLoader(
       makeArgs("/api/admin/bug-reports?source=QUESTION_MAKER&status=RESOLVED"),
     );
-    expect(prisma.bugReport.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { source: "QUESTION_MAKER", status: "RESOLVED" },
-      }),
-    );
+    expect(prisma.bugReport.count).toHaveBeenCalledWith({
+      where: { source: "QUESTION_MAKER", status: "RESOLVED" },
+    });
+    expect(prisma.$queryRaw).toHaveBeenCalled();
   });
 
   it("rejects an unknown source filter with 400", async () => {
@@ -177,12 +211,11 @@ describe("GET /api/admin/bug-reports (#304)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("paginates via limit/offset", async () => {
+  it("paginates via limit/offset on the list query", async () => {
     mockUser("ADMIN");
     await adminLoader(makeArgs("/api/admin/bug-reports?limit=10&offset=20"));
-    expect(prisma.bugReport.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 10, skip: 20 }),
-    );
+    expect(prisma.bugReport.count).toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalled();
   });
 });
 

@@ -21,6 +21,32 @@ describe("redactSecretValuesInString", () => {
     );
   });
 
+  it("redacts JSON-quoted Authorization headers regardless of token length", () => {
+    expect(redactSecretValuesInString('"Authorization": "Basic dXNlcjpwYXNz"')).toContain(
+      `Basic ${REDACTED_VALUE}`,
+    );
+    expect(redactSecretValuesInString('"Authorization": "Bearer abc.def"')).toContain(
+      `Bearer ${REDACTED_VALUE}`,
+    );
+  });
+
+  it("redacts standalone long Bearer/Basic tokens outside header context", () => {
+    expect(
+      redactSecretValuesInString("saw Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature in log"),
+    ).toBe(`saw Bearer ${REDACTED_VALUE} in log`);
+    expect(redactSecretValuesInString("Basic dXNlcm5hbWU6cGFzc3dvcmQxMjM=")).toBe(
+      `Basic ${REDACTED_VALUE}`,
+    );
+  });
+
+  it("leaves Bearer/Basic prose untouched (#1116 review)", () => {
+    expect(redactSecretValuesInString("Basic setup complete")).toBe("Basic setup complete");
+    expect(redactSecretValuesInString("Bearer of bad news")).toBe("Bearer of bad news");
+    expect(redactSecretValuesInString("keep it Basic for now, ok?")).toBe(
+      "keep it Basic for now, ok?",
+    );
+  });
+
   it("redacts raw Cookie and Set-Cookie header lines", () => {
     expect(redactSecretValuesInString("Cookie: session=abc; theme=dark")).toBe(
       `Cookie: ${REDACTED_VALUE}`,
@@ -123,7 +149,9 @@ describe("redactDiagnosticLogString", () => {
   });
 
   it("falls back to value-level scrubbing for non-JSON text", () => {
-    expect(redactDiagnosticLogString("got Bearer tok123")).toBe(`got Bearer ${REDACTED_VALUE}`);
+    expect(redactDiagnosticLogString("got Bearer tok-1234567890-abcdef")).toBe(
+      `got Bearer ${REDACTED_VALUE}`,
+    );
   });
 
   it("scrubs Cookie / Basic / x-api-key text captures before persist", () => {

@@ -15,7 +15,7 @@ export const BUG_REPORT_FIELD_LIMITS = {
   description: 2000,
   consoleLogs: 100_000,
   networkLogs: 100_000,
-  /** Reject (do not truncate) — truncating base64 corrupts the image. */
+  /** Dropped (not truncated) when oversized — truncating base64 corrupts the image. */
   screenshot: 512_000,
   pageUrl: 2048,
   userAgent: 512,
@@ -66,14 +66,15 @@ function prepareDiagnosticLogs(
   };
 }
 
-function prepareContext(
-  value: unknown,
-):
-  | { ok: true; value: Prisma.InputJsonValue | typeof Prisma.DbNull }
-  | { ok: false; reason: string } {
+/**
+ * Context is diagnostic garnish — never fail the whole submission over it.
+ * Oversized or non-serializable context is dropped to DbNull so the
+ * description and logs still persist (#1116 review).
+ */
+function prepareContext(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
   // Non-object / array context was previously coerced to DbNull — keep that behavior.
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { ok: true, value: Prisma.DbNull };
+    return Prisma.DbNull;
   }
 
   const sanitized = sanitizeSensitiveData(value);
@@ -81,17 +82,14 @@ function prepareContext(
   try {
     serialized = JSON.stringify(sanitized);
   } catch {
-    return { ok: false, reason: "must be JSON-serializable" };
+    return Prisma.DbNull;
   }
 
   if (serialized.length > BUG_REPORT_FIELD_LIMITS.contextJson) {
-    return {
-      ok: false,
-      reason: `exceeds ${BUG_REPORT_FIELD_LIMITS.contextJson} chars when serialized`,
-    };
+    return Prisma.DbNull;
   }
 
-  return { ok: true, value: sanitized as Prisma.InputJsonValue };
+  return sanitized as Prisma.InputJsonValue;
 }
 
 export async function createBugReport(raw: unknown): Promise<CreateBugReportResult> {
@@ -136,11 +134,16 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
     BUG_REPORT_FIELD_LIMITS.networkLogs,
   );
 
-  // Screenshot is rejected when oversized — truncating a data URL yields a broken image.
-  const screenshot = optionalCappedString(p.screenshot, BUG_REPORT_FIELD_LIMITS.screenshot);
-  if (!screenshot.ok) {
-    return validationError({ screenshot: screenshot.reason });
-  }
+  // Oversized screenshot is dropped, not rejected: truncating a data URL yields
+  // a broken image, and failing the submit would lose the description + logs
+  // with it (full-page captures trip the cap easily — #1116 review).
+  // Empty strings are stored as null so has* flags stay consistent.
+  const screenshotValue =
+    typeof p.screenshot === "string" &&
+    p.screenshot.length > 0 &&
+    p.screenshot.length <= BUG_REPORT_FIELD_LIMITS.screenshot
+      ? p.screenshot
+      : null;
 
   const pageUrl = optionalCappedString(p.pageUrl, BUG_REPORT_FIELD_LIMITS.pageUrl);
   if (!pageUrl.ok) {
@@ -153,9 +156,6 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
   }
 
   const context = prepareContext(p.context);
-  if (!context.ok) {
-    return validationError({ context: context.reason });
-  }
 
   const userId = p.userId.trim();
 
@@ -173,10 +173,10 @@ export async function createBugReport(raw: unknown): Promise<CreateBugReportResu
       isAnonymous: typeof p.isAnonymous === "boolean" ? p.isAnonymous : false,
       consoleLogs: consoleLogs.value,
       networkLogs: networkLogs.value,
-      screenshot: screenshot.value,
+      screenshot: screenshotValue,
       pageUrl: pageUrl.value,
       userAgent: userAgent.value,
-      context: context.value,
+      context,
     },
   });
 
@@ -196,63 +196,55 @@ export function isBugReportSource(value: unknown): value is (typeof ADMIN_LIST_S
   return typeof value === "string" && (ADMIN_LIST_SOURCES as readonly string[]).includes(value);
 }
 
-type AttachmentFlags = {
+function maskReporter(r: {
+  isAnonymous: boolean;
+  userId: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
+  user?: { email: string | null; name: string | null } | null;
+}) {
+  const email = r.userEmail ?? r.user?.email ?? null;
+  const name = r.userName ?? r.user?.name ?? null;
+  return {
+    userId: r.isAnonymous ? null : r.userId,
+    userEmail: r.isAnonymous ? null : email,
+    userName: r.isAnonymous ? null : name,
+  };
+}
+
+/** Non-empty attachment presence — matches AI Tutor / QM mappers (`!= null && !== ''`). */
+function hasAttachment(value: string | null | undefined): boolean {
+  return value != null && value !== "";
+}
+
+type ListBugReportRow = {
+  id: string;
+  source: string;
+  status: string;
+  description: string;
+  bugType: string | null;
+  isAnonymous: boolean;
+  userId: string | null;
+  pageUrl: string | null;
+  userAgent: string | null;
+  context: Prisma.JsonValue | null;
+  createdAt: Date;
+  updatedAt: Date;
   hasConsoleLogs: boolean;
   hasNetworkLogs: boolean;
   hasScreenshot: boolean;
+  userEmail: string | null;
+  userName: string | null;
 };
-
-/**
- * Presence flags without loading TEXT blobs into the Node heap (#979 list DoS).
- */
-async function loadAttachmentFlags(ids: string[]): Promise<Map<string, AttachmentFlags>> {
-  const map = new Map<string, AttachmentFlags>();
-  if (ids.length === 0) return map;
-
-  const rows = await prisma.$queryRaw<
-    Array<{
-      id: string;
-      hasConsoleLogs: boolean;
-      hasNetworkLogs: boolean;
-      hasScreenshot: boolean;
-    }>
-  >`
-    SELECT
-      id,
-      ("consoleLogs" IS NOT NULL) AS "hasConsoleLogs",
-      ("networkLogs" IS NOT NULL) AS "hasNetworkLogs",
-      (screenshot IS NOT NULL) AS "hasScreenshot"
-    FROM bug_reports
-    WHERE id IN (${Prisma.join(ids)})
-  `;
-
-  for (const row of rows) {
-    map.set(row.id, {
-      hasConsoleLogs: Boolean(row.hasConsoleLogs),
-      hasNetworkLogs: Boolean(row.hasNetworkLogs),
-      hasScreenshot: Boolean(row.hasScreenshot),
-    });
-  }
-  return map;
-}
-
-function maskReporter<T extends {
-  isAnonymous: boolean;
-  userId: string | null;
-  user: { email: string | null; name: string | null } | null;
-}>(r: T) {
-  return {
-    userId: r.isAnonymous ? null : r.userId,
-    userEmail: r.isAnonymous ? null : (r.user?.email ?? null),
-    userName: r.isAnonymous ? null : (r.user?.name ?? null),
-  };
-}
 
 /**
  * GET /api/admin/bug-reports (#304, §11) — admin listing with source/status
  * filters and pagination. Heavy diagnostic blobs are omitted from the list
  * payload (#979); use {@link getBugReportById} when a viewer needs them.
  * When `isAnonymous=true`, the reporter's identity is masked in the response.
+ *
+ * Presence flags are computed in the same query (`IS NOT NULL AND <> ''`) so
+ * we do not pay a second round-trip or load TEXT blobs into the Node heap.
  */
 export async function listBugReports(params: {
   source?: (typeof ADMIN_LIST_SOURCES)[number];
@@ -268,64 +260,70 @@ export async function listBugReports(params: {
     ...(status !== undefined && { status }),
   };
 
+  const conditions: Prisma.Sql[] = [];
+  if (source !== undefined) {
+    conditions.push(Prisma.sql`br.source = ${source}::"BugReportSource"`);
+  }
+  if (status !== undefined) {
+    conditions.push(Prisma.sql`br.status = ${status}::"BugReportStatus"`);
+  }
+  const whereSql =
+    conditions.length > 0
+      ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
+      : Prisma.sql``;
+
   const [reports, total] = await Promise.all([
-    prisma.bugReport.findMany({
-      where,
-      // Exclude consoleLogs / networkLogs / screenshot — loading them for up to
-      // 200 rows is how admin list amplified storage DoS into response DoS (#979).
-      select: {
-        id: true,
-        source: true,
-        status: true,
-        description: true,
-        bugType: true,
-        isAnonymous: true,
-        userId: true,
-        pageUrl: true,
-        userAgent: true,
-        context: true,
-        createdAt: true,
-        updatedAt: true,
-        user: { select: { email: true, name: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: clampedLimit,
-      skip: offset,
-    }),
+    prisma.$queryRaw<ListBugReportRow[]>`
+      SELECT
+        br.id,
+        br.source::text AS source,
+        br.status::text AS status,
+        br.description,
+        br."bugType"::text AS "bugType",
+        br."isAnonymous",
+        br."userId",
+        br."pageUrl",
+        br."userAgent",
+        br.context,
+        br."createdAt",
+        br."updatedAt",
+        (br."consoleLogs" IS NOT NULL AND br."consoleLogs" <> '') AS "hasConsoleLogs",
+        (br."networkLogs" IS NOT NULL AND br."networkLogs" <> '') AS "hasNetworkLogs",
+        (br.screenshot IS NOT NULL AND br.screenshot <> '') AS "hasScreenshot",
+        u.email AS "userEmail",
+        u.name AS "userName"
+      FROM bug_reports br
+      LEFT JOIN "user" u ON u.id = br."userId"
+      ${whereSql}
+      ORDER BY br."createdAt" DESC
+      LIMIT ${clampedLimit}
+      OFFSET ${offset}
+    `,
     prisma.bugReport.count({ where }),
   ]);
 
-  const flagsById = await loadAttachmentFlags(reports.map((r) => r.id));
-
   return {
-    reports: reports.map((r) => {
-      const flags = flagsById.get(r.id) ?? {
-        hasConsoleLogs: false,
-        hasNetworkLogs: false,
-        hasScreenshot: false,
-      };
-      return {
-        id: r.id,
-        source: r.source,
-        status: r.status,
-        description: r.description,
-        bugType: r.bugType ?? null,
-        isAnonymous: r.isAnonymous,
-        ...maskReporter(r),
-        // Bodies omitted from list; flags drive UI enablement. Full blobs via getBugReportById.
-        consoleLogs: null as string | null,
-        networkLogs: null as string | null,
-        screenshot: null as string | null,
-        hasConsoleLogs: flags.hasConsoleLogs,
-        hasNetworkLogs: flags.hasNetworkLogs,
-        hasScreenshot: flags.hasScreenshot,
-        pageUrl: r.pageUrl,
-        userAgent: r.userAgent,
-        context: r.context,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      };
-    }),
+    reports: reports.map((r) => ({
+      id: r.id,
+      source: r.source,
+      status: r.status,
+      description: r.description,
+      bugType: r.bugType ?? null,
+      isAnonymous: r.isAnonymous,
+      ...maskReporter(r),
+      // Bodies omitted from list; flags drive UI enablement. Full blobs via getBugReportById.
+      consoleLogs: null as string | null,
+      networkLogs: null as string | null,
+      screenshot: null as string | null,
+      hasConsoleLogs: Boolean(r.hasConsoleLogs),
+      hasNetworkLogs: Boolean(r.hasNetworkLogs),
+      hasScreenshot: Boolean(r.hasScreenshot),
+      pageUrl: r.pageUrl,
+      userAgent: r.userAgent,
+      context: r.context,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
     total,
     limit: clampedLimit,
     offset,
@@ -351,9 +349,11 @@ export async function getBugReportById(id: string) {
     consoleLogs: r.consoleLogs,
     networkLogs: r.networkLogs,
     screenshot: r.screenshot,
-    hasConsoleLogs: r.consoleLogs != null,
-    hasNetworkLogs: r.networkLogs != null,
-    hasScreenshot: r.screenshot != null,
+    // Presence means non-empty — matches the list SQL flags and the AI Tutor /
+    // QM mappers (`!= null && !== ''`) so viewers never open on an empty blob.
+    hasConsoleLogs: hasAttachment(r.consoleLogs),
+    hasNetworkLogs: hasAttachment(r.networkLogs),
+    hasScreenshot: hasAttachment(r.screenshot),
     pageUrl: r.pageUrl,
     userAgent: r.userAgent,
     context: r.context,
