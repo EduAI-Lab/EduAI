@@ -5,7 +5,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
-## [Week 11 — July 13–19, 2026]
 ## [Week 12 — July 20–26, 2026]
 
 ### Fixed
@@ -13,6 +12,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
 
 ## [Week 11 — July 13–19, 2026]
+
+### Added
+
+- [core] feat: Assist interactive `eduai-diagram` catalog (process-flow, gradient-descent, hierarchy, compare) with labeled tappable stages, plus display-only Step ladder → diagram → TLDR → Continue layout (storage anchors unchanged). (#1060, @Ayyhab, 2026-07-18) — [#1091](https://github.com/EduAI-Lab/EduAI/pull/1091)
 
 ### Changed
 
@@ -34,8 +37,6 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — [#929](https://github.com/EduAI-Lab/EduAI/pull/929)
 ### Added
 - [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
-
-- [core] feat: Assist interactive `eduai-diagram` catalog (process-flow, gradient-descent, hierarchy, compare) with labeled tappable stages, plus display-only Step ladder → diagram → TLDR → Continue layout (storage anchors unchanged). (#1060, @Ayyhab, 2026-07-18) — [#1091](https://github.com/EduAI-Lab/EduAI/pull/1091)
 
 ### Changed
 
