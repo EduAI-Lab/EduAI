@@ -1920,6 +1920,7 @@ ${buildEmptyCourseRagBlock()}`;
               model: aiModel,
               wordCap: adhdWordCap,
               profile: adhdProfile ?? "full_tutoring",
+              userText: lastUserText,
             })
           : emptyOversightAuditResult();
 

@@ -472,4 +472,45 @@ ${longBody}`,
     expect(result.text).toBe(urgent);
     expect(generateText).toHaveBeenCalledOnce();
   });
+
+  it("does not let requireDiagram bypass Top summary / Next? structure", async () => {
+    // Diagram-only rewrite: has a fence but no Top summary / Next? anchors.
+    vi.mocked(generateText).mockResolvedValue({
+      text: `Here is a diagram:
+
+\`\`\`eduai-diagram
+process-flow
+title: Steps
+One: First
+Two: Second
+\`\`\`
+`,
+      usage: { promptTokens: 8, completionTokens: 20 },
+    } as never);
+
+    const draft = `**Top summary**
+- Existing point without a diagram
+
+**Next?** Want the diagram?`;
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "Can you draw a diagram of the steps?",
+    });
+
+    // LLM ran (diagram was missing), but rewrite lacked structure → rejected.
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.method).not.toBe("llm");
+    // Saved reply must still expose Top summary + Next? (profile structure).
+    expect(result.text).toMatch(/\*\*Top summary\*\*/i);
+    expect(result.text).toMatch(/\*\*Next\?\*\*/);
+    expect(
+      isProfileStructuralPass(
+        computeAdhdResponseMetrics(result.text),
+        "full_tutoring",
+        result.text,
+      ),
+    ).toBe(true);
+  });
 });

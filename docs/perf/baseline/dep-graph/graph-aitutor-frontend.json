@@ -1,0 +1,217 @@
+{
+  "../../../../packages/types/dist/index.d.ts": [],
+  "app.css": [],
+  "components/ActivityDetailsCard.tsx": [
+    "lib/types.ts"
+  ],
+  "components/AddActivityPanel.tsx": [
+    "hooks/useCourseTopics.tsx",
+    "lib/api.ts"
+  ],
+  "components/AddCourseTopicsButton.tsx": [
+    "hooks/useCourseTopics.tsx"
+  ],
+  "components/EditActivityPanel.tsx": [
+    "lib/activityForm.ts",
+    "lib/types.ts"
+  ],
+  "components/ProgressBar.tsx": [],
+  "components/PublishStatusButton.tsx": [],
+  "components/StudentActivityFeedbackCard.tsx": [],
+  "components/StudentAiChat.tsx": [
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "components/StudentChatHistoryPanel.tsx": [],
+  "components/TopicSyncMappingDialog.tsx": [],
+  "components/TourButton.tsx": [
+    "components/TourProvider.tsx"
+  ],
+  "components/TourProvider.tsx": [],
+  "components/admin/AdminSettingsPanel.tsx": [],
+  "components/admin/BugReportsTab.tsx": [],
+  "components/ai-elements/conversation.tsx": [],
+  "components/ai-elements/message.tsx": [],
+  "components/ai-elements/prompt-input.tsx": [],
+  "components/bug-report/BugReportProvider.tsx": [],
+  "components/bug-report/useBugReport.ts": [
+    "components/bug-report/BugReportProvider.tsx"
+  ],
+  "components/courses/CourseAnalyticsPanel.tsx": [],
+  "components/courses/CourseEnrollmentsPanel.tsx": [],
+  "components/courses/CourseStudentMetricsPanel.tsx": [],
+  "components/courses/CourseSubmissionsPanel.tsx": [],
+  "components/dashboard/DashboardStatGrid.tsx": [],
+  "components/dashboard/RoleDashboard.tsx": [],
+  "components/layout/AiTutorNavMain.tsx": [],
+  "components/layout/AiTutorSidebar.tsx": [
+    "components/TourButton.tsx",
+    "components/layout/AiTutorNavMain.tsx",
+    "components/layout/AiTutorSidebarUser.tsx"
+  ],
+  "components/layout/AiTutorSidebarUser.tsx": [],
+  "components/layout/AppShell.tsx": [
+    "components/layout/AiTutorSidebar.tsx",
+    "components/layout/AppSiteHeader.tsx"
+  ],
+  "components/layout/AppSiteHeader.tsx": [
+    "components/bug-report/useBugReport.ts"
+  ],
+  "components/layout/ShellBreadcrumbs.tsx": [],
+  "components/rbac/AtRoleBanner.tsx": [],
+  "components/rbac/PermissionGate.tsx": [],
+  "components/theme-provider.tsx": [],
+  "components/theme-sync-initializer.tsx": [],
+  "components/ui/button-group.tsx": [],
+  "components/ui/input-group.tsx": [],
+  "hooks/useAtPermissions.ts": [],
+  "hooks/useBugReportCapture.ts": [],
+  "hooks/useCourseTopics.tsx": [
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "hooks/useLocalUser.tsx": [],
+  "lib/activityForm.ts": [
+    "lib/types.ts"
+  ],
+  "lib/admin-settings.ts": [],
+  "lib/api.ts": [
+    "lib/types.ts"
+  ],
+  "lib/apps.tsx": [
+    "lib/extension-urls.ts"
+  ],
+  "lib/client-auth.ts": [],
+  "lib/dashboard-stats.ts": [],
+  "lib/extension-urls.ts": [],
+  "lib/rbac/index.ts": [
+    "lib/rbac/nav.ts",
+    "lib/rbac/permissions.ts",
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/nav.ts": [
+    "lib/rbac/permissions.ts",
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/permissions.ts": [
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/types.ts": [],
+  "lib/role-routing.ts": [
+    "lib/types.ts"
+  ],
+  "lib/student-chat-history-types.ts": [],
+  "lib/student-chat-history.ts": [
+    "lib/api.ts",
+    "lib/student-chat-history-types.ts"
+  ],
+  "lib/tours/tour-definitions.ts": [
+    "lib/tours/tour-types.ts"
+  ],
+  "lib/tours/tour-engine.ts": [
+    "lib/tours/tour-storage.ts",
+    "lib/tours/tour-types.ts",
+    "lib/tours/tour-utils.ts"
+  ],
+  "lib/tours/tour-storage.ts": [
+    "lib/tours/tour-types.ts"
+  ],
+  "lib/tours/tour-types.ts": [],
+  "lib/tours/tour-utils.ts": [
+    "lib/tours/tour-types.ts"
+  ],
+  "lib/types.ts": [
+    "../../../../packages/types/dist/index.d.ts"
+  ],
+  "lib/utils.ts": [],
+  "root.tsx": [
+    "app.css"
+  ],
+  "routes.ts": [],
+  "routes/admin.tsx": [],
+  "routes/home.tsx": [
+    "hooks/useLocalUser.tsx",
+    "lib/role-routing.ts"
+  ],
+  "routes/instructor.course.tsx": [
+    "components/PublishStatusButton.tsx",
+    "components/courses/CourseAnalyticsPanel.tsx",
+    "components/courses/CourseEnrollmentsPanel.tsx",
+    "components/courses/CourseStudentMetricsPanel.tsx",
+    "components/courses/CourseSubmissionsPanel.tsx",
+    "components/rbac/PermissionGate.tsx",
+    "hooks/useAtPermissions.ts",
+    "hooks/useLocalUser.tsx",
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "routes/instructor.list.tsx": [
+    "components/ActivityDetailsCard.tsx",
+    "components/AddActivityPanel.tsx",
+    "components/AddCourseTopicsButton.tsx",
+    "components/EditActivityPanel.tsx",
+    "hooks/useCourseTopics.tsx",
+    "lib/activityForm.ts",
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "routes/instructor.topic.tsx": [
+    "components/PublishStatusButton.tsx",
+    "components/rbac/PermissionGate.tsx",
+    "hooks/useAtPermissions.ts",
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "routes/instructor.tsx": [
+    "components/PublishStatusButton.tsx",
+    "components/rbac/AtRoleBanner.tsx",
+    "components/rbac/PermissionGate.tsx",
+    "hooks/useAtPermissions.ts",
+    "hooks/useLocalUser.tsx",
+    "lib/api.ts",
+    "lib/extension-urls.ts",
+    "lib/types.ts"
+  ],
+  "routes/settings.tsx": [],
+  "routes/student.course.tsx": [
+    "components/ProgressBar.tsx",
+    "lib/types.ts"
+  ],
+  "routes/student.list.tsx": [
+    "components/ProgressBar.tsx",
+    "components/StudentActivityFeedbackCard.tsx",
+    "components/StudentAiChat.tsx",
+    "lib/api.ts",
+    "lib/types.ts"
+  ],
+  "routes/student.topic.tsx": [
+    "components/ProgressBar.tsx",
+    "lib/types.ts"
+  ],
+  "routes/student.tsx": [
+    "components/ProgressBar.tsx",
+    "components/rbac/AtRoleBanner.tsx",
+    "hooks/useLocalUser.tsx",
+    "lib/types.ts"
+  ],
+  "routes/unsupported-role.tsx": [
+    "hooks/useLocalUser.tsx",
+    "lib/role-routing.ts"
+  ],
+  "tests/setup.ts": [],
+  "tests/unit/AppSiteHeader.test.tsx": [],
+  "tests/unit/AtRoleBanner.test.tsx": [],
+  "tests/unit/BugReportProvider.test.tsx": [],
+  "tests/unit/BugReportsTab.test.tsx": [],
+  "tests/unit/PermissionGate.test.tsx": [],
+  "tests/unit/RoleDashboard.test.tsx": [],
+  "tests/unit/api.test.ts": [],
+  "tests/unit/dashboard-stats.test.ts": [],
+  "tests/unit/extension-urls.test.ts": [],
+  "tests/unit/nav.test.ts": [],
+  "tests/unit/rbac-permissions.test.ts": [],
+  "tests/unit/student-chat-history.test.ts": [],
+  "tests/unit/student.route.test.tsx": [],
+  "tests/unit/tour-engine.test.ts": [],
+  "tests/unit/useLocalUser.test.tsx": []
+}
