@@ -13,6 +13,7 @@
     "dev": "npx prisma migrate deploy && npx prisma generate && npm run seed:if-empty && nodemon src/index.js",
     "seed": "tsx prisma/seed.ts",
     "seed:if-empty": "tsx prisma/seed-if-empty.ts",
+    "seed:perf": "tsx prisma/seed-perf.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
