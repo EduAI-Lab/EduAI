@@ -1015,7 +1015,8 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const baselineAssessment = await Assessments.findOne({
     where: { id: Number(baselineAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'code', 'coreCourseId'], required: true }]
+    // `code` is Core-owned (#1072) — select only local columns, then enrich.
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
   });
   if (!baselineAssessment) {
     throw new Error('Baseline assessment not found or course mismatch');
@@ -1023,15 +1024,16 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const variantAssessment = await Assessments.findOne({
     where: { id: Number(variantAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'code', 'coreCourseId'], required: true }]
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
   });
   if (!variantAssessment) {
     throw new Error('Variant assessment not found or course mismatch');
   }
 
   const reviewCourse = baselineAssessment.course;
+  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie });
   const reviewCourseCode =
-    (reviewCourse?.code && String(reviewCourse.code).trim()) || `COURSE-${courseId}`;
+    (courseDetail?.code && String(courseDetail.code).trim()) || `COURSE-${courseId}`;
   const reviewCoreCourseId =
     typeof reviewCourse?.coreCourseId === 'string' && reviewCourse.coreCourseId.trim()
       ? reviewCourse.coreCourseId.trim()
