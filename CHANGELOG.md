@@ -7,6 +7,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Added
+
+- [monorepo] docs: Commit the #961 endpoint-latency baseline captured against the seeded UBC dev server (`--target=ubc-dev`, 163 endpoints, 162 clean, headline outlier `qm GET /api/course` at 2714 ms p50). (#961, @mochi_21, 2026-07-21) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Fixed
 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)

@@ -105,10 +105,16 @@ and warns when a pool is below `PERF_MUT_SAMPLES`). Design notes:
 - me / preferences / bug-reports run as a dedicated password-backed **perf actor** user, so the known
   seed users are never mutated. Core invitations use non-routable `*@perf.local` addresses.
 
-> **`response-times.json` is not committed in this PR.** A localhost capture hides the N+1s this
-> baseline exists to measure (small seed pools, warm PG cache, no network hop), so it isn't a valid
-> baseline. It's regenerated against the seeded UBC dev server after this PR merges — run
-> `npm run db:seed:perf && npm run perf:endpoints` there. Until then this section is the spec, not data.
+> **`response-times.json` — captured against the seeded UBC dev server** (`--target=ubc-dev`,
+> 2026-07-21; Core `dev.eduai.ok.ubc.ca`, AI-Tutor `dev.aitutor.eduai.ok.ubc.ca`,
+> QM `dev.questionmaker.eduai.ok.ubc.ca`). 163 endpoints measured — 162 clean, 0 partial errors.
+> Median p50/p95: core 61/120 ms (71 endpoints), ai-tutor 64/143 ms (47), qm 72/163 ms (45).
+> Headline outlier: `qm GET /api/course` **2714 ms p50 / 3152 ms p95** (~40× the app median);
+> next tier: `ai-tutor GET /api/admin/courses/:id/enrollments` 392 ms p50, `core GET /api/users`
+> 384 ms p50, `core GET /api/units/:dept/chats` 284 ms p50. Sole failure:
+> `core POST /api/courses` 422×15 — the harness still sends `term: "Fall"` while dev now requires
+> `'W1' | 'W2' | 'S1' | 'S2'` (schema drift; update the payload in `scripts/perf-baseline.mjs`
+> before the next full run). `errors.json` is committed alongside; `errors.log` is gitignored (`*.log`).
 
 **Two real app bugs surfaced by an earlier run (both fixed this session):**
 - `core GET /api/courses/:id/materials` → 500 `Headers is required` — loader passed a raw `Request` to
