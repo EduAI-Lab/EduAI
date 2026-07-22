@@ -33,6 +33,9 @@ export function getEduAiChatUrl() {
  *
  * Pass `options.cookie` (the raw Cookie header forwarded from the request)
  * for user-scoped calls. Omit for unauthenticated endpoints.
+ * Pass `options.signal` (e.g. `AbortSignal.timeout(3000)`) to bound how long
+ * a caller will wait — a Core that's up but slow/hung otherwise blocks the
+ * socket with no timeout of its own.
  */
 async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === 'string' ? options.cookie : '';
@@ -46,6 +49,7 @@ async function requestEduAi(path, options = {}) {
       ...options.headers,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -278,7 +282,7 @@ export async function listEduAiCoursesServiceKey() {
   }
 }
 
-export async function listEduAiCourseTopics(externalCourseId) {
+export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
@@ -286,6 +290,7 @@ export async function listEduAiCourseTopics(externalCourseId) {
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
   });
   try {
     const parsed = EduAiTopicListSchema.parse(data);

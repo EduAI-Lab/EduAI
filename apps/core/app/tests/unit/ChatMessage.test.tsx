@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatMessage, coerceMessageContent } from "~/components/chat/chat-message";
 import type { Message } from "ai";
 
@@ -87,6 +87,160 @@ describe("ChatMessage — AI message", () => {
       <ChatMessage message={aiMessage} highlightRole="inactive" />,
     );
     expect(container.querySelector(".chat-message--inactive")).toBeInTheDocument();
+  });
+
+  it("renders an animated eduai-diagram widget instead of a code fence", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `Intro
+
+\`\`\`eduai-diagram
+gradient-descent
+\`\`\`
+
+Outro`,
+    };
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    expect(container.querySelector('[data-eduai-diagram="gradient-descent"]')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /replay/i })).toBeInTheDocument();
+    expect(screen.queryByText(/```eduai-diagram/)).not.toBeInTheDocument();
+  });
+
+  it("does not turn eduai-diagram fences into widgets outside Assist mode", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: Baseline
+Introduce: Step one
+\`\`\``,
+    };
+    const { container } = render(<ChatMessage message={withDiagram} />);
+    expect(container.querySelector("[data-eduai-diagram]")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /replay/i })).not.toBeInTheDocument();
+  });
+
+  it("renders labeled process-flow stages and shows detail on tap", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: How a bill becomes law
+Introduce bill: Member files the proposal
+Committee: Experts study and amend
+Floor vote: Chamber decides
+Become law: President signs
+\`\`\``,
+    };
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
+    expect(diagram).toBeInTheDocument();
+    expect(screen.getByText("How a bill becomes law")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Committee" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Committee" }));
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+Experts study and amend/);
+  });
+
+  it("keeps process-flow stage selection after autoplay timers fire", () => {
+    vi.useFakeTimers();
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+process-flow
+title: Bill
+Introduce Bill: file
+Committee: review
+Vote: decide
+Law: sign
+\`\`\``,
+    };
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Committee" }));
+    const diagram = container.querySelector('[data-eduai-diagram="process-flow"]');
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
+    vi.advanceTimersByTime(5000);
+    // Detail panel must still describe Committee, not the last autoplay stage.
+    expect(diagram?.textContent).toMatch(/Committee\s+—\s+review/);
+    expect(diagram?.textContent).not.toMatch(/Law\s+—\s+sign/);
+    vi.useRealTimers();
+  });
+
+  it("renders gradient-descent stage chips and detail on tap", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: `\`\`\`eduai-diagram
+gradient-descent
+title: Gradient descent
+Start high: Pick a starting point
+Compute slope: Measure steepness
+Step downhill: Move opposite the slope
+\`\`\``,
+    };
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    const diagram = container.querySelector('[data-eduai-diagram="gradient-descent"]');
+    expect(diagram).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Compute slope" }));
+    expect(diagram?.textContent).toMatch(/Compute slope\s+—\s+Measure steepness/);
+  });
+
+  it("renders hierarchy and compare stage detail on tap", () => {
+    const hierarchy: Message = {
+      ...aiMessage,
+      id: "h",
+      content: `\`\`\`eduai-diagram
+hierarchy
+title: Neuron
+Neuron: Whole cell
+Dendrites: Receive
+Axon: Send
+\`\`\``,
+    };
+    const { container, unmount } = render(
+      <ChatMessage message={hierarchy} assistiveDisplay />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dendrites" }));
+    expect(
+      container.querySelector('[data-eduai-diagram="hierarchy"]')?.textContent,
+    ).toMatch(/Dendrites\s+—\s+Receive/);
+    unmount();
+
+    const compare: Message = {
+      ...aiMessage,
+      id: "c",
+      content: `\`\`\`eduai-diagram
+compare
+title: TCP vs UDP
+TCP: Reliable
+UDP: Fast
+\`\`\``,
+    };
+    const compareRender = render(
+      <ChatMessage message={compare} assistiveDisplay />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "UDP" }));
+    expect(
+      compareRender.container.querySelector('[data-eduai-diagram="compare"]')
+        ?.textContent,
+    ).toMatch(/UDP\s+—\s+Fast/);
+  });
+
+  it("falls back unknown type ids to process-flow animation", () => {
+    const withDiagram: Message = {
+      ...aiMessage,
+      content: "```eduai-diagram\nphotosynthesis-cycle\n```",
+    };
+    const { container } = render(
+      <ChatMessage message={withDiagram} assistiveDisplay />,
+    );
+    expect(container.querySelector('[data-eduai-diagram="process-flow"]')).toBeInTheDocument();
   });
 });
 
