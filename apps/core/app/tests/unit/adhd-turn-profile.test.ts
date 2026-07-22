@@ -119,6 +119,17 @@ describe("resolveAdhdTurnProfile", () => {
   it("defaults empty user text to full tutoring", () => {
     expect(resolveAdhdTurnProfile({ userText: "" })).toBe("full_tutoring");
   });
+
+  it("classifies short diagram asks as full tutoring (not brief)", () => {
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "plz make me a diagram for this",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("full_tutoring");
+    expect(resolveAdhdTurnProfile({ userText: "draw it" })).toBe("full_tutoring");
+    expect(resolveAdhdTurnProfile({ userText: "show me a diagram" })).toBe("full_tutoring");
+  });
 });
 
 describe("getProfileRequirements", () => {

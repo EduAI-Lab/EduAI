@@ -40,6 +40,7 @@ async function main() {
       name: "Smoke Preview",
       email: testEmail,
       role: "STUDENT",
+      idempotencyKey: `smoke-preview-${stamp}`,
     },
     toolExec,
   );
@@ -71,6 +72,7 @@ async function main() {
       email: testEmail,
       role: "STUDENT",
       isActive: true,
+      idempotencyKey: `smoke-create-user-${stamp}`,
     },
     toolExec,
   );
@@ -121,6 +123,7 @@ async function main() {
           userEmail: testEmail,
           role: "STUDENT",
           courseCode: course.code,
+          idempotencyKey: `smoke-enroll-preview-${stamp}`,
         },
         toolExec,
       );
