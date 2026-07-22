@@ -179,6 +179,30 @@ beforeEach(() => {
   capturedHistoryOnSelect = undefined;
 });
 
+// ── #1004 ─────────────────────────────────────────────────────────────────
+
+describe('StudentAiChat — default model selection from isDefaultTutor (#1004)', () => {
+  it('selects the model flagged isDefaultTutor by the API, not the first catalog entry', async () => {
+    listAiModels.mockResolvedValue([
+      { id: 'm1', modelId: 'openai:gpt-4o-mini', modelName: 'GPT-4o mini' },
+      { id: 'm2', modelId: 'google:gemini-2.5-pro', modelName: 'Gemini 2.5 Pro', isDefaultTutor: true },
+    ]);
+    sendGuideMessage.mockResolvedValue({ message: 'Here is a hint.', chatId: null });
+    renderChat();
+
+    // Wait for the async model-catalog fetch (and the resulting default-model
+    // selection) to land before sending, otherwise we'd race the effect.
+    await waitFor(() => expect(screen.getByLabelText('Model')).not.toBeDisabled());
+
+    await typeAndSend('I need a hint');
+    await waitFor(() => expect(sendGuideMessage).toHaveBeenCalledTimes(1));
+
+    expect(sendGuideMessage.mock.calls[0][1]).toMatchObject({
+      modelId: 'google:gemini-2.5-pro',
+    });
+  });
+});
+
 // ── #998 ──────────────────────────────────────────────────────────────────
 
 describe('StudentAiChat — in-flight guard (#998)', () => {

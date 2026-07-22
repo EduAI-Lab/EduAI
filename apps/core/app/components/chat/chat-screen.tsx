@@ -194,6 +194,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     return () => el.removeAttribute("data-assistive-focus-mode");
   }, [focusMode]);
 
+  // Lock document scroll while chat owns an internal message scroller — otherwise
+  // the page can grow past the composer and show empty space underneath.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   useAssistiveReorientation({
     enabled: assistive && reorientationEpoch > 0,
     adhdAssist,
@@ -461,12 +476,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           </Tooltip>
         </TooltipProvider>
       }
-      insetClassName="min-h-0"
-      mainClassName="flex flex-1 min-h-0 flex-col"
+      insetClassName="min-h-0 h-svh max-h-svh overflow-hidden"
+      mainClassName="flex flex-1 min-h-0 flex-col overflow-hidden"
+      providerClassName="h-svh max-h-svh overflow-hidden"
     >
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <ChatHistoryRail {...historyListProps} />
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ChatCourseScopedView {...sharedViewProps} />
         </div>
       </div>
