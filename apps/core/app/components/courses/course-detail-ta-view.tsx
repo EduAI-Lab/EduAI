@@ -34,6 +34,7 @@ import {
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
+import { DetailPageScaffold } from '@eduai/ui'
 import { resolvePaletteAccent } from '@eduai/ui'
 import { StatusBadge } from '@eduai/ui'
 import { Avatar } from '@eduai/ui'
@@ -189,7 +190,20 @@ export function CourseDetailTaView({
   const readyMaterials = materials.filter((m) => m.status === 'READY').length
 
   return (
-    <div className="flex flex-col gap-6">
+    <DetailPageScaffold
+      hero={
+        <CourseHeroCard
+          code={course.code}
+          term={course.term}
+          year={course.year}
+          name={course.name}
+          description={course.description}
+          accentColor={resolvePaletteAccent(course.id)}
+          topRightBadges={topRightBadges}
+          topics={topics.map((t) => t.name)}
+        />
+      }
+    >
       {/* Delete material confirmation (TA own uploads only) */}
       <AlertDialog
         open={!!deleteMaterialId}
@@ -317,18 +331,6 @@ export function CourseDetailTaView({
           </DialogContent>
         </Dialog>
       )}
-
-      {/* B2: Topics in hero, badges top-right */}
-      <CourseHeroCard
-        code={course.code}
-        term={course.term}
-        year={course.year}
-        name={course.name}
-        description={course.description}
-        accentColor={resolvePaletteAccent(course.id)}
-        topRightBadges={topRightBadges}
-        topics={topics.map((t) => t.name)}
-      />
 
       <PageTabs defaultValue="overview">
         <PageTabsList>
@@ -620,6 +622,6 @@ export function CourseDetailTaView({
           </div>
         </PageTabsContent>
       </PageTabs>
-    </div>
+    </DetailPageScaffold>
   )
 }

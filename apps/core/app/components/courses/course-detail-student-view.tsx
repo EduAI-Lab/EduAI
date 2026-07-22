@@ -8,6 +8,7 @@ import {
   PageTabsTrigger,
   PageTabsContent,
   CourseHeroCard,
+  DetailPageScaffold,
   StatusBadge,
   Avatar,
   courseThemeVars,
@@ -108,26 +109,29 @@ export function CourseDetailStudentView({
   const topRightBadges: string[] = ['Enrolled', ...(hasAi ? ['AI-enabled'] : [])]
 
   return (
-    <div className="flex flex-col gap-6" style={courseThemeVars(accentColor)}>
-      {/* B2: Topics folded into hero; badges moved to top-right */}
-      <CourseHeroCard
-        code={course.code}
-        term={course.term}
-        year={course.year}
-        name={displayName}
-        description={course.description}
-        accentColor={accentColor}
-        topRightBadges={topRightBadges}
-        topics={topics.map((t) => t.name)}
-        headerAction={
-          <CourseCardCustomizePopover
-            courseName={course.name}
-            courseCode={course.code}
-            preference={cardPreference}
-            onApply={(update) => setCoursePreference(course.id, update)}
-          />
-        }
-      />
+    <DetailPageScaffold
+      style={courseThemeVars(accentColor)}
+      hero={
+        <CourseHeroCard
+          code={course.code}
+          term={course.term}
+          year={course.year}
+          name={displayName}
+          description={course.description}
+          accentColor={accentColor}
+          topRightBadges={topRightBadges}
+          topics={topics.map((t) => t.name)}
+          headerAction={
+            <CourseCardCustomizePopover
+              courseName={course.name}
+              courseCode={course.code}
+              preference={cardPreference}
+              onApply={(update) => setCoursePreference(course.id, update)}
+            />
+          }
+        />
+      }
+    >
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -320,6 +324,6 @@ export function CourseDetailStudentView({
           </PageTabsContent>
         )}
       </PageTabs>
-    </div>
+    </DetailPageScaffold>
   )
 }

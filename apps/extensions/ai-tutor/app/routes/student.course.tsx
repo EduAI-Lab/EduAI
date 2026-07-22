@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { IconFolders } from '@tabler/icons-react';
-import { Card, CourseHeroCard, EmptyState } from '@eduai/ui';
+import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from '@eduai/ui';
 import { ModuleCard } from '../components/courses/ModuleCard';
 import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import type { Course, Module } from '../lib/types';
@@ -49,18 +49,21 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   ]);
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <CourseHeroCard
-        code={courseCode(course)}
-        term={courseTerm(course)}
-        year={courseYear(course)}
-        name={courseName(course)}
-        description={course.description}
-        accentColor={accentForCourse(course)}
-        topics={topics.map((topic) => topic.name)}
-        topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <CourseHeroCard
+          code={courseCode(course)}
+          term={courseTerm(course)}
+          year={courseYear(course)}
+          name={courseName(course)}
+          description={course.description}
+          accentColor={accentForCourse(course)}
+          topics={topics.map((topic) => topic.name)}
+          topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
+        />
+      }
+    >
       {moduleList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
           <EmptyState
@@ -87,6 +90,6 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
           ))}
         </div>
       )}
-    </div>
+    </DetailPageScaffold>
   );
 }
