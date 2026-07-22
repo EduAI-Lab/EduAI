@@ -16,6 +16,11 @@ import {
   withStructuralPass,
   type AdhdStructuralCompliance,
 } from "~/lib/ai/adhd-metrics";
+import {
+  ensureDiagramBeforeNext,
+  hasEduaiDiagramFence,
+} from "~/lib/ai/adhd-assist";
+import { userRequestedDiagram } from "~/lib/ai/adhd-turn-profile";
 
 export const ADHD_OVERSIGHT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode chat responses.
 Rewrite the draft to satisfy ALL structural rules without changing facts, numbers, or meaning.
@@ -24,12 +29,26 @@ REQUIRED MARKDOWN STRUCTURE:
 1) First line MUST be exactly: **Top summary**
 2) Then 1-3 bullet points that answer the learner's question.
 3) If steps are needed, add a "### Step ladder" section with at most 5 numbered steps.
-4) End with a standalone line: **Next?** <one short continuation offer>
+4) If a diagram is present, keep exactly one fenced eduai-diagram block (preferred) or ASCII text fence AFTER the body/steps and BEFORE **Next?**. Do not invent a diagram if the draft had none; do not split one diagram into multiple frames.
+5) End with a standalone line: **Next?** <one short continuation offer>
 
 LENGTH: Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.
 Remove any urgency or time-pressure wording (e.g. "quickly", "fast", "hurry", "right away"); never rush the learner.
 No emojis. No filler ("Great question!", "Certainly!").
 Return ONLY the rewritten response.`;
+
+const ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM = `
+
+DIAGRAM REQUIRED (learner asked for a visual):
+- You MUST include exactly one markdown fenced code block tagged eduai-diagram.
+- Known type ids: process-flow (default), gradient-descent, hierarchy, compare.
+- Stored order MUST be: **Top summary** (concise 1-line-per-stage bullets) →
+  ### Step ladder (EVERY diagram stage as a numbered step — not just step 1) →
+  eduai-diagram fence → **Next?**.
+- No freeform intro paragraph and no duplicate bullet list outside those sections.
+- Stage names in Top summary, Step ladder, and the fence MUST match in order.
+- Do NOT describe the diagram in prose instead of emitting the fence.
+- Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
 const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
 The learner asked about a second topic while another is in progress.
@@ -43,20 +62,30 @@ RULES:
 - No emojis. No filler.
 Return ONLY the rewritten response.`;
 
-export function buildOversightRewriteSystem(profile: AdhdTurnProfile, wordCap: number): string {
+export function buildOversightRewriteSystem(
+  profile: AdhdTurnProfile,
+  wordCap: number,
+  options?: { requireDiagram?: boolean },
+): string {
   if (profile === "redirect") {
     return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
   }
+  let system: string;
   if (profile === "brief_clarification") {
-    return ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
+    system = ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
+      `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
+      `Hard cap ${wordCap} words.`,
+    );
+  } else {
+    system = ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
       `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
       `Hard cap ${wordCap} words.`,
     );
   }
-  return ADHD_OVERSIGHT_REWRITE_SYSTEM.replace(
-    `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
-    `Hard cap ${wordCap} words.`,
-  );
+  if (options?.requireDiagram) {
+    system += ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM;
+  }
+  return system;
 }
 
 export type OversightMethod =
@@ -302,11 +331,15 @@ export async function auditAndMaybeRewrite(args: {
   model: LanguageModel;
   wordCap?: number;
   profile?: AdhdTurnProfile;
+  userText?: string;
 }): Promise<AuditAndMaybeRewriteResult> {
   const wordCap = args.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = args.profile ?? "full_tutoring";
   const trimmed = (args.draft ?? "").trim();
   const profileReq = getProfileRequirements(profile);
+  const requireDiagram =
+    userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
+  const diagramOpts = { userText: args.userText };
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
@@ -319,6 +352,23 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   if (!profileReq.runDean) {
+    // Even when Dean is off, never ship a diagram-request reply with no fence.
+    if (requireDiagram) {
+      const withDiagram = ensureDiagramBeforeNext(trimmed, diagramOpts);
+      return {
+        text: withDiagram,
+        rewritten: withDiagram !== trimmed,
+        method: withDiagram !== trimmed ? "deterministic" : "none",
+        beforeMetrics,
+        afterMetrics: withProfileStructuralPass(
+          computeAdhdResponseMetrics(withDiagram, { wordCap }),
+          profile,
+          withDiagram,
+        ),
+        oversightDurationMs: 0,
+        oversightUsage: null,
+      };
+    }
     return {
       text: trimmed,
       rewritten: false,
@@ -345,7 +395,12 @@ export async function auditAndMaybeRewrite(args: {
   // Content pass = profile structure AND no urgency language. Citations are
   // measured (metrics.hasSources) but not enforced here: the Dean has no access
   // to the source material and must never confabulate a Sources footer.
-  if (passesProfileStructure(beforeMetrics, profile, trimmed) && beforeMetrics.noUrgency) {
+  // Diagram requests with no fence never early-exit — they need a rewrite/inject.
+  if (
+    !requireDiagram &&
+    passesProfileStructure(beforeMetrics, profile, trimmed) &&
+    beforeMetrics.noUrgency
+  ) {
     return {
       text: trimmed,
       rewritten: false,
@@ -358,7 +413,7 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   const deterministic = tryDeterministicStructuralFix(trimmed, { wordCap, profile });
-  if (deterministic) {
+  if (deterministic && !requireDiagram) {
     const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(deterministic, { wordCap }),
       profile,
@@ -386,11 +441,17 @@ export async function auditAndMaybeRewrite(args: {
       model: args.model,
       temperature: 0.2,
       maxTokens: resolveOversightRewriteMaxTokens(wordCap),
-      system: buildOversightRewriteSystem(profile, wordCap),
-      prompt: `DRAFT TO REWRITE:\n\n${trimmed}`,
+      system: buildOversightRewriteSystem(profile, wordCap, { requireDiagram }),
+      prompt: requireDiagram
+        ? `The learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.\n\nLEARNER MESSAGE:\n${args.userText ?? "(unknown)"}\n\nDRAFT TO REWRITE:\n\n${trimmed}`
+        : `DRAFT TO REWRITE:\n\n${trimmed}`,
     });
 
-    const llmText = (rewritten ?? "").trim();
+    let llmText = (rewritten ?? "").trim();
+    if (requireDiagram && llmText && !hasEduaiDiagramFence(llmText)) {
+      llmText = ensureDiagramBeforeNext(llmText, diagramOpts);
+    }
+
     const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(llmText, { wordCap }),
       profile,
@@ -399,28 +460,40 @@ export async function auditAndMaybeRewrite(args: {
 
     // When urgency triggered the rewrite, only accept a result that is clean;
     // a rewrite that still trips urgency is rejected and the draft is kept.
+    // requireDiagram must NOT bypass profileStructuralPass — diagram inject still
+    // needs valid Top summary / Next? (or a structural score gain) before adopt.
     const urgencyWasProblem = !beforeMetrics.noUrgency;
+    const diagramOk = !requireDiagram || hasEduaiDiagramFence(llmText);
+    const structuralOk =
+      afterMetrics.profileStructuralPass ||
+      profileStructuralScore(afterMetrics, profile, llmText) >
+        profileStructuralScore(beforeMetrics, profile, trimmed);
     const useLlm =
       llmText.length > 0 &&
       afterMetrics.underCap &&
+      diagramOk &&
       (!urgencyWasProblem || afterMetrics.noUrgency) &&
-      (afterMetrics.profileStructuralPass ||
-        profileStructuralScore(afterMetrics, profile, llmText) >
-          profileStructuralScore(beforeMetrics, profile, trimmed));
+      structuralOk;
 
-    const finalText = useLlm ? llmText : trimmed;
-    const finalMetrics = useLlm
-      ? afterMetrics
-      : beforeMetrics;
+    let finalText = useLlm ? llmText : trimmed;
+    if (requireDiagram && !hasEduaiDiagramFence(finalText)) {
+      finalText = ensureDiagramBeforeNext(finalText, diagramOpts);
+    }
+    const finalMetrics = withProfileStructuralPass(
+      computeAdhdResponseMetrics(finalText, { wordCap }),
+      profile,
+      finalText,
+    );
 
     // `llm_rejected`: the model ran but its rewrite was not adopted (truncated,
     // over word cap, or no structural gain). Distinct from "none" — which means
     // we never needed the LLM — so telemetry can surface drafts shipped
     // non-compliant despite oversight (#714).
+    const rewrittenOut = finalText !== trimmed;
     return {
       text: finalText,
-      rewritten: useLlm,
-      method: useLlm ? "llm" : "llm_rejected",
+      rewritten: rewrittenOut,
+      method: useLlm ? "llm" : rewrittenOut ? "deterministic" : "llm_rejected",
       beforeMetrics,
       afterMetrics: finalMetrics,
       oversightDurationMs: Date.now() - oversightStartedAt,
@@ -431,12 +504,20 @@ export async function auditAndMaybeRewrite(args: {
     };
   } catch (error) {
     console.error("[adhd-oversight] LLM rewrite failed", error);
+    const fallback =
+      requireDiagram && !hasEduaiDiagramFence(trimmed)
+        ? ensureDiagramBeforeNext(trimmed, diagramOpts)
+        : trimmed;
     return {
-      text: trimmed,
-      rewritten: false,
-      method: "llm_failed",
+      text: fallback,
+      rewritten: fallback !== trimmed,
+      method: fallback !== trimmed ? "deterministic" : "llm_failed",
       beforeMetrics,
-      afterMetrics: beforeMetrics,
+      afterMetrics: withProfileStructuralPass(
+        computeAdhdResponseMetrics(fallback, { wordCap }),
+        profile,
+        fallback,
+      ),
       oversightDurationMs: Date.now() - oversightStartedAt,
       oversightUsage: null,
     };
