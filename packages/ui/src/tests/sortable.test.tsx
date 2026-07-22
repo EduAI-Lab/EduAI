@@ -35,10 +35,35 @@ describe("Sortable", () => {
     expect(screen.getAllByRole("button", { name: /Drag item/ })).toHaveLength(3);
   });
 
-  it("still renders children when disabled (no DnD context)", () => {
+  it("still renders children when disabled (context stays mounted, dragging off)", () => {
     renderList(true);
     expect(screen.getByText("Item 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Drag item 2" })).toBeInTheDocument();
+  });
+
+  it("keeps SortableItem working when only the provider is disabled mid-request", () => {
+    // Callers flip `disabled` on the provider while a reorder persists; items
+    // keep calling useSortable, so the context must stay mounted.
+    const ids = [1, 2];
+    const { rerender } = render(
+      <SortableProvider ids={ids} onReorder={vi.fn()} strategy="list" disabled={false}>
+        {ids.map((id) => (
+          <SortableItem key={id} id={id}>
+            {({ handleProps }) => <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />}
+          </SortableItem>
+        ))}
+      </SortableProvider>,
+    );
+    rerender(
+      <SortableProvider ids={ids} onReorder={vi.fn()} strategy="list" disabled={true}>
+        {ids.map((id) => (
+          <SortableItem key={id} id={id}>
+            {({ handleProps }) => <DragHandle handleProps={handleProps} label={`Drag item ${id}`} />}
+          </SortableItem>
+        ))}
+      </SortableProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Drag item 1" })).toBeInTheDocument();
   });
 
   it("DragHandle stops click propagation so it does not trigger a parent card", () => {

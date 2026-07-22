@@ -10,8 +10,10 @@
  *
  * `SortableProvider` owns the DnD context and translates a drop into a single
  * `onReorder(orderedIds)` call with the full new order; persistence and
- * optimistic update are the caller's job. When `disabled`, it renders children
- * untouched (no context, no handles active) so non-editors get plain cards.
+ * optimistic update are the caller's job. When `disabled`, the context stays
+ * mounted (so `SortableItem`'s `useSortable` always has a provider — callers
+ * flip `disabled` mid-request while reordering) but dragging is switched off
+ * via `useSortable({ disabled })` and a guarded drag-end handler.
  */
 import * as React from "react"
 import {
@@ -43,10 +45,17 @@ export interface SortableProviderProps {
   onReorder: (orderedIds: number[]) => void
   /** Grids use rect strategy; vertical lists use list strategy. */
   strategy?: "grid" | "list"
-  /** When true, renders children without any DnD wiring. */
+  /** When true, dragging is disabled (the context stays mounted). */
   disabled?: boolean
   children: React.ReactNode
 }
+
+/**
+ * Lets `SortableItem` inherit the provider's `disabled` state so the DnD
+ * context can stay mounted while dragging is off (e.g. during a persist
+ * request) without every caller having to thread `disabled` down twice.
+ */
+const SortableDisabledContext = React.createContext(false)
 
 export function SortableProvider({
   ids,
@@ -62,11 +71,9 @@ export function SortableProvider({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  if (disabled) return <>{children}</>
-
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (!over || active.id === over.id) return
+    if (disabled || !over || active.id === over.id) return
     const oldIndex = ids.indexOf(Number(active.id))
     const newIndex = ids.indexOf(Number(over.id))
     if (oldIndex < 0 || newIndex < 0) return
@@ -84,7 +91,9 @@ export function SortableProvider({
         items={ids}
         strategy={strategy === "list" ? verticalListSortingStrategy : rectSortingStrategy}
       >
-        {children}
+        <SortableDisabledContext.Provider value={disabled}>
+          {children}
+        </SortableDisabledContext.Provider>
       </SortableContext>
     </DndContext>
   )
@@ -106,9 +115,10 @@ export interface SortableItemProps {
 }
 
 export function SortableItem({ id, disabled = false, className, children }: SortableItemProps) {
+  const providerDisabled = React.useContext(SortableDisabledContext)
   const { setNodeRef, transform, transition, attributes, listeners, isDragging } = useSortable({
     id,
-    disabled,
+    disabled: disabled || providerDisabled,
   })
 
   const style: React.CSSProperties = {

@@ -324,7 +324,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     const current = activities;
     const byId = new Map(current.map((a) => [a.id, a]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
-    if (next.length !== current.length) return;
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The activity list changed while reordering. Refreshing — please try again.');
+      await refreshActivities();
+      return;
+    }
 
     setActivities(next);
     setReorderingActivities(true);
@@ -333,6 +339,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setActivities(updated);
     } catch (error) {
       console.error('Failed to reorder activities', error);
+      toast.error('Failed to reorder activities. The previous order was restored.');
       setActivities(current);
     } finally {
       setReorderingActivities(false);
