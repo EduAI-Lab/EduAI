@@ -25,7 +25,6 @@ import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
   Button,
   Card,
-  CardContent,
   ConfirmDialog,
   CourseHeroCard,
   Dialog,
@@ -34,6 +33,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Input,
   Label,
   PageTabs,
@@ -626,12 +626,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
           {oModules.length === 0 ? (
             <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <IconLayoutGrid size={22} aria-hidden="true" />
-                </div>
-                <p className="text-sm text-muted-foreground">No modules yet.</p>
-              </CardContent>
+              <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

@@ -33,6 +33,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Input,
   Label,
   Select,
@@ -687,17 +688,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
       {oLessons.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconNotebook size={22} aria-hidden="true" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold text-foreground">No lessons yet</h3>
-              <p className="text-sm text-muted-foreground">
-                Add a lesson, or import one from another course to get started.
-              </p>
-            </div>
-          </CardContent>
+          <EmptyState
+            icon={<IconNotebook size={22} aria-hidden="true" />}
+            title="No lessons yet"
+            description="Add a lesson, or import one from another course to get started."
+          />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
