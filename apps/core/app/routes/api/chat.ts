@@ -56,6 +56,12 @@ import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-a
 import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
+  buildCourseScopeRedirectMessage,
+  courseScopeGuardrailEnabled,
+  resolveCourseScopeVerdict,
+  type CourseScopeVerdict,
+} from "~/lib/ai/course-scope-guardrail";
+import {
   buildChatToolRegistry,
   buildToolCallingSystemPrompt,
 } from "~/lib/ai/chat-tools";
@@ -124,7 +130,10 @@ import {
   type HybridRagHit,
 } from "~/lib/chat-rag";
 import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
-import { withResolvedModelMetadata } from "~/lib/chat/chat-message-metadata";
+import {
+  withResolvedModelMetadata,
+  withCourseScopeRedirectMetadata,
+} from "~/lib/chat/chat-message-metadata";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -725,8 +734,13 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
-    let effectiveCourse: { responseStyleTags: string[]; aiInstructions: string } | null =
-      null;
+    let effectiveCourse: {
+      name: string;
+      code: string;
+      description: string | null;
+      responseStyleTags: string[];
+      aiInstructions: string;
+    } | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -746,6 +760,9 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       courseAccess = access;
       effectiveCourse = {
+        name: course.name,
+        code: course.code,
+        description: course.description ?? null,
         responseStyleTags: course.responseStyleTags ?? [],
         aiInstructions: course.aiInstructions ?? null,
       };
@@ -924,6 +941,27 @@ export async function action({ request }: ActionFunctionArgs) {
     const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
     const hasCourse = Boolean(effectiveCourseId);
     const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
+
+    // Kick off the course-scope classifier alongside the RAG prefetch below so
+    // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
+    // latency. Web-app chat only (#skip for admin preview and service-key
+    // callers — AI Tutor/Question Maker — per design; QM's generation-style
+    // prompts would false-positive against an "off-topic" gate).
+    const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
+      courseScopeGuardrailEnabled() &&
+      effectiveCourse &&
+      !isServiceKeyCaller &&
+      chatMode !== "admin"
+        ? resolveCourseScopeVerdict({
+            message: lastUserMessageTextForRouting,
+            context: {
+              courseName: effectiveCourse.name,
+              courseCode: effectiveCourse.code,
+              courseDescription: effectiveCourse.description,
+              aiInstructions: effectiveCourse.aiInstructions,
+            },
+          })
+        : null;
 
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
@@ -1184,6 +1222,50 @@ export async function action({ request }: ActionFunctionArgs) {
     await appendMessages(
       normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
     );
+
+    // Course-scope guardrail: resolve the classifier promise kicked off
+    // earlier (alongside the RAG prefetch) and short-circuit before touching
+    // the fleet admission slot, energy sidecar, or streamText() at all.
+    const courseScopeVerdict = courseScopeCheckPromise ? await courseScopeCheckPromise : null;
+    if (courseScopeVerdict?.blocked) {
+      const redirectText = buildCourseScopeRedirectMessage(effectiveCourse?.name ?? null);
+      await appendMessages([
+        withCourseScopeRedirectMetadata({
+          id: randomUUID(),
+          role: "assistant",
+          content: redirectText,
+        }),
+      ]);
+      chatApiDebug("Course scope guardrail redirected turn", {
+        chatId: chat.id,
+        courseId: effectiveCourseId,
+        confidence: courseScopeVerdict.classification?.confidence ?? null,
+      });
+      if (streaming) {
+        return createDataStreamResponse({
+          headers: chat.id ? { "X-Chat-Id": chat.id } : {},
+          execute: (dataStream) => {
+            dataStream.write(formatDataStreamPart("text", redirectText));
+            dataStream.write(
+              formatDataStreamPart("finish_message", { finishReason: "stop" }),
+            );
+          },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          content: redirectText,
+          model,
+          finishReason: "stop",
+          courseCode,
+          chatId: chat?.id,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
     const userQuestion = extractMessageText(lastUserMessage);

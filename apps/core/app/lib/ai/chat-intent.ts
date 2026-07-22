@@ -32,7 +32,7 @@ const COURSE_RAG_KEYWORDS = [
   "about the",
 ];
 
-const GREETING_PATTERN = /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/i;
+export const GREETING_PATTERN = /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/i;
 
 const GENERIC_KNOWLEDGE_PATTERN = /^what is\b/i;
 

@@ -1,5 +1,6 @@
 export type ChatMessageMetadata = {
-  resolvedModelId: string;
+  resolvedModelId?: string;
+  courseScopeRedirect?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -32,6 +33,19 @@ export function withResolvedModelMetadata<T extends Record<string, unknown>>(
     metadata: {
       ...(isRecord(message.metadata) ? message.metadata : {}),
       resolvedModelId,
+    },
+  };
+}
+
+/** Tag a persisted assistant turn as a course-scope-guardrail redirect (analytics/UI). */
+export function withCourseScopeRedirectMetadata<T extends Record<string, unknown>>(
+  message: T,
+): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
+  return {
+    ...message,
+    metadata: {
+      ...(isRecord(message.metadata) ? message.metadata : {}),
+      courseScopeRedirect: true,
     },
   };
 }
