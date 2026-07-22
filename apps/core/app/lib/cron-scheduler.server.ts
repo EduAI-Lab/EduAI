@@ -22,7 +22,9 @@ function scheduleOne(jobName: string, schedule: string, script: string): void {
     schedule,
     () => {
       startCronRun(jobName)
-        .then((runId) => triggerCronJobAsync(jobName, script, runId))
+        .then(({ runId, created }) => {
+          if (created) triggerCronJobAsync(jobName, script, runId);
+        })
         .catch((err: unknown) => console.error(`[cron] ${jobName} failed to start:`, err));
     },
     { timezone: "UTC" },
