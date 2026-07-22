@@ -7,13 +7,9 @@ import {
   IconUserCheck,
   IconArrowsExchange,
   IconUserPlus,
-  IconFileText,
   IconUpload,
   IconSettings,
   IconBook,
-  IconLoader,
-  IconCircleCheck,
-  IconCircleX,
   IconEye,
   IconEyeOff,
   IconClock,
@@ -23,6 +19,8 @@ import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { termLabel } from "@eduai/ui";
 import { Badge } from "@eduai/ui";
+import { EmptyState } from "@eduai/ui";
+import { MaterialList, type MaterialListItem } from "@eduai/ui";
 import {
   Dialog,
   DialogContent,
@@ -128,16 +126,6 @@ function formatSize(bytes: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
 }
 
-function MaterialStatusIcon({ status }: { status: CourseMaterial["status"] }) {
-  if (status === "PROCESSING")
-    return <IconLoader className="h-4 w-4 text-yellow-500 animate-spin" />;
-  if (status === "READY")
-    return <IconCircleCheck className="h-4 w-4 text-green-500" />;
-  if (status === "FAILED")
-    return <IconCircleX className="h-4 w-4 text-red-500" />;
-  return <IconFileText className="h-4 w-4 text-muted-foreground" />;
-}
-
 /**
  * Student-visibility indicator for the staff material list (#839): a chip when a
  * material is hidden or scheduled for a future reveal. Nothing renders when the
@@ -172,38 +160,6 @@ function MaterialVisibilityChip({ material }: { material: CourseMaterial }) {
     );
   }
   return null;
-}
-
-function MaterialStatusChip({ status }: { status: CourseMaterial["status"] }) {
-  const cfg = {
-    READY: {
-      label: "Embedded",
-      bg: "var(--color-success-100)",
-      color: "var(--color-success-700)",
-    },
-    PROCESSING: {
-      label: "Processing",
-      bg: "oklch(0.97 0.03 90)",
-      color: "oklch(0.55 0.18 90)",
-    },
-    FAILED: {
-      label: "Failed",
-      bg: "var(--color-error-100)",
-      color: "var(--destructive)",
-    },
-  }[status] ?? {
-    label: "Unknown",
-    bg: "var(--muted)",
-    color: "var(--muted-foreground)",
-  };
-  return (
-    <span
-      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-      style={{ background: cfg.bg, color: cfg.color }}
-    >
-      {cfg.label}
-    </span>
-  );
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -1041,136 +997,108 @@ export function CourseDetailManagerView({
           forceMount
           className="data-[state=inactive]:hidden flex-1 outline-none"
         >
-          {/* A2: Header row: title left, action buttons right */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-[16px] font-semibold text-foreground">
-                Course materials
-              </p>
-              <p className="text-[13px] text-muted-foreground">
-                {materials.length} file{materials.length !== 1 ? "s" : ""}
-                {" · "}
-                {readyMaterials} embedded in AI
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {showCanvasMaterialSync && courseId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCanvasSyncOpen(true)}
-                >
-                  <Download className="h-4 w-4 mr-1.5" />
-                  Sync from Canvas
-                </Button>
-              )}
-              {courseId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEmbeddingOpen(true)}
-                >
-                  <IconSettings className="h-4 w-4 mr-1.5" />
-                  Embedding settings
-                </Button>
-              )}
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <IconUpload className="h-4 w-4 mr-1.5" />
-                Upload material
-              </Button>
-            </div>
-          </div>
-
-          {/* A1: Single materials list — no duplicate */}
-          {materials.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div
-                className="w-14 h-14 rounded-[14px] flex items-center justify-center mb-4"
-                style={{ background: "var(--muted)" }}
-              >
-                <IconBook
-                  size={26}
-                  className="text-muted-foreground"
-                  stroke={1.5}
-                />
-              </div>
-              <p className="text-[15px] font-semibold text-foreground mb-1">
-                No materials yet
-              </p>
-              <p className="text-[13px] text-muted-foreground mb-4">
-                Upload documents to make them available for AI chat.
-              </p>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
-                <IconUpload className="h-4 w-4 mr-1.5" />
-                Upload material
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {materials.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
-                >
-                  <div
-                    className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
-                    style={{ background: fileTypeColor(m.mimeType) }}
+          <MaterialList
+            items={materials.map(
+              (m): MaterialListItem => ({
+                id: m.id,
+                name: m.title,
+                status: m.status,
+                mimeType: m.mimeType,
+                meta: (
+                  <>
+                    {formatSize(m.fileSize)} ·{" "}
+                    {new Date(m.createdAt).toLocaleDateString()}
+                  </>
+                ),
+              }),
+            )}
+            fileTypeColor={(item) => fileTypeColor(item.mimeType ?? "")}
+            headerActions={
+              <>
+                {showCanvasMaterialSync && courseId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCanvasSyncOpen(true)}
                   >
-                    <IconFileText size={14} color="white" stroke={2} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-foreground truncate">
-                      {m.title}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {formatSize(m.fileSize)} ·{" "}
-                      {new Date(m.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <MaterialVisibilityChip material={m} />
-                    <MaterialStatusChip status={m.status} />
-                    <MaterialStatusIcon status={m.status} />
-                    {canManage && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Student visibility"
-                        onClick={() => openVisibility(m)}
-                      >
-                        <IconEye className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {canRenameMaterial(m) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Rename material"
-                        onClick={() => {
-                          setRenameMaterialId(m.id);
-                          setRenameTitle(m.title);
-                          setRenameError(null);
-                        }}
-                      >
-                        <IconPencil className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {canDeleteMaterial(m) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete material"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setDeleteMaterialId(m.id)}
-                      >
-                        <IconTrash className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                    <Download className="h-4 w-4 mr-1.5" />
+                    Sync from Canvas
+                  </Button>
+                )}
+                {courseId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEmbeddingOpen(true)}
+                  >
+                    <IconSettings className="h-4 w-4 mr-1.5" />
+                    Embedding settings
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setUploadOpen(true)}>
+                  <IconUpload className="h-4 w-4 mr-1.5" />
+                  Upload material
+                </Button>
+              </>
+            }
+            emptyState={
+              <EmptyState
+                icon={<IconBook size={26} stroke={1.5} />}
+                title="No materials yet"
+                description="Upload documents to make them available for AI chat."
+                action={
+                  <Button size="sm" onClick={() => setUploadOpen(true)}>
+                    <IconUpload className="h-4 w-4 mr-1.5" />
+                    Upload material
+                  </Button>
+                }
+              />
+            }
+            renderItemActions={(item) => {
+              const m = materials.find((mat) => mat.id === item.id);
+              if (!m) return null;
+              return (
+                <>
+                  <MaterialVisibilityChip material={m} />
+                  {canManage && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Student visibility"
+                      onClick={() => openVisibility(m)}
+                    >
+                      <IconEye className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {canRenameMaterial(m) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Rename material"
+                      onClick={() => {
+                        setRenameMaterialId(m.id);
+                        setRenameTitle(m.title);
+                        setRenameError(null);
+                      }}
+                    >
+                      <IconPencil className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {canDeleteMaterial(m) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Delete material"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteMaterialId(m.id)}
+                    >
+                      <IconTrash className="w-4 h-4" />
+                    </Button>
+                  )}
+                </>
+              );
+            }}
+          />
         </PageTabsContent>
 
         {/* ── Topics ── */}
@@ -1206,11 +1134,7 @@ export function CourseDetailManagerView({
               </PolicyTooltip>
             )}
             {topics.length === 0 ? (
-              <Card>
-                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                  No topics yet.
-                </CardContent>
-              </Card>
+              <EmptyState title="No topics yet." size="sm" />
             ) : (
               <div className="grid gap-2">
                 {topics.map((t) => (
