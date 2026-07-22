@@ -192,7 +192,7 @@ npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
 npm run test         # All tests across all apps (unit + integration)
 npm run test:all     # Unit + integration tests
-npm run test:coverage # Coverage for edu-ai, ai-tutor-server, and question-maker-backend
+npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
@@ -300,12 +300,12 @@ npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
 Each app exposes a `test:coverage` script (Vitest V8 coverage). From the monorepo root:
 
 ```bash
-npm run test:coverage   # Aggregates coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+npm run test:coverage   # Aggregates coverage for all six suites (backends + frontends) via Turborepo
 ```
 
-> **Note:** The root `test:coverage` command covers backend services only (Core, AI Tutor server, and Question Maker backend). Frontend coverage is not aggregated at the root level.
+> **Note:** The root `test:coverage` command covers the three backends (Core, AI Tutor server, Question Maker backend) and the three frontend/UI suites (`@eduai/ui`, AI Tutor client, Question Maker frontend).
 
-Run a single app's coverage from its own directory with `npm run test:coverage` (available for core, the AI Tutor server, and the Question Maker frontend and backend). Generated coverage report directories are gitignored.
+Run a single app's coverage from its own directory with `npm run test:coverage`. Generated coverage report directories are gitignored.
 
 ### Integration tests
 
