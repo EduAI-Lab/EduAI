@@ -71,6 +71,25 @@ describe('validateCanvasUrl', () => {
     // (e.g. a subdomain) must not be misclassified.
     expect(() => validateCanvasUrl('https://10.example.edu/')).not.toThrow();
   });
+
+  it.each([
+    ['decimal (2130706433 = 127.0.0.1)', 'https://2130706433/'],
+    ['hex (0x7f000001 = 127.0.0.1)', 'https://0x7f000001/'],
+    ['octal (0177.0.0.1 = 127.0.0.1)', 'https://0177.0.0.1/'],
+    ['decimal (167838211 = 10.1.2.3)', 'https://167838211/'],
+  ])(
+    'rejects an IPv4 loopback/private address obfuscated as %s',
+    (_label, url) => {
+      // The WHATWG URL parser canonicalizes these to dotted-decimal before
+      // validateCanvasUrl ever sees `hostname`, so the classic SSRF-filter
+      // bypass via alternate IP encodings is closed — lock that in here.
+      expect(() => validateCanvasUrl(url)).toThrow(CanvasUrlValidationError);
+    },
+  );
+
+  it('does not reject a public IPv4 literal obfuscated as decimal (134744072 = 8.8.8.8)', () => {
+    expect(() => validateCanvasUrl('https://134744072/')).not.toThrow();
+  });
 });
 
 describe('createPinnedLookup', () => {

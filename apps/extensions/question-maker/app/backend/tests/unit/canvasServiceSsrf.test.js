@@ -112,4 +112,37 @@ describe('makeCanvasRequest — SSRF re-validation at request time (#991)', () =
       beforeRedirect({ protocol: 'https:', hostname: 'canvas.example.edu', path: '/api/v1/courses/' })
     ).not.toThrow();
   });
+
+  it('beforeRedirect re-brackets an IPv6 hostname before validating, so a public IPv6 hop is not wrongly rejected as malformed', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    // follow-redirects strips the [...] brackets before this callback runs.
+    expect(() =>
+      beforeRedirect({ protocol: 'https:', hostname: '2001:4860:4860::8888', path: '/api/v1/courses' })
+    ).not.toThrow();
+  });
+
+  it('beforeRedirect rejects a redirect hop to a private IPv6 hostname', async () => {
+    integrationFindOne.mockResolvedValue({
+      isTestMode: false,
+      canvasUrl: 'https://canvas.example.edu',
+      apiKey: 'secret-token',
+    });
+    axiosRequest.mockResolvedValue({ data: [] });
+
+    await getCanvasCourses(42);
+
+    const { beforeRedirect } = axiosRequest.mock.calls[0][0];
+    expect(() =>
+      beforeRedirect({ protocol: 'https:', hostname: 'fe80::1', path: '/api/v1/courses' })
+    ).toThrow();
+  });
 });

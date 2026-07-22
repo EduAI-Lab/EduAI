@@ -8,6 +8,7 @@ import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
 import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
+import net from 'node:net';
 
 /**
  * Canvas LMS API Service
@@ -136,7 +137,12 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     lookup: createPinnedLookup(),
     maxRedirects: 5,
     beforeRedirect: (redirectOptions) => {
-      validateCanvasUrl(`${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}`);
+      // follow-redirects strips the [...] brackets from an IPv6 hostname
+      // before this callback runs — re-add them so the reconstructed URL
+      // parses instead of being wrongly rejected as malformed.
+      const { protocol, hostname, path } = redirectOptions;
+      const host = net.isIP(hostname) === 6 ? `[${hostname}]` : hostname;
+      validateCanvasUrl(`${protocol}//${host}${path || ''}`);
     }
   };
 
