@@ -28,6 +28,8 @@ export {
 export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
+export { EmptyState } from "./empty-state"
+export type { EmptyStateProps } from "./empty-state"
 export { QuickActionsPanel } from "./quick-actions-panel"
 export type { QuickActionsPanelProps, QuickAction } from "./quick-actions-panel"
 export { Avatar } from "./avatar"
@@ -61,6 +63,12 @@ export type {
 } from "./question-card"
 export { AnswerOption } from "./answer-option"
 export type { AnswerOptionProps, AnswerOptionState } from "./answer-option"
+export { MaterialStatusIcon, MaterialStatusChip } from "./material-status"
+export type {
+  MaterialStatus,
+  MaterialStatusIconProps,
+  MaterialStatusChipProps,
+} from "./material-status"
 export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
 export { QuestionStatusBadge, questionStatus } from "./question-status-badge"
