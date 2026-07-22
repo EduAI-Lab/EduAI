@@ -418,8 +418,6 @@ This uses the same `DATABASE_URL` as the app (host `postgres`), so it works even
 
 **Alternative (host):** If Postgres is published to the host (e.g. `55432:5432`) and the stack is running, you can run from the project root: `npm run seed:production`. If you get connection refused, use the `docker compose run` command above.
 
-Do **not** use `npm run populate` in production—it clears all data first.
-
 ## Backup and Recovery
 
 ```bash

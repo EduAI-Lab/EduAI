@@ -75,6 +75,7 @@ export function parseModelIdentifier(
 export function mergeLocalInferenceFromEnv(
   userSettings: UserProviderSettings,
   modelIdentifier?: string,
+  vllmBaseUrlOverride?: string,
 ): UserProviderSettings {
   const merged: UserProviderSettings = { ...userSettings };
   const parsed = modelIdentifier ? parseModelIdentifier(modelIdentifier) : null;
@@ -84,16 +85,24 @@ export function mergeLocalInferenceFromEnv(
       : []
     : LOCAL_INFERENCE_PROVIDERS;
 
+  const fleetVllmUrl = vllmBaseUrlOverride?.trim();
+
   for (const providerId of providerIds) {
     const envVar = PROVIDER_CONFIGS[providerId]?.envVarName;
-    const envUrl = envVar ? process.env[envVar]?.trim() : undefined;
+    let envUrl = envVar ? process.env[envVar]?.trim() : undefined;
+    if (providerId === "vllm" && fleetVllmUrl) {
+      envUrl = fleetVllmUrl;
+    }
     if (!envUrl) continue;
 
     // Server-managed: availability follows apps/core/.env on the app host, not browser toggles.
     merged[providerId] = {
       ...merged[providerId],
       isEnabled: true,
-      baseUrl: merged[providerId]?.baseUrl || envUrl,
+      baseUrl:
+        fleetVllmUrl && providerId === "vllm"
+          ? fleetVllmUrl
+          : merged[providerId]?.baseUrl || envUrl,
     };
   }
 

@@ -34,6 +34,7 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
@@ -60,6 +61,7 @@ function makeArgs(body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -141,6 +143,24 @@ describe("POST /api/chat — admin chatMode gate", () => {
     } as never);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("rejects a valid service key for admin chatMode", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    const args = makeArgs({ messages: [], chatMode: "admin" });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], chatMode: "admin" }),
+    });
+
+    const res = await action(args);
+
+    expect(res.status).toBe(403);
   });
 
   it("admits a verified ADMIN API key for admin chatMode without course context", async () => {

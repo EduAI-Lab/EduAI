@@ -13,6 +13,8 @@ vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 import { createBugReport } from "~/lib/bug-reports/server";
 
 const VALID_USER = { id: "user-cuid-abc" };
+const CREATED_REPORT = { id: "br-test-1" };
+const OK_RESULT = { ok: true as const, report: { id: CREATED_REPORT.id } };
 
 const BASE_PAYLOAD = {
   source: "AI_TUTOR" as const,
@@ -72,9 +74,9 @@ describe("createBugReport — validation", () => {
 
   it("accepts description of exactly 2000 chars", async () => {
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
     const r = await createBugReport({ ...BASE_PAYLOAD, description: "x".repeat(2000) });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
   });
 });
 
@@ -102,12 +104,12 @@ describe("createBugReport — source tagging", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
   it("persists with source AI_TUTOR", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, source: "AI_TUTOR" });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ source: "AI_TUTOR" }) }),
     );
@@ -115,7 +117,7 @@ describe("createBugReport — source tagging", () => {
 
   it("persists with source QUESTION_MAKER", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, source: "QUESTION_MAKER" });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ source: "QUESTION_MAKER" }) }),
     );
@@ -126,12 +128,12 @@ describe("createBugReport — anonymous vs. non-anonymous persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
   it("persists userId even when isAnonymous is true", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, isAnonymous: true });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const createCall = prismaMock.bugReport.create.mock.calls[0][0];
     expect(createCall.data.userId).toBe(BASE_PAYLOAD.userId);
     expect(createCall.data.isAnonymous).toBe(true);
@@ -140,13 +142,13 @@ describe("createBugReport — anonymous vs. non-anonymous persistence", () => {
   it("persists isAnonymous: false when not provided", async () => {
     const { isAnonymous: _, ...noAnonymous } = BASE_PAYLOAD;
     const r = await createBugReport(noAnonymous);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create.mock.calls[0][0].data.isAnonymous).toBe(false);
   });
 
   it("persists userId for non-anonymous report", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, isAnonymous: false });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     expect(prismaMock.bugReport.create.mock.calls[0][0].data.userId).toBe(BASE_PAYLOAD.userId);
   });
 });
@@ -155,26 +157,26 @@ describe("createBugReport — bugType", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
   it("persists a valid bugType", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, bugType: "FEATURE_NOT_WORKING" });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.bugType).toBe("FEATURE_NOT_WORKING");
   });
 
   it("persists null bugType when field is absent", async () => {
     const r = await createBugReport(BASE_PAYLOAD);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.bugType).toBeNull();
   });
 
   it("persists null bugType when field is explicitly null", async () => {
     const r = await createBugReport({ ...BASE_PAYLOAD, bugType: null });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.bugType).toBeNull();
   });
@@ -201,7 +203,7 @@ describe("createBugReport — bugType", () => {
     for (const bugType of validTypes) {
       prismaMock.bugReport.create.mockClear();
       const r = await createBugReport({ ...BASE_PAYLOAD, bugType });
-      expect(r).toEqual({ ok: true });
+      expect(r).toEqual(OK_RESULT);
       expect(prismaMock.bugReport.create.mock.calls[0][0].data.bugType).toBe(bugType);
     }
   });
@@ -211,7 +213,7 @@ describe("createBugReport — optional fields", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
   it("passes through all optional string fields", async () => {
@@ -224,7 +226,7 @@ describe("createBugReport — optional fields", () => {
       userAgent: "Mozilla/5.0",
       context: { courseId: "c1" },
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.consoleLogs).toBe("[]");
     expect(data.networkLogs).toBe("[]");
@@ -236,7 +238,7 @@ describe("createBugReport — optional fields", () => {
 
   it("stores null for absent optional fields", async () => {
     const r = await createBugReport(BASE_PAYLOAD);
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.consoleLogs).toBeNull();
     expect(data.screenshot).toBeNull();

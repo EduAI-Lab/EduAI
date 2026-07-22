@@ -47,6 +47,10 @@ export function StudentIdOnboardingForm({
             autoComplete="off"
             placeholder="e.g. 12345678"
             required
+            minLength={8}
+            maxLength={8}
+            pattern="\d{8}"
+            title="Student number must be 8 digits"
             disabled={isLoading}
             className={cn("font-mono text-lg tracking-wider", fieldError ? "border-destructive" : undefined)}
           />
