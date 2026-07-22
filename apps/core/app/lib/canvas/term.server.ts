@@ -1,3 +1,5 @@
+import { UBC_TIME_ZONE } from "@eduai/ui/term";
+
 /**
  * UBC academic term codes derived from a course start date (Pacific time).
  *
@@ -5,6 +7,9 @@
  * - Jan–Apr: Winter Term 2 (W2)
  * - May–Jun: Summer Term 1 (S1)
  * - Jul–Aug: Summer Term 2 (S2)
+ *
+ * The zone is a fixed constant owned by `packages/ui/src/lib/term.ts` —
+ * see that file for why.
  *
  * `year` (the Course row's academic-year label — see `ubcAcademicYearFromDate`
  * below) is NOT the calendar year a W2 course starts in: UBC's academic year
@@ -15,7 +20,6 @@
  * same `Date#getFullYear()` (host-timezone) basis existing callers already use
  * for `year`, only correcting which year W2 attributes to.
  */
-const UBC_TIME_ZONE = process.env.UBC_TIMEZONE ?? "America/Vancouver";
 
 function monthInUbcTimeZone(date: Date): number {
   return Number(
