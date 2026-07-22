@@ -90,11 +90,17 @@ function reorderAssistiveSections(content: string): string {
   }
 
   if (remainder) {
-    // With Step ladder / diagram, drop orphan intro fluff (duplicate of TLDR).
+    // With Step ladder / diagram, drop only remainder blocks proven to
+    // duplicate the rendered ladder/diagram/TLDR (stage lists, repeated
+    // prose); substantive explanations are kept (#1091 review).
     // Without them, keep the body explanation before the TLDR (#1060).
     const kept =
       stepText || diagrams.length > 0
-        ? keepTrailingStructuralExtras(remainder)
+        ? dropDuplicateRemainderBlocks(remainder, stages, [
+            stepText,
+            ...diagrams.map((d) => d.text),
+            tldrBlock,
+          ])
         : remainder.trim();
     if (kept) parts.push(kept);
   }
@@ -108,14 +114,90 @@ function reorderAssistiveSections(content: string): string {
   return normalizeGaps(parts.join("\n\n"));
 }
 
-/** Keep Sources / Connects / Quick check footers; drop orphan intro prose. */
-function keepTrailingStructuralExtras(remainder: string): string {
-  const lines = remainder.split("\n");
-  const keepFrom = lines.findIndex((line) =>
-    /^(Sources:|\*\*Sources|\*\*Connects to|Quick check)/i.test(line.trim()),
+/**
+ * With a Step ladder / diagram present, remove only remainder blocks proven
+ * to duplicate already-rendered content; keep everything else (#1091 review).
+ *
+ * A block is a duplicate when every line in it is either:
+ *   - a list item whose leading label matches a diagram stage label,
+ *   - prose already contained verbatim in the rendered ladder/diagram/TLDR, or
+ *   - a short lead-in ending with ":" that only introduces duplicate list items.
+ */
+function dropDuplicateRemainderBlocks(
+  remainder: string,
+  stages: EduaiDiagramStage[],
+  renderedParts: Array<string | null>,
+): string {
+  const stageKeys = new Set(stages.map((s) => normalizeLabelKey(s.label)));
+  const renderedProse = normalizeProse(
+    renderedParts.filter((part): part is string => Boolean(part)).join("\n"),
   );
-  if (keepFrom < 0) return "";
-  return lines.slice(keepFrom).join("\n").trim();
+
+  const blocks = remainder.split(/\n{2,}/);
+  const kept = blocks.filter(
+    (block) =>
+      block.trim() !== "" &&
+      !isDuplicateRemainderBlock(block, stageKeys, renderedProse),
+  );
+  return kept.join("\n\n").trim();
+}
+
+function isDuplicateRemainderBlock(
+  block: string,
+  stageKeys: Set<string>,
+  renderedProse: string,
+): boolean {
+  const lines = block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  if (lines.length === 0) return true;
+
+  const duplicates = lines.map((line) =>
+    isDuplicateRemainderLine(line, stageKeys, renderedProse),
+  );
+
+  // A lead-in ending with ":" counts as duplicate when everything after it in
+  // the block is duplicate list content (e.g. "Here's a sketch:" + stage list).
+  for (let i = 0; i < lines.length; i++) {
+    if (duplicates[i]) continue;
+    const rest = lines.slice(i + 1);
+    if (
+      /:\s*$/.test(lines[i]) &&
+      rest.length > 0 &&
+      rest.every((line) => /^(?:[-*•]|\d+[.)])\s+/.test(line)) &&
+      duplicates.slice(i + 1).every(Boolean)
+    ) {
+      duplicates[i] = true;
+    }
+  }
+
+  return duplicates.every(Boolean);
+}
+
+function isDuplicateRemainderLine(
+  line: string,
+  stageKeys: Set<string>,
+  renderedProse: string,
+): boolean {
+  const listMatch = /^(?:[-*•]|\d+[.)])\s+(.+)$/.exec(line);
+  if (listMatch) {
+    const item = (listMatch[1] ?? "").trim();
+    const bold = /^\*\*(.+?)\*\*/.exec(item);
+    const label = bold?.[1] ?? item.split(/[:–—-]/, 1)[0] ?? item;
+    if (stageKeys.has(normalizeLabelKey(label))) return true;
+  }
+  const normalized = normalizeProse(line);
+  // Containment only for lines long enough that a match is meaningful.
+  return normalized.length >= 10 && renderedProse.includes(normalized);
+}
+
+/** Lowercased alphanumeric words only — for duplicate-prose comparison. */
+function normalizeProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function synthesizeTldrLines(stages: EduaiDiagramStage[]): string | null {
