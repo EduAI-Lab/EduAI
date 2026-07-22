@@ -2,6 +2,8 @@
 
 > **This is a living document.** It is a work in progress and should be treated as a starting point, not a final answer. Any section can be revised, restructured, or replaced entirely as the team learns more and makes decisions together.
 
+> **Course-data sections refreshed 2026-07-17 (#1072):** §1.2, §1.3, §3.1 (QM-3), §3.2 (AT-1), Decision 1, and Decision 2 now describe the shipped anchor + live read-through architecture. The rest of this document (auth, Canvas, bug reporting, monorepo, week-by-week checklist) is unchanged and reflects the original May 10 planning snapshot — several of those items have since moved independently of this pass.
+
 **Epic:** EduAICore #58  
 **Last Updated:** May 10, 2026
 
@@ -58,7 +60,7 @@ The central platform. Already owns:
 | Auth | Centralized | Uses EduAI's OAuth/OIDC (Better Auth genericOAuth plugin) |
 | AI Chat | Centralized | Proxies all AI calls through `POST /api/chat` on EduAI |
 | AI Models | Centralized | Fetches model list from EduAI |
-| Courses | Partial — one-time sync | Instructors manually "import" a course (copies metadata + enrollments + topics into AI Tutor's local DB). **Changes in EduAI don't auto-propagate.** |
+| Courses | Centralized — anchor + live read-through (#1072) | AI Tutor keeps only a minimal anchor row (`coreOfferingId`) per course; every Core-owned field (title, description, department, dates, publish state, term/year, `aiInstructions`) is fetched live from EduAI on each request — zero local copies, so an EduAI-side edit appears immediately with no manual re-sync. Instructor "import" now just provisions the anchor. Lists source from one batched `GET /api/courses` call (never per-course); if EduAI is unreachable, AI Tutor degrades to a placeholder + "Core unavailable" state instead of erroring. A read-through cache is deferred (#1083). Enrollments and topics still sync into AI Tutor's local DB — that mechanism is unchanged by #1072. |
 | Users | Partial — local mirror | Has its own `User` table, but populated from EduAI OAuth claims. It's a projection of EduAI data, not a second source of truth. |
 | Activities / Content | AI Tutor-specific | Modules, Lessons, Activities, Submissions, Analytics — stay in AI Tutor |
 | Prompt Templates | AI Tutor-specific | Stays in AI Tutor |
@@ -71,7 +73,7 @@ The central platform. Already owns:
 |--------|--------|-------|
 | Auth | Not integrated | Fully standalone JWT auth with local user registration. **No integration with EduAI.** |
 | Users | Local only | Local `users` table with bcrypt passwords. Completely separate from EduAI. |
-| Courses | Partial — reference only | Local `courses` table. Instructors can call `GET /api/eduai/courses` to list EduAI courses for reference, but local courses are entirely separate. |
+| Courses | Centralized — anchor + live read-through (#1072) | Local `Course` table is a minimal anchor (`id`, `userId`, `coreCourseId`) — no name/code/department/term/description stored locally. Every QM course now originates in EduAI (`coreCourseId` required at creation; local-only "sandbox" course creation was removed), and all display fields are projected live from EduAI on every list/detail read (one batched call, never per-course). If EduAI is unreachable, QM degrades to a placeholder (`coreUnavailable: true`) instead of serving stale local columns. Canvas quiz import/export still talks to Canvas directly from QM rather than through EduAI — that centralization is tracked separately (#1084 / Decision #4 below, Epic #59). |
 | Topics | Partial — reference only | Fetched from EduAI on-demand but stored locally for FK associations. |
 | AI Chat / Question Generation | Partial | OCR extraction and variant generation proxy through Core. The main question generation route still dispatches directly to Groq, OpenAI, or DeepSeek — see QM-7. |
 | Questions / Variants | QM-specific | Question bank, variant workflows, assessment building — stay in Question Maker |
@@ -148,7 +150,7 @@ The central platform. Already owns:
 |----|-----|--------|----------|
 | QM-1 | **Auth migration:** Remove local JWT auth. Implement EduAI OAuth/OIDC using Better Auth (same pattern as AI Tutor). | Large | Critical |
 | QM-2 | **Remove local users table:** Derive user identity from EduAI OAuth claims only. Remove registration/login endpoints. | Medium | Critical |
-| QM-3 | **Course reference:** Remove local `courses` table. Questions and assessments reference EduAI course IDs directly. | Medium | High |
+| QM-3 | ~~**Course reference:** Remove local `courses` table. Questions and assessments reference EduAI course IDs directly.~~ **Resolved (#1072):** the local `Course` table was kept as a minimal anchor (`id`, `userId`, `coreCourseId`) rather than removed outright — full removal would lose `onDelete: Cascade` for Questions/Assessments/Topics (deferred until Canvas routing, #1084, and #630). Every course field beyond the anchor is live read-through from EduAI; zero Core-owned columns remain locally. | Medium | Done |
 | QM-4 | **Topic reference:** Remove local topic storage. Fetch from EduAI on-demand. | Small | High |
 | QM-5 | **API key scope:** Currently uses a shared admin API key for all EduAI calls. After OAuth migration, user-scoped calls should use the user's Bearer token. | Small | High |
 | QM-6 | **Canvas credentials:** Currently stored locally per-user. Migrate to EduAI centralized Canvas management (see Decision #4). | Medium | High |
@@ -161,7 +163,7 @@ The central platform. Already owns:
 
 | ID | Gap | Effort | Priority |
 |----|-----|--------|----------|
-| AT-1 | **Course sync staleness:** One-time import means roster/topic changes don't propagate. Decision needed on sync model (see Decision #1). | Medium | High |
+| AT-1 | ~~**Course sync staleness:** One-time import means roster/topic changes don't propagate. Decision needed on sync model (see Decision #1).~~ **Resolved (#1072):** moved to live fetch (Decision #1, Option B) for every Core-owned course field — see §1.2. Roster/topic import is a separate sync mechanism and is unaffected by this decision. | Medium | Done |
 | AT-2 | **Local user mirror:** Local `User` table duplicates EduAI data. Could be removed and fetched from EduAI on each request, or kept as a read-through cache. | Small | Low |
 | AT-3 | **Bug reporting:** AI Tutor owns `services/bugReports.js`, `routes/bugReports.js`, and `utils/bugReportMappers.js` — identical in structure to QM's bug-report flow. See Decision #5. | Small | Low |
 
@@ -374,6 +376,8 @@ The options below are starting points for discussion, not final answers. If some
 
 ### Decision 1: AI Tutor Course Sync — Keep Import Model or Move to Live Fetch?
 
+> **Resolved 2026-07-17 (#1072): Option B — live fetch, no cache.** AI Tutor keeps only a `coreOfferingId` anchor row; every Core-owned field (title, description, department, dates, publish state, term/year, `aiInstructions`) is fetched live from EduAI per request, with list requests batched into one `GET /api/courses` call (never per-course, so the "latency added" risk below stayed bounded). An EduAI outage degrades to a placeholder + "Core unavailable" state instead of hard-erroring. The caching layer called out as a downside of Option B is deferred, not skipped — tracked as #1083. Enrollment/topic import remains a separate sync mechanism, unaffected by this decision.
+
 **Option A: Keep import model** (current behavior)
 - Instructor clicks "import course" once; AI Tutor syncs metadata, enrollments, and topics locally.
 - + Simple, resilient — works even if EduAI is temporarily down
@@ -394,6 +398,8 @@ The options below are starting points for discussion, not final answers. If some
 ---
 
 ### Decision 2: What is the Canonical Course ID in Question Maker?
+
+> **Resolved 2026-07-17 (#1072): Option B, refined — a local anchor row keyed by `coreCourseId`, not a full local course table used as a reference layer.** Question Maker keeps a minimal local `Course` row (`id`, `userId`, `coreCourseId`) as the FK target for Questions/Assessments/Topics — pure Option A (dropping the table and using the EduAI CUID as the bare FK) would lose `onDelete: Cascade` and is deferred until Canvas routing (#1084) and #630. `coreCourseId` is the sole course identity: every course now originates in EduAI at creation (local-only "sandbox" creation removed), and the legacy code-based matching/backfill machinery (linking on course `code`) was deleted as dead code once that invariant held everywhere.
 
 When Question Maker's questions and assessments reference a "course," what should that ID be?
 

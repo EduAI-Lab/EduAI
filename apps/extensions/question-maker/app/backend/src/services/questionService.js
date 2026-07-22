@@ -4,6 +4,26 @@
  */
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
+import {
+  enrichRowsWithCourse,
+  enrichRowWithCourse,
+  formatSemesterDisplay
+} from './courseListService.js';
+
+/**
+ * Overwrites each question row's nested `variant.assessment.semester` with the
+ * value derived from the question's own course term (#1072 §4 step 8 / #1077).
+ * A variant's assessment always shares the question's course (enforced at
+ * write time — `addQuestionToAssessment` / assembly flows), so the course
+ * already enriched onto the question row is reused; no extra Core fetch.
+ */
+function withDerivedVariantSemesters(row) {
+  const semester = formatSemesterDisplay(row.course?.term, row.course?.year);
+  const variants = Array.isArray(row.variants)
+    ? row.variants.map((v) => (v.assessment ? { ...v, assessment: { ...v.assessment, semester } } : v))
+    : row.variants;
+  return variants === row.variants ? row : { ...row, variants };
+}
 
 /**
  * Normalizes a primary topic id into a non-empty CUID string, or null if absent/invalid.
@@ -206,7 +226,9 @@ export const getQuestionsByUser = async (userId, options = {}) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId: userId } // Filter by user through course relationship
         },
         {
@@ -217,7 +239,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
             {
               model: Assessments,
               as: 'assessment',
-              attributes: ['id', 'name', 'type', 'semester']
+              attributes: ['id', 'name', 'type']
             }
           ]
         }
@@ -230,12 +252,13 @@ export const getQuestionsByUser = async (userId, options = {}) => {
     // Apply search filter if provided
     let filteredQuestions = questions;
     if (search) {
-      filteredQuestions = questions.filter(q => 
+      filteredQuestions = questions.filter(q =>
         q.description.toLowerCase().includes(search.toLowerCase())
       );
     }
 
-    return filteredQuestions;
+    const enriched = await enrichRowsWithCourse(filteredQuestions);
+    return enriched.map(withDerivedVariantSemesters);
   } catch (error) {
     throw error;
   }
@@ -250,7 +273,9 @@ export const getQuestionById = async (questionId, userId) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId: userId } // Ensure user owns the course
         },
         {
@@ -261,7 +286,7 @@ export const getQuestionById = async (questionId, userId) => {
             {
               model: Assessments,
               as: 'assessment',
-              attributes: ['id', 'name', 'type', 'semester']
+              attributes: ['id', 'name', 'type']
             }
           ]
         }
@@ -272,7 +297,7 @@ export const getQuestionById = async (questionId, userId) => {
       throw new Error('Question not found');
     }
 
-    return question;
+    return withDerivedVariantSemesters(await enrichRowWithCourse(question));
   } catch (error) {
     throw error;
   }
@@ -348,6 +373,22 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       throw new Error('isAiGenerated and isDraft are variant-level fields. Use updateVariant to update individual variants.');
     }
 
+    // §19/#1080 post-review lock, extended: `type` and `primaryTopicId` feed the Core
+    // push payload (coreWiringService.js `type`/`topicId`) exactly like a variant's
+    // questionText/difficulty. Once any sibling variant is reviewed (isDraft:false)
+    // and pushed, editing either here would silently diverge from the immutable Core
+    // copy — so the SAME 409 VARIANT_LOCKED convention as the variants.js content
+    // lock applies. Un-review the reviewed variant(s) first (which clears
+    // coreQuestionId) to unlock these fields again.
+    if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
+      const reviewedVariant = await Variants.findOne({
+        where: { questionMetadataId: question.id, isDraft: false }
+      });
+      if (reviewedVariant) {
+        throw Object.assign(new Error('VARIANT_LOCKED'), { status: 409 });
+      }
+    }
+
     await question.update(updates);
     return question;
   } catch (error) {
@@ -411,7 +452,12 @@ export const createMultipleQuestions = async (userId, questionsData) => {
   }
 };
 
-/** Persists extracted questions/variants and optionally creates assessments/sections for them. */
+/**
+ * Persists extracted questions/variants and optionally creates assessments/sections
+ * for them. The optional `assessment.semester` on `payload` is ignored — `semester`
+ * is no longer stored at all (#1072 §4 step 10/#1077); it's derived from the
+ * course's Core term at the read seam (`withDerivedVariantSemesters` above).
+ */
 export const saveExtractedQuestions = async (userId, payload) => {
   const { courseId, primaryTopicId, topicName, questions, assessment, isAiGenerated = false, createdBy = null } = payload;
 
@@ -498,14 +544,13 @@ export const saveExtractedQuestions = async (userId, payload) => {
     let createdAssessment = null;
     let createdSection = null;
     if (assessment) {
-      const { type, name, semester } = assessment;
-      if (!type || !name || !semester) {
-        throw new Error('Assessment type, name, and semester are required.');
+      const { type, name } = assessment;
+      if (!type || !name) {
+        throw new Error('Assessment type and name are required.');
       }
       createdAssessment = await Assessments.create({
         type,
         name,
-        semester,
         courseId
       }, { transaction });
 
@@ -636,7 +681,9 @@ export const saveExtractedQuestions = async (userId, payload) => {
         {
           model: Course,
           as: 'course',
-          attributes: ['id', 'name', 'code'],
+          // `coreCourseId` feeds the Core projection below — `Course` has no
+          // local name/code to select anymore (#1072 §4 step 10).
+          attributes: ['id', 'coreCourseId'],
           where: { userId }
         },
         {
@@ -648,7 +695,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
     });
 
     return {
-      questions: savedQuestions.map((question) => question.toJSON()),
+      questions: await enrichRowsWithCourse(savedQuestions),
       assessmentId: createdAssessment ? createdAssessment.id : null
     };
   } catch (error) {
@@ -881,6 +928,13 @@ export const updateVariant = async (variantId, variantData, userId) => {
       normalizedAnswer = variantData.answer.trim();
     }
 
+    const nextIsDraft = variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : undefined;
+    // #1080 un-review: reopening a reviewed variant back to draft must clear its Core
+    // link so the next approval re-pushes a fresh copy instead of the state-based push
+    // guard (`variants.js` — `isDraft === false && !variant.coreQuestionId`) skipping it
+    // as "already linked". Only fires on the false→true transition (not a no-op resend).
+    const unreviewing = variant.isDraft === false && nextIsDraft === true;
+
     const normalizedData = {
       ...variantData,
       ...(variantData.secondaryTopicsId !== undefined && {
@@ -889,14 +943,17 @@ export const updateVariant = async (variantId, variantData, userId) => {
       ...(variantData.isAiGenerated !== undefined && {
         isAiGenerated: Boolean(variantData.isAiGenerated)
       }),
-      ...(variantData.isDraft !== undefined && {
-        isDraft: Boolean(variantData.isDraft)
+      ...(nextIsDraft !== undefined && {
+        isDraft: nextIsDraft
       }),
       ...(normalizedChoices !== undefined && {
         choices: normalizedChoices
       }),
       ...(normalizedAnswer !== undefined && {
         answer: normalizedAnswer
+      }),
+      ...(unreviewing && {
+        coreQuestionId: null
       })
     };
 

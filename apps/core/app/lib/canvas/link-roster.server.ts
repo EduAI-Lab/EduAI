@@ -1,14 +1,18 @@
-import prisma from "~/lib/prisma.server";
 import {
   normalizeStudentId,
   resolveCanvasEnrollmentsForUser,
 } from "~/lib/canvas/enrollment-link.server";
+import {
+  isValidUbcStudentNumber,
+  UBC_STUDENT_NUMBER_MESSAGE,
+} from "~/lib/canvas/schemas";
 import {
   isLegacyPlaintextStudentId,
   prepareStudentIdStorage,
   readStoredStudentId,
   studentIdMatchFilter,
 } from "~/lib/canvas/student-id.server";
+import prisma from "~/lib/prisma.server";
 
 export class LinkRosterError extends Error {
   readonly statusCode: number;
@@ -51,6 +55,11 @@ export async function linkCanvasRoster(
   if (!normalized) {
     auditLinkAttempt(userId, "failure", "empty_student_number");
     throw new LinkRosterError("Student number is required", 400);
+  }
+
+  if (!isValidUbcStudentNumber(normalized)) {
+    auditLinkAttempt(userId, "failure", "invalid_student_number_format");
+    throw new LinkRosterError(UBC_STUDENT_NUMBER_MESSAGE, 400);
   }
 
   const user = await prisma.user.findUnique({
@@ -125,6 +134,9 @@ export async function applyStudentIdAndResolveEnrollments(
   const normalized = normalizeStudentId(studentId);
   if (!normalized) {
     return 0;
+  }
+  if (!isValidUbcStudentNumber(normalized)) {
+    throw new LinkRosterError(UBC_STUDENT_NUMBER_MESSAGE, 400);
   }
   return resolveCanvasEnrollmentsForUser(userId);
 }

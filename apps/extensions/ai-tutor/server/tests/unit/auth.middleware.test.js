@@ -4,6 +4,10 @@ vi.mock('../../src/services/policyService.js', () => ({
   getPolicy: vi.fn(),
 }));
 
+vi.mock('../../src/services/courseResolver.js', () => ({
+  resolveCoreCourseById: vi.fn(),
+}));
+
 import {
   requireAuth,
   requireRole,
@@ -12,6 +16,7 @@ import {
   isUnitAdminForCourse,
 } from '../../src/middleware/auth.js';
 import { getPolicy } from '../../src/services/policyService.js';
+import { resolveCoreCourseById } from '../../src/services/courseResolver.js';
 
 process.env.CORE_URL = 'http://core.test';
 
@@ -239,44 +244,75 @@ describe('requireInstructorPolicy', () => {
   });
 });
 
+// #1072 step 4: `department` is Core-owned — CourseOffering carries no local
+// column anymore, so `isUnitAdminForCourse` is async and resolves it either
+// from a caller-supplied `resolvedCoreCourse` (fast path, no Core call) or by
+// fetching `resolveCoreCourseById(course.coreOfferingId)` itself.
 describe('isUnitAdminForCourse', () => {
-  const course = { department: 'COSC' };
-  const courseNoDept = { department: null };
+  const course = { coreOfferingId: 'core-1' };
+  const coreCourse = { department: 'COSC' };
+  const coreCourseNoDept = { department: null };
   const unitAdminCosc = { role: 'UNIT_ADMIN', authorizedUnits: ['COSC', 'MATH'] };
   const unitAdminOther = { role: 'UNIT_ADMIN', authorizedUnits: ['PHYS'] };
   const unitAdminEmpty = { role: 'UNIT_ADMIN', authorizedUnits: [] };
   const instructor = { role: 'INSTRUCTOR', authorizedUnits: ['COSC'] };
 
-  it('returns true when role is UNIT_ADMIN and department is in authorizedUnits', () => {
-    expect(isUnitAdminForCourse(unitAdminCosc, course)).toBe(true);
+  beforeEach(() => {
+    resolveCoreCourseById.mockReset();
   });
 
-  it('returns false when authorizedUnits does not include the department', () => {
-    expect(isUnitAdminForCourse(unitAdminOther, course)).toBe(false);
+  describe('with a pre-resolved Core course (fast path — no Core call)', () => {
+    it('returns true when role is UNIT_ADMIN and department is in authorizedUnits', async () => {
+      expect(await isUnitAdminForCourse(unitAdminCosc, course, coreCourse)).toBe(true);
+      expect(resolveCoreCourseById).not.toHaveBeenCalled();
+    });
+
+    it('returns false when authorizedUnits does not include the department', async () => {
+      expect(await isUnitAdminForCourse(unitAdminOther, course, coreCourse)).toBe(false);
+    });
+
+    it('returns false when authorizedUnits is empty', async () => {
+      expect(await isUnitAdminForCourse(unitAdminEmpty, course, coreCourse)).toBe(false);
+    });
+
+    it('returns false when the resolved Core course has no department (null never matches)', async () => {
+      expect(await isUnitAdminForCourse(unitAdminCosc, course, coreCourseNoDept)).toBe(false);
+    });
+
+    it('returns false when role is not UNIT_ADMIN', async () => {
+      expect(await isUnitAdminForCourse(instructor, course, coreCourse)).toBe(false);
+    });
+
+    it('returns false when user is null', async () => {
+      expect(await isUnitAdminForCourse(null, course, coreCourse)).toBe(false);
+    });
+
+    it('returns false when authorizedUnits is not an array', async () => {
+      const user = { role: 'UNIT_ADMIN', authorizedUnits: 'COSC' };
+      expect(await isUnitAdminForCourse(user, course, coreCourse)).toBe(false);
+    });
   });
 
-  it('returns false when authorizedUnits is empty', () => {
-    expect(isUnitAdminForCourse(unitAdminEmpty, course)).toBe(false);
-  });
+  describe('self-resolving (no resolvedCoreCourse passed)', () => {
+    it('returns false without a Core call when course is null', async () => {
+      expect(await isUnitAdminForCourse(unitAdminCosc, null)).toBe(false);
+      expect(resolveCoreCourseById).not.toHaveBeenCalled();
+    });
 
-  it('returns false when course.department is null (null never matches)', () => {
-    expect(isUnitAdminForCourse(unitAdminCosc, courseNoDept)).toBe(false);
-  });
+    it('returns false without a Core call when course.coreOfferingId is null', async () => {
+      expect(await isUnitAdminForCourse(unitAdminCosc, { coreOfferingId: null })).toBe(false);
+      expect(resolveCoreCourseById).not.toHaveBeenCalled();
+    });
 
-  it('returns false when role is not UNIT_ADMIN', () => {
-    expect(isUnitAdminForCourse(instructor, course)).toBe(false);
-  });
+    it('resolves the department via resolveCoreCourseById and returns true on a match', async () => {
+      resolveCoreCourseById.mockResolvedValue({ course: coreCourse, coreUnavailable: false });
+      expect(await isUnitAdminForCourse(unitAdminCosc, course)).toBe(true);
+      expect(resolveCoreCourseById).toHaveBeenCalledWith('core-1');
+    });
 
-  it('returns false when user is null', () => {
-    expect(isUnitAdminForCourse(null, course)).toBe(false);
-  });
-
-  it('returns false when course is null', () => {
-    expect(isUnitAdminForCourse(unitAdminCosc, null)).toBe(false);
-  });
-
-  it('returns false when authorizedUnits is not an array', () => {
-    const user = { role: 'UNIT_ADMIN', authorizedUnits: 'COSC' };
-    expect(isUnitAdminForCourse(user, course)).toBe(false);
+    it('fails soft to false when Core is unavailable', async () => {
+      resolveCoreCourseById.mockResolvedValue({ course: null, coreUnavailable: true });
+      expect(await isUnitAdminForCourse(unitAdminCosc, course)).toBe(false);
+    });
   });
 });

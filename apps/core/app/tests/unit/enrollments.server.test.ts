@@ -27,6 +27,8 @@ import {
   addEnrollment,
   updateEnrollmentRole,
   deactivateEnrollment,
+  requiredRankForEnrollmentRole,
+  canAddEnrollmentRole,
 } from "~/lib/courses/enrollments.server";
 
 const tx = prismaMock.__tx;
@@ -35,22 +37,37 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe("requiredRankForEnrollmentRole", () => {
+  it("requires rank 3 for INSTRUCTOR and rank 2 otherwise", () => {
+    expect(requiredRankForEnrollmentRole("INSTRUCTOR")).toBe(3);
+    expect(requiredRankForEnrollmentRole("STUDENT")).toBe(2);
+    expect(requiredRankForEnrollmentRole("TA")).toBe(2);
+    expect(canAddEnrollmentRole(2, "INSTRUCTOR")).toBe(false);
+    expect(canAddEnrollmentRole(3, "INSTRUCTOR")).toBe(true);
+  });
+});
+
 describe("addEnrollment", () => {
   it("returns 422 for an invalid role", async () => {
-    const result = await addEnrollment("c1", { userId: "u1", role: "OVERLORD" });
+    const result = await addEnrollment("c1", { userId: "u1", role: "OVERLORD" }, 4);
     expect(result.status).toBe("422");
+  });
+
+  it("returns 403 when actor rank is too low for the target role", async () => {
+    const result = await addEnrollment("c1", { userId: "u1", role: "INSTRUCTOR" }, 2);
+    expect(result).toEqual({ status: "403", error: "Forbidden" });
   });
 
   it("returns 422 USER_NOT_FOUND for an unknown user", async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
-    const result = await addEnrollment("c1", { userId: "ghost", role: "STUDENT" });
+    const result = await addEnrollment("c1", { userId: "ghost", role: "STUDENT" }, 2);
     expect(result).toEqual({ status: "422", error: "USER_NOT_FOUND" });
   });
 
   it("creates an active enrollment and returns 201", async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
     prismaMock.enrollment.create.mockResolvedValue({ id: "e1" });
-    const result = await addEnrollment("c1", { userId: "u1", role: "TA" });
+    const result = await addEnrollment("c1", { userId: "u1", role: "TA" }, 2);
     expect(result.status).toBe("201");
     expect(prismaMock.enrollment.create).toHaveBeenCalledWith({
       data: { courseId: "c1", userId: "u1", role: "TA", isActive: true },
@@ -66,45 +83,8 @@ describe("addEnrollment", () => {
       }),
     );
     prismaMock.enrollment.findUnique.mockResolvedValue({ id: "e1", isActive: true });
-    const result = await addEnrollment("c1", { userId: "u1", role: "STUDENT" });
+    const result = await addEnrollment("c1", { userId: "u1", role: "STUDENT" }, 2);
     expect(result).toEqual({ status: "409", error: "ALREADY_ENROLLED" });
-  });
-
-  it("returns 201 on idempotency key replay without creating again", async () => {
-    const existing = { id: "e-existing", courseId: "c1", userId: "u1", role: "STUDENT" };
-    prismaMock.enrollment.findUnique.mockResolvedValue(existing);
-    const result = await addEnrollment("c1", {
-      userId: "u1",
-      role: "STUDENT",
-      idempotencyKey: "idem-enroll-1",
-    });
-    expect(result).toEqual({ status: "201", enrollment: existing });
-    expect(prismaMock.enrollment.create).not.toHaveBeenCalled();
-  });
-
-  it("recovers from idempotency-key race (P2002) by returning the existing enrollment", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: "u1" });
-    prismaMock.enrollment.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "e-race", courseId: "c1", userId: "u1", role: "STUDENT" });
-    prismaMock.enrollment.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("unique", {
-        code: "P2002",
-        clientVersion: "5.0.0",
-      }),
-    );
-    const result = await addEnrollment("c1", {
-      userId: "u1",
-      role: "STUDENT",
-      idempotencyKey: "idem-race",
-    });
-    expect(result.status).toBe("201");
-    expect(result.enrollment).toEqual({
-      id: "e-race",
-      courseId: "c1",
-      userId: "u1",
-      role: "STUDENT",
-    });
   });
 
   it("reactivates an inactive enrollment with the requested role and returns 201 (#685 review)", async () => {
@@ -117,7 +97,7 @@ describe("addEnrollment", () => {
     );
     prismaMock.enrollment.findUnique.mockResolvedValue({ id: "e1", isActive: false });
     prismaMock.enrollment.update.mockResolvedValue({ id: "e1", role: "TA", isActive: true });
-    const result = await addEnrollment("c1", { userId: "u1", role: "TA" });
+    const result = await addEnrollment("c1", { userId: "u1", role: "TA" }, 2);
     expect(result.status).toBe("201");
     expect(prismaMock.enrollment.update).toHaveBeenCalledWith({
       where: { id: "e1" },

@@ -65,6 +65,11 @@ services:
       BETTER_AUTH_SECRET: e2e-test-secret-change-for-production
       BETTER_AUTH_URL: http://localhost:3000
       BETTER_AUTH_DISABLE_RATE_LIMIT: "1"
+      # Core's own /api/sessions/validate limiter (rate-limit.server.ts,
+      # default 300 req/60s per IP) — three extension servers validating every
+      # authenticated request from one compose network IP exceed that in a
+      # full-suite run, cascading 429→401s. Raised for e2e only.
+      SESSION_VALIDATE_RATE_LIMIT: "5000"
       GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
       NODE_ENV: test
       PORT: "3000"
