@@ -595,7 +595,7 @@ List available AI models.
 
 **Behavior:** Students see only models allowed by the admin AI model policy. Instructors and admins see all models.
 
-**Response:** `AiModel[]` with fields: `id`, `name`, `provider`, `description`, cost tier metadata.
+**Response:** `AiModel[]` with fields: `id`, `modelId`, `modelName`, `provider`, `summary`, `costTier`, `roleHint`, `studentSelectable` (whether the AI model policy allows this model for students), `availability` (`allowed` | `admin-only`), `isDefaultTutor` (true on the one model the admin AI model policy designates as the tutor default — clients should read this instead of hardcoding a model id).
 
 ---
 
