@@ -37,6 +37,7 @@ import { randomUUID } from 'crypto';
 import { prisma } from '../config/database.js';
 import { getEduAiChatUrl } from './eduaiClient.js';
 import { trimNonEmpty } from '../utils/coreCourseId.js';
+import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
 
 const SUPERVISOR_ERROR_MESSAGE =
   'AI study buddy encountered an issue reviewing the response. Please try again.';
