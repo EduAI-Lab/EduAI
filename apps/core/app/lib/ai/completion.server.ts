@@ -39,6 +39,8 @@ export type CompletionRequest = {
   temperature?: number;
   maxTokens?: number;
   routingContext?: unknown;
+  /** Client disconnect / Stop — forwarded to streamText so provider generation aborts. */
+  signal?: AbortSignal;
 };
 
 export type ResolvedCompletionPrompt = {
@@ -164,8 +166,20 @@ export async function runCompletion(request: CompletionRequest) {
     };
   }
 
-  const registry = createAIProviderRegistry(validatedApiKeys);
-  const aiModel = registry.languageModel(validatedModelId);
+  let aiModel;
+  try {
+    const registry = createAIProviderRegistry(validatedApiKeys);
+    aiModel = registry.languageModel(validatedModelId);
+  } catch (error) {
+    // languageModel() can throw (e.g. AI_NoSuchProviderError) before streamText's
+    // 502 boundary when a provider is marked enabled but not registered.
+    return {
+      ok: false as const,
+      status: 502,
+      error: `LLM provider setup failed: ${formatCompletionStreamError(error)}`,
+    };
+  }
+
   const streaming = request.streaming === true;
   const temperature =
     typeof request.temperature === "number" && Number.isFinite(request.temperature)
@@ -184,6 +198,7 @@ export async function runCompletion(request: CompletionRequest) {
       messages: resolved.messages as Parameters<typeof streamText>[0]["messages"],
       temperature,
       maxTokens,
+      abortSignal: request.signal,
     });
   } catch (error) {
     return {

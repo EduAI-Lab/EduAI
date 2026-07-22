@@ -48,6 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
     temperature: payload.temperature,
     maxTokens: payload.maxTokens,
     routingContext: payload.routingContext,
+    signal: request.signal,
   });
 
   if (!outcome.ok) {
