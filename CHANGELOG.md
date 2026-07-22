@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] test: Close remaining mutation testing gaps from #224's epic follow-ups — `password-history.server.ts` 46.00% → 100% (27 gaps), `password-policy.ts` 73.91% → 100% (14 gaps, including two previously timeout-prone mutants on `PASSWORD_POLICY_MESSAGE`), `password-expiry.server.ts` 76.19% → 100% (10 gaps), and `canvas/guards.server.ts` 76.32% → 97.37% (8 of 9 gaps; the remaining mutant is a documented equivalent). (#1094, #1095, #1097, #1098, @GlowyBlack, 2026-07-22) — [#PR](https://github.com/EduAI-Lab/EduAICore/pull/PR)
+- [core] test: Close remaining mutation testing gaps from #224's epic follow-ups — `password-history.server.ts` 46.00% → 100% (27 gaps), `password-policy.ts` 73.91% → 100% (14 gaps, including two previously timeout-prone mutants on `PASSWORD_POLICY_MESSAGE`), `password-expiry.server.ts` 76.19% → 100% (10 gaps), and `canvas/guards.server.ts` 76.32% → 97.37% (8 of 9 gaps; the remaining mutant is a documented equivalent). (#1094, #1095, #1097, #1098, @GlowyBlack, 2026-07-22) — [#1150](https://github.com/EduAI-Lab/EduAI/pull/1150)
 
 ### Fixed
 
