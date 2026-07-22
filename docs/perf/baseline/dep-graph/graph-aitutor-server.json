@@ -1,0 +1,167 @@
+{
+  "../../shared/schemas/activity.js": [],
+  "../../shared/schemas/aiGuidance.js": [],
+  "app.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "routes/activities.js",
+    "routes/admin.js",
+    "routes/ai-models.js",
+    "routes/authentication.js",
+    "routes/bug-reports.js",
+    "routes/courses.js",
+    "routes/internal.js",
+    "routes/lessons.js",
+    "routes/modules.js",
+    "routes/prompts.js",
+    "routes/suggested-prompts.js",
+    "routes/topics.js"
+  ],
+  "config/bootstrapAdmins.js": [],
+  "config/database.js": [],
+  "index.js": [
+    "app.js",
+    "jobs/scheduler.js"
+  ],
+  "jobs/reconcile.js": [
+    "config/database.js",
+    "services/eduaiClient.js"
+  ],
+  "jobs/scheduler.js": [
+    "jobs/reconcile.js"
+  ],
+  "middleware/auth.js": [
+    "services/policyService.js"
+  ],
+  "middleware/serviceAuth.js": [],
+  "routes/activities.js": [
+    "../../shared/schemas/activity.js",
+    "../../shared/schemas/aiGuidance.js",
+    "config/database.js",
+    "middleware/auth.js",
+    "services/activityAnalytics.js",
+    "services/activityEvaluation.js",
+    "services/aiGuidance.js",
+    "services/aiModelPolicy.js",
+    "services/eduaiAuth.js",
+    "services/eduaiClient.js",
+    "services/progressCalculation.js",
+    "utils/mappers.js"
+  ],
+  "routes/admin.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "services/aiModelPolicy.js",
+    "services/eduaiAuth.js",
+    "services/eduaiClient.js",
+    "services/enrollmentSync.js",
+    "services/systemSettings.js",
+    "utils/mappers.js"
+  ],
+  "routes/ai-models.js": [
+    "services/aiModelPolicy.js"
+  ],
+  "routes/authentication.js": [
+    "services/eduaiClient.js",
+    "services/importTaughtCoursesService.js",
+    "utils/mappers.js"
+  ],
+  "routes/bug-reports.js": [
+    "middleware/auth.js",
+    "services/bugReports.js",
+    "services/eduaiAuth.js"
+  ],
+  "routes/courses.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "services/courseCloning.js",
+    "services/eduaiAuth.js",
+    "services/eduaiClient.js",
+    "services/eduaiServiceKeyErrors.js",
+    "services/enrollmentSync.js",
+    "services/importTaughtCoursesService.js",
+    "services/progressCalculation.js",
+    "utils/mappers.js"
+  ],
+  "routes/internal.js": [
+    "config/database.js",
+    "middleware/serviceAuth.js"
+  ],
+  "routes/lessons.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "services/progressCalculation.js",
+    "utils/mappers.js"
+  ],
+  "routes/modules.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "services/progressCalculation.js",
+    "utils/mappers.js"
+  ],
+  "routes/prompts.js": [
+    "config/database.js",
+    "middleware/auth.js"
+  ],
+  "routes/suggested-prompts.js": [
+    "config/database.js"
+  ],
+  "routes/topics.js": [
+    "config/database.js",
+    "middleware/auth.js",
+    "services/topicSync.js"
+  ],
+  "schemas/eduai.js": [],
+  "services/activityAnalytics.js": [
+    "config/database.js"
+  ],
+  "services/activityEvaluation.js": [],
+  "services/aiGuidance.js": [
+    "config/database.js",
+    "services/eduaiClient.js"
+  ],
+  "services/aiModelPolicy.js": [
+    "services/eduaiClient.js",
+    "services/systemSettings.js"
+  ],
+  "services/bugReports.js": [
+    "config/database.js",
+    "services/eduaiClient.js",
+    "utils/bugReportMappers.js"
+  ],
+  "services/courseCloning.js": [
+    "config/database.js"
+  ],
+  "services/eduaiAuth.js": [],
+  "services/eduaiClient.js": [
+    "schemas/eduai.js",
+    "services/systemSettings.js"
+  ],
+  "services/eduaiServiceKeyErrors.js": [],
+  "services/enrollmentSync.js": [
+    "config/database.js",
+    "services/eduaiClient.js"
+  ],
+  "services/importTaughtCoursesService.js": [
+    "config/database.js",
+    "services/eduaiClient.js",
+    "services/enrollmentSync.js",
+    "services/topicSync.js"
+  ],
+  "services/policyService.js": [
+    "services/eduaiClient.js",
+    "services/systemSettings.js"
+  ],
+  "services/progressCalculation.js": [
+    "config/database.js"
+  ],
+  "services/systemSettings.js": [
+    "config/database.js"
+  ],
+  "services/topicSync.js": [
+    "config/database.js",
+    "services/eduaiClient.js"
+  ],
+  "utils/bugReportMappers.js": [],
+  "utils/mappers.js": []
+}
