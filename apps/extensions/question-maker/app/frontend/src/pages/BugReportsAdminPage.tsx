@@ -198,6 +198,63 @@ export function BugReportsAdminPage() {
     }
   }, [navigate, toast]);
 
+  /** List rows omit diagnostic blobs (#979); load full detail before opening viewers. */
+  const openAttachment = useCallback(
+    async (
+      row: BugReportRow,
+      kind: 'console' | 'network' | 'screenshot',
+    ) => {
+      try {
+        const detailed =
+          row.consoleLogs != null || row.networkLogs != null || row.screenshot != null
+            ? row
+            : await bugReportApi.get(row.id);
+        setRows((current) =>
+          current.map((r) =>
+            r.id === row.id
+              ? {
+                  ...r,
+                  ...detailed,
+                  hasConsoleLogs: detailed.hasConsoleLogs ?? Boolean(detailed.consoleLogs),
+                  hasNetworkLogs: detailed.hasNetworkLogs ?? Boolean(detailed.networkLogs),
+                  hasScreenshot: detailed.hasScreenshot ?? Boolean(detailed.screenshot),
+                }
+              : r,
+          ),
+        );
+        if (kind === 'console') {
+          setDetail({
+            open: true,
+            title: 'Console logs',
+            content: detailed.consoleLogs || '',
+            type: 'logs',
+          });
+        } else if (kind === 'network') {
+          setDetail({
+            open: true,
+            title: 'Network logs',
+            content: detailed.networkLogs || '',
+            type: 'logs',
+          });
+        } else {
+          setDetail({
+            open: true,
+            title: 'Screenshot',
+            content: detailed.screenshot || '',
+            type: 'screenshot',
+          });
+        }
+      } catch {
+        toast({
+          title: 'Could not load attachment',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast],
+  );
+
   useEffect(() => {
     if (isLoading) return;
     const qmUser = user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null;
@@ -443,15 +500,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.consoleLogs}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Console logs',
-                                content: row.consoleLogs || '',
-                                type: 'logs'
-                              })
-                            }
+                            disabled={!(row.hasConsoleLogs ?? Boolean(row.consoleLogs))}
+                            onClick={() => void openAttachment(row, 'console')}
                           >
                             Console
                           </Button>
@@ -459,15 +509,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.networkLogs}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Network logs',
-                                content: row.networkLogs || '',
-                                type: 'logs'
-                              })
-                            }
+                            disabled={!(row.hasNetworkLogs ?? Boolean(row.networkLogs))}
+                            onClick={() => void openAttachment(row, 'network')}
                           >
                             Network
                           </Button>
@@ -475,15 +518,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.screenshot}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Screenshot',
-                                content: row.screenshot || '',
-                                type: 'screenshot'
-                              })
-                            }
+                            disabled={!(row.hasScreenshot ?? Boolean(row.screenshot))}
+                            onClick={() => void openAttachment(row, 'screenshot')}
                           >
                             Screenshot
                           </Button>

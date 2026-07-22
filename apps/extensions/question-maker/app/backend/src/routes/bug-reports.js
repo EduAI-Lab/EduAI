@@ -71,6 +71,30 @@ router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, 
   }
 });
 
+/**
+ * GET /api/admin/bug-reports/:id — full detail including diagnostic blobs.
+ * Core list responses omit console/network/screenshot (#979); the admin UI
+ * loads attachments on demand through this proxy.
+ */
+router.get('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const response = await fetch(`${config.coreUrl}/api/admin/bug-reports/${req.params.id}`, {
+      headers: { cookie: req.headers.cookie ?? '' },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, ...body });
+    }
+    // Scope QM triage to Question Maker reports (same filter as the list UI).
+    if (body?.source && body.source !== 'QUESTION_MAKER') {
+      return res.status(404).json({ success: false, error: 'Bug report not found' });
+    }
+    return res.json({ success: true, data: body });
+  } catch {
+    return res.status(502).json({ success: false, error: 'Could not reach Core' });
+  }
+});
+
 /** PATCH /api/admin/bug-reports/:id — ADMIN-only status update via Core. */
 router.patch('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
   try {
