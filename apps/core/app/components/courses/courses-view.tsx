@@ -222,7 +222,7 @@ function AdminCoursesBody({ courses, instructors = [], onCreateCourse, onEditCou
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <PageHeading heading={config.heading} subheading="Manage all courses in the system" />
 
@@ -540,7 +540,7 @@ function UnitAdminCoursesBody({
     : authorizedUnits.join(', ') || '—'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <PageHeading heading={config.heading} subheading={<>Managing: <span className="font-medium">{unitLabel}</span></>} />
 
@@ -851,7 +851,7 @@ function InstructorCoursesBody({ courses, onCreateCourse, onEditCourse, onDelete
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <PageHeading heading={config.heading} subheading="Courses you are teaching" />
 
@@ -1082,7 +1082,7 @@ function MixedCourseSection({
   setCoursePreference: (courseId: string, update: CourseCardPreference | null) => void
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <PageHeading heading={heading} subheading={subheading} />
       <CourseListView<Course>
         courses={courses}
@@ -1141,7 +1141,7 @@ function MixedCoursesBody({ courses, taCourseIds, enrolledCourseIds }: MixedView
 
   if (assisting.length === 0 && enrolled.length === 0) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-6">
         <PageHeading heading="My Courses" subheading="Your courses" />
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-8">
