@@ -50,7 +50,8 @@ export default defineConfig(({ mode, isSsrBuild }) => {
       reactRouter(),
       tsconfigPaths(),
       // ANALYZE=1 npm run build → treemap at build/client-bundle-stats.html
-      ...(process.env.ANALYZE
+      // Client build only — the SSR pass runs last and would clobber the file.
+      ...(process.env.ANALYZE && !isSsrBuild
         ? [
             visualizer({
               filename: "build/client-bundle-stats.html",

@@ -79,6 +79,8 @@ if (asJson) {
       `${r.route.padEnd(pad)}  ${String(r.chunks).padStart(6)}  ${kb(r.bytes)}`,
     );
   }
-  const total = rows.find((r) => r.key.includes("root")) ?? rows[0];
-  console.log(`\n${rows.length} route entries; largest: ${kb(rows[0].bytes)}`);
+  const root = rows.find((r) => r.key.includes("root")) ?? rows[0];
+  console.log(
+    `\n${rows.length} route entries; root baseline: ${kb(root.bytes)}; largest: ${kb(rows[0].bytes)}`,
+  );
 }
