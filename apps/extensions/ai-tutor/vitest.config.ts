@@ -14,5 +14,13 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['app/tests/**/*.test.{ts,tsx}'],
     setupFiles: ['./app/tests/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      // Emit the summary even when some tests fail, so CI always gets a coverage figure.
+      reportOnFailure: true,
+      include: ['app/**/*.{ts,tsx}'],
+      exclude: ['app/tests/**', 'app/**/*.test.{ts,tsx}', 'app/root.tsx', 'app/routes.ts'],
+      reporter: ['text-summary', 'json-summary'],
+    },
   },
 });
