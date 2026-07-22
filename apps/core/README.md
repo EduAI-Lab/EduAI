@@ -532,6 +532,20 @@ See `docs/rag-ai/routing/eduai-summer-2026/` and `infra/cmps01/README.md` for cm
 - If `npm run test` fails with `ERR_REQUIRE_ESM` from `html-encoding-sniffer`, that is a known jsdom 29 dependency issue in the monorepo — track fix separately; component test files themselves are valid.
 - Tests must live under `app/tests/` and be named `*.test.ts` or `*.test.tsx`.
 
+### Mutation testing
+
+`npm run test:mutation` runs [Stryker](https://stryker-mutator.io/) against the RBAC, auth,
+and Canvas-credential-encryption modules (`stryker.config.mjs`) to verify the unit suite
+actually catches regressions in that code, not just covers it. It reuses `vitest.shared.ts`
+(the same plugins/aliases as the main `vitest.config.ts`) with a narrowed `include` list
+(`vitest.mutation.config.ts`) scoped to the ~40 test files that exercise the mutated modules —
+running the full 199-file suite would exceed Stryker's dry-run timeout and pull in an
+unrelated, pre-existing Ollama-dependent test failure. Results are written to
+`reports/mutation/mutation.html` (gitignored, not committed). This is a local/on-demand
+command — it is not run in CI.
+
+To re-check a single file after adding tests: `npx stryker run --mutate <path/to/file.ts>`.
+
 ## Contributing
 
 1. Fork the repository
