@@ -1,12 +1,24 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { CoursesAdminView } from '~/components/courses/courses-admin-view'
-import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
-import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
+import { CoursesView, type CoursesViewProps } from '~/components/courses/courses-view'
 import { PolicyProvider, type PolicyValues } from '~/components/policy/policy-gate'
 import type { Course } from '~/hooks/api/use-courses'
+
+// Thin per-role wrappers over the single role-gated `CoursesView` (#1087 Group A)
+// so the test bodies below (unchanged) exercise each role exactly as before.
+function CoursesAdminView(props: Omit<Extract<CoursesViewProps, { role: 'admin' }>, 'role'>) {
+  return <CoursesView role="admin" {...props} />
+}
+function CoursesUnitAdminView(props: Omit<Extract<CoursesViewProps, { role: 'unit-admin' }>, 'role'>) {
+  return <CoursesView role="unit-admin" {...props} />
+}
+function CoursesInstructorView(props: Omit<Extract<CoursesViewProps, { role: 'instructor' }>, 'role'>) {
+  return <CoursesView role="instructor" {...props} />
+}
+function CoursesMixedView(props: Omit<Extract<CoursesViewProps, { role: 'mixed' }>, 'role'>) {
+  return <CoursesView role="mixed" {...props} />
+}
 
 // §541: department labels/options now come from the DB-backed useDisciplines
 // hook (previously the static UNIT_OPTIONS). Stub it with a fixed list so the
@@ -261,10 +273,13 @@ describe('CoursesInstructorView', () => {
     expect(screen.getByText('COSC 201')).toBeInTheDocument()
   })
 
-  it('groups older-term courses under "Previous Terms"', () => {
+  // #1087 Group A: instructor now uses the same term grouping as admin —
+  // older/future terms render as their own term sections with a relative
+  // subtitle ("Previous term" / "Upcoming term") instead of date buckets.
+  it('labels older-term sections as "Previous term"', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', startDate: '2020-01-01', endDate: '2020-04-15' }
+    const oldCourse = { ...PUBLISHED_COURSE, id: 'old1', code: 'COSC 999', year: 2020, startDate: '2020-09-01', endDate: '2020-12-15' }
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, oldCourse]}
@@ -275,14 +290,14 @@ describe('CoursesInstructorView', () => {
       />
     )
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText(/previous term/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 999')).toBeInTheDocument()
   })
 
-  it('groups not-yet-started courses under "Upcoming Terms"', () => {
+  it('labels future-term sections as "Upcoming term"', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const futureCourse = { ...PUBLISHED_COURSE, id: 'future1', code: 'COSC 555', startDate: '2026-01-01', endDate: '2026-04-15' }
+    const futureCourse = { ...PUBLISHED_COURSE, id: 'future1', code: 'COSC 555', term: 'Winter', year: 2025, startDate: '2026-01-01', endDate: '2026-04-15' }
     wrap(
       <CoursesInstructorView
         courses={[PUBLISHED_COURSE, futureCourse]}
@@ -293,7 +308,7 @@ describe('CoursesInstructorView', () => {
       />
     )
     expect(screen.getByText('COSC 101')).toBeInTheDocument()
-    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText(/upcoming term/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 555')).toBeInTheDocument()
   })
 
@@ -391,10 +406,11 @@ describe('CoursesMixedView', () => {
     expect(screen.getByText(/no courses/i)).toBeInTheDocument()
   })
 
-  it('groups older-term courses under "Previous Terms" in the assisting section', () => {
+  // #1087 Group A: mixed sections use the same term grouping as every other role.
+  it('labels older-term sections as "Previous term" in the assisting section', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', startDate: '2020-01-01', endDate: '2020-04-15' }
+    const oldTa = { ...TA_COURSE, id: 'ta-old', code: 'COSC 300', year: 2020, startDate: '2020-09-01', endDate: '2020-12-15' }
     wrap(
       <CoursesMixedView
         courses={[TA_COURSE, oldTa]}
@@ -403,14 +419,14 @@ describe('CoursesMixedView', () => {
       />
     )
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
-    expect(screen.getByText(/previous terms/i)).toBeInTheDocument()
+    expect(screen.getByText(/previous term/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 300')).toBeInTheDocument()
   })
 
-  it('groups not-yet-started courses under "Upcoming Terms" in the assisting section', () => {
+  it('labels future-term sections as "Upcoming term" in the assisting section', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
-    const futureTa = { ...TA_COURSE, id: 'ta-future', code: 'COSC 305', startDate: '2026-01-01', endDate: '2026-04-15' }
+    const futureTa = { ...TA_COURSE, id: 'ta-future', code: 'COSC 305', term: 'Winter', year: 2025, startDate: '2026-01-01', endDate: '2026-04-15' }
     wrap(
       <CoursesMixedView
         courses={[TA_COURSE, futureTa]}
@@ -419,11 +435,11 @@ describe('CoursesMixedView', () => {
       />
     )
     expect(screen.getByText('COSC 301')).toBeInTheDocument()
-    expect(screen.getByText(/upcoming terms/i)).toBeInTheDocument()
+    expect(screen.getByText(/upcoming term/i)).toBeInTheDocument()
     expect(screen.getByText('COSC 305')).toBeInTheDocument()
   })
 
-  it('does not show a "Previous Terms" or "Upcoming Terms" heading when all courses are current', () => {
+  it('does not show a "Previous term" or "Upcoming term" subtitle when all courses are current', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-10-15'))
     wrap(
@@ -433,7 +449,7 @@ describe('CoursesMixedView', () => {
         enrolledCourseIds={[]}
       />
     )
-    expect(screen.queryByText(/previous terms/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/upcoming terms/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/previous term/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/upcoming term/i)).not.toBeInTheDocument()
   })
 })
