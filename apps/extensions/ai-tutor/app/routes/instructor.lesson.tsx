@@ -99,6 +99,9 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  SortableProvider,
+  SortableItem,
+  DragHandle,
   courseThemeVars,
 } from '@eduai/ui';
 import { splitTitle } from '~/lib/course-title';
@@ -167,6 +170,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
 
   const [updatingTopicsFor, setUpdatingTopicsFor] = useState<number | null>(null);
   const [updatingModesFor, setUpdatingModesFor] = useState<number | null>(null);
+  const [reorderingActivities, setReorderingActivities] = useState(false);
 
   const [showAddPanel, setShowAddPanel] = useState(false);
 
@@ -309,6 +313,36 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       setActivities(activityData);
     } catch (error) {
       console.error('Failed to refresh activities', error);
+    }
+  };
+
+  // Persist a drag-reordered activity list: reorder the local list to match the
+  // dropped order optimistically, then confirm with the bulk reorder endpoint;
+  // a failure rolls back to the prior order.
+  const reorderActivitiesList = async (orderedIds: number[]) => {
+    if (!numericLessonId) return;
+    const current = activities;
+    const byId = new Map(current.map((a) => [a.id, a]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The activity list changed while reordering. Refreshing — please try again.');
+      await refreshActivities();
+      return;
+    }
+
+    setActivities(next);
+    setReorderingActivities(true);
+    try {
+      const updated = await api.reorderActivities(numericLessonId, orderedIds);
+      setActivities(updated);
+    } catch (error) {
+      console.error('Failed to reorder activities', error);
+      toast.error('Failed to reorder activities. The previous order was restored.');
+      setActivities(current);
+    } finally {
+      setReorderingActivities(false);
     }
   };
 
@@ -720,7 +754,15 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 </CardContent>
               </Card>
             ) : (
-              <ul className="space-y-4">
+              <SortableProvider
+                ids={oActivities.map((a) => a.id)}
+                onReorder={reorderActivitiesList}
+                strategy="list"
+                disabled={
+                  !perms.canManageContent || oActivities.length < 2 || reorderingActivities
+                }
+              >
+              <div className="space-y-4">
                 {oActivities.map((activity, i) => {
                   const isUpdatingTopics = updatingTopicsFor === activity.id;
                   const isUpdatingModes = updatingModesFor === activity.id;
@@ -736,8 +778,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
+                  const canReorderActivity = perms.canManageContent && oActivities.length > 1;
                   return (
-                    <li key={activity.id}>
+                    <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
+                      {({ handleProps }) => (
                       <Card
                         className="group relative overflow-hidden"
                         style={courseThemeVars(accentColor ?? 'var(--primary)')}
@@ -762,6 +806,13 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           {String(i + 1).padStart(2, '0')}
                         </span>
                         <div className="relative flex items-start gap-3 p-5">
+                          {canReorderActivity && (
+                            <DragHandle
+                              handleProps={handleProps}
+                              label={`Drag to reorder ${activity.title ?? 'activity'}`}
+                              className="mt-0.5"
+                            />
+                          )}
                           <span
                             className="flex size-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
                             style={{
@@ -1102,10 +1153,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                           </div>
                         </div>
                       </Card>
-                    </li>
+                      )}
+                    </SortableItem>
                   );
                 })}
-              </ul>
+              </div>
+              </SortableProvider>
             )}
           </div>
       </div>
