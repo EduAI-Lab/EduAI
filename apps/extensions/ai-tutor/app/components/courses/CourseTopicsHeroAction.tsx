@@ -1,21 +1,21 @@
 /**
- * @file Course-hero topic control — sync/create topics from the course banner.
+ * @file Course-hero topic control — create topics from the course banner.
  *
  * Responsibility: The compact top-right action on the course-detail hero that
  *   manages the course's topic taxonomy (the chips themselves are rendered by
- *   the shared CourseHeroCard's `topics` prop). EduAI-sourced courses get a
- *   one-click re-pull; locally-authored courses get a create-topic dialog.
- *   Orphaned local topics surfaced by a sync are resolved through
- *   TopicSyncMappingDialog.
+ *   the shared CourseHeroCard's `topics` prop). EduAI-sourced courses have
+ *   their topics pulled automatically from Core (see server routes/topics.js);
+ *   locally-authored courses get a create-topic dialog here.
  * Used by: `app/routes/instructor.course.tsx` (hero `headerAction`).
  * Gotchas:
  *   - Shares the caller's `useCourseTopics` instance so the hero chips and this
- *     control stay in sync after a create/sync.
- *   - Renders nothing when the user lacks `canManageTopics` (chips still show).
- * Related: hooks/useCourseTopics, components/TopicSyncMappingDialog
+ *     control stay in sync after a create.
+ *   - Renders nothing when the user lacks `canManageTopics` (chips still show),
+ *     or for EduAI-sourced courses (no manual action needed — see #1031).
+ * Related: hooks/useCourseTopics
  */
 import { useState } from 'react';
-import { IconLoader2, IconPlus, IconRefresh } from '@tabler/icons-react';
+import { IconLoader2, IconPlus } from '@tabler/icons-react';
 import {
   Button,
   Dialog,
@@ -25,15 +25,9 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from '@eduai/ui';
-import TopicSyncMappingDialog from '~/components/TopicSyncMappingDialog';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
 import type { CourseTopicsState } from '~/hooks/useCourseTopics';
-import api from '~/lib/api';
 import type { Course } from '~/lib/types';
 
 export function CourseTopicsHeroAction({
@@ -44,38 +38,20 @@ export function CourseTopicsHeroAction({
   courseTopics: CourseTopicsState;
 }) {
   const perms = useAtPermissions();
-  const { topics } = courseTopics;
-
-  const [syncing, setSyncing] = useState(false);
-  const [showMapping, setShowMapping] = useState(false);
-  const [missingTopics, setMissingTopics] = useState<{ id: number; name: string }[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newTopicName, setNewTopicName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // EduAI-sourced courses have their topics pulled automatically from Core
+  // on every read (routes/topics.js) — no manual action needed here. Gated
+  // on `coreOfferingId` to match the server's sync/create gate exactly
+  // (routes/topics.js checks `course.coreOfferingId`); every CourseOffering
+  // is now a Core anchor row (#1072), so this is effectively always true —
+  // the field stays optional here only defensively.
   const isEduAiCourse = !!course.coreOfferingId;
-
-  if (!perms.canManageTopics) return null;
-
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const result = await api.syncCourseTopics(course.id);
-      // Refresh topics first so the mapping dialog options reflect latest topics.
-      await courseTopics.refresh();
-      if (result && Array.isArray(result.missingTopics) && result.missingTopics.length > 0) {
-        setMissingTopics(result.missingTopics.map((t: any) => ({ id: t.id, name: t.name })));
-        setShowMapping(true);
-      }
-    } catch (e) {
-      console.error('Failed to sync topics', e);
-      alert('Failed to sync topics from EduAI. Please try again.');
-    } finally {
-      setSyncing(false);
-    }
-  };
+  if (!perms.canManageTopics || isEduAiCourse) return null;
 
   const handleCreateTopic = async () => {
     const name = newTopicName.trim();
@@ -102,46 +78,17 @@ export function CourseTopicsHeroAction({
 
   return (
     <>
-      <TooltipProvider delayDuration={150}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {isEduAiCourse ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={heroButtonClass}
-                aria-label="Sync topics from EduAI"
-                onClick={() => {
-                  if (!syncing) void handleSync();
-                }}
-                disabled={syncing}
-              >
-                <IconRefresh
-                  className={`size-4${syncing ? ' animate-spin' : ''}`}
-                  aria-hidden="true"
-                />
-                {syncing ? 'Syncing…' : 'Sync now'}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={heroButtonClass}
-                aria-label="Create topic"
-                onClick={() => setCreateOpen(true)}
-              >
-                <IconPlus className="size-4" aria-hidden="true" />
-                Create topic
-              </Button>
-            )}
-          </TooltipTrigger>
-          <TooltipContent>
-            {isEduAiCourse ? 'Sync topics from EduAI Core' : 'Create a course topic'}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={heroButtonClass}
+        aria-label="Create topic"
+        onClick={() => setCreateOpen(true)}
+      >
+        <IconPlus className="size-4" aria-hidden="true" />
+        Create topic
+      </Button>
 
       <Dialog
         open={createOpen}
@@ -186,18 +133,6 @@ export function CourseTopicsHeroAction({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <TopicSyncMappingDialog
-        open={showMapping}
-        onClose={() => setShowMapping(false)}
-        topics={topics}
-        missing={missingTopics}
-        busy={syncing}
-        onApply={async (mappings) => {
-          await api.remapCourseTopics(course.id, mappings);
-          await courseTopics.refresh();
-        }}
-      />
     </>
   );
 }
