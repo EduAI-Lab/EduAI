@@ -18,7 +18,8 @@
     "paths": {
       "~/*": ["./app/*"],
       "@prisma/client": ["./node_modules/@prisma/client"],
-      "@eduai/types": ["../../packages/types/src/index.ts"]
+      "@eduai/types": ["../../packages/types/src/index.ts"],
+      "@eduai/ui/term-boundary-fixtures": ["../../packages/ui/src/tests/fixtures/term-boundary-fixtures.ts"]
     },
     "esModuleInterop": true,
     "verbatimModuleSyntax": true,

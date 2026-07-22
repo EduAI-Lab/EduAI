@@ -14,6 +14,7 @@ import {
   ubcAcademicYearFromDate,
   inferUbcTermStartFromEndDate,
 } from "~/lib/canvas/term.server";
+import { UBC_TERM_BOUNDARY_CASES } from "@eduai/ui/term-boundary-fixtures";
 
 describe("normalizeStudentId", () => {
   it("trims whitespace", () => {
@@ -46,6 +47,15 @@ describe("ubcTermFromDate", () => {
   ] as const)("maps %s to %s", (isoDate, term) => {
     expect(ubcTermFromDate(new Date(isoDate))).toBe(term);
   });
+
+  // Shared with packages/ui's `termFromDate` test so both date→term
+  // derivations agree on the Vancouver timezone boundary (#1010).
+  it.each(UBC_TERM_BOUNDARY_CASES)(
+    "maps %s to %s in America/Vancouver, not UTC (#1010)",
+    (iso, term) => {
+      expect(ubcTermFromDate(new Date(iso))).toBe(term);
+    },
+  );
 });
 
 describe("ubcAcademicYearFromDate", () => {
