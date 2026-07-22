@@ -1,6 +1,5 @@
 /**
- * Campus-model size ranking for QM backend pickers/probes.
- * Keep in sync with frontend `src/utils/modelSizeRanks.ts` when adding sizes.
+ * Campus-model size ranking for QM pickers/probes (frontend re-exports this module).
  */
 
 /** @type {ReadonlyArray<readonly [RegExp, number]>} */
