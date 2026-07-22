@@ -6,11 +6,11 @@ import {
   buildDepartmentFilterGroup,
   defaultColorIndexForCourse,
   type CourseFilterGroup,
+  EmptyState,
 } from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
 import { Course } from '@/types/question';
 import { getDepartmentLabel } from '@/lib/units';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { CardGridSkeleton } from '@/components/shared/Skeletons';
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
