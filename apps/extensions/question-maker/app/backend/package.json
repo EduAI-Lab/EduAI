@@ -14,6 +14,7 @@
     "test:coverage": "vitest run --coverage --config vitest.coverage.config.js",
     "lint": "eslint . --max-warnings=0",
     "seed": "node scripts/seedUnified.js",
+    "seed:perf": "node scripts/seed-perf.js",
     "seed:production": "node scripts/seedProductionQuestions.js",
     "test:ocr": "node scripts/testOcrExtraction.js",
     "migrate:1072": "node scripts/migrate1072AnchorCleanup.js"

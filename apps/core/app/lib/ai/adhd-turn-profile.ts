@@ -47,6 +47,14 @@ const SUBSTANTIVE_CONTINUATION_PATTERN =
 const SUBSTANTIVE_QUESTION_PATTERN =
   /\b(what is|what are|how does|how do|why|explain|define|describe|walk me through|compare|summarize)\b/i;
 
+/** Learner asked for a visual / ASCII diagram — must not use brief policy (no DIAGRAMS rules). */
+export const ADHD_DIAGRAM_REQUEST_PATTERN =
+  /\b(diagram|draw|sketch|animat(?:e|ed|ion)|visuali[sz]e|ascii\s*art|show\s+(me\s+)?(a\s+)?(picture|figure|plot|graph)|make\s+(me\s+)?(a\s+)?diagram)\b/i;
+
+export function userRequestedDiagram(userText?: string): boolean {
+  return ADHD_DIAGRAM_REQUEST_PATTERN.test((userText ?? "").trim());
+}
+
 function countWords(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
@@ -84,6 +92,12 @@ export function resolveAdhdTurnProfile(args: {
   }
 
   if (SUBSTANTIVE_QUESTION_PATTERN.test(trimmed)) {
+    return "full_tutoring";
+  }
+
+  // Diagram asks are often short ("draw it", "make a diagram") and would otherwise
+  // fall into brief_clarification — which omits DIAGRAMS rules and starves the reply.
+  if (userRequestedDiagram(trimmed)) {
     return "full_tutoring";
   }
 
