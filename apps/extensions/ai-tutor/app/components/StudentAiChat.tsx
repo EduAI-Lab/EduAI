@@ -84,6 +84,7 @@ type StudentSelectableModel = AiModel & {
   allowedForStudents?: boolean;
   isAllowed?: boolean;
   availability?: 'allowed' | 'blocked' | 'admin-only';
+  isDefaultTutor?: boolean;
 };
 
 /**
@@ -114,6 +115,10 @@ type StudentAiChatProps = {
   className?: string;
 };
 
+// Last-resort fallback for when the /ai-models call itself fails and no
+// catalog is available at all. The real default lives server-side (see
+// `aiModelPolicy.js` DEFAULT_TUTOR_MODEL) and is surfaced per-model via the
+// `isDefaultTutor` flag on each /ai-models entry — prefer that over this.
 const DEFAULT_MODEL_ID = 'google:gemini-2.5-flash';
 
 // Detects whether the API has decorated this model with any student-policy field.
@@ -291,10 +296,8 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
         setStudentModelPolicyActive(policyActive);
         setSelectedModelId((current) => {
           if (selectableModels.some((model) => model.modelId === current)) return current;
-          const geminiModel = selectableModels.find((model) =>
-            model.modelId.includes('gemini-2.5-flash'),
-          );
-          return geminiModel?.modelId ?? selectableModels[0]?.modelId ?? DEFAULT_MODEL_ID;
+          const defaultModel = selectableModels.find((model) => model.isDefaultTutor);
+          return defaultModel?.modelId ?? selectableModels[0]?.modelId ?? DEFAULT_MODEL_ID;
         });
         setModelLoadError(false);
       } catch (error) {
