@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": ["*.css"],
   "exports": {
     ".": "./src/index.ts",
     "./sonner": "./src/ui/sonner.tsx",
@@ -10,6 +11,7 @@
     "./theme-provider": "./src/theme-provider.tsx",
     "./theme-sync": "./src/lib/theme-sync.ts",
     "./theme-sync-initializer": "./src/theme-sync-initializer.tsx",
+    "./tooltip": "./src/ui/tooltip.tsx",
     "./term": "./src/lib/term.ts"
   },
   "scripts": {
