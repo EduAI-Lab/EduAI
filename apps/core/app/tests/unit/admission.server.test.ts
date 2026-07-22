@@ -71,4 +71,45 @@ describe("AI admission", () => {
     await wrapped.text();
     await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
   });
+
+  it("withAdmissionRelease cancels the upstream reader before releasing on cancel", async () => {
+    let upstreamCancelled = false;
+    const release = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("chunk"));
+        // Keep the stream open until cancelled.
+      },
+      cancel() {
+        upstreamCancelled = true;
+      },
+    });
+
+    const wrapped = withAdmissionRelease(new Response(body), release);
+    await wrapped.body!.cancel();
+
+    await vi.waitFor(() => {
+      expect(upstreamCancelled).toBe(true);
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("removes aborted waiters from the FIFO queue", async () => {
+    process.env.AI_MAX_INFLIGHT = "1";
+    process.env.AI_ADMISSION_WAIT_MS = "2000";
+    const first = await acquireAiAdmission();
+    const controller = new AbortController();
+    const pending = acquireAiAdmission(controller.signal);
+    expect(getAiAdmissionStats().queued).toBe(1);
+
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(getAiAdmissionStats().queued).toBe(0);
+
+    const next = acquireAiAdmission();
+    first.release();
+    const admitted = await next;
+    expect(getAiAdmissionStats().inflight).toBe(1);
+    admitted.release();
+  });
 });

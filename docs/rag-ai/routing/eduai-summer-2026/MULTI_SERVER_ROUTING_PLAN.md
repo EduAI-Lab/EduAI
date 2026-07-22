@@ -184,6 +184,8 @@ If a host was marked healthy within the last ~30 s but **dies before the cache e
 - Soft-timeout marks a silent/slow host as **ready** so TTFT is not blocked forever. After that, a late `onError` cannot trigger another host retry — the client sees the bad/hung stream. Operators who prefer fail-closed on dead hosts can lower `FLEET_STREAM_PROBE_MS`.
 - Failures **after** the probe has settled (mid-stream disconnect, oversight rewrite errors, etc.) do **not** get a second host. Slice 2 is **startup-failure retry**, not full mid-stream failover.
 
+`fleetRetry: true` is logged only after the alternate host attempt **succeeds**. A failed second attempt logs `[fleet] retry attempt` then surfaces the error with `fleetRetry: false` (no success marker).
+
 `X-Fleet-Server` reflects the **final** host after a successful retry.
 
 ---
@@ -253,6 +255,7 @@ Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (
 | `VLLM_FLEET_CHAT_URLS` unset | No `X-Fleet-Server`; uses `VLLM_BASE_URL` only |
 | All fleet hosts unreachable | **503** `"No healthy vLLM fleet server available"` |
 | Model not on any host | **503** with model name in `details` |
+| Briefly stop one healthy vLLM (manual failover) | Chat logs `[fleet] retry attempt` then `fleetRetry: true` and succeeds on the other host; `X-Fleet-Server` is the survivor |
 
 **Implemented:** Slice 2 inference retry after a stale health cache — dead mid-window hosts invalidate and retry once on another healthy host.
 
@@ -263,7 +266,7 @@ Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (
 | Slice | Status | What |
 |-------|--------|------|
 | **1** | **Done** (`feat/fleet-slice1`) | Env pools, health cache, per-pool round-robin, 503 at pick time, `routingContext.jobType` pool selection |
-| **2** | Planned | Inference failure → cache invalidate + one retry |
+| **2** | **Done** (`feat/fleet-slice2-retry`) | Inference startup failure → cache invalidate + one alternate-host retry; stream probe + process-local admission |
 | **3** | Planned | Per-host energy sidecar URL; classroom load test |
 | **4** | Planned | Bedrock overflow (PIA) |
 

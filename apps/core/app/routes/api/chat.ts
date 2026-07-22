@@ -1644,10 +1644,13 @@ ${buildEmptyCourseRagBlock()}`;
     let admissionWaitedMs = 0;
     if (needsAdmission) {
       try {
-        const slot = await acquireAiAdmission();
+        const slot = await acquireAiAdmission(request.signal);
         admissionRelease = slot.release;
         admissionWaitedMs = slot.waitedMs;
       } catch (err) {
+        if (isClientAbort(err, request.signal)) {
+          return clientAbortResponse();
+        }
         if (err instanceof AdmissionTimeoutError) {
           return new Response(
             JSON.stringify({
@@ -1806,7 +1809,6 @@ ${buildEmptyCourseRagBlock()}`;
           if (nextPick) {
             abandonSidecar(failedPick.energySidecarUrl, sidecarTag);
             fleetPick = nextPick;
-            fleetRetry = true;
             energySidecarBaseUrl = nextPick.energySidecarUrl;
             sidecarTag = await startSidecarMeasurement(
               `chat-${chat.id}-${randomUUID()}`,
@@ -1820,6 +1822,20 @@ ${buildEmptyCourseRagBlock()}`;
             registry = createAIProviderRegistry(validatedApiKeys);
             aiModel = registry.languageModel(resolvedModelId);
             streamConfig.model = aiModel;
+            console.log("[fleet] retry attempt", {
+              from: failedPick.serverId,
+              to: nextPick.serverId,
+              model: resolvedModelId,
+            });
+            chatApiTrace("fleet retry host selected", {
+              fleetServerId: nextPick.serverId,
+              fleetReason: nextPick.reason,
+              previousServerId: failedPick.serverId,
+              fleetRetryAttempt: true,
+            });
+            result = await runStreamText();
+            // #876 success marker — only after the alternate attempt succeeds.
+            fleetRetry = true;
             routerContext = {
               ...(routerContext ?? {}),
               ...buildFleetRouterFeatures(workloadFeature, fleetPick),
@@ -1830,13 +1846,6 @@ ${buildEmptyCourseRagBlock()}`;
               to: nextPick.serverId,
               model: resolvedModelId,
             });
-            chatApiTrace("fleet retry host selected", {
-              fleetServerId: nextPick.serverId,
-              fleetReason: nextPick.reason,
-              previousServerId: failedPick.serverId,
-              fleetRetry: true,
-            });
-            result = await runStreamText();
           } else {
             throw error;
           }
