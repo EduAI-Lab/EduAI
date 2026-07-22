@@ -8,7 +8,6 @@ import {
   type CourseFilterGroup,
 } from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
-import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
 import { getDepartmentLabel } from '@/lib/units';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -33,8 +32,6 @@ export type CoursesGridProps = {
   onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
-  roleView?: QmRoleView;
-  currentUserId?: string;
   /** Course card to highlight for guided tour step 1 */
   tourHighlightCourseId?: number | null;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
