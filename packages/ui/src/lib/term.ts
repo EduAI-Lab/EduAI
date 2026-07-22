@@ -39,8 +39,9 @@ export function isTermCode(value: unknown): value is TermCode {
 }
 
 /**
- * Map a JS month index (0–11) to its UBC term code. Mirrors Core's
- * `ubcTermFromDate` so date-derived terms are identical everywhere.
+ * Map a JS month index (0–11) to its UBC term code. Used internally by
+ * `termFromDate`; prefer that (or `normalizeTerm`) whenever a real `Date`
+ * is available, since a raw month index carries no timezone information.
  *
  * This alone does NOT tell you the academic year — pairing it with
  * `date.getFullYear()` gives the CALENDAR year, which is wrong for W2
@@ -52,6 +53,39 @@ export function termFromMonth(month: number): TermCode {
   if (month >= 4 && month <= 5) return "S1" // May–Jun
   if (month >= 6 && month <= 7) return "S2" // Jul–Aug
   return "W2" // Jan–Apr
+}
+
+// Terms are UBC-local (Vancouver), not UTC. `Date#getMonth()` reads the
+// JS runtime's local timezone, which differs by environment (server process
+// TZ, or a browser's OS setting) and can bucket a date near a month
+// boundary into the wrong term. Always derive a term from a real Date via
+// this timezone, mirroring Core's `ubcTermFromDate` in term.server.ts.
+//
+// This is the single owner of the Vancouver zone constant — a fixed value,
+// not an env-configurable one. An env override here would only ever reach
+// Core: bundlers don't expose `process.env` to browser code by default, so
+// a `UBC_TIMEZONE` override would apply on the server but silently not in
+// the browser, letting the two derivations drift apart. Core's
+// `term.server.ts` imports this rather than redeclaring it, so both stay
+// identical by construction.
+export const UBC_TIME_ZONE = "America/Vancouver"
+
+function monthInUbcTimeZone(date: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: UBC_TIME_ZONE,
+      month: "numeric",
+    }).format(date),
+  )
+}
+
+/**
+ * Map a calendar date to its UBC term code using the America/Vancouver
+ * timezone boundary. This is the authoritative date→term derivation —
+ * prefer it over `termFromMonth` whenever a real `Date` is available.
+ */
+export function termFromDate(date: Date): TermCode {
+  return termFromMonth(monthInUbcTimeZone(date) - 1)
 }
 
 /**
@@ -86,8 +120,16 @@ export function normalizeTerm(
   startDate?: string | Date | null,
 ): TermCode | null {
   if (startDate != null) {
+    // A bare "YYYY-MM-DD" string names a calendar date, not an instant. Parsing
+    // it as UTC midnight and re-deriving via the Vancouver offset can shift it
+    // into the previous day (and term) near a month boundary — read the month
+    // straight from the string instead of round-tripping through a timezone.
+    if (typeof startDate === "string") {
+      const dateOnly = startDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (dateOnly) return termFromMonth(Number(dateOnly[2]) - 1)
+    }
     const date = startDate instanceof Date ? startDate : new Date(startDate)
-    if (!Number.isNaN(date.getTime())) return termFromMonth(date.getMonth())
+    if (!Number.isNaN(date.getTime())) return termFromDate(date)
   }
   if (typeof raw !== "string") return null
   const s = raw.trim().toUpperCase()
