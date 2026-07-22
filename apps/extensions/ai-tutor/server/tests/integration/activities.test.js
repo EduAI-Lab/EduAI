@@ -935,6 +935,69 @@ describe('Activities routes', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // ── Activity ordering (#1047) ─────────────────────────────────────
+
+  describe('activity ordering', () => {
+    it('appends new activities to the end of the lesson', async () => {
+      // A pre-existing activity anchors position 0.
+      const first = await createActivityInDb({ position: 0 });
+      const res = await request(profApp)
+        .post(`/api/lessons/${seed.lesson.id}/activities`)
+        .send({
+          title: 'Appended',
+          mainTopicId: seed.topic.id,
+          question: 'What is 3+3?',
+          type: 'MCQ',
+          options: ['5', '6', '7'],
+          answer: 1,
+          enableTeachMode: true,
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(first.position + 1);
+    });
+
+    describe('PUT /api/lessons/:lessonId/activities/order', () => {
+      async function seedThreeActivities() {
+        const a = await createActivityInDb({ position: 0 });
+        const b = await createActivityInDb({ position: 1 });
+        const c = await createActivityInDb({ position: 2 });
+        return { a, b, c };
+      }
+
+      it('reassigns positions 0..n-1 from the ordered id list', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, a.id, b.id] });
+
+        expect(res.status).toBe(200);
+        expect(res.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+        expect(res.body.map((x) => x.position)).toEqual([0, 1, 2]);
+
+        const list = await request(profApp).get(`/api/lessons/${seed.lesson.id}/activities`);
+        expect(list.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+      });
+
+      it('rejects an id set that does not match the lesson activities', async () => {
+        const { a, b } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [a.id, b.id] });
+        expect(res.status).toBe(400);
+      });
+
+      it('returns 403 for a TA', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const ta = await enrollTa();
+        const taApp = await createApp({ mockUser: ta });
+        const res = await request(taApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, b.id, a.id] });
+        expect(res.status).toBe(403);
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

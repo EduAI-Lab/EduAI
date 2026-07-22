@@ -7,6 +7,8 @@ import { CanvasIntegration, CanvasCourseMapping, Question_Metadata, Variants, As
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
+import { validateCanvasUrl, createPinnedLookup } from '../utils/canvasUrlGuard.js';
+import net from 'node:net';
 
 /**
  * Canvas LMS API Service
@@ -113,7 +115,11 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     return { data: { success: true } };
   }
 
-  // Real Canvas API request
+  // Real Canvas API request — re-validate at request time (#991) so an
+  // integration saved before this guard existed, or one whose row was
+  // altered directly, can't pivot the backend into an internal network or
+  // cloud metadata endpoint.
+  validateCanvasUrl(integration.canvasUrl);
   const url = `${integration.canvasUrl}/api/v1${endpoint}`;
   const config = {
     method,
@@ -121,6 +127,22 @@ const makeCanvasRequest = async (integration, method, endpoint, data = null) => 
     headers: {
       'Authorization': `Bearer ${integration.apiKey}`,
       'Content-Type': 'application/json'
+    },
+    // A hostname that passed validateCanvasUrl's IP-literal check can still
+    // resolve (or later rebind) to a private address — pin the DNS lookup so
+    // the resolved address is re-validated at connection time. Redirects are
+    // followed (Canvas hosts commonly sit behind a canonicalizing LB), but
+    // each hop is re-validated the same way before axios follows it, so a
+    // permitted host can't hand the request off to an unvalidated one.
+    lookup: createPinnedLookup(),
+    maxRedirects: 5,
+    beforeRedirect: (redirectOptions) => {
+      // follow-redirects strips the [...] brackets from an IPv6 hostname
+      // before this callback runs — re-add them so the reconstructed URL
+      // parses instead of being wrongly rejected as malformed.
+      const { protocol, hostname, path } = redirectOptions;
+      const host = net.isIP(hostname) === 6 ? `[${hostname}]` : hostname;
+      validateCanvasUrl(`${protocol}//${host}${path || ''}`);
     }
   };
 
