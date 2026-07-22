@@ -250,7 +250,7 @@ describe("createBugReport — field caps and redaction (#979)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findUnique.mockResolvedValue(VALID_USER);
-    prismaMock.bugReport.create.mockResolvedValue({});
+    prismaMock.bugReport.create.mockResolvedValue(CREATED_REPORT);
   });
 
   it("rejects oversized screenshots without truncating", async () => {
@@ -271,7 +271,7 @@ describe("createBugReport — field caps and redaction (#979)", () => {
       ...BASE_PAYLOAD,
       consoleLogs: "y".repeat(BUG_REPORT_FIELD_LIMITS.consoleLogs + 50),
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.consoleLogs).toHaveLength(BUG_REPORT_FIELD_LIMITS.consoleLogs);
   });
@@ -286,7 +286,7 @@ describe("createBugReport — field caps and redaction (#979)", () => {
         },
       ]),
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     const parsed = JSON.parse(data.networkLogs);
     expect(parsed[0].requestHeaders.Authorization).toBe("[REDACTED]");
@@ -301,7 +301,7 @@ describe("createBugReport — field caps and redaction (#979)", () => {
         callback: "https://x.com?access_token=sekret",
       },
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toEqual(OK_RESULT);
     const data = prismaMock.bugReport.create.mock.calls[0][0].data;
     expect(data.context).toEqual({
       courseId: "c1",
