@@ -21,6 +21,7 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { IconNotebook, IconPlus, IconUpload } from '@tabler/icons-react';
 import {
   Button,
@@ -324,7 +325,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     const current = lessons;
     const byId = new Map(current.map((l) => [l.id, l]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
-    if (next.length !== current.length) return;
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The lesson list changed while reordering. Refreshing — please try again.');
+      await refreshLessons();
+      return;
+    }
 
     setLessons(next);
     setReorderingLessons(true);
@@ -333,6 +340,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setLessons(updated);
     } catch (error) {
       console.error('Failed to reorder lessons', error);
+      toast.error('Failed to reorder lessons. The previous order was restored.');
       setLessons(current);
     } finally {
       setReorderingLessons(false);

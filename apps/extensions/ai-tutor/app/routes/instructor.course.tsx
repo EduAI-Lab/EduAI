@@ -21,6 +21,7 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
   Button,
@@ -290,7 +291,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     const current = modules;
     const byId = new Map(current.map((m) => [m.id, m]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
-    if (next.length !== current.length) return;
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The module list changed while reordering. Refreshing — please try again.');
+      await refreshModules();
+      return;
+    }
 
     setModules(next);
     setReorderingModules(true);
@@ -299,6 +306,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       setModules(updated);
     } catch (error) {
       console.error('Failed to reorder modules', error);
+      toast.error('Failed to reorder modules. The previous order was restored.');
       setModules(current);
     } finally {
       setReorderingModules(false);
