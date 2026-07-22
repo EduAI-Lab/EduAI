@@ -95,7 +95,6 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `CHAT_RATE_LIMIT`, `CHAT_RATE_WINDOW_MS` | optional (default 20 per 60000ms) | dev/prod | Per-user rate limit for `POST /api/chat` |
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
-| `UBC_TIMEZONE` | optional (default America/Vancouver) | dev/prod | IANA timezone for academic term-code derivation |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
 
 ## `apps/core/.env.test.example`
