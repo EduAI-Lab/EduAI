@@ -4,6 +4,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 10 — July 6-July 12, 2026]
+
+### Fixed
+
+- [core] fix: Hide the student material upload UI when the `students.canUploadMaterials` policy is disabled, even if an upload handler is present. Added a regression test covering the case where an upload handler exists but the policy remains disabled. (#899, @YibingW, 2026-07-07) — [#932](https://github.com/EduAI-Lab/EduAI/pull/932)
 
 ## [Week 12 — July 20–26, 2026]
 
