@@ -58,6 +58,107 @@ describe('Modules routes', () => {
     return ta;
   }
 
+  // ── POST /api/courses/:courseId/modules ─────────
+
+  describe('POST /api/courses/:courseId/modules append order', () => {
+    it('appends a new module to the end when no position is supplied', async () => {
+      // seedMinimalCourse creates one module at position 0.
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Second Module' });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(1);
+
+      const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(list.body.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
+    });
+
+    it('does not shift existing modules to a lower position', async () => {
+      const before = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(before.body[0].position).toBe(0);
+
+      await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Appended' });
+
+      const after = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      const original = after.body.find((m) => m.id === seed.module.id);
+      expect(original.position).toBe(0);
+    });
+
+    it('honors an explicit position when supplied', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Pinned', position: 5 });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(5);
+    });
+  });
+
+  // ── PUT /api/courses/:courseId/modules/order (reorder, #1047) ──────
+
+  describe('PUT /api/courses/:courseId/modules/order', () => {
+    async function seedThreeModules() {
+      // seed.module is already at position 0; add two more.
+      const b = await prisma.module.create({
+        data: { title: 'B', position: 1, courseOfferingId: seed.course.id },
+      });
+      const c = await prisma.module.create({
+        data: { title: 'C', position: 2, courseOfferingId: seed.course.id },
+      });
+      return { a: seed.module, b, c };
+    }
+
+    it('reassigns positions 0..n-1 from the ordered id list', async () => {
+      const { a, b, c } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [c.id, a.id, b.id] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
+      expect(res.body.map((m) => m.position)).toEqual([0, 1, 2]);
+
+      // Persisted order matches on a fresh read.
+      const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(list.body.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
+    });
+
+    it('rejects an id set that does not match the course modules', async () => {
+      const { a, b } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [a.id, b.id] }); // missing c
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects duplicate ids', async () => {
+      const { a } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [a.id, a.id, a.id] });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a non-array orderedIds', async () => {
+      await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: 'nope' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 403 for a TA', async () => {
+      const { a, b, c } = await seedThreeModules();
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [c.id, b.id, a.id] });
+      expect(res.status).toBe(403);
+    });
+  });
+
   // ── GET /api/courses/:courseId/modules ─────────────────────────────
 
   describe('GET /api/courses/:courseId/modules', () => {
