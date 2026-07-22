@@ -36,6 +36,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '../config/database.js';
 import { getEduAiChatUrl } from './eduaiClient.js';
+import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
 
 const SUPERVISOR_ERROR_MESSAGE =
   'AI study buddy encountered an issue reviewing the response. Please try again.';
@@ -69,7 +70,7 @@ async function callEduAI({
   signal,
 }) {
   const endpoint = getEduAiChatUrl();
-  const model = modelId || process.env.EDUAI_MODEL || 'google:gemini-2.5-flash';
+  const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
     console.error('[aiGuidance] Missing session cookie for EduAI call');

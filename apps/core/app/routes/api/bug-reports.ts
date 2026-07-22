@@ -93,5 +93,8 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
 
-  return new Response(null, { status: 201 });
+  return new Response(JSON.stringify({ id: result.report.id }), {
+    status: 201,
+    headers: { "Content-Type": "application/json" },
+  });
 }
