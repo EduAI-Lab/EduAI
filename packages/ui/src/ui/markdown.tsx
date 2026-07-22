@@ -1,5 +1,4 @@
-import { marked } from "marked"
-import { memo, useId, useMemo, Suspense } from "react"
+import { memo, useEffect, useId, useMemo, useState, Suspense } from "react"
 import type { Components } from "react-markdown"
 import { LazyStreamdown } from "./lazy-streamdown"
 
@@ -12,14 +11,31 @@ export type MarkdownProps = {
   isAnimating?: boolean
 }
 
+// `marked` is only used to split markdown into blocks — load it on demand so it
+// stays out of the always-loaded shared chunk (Streamdown next door is already lazy).
+let cachedLexer: ((markdown: string) => string[]) | null = null
+let lexerLoad: Promise<void> | null = null
+
+function loadLexer(): Promise<void> {
+  lexerLoad ??= import("marked").then(({ marked }) => {
+    cachedLexer = (markdown) => marked.lexer(markdown).map((token) => token.raw)
+  })
+  return lexerLoad
+}
+
 function parseMarkdownIntoBlocks(markdown: string): string[] {
   // Keep math in one Streamdown pass — marked.lexer splits on headings/lists and can break equations.
   if (/(?<!\\)\$\$|(?<!\\)\$[^$\n]+\$|\\frac|\\sqrt|[a-zA-Z]\^/.test(markdown)) {
     return [markdown];
   }
 
-  const tokens = marked.lexer(markdown)
-  return tokens.map((token) => token.raw)
+  // Lexer not loaded yet — render as a single block; the component re-renders
+  // and re-splits once the lazy import resolves.
+  if (!cachedLexer) {
+    return [markdown]
+  }
+
+  return cachedLexer(markdown)
 }
 
 const MemoizedMarkdownBlock = memo(
@@ -61,7 +77,24 @@ function MarkdownComponent({
 }: MarkdownProps) {
   const generatedId = useId()
   const blockId = id ?? generatedId
-  const blocks = useMemo(() => parseMarkdownIntoBlocks(children), [children])
+  const [lexerReady, setLexerReady] = useState(() => cachedLexer !== null)
+
+  useEffect(() => {
+    if (!lexerReady) {
+      let cancelled = false
+      loadLexer().then(() => {
+        if (!cancelled) setLexerReady(true)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+  }, [lexerReady])
+
+  const blocks = useMemo(
+    () => parseMarkdownIntoBlocks(children),
+    [children, lexerReady]
+  )
 
   return (
     <div className={className}>
