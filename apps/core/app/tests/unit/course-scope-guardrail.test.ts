@@ -4,6 +4,7 @@ import {
   buildCourseScopeRedirectMessage,
   courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
+  shouldSkipCourseScopeCheck,
 } from "~/lib/ai/course-scope-guardrail";
 
 const baseContext = {
@@ -65,6 +66,22 @@ describe("buildCourseScopeRedirectMessage", () => {
 
   it("falls back to a generic phrase when course name is null", () => {
     expect(buildCourseScopeRedirectMessage(null)).toContain("this course");
+  });
+});
+
+describe("shouldSkipCourseScopeCheck", () => {
+  it("skips empty and pure-greeting messages", () => {
+    expect(shouldSkipCourseScopeCheck("   ")).toBe(true);
+    expect(shouldSkipCourseScopeCheck("hi")).toBe(true);
+    expect(shouldSkipCourseScopeCheck("hey, thanks!")).toBe(true);
+    expect(shouldSkipCourseScopeCheck("good morning")).toBe(true);
+  });
+
+  it("does NOT skip off-topic requests that merely start with a greeting word", () => {
+    // Regression: a leading-anchor greeting match let these bypass the gate.
+    expect(shouldSkipCourseScopeCheck("ok what's the weather today")).toBe(false);
+    expect(shouldSkipCourseScopeCheck("hey write me a poem about cats")).toBe(false);
+    expect(shouldSkipCourseScopeCheck("what is the deadline for a2")).toBe(false);
   });
 });
 
