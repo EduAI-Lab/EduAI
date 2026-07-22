@@ -26,6 +26,9 @@ export function getEduAiChatUrl() {
  *
  * Pass `options.cookie` (the raw Cookie header forwarded from the request)
  * for user-scoped calls. Omit for unauthenticated endpoints.
+ * Pass `options.signal` (e.g. `AbortSignal.timeout(3000)`) to bound how long
+ * a caller will wait — a Core that's up but slow/hung otherwise blocks the
+ * socket with no timeout of its own.
  */
 async function requestEduAi(path, options = {}) {
   const cookie = typeof options.cookie === 'string' ? options.cookie : '';
@@ -39,6 +42,7 @@ async function requestEduAi(path, options = {}) {
       ...options.headers,
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -238,7 +242,40 @@ export async function findEduAiCourseById(courseId, options = {}) {
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
-export async function listEduAiCourseTopics(externalCourseId) {
+/**
+ * Lists every Core course under the service key (#1082) — an UNSCOPED read of
+ * the full non-deleted catalog (Core's `getCourses` service-key branch:
+ * `prisma.course.findMany({ where: { deletedAt: null } })`), no enrollment/
+ * publish/RBAC filtering and no `callerEnrollmentRole` (that field is
+ * computed against the caller's own enrollments, which don't apply to a
+ * service-key call).
+ *
+ * Use ONLY as a fallback for AT-enrolled courses missing from a caller's
+ * cookie-scoped list (`listEduAiCourses`) — AT and Core enrollment are
+ * intentionally independent tracks, so a miss there means "caller isn't
+ * Core-scoped for it," not "doesn't exist." Never use this as the primary/
+ * oracle source for a caller-facing list.
+ */
+export async function listEduAiCoursesServiceKey() {
+  const serviceKey = process.env.EDUAI_API_KEY;
+  if (!serviceKey) {
+    throw new Error('EDUAI_API_KEY not configured');
+  }
+  const data = await requestEduAi('/courses', {
+    headers: { Authorization: `Bearer ${serviceKey}` },
+  });
+  try {
+    const parsed = EduAiCourseListSchema.parse(data);
+    return parsed.courses;
+  } catch (e) {
+    const err = new Error('Invalid response when fetching EduAI courses (service key)');
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
+}
+
+export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
@@ -246,6 +283,7 @@ export async function listEduAiCourseTopics(externalCourseId) {
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/topics`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
   });
   try {
     const parsed = EduAiTopicListSchema.parse(data);

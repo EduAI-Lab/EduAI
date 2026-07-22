@@ -1,0 +1,449 @@
+{
+  "App.tsx": [
+    "components/ThemeSyncInitializer.tsx",
+    "components/auth/QmAppGate.tsx",
+    "components/layout/QmAppLayout.tsx",
+    "contexts/AuthContext.tsx",
+    "contexts/BugReportContext.tsx",
+    "contexts/GuidedTourContext.tsx",
+    "pages/ApiTestPage.tsx",
+    "pages/AssessmentBuilderPage.tsx",
+    "pages/AssessmentVariantPage.tsx",
+    "pages/BugReportsAdminPage.tsx",
+    "pages/CourseDetailPage.tsx",
+    "pages/CourseSelectionPage.tsx",
+    "pages/DashboardPage.tsx",
+    "pages/HelpPage.tsx",
+    "pages/QuestionBankPage.tsx",
+    "pages/QuestionComposerPage.tsx",
+    "pages/SettingsPage.tsx"
+  ],
+  "components/ThemeSyncInitializer.tsx": [],
+  "components/assessments/AssessmentBuilder.tsx": [
+    "components/assessments/AssessmentQuestionPicker.tsx",
+    "components/assessments/AssessmentSectionCard.tsx",
+    "types/question.ts"
+  ],
+  "components/assessments/AssessmentQuestionPicker.tsx": [
+    "lib/difficulty.ts",
+    "types/question.ts"
+  ],
+  "components/assessments/AssessmentSection.tsx": [
+    "components/assessments/GenerateAssessmentModal.tsx",
+    "types/question.ts"
+  ],
+  "components/assessments/AssessmentSectionCard.tsx": [
+    "types/question.ts"
+  ],
+  "components/assessments/GenerateAssessmentModal.tsx": [
+    "types/question.ts"
+  ],
+  "components/assessments/GeneratedVariantsReviewDialog.tsx": [
+    "lib/difficulty.ts",
+    "services/assessmentVariantService.ts",
+    "services/questionService.ts",
+    "types/question.ts"
+  ],
+  "components/auth/AccessDeniedView.tsx": [],
+  "components/auth/QmAppGate.tsx": [],
+  "components/canvas/CanvasExportDialog.tsx": [
+    "services/canvasService.ts"
+  ],
+  "components/canvas/CanvasImportDialog.tsx": [
+    "services/canvasService.ts",
+    "services/courseService.ts",
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "components/command/CommandPalette.tsx": [],
+  "components/composer/ComposerMetadataFields.tsx": [
+    "components/composer/DifficultySlider.tsx",
+    "components/composer/ReasoningSelector.tsx",
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "components/composer/ComposerPreview.tsx": [
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "components/composer/DifficultySlider.tsx": [
+    "lib/difficulty.ts",
+    "types/question.ts"
+  ],
+  "components/composer/QuestionTypeSelector.tsx": [
+    "types/question.ts"
+  ],
+  "components/composer/ReasoningSelector.tsx": [
+    "types/question.ts"
+  ],
+  "components/courses/CourseAccessBadge.tsx": [],
+  "components/courses/CoursesGrid.tsx": [],
+  "components/courses/courses-admin-view.tsx": [
+    "components/courses/CoursesGrid.tsx"
+  ],
+  "components/courses/courses-instructor-view.tsx": [
+    "components/courses/CoursesGrid.tsx"
+  ],
+  "components/courses/courses-unit-admin-view.tsx": [
+    "components/courses/CoursesGrid.tsx"
+  ],
+  "components/dashboard/QmDashboardView.tsx": [],
+  "components/eduai/AIServiceIndicators.tsx": [
+    "hooks/useEduAIStatus.ts"
+  ],
+  "components/home/QmHomeShell.tsx": [],
+  "components/layout/CourseSwitcher.tsx": [],
+  "components/layout/QmAppLayout.tsx": [],
+  "components/layout/QmLayoutContext.tsx": [],
+  "components/ocr/OCRHistoryPanel.tsx": [
+    "components/ocr/OCRJobCard.tsx",
+    "types/ocr.ts"
+  ],
+  "components/ocr/OCRJobCard.tsx": [
+    "types/ocr.ts"
+  ],
+  "components/ocr/UnsavedChangesDialog.tsx": [],
+  "components/profile/ProfileCoursesDialog.tsx": [
+    "components/eduai/AIServiceIndicators.tsx",
+    "contexts/AuthContext.tsx",
+    "hooks/useEduAIStatus.ts",
+    "services/assessmentService.ts",
+    "services/courseService.ts",
+    "services/eduaiService.ts",
+    "types/class.ts",
+    "utils/courseDisplay.ts"
+  ],
+  "components/question-bank/QuestionBank.tsx": [
+    "components/question-bank/QuestionCard.tsx",
+    "components/question-bank/QuestionFilterToolbar.tsx",
+    "types/question.ts"
+  ],
+  "components/question-bank/QuestionCard.tsx": [
+    "types/question.ts"
+  ],
+  "components/question-bank/QuestionFilterToolbar.tsx": [
+    "types/question.ts"
+  ],
+  "components/question-bank/QuestionPreviewSheet.tsx": [],
+  "components/question-bank/QuestionUploadDialog.tsx": [
+    "components/eduai/AIServiceIndicators.tsx",
+    "components/ocr/OCRHistoryPanel.tsx",
+    "components/ocr/UnsavedChangesDialog.tsx",
+    "components/questions/MCQChoicesField.tsx",
+    "hooks/use-ocr-history.ts",
+    "hooks/useEduAIStatus.ts",
+    "services/apiKeyStorage.ts",
+    "services/eduaiService.ts",
+    "services/questionService.ts",
+    "types/ocr.ts",
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "components/questions/AddQuestionDialog.tsx": [
+    "components/questions/MCQChoicesField.tsx",
+    "components/questions/QuestionAIControls.tsx",
+    "components/questions/QuestionMetadataPanel.tsx",
+    "components/questions/QuestionOutputPanel.tsx",
+    "hooks/useEduAIStatus.ts",
+    "lib/difficulty.ts",
+    "services/apiKeyStorage.ts",
+    "services/assessmentService.ts",
+    "services/courseService.ts",
+    "services/eduaiService.ts",
+    "services/questionService.ts",
+    "types/question.ts",
+    "types/topic.ts",
+    "utils/courseDisplay.ts",
+    "utils/questionMetadataEdit.ts"
+  ],
+  "components/questions/MCQChoicesField.tsx": [
+    "types/question.ts"
+  ],
+  "components/questions/QuestionAIControls.tsx": [
+    "components/eduai/AIServiceIndicators.tsx",
+    "hooks/useEduAIStatus.ts",
+    "services/apiKeyStorage.ts",
+    "services/eduaiService.ts"
+  ],
+  "components/questions/QuestionMetadataPanel.tsx": [
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "components/questions/QuestionModal.tsx": [
+    "components/questions/AddQuestionDialog.tsx"
+  ],
+  "components/questions/QuestionOutputPanel.tsx": [
+    "components/questions/MCQChoicesField.tsx",
+    "types/question.ts"
+  ],
+  "components/rbac/CourseNoAccessAlert.tsx": [],
+  "components/rbac/PermissionGate.tsx": [],
+  "components/rbac/QmRoleBanner.tsx": [],
+  "components/shared/EmptyState.tsx": [],
+  "components/shared/Skeletons.tsx": [],
+  "components/ui/DeleteConfirmationModal.tsx": [],
+  "components/ui/tooltip.tsx": [],
+  "components/ui/use-toast.ts": [],
+  "contexts/AuthContext.tsx": [
+    "services/authService.ts",
+    "types/auth.ts"
+  ],
+  "contexts/BugReportContext.tsx": [
+    "contexts/AuthContext.tsx",
+    "hooks/useBugReportCapture.ts",
+    "services/bugReportApi.ts"
+  ],
+  "contexts/GuidedTourContext.tsx": [
+    "lib/utils.ts",
+    "tour/tourSteps.tsx",
+    "tour/tourTypes.ts"
+  ],
+  "hooks/use-ocr-history.ts": [
+    "types/ocr.ts"
+  ],
+  "hooks/useAllAssessments.ts": [
+    "services/assessmentService.ts",
+    "types/question.ts"
+  ],
+  "hooks/useAllQuestions.ts": [
+    "services/questionService.ts",
+    "types/question.ts"
+  ],
+  "hooks/useBugReportCapture.ts": [],
+  "hooks/useCourseAccess.ts": [],
+  "hooks/useCourseFromRoute.ts": [
+    "hooks/useDisplayCourses.ts",
+    "types/question.ts"
+  ],
+  "hooks/useCourses.ts": [
+    "services/courseService.ts",
+    "types/question.ts"
+  ],
+  "hooks/useDisplayCourses.ts": [
+    "contexts/AuthContext.tsx",
+    "hooks/useCourses.ts",
+    "services/eduaiService.ts",
+    "utils/courseDisplay.ts"
+  ],
+  "hooks/useEduAIStatus.ts": [
+    "services/apiKeyStorage.ts",
+    "services/eduaiService.ts"
+  ],
+  "hooks/useQmPermissions.ts": [
+    "hooks/useCourseAccess.ts"
+  ],
+  "hooks/useQuestionStats.ts": [
+    "services/questionService.ts",
+    "types/question.ts"
+  ],
+  "index.css": [],
+  "lib/apps.tsx": [
+    "lib/coreUrl.ts"
+  ],
+  "lib/coreUrl.ts": [],
+  "lib/difficulty.ts": [
+    "types/question.ts"
+  ],
+  "lib/mcq.ts": [
+    "types/question.ts"
+  ],
+  "lib/rbac/course-labels.ts": [
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/index.ts": [
+    "lib/rbac/course-labels.ts",
+    "lib/rbac/nav.ts",
+    "lib/rbac/permissions.ts",
+    "lib/rbac/resolve-course-access.ts",
+    "lib/rbac/roles.ts",
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/nav.ts": [
+    "lib/rbac/permissions.ts",
+    "lib/rbac/resolve-course-access.ts",
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/permissions.ts": [
+    "lib/rbac/resolve-course-access.ts",
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/resolve-course-access.ts": [
+    "lib/rbac/types.ts"
+  ],
+  "lib/rbac/roles.ts": [],
+  "lib/rbac/types.ts": [],
+  "lib/units.ts": [],
+  "lib/utils.ts": [],
+  "main.tsx": [
+    "App.tsx",
+    "index.css"
+  ],
+  "pages/ApiTestPage.tsx": [
+    "components/eduai/AIServiceIndicators.tsx",
+    "contexts/AuthContext.tsx",
+    "hooks/useEduAIStatus.ts",
+    "services/api.ts",
+    "services/eduaiService.ts"
+  ],
+  "pages/AssessmentBuilderPage.tsx": [
+    "components/assessments/AssessmentBuilder.tsx",
+    "components/assessments/GenerateAssessmentModal.tsx",
+    "components/canvas/CanvasExportDialog.tsx",
+    "components/questions/QuestionModal.tsx",
+    "lib/difficulty.ts",
+    "pages/assessments/assessmentViewTypes.ts",
+    "services/assessmentService.ts",
+    "services/courseService.ts",
+    "services/questionService.ts",
+    "types/question.ts",
+    "types/topic.ts",
+    "utils/assessmentExport.ts"
+  ],
+  "pages/AssessmentVariantPage.tsx": [
+    "components/assessments/GeneratedVariantsReviewDialog.tsx",
+    "components/canvas/CanvasImportDialog.tsx",
+    "components/question-bank/QuestionUploadDialog.tsx",
+    "hooks/useCourses.ts",
+    "services/assessmentService.ts",
+    "services/assessmentVariantService.ts",
+    "services/courseService.ts",
+    "services/eduaiService.ts",
+    "types/question.ts",
+    "types/topic.ts",
+    "utils/aiReviewExportDocx.ts"
+  ],
+  "pages/BugReportsAdminPage.tsx": [
+    "contexts/AuthContext.tsx",
+    "services/bugReportApi.ts"
+  ],
+  "pages/CourseDetailPage.tsx": [
+    "components/assessments/AssessmentSection.tsx",
+    "components/canvas/CanvasExportDialog.tsx",
+    "components/canvas/CanvasImportDialog.tsx",
+    "components/layout/QmLayoutContext.tsx",
+    "components/question-bank/QuestionBank.tsx",
+    "components/question-bank/QuestionUploadDialog.tsx",
+    "components/questions/QuestionModal.tsx",
+    "components/rbac/CourseNoAccessAlert.tsx",
+    "components/ui/DeleteConfirmationModal.tsx",
+    "components/ui/use-toast.ts",
+    "contexts/GuidedTourContext.tsx",
+    "hooks/useCourseFromRoute.ts",
+    "hooks/useQmPermissions.ts",
+    "pages/course-detail/CourseCanvasTab.tsx",
+    "pages/course-detail/CourseOverviewTab.tsx",
+    "pages/course-detail/CourseTopicsTab.tsx",
+    "services/assessmentService.ts",
+    "services/courseService.ts",
+    "services/questionService.ts",
+    "types/question.ts",
+    "types/topic.ts",
+    "utils/assessmentExport.ts"
+  ],
+  "pages/CourseSelectionPage.tsx": [
+    "components/layout/QmLayoutContext.tsx",
+    "contexts/GuidedTourContext.tsx",
+    "hooks/useDisplayCourses.ts",
+    "types/question.ts"
+  ],
+  "pages/DashboardPage.tsx": [],
+  "pages/HelpPage.tsx": [
+    "contexts/GuidedTourContext.tsx"
+  ],
+  "pages/QuestionBankPage.tsx": [],
+  "pages/QuestionComposerPage.tsx": [],
+  "pages/SettingsPage.tsx": [
+    "components/ui/use-toast.ts",
+    "contexts/AuthContext.tsx",
+    "services/apiKeyStorage.ts",
+    "services/canvasService.ts",
+    "services/eduaiService.ts"
+  ],
+  "pages/assessments/assessmentViewTypes.ts": [
+    "types/question.ts"
+  ],
+  "pages/course-detail/CourseCanvasTab.tsx": [],
+  "pages/course-detail/CourseOverviewTab.tsx": [],
+  "pages/course-detail/CourseTopicsTab.tsx": [
+    "components/shared/EmptyState.tsx",
+    "components/shared/Skeletons.tsx",
+    "components/ui/use-toast.ts",
+    "hooks/useQmPermissions.ts",
+    "services/courseService.ts",
+    "services/topicsService.ts",
+    "types/question.ts"
+  ],
+  "services/api.ts": [],
+  "services/apiKeyStorage.ts": [],
+  "services/assessmentService.ts": [
+    "services/api.ts",
+    "types/question.ts"
+  ],
+  "services/assessmentVariantService.ts": [
+    "services/api.ts",
+    "services/apiKeyStorage.ts"
+  ],
+  "services/authService.ts": [
+    "services/api.ts",
+    "types/auth.ts"
+  ],
+  "services/bugReportApi.ts": [
+    "services/api.ts"
+  ],
+  "services/canvasService.ts": [
+    "services/api.ts"
+  ],
+  "services/courseService.ts": [
+    "services/api.ts",
+    "types/question.ts",
+    "types/topic.ts"
+  ],
+  "services/eduaiService.ts": [
+    "services/api.ts",
+    "services/apiKeyStorage.ts"
+  ],
+  "services/questionService.ts": [
+    "services/api.ts",
+    "types/question.ts"
+  ],
+  "services/topicsService.ts": [
+    "services/api.ts"
+  ],
+  "tests/unit/courseDisplay.test.ts": [],
+  "tests/unit/mcqChoiceDisplay.test.ts": [],
+  "tests/unit/questionMetadataEdit.test.ts": [],
+  "tests/unit/rbac-course-labels.test.ts": [],
+  "tests/unit/rbac-nav.test.ts": [],
+  "tests/unit/rbac-permissions.test.ts": [],
+  "tests/unit/rbac-roles.test.ts": [],
+  "tests/vitest.setup.ts": [],
+  "tour/tourSteps.tsx": [
+    "tour/tourTypes.ts"
+  ],
+  "tour/tourTypes.ts": [],
+  "types/auth.ts": [],
+  "types/class.ts": [
+    "types/question.ts"
+  ],
+  "types/ocr.ts": [],
+  "types/pdfjs.d.ts": [],
+  "types/question.ts": [
+    "types/topic.ts"
+  ],
+  "types/topic.ts": [],
+  "utils/aiReviewExportDocx.ts": [
+    "services/assessmentVariantService.ts"
+  ],
+  "utils/assessmentExport.ts": [
+    "types/question.ts"
+  ],
+  "utils/courseDisplay.ts": [
+    "services/eduaiService.ts",
+    "types/question.ts"
+  ],
+  "utils/mcqChoiceDisplay.ts": [],
+  "utils/questionMetadataEdit.ts": [
+    "types/question.ts"
+  ],
+  "vite-env.d.ts": []
+}

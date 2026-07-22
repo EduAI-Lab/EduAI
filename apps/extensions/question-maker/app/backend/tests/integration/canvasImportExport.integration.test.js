@@ -32,7 +32,7 @@ describeDb('canvasService import/export (integration, test mode)', () => {
 
     const schema = await import('../../src/schema/index.js');
     ({ User, Course, Topics, CanvasIntegration, Assessments, AssessmentSections, SectionVariants, Variants } = schema);
-    ({ seedCoursesForNewUser } = await import('../../src/services/seedNewUserService.js'));
+    ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     canvas = await import('../../src/services/canvasService.js');
 
     vi.spyOn(console, 'log').mockImplementation(() => {});

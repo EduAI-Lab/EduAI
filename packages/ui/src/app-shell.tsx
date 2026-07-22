@@ -47,6 +47,13 @@ export interface AppShellProps {
    * default `overflow-auto` main would fight it.
    */
   mainClassName?: string
+  /**
+   * Optional className merged onto `SidebarProvider`'s wrapper. Use for
+   * viewport-locked pages (e.g. chat: `h-svh overflow-hidden`) so the
+   * default `min-h-svh` wrapper cannot grow and create page-level scroll
+   * past an internally-scrolling pane.
+   */
+  providerClassName?: string
 }
 
 /**
@@ -68,9 +75,11 @@ export function AppShell({
   headerHeight = "calc(var(--spacing) * 12)",
   insetClassName,
   mainClassName,
+  providerClassName,
 }: AppShellProps) {
   return (
     <SidebarProvider
+      className={providerClassName}
       style={
         {
           "--sidebar-width": sidebarWidth,
