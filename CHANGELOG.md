@@ -5,6 +5,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 
+## [Week 12 — July 20–26, 2026]
+
+### Fixed
+
+- [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Changed
