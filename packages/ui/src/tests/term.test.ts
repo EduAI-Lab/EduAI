@@ -5,6 +5,7 @@ import {
   groupCoursesByTerm,
   isTermCode,
   normalizeTerm,
+  termFromDate,
   termFromMonth,
   termInfoFromDate,
   termLabel,
@@ -13,6 +14,7 @@ import {
   termSortKey,
   TERM_CODES,
 } from "../lib/term";
+import { UBC_TERM_BOUNDARY_CASES } from "./fixtures/term-boundary-fixtures";
 
 describe("term codes", () => {
   it("exposes the four UBC codes", () => {
@@ -35,6 +37,15 @@ describe("termFromMonth", () => {
     expect(termFromMonth(4)).toBe("S1"); // May
     expect(termFromMonth(6)).toBe("S2"); // Jul
   });
+});
+
+describe("termFromDate", () => {
+  it.each(UBC_TERM_BOUNDARY_CASES)(
+    "maps %s to %s in America/Vancouver, not UTC (#1010)",
+    (iso, expected) => {
+      expect(termFromDate(new Date(iso))).toBe(expected);
+    },
+  );
 });
 
 describe("termInfoFromDate", () => {
@@ -63,6 +74,21 @@ describe("normalizeTerm", () => {
     expect(normalizeTerm("Fall", "2026-09-05")).toBe("W1");
     // Date wins even if the string disagrees.
     expect(normalizeTerm("Summer", "2026-01-10")).toBe("W2");
+  });
+
+  it("buckets a midnight-UTC month-boundary start date by Vancouver time, not UTC", () => {
+    // 2026-09-01T00:00:00Z is still 2026-08-31 evening in Vancouver (S2),
+    // not September (W1) — the exact divergence fixed in #1010.
+    expect(normalizeTerm(null, "2026-09-01T00:00:00Z")).toBe("S2");
+  });
+
+  it("reads a bare calendar date (e.g. from <input type=\"date\">) as-is, not as a UTC instant", () => {
+    // Unlike a full ISO instant, "2026-09-01" names a calendar day with no
+    // attached time. Parsing it as UTC midnight and reprojecting through the
+    // Vancouver offset would shift it back to Aug 31 (S2) — wrong for a date
+    // that plainly means September 1st (W1).
+    expect(normalizeTerm(null, "2026-09-01")).toBe("W1");
+    expect(normalizeTerm(null, "2026-05-01")).toBe("S1");
   });
 
   it("passes through canonical codes", () => {

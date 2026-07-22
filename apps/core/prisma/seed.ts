@@ -35,13 +35,13 @@ export const SEED_IDS = {
     student4: 'seed_user_student_04',
     student5: 'seed_user_student_05',
   },
-  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). */
+  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). UBC format: 8 digits (#818). */
   studentNumbers: {
-    student1: 'student_1',
-    student2: 'student_2',
-    student3: 'student_3',
-    student4: 'student_4',
-    student5: 'student_5',
+    student1: '10000001',
+    student2: '10000002',
+    student3: '10000003',
+    student4: '10000004',
+    student5: '10000005',
   },
   courses: {
     cosc101: 'seed_course_cosc101',
@@ -1639,7 +1639,7 @@ async function main() {
   await seedUsers();
   await seedPasswords();
   console.log(
-    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with student_1–student_5 IDs) with default password',
+    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with default password',
   );
 
   // Fail fast BEFORE any course row is written — a bad term literal must not
