@@ -62,6 +62,11 @@ vi.mock('../../src/config/settings.js', () => {
 });
 
 vi.mock('../../src/services/coreApiService.js', () => ({
+  // `resolveCourseCodeAccess` (routes/eduai.js) now matches on the Core-projected
+  // code via `courseListService.findCoursesByProjectedCode` (#1072 §4 step 10 —
+  // `Course.code` no longer exists locally), so it needs a Core course whose
+  // `code`/`id` line up with `COURSE.coreCourseId` below.
+  getAllCoursesFromCore: vi.fn().mockResolvedValue([{ id: 'cuid-core', code: 'COSC 101', name: 'Test Course' }]),
   getCourseEnrollmentsFromCore: mockEnrollments,
   getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core', department: 'COSC' }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),

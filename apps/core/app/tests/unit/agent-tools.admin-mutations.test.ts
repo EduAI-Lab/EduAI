@@ -181,7 +181,7 @@ describe("createAdminEnrollment via addEnrollment", () => {
       role: "STUDENT",
     });
 
-    expect(addEnrollment).toHaveBeenCalledWith("c1", { userId: "u1", role: "STUDENT" });
+    expect(addEnrollment).toHaveBeenCalledWith("c1", { userId: "u1", role: "STUDENT" }, 4);
     expect(result).toMatchObject({ ok: true, writeSucceeded: true, verifiedEnrollment: { id: "e1" } });
   });
 });

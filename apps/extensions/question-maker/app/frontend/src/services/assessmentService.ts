@@ -46,7 +46,6 @@ export const assessmentService = {
       name: 'Practice Exam',
       type: 'Quiz',
       description: '',
-      semester: 'Fall 2024',
       primaryTopicIds: [],
       secondaryTopicIds: [],
       excludedTopicIds: [],
@@ -66,7 +65,6 @@ export const assessmentService = {
     const response = await api.post('/api/assessments', {
       type: payload.type,
       name: payload.name,
-      semester: payload.semester,
       description: payload.description,
       courseId: payload.courseId,
       blueprintConfig: toBlueprintConfig(payload)
@@ -80,7 +78,6 @@ export const assessmentService = {
     const response = await api.put(`/api/assessments/${assessmentId}`, {
       type: payload.type,
       name: payload.name,
-      semester: payload.semester,
       description: payload.description,
       courseId: payload.courseId,
       blueprintConfig: toBlueprintConfig(payload)

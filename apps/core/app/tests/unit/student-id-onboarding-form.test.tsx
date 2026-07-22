@@ -26,4 +26,12 @@ describe("StudentIdOnboardingForm", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("already linked to another account");
   });
+
+  it("constrains the student number field to 8 digits (#818)", () => {
+    renderForm();
+    const input = screen.getByLabelText("UBC Student Number");
+    expect(input).toHaveAttribute("pattern", "\\d{8}");
+    expect(input).toHaveAttribute("minLength", "8");
+    expect(input).toHaveAttribute("maxLength", "8");
+  });
 });

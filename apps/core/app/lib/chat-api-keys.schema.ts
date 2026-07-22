@@ -5,7 +5,7 @@ import type { UserProviderSettings } from "~/lib/ai/provider-types";
 export const clientApiKeysBodySchema = z.record(
   z.string(),
   z.object({
-    isEnabled: z.boolean().optional(),
+    isEnabled: z.coerce.boolean().optional(),
     apiKey: z.string().optional(),
     baseUrl: z.string().optional(),
   }),
