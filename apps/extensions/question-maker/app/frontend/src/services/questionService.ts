@@ -78,6 +78,10 @@ export type PaginatedList<T> = {
 };
 
 const PAGE_FETCH_SIZE = 100;
+/** Server list endpoints clamp to this; larger explicit limits must page-loop. */
+const SERVER_MAX_LIST_LIMIT = 200;
+/** Hard ceiling so a bad `total` cannot spin forever. */
+const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
 function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): PaginatedList<T> {
@@ -96,6 +100,26 @@ function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): Pagina
     };
   }
   return { items: [], total: 0, limit: 50, offset: 0 };
+}
+
+async function fetchAllPages<T>(
+  fetchPage: (offset: number, limit: number) => Promise<PaginatedList<T>>,
+  options: { startOffset?: number; maxItems?: number } = {},
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = options.startOffset ?? 0;
+  let total = Infinity;
+  const maxItems = Math.min(options.maxItems ?? MAX_FETCH_ALL, MAX_FETCH_ALL);
+
+  while (all.length < total && all.length < maxItems) {
+    const page = await fetchPage(offset, PAGE_FETCH_SIZE);
+    all.push(...page.items);
+    total = Number.isFinite(page.total) ? page.total : all.length;
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+    if (offset >= total) break;
+  }
+  return all.slice(0, maxItems);
 }
 
 export const questionService = {
@@ -118,8 +142,9 @@ export const questionService = {
 
   /**
    * Fetches questions for UI consumers.
-   * - With an explicit `limit`: returns that single page's items.
-   * - Without `limit`: page-loops until all matching rows are loaded (fixes silent 50-cap).
+   * - With an explicit `limit` ≤ server max: returns that single page's items.
+   * - With a larger `limit`, or no limit: page-loops until all matching rows (or the
+   *   requested cap) are loaded — fixes silent 50-cap and avoids silent clamp at 200.
    */
   async getQuestions(options: {
     courseId?: number;
@@ -127,28 +152,28 @@ export const questionService = {
     limit?: number;
     offset?: number;
   } = {}): Promise<Question[]> {
-    if (options.limit !== undefined) {
+    if (
+      options.limit !== undefined &&
+      options.limit > 0 &&
+      options.limit <= SERVER_MAX_LIST_LIMIT
+    ) {
       const page = await this.getQuestionsPage(options);
       return page.items;
     }
 
-    const all: Question[] = [];
-    let offset = options.offset ?? 0;
-    let total = Infinity;
-    while (all.length < total) {
-      const page = await this.getQuestionsPage({
-        courseId: options.courseId,
-        search: options.search,
-        limit: PAGE_FETCH_SIZE,
-        offset,
-      });
-      all.push(...page.items);
-      total = page.total;
-      if (page.items.length === 0) break;
-      offset += page.items.length;
-      if (offset >= total) break;
-    }
-    return all;
+    return fetchAllPages(
+      (offset, limit) =>
+        this.getQuestionsPage({
+          courseId: options.courseId,
+          search: options.search,
+          limit,
+          offset,
+        }),
+      {
+        startOffset: options.offset ?? 0,
+        maxItems: options.limit,
+      },
+    );
   },
 
   /** Retrieves a single question by ID. */

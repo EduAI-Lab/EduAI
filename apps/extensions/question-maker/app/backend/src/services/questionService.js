@@ -10,6 +10,7 @@ import {
   enrichRowWithCourse,
   formatSemesterDisplay
 } from './courseListService.js';
+import { sanitizeLikeLiteral } from '../utils/listPagination.js';
 
 /**
  * Overwrites each question row's nested `variant.assessment.semester` with the
@@ -228,7 +229,10 @@ export const getQuestionsByUser = async (userId, options = {}) => {
 
     // Apply search in SQL before limit/offset so pagination stays correct (#1040).
     if (search && String(search).trim()) {
-      whereClause.description = { [Op.iLike]: `%${String(search).trim()}%` };
+      const needle = sanitizeLikeLiteral(String(search).trim());
+      if (needle) {
+        whereClause.description = { [Op.iLike]: `%${needle}%` };
+      }
     }
 
     const include = [
@@ -243,6 +247,8 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       {
         model: Variants,
         as: 'variants',
+        // Separate query so limit/offset apply to question rows, not join-expanded rows.
+        separate: true,
         attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
         include: [
           {

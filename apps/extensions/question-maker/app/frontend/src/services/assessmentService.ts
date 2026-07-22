@@ -26,6 +26,8 @@ export type PaginatedList<T> = {
 };
 
 const PAGE_FETCH_SIZE = 100;
+const SERVER_MAX_LIST_LIMIT = 200;
+const MAX_FETCH_ALL = 10_000;
 
 /** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
 function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
@@ -49,6 +51,26 @@ function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
   return { items: [], total: 0, limit: 50, offset: 0 };
 }
 
+async function fetchAllPages<T>(
+  fetchPage: (offset: number, limit: number) => Promise<PaginatedList<T>>,
+  options: { startOffset?: number; maxItems?: number } = {},
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = options.startOffset ?? 0;
+  let total = Infinity;
+  const maxItems = Math.min(options.maxItems ?? MAX_FETCH_ALL, MAX_FETCH_ALL);
+
+  while (all.length < total && all.length < maxItems) {
+    const page = await fetchPage(offset, PAGE_FETCH_SIZE);
+    all.push(...page.items);
+    total = Number.isFinite(page.total) ? page.total : all.length;
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+    if (offset >= total) break;
+  }
+  return all.slice(0, maxItems);
+}
+
 const toBlueprintConfig = (payload: AssessmentGenerationParams): AssessmentBlueprintConfig => ({
   primaryTopicIds: payload.primaryTopicIds,
   secondaryTopicIds: payload.secondaryTopicIds,
@@ -62,7 +84,7 @@ export const assessmentService = {
   /** Fetches one page of assessments with pagination metadata (#1040). */
   async getAssessmentsPage(options: GetAssessmentsOptions = {}): Promise<PaginatedList<Assessment>> {
     const params: Record<string, number> = {};
-    if (options.courseId) params.courseId = options.courseId;
+    if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;
 
@@ -74,31 +96,31 @@ export const assessmentService = {
 
   /**
    * Fetches assessments for UI consumers.
-   * - With an explicit `limit`: returns that single page's items.
-   * - Without `limit`: page-loops until all matching rows are loaded (fixes silent 50-cap).
+   * - With an explicit `limit` ≤ server max: returns that single page's items.
+   * - With a larger `limit`, or no limit: page-loops until all matching rows are loaded.
    */
   async getAssessments(options: GetAssessmentsOptions = {}): Promise<Assessment[]> {
-    if (options.limit !== undefined) {
+    if (
+      options.limit !== undefined &&
+      options.limit > 0 &&
+      options.limit <= SERVER_MAX_LIST_LIMIT
+    ) {
       const page = await this.getAssessmentsPage(options);
       return page.items;
     }
 
-    const all: Assessment[] = [];
-    let offset = options.offset ?? 0;
-    let total = Infinity;
-    while (all.length < total) {
-      const page = await this.getAssessmentsPage({
-        courseId: options.courseId,
-        limit: PAGE_FETCH_SIZE,
-        offset,
-      });
-      all.push(...page.items);
-      total = page.total;
-      if (page.items.length === 0) break;
-      offset += page.items.length;
-      if (offset >= total) break;
-    }
-    return all;
+    return fetchAllPages(
+      (offset, limit) =>
+        this.getAssessmentsPage({
+          courseId: options.courseId,
+          limit,
+          offset,
+        }),
+      {
+        startOffset: options.offset ?? 0,
+        maxItems: options.limit,
+      },
+    );
   },
 
   /** Creates an empty "Practice Exam" assessment for a course (e.g. sandbox or new course). */

@@ -93,6 +93,8 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       {
         model: Variants,
         as: 'variants',
+        // Separate so limit/offset count assessments, not join-expanded rows (#1040).
+        separate: true,
         attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
         include: [
           {
@@ -114,6 +116,7 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       {
         model: AssessmentSections,
         as: 'sections',
+        separate: true,
         include: [
           {
             model: SectionVariants,
