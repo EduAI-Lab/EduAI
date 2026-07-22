@@ -27,6 +27,7 @@ import {
   Card,
   ConfirmDialog,
   CourseHeroCard,
+  DetailPageScaffold,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -332,19 +333,22 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   ]);
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <CourseHeroCard
-        code={courseCode(course)}
-        term={courseTerm(course)}
-        year={courseYear(course)}
-        name={courseName(course)}
-        description={course.description}
-        accentColor={accentForCourse(course)}
-        topics={courseTopics.topics.map((topic) => topic.name)}
-        topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
-        topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <CourseHeroCard
+          code={courseCode(course)}
+          term={courseTerm(course)}
+          year={courseYear(course)}
+          name={courseName(course)}
+          description={course.description}
+          accentColor={accentForCourse(course)}
+          topics={courseTopics.topics.map((topic) => topic.name)}
+          topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
+          topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
+        />
+      }
+    >
       <PageTabs
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as (typeof tabs)[number]['id'])}
@@ -719,6 +723,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
-    </div>
+    </DetailPageScaffold>
   );
 }

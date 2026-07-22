@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { IconNotebook } from '@tabler/icons-react';
-import { Card, EmptyState } from '@eduai/ui';
+import { Card, DetailPageScaffold, EmptyState } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { accentForCourse } from '../lib/course-display';
@@ -83,16 +83,19 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
   ];
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <ModuleHero
-        order={moduleOrder > 0 ? moduleOrder : undefined}
-        title={module?.title || 'Module'}
-        description={module?.description}
-        accentColor={accentColor}
-        stats={heroStats}
-        progress={moduleProgress}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <ModuleHero
+          order={moduleOrder > 0 ? moduleOrder : undefined}
+          title={module?.title || 'Module'}
+          description={module?.description}
+          accentColor={accentColor}
+          stats={heroStats}
+          progress={moduleProgress}
+        />
+      }
+    >
       {lessonList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
           <EmptyState
@@ -120,6 +123,6 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
           ))}
         </div>
       )}
-    </div>
+    </DetailPageScaffold>
   );
 }

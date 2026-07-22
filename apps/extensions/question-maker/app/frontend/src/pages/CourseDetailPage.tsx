@@ -18,6 +18,7 @@ import {
   PageTabsTrigger,
   PageTabsContent,
   CourseHeroCard,
+  DetailPageScaffold,
   Card,
   CardContent,
   CardHeader,
@@ -723,35 +724,39 @@ export const CourseDetailPage = () => {
   const writesDisabled = !canCreateQuestion || !hasCourseAccess;
 
   return (
-    <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
-      {!hasCourseAccess && (
-        <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
-      )}
-
-      <CourseHeroCard
-        code={course.code ?? course.name}
-        term={course.term ?? ''}
-        year={course.year ?? undefined}
-        name={course.name}
-        description={course.description}
-        topics={(topicsByCourse[course.id] ?? []).slice(0, 8).map((t) => t.name)}
-        topRightBadges={[
-          course.coreCourseId ? 'EduAI Core' : 'Local',
-          ...(writesDisabled ? ['Read-only'] : []),
-        ]}
-        accentColor={resolvePaletteAccent(String(course.id))}
-        topicsAction={
-          <CourseTopicsHeroAction
-            courseId={course.id}
-            isLinked={!!course.coreCourseId}
-            canManage={!writesDisabled}
-            onTopicsChange={() => {
-              void loadTopicsForCourse(course.id, { force: true });
-            }}
-          />
-        }
-      />
-
+    <DetailPageScaffold
+      padding="qm"
+      beforeHero={
+        !hasCourseAccess && (
+          <CourseNoAccessAlert onGoToCourses={() => navigate('/courses')} />
+        )
+      }
+      hero={
+        <CourseHeroCard
+          code={course.code ?? course.name}
+          term={course.term ?? ''}
+          year={course.year ?? undefined}
+          name={course.name}
+          description={course.description}
+          topics={(topicsByCourse[course.id] ?? []).slice(0, 8).map((t) => t.name)}
+          topRightBadges={[
+            course.coreCourseId ? 'EduAI Core' : 'Local',
+            ...(writesDisabled ? ['Read-only'] : []),
+          ]}
+          accentColor={resolvePaletteAccent(String(course.id))}
+          topicsAction={
+            <CourseTopicsHeroAction
+              courseId={course.id}
+              isLinked={!!course.coreCourseId}
+              canManage={!writesDisabled}
+              onTopicsChange={() => {
+                void loadTopicsForCourse(course.id, { force: true });
+              }}
+            />
+          }
+        />
+      }
+    >
       <PageTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -909,6 +914,6 @@ export const CourseDetailPage = () => {
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
       />
-    </div>
+    </DetailPageScaffold>
   );
 };

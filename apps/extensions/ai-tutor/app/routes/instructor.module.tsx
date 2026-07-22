@@ -27,6 +27,7 @@ import {
   Card,
   CardContent,
   ConfirmDialog,
+  DetailPageScaffold,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -377,46 +378,49 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   ];
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <ModuleHero
-        order={moduleOrder > 0 ? moduleOrder : undefined}
-        title={module?.title || 'Module'}
-        description={module?.description}
-        accentColor={accentColor}
-        isPublished={module?.isPublished}
-        stats={heroStats}
-        actions={
-          <PermissionGate allow={perms.canManageContent}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-              onClick={() => {
-                if (!showImport) {
-                  ensureSourceCoursesLoaded();
-                } else {
-                  void handleSourceCourseSelection(null);
-                }
-                setShowImport((prev) => !prev);
-              }}
-            >
-              <IconUpload size={15} aria-hidden="true" />
-              {showImport ? 'Close import' : 'Import lessons'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
-              onClick={() => setCreateOpen(true)}
-            >
-              <IconPlus size={15} aria-hidden="true" />
-              Add lesson
-            </Button>
-          </PermissionGate>
-        }
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <ModuleHero
+          order={moduleOrder > 0 ? moduleOrder : undefined}
+          title={module?.title || 'Module'}
+          description={module?.description}
+          accentColor={accentColor}
+          isPublished={module?.isPublished}
+          stats={heroStats}
+          actions={
+            <PermissionGate allow={perms.canManageContent}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => {
+                  if (!showImport) {
+                    ensureSourceCoursesLoaded();
+                  } else {
+                    void handleSourceCourseSelection(null);
+                  }
+                  setShowImport((prev) => !prev);
+                }}
+              >
+                <IconUpload size={15} aria-hidden="true" />
+                {showImport ? 'Close import' : 'Import lessons'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                onClick={() => setCreateOpen(true)}
+              >
+                <IconPlus size={15} aria-hidden="true" />
+                Add lesson
+              </Button>
+            </PermissionGate>
+          }
+        />
+      }
+    >
       <PermissionGate allow={perms.canManageContent}>
         {showImport && (
           <Card>
@@ -787,6 +791,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
-    </div>
+    </DetailPageScaffold>
   );
 }
