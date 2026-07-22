@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import {
@@ -10,6 +10,16 @@ import {
   prisma,
 } from '../helpers.js';
 
+const listEduAiCourseTopics = vi.fn();
+
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    listEduAiCourseTopics: (...args) => listEduAiCourseTopics(...args),
+  };
+});
+
 describe('Topics routes', () => {
   let prof;
   let seed;
@@ -17,6 +27,7 @@ describe('Topics routes', () => {
 
   beforeEach(async () => {
     await truncateAll();
+    listEduAiCourseTopics.mockReset();
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     app = await createApp({ mockUser: prof });
@@ -60,6 +71,35 @@ describe('Topics routes', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
+    });
+
+    // #1072 step 4: every CourseOffering is a Core anchor (`coreOfferingId`
+    // required + unique) — `seedMinimalCourse` already sets one, so there's
+    // no "locally-authored course" state left to cover separately from the
+    // imported-course cases below.
+
+    it('auto-pulls the latest topics from Core for an imported course (#1031)', async () => {
+      listEduAiCourseTopics.mockResolvedValue([{ id: 'core-1', name: 'Core-only Topic' }]);
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(listEduAiCourseTopics).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        expect.objectContaining({ signal: expect.anything() }),
+      );
+      const names = res.body.map((t) => t.name);
+      expect(names).toContain('Test Topic');
+      expect(names).toContain('Core-only Topic');
+    });
+
+    it('falls back to the local mirror when Core is unreachable', async () => {
+      listEduAiCourseTopics.mockRejectedValue(new Error('Core unavailable'));
+
+      const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject([{ id: seed.topic.id, name: 'Test Topic' }]);
     });
   });
 
