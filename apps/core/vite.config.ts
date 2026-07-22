@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig, loadEnv } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -11,7 +12,30 @@ import tsconfigPaths from "vite-tsconfig-paths";
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.resolve(coreDir, "../..");
 
-export default defineConfig(({ mode }) => {
+// Vendor-splitting strategy for the client bundle (issue #1039).
+//
+// Vite's default chunking co-bundled domain UI with framework code into
+// shared chunks with effectively random names (recharts once landed in a
+// chunk named after a Shiki grammar). We pin:
+//   vendor-react — react/react-dom/scheduler/react-router: stable,
+//                  long-cacheable, changes only on framework upgrades.
+// Deliberately NOT pinned:
+//   shiki / streamdown / katex — these split themselves via internal dynamic
+//           imports (per-language grammars, lazy code/math pipelines).
+//           Pinning any of them merges the lazy halves into one eager chunk
+//           that every route then pays for (verified: +1MB initial JS per
+//           route when streamdown/katex were pinned).
+//   everything else (Radix, lucide, recharts, domain code) — Rollup's
+//           route-level splitting handles these; a catch-all vendor chunk
+//           would inflate initial JS for every route.
+function manualChunks(id: string): string | undefined {
+  if (/node_modules\/(react|react-dom|scheduler|react-router)\//.test(id)) {
+    return "vendor-react";
+  }
+  return undefined;
+}
+
+export default defineConfig(({ mode, isSsrBuild }) => {
   const env = loadEnv(mode, coreDir, "");
   const hmrPublicHost =
     env.DEV_SERVER_HMR_HOST?.trim() || process.env.DEV_SERVER_HMR_HOST?.trim();
@@ -21,7 +45,30 @@ export default defineConfig(({ mode }) => {
   const hmrClientPort = Number(hmrClientPortRaw || "443") || 443;
 
   return {
-    plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+    plugins: [
+      tailwindcss(),
+      reactRouter(),
+      tsconfigPaths(),
+      // ANALYZE=1 npm run build → treemap at build/client-bundle-stats.html
+      ...(process.env.ANALYZE
+        ? [
+            visualizer({
+              filename: "build/client-bundle-stats.html",
+              gzipSize: true,
+            }),
+          ]
+        : []),
+    ],
+    build: {
+      // Emit .vite/manifest.json so scripts/bundle-report.mjs can compute
+      // per-route initial JS (issue #1039).
+      manifest: true,
+      // Client build only — the SSR bundle is a single file and the React
+      // Router server build rejects manualChunks.
+      ...(isSsrBuild
+        ? {}
+        : { rollupOptions: { output: { manualChunks } } }),
+    },
     ssr: {
       // Server bundle is ESM (react-router default). Packages that need bundling:
       //   @tabler/icons-react — aliased to its .mjs file below; must be bundled
