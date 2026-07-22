@@ -1,0 +1,30 @@
+[93m[4mUnused files[24m[39m (1)
+scripts/migrateMCQChoices.js
+[93m[4mUnused dependencies[24m[39m (6)
+@eduai/types  package.json:22:6
+joi           package.json:32:6
+jsonwebtoken  package.json:33:6
+morgan        package.json:34:6
+multer        package.json:35:6
+pg            package.json:37:6
+[93m[4mUnused devDependencies[24m[39m (1)
+pino-pretty  package.json:46:6
+[93m[4mUnlisted binaries[24m[39m (1)
+nodemon  package.json
+[93m[4mUnused exports[24m[39m (13)
+default                                        src/config/settings.js:77:16                   
+AUTHORS                                        src/middleware/roles.js:6:14                   
+INSTRUCTORS                                    src/middleware/roles.js:7:14                   
+splitIntoQuestionBlocks                        src/services/aiService.js:786:3                
+chunkByQuestionBlocks                          src/services/aiService.js:787:3                
+extractedQuestionDedupeKey                     src/services/aiService.js:788:3                
+deduplicateExtractedQuestions                  src/services/aiService.js:789:3                
+normalizeExtractText                           src/services/aiService.js:790:3                
+MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW            src/services/assessmentVariantService.js:23:14 
+findBestBankMetadataForSlot          function  src/services/assessmentVariantService.js:430:23
+getCanvasQuizQuestionById                      src/services/canvasService.js:455:14           
+eduaiService                                   src/services/eduaiService.js:864:14            
+default                              variable  src/utils/logger.js:56:16                      
+[93m[4mDuplicate exports[24m[39m (2)
+config|default        src/config/settings.js      
+eduaiService|default  src/services/eduaiService.js
