@@ -85,6 +85,7 @@ export interface CoreAppShellProps {
    */
   insetClassName?: string
   mainClassName?: string
+  providerClassName?: string
   children: React.ReactNode
 }
 
@@ -105,6 +106,7 @@ export function CoreAppShell({
   sidebarProps,
   insetClassName,
   mainClassName,
+  providerClassName,
   children,
 }: CoreAppShellProps) {
   const { pathname } = useLocation()
@@ -129,6 +131,7 @@ export function CoreAppShell({
       }
       insetClassName={insetClassName}
       mainClassName={mainClassName}
+      providerClassName={providerClassName}
     >
       {children}
     </AppShell>
