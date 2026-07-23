@@ -105,6 +105,8 @@ interface Props {
   onEnrollStudent: (userId: string) => Promise<void>;
   onRemoveEnrollment: (enrollmentId: string) => Promise<void>;
   onRefreshMaterials?: () => Promise<void>;
+  /** Wired to `useCourseMaterials.deleteMaterial` — refetches the list itself. */
+  onDeleteMaterial?: (materialId: string) => Promise<void>;
   courseId?: string;
   currentUserId?: string;
   showCanvasMaterialSync?: boolean;
@@ -231,6 +233,7 @@ export function CourseDetailManagerView({
   onEnrollStudent,
   onRemoveEnrollment,
   onRefreshMaterials,
+  onDeleteMaterial,
   courseId,
   currentUserId,
   showCanvasMaterialSync = false,
@@ -442,21 +445,11 @@ export function CourseDetailManagerView({
   };
 
   const handleDeleteMaterial = async () => {
-    if (!deleteMaterialId || !courseId) return;
+    if (!deleteMaterialId || !onDeleteMaterial) return;
     setDeletingMaterial(true);
     try {
-      const res = await fetch(
-        `/api/courses/${courseId}/materials/${deleteMaterialId}`,
-        { method: "DELETE" }
-      );
-      if (!res.ok) {
-        const err = await res.text().catch(() => "Failed to delete material");
-        throw new Error(err);
-      }
+      await onDeleteMaterial(deleteMaterialId);
       setDeleteMaterialId(null);
-      if (onRefreshMaterials) {
-        await onRefreshMaterials();
-      }
     } catch (e) {
       console.error(e);
     } finally {
