@@ -40,6 +40,7 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { resolveCourseChangeAction } from "./chat-course-change";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import {
@@ -191,10 +192,23 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const handleCourseChange = useCallback(
     (code: string | null) => {
-      setSelectedCourseCode(code);
+      const action = resolveCourseChangeAction({
+        currentCourseCode: selectedCourseCode,
+        nextCourseCode: code,
+        chatId,
+      });
+      if (action.kind === "noop") return;
+
       persistPreference({ lastCourseCode: code });
+
+      if (action.kind === "new-chat") {
+        navigate(action.to, { state: { focusMode } });
+        return;
+      }
+
+      setSelectedCourseCode(action.courseCode);
     },
-    [persistPreference],
+    [chatId, focusMode, navigate, persistPreference, selectedCourseCode],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
