@@ -64,6 +64,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Block SSRF via client-supplied provider `baseUrl` in chat — `createAIProviderRegistry` no longer trusts the client-supplied Ollama/vLLM `baseUrl` from `/api/chat`; a new `resolveAllowedVllmBaseUrl` (mirroring the existing Ollama guard from #849) restricts it to loopback or a deployment-configured host (`VLLM_BASE_URL`/`VLLM_FLEET_*`), silently falling back to the server default otherwise. Previously any authenticated user — including students — could point `baseUrl` at an internal host or the cloud-metadata endpoint and have Core relay the response back. (#972, @evanbones, 2026-07-21) — [#1139](https://github.com/EduAI-Lab/EduAI/pull/1139)
 - [core] fix: Block SSRF via Canvas base URL — `parseAndValidateCanvasUrl` previously allowed any HTTPS host with no private-network check. A new shared `assertPublicHostname` guard (`app/lib/net/ssrf-guard.server.ts`) DNS-resolves the host and rejects RFC1918/loopback/link-local/CGNAT/IPv6-ULA ranges (including cloud metadata endpoints), re-checked on every real Canvas request (credential verification, course/roster/file listing, file downloads) rather than once at connect time. (#977, @evanbones, 2026-07-21) — [#1139](https://github.com/EduAI-Lab/EduAI/pull/1139)
 
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] refactor: Wire `useCourseMaterials.deleteMaterial` to the live `DELETE /api/courses/:courseId/materials/:materialId` endpoint and route the course-detail manager/TA delete flows through the hook instead of inline `fetch`. (#559, @mochi_21, 2026-07-20) — [#1138](https://github.com/EduAI-Lab/EduAI/pull/1138)
+- [monorepo] docs: Add a user-facing guide covering navigation, roles, and common workflows across Core, AI Tutor, and Question Maker, plus a developer guide covering the technology stack, trust boundaries, conventions, local development, testing expectations, and the canonical documentation map. Both guides link directly to the technically traced actor use cases, and the use-case index now lists all three products. (#1154, @superbolt08, 2026-07-23) — [#1159](https://github.com/EduAI-Lab/EduAI/pull/1159)
+
 
 ## [Week 11 — July 13–19, 2026]
 
