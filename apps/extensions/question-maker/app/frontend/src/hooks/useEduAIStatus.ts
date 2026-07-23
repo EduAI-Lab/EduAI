@@ -14,8 +14,8 @@ export type QuestionGenerationPhase = 'generating' | 'review' | null;
 type EduAIState = {
     status: Status;
     message?: string;
-    /** Which provider path is live when status==='ok': 'google' (cloud) or 'ollama' (UBC-hosted). */
-    provider?: 'google' | 'ollama';
+    /** Which provider path is live when status==='ok': cloud provider id or campus (`vllm` / legacy `ollama`). */
+    provider?: 'google' | 'openai' | 'deepseek' | 'anthropic' | 'vllm' | 'ollama';
     questionGenerationPhase: QuestionGenerationPhase;
 };
 

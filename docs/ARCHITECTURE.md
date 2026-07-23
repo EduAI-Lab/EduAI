@@ -413,6 +413,8 @@ Core is the **authoritative source** for courses, topics, and enrollments. Exten
 
 Anchor provisioning is automatic. The server calls `GET /api/courses` on Core using the service key on every `GET /api/me` (login) and every `GET /api/courses` list fetch (`importTaughtCoursesFromCore` / `importEnrolledCoursesFromCore` in `server/src/services/importTaughtCoursesService.js`), creating a local `CourseOffering` anchor row (`coreOfferingId` only — required and unique) for any Core course not yet linked. Enrollments are synced in the same flow. The old manual `POST /courses/import-external` endpoint still exists in the API but is no longer reachable from the UI. An admin opening a Core course with no local anchor yet materializes one on the spot (`ensureOfferingAnchors`, create-on-open), so the admin course list always shows Core's full catalog instead of only previously-imported courses.
 
+Topics are pulled on every `GET /courses/:id/topics` read (`routes/topics.js`, `syncExternalCourseTopics`), not just on login/course-list — so the topic list is always current without a manual sync action (#1031). A failed pull falls back to serving the local mirror rather than failing the request. The old manual `POST /courses/:id/topics/sync` endpoint still exists in the API but is no longer reachable from the UI, same treatment as course import above.
+
 All display fields — including `isPublished` — are resolved live from Core by `mapCourseOffering` (`server/src/utils/mappers.js`) via a `courseResolver` seam over `eduaiClient`: list requests source from one batched `GET /api/courses` call (never per-course), and single-course reads use a service-key `GET /api/courses/:id`. If Core is unreachable, the resolver degrades to an empty/placeholder result (`coreUnavailable: true`) instead of erroring the page. The old field-copying `reconcileOfferingFromCore` reconciler is gone — there's nothing left to reconcile once no course field is stored locally. The background job (`server/src/jobs/reconcile.js`) still runs, but only as a deletion-only safety net that drops the local anchor (and its children, via cascade) when Core 404s the course.
 
 ```
@@ -441,7 +443,7 @@ All server-to-server calls from extensions to Core are authenticated with a shar
 Endpoints that accept the service key:
 
 - `GET /api/courses` — used by AI Tutor course import
-- `GET /api/courses/:id/topics` — used by AI Tutor topic sync
+- `GET /api/courses/:id/topics` — used by AI Tutor topic auto-sync (pulled on every topic-list read)
 - `GET /api/courses/:id/enrollments` — used by AI Tutor enrollment sync
 - `POST /api/bug-reports` — used by AI Tutor and QM bug report submission
 - `POST /api/questions` — used by QM variant push
