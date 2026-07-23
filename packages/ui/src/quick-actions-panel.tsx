@@ -6,19 +6,11 @@ import { cn } from "./utils"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type QuickAction = {
+type QuickActionBase = {
   /** Short action title. */
   label: string
   /** One-line supporting description. */
   description: string
-  /**
-   * Destination path. Required unless `onClick` is provided instead — pass
-   * one or the other depending on whether the action navigates or triggers
-   * an in-page handler (opening a modal, switching a tab, etc).
-   */
-  href?: string
-  /** In-page handler (opens a modal, switches a tab, ...). Renders a `<button>` instead of a link. */
-  onClick?: () => void
   /** Pre-rendered icon element (e.g. a Tabler icon). Rendered inside the swatch. */
   icon: React.ReactNode
   /**
@@ -28,8 +20,31 @@ export type QuickAction = {
    * from the shared course palette by position, so every app looks identical.
    */
   color?: string
+}
+
+/** Navigating action: renders a link to `href`. Anchors can't be disabled. */
+type QuickActionLink = QuickActionBase & {
+  /** Destination path. Renders a link. */
+  href: string
+  onClick?: never
+  disabled?: never
+}
+
+/** In-page action: renders a `<button>` that invokes `onClick`. */
+type QuickActionButton = QuickActionBase & {
+  /** In-page handler (opens a modal, switches a tab, ...). Renders a `<button>`. */
+  onClick: () => void
+  href?: never
+  /** Greys out and disables the button. Only meaningful for button actions. */
   disabled?: boolean
 }
+
+/**
+ * A quick action is either a link (`href`) or an in-page button (`onClick`) —
+ * never both, never neither. Modelled as a union so an inert card (no target)
+ * is a compile error, and `disabled` only exists where it's actually honoured.
+ */
+export type QuickAction = QuickActionLink | QuickActionButton
 
 export interface QuickActionsPanelProps {
   actions: QuickAction[]
