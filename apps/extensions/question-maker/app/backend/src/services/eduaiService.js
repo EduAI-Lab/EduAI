@@ -5,6 +5,7 @@
 import axios from "axios";
 import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
+import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
@@ -154,24 +155,15 @@ class EduAIService {
 
   /**
    * Picks a lightweight model for connectivity checks. Prefers whichever cloud
-   * provider the caller has a key for (browser-stored key), then the server's
-   * Google key — so the badge reflects cloud availability for ANY supported cloud
-   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
-   * offline. Falls back to Ollama only when no cloud key exists at all.
-   *
-   * `forceProvider` overrides the auto-selection so a caller can probe a specific
-   * path regardless of what keys exist. The status chips rely on this: the UBC
-   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
-   * configured — otherwise the auto-selection would test Google and the UBC chip
-   * would report Google's state, never its own.
+   * provider the caller has a key for, then the server's Google key. Campus
+   * probes (`forceProvider` vllm/ollama) resolve the smallest active campus
+   * model from Core's live catalog when `campusModels` is provided.
    */
-  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
-    if (forceProvider === "ollama") {
-      return {
-        provider: "ollama",
-        model: "ollama:gpt-oss:120b",
-        apiKeys: { ollama: { isEnabled: true } },
-      };
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider, campusModels = null) {
+    // UBC-hosted path. Accept legacy `ollama` force so older status-chip callers
+    // still pin the campus provider.
+    if (forceProvider === "ollama" || forceProvider === "vllm") {
+      return campusProbeParams(campusModels);
     }
 
     for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
@@ -195,11 +187,7 @@ class EduAIService {
       };
     }
 
-    return {
-      provider: "ollama",
-      model: "ollama:gpt-oss:120b",
-      apiKeys: { ollama: { isEnabled: true } },
-    };
+    return campusProbeParams(campusModels);
   }
 
   /** Fills in server-side provider keys when the client did not supply one (local dev). */
@@ -213,6 +201,9 @@ class EduAIService {
     }
     if (provider === "ollama" && !merged.ollama) {
       merged.ollama = { isEnabled: true };
+    }
+    if (provider === "vllm" && !merged.vllm) {
+      merged.vllm = { isEnabled: true };
     }
     return merged;
   }
@@ -264,6 +255,12 @@ class EduAIService {
         ...(params.temperature != null ? { temperature: params.temperature } : {}),
         ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       };
+      if (params.courseId) {
+        requestPayload.courseId = params.courseId;
+      }
+      if (params.courseCode) {
+        requestPayload.courseCode = params.courseCode;
+      }
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
@@ -272,6 +269,8 @@ class EduAIService {
         url: `${this.baseURL}/api/completion`,
         timeoutMs,
         model: requestPayload.model,
+        courseId: requestPayload.courseId ?? null,
+        courseCode: requestPayload.courseCode ?? null,
         messageCount: (requestPayload.messages || []).length,
         hasSystemPrompt: Boolean(requestPayload.systemPrompt),
         systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
@@ -375,6 +374,7 @@ class EduAIService {
     const {
       prompt,
       courseCode,
+      courseId,
       model = "google:gemini-2.5-flash",
       apiKeys = {},
       numQuestions = 5,
@@ -386,9 +386,9 @@ class EduAIService {
       cookie,
     } = params;
 
-    if (!prompt || !courseCode) {
+    if (!prompt || (!courseCode && !courseId)) {
       throw new Error(
-        "Prompt and courseCode are required for question generation"
+        "Prompt and courseCode (or courseId) are required for question generation"
       );
     }
 
@@ -465,7 +465,8 @@ OUTPUT RULES (mandatory):
     try {
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
-        courseCode,
+        courseId: courseId ?? null,
+        courseCode: courseCode ?? null,
         model,
         numQuestions,
         mcqRequiredChoiceCount: mcqCountEnforced ? mcqRequiredChoiceCount : undefined,
@@ -482,6 +483,7 @@ OUTPUT RULES (mandatory):
         ],
         model,
         apiKeys,
+        courseId,
         courseCode,
         streaming: false,
         timeoutMs: 180000, // 3 minutes for question generation/extraction
@@ -526,6 +528,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             ],
             model,
             apiKeys,
+            courseId,
             courseCode,
             streaming: false,
             timeoutMs: 180000,
@@ -955,6 +958,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   }
 
   /**
+   * Course context for connectivity probes. Prefer configured Core `courseId`,
+   * then `courseCode`. When neither is set, omit course so service-key probes
+   * can use Core's course-free API-key path instead of hardcoding a seed course
+   * that may not exist on every environment.
+   */
+  getConnectivityProbeCourse() {
+    const courseId = config.eduaiProbeCourseId || "";
+    const courseCode = config.eduaiProbeCourseCode || "";
+    if (courseId) return { courseId };
+    if (courseCode) return { courseCode };
+    return {};
+  }
+
+  /**
    * Issues a lightweight chat call to validate Core AI connectivity.
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
@@ -977,14 +994,31 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
+    let campusModels = null;
+    if (forceProvider === "ollama" || forceProvider === "vllm" || !Object.keys(clientApiKeys || {}).length) {
+      try {
+        campusModels = await this.listAIModels({ cookie });
+      } catch (err) {
+        console.warn(`${DEBUG_PREFIX} campus model catalog unavailable for probe`, err.message);
+      }
+    }
+
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(
+      clientApiKeys,
+      forceProvider,
+      campusModels,
+    );
+    const probeCourse = this.getConnectivityProbeCourse();
     try {
       const response = await this.chat({
         systemPrompt: "Reply briefly.",
         messages: [{ role: "user", content: "test" }],
         model,
         apiKeys,
+        ...probeCourse,
         streaming: false,
+        // Status chips should fail fast — full extract uses a longer timeout.
+        timeoutMs: 20000,
         cookie,
       });
 
