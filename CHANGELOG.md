@@ -6,6 +6,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Added
+
+- [core] feat: Fleet Slice 2 — retry once on an alternate healthy vLLM host after inference failure (streaming startup probe + health invalidate); process-local `AI_MAX_INFLIGHT` admission with stream-safe release. Closes #876. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
+- [core] tests: `admission.server` + `fleet-probe-stream` unit coverage; fleet-routing exclude/retry cases. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
+
+### Changed
+
+- [core] fix: Fleet Slice 2 startup probe now runs for non-streaming and oversight turns (not only streaming); docs call out soft-timeout / mid-stream non-retry tradeoffs. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
 ### Fixed
 
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
