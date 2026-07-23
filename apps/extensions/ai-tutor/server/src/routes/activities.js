@@ -60,6 +60,7 @@ import {
   TeachRequestSchema,
 } from '../../../shared/schemas/aiGuidance.js';
 import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
+import { getCoreCourseId } from '../utils/coreCourseId.js';
 
 const router = express.Router();
 
@@ -282,6 +283,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       chatId,
       messageId,
       courseCode,
+      courseId: getCoreCourseId(course),
       testableQuestions,
       signal: abortController.signal,
     });
