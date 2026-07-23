@@ -36,7 +36,7 @@ export function ChangePasswordSettings() {
         revokeOtherSessions: false,
       });
       if (res.error) {
-        setError("Could not change your password. Check your current password and try again.");
+        setError(res.error.message ?? "Could not change your password. Please try again.");
         return;
       }
       setSuccess(true);
@@ -44,7 +44,7 @@ export function ChangePasswordSettings() {
       setNext("");
       setConfirm("");
     } catch {
-      setError("Could not change your password. Check your current password and try again.");
+      setError("Could not change your password. Please try again.");
     } finally {
       setSaving(false);
     }

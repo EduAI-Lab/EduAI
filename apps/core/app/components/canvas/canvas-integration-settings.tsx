@@ -70,8 +70,12 @@ export function CanvasIntegrationSettings() {
           ? "Canvas test mode enabled."
           : "Canvas connected. Your API key is stored encrypted and is not shown again.",
       );
-    } catch {
-      setError("Could not connect to Canvas. Check your URL and API key and try again.");
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Could not connect to Canvas. Please try again.",
+      );
     } finally {
       setConnecting(false);
     }

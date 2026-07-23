@@ -6,19 +6,19 @@ export function toMaterialUploadUserMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
 
   if (/prisma\.\$(executeRaw|queryRaw)|PrismaClient|Raw query failed/i.test(message)) {
-    return "Material indexing failed due to a database error. Please try again or contact support.";
+    return "Couldn't save this material's search data due to a database error. Please try again or contact support.";
   }
 
   if (/serializ|BigDecimal|Couldn't serialize/i.test(message)) {
-    return "Material indexing failed while saving. Please try again.";
+    return "Couldn't save this material's search data. Please try again.";
   }
 
   if (/Embedding dimension mismatch/i.test(message)) {
-    return "Material indexing failed: configuration mismatch. Contact your administrator.";
+    return "Couldn't save this material's search data: configuration mismatch. Contact your administrator.";
   }
 
   if (/No embedding provider configured|Local embedding provider failed/i.test(message)) {
-    return "Material indexing is unavailable. Contact your administrator.";
+    return "Search data isn't available for this material right now. Contact your administrator.";
   }
 
   if (/No content chunks generated/i.test(message)) {
