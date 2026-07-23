@@ -22,6 +22,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Course-access check on RAG settings endpoint (IDOR) — `GET`/`PATCH /api/courses/:id/rag-settings` authorized on the caller's global role only, never verifying they teach the target course; any INSTRUCTOR (or any authenticated user for GET) could read or mutate another course's RAG tuning values. Both handlers now use `resolveCourseAccessWithCourse` + a rank gate, matching sibling course-mutation routes. (#975, @GlowyBlack, 2026-07-20) — [#1131](https://github.com/EduAI-Lab/EduAI/pull/1131)
 - [question-maker] fix: PR #1013 review follow-ups, round 2 — `isPrivateIPv6` missed the deprecated IPv4-compatible form (`::a.b.c.d`, no `::ffff:` prefix), so `https://[::127.0.0.1]/` (normalized by Node's `URL` parser to `::7f00:1`) sailed through as a non-private literal; now the low 32 bits are pulled out and re-checked via `isPrivateIPv4` whenever the first six 16-bit groups are zero. `createPinnedLookup` fails closed with a clean `Error` instead of throwing a `TypeError` on a destructure if `dns.lookup` ever calls back with zero addresses. `makeCanvasRequest`'s blanket `maxRedirects: 0` (added in round 1) broke Canvas hosts that legitimately 3xx-redirect (e.g. an apex→`www` or canonicalizing-LB hop); now redirects are followed (`maxRedirects: 5`) but each hop is re-validated through `validateCanvasUrl` via axios's `beforeRedirect`, so a permitted host still can't hand the request off to a private target or downgrade to HTTP. (#991, @GlowyBlack, 2026-07-20) — [#1013](https://github.com/EduAI-Lab/EduAI/pull/1013)
 
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] refactor: Wire `useCourseMaterials.deleteMaterial` to the live `DELETE /api/courses/:courseId/materials/:materialId` endpoint and route the course-detail manager/TA delete flows through the hook instead of inline `fetch`. (#559, @mochi_21, 2026-07-20) — [#1138](https://github.com/EduAI-Lab/EduAI/pull/1138)
+
 ## [Week 11 — July 13–19, 2026]
 
 ### Added
