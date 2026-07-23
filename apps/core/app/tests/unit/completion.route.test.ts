@@ -33,7 +33,10 @@ import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
 
-function makeRequest(body: object, signal?: AbortSignal) {
+function makeRequest(
+  body: object,
+  signal?: AbortSignal,
+): Parameters<typeof action>[0] {
   return {
     request: new Request("http://localhost/api/completion", {
       method: "POST",
@@ -43,7 +46,7 @@ function makeRequest(body: object, signal?: AbortSignal) {
     }),
     params: {},
     context: {} as never,
-  } as never;
+  } as Parameters<typeof action>[0];
 }
 
 function baseBody(overrides: Record<string, unknown> = {}) {
