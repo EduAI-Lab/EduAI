@@ -44,6 +44,8 @@ function makeRequest(
       body: JSON.stringify(body),
       signal,
     }),
+    url: new URL("http://localhost/api/completion"),
+    pattern: "/api/completion",
     params: {},
     context: {} as never,
   } as Parameters<typeof action>[0];
