@@ -15,10 +15,15 @@ vi.mock('../../src/services/eduaiService.js', () => ({
 
 const findByPk = vi.fn();
 const findAll = vi.fn();
+const enrichCourseDetail = vi.fn();
 vi.mock('../../src/schema/index.js', () => ({
   Question_Metadata: {},
   Course: { findByPk },
   Topics: { findAll },
+}));
+
+vi.mock('../../src/services/courseListService.js', () => ({
+  enrichCourseDetail,
 }));
 
 const axios = (await import('axios')).default;
@@ -38,7 +43,16 @@ const validQ = JSON.stringify([
 beforeEach(() => {
   vi.clearAllMocks();
   isConfiguredMock.mockReturnValue(true);
-  findByPk.mockResolvedValue({ id: 7, code: 'CS 101', name: 'Intro' });
+  findByPk.mockResolvedValue({ id: 7, coreCourseId: null });
+  enrichCourseDetail.mockImplementation(async (course) => {
+    const row = course?.toJSON ? course.toJSON() : course;
+    return {
+      ...row,
+      code: null,
+      name: 'Unavailable (Core offline)',
+      coreUnavailable: true,
+    };
+  });
   findAll.mockResolvedValue([]);
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -174,5 +188,23 @@ describe('extractQuestionsFromText (EduAI extraction)', () => {
     generateQuestionsMock.mockResolvedValue([{ content: 'Q', difficulty: 'easy', type: 'SA', answer: null }]);
     await extractQuestionsFromText('exam text', 99, 'm', {});
     expect(generateQuestionsMock.mock.calls[0][0].courseCode).toBe('COURSE-UNKNOWN');
+  });
+
+  it('preserves course code spacing and forwards coreCourseId', async () => {
+    findByPk.mockResolvedValue({
+      id: 7,
+      coreCourseId: 'cuid-core-121',
+    });
+    enrichCourseDetail.mockResolvedValue({
+      id: 7,
+      coreCourseId: 'cuid-core-121',
+      code: 'COSC 121',
+      name: 'Intro',
+    });
+    generateQuestionsMock.mockResolvedValue([{ content: 'Q', difficulty: 'easy', type: 'SA', answer: null }]);
+    await extractQuestionsFromText('exam text', 7, 'm', {});
+    const call = generateQuestionsMock.mock.calls[0][0];
+    expect(call.courseCode).toBe('COSC 121');
+    expect(call.courseId).toBe('cuid-core-121');
   });
 });
