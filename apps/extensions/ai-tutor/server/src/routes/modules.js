@@ -114,11 +114,26 @@ router.post('/courses/:courseId/modules', requireRole(['INSTRUCTOR', 'UNIT_ADMIN
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
+    // When the client does not supply an explicit position, append the new
+    // module to the end of the list rather than defaulting to 0, which would
+    // push it to the top and shift every existing module down (issue #1046).
+    let resolvedPosition;
+    if (typeof position === 'number') {
+      resolvedPosition = position;
+    } else {
+      const last = await prisma.module.findFirst({
+        where: { courseOfferingId: courseId },
+        orderBy: { position: 'desc' },
+        select: { position: true },
+      });
+      resolvedPosition = last ? last.position + 1 : 0;
+    }
+
     const module = await prisma.module.create({
       data: {
         title,
         description,
-        position: typeof position === 'number' ? position : 0,
+        position: resolvedPosition,
         courseOfferingId: courseId,
       },
     });
@@ -363,5 +378,76 @@ router.patch('/modules/:moduleId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
     res.status(500).json({ error: String(e) });
   }
 });
+
+// Reorder every module in a course in one atomic write. The client sends the
+// full ordered list of module ids; positions are reassigned 0..n-1 by index.
+// Bulk-and-atomic (rather than N single-field PATCHes) avoids transient
+// duplicate positions and partial reorders on failure (issue #1047).
+router.put(
+  '/courses/:courseId/modules/order',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const courseId = Number(req.params.courseId);
+    if (!Number.isFinite(courseId)) {
+      return res.status(400).json({ error: 'Invalid course id' });
+    }
+
+    const { orderedIds } = req.body || {};
+    if (
+      !Array.isArray(orderedIds) ||
+      orderedIds.length === 0 ||
+      !orderedIds.every((id) => Number.isInteger(id))
+    ) {
+      return res.status(400).json({ error: 'orderedIds must be a non-empty array of integers' });
+    }
+    if (new Set(orderedIds).size !== orderedIds.length) {
+      return res.status(400).json({ error: 'orderedIds must not contain duplicates' });
+    }
+
+    try {
+      const course = await prisma.courseOffering.findUnique({
+        where: { id: courseId },
+        include: { instructors: { select: { userId: true } } },
+      });
+      if (!course) return res.status(404).json({ error: 'Course not found' });
+
+      const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
+      const unitAdmin = isUnitAdminForCourse(authUser, course);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      const existing = await prisma.module.findMany({
+        where: { courseOfferingId: courseId },
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((m) => m.id));
+      // The provided ids must be exactly the course's modules — no more, no less.
+      if (
+        orderedIds.length !== existingIds.size ||
+        !orderedIds.every((id) => existingIds.has(id))
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'orderedIds must match the full set of module ids for this course' });
+      }
+
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.module.update({ where: { id }, data: { position: index } }),
+        ),
+      );
+
+      const modules = await prisma.module.findMany({
+        where: { courseOfferingId: courseId },
+        orderBy: { position: 'asc' },
+      });
+      res.json(modules.map(mapModule));
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 export default router;
