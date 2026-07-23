@@ -55,6 +55,15 @@ export const config = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  /**
+   * Optional Core course used by connectivity probes (`testApiKey`). Prefer
+   * `courseId` (CUID) over `courseCode`. When neither is set, service-key
+   * probes omit course context (Core allows course-free chat for API keys);
+   * cookie probes should set one of these so status chips do not depend on a
+   * hardcoded seed course like COSC 121.
+   */
+  eduaiProbeCourseId: (process.env.EDUAI_PROBE_COURSE_ID || '').trim(),
+  eduaiProbeCourseCode: (process.env.EDUAI_PROBE_COURSE_CODE || '').trim(),
   
   // AI Settings
   defaultNumQuestions: parseInt(process.env.DEFAULT_NUM_QUESTIONS) || 15,

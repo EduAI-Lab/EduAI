@@ -61,7 +61,10 @@ export function ChatConversationLayout({
   return (
     <div
       className={cn(
-        "flex flex-col h-[calc(100vh-var(--header-height))] bg-background",
+        // Fill the AppShell main pane — do NOT use 100vh here. Nested inside
+        // SiteHeader + main, a viewport calc makes the page taller than the
+        // screen and lets you scroll past the composer (#1060 follow-up).
+        "flex h-full min-h-0 flex-1 flex-col bg-background",
         assistive && ASSISTIVE_CHAT_SURFACE_CLASS,
       )}
     >
@@ -76,7 +79,7 @@ export function ChatConversationLayout({
             </p>
           </div>
         )}
-        <div className="h-full overflow-y-auto scrollbar-hover scroll-smooth">
+        <div className="h-full min-h-0 overflow-y-auto overscroll-contain scrollbar-hover scroll-smooth">
           <div
             className={cn(
               "px-4 md:px-6",
