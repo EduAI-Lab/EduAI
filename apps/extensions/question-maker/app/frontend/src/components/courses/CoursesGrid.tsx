@@ -131,6 +131,7 @@ export function CoursesGrid({
       gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       emptyState={
         <EmptyState
+          bare={false}
           icon={<IconBooks className="size-6" />}
           title="No courses yet"
           description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
@@ -138,6 +139,7 @@ export function CoursesGrid({
       }
       noResultsState={
         <EmptyState
+          bare={false}
           icon={<IconSearch className="size-6" />}
           title="No courses match"
           description="Try a different search or filter."
