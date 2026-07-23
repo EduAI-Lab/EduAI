@@ -8,12 +8,20 @@ const ENCRYPTION_KEY_NAME = 'eduai_encryption_key';
 
 export type AIProvider = 'google' | 'openai' | 'deepseek' | 'anthropic';
 
-/** Cloud (key-bearing) providers, as opposed to the UBC-hosted `ollama` path. */
+/** UBC-hosted campus providers (no client API key). `ollama` kept for legacy responses. */
+export type CampusProvider = 'vllm' | 'ollama';
+
+/** Cloud (key-bearing) providers, as opposed to the UBC-hosted campus path. */
 export const CLOUD_PROVIDERS: AIProvider[] = ['google', 'openai', 'deepseek', 'anthropic'];
 
 /** True when a provider id names a cloud provider (any supported one — not just Google). */
 export function isCloudProvider(provider: string | null | undefined): provider is AIProvider {
   return !!provider && (CLOUD_PROVIDERS as string[]).includes(provider);
+}
+
+/** True when a provider id names the UBC-hosted campus path (`vllm` or legacy `ollama`). */
+export function isCampusProvider(provider: string | null | undefined): provider is CampusProvider {
+  return provider === 'vllm' || provider === 'ollama';
 }
 
 /** Generates or retrieves a derived AES-GCM key for encrypting provider secrets in this browser. */
@@ -141,9 +149,9 @@ export const apiKeyStorage = {
     return null;
   },
 
-  /** Returns true when the selected model requires a provider API key (i.e., not ollama). */
+  /** Returns true when the selected model requires a provider API key (cloud only). */
   requiresApiKey(modelId: string): boolean {
-    return !modelId.startsWith('ollama');
+    return !modelId.startsWith('ollama') && !modelId.startsWith('vllm');
   },
 
   /** Builds the apiKeys payload expected by the AI service based on the chosen model and stored keys. */
@@ -151,6 +159,13 @@ export const apiKeyStorage = {
     if (modelId.startsWith('ollama')) {
       return {
         ollama: {
+          isEnabled: true
+        }
+      };
+    }
+    if (modelId.startsWith('vllm')) {
+      return {
+        vllm: {
           isEnabled: true
         }
       };
