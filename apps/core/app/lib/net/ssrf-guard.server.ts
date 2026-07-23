@@ -30,8 +30,12 @@ function isBlockedIPv6(address: string): boolean {
   const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped?.[1]) return isBlockedIPv4(mapped[1]);
 
+  // An empty first group means the address starts with "::" (zero-compressed).
+  // That includes hex-form IPv4-mapped addresses like "::ffff:c0a8:101"
+  // (192.168.1.1) that the dotted-decimal regex above doesn't catch — treat
+  // as unparseable and fail closed rather than defaulting to hextet 0.
   const firstGroup = normalized.split(":")[0] ?? "";
-  const firstHextet = firstGroup === "" ? 0 : parseInt(firstGroup, 16);
+  const firstHextet = firstGroup === "" ? NaN : parseInt(firstGroup, 16);
   if (Number.isNaN(firstHextet)) return true; // malformed — fail closed
 
   if (firstHextet >= 0xfe80 && firstHextet <= 0xfebf) return true; // link-local fe80::/10

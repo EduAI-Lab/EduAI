@@ -17,6 +17,7 @@ import {
   downloadCanvasFile,
   getCanvasCourseWithTerm,
   listCanvasCourseStudents,
+  listTeacherCanvasCourses,
   parseAndValidateCanvasUrl,
   resolveCanvasFileDownloadUrl,
   verifyCanvasCredentials,
@@ -177,6 +178,38 @@ describe("SSRF guard for real Canvas requests", () => {
       verifyCanvasCredentials("http://localhost:8080", "token"),
     ).resolves.toBeUndefined();
     expect(assertPublicHostnameMock).not.toHaveBeenCalled();
+  });
+
+  it("does not let a pagination Link header pointing at loopback bypass the guard for a non-local-dev canvasUrl", async () => {
+    // A public canvasUrl must not get the local-dev free pass just because a
+    // later request URL (here, from a Canvas-controlled Link header) happens
+    // to have a hostname that's on the local-dev allow-list.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
+        status: 200,
+        headers: {
+          link: '<http://127.0.0.1:11434/api/v1/courses?page=2>; rel="next"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    // First call is for the initial page (canvas.attacker.example itself,
+    // resolved publicly); second is for the Link-header URL (127.0.0.1).
+    assertPublicHostnameMock.mockResolvedValueOnce(undefined);
+    assertPublicHostnameMock.mockRejectedValueOnce(
+      new Error('Host "127.0.0.1" resolves to a disallowed network address'),
+    );
+
+    await expect(
+      listTeacherCanvasCourses({
+        canvasUrl: "https://canvas.attacker.example",
+        apiKey: "token",
+        isTestMode: false,
+      }),
+    ).rejects.toThrow(CanvasApiError);
+
+    expect(assertPublicHostnameMock).toHaveBeenCalledWith("127.0.0.1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

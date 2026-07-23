@@ -195,16 +195,22 @@ function buildCanvasProfileUrl(canvasUrl: string): string {
 }
 
 /**
- * SSRF guard for the actual outbound request: local-dev hosts (already
- * restricted to plain HTTP by parseAndValidateCanvasUrl) are trusted as-is;
- * everything else is resolved and rejected if it lands on a private/loopback/
- * link-local range (RFC1918, CGNAT, ULA — incl. cloud metadata endpoints).
+ * SSRF guard for the actual outbound request: local-dev hosts are only
+ * trusted as-is when the *configured* canvasUrl for this integration is
+ * itself a local-dev host (already restricted to plain HTTP by
+ * parseAndValidateCanvasUrl) — e.g. same-origin pagination or the
+ * canvas.docker download-transport rewrite. Otherwise every request URL,
+ * including ones derived from Canvas-controlled pagination Link headers or
+ * redirect Location headers, is resolved and rejected if it lands on a
+ * private/loopback/link-local range (RFC1918, CGNAT, ULA — incl. cloud
+ * metadata endpoints). This keeps a public canvasUrl from being used to pivot
+ * inward via a malicious Link/Location header pointing at loopback.
  * Re-checked on every call, not just once at connect time, to narrow the
  * DNS-rebinding window.
  */
-async function assertSafeCanvasRequestHost(url: string): Promise<void> {
+async function assertSafeCanvasRequestHost(url: string, canvasUrl: string): Promise<void> {
   const hostname = new URL(url).hostname.toLowerCase();
-  if (HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
+  if (isLocalCanvasDev(canvasUrl) && HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
 
   try {
     await assertPublicHostname(hostname);
@@ -223,7 +229,7 @@ export async function verifyCanvasCredentials(
   const url = buildCanvasProfileUrl(canvasUrl);
 
   try {
-    await assertSafeCanvasRequestHost(url);
+    await assertSafeCanvasRequestHost(url, canvasUrl);
 
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -271,11 +277,12 @@ function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
 
 async function canvasFetchJson<T>(
   url: string,
+  canvasUrl: string,
   apiKey: string,
   fetchImpl: typeof fetch,
 ): Promise<{ data: T; linkHeader: string | null }> {
   try {
-    await assertSafeCanvasRequestHost(url);
+    await assertSafeCanvasRequestHost(url, canvasUrl);
 
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -318,7 +325,12 @@ export async function canvasGetPaginated<T>(
   const results: T[] = [];
 
   while (nextUrl) {
-    const { data, linkHeader } = await canvasFetchJson<T[]>(nextUrl, credentials.apiKey, fetchImpl);
+    const { data, linkHeader } = await canvasFetchJson<T[]>(
+      nextUrl,
+      credentials.canvasUrl,
+      credentials.apiKey,
+      fetchImpl,
+    );
     if (Array.isArray(data) && data.length > 0) {
       results.push(...data);
     }
@@ -388,7 +400,12 @@ export async function getCanvasCourseWithTerm(
   );
 
   try {
-    const { data } = await canvasFetchJson<CanvasCourseApi>(url, credentials.apiKey, fetchImpl);
+    const { data } = await canvasFetchJson<CanvasCourseApi>(
+      url,
+      credentials.canvasUrl,
+      credentials.apiKey,
+      fetchImpl,
+    );
     return data;
   } catch (error) {
     if (error instanceof CanvasApiError && error.statusCode === 404) {
@@ -482,7 +499,7 @@ async function performCanvasFileDownloadRequest(
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
 ): Promise<CanvasFileDownloadResponse> {
-  await assertSafeCanvasRequestHost(url);
+  await assertSafeCanvasRequestHost(url, credentials.canvasUrl);
 
   const useUndici =
     fetchImpl === fetch &&
