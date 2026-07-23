@@ -70,6 +70,10 @@ import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdRespons
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import {
+  courseCodeLookupCandidates,
+  pickCourseIdByCandidatePriority,
+} from "~/lib/courses/course-code-candidates";
+import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
@@ -609,12 +613,26 @@ export async function action({ request }: ActionFunctionArgs) {
         .filter((m): m is GenericMessage => m !== null),
     );
 
-    // Resolve course code to internal ID when needed
+    // Resolve course code to internal ID when needed.
+    // Prefer exact match; fall back to common whitespace variants because
+    // callers (e.g. QM before coreCourseId pass-through) sometimes send
+    // "COSC121" while Core stores "COSC 121". Prefer courseId when available.
+    // Single findMany keeps candidate priority without N round-trips; case is
+    // insensitive so "cosc121" still resolves.
     let resolvedCourseId: string | null = null;
     if (courseCode && typeof courseCode === "string") {
       try {
-        const course = await prisma.course.findFirst({ where: { code: courseCode, deletedAt: null } });
-        resolvedCourseId = course?.id || null;
+        const candidates = courseCodeLookupCandidates(courseCode);
+        if (candidates.length > 0) {
+          const rows = await prisma.course.findMany({
+            where: {
+              code: { in: candidates, mode: "insensitive" },
+              deletedAt: null,
+            },
+            select: { id: true, code: true },
+          });
+          resolvedCourseId = pickCourseIdByCandidatePriority(candidates, rows);
+        }
       } catch (e) {
         console.error("Failed to resolve course by code", e);
       }

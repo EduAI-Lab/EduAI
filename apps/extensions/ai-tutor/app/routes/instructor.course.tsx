@@ -21,6 +21,7 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
   Button,
@@ -46,6 +47,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableProvider,
+  SortableItem,
+  DragHandle,
   Textarea,
 } from '@eduai/ui';
 import { PublishMenu } from '../components/PublishMenu';
@@ -126,6 +130,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     isPublished: boolean;
     title: string;
   } | null>(null);
+  const [reorderingModules, setReorderingModules] = useState(false);
   const modulesRequestIdRef = useRef(0);
 
   const [oModules, addModuleOpt] = useOptimistic(
@@ -276,6 +281,36 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       );
     } finally {
       setPublishingId((current) => (current === moduleId ? null : current));
+    }
+  };
+
+  // Persist a drag-reordered module list: reorder the local list to match the
+  // dropped order optimistically, then confirm with the bulk reorder endpoint;
+  // a failure rolls back to the prior order.
+  const reorderModulesList = async (orderedIds: number[]) => {
+    if (!numericCourseId) return;
+    const current = modules;
+    const byId = new Map(current.map((m) => [m.id, m]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The module list changed while reordering. Refreshing — please try again.');
+      await refreshModules();
+      return;
+    }
+
+    setModules(next);
+    setReorderingModules(true);
+    try {
+      const updated = await api.reorderModules(numericCourseId, orderedIds);
+      setModules(updated);
+    } catch (error) {
+      console.error('Failed to reorder modules', error);
+      toast.error('Failed to reorder modules. The previous order was restored.');
+      setModules(current);
+    } finally {
+      setReorderingModules(false);
     }
   };
 
@@ -633,47 +668,63 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {oModules.map((m, idx) => {
-                const canPublish = course?.isPublished;
-                const blocked = !m.isPublished && !canPublish;
-                const tooltipMessage = blocked
-                  ? `Publish ${m.title} after publishing ${course?.title ?? 'the parent course'}.`
-                  : null;
-                const busy = publishingId === m.id;
-                return (
-                  <ModuleCard
-                    key={m.id}
-                    index={idx}
-                    title={m.title}
-                    description={m.description}
-                    accentColor={accentColor}
-                    isPublished={m.isPublished}
-                    onClick={() => navigate(`/instructor/module/${m.id}`)}
-                    actions={
-                      perms.canPublishContent || perms.canManageContent ? (
-                        <PublishMenu
-                          isPublished={m.isPublished}
-                          pending={busy}
-                          blockedReason={tooltipMessage}
-                          itemLabel="module"
-                          onToggle={
-                            perms.canPublishContent
-                              ? () => {
-                                  if (busy || blocked) return;
-                                  setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
-                                }
-                              : undefined
-                          }
-                          onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
-                          onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
-                        />
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
-            </div>
+            <SortableProvider
+              ids={oModules.map((m) => m.id)}
+              onReorder={reorderModulesList}
+              strategy="grid"
+              disabled={!perms.canManageContent || oModules.length < 2 || reorderingModules}
+            >
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {oModules.map((m, idx) => {
+                  const canPublish = course?.isPublished;
+                  const blocked = !m.isPublished && !canPublish;
+                  const tooltipMessage = blocked
+                    ? `Publish ${m.title} after publishing ${course?.title ?? 'the parent course'}.`
+                    : null;
+                  const busy = publishingId === m.id;
+                  const canReorder = perms.canManageContent && oModules.length > 1;
+                  return (
+                    <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
+                      {({ handleProps }) => (
+                          <ModuleCard
+                            index={idx}
+                            title={m.title}
+                            description={m.description}
+                            accentColor={accentColor}
+                            isPublished={m.isPublished}
+                            onClick={() => navigate(`/instructor/module/${m.id}`)}
+                            leading={
+                              canReorder ? (
+                                <DragHandle handleProps={handleProps} label={`Drag to reorder ${m.title}`} />
+                              ) : undefined
+                            }
+                            actions={
+                              perms.canPublishContent || perms.canManageContent ? (
+                                <PublishMenu
+                                  isPublished={m.isPublished}
+                                  pending={busy}
+                                  blockedReason={tooltipMessage}
+                                  itemLabel="module"
+                                  onToggle={
+                                    perms.canPublishContent
+                                      ? () => {
+                                          if (busy || blocked) return;
+                                          setPendingPublish({ id: m.id, isPublished: m.isPublished, title: m.title });
+                                        }
+                                      : undefined
+                                  }
+                                  onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
+                                  onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
+                                />
+                              ) : undefined
+                            }
+                          />
+                      )}
+                    </SortableItem>
+                  );
+                })}
+              </div>
+            </SortableProvider>
           )}
         </PageTabsContent>
 
