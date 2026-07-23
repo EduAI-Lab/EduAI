@@ -1122,6 +1122,79 @@ describe('Tutoring-flow: question consumption via Core', () => {
   // `resolveCoreCourseById`) is dead code now, harmlessly so; left in place
   // rather than removed as part of this migration.
 
+  // #1021 review: assert the activities → EduAI wiring layer, not only
+  // generate*Response with an explicitly passed courseId.
+  it('/teach and /guide EduAI chat bodies include linked coreOfferingId as courseId (#1021)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+        }),
+    );
+
+    const teachRes = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(teachRes.status).toBe(200);
+
+    const teachChatBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(teachChatBodies.length).toBeGreaterThan(0);
+    for (const body of teachChatBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
+
+    fetch.mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-2' }),
+        }),
+    );
+
+    const guideRes = await request(studentApp)
+      .post(`/api/activities/${activity.id}/guide`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(guideRes.status).toBe(200);
+
+    const guideChatBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(guideChatBodies.length).toBeGreaterThan(0);
+    for (const body of guideChatBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
+  });
+
+  // The "coreOfferingId is null" scenario is no longer constructible: #1072
+  // step 4 made `coreOfferingId` required at the DB level, so every
+  // CourseOffering row is Core-linked by construction. Linked-course
+  // courseId forwarding is covered by the test above; omitting courseId for
+  // an unlinked offering cannot be integration-tested against Prisma.
+
   it('/teach proceeds with empty question bank and returns 200 when Core questions fetch fails', async () => {
     vi.stubGlobal(
       'fetch',

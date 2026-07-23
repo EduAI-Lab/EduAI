@@ -36,6 +36,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '../config/database.js';
 import { getEduAiCompletionUrl } from './eduaiClient.js';
+import { trimNonEmpty } from '../utils/coreCourseId.js';
 import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
 
 const SUPERVISOR_ERROR_MESSAGE =
@@ -67,6 +68,12 @@ async function callEduAI({
   chatId = null,
   messageId = null,
   courseCode = null,
+  // Core Course CUID (AI Tutor `course.coreOfferingId`). Send this for linked
+  // offerings so a mismatched/stripped courseCode cannot yield COURSE_REQUIRED
+  // (#657 / #1021). Note: Core still resolves `courseCode` first when both are
+  // present (`effectiveCourseId = resolvedCourseId || courseId` in chat.ts) —
+  // courseId is the fallback when code lookup fails, not a preferred override.
+  courseId = null,
   signal,
 }) {
   const endpoint = getEduAiCompletionUrl();
@@ -102,6 +109,10 @@ async function callEduAI({
     },
   };
 
+  // Same trim/omit helper as getCoreCourseId — keep one rule for whitespace.
+  const trimmedCourseId = trimNonEmpty(courseId);
+  const trimmedCourseCode = trimNonEmpty(courseCode);
+
   const requestBody = {
     messages: [{ id: userMessageId, role: 'user', content: userMessage }],
     systemPrompt,
@@ -110,7 +121,8 @@ async function callEduAI({
     streaming: false,
     routingContext: { feature: 'tutor', jobType: 'interactive' },
     ...(chatId ? { chatId } : {}),
-    ...(courseCode ? { courseCode } : {}),
+    ...(trimmedCourseId ? { courseId: trimmedCourseId } : {}),
+    ...(trimmedCourseCode ? { courseCode: trimmedCourseCode } : {}),
   };
 
   try {
@@ -224,6 +236,8 @@ async function callSupervisor({
   supervisorModelId,
   cookie,
   userApiKey,
+  courseCode = null,
+  courseId = null,
   signal,
 }) {
   const template = await getPromptTemplateBySlug('supervisor-prompt');
@@ -259,6 +273,8 @@ RESPOND WITH ONLY VALID JSON.`;
       modelId: supervisorModelId,
       cookie,
       userApiKey,
+      courseCode,
+      courseId,
       signal,
     });
 
@@ -517,6 +533,8 @@ async function supervisedGenerate(generateFn, context) {
         supervisorModelId: context.supervisorModelId,
         cookie: context.cookie,
         userApiKey: context.userApiKey,
+        courseCode: context.courseCode,
+        courseId: context.courseId,
         signal: context.signal,
       });
 
@@ -578,6 +596,7 @@ async function generateWithSupervisor({
   chatId,
   messageId,
   courseCode,
+  courseId = null,
   signal,
 }) {
   const context = {
@@ -592,6 +611,8 @@ async function generateWithSupervisor({
     dualLoopEnabled,
     maxSupervisorIterations,
     lastFeedback: null,
+    courseCode,
+    courseId,
     signal,
   };
 
@@ -615,6 +636,7 @@ async function generateWithSupervisor({
       // the same turn; only the original turn reuses the caller's messageId.
       messageId: isRevision ? randomUUID() : messageId,
       courseCode,
+      courseId,
       signal,
     });
   };
@@ -641,6 +663,7 @@ export async function generateTeachResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -680,6 +703,7 @@ export async function generateTeachResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
@@ -719,6 +743,7 @@ export async function generateGuideResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -756,6 +781,7 @@ export async function generateGuideResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
@@ -797,6 +823,7 @@ export async function generateCustomResponse({
   chatId = null,
   messageId = null,
   courseCode = null,
+  courseId = null,
   testableQuestions = [],
   signal,
 }) {
@@ -834,6 +861,7 @@ export async function generateCustomResponse({
       chatId,
       messageId,
       courseCode,
+      courseId,
       signal,
     });
   } catch (error) {
