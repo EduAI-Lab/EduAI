@@ -14,7 +14,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [ci] chore: Coverage-report workflow reworked per #1153 — now runs weekly (Mondays 09:00 UTC + manual dispatch) instead of on every push to `development`, commits the report to a clearer `docs/coverage` branch (was `eduai-summer-2026`), and covers all six test suites instead of backends only: added `test:coverage` (V8, `json-summary`) to `@eduai/ui`, the AI Tutor client, and the Question Maker frontend (whose script previously ran vitest in watch mode with no config — it hung and produced nothing; now a `vitest.coverage.config.ts` aggregates its unit + integration projects like core). Root `npm run test:coverage` aggregates all six. (#1153, @yta3216, 2026-07-22) — #PR
+- [ci] chore: Coverage-report workflow reworked per #1153 — now runs weekly (Mondays 09:00 UTC + manual dispatch) instead of on every push to `development`, commits the report to a clearer `docs/coverage` branch (was `eduai-summer-2026`), and covers all six test suites instead of backends only: added `test:coverage` (V8, `json-summary`) to `@eduai/ui`, the AI Tutor client, and the Question Maker frontend (whose script previously ran vitest in watch mode with no config — it hung and produced nothing; now a `vitest.coverage.config.ts` aggregates its unit + integration projects like core). Root `npm run test:coverage` aggregates all six. (#1153, @yta3216, 2026-07-22) — [#1155](https://github.com/EduAI-Lab/EduAI/pull/1155)
 
 ### Fixed
 
