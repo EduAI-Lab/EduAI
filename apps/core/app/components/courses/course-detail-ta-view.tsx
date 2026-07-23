@@ -63,6 +63,8 @@ interface Props {
   /** Current viewer's user id — TAs may delete only their OWN uploads (§7). */
   currentUserId?: string
   onRefreshMaterials?: () => Promise<void>
+  /** Wired to `useCourseMaterials.deleteMaterial` — refetches the list itself. */
+  onDeleteMaterial?: (materialId: string) => Promise<void>
   tas?: CourseTA[]
   onCreateTopic: (name: string) => Promise<void>
   onDeleteTopic: (id: string) => Promise<void>
@@ -115,6 +117,7 @@ export function CourseDetailTaView({
   courseId,
   currentUserId,
   onRefreshMaterials,
+  onDeleteMaterial,
   tas = [],
   onCreateTopic,
   onDeleteTopic,
@@ -172,16 +175,11 @@ export function CourseDetailTaView({
   }
 
   const handleDeleteMaterial = async () => {
-    if (!deleteMaterialId || !courseId) return
+    if (!deleteMaterialId || !onDeleteMaterial) return
     setDeletingMaterial(true)
     try {
-      const res = await fetch(
-        `/api/courses/${courseId}/materials/${deleteMaterialId}`,
-        { method: 'DELETE' },
-      )
-      if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to delete material'))
+      await onDeleteMaterial(deleteMaterialId)
       setDeleteMaterialId(null)
-      if (onRefreshMaterials) await onRefreshMaterials()
     } catch (e) {
       console.error(e)
     } finally {

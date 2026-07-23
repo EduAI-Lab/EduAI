@@ -155,7 +155,7 @@ export default function CourseDetailPage() {
     removeEnrollment,
     refetch: refetchEnrollments,
   } = useCourseEnrollments(course.id)
-  const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
+  const { materials, uploadMaterial, deleteMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const [isUploading, setIsUploading] = useState(false)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
@@ -264,6 +264,7 @@ export default function CourseDetailPage() {
               onAddTA={addTA}
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}
+              onDeleteMaterial={deleteMaterial}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={
@@ -285,6 +286,7 @@ export default function CourseDetailPage() {
               courseId={course.id}
               currentUserId={user.id}
               onRefreshMaterials={refetchMaterials}
+              onDeleteMaterial={deleteMaterial}
               tas={tas}
               onCreateTopic={async (name) => { await createTopic(name) }}
               onDeleteTopic={async (id) => { await deleteTopic(id) }}
