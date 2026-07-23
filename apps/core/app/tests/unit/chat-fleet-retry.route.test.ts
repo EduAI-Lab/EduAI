@@ -230,9 +230,9 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
       .mockImplementationOnce(() => {
         throw new Error("connection refused");
       })
-      .mockImplementation((args: { onChunk?: () => void; onStepFinish?: (a: unknown) => void }) => {
-        args.onChunk?.();
-        args.onStepFinish?.({ toolCalls: [], toolResults: [] });
+      .mockImplementation((args) => {
+        args.onChunk?.({} as never);
+        args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
         return {
           consumeStream: vi.fn().mockResolvedValue(undefined),
           text: Promise.resolve("Recovered on cmps02."),
