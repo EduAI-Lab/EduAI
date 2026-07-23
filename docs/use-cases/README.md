@@ -6,9 +6,9 @@ Technically-grounded scenarios describing how the EduAI platform is used, misuse
 
 ```
 docs/use-cases/
-  core/          # apps/core — see core files below
-  qm/            # apps/extensions/question-maker — TBD by QM contributors
-  ai-tutor/      # apps/extensions/ai-tutor — TBD by AI Tutor contributors
+  core/          # apps/core actor scenarios
+  qm/            # apps/extensions/question-maker actor scenarios
+  ai-tutor/      # apps/extensions/ai-tutor actor scenarios
 ```
 
 ### Core actors (`core/`)
@@ -30,6 +30,16 @@ docs/use-cases/
 - [`ta.md`](ai-tutor/ta.md) — TA (course-scoped grading/oversight; platform-role vs. enrollment-role TA distinction)
 - [`unauthenticated.md`](ai-tutor/unauthenticated.md) — no session: missing/expired cookie, Core-outage failure mode, internal-route separation
 - [`service-caller.md`](ai-tutor/service-caller.md) — Core↔AI Tutor server-to-server: cookie-forwarding vs. service-key call patterns, inbound cascade-delete
+
+### Question Maker actors (`qm/`)
+
+- [`instructor.md`](qm/instructor.md) — INSTRUCTOR (questions, assessments, variants, OCR, and Canvas)
+- [`admin.md`](qm/admin.md) — ADMIN (platform-wide course access and bug-report triage)
+- [`unit-admin.md`](qm/unit-admin.md) — UNIT_ADMIN (department-scoped course authoring)
+- [`ta.md`](qm/ta.md) — TA (course-scoped access and current role-gate limitations)
+- [`student.md`](qm/student.md) — STUDENT (expected denial paths and documented authorization bugs)
+- [`unauthenticated.md`](qm/unauthenticated.md) — no session: provisioning, expiry, Core outages, and internal routes
+- [`service-caller.md`](qm/service-caller.md) — Core↔Question Maker service-key and cookie-forwarding call patterns
 
 ## Scenario categories
 
