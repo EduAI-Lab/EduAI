@@ -57,6 +57,12 @@ describe("assertPublicHostname", () => {
     await expect(assertPublicHostname("mapped.example")).rejects.toThrow(UnsafeHostError);
   });
 
+  it("rejects IPv4-mapped IPv6 addresses in hex form (not just dotted-decimal)", async () => {
+    // ::ffff:c0a8:101 == ::ffff:192.168.1.1, but resolvers can emit either form.
+    lookupMock.mockResolvedValueOnce([{ address: "::ffff:c0a8:101", family: 6 }]);
+    await expect(assertPublicHostname("hex-mapped.example")).rejects.toThrow(UnsafeHostError);
+  });
+
   it("rejects when any resolved record (not just the first) is blocked", async () => {
     lookupMock.mockResolvedValueOnce([
       { address: "93.184.216.34", family: 4 },

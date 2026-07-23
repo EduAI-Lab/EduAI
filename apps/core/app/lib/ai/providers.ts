@@ -29,6 +29,43 @@ export {
 };
 
 /**
+ * Resolves a local-inference base URL (Ollama/vLLM) with logging instead of
+ * throwing: a rejected client-supplied host falls back to the deployment
+ * default (logged, not silent, so a misconfig doesn't quietly hit the wrong
+ * host); if the deployment default is itself misconfigured, the provider is
+ * disabled (returns null) rather than the exception crashing registry
+ * creation for every other provider.
+ */
+function resolveLocalInferenceBaseUrlOrLog(opts: {
+  resolve: (raw?: string | null) => string;
+  clientBaseUrl: string | undefined;
+  providerLabel: string;
+  envVarName: string;
+}): string | null {
+  const { resolve, clientBaseUrl, providerLabel, envVarName } = opts;
+  try {
+    return resolve(clientBaseUrl);
+  } catch (error) {
+    if (clientBaseUrl) {
+      console.error(
+        `[ai/providers] Rejected client-supplied ${providerLabel} base URL "${clientBaseUrl}": ` +
+          `${error instanceof Error ? error.message : error}. Falling back to the deployment default.`,
+      );
+    }
+  }
+
+  try {
+    return resolve();
+  } catch (error) {
+    console.error(
+      `[ai/providers] ${envVarName} is misconfigured; disabling the ${providerLabel} provider: ` +
+        `${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
+}
+
+/**
  * Creates a dynamic provider registry with user-provided settings
  */
 export function createAIProviderRegistry(userSettings: UserProviderSettings) {
@@ -52,56 +89,63 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
   if (userSettings.ollama?.isEnabled) {
     const clientOllamaBaseUrl = userSettings.ollama?.baseUrl?.trim();
     // SSRF guard: only loopback or the deployment-configured OLLAMA_BASE_URL host
-    // is trusted
-    let baseURL: string;
-    try {
-      baseURL = resolveAllowedOllamaBaseUrl(clientOllamaBaseUrl);
-    } catch {
-      baseURL = resolveAllowedOllamaBaseUrl();
-    }
-
-    // Ensure the URL ends with /api for Ollama compatibility
-    if (!baseURL.endsWith("/api")) {
-      baseURL = baseURL.replace(/\/$/, "") + "/api";
-    }
-
-    providers.ollama = createOllama({
-      baseURL,
-      // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
-      headers: clientOllamaBaseUrl
-        ? {}
-        : cmps01InternalAuthHeadersForUrl(baseURL),
+    // is trusted. Falls back to the deployment default when the client-supplied
+    // host is rejected; if OLLAMA_BASE_URL itself is misconfigured, the fallback
+    // is guarded too so a bad env var disables only this provider, not the
+    // whole registry.
+    let baseURL = resolveLocalInferenceBaseUrlOrLog({
+      resolve: resolveAllowedOllamaBaseUrl,
+      clientBaseUrl: clientOllamaBaseUrl,
+      providerLabel: "Ollama",
+      envVarName: "OLLAMA_BASE_URL",
     });
+
+    if (baseURL) {
+      // Ensure the URL ends with /api for Ollama compatibility
+      if (!baseURL.endsWith("/api")) {
+        baseURL = baseURL.replace(/\/$/, "") + "/api";
+      }
+
+      providers.ollama = createOllama({
+        baseURL,
+        // Never attach cmps01 internal key for client-supplied base URLs (IP allowlist bypass).
+        headers: clientOllamaBaseUrl
+          ? {}
+          : cmps01InternalAuthHeadersForUrl(baseURL),
+      });
+    }
   }
 
   // vLLM (OpenAI-compatible /v1 — see docs/rag-ai/VLLM.md)
   if (userSettings.vllm?.isEnabled) {
     const clientVllmBaseUrl = userSettings.vllm?.baseUrl?.trim();
     // SSRF guard: only loopback or a deployment-configured VLLM host (VLLM_BASE_URL /
-    // VLLM_FLEET_*) is trusted
-    let baseURL: string;
-    try {
-      baseURL = resolveAllowedVllmBaseUrl(clientVllmBaseUrl);
-    } catch {
-      baseURL = resolveAllowedVllmBaseUrl();
-    }
-
-    baseURL = baseURL.replace(/\/$/, '');
-    if (!baseURL.endsWith('/v1')) {
-      baseURL = `${baseURL}/v1`;
-    }
-
-    const apiKey =
-      userSettings.vllm?.apiKey ||
-      process.env.VLLM_API_KEY ||
-      'vllm-local';
-
-    providers.vllm = createOpenAI({
-      apiKey,
-      baseURL,
-      // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
-      compatibility: "strict",
+    // VLLM_FLEET_*) is trusted. See the Ollama block above for the fallback/logging shape.
+    let baseURL = resolveLocalInferenceBaseUrlOrLog({
+      resolve: resolveAllowedVllmBaseUrl,
+      clientBaseUrl: clientVllmBaseUrl,
+      providerLabel: "vLLM",
+      envVarName: "VLLM_BASE_URL",
     });
+
+    if (baseURL) {
+      baseURL = baseURL.replace(/\/$/, '');
+      if (!baseURL.endsWith('/v1')) {
+        baseURL = `${baseURL}/v1`;
+      }
+
+      const apiKey =
+        userSettings.vllm?.apiKey ||
+        process.env.VLLM_API_KEY ||
+        'vllm-local';
+
+      providers.vllm = createOpenAI({
+        apiKey,
+        baseURL,
+        // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
+        compatibility: "strict",
+      });
+    }
   }
 
   // Create and return the registry
