@@ -16,6 +16,8 @@ vi.mock('../../src/config/settings.js', () => ({
     eduaiApiUrl: 'http://eduai.test',
     eduaiApiKey: 'test-key-123456',
     eduaiIgnoredCourseCodes: [],
+    eduaiProbeCourseId: '',
+    eduaiProbeCourseCode: '',
   },
 }));
 
@@ -27,7 +29,7 @@ const eduaiService = (await import('../../src/services/eduaiService.js')).defaul
 function responseError({ status = 500, statusText = 'Internal Server Error', data = {} } = {}) {
   return Object.assign(new Error('Request failed'), {
     response: { status, statusText, data, headers: {} },
-    config: { url: 'http://eduai.test/api/chat' },
+    config: { url: 'http://eduai.test/api/completion' },
   });
 }
 
@@ -36,13 +38,15 @@ function requestError({ code, message = 'no response' } = {}) {
   return Object.assign(new Error(message), {
     request: {},
     code,
-    config: { url: 'http://eduai.test/api/chat', baseURL: 'http://eduai.test', timeout: 60000 },
+    config: { url: 'http://eduai.test/api/completion', baseURL: 'http://eduai.test', timeout: 60000 },
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   config.eduaiIgnoredCourseCodes = [];
+  config.eduaiProbeCourseId = '';
+  config.eduaiProbeCourseCode = '';
   eduaiService.apiKey = 'test-key-123456';
   eduaiService.baseURL = 'http://eduai.test';
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -72,27 +76,43 @@ describe('isConfigured', () => {
 describe('chat', () => {
   it('throws when neither a session cookie nor a service key is available', async () => {
     eduaiService.apiKey = '';
-    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/Core session/i);
+    await expect(eduaiService.chat({ messages: [] })).rejects.toThrow(/not configured/i);
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('prefers the Core session cookie over the service key for /api/chat', async () => {
+  it('posts to /api/completion and returns the response body', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { content: 'hello' } });
 
     const out = await eduaiService.chat({
-      messages: [{ role: 'user', content: 'hi' }],
+      messages: [
+        { role: 'system', content: 'You generate questions.' },
+        { role: 'user', content: 'hi' },
+      ],
       courseCode: 'CS 101',
+      courseId: 'cuid-core-cs101',
       cookie: '__Secure-better-auth.session_token=abc',
     });
 
     expect(out).toEqual({ content: 'hello' });
     const [url, payload, opts] = axios.post.mock.calls[0];
-    expect(url).toBe('http://eduai.test/api/chat');
+    expect(url).toBe('http://eduai.test/api/completion');
+    expect(payload.systemPrompt).toBe('You generate questions.');
+    expect(payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(payload.courseCode).toBe('CS 101');
-    expect(opts.headers.cookie).toBe('__Secure-better-auth.session_token=abc');
-    expect(opts.headers.Authorization).toBeUndefined();
+    expect(payload.courseId).toBe('cuid-core-cs101');
+    // Core's requireServiceKey guard expects Authorization: Bearer (not x-api-key).
+    expect(opts.headers['Authorization']).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBeUndefined();
     expect(opts.headers['x-api-key']).toBeUndefined();
     expect(opts.timeout).toBe(60000);
+  });
+
+  it('omits courseId from the payload when it is not provided', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'ok' } });
+    await eduaiService.chat({ messages: [], courseCode: 'BIO 101' });
+    const payload = axios.post.mock.calls[0][1];
+    expect(payload.courseCode).toBe('BIO 101');
+    expect(payload).not.toHaveProperty('courseId');
   });
 
   it('posts user messages and elevates system role into top-level systemPrompt', async () => {
@@ -115,8 +135,9 @@ describe('chat', () => {
       feature: 'question-maker',
       jobType: 'background',
     });
-    expect(opts.headers.cookie).toBe('__Secure-better-auth.session_token=abc');
-    expect(opts.headers.Authorization).toBeUndefined();
+    // Service key is preferred when configured (cookie is only the fallback).
+    expect(opts.headers.Authorization).toBe('Bearer test-key-123456');
+    expect(opts.headers.cookie).toBeUndefined();
   });
 
   it('falls back to Bearer service key when no cookie is present', async () => {
@@ -172,8 +193,22 @@ describe('chat', () => {
 describe('generateQuestions', () => {
   const baseParams = { prompt: 'cells', courseCode: 'BIO 101' };
 
-  it('throws when prompt or courseCode is missing', async () => {
+  it('throws when prompt is missing, or both courseCode and courseId are missing', async () => {
     await expect(eduaiService.generateQuestions({ prompt: 'x' })).rejects.toThrow(/required/i);
+    await expect(eduaiService.generateQuestions({ courseCode: 'BIO 101' })).rejects.toThrow(/required/i);
+  });
+
+  it('accepts courseId without courseCode', async () => {
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        content: [{ content: 'Q?', description: 'd', difficulty: 'easy', reasoning_level: 'factual', type: 'SA', answer: 'a' }],
+      },
+    });
+    const out = await eduaiService.generateQuestions({ prompt: 'cells', courseId: 'cuid-core' });
+    expect(out).toHaveLength(1);
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-core');
+    expect(axios.post.mock.calls[0][1]).not.toHaveProperty('courseCode');
   });
 
   it('normalizes a plain array of SA questions', async () => {
@@ -478,17 +513,49 @@ describe('testApiKey', () => {
     expect(out.success).toBe(true);
     expect(out.message).toMatch(/Service key can reach AI/i);
     expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
+    // No hardcoded seed course — service-key probes are course-free by default.
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
+    expect(axios.post.mock.calls[0][1].courseId).toBeUndefined();
   });
 
-  it('prefers the session cookie when both cookie and service key are present', async () => {
+  it('sends configured probe courseId when set', async () => {
+    config.eduaiProbeCourseId = 'cuid-probe-1';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey();
+    expect(out.success).toBe(true);
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-probe-1');
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
+  });
+
+  it('sends configured probe courseCode when courseId is unset', async () => {
+    config.eduaiProbeCourseCode = 'MATH 100';
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
     const out = await eduaiService.testApiKey({
       cookie: '__Secure-better-auth.session_token=abc',
     });
     expect(out.success).toBe(true);
-    expect(out.message).toMatch(/Core session can reach AI/i);
-    expect(axios.post.mock.calls[0][2].headers.cookie).toContain('session_token=abc');
-    expect(axios.post.mock.calls[0][2].headers.Authorization).toBeUndefined();
+    expect(axios.post.mock.calls[0][1].courseCode).toBe('MATH 100');
+    expect(axios.post.mock.calls[0][1].courseId).toBeUndefined();
+  });
+
+  it('prefers probe courseId over courseCode', async () => {
+    config.eduaiProbeCourseId = 'cuid-preferred';
+    config.eduaiProbeCourseCode = 'COSC 121';
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    await eduaiService.testApiKey();
+    expect(axios.post.mock.calls[0][1].courseId).toBe('cuid-preferred');
+    expect(axios.post.mock.calls[0][1].courseCode).toBeUndefined();
+  });
+
+  it('prefers the service key when both cookie and service key are present', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
+    const out = await eduaiService.testApiKey({
+      cookie: '__Secure-better-auth.session_token=abc',
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/Service key can reach AI/i);
+    expect(axios.post.mock.calls[0][2].headers.Authorization).toBe('Bearer test-key-123456');
+    expect(axios.post.mock.calls[0][2].headers.cookie).toBeUndefined();
   });
 
   it('flags auth failure on a 401', async () => {
@@ -565,27 +632,34 @@ describe('getConnectivityTestParams', () => {
   it('falls back to the UBC-hosted path when no cloud key exists at all', () => {
     config.googleGenerativeAiApiKey = undefined;
     const params = eduaiService.getConnectivityTestParams({});
-    expect(params.provider).toBe('ollama');
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
   });
 
-  it('forceProvider "ollama" pins the UBC path even when a server Google key exists', () => {
-    // The UBC status chip probes independently: with a server Google key set,
-    // auto-selection would test Google, so the chip must force ollama to check
-    // its own path. Regression guard for the "empty keys isn't enough" bug.
+  it('forceProvider "ollama" uses the smallest campus model from the live catalog', () => {
     config.googleGenerativeAiApiKey = 'server-google';
-    const params = eduaiService.getConnectivityTestParams({}, 'ollama');
-    expect(params.provider).toBe('ollama');
-    expect(params.model).toBe('ollama:gpt-oss:120b');
-    expect(params.apiKeys.ollama.isEnabled).toBe(true);
+    const catalog = [
+      { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
+      { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+    ];
+    const params = eduaiService.getConnectivityTestParams({}, 'ollama', catalog);
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(params.apiKeys.vllm.isEnabled).toBe(true);
     expect(params.apiKeys.google).toBeUndefined();
   });
 
-  it('forceProvider "ollama" pins the UBC path even when a client cloud key is present', () => {
+  it('forceProvider "vllm" pins the UBC path even when a client cloud key is present', () => {
+    const catalog = [
+      { provider: { name: 'vllm' }, modelId: 'custom-campus-3b', name: '3B', isActive: true },
+    ];
     const params = eduaiService.getConnectivityTestParams(
       { openai: { apiKey: 'sk-openai', isEnabled: true } },
-      'ollama',
+      'vllm',
+      catalog,
     );
-    expect(params.provider).toBe('ollama');
+    expect(params.provider).toBe('vllm');
+    expect(params.model).toBe('vllm:custom-campus-3b');
   });
 });
 
@@ -595,15 +669,23 @@ describe('testApiKey forceProvider', () => {
     config.googleGenerativeAiApiKey = savedConfigKey;
   });
 
-  it('probes the UBC path (ollama) when forced, ignoring the server Google key', async () => {
+  it('probes the UBC path (vllm) when forced, ignoring the server Google key', async () => {
     config.googleGenerativeAiApiKey = 'server-google';
+    axios.get.mockResolvedValue({
+      status: 200,
+      data: [
+        { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
+        { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+      ],
+    });
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
-    const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'ollama' });
+    const out = await eduaiService.testApiKey({ apiKeys: {}, forceProvider: 'vllm' });
     expect(out.success).toBe(true);
-    expect(out.provider).toBe('ollama');
-    const [, body] = axios.post.mock.calls.at(-1);
-    expect(body.model).toBe('ollama:gpt-oss:120b');
-    expect(body.apiKeys.ollama.isEnabled).toBe(true);
+    expect(out.provider).toBe('vllm');
+    const [, body, opts] = axios.post.mock.calls.at(-1);
+    expect(body.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(body.apiKeys.vllm.isEnabled).toBe(true);
     expect(body.apiKeys.google).toBeUndefined();
+    expect(opts.timeout).toBe(20000);
   });
 });

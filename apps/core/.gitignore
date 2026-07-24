@@ -12,3 +12,7 @@ ecosystem.config.cjs
 /output/
 /scripts/research/.env.research
 /scripts/research/data/runs/
+
+# Stryker Generated Files
+.stryker-tmp/
+/reports/

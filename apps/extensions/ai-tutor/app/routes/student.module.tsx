@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { IconNotebook } from '@tabler/icons-react';
-import { Card, CardContent } from '@eduai/ui';
+import { Card, DetailPageScaffold, EmptyState } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { accentForCourse } from '../lib/course-display';
@@ -83,29 +83,26 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
   ];
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <ModuleHero
-        order={moduleOrder > 0 ? moduleOrder : undefined}
-        title={module?.title || 'Module'}
-        description={module?.description}
-        accentColor={accentColor}
-        stats={heroStats}
-        progress={moduleProgress}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <ModuleHero
+          order={moduleOrder > 0 ? moduleOrder : undefined}
+          title={module?.title || 'Module'}
+          description={module?.description}
+          accentColor={accentColor}
+          stats={heroStats}
+          progress={moduleProgress}
+        />
+      }
+    >
       {lessonList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconNotebook size={22} aria-hidden="true" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold text-foreground">No lessons available</h3>
-              <p className="text-sm text-muted-foreground">
-                This module doesn&apos;t have any lessons yet. Check back later.
-              </p>
-            </div>
-          </CardContent>
+          <EmptyState
+            icon={<IconNotebook size={22} aria-hidden="true" />}
+            title="No lessons available"
+            description="This module doesn't have any lessons yet. Check back later."
+          />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -126,6 +123,6 @@ export default function StudentModuleLessons({ loaderData }: Route.ComponentProp
           ))}
         </div>
       )}
-    </div>
+    </DetailPageScaffold>
   );
 }
