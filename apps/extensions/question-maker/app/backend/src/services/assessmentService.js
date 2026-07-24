@@ -158,7 +158,9 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
       include,
       distinct: true,
       col: 'id',
-      order: [['createdAt', 'DESC']],
+      // `id DESC` tie-breaker: createdAt alone isn't unique, so offset pagination
+      // over ties could duplicate or skip rows across page requests (#1040 review).
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
       limit: appliedLimit,
       offset: appliedOffset
     });

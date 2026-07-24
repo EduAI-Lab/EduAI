@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseLimitOffset,
-  sanitizeLikeLiteral,
+  escapeLikeLiteral,
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
 } from '../../src/utils/listPagination.js';
@@ -39,7 +39,11 @@ describe('parseLimitOffset (#1040)', () => {
     });
   });
 
-  it('strips LIKE wildcards from search literals', () => {
-    expect(sanitizeLikeLiteral('100%_done')).toBe('100done');
+  it('escapes LIKE wildcards instead of stripping them, so the literal text is preserved', () => {
+    expect(escapeLikeLiteral('100%_done')).toBe('100\\%\\_done');
+  });
+
+  it('escapes a literal backslash before adding wildcard escapes, so it is not misread as escaping them', () => {
+    expect(escapeLikeLiteral('a\\%b')).toBe('a\\\\\\%b');
   });
 });
