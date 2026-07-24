@@ -86,16 +86,31 @@ tests/
 ```bash
 npm run dev
 ```
-Runs `prisma migrate deploy && prisma generate && seed:if-empty && nodemon src/index.js` — migrations are
-applied, the Prisma client is (re)generated, the database is seeded only if it's empty, then the server
-starts with hot reload.
+Runs `db:migrate:deploy && prisma generate && seed:if-empty && nodemon src/index.js` — migrations are
+applied (baselining first if needed, see below), the Prisma client is (re)generated, the database is
+seeded only if it's empty, then the server starts with hot reload.
 
 ### Production
 ```bash
 npm start
 ```
-Runs `prisma generate && node src/index.js`. Migrations are applied separately (`npm run db:migrate:deploy`
-or the equivalent Docker `CMD`) as part of deployment, not on every boot.
+Runs `db:migrate:deploy && prisma generate && node src/index.js` — same migration/baseline step as `dev`,
+without seeding.
+
+### Adopting an existing deployment
+`db:migrate:deploy` (`npm run db:migrate:deploy`, also run by `dev`/`start`/the Docker `CMD`) begins with
+`scripts/baselineExistingDatabase.js`. QM's pre-Prisma backend booted via
+`sequelize.sync({ alter: true })` — no migrations table, but `users`, `courses`, etc. already exist. Running
+`prisma migrate deploy` straight against a database like that fails: it tries to `CREATE TABLE` things that
+are already there. The baseline script detects that case (no `_prisma_migrations` table, but `users` does
+exist) and marks the init migration as already applied (`prisma migrate resolve --applied`) without running
+its DDL, so it never touches those tables. Every migration after init still runs for real — that's what
+reconciles the data (e.g. deduping rows for constraints the old schema never enforced) with what a fresh
+`init` would have produced; see the migrations under `prisma/migrations/` newer than
+`20260723215902_init` for the current set. On a genuinely fresh database (no `users` table either), the
+script is a no-op and `migrate deploy` runs `init` and everything after it from scratch, as usual. The
+script is idempotent — once `_prisma_migrations` exists (baselined or fresh), it no-ops on every later
+deploy.
 
 The API is available at `http://localhost:8000` by default.
 
@@ -164,7 +179,8 @@ npm run lint
 
 ## Deployment
 
-- `Dockerfile` — production image; runs `prisma migrate deploy` before starting the server
+- `Dockerfile` — production image; baselines (if needed) and runs `prisma migrate deploy` before starting
+  the server — see "Adopting an existing deployment" above
 - `Dockerfile.dev` — development image; runs `npm run dev` (migrate + seed:if-empty + nodemon)
 - Environment-based configuration (see Environment Variables above)
 - Rate limiting, Helmet, and CORS are enabled by default

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run db:migrate:deploy && npm run db:generate && npm run seed:if-empty && nodemon src/index.js",
-    "start": "npm run db:generate && node src/index.js",
+    "start": "npm run db:migrate:deploy && npm run db:generate && node src/index.js",
     "build": "echo 'No build step required'",
     "test": "vitest run && vitest run --config vitest.integration.config.js",
     "test:integration": "vitest run --config vitest.integration.config.js",
@@ -15,7 +15,8 @@
     "lint": "eslint . --max-warnings=0",
     "db:generate": "node scripts/withPrismaEnv.js generate",
     "db:migrate": "node scripts/withPrismaEnv.js migrate dev",
-    "db:migrate:deploy": "node scripts/withPrismaEnv.js migrate deploy",
+    "db:baseline": "node scripts/baselineExistingDatabase.js",
+    "db:migrate:deploy": "npm run db:baseline && node scripts/withPrismaEnv.js migrate deploy",
     "seed": "node scripts/seedUnified.js",
     "seed:if-empty": "node scripts/seedIfEmpty.js",
     "seed:perf": "node scripts/seed-perf.js",

@@ -472,6 +472,38 @@ describeDb('assessmentVariantService (integration)', () => {
       // The assembler should prefer the alternate variant, not the reference one
       expect(link.variantId).toBe(vAlt.id);
     });
+
+    it('LARGE BATCH: completes a realistic-size multi-exam assembly inside one transaction', async () => {
+      // 25 slots x 6 exams = 150 slot iterations, each doing several sequential
+      // round-trips (candidate lookup, cursor SELECT ... FOR UPDATE, section-variant
+      // insert, variant update). Measured locally, assembling this batch inside the
+      // transaction alone comfortably exceeds Prisma's 5s interactive-transaction
+      // default — the exact failure mode ASSEMBLY_TRANSACTION_TIMEOUT_MS guards
+      // against (without it, Prisma aborts and rolls back all work once the clock
+      // runs out, mid-batch). This is correctness/regression coverage for that
+      // config, not a timing assertion — the test's own generous timeout just needs
+      // to outlast the transaction, not measure it.
+      // 6 variants per slot — exactly enough that each of the 6 exams below can
+      // draw a not-yet-used variant per slot without exhausting the bank (variant
+      // reuse across exams in one batch is never allowed by design).
+      const examLabels = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const { assessment } = await buildReferenceWithVariants(25, examLabels.length);
+
+      const result = await assembleEquivalentExamVariants(USER.id, {
+        referenceAssessmentId: assessment.id,
+        courseId,
+        examLabels
+      });
+
+      expect(result.slotsProcessed).toBe(25);
+      expect(result.examCount).toBe(examLabels.length);
+      expect(result.createdAssessments).toHaveLength(examLabels.length);
+
+      const sectionVariantCount = await prisma.sectionVariants.count({
+        where: { section: { assessment: { id: { in: result.createdAssessments.map((a) => a.id) } } } }
+      });
+      expect(sectionVariantCount).toBe(25 * examLabels.length);
+    }, 90000);
   });
 
   // ---------------------------------------------------------------------------

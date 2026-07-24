@@ -242,7 +242,11 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
   }
 };
 
-/** Deletes an assessment and detaches any variants tied to it to keep data consistent. */
+/**
+ * Deletes an assessment. Linked variants are detached automatically —
+ * `variants.assessment_id` has `onDelete: SetNull` — so no preliminary
+ * update is needed.
+ */
 export const deleteAssessment = async (assessmentId, userId) => {
   try {
     const assessment = await prisma.assessments.findFirst({
@@ -252,12 +256,6 @@ export const deleteAssessment = async (assessmentId, userId) => {
     if (!assessment) {
       throw new Error('Assessment not found');
     }
-
-    // Clear assessmentId from all variants linked to this assessment
-    await prisma.variants.updateMany({
-      where: { assessmentId },
-      data: { assessmentId: null }
-    });
 
     await prisma.assessments.delete({ where: { id: assessment.id } });
     return true;

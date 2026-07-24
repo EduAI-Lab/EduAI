@@ -46,5 +46,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # This prevents hanging shutdowns and zombie processes when running as PID 1
 ENTRYPOINT ["dumb-init", "--"]
 
-# Apply pending migrations, then start the application
-CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
+# Baseline a pre-existing (Sequelize-managed) database if needed, apply pending
+# migrations, then start the application. See scripts/baselineExistingDatabase.js.
+CMD ["sh", "-c", "node scripts/baselineExistingDatabase.js && npx prisma migrate deploy && node src/index.js"]
