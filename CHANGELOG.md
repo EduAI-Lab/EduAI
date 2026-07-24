@@ -8,6 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: ADHD Assist v2.0 — Session Tasks checklist (external working memory: ask "What are we working on today?" once, show a `**Session Tasks:**` list with one active item and progressive reveal, park side-requests instead of derailing) and an A/B/C topic-switch choice template replacing the single-line "come back or switch?" redirect, so an off-topic drift is never silently followed. `REDIRECT_PATTERN` extended to the spec's named cues ("wait actually", "random question", "real quick"); Dean oversight rewrite prompts updated to preserve the Session Tasks checklist instead of dropping it on rewrite. Closes #1164. (#1164, @Ayyhab, 2026-07-24) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 - [ui] feat: New shared primitives in `@eduai/ui` — `EmptyState` (replaces 7+ per-app copies), `MaterialStatusIcon`/`MaterialStatusChip`, `MaterialList` (unifies 3 drifted Core inline lists), `HeroShell` + `HERO_GLASS_STYLE` (single source for the hero surface `CourseHeroCard` and ai-tutor's `ModuleHero` previously hand-copied), presentational `CourseTopicsHeroAction` (collapses the name-identical QM/ai-tutor forks into data-wiring adapters), and `DetailPageScaffold` (the hero→content page skeleton previously hand-assembled on 8 surfaces); `QuickActionsPanel` gains optional `onClick`/`disabled` so action cards can be buttons, not just links. (#1145, @yta3216, 2026-07-21) — [#1148](https://github.com/EduAI-Lab/EduAI/pull/1148)
 
 ### Changed
