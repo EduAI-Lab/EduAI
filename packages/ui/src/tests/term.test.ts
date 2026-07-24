@@ -170,6 +170,29 @@ describe("ordering", () => {
   });
 });
 
+describe("termSortKey with a date-only startDate string (#1087 regression)", () => {
+  it("derives term/year from the string itself, matching termInfoFromDate's local-Date attribution, regardless of runtime timezone", () => {
+    const fromString = termSortKey({ term: "Fall", year: 2025, startDate: "2025-09-01" });
+    // new Date(2025, 8, 15) is constructed in LOCAL time, deliberately avoiding
+    // any UTC-midnight shift — this must land in the same W1 2025 bucket.
+    const fromLocalDate = termSortKey(termInfoFromDate(new Date(2025, 8, 15)));
+    expect(fromString).toBe(fromLocalDate);
+  });
+
+  it("does not let a mismatched term/year field override the date-only string", () => {
+    // term/year say something else entirely; the startDate string must win.
+    const key = termSortKey({ term: "S1", year: 1999, startDate: "2025-09-01" });
+    const expected = termSortKey(termInfoFromDate(new Date(2025, 8, 15)));
+    expect(key).toBe(expected);
+  });
+
+  it("attributes a Jan-dated string to the previous academic year's W2", () => {
+    const key = termSortKey({ term: "ignored", year: 9999, startDate: "2026-01-01" });
+    const expected = termSortKey({ term: "W2", year: 2025 });
+    expect(key).toBe(expected);
+  });
+});
+
 describe("groupCoursesByTerm", () => {
   it("groups by canonical label, most recent first", () => {
     const courses = [

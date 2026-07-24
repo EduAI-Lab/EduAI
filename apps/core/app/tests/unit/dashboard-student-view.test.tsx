@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
+import { DashboardStandardBody } from "~/components/dashboard/dashboard-view-config";
 
 function renderStudentDashboard() {
   const router = createMemoryRouter(
-    [{ path: "/", element: <DashboardStudentView /> }],
+    [{ path: "/", element: <DashboardStandardBody effectiveRole="STUDENT" /> }],
     { initialEntries: ["/"] },
   );
 
   return render(<RouterProvider router={router} />);
 }
 
-describe("DashboardStudentView", () => {
+describe("DashboardStandardBody (STUDENT)", () => {
   it("does not show the Question Maker dashboard card", () => {
     renderStudentDashboard();
 
