@@ -74,10 +74,14 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid module id', { status: 400 });
   }
 
-  const [module, lessons] = await Promise.all([
+  const [module, lessonsPage] = await Promise.all([
     api.moduleById(moduleId) as Promise<ModuleDetail>,
-    api.lessonsForModule(moduleId) as Promise<Lesson[]>,
+    // #1043: lessons endpoint returns the pagination envelope. Reorder host —
+    // keep `total` to refuse a partial-order persist past the page.
+    api.lessonsForModule(moduleId),
   ]);
+  const lessons = lessonsPage.data;
+  const lessonsTotal = lessonsPage.total;
 
   // Fetch the course + its ordered module list in parallel. The sibling list
   // gives the module's true 1-based ordinal (matching the course-view chip),
@@ -85,11 +89,11 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   // 0-based via UI create.
   const [course, siblingModules] = await Promise.all([
     api.courseById(module.courseOfferingId) as Promise<Course>,
-    api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+    api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
   ]);
   const moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
 
-  return { course, module, lessons, moduleOrder };
+  return { course, module, lessons, lessonsTotal, moduleOrder };
 }
 
 /**
@@ -102,9 +106,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
   const perms = useAtPermissions();
-  const { course, module, lessons: initialLessons, moduleOrder } = loaderData;
+  const { course, module, lessons: initialLessons, lessonsTotal, moduleOrder } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
+  // #1043: more lessons than the bounded page we loaded — reorder disabled so a
+  // partial-order persist can't orphan the unseen tail.
+  const lessonsTruncated = lessonsTotal > initialLessons.length;
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
@@ -154,7 +161,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     if (!numericModuleId) return;
     try {
       const lessonData = await api.lessonsForModule(numericModuleId);
-      setLessons(lessonData);
+      setLessons(lessonData.data);
     } catch (error) {
       console.error('Failed to refresh lessons', error);
     }
@@ -198,7 +205,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       const modulesData = await api.modulesForCourse(nextCourseId);
       if (sourceModulesRequestIdRef.current === courseRequestId) {
-        setSourceModules(modulesData);
+        setSourceModules(modulesData.data);
       }
     } catch (error) {
       if (sourceModulesRequestIdRef.current === courseRequestId) {
@@ -228,7 +235,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       const lessonData = await api.lessonsForModule(nextModuleId);
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
-        setSourceLessons(lessonData);
+        setSourceLessons(lessonData.data);
       }
     } catch (error) {
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
@@ -324,6 +331,10 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderLessonsList = async (orderedIds: number[]) => {
     if (!numericModuleId) return;
+    if (lessonsTruncated) {
+      toast.error('This module has more lessons than can be reordered at once.');
+      return;
+    }
     const current = lessons;
     const byId = new Map(current.map((l) => [l.id, l]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];

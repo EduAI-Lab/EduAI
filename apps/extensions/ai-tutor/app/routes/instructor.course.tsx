@@ -82,12 +82,14 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid course id', { status: 400 });
   }
 
-  const [course, modules] = await Promise.all([
+  const [course, modulesPage] = await Promise.all([
     api.courseById(courseId) as Promise<Course>,
-    api.modulesForCourse(courseId) as Promise<Module[]>,
+    // #1043: modules endpoint returns the pagination envelope. Reorder host —
+    // keep `total` so we can refuse a partial-order persist past the page.
+    api.modulesForCourse(courseId),
   ]);
 
-  return { course, modules };
+  return { course, modules: modulesPage.data, modulesTotal: modulesPage.total };
 }
 
 /**
@@ -103,7 +105,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const perms = useAtPermissions();
   const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
-  const { course, modules: initialModules } = loaderData;
+  const { course, modules: initialModules, modulesTotal } = loaderData;
+  // #1043: more modules than the bounded page we loaded — reorder is disabled
+  // so a partial-order persist can't orphan the unseen tail.
+  const modulesTruncated = modulesTotal > initialModules.length;
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
@@ -152,7 +157,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     if (!numericCourseId) return;
     try {
       const modulesData = await api.modulesForCourse(numericCourseId);
-      setModules(modulesData);
+      setModules(modulesData.data);
     } catch (error) {
       console.error('Failed to refresh modules', error);
     }
@@ -191,7 +196,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     try {
       const data = await api.modulesForCourse(nextCourseId);
       if (modulesRequestIdRef.current === requestId) {
-        setSourceModules(data);
+        setSourceModules(data.data);
       }
     } catch (error) {
       if (modulesRequestIdRef.current === requestId) {
@@ -289,6 +294,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderModulesList = async (orderedIds: number[]) => {
     if (!numericCourseId) return;
+    if (modulesTruncated) {
+      toast.error('This course has more modules than can be reordered at once.');
+      return;
+    }
     const current = modules;
     const byId = new Map(current.map((m) => [m.id, m]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
