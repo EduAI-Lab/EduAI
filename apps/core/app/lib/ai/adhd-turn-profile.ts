@@ -21,6 +21,8 @@ export type AdhdProfileRequirements = {
   expectNextLine: boolean;
   /** Dean checks §5 drift / one-topic redirect template. */
   expectRedirectTemplate: boolean;
+  /** Profile's policy block carries the Session Tasks contract (v2.0). */
+  expectSessionTasksContext: boolean;
 };
 
 export const ADHD_GREETING_WORD_CAP = 80;
@@ -143,6 +145,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: false,
         expectNextLine: false,
         expectRedirectTemplate: false,
+        expectSessionTasksContext: false,
       };
     case "confirmation":
       return {
@@ -152,6 +155,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: false,
         expectNextLine: false,
         expectRedirectTemplate: false,
+        expectSessionTasksContext: false,
       };
     case "meta":
       return {
@@ -161,6 +165,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: false,
         expectNextLine: false,
         expectRedirectTemplate: false,
+        expectSessionTasksContext: true,
       };
     case "redirect":
       return {
@@ -170,6 +175,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: false,
         expectNextLine: false,
         expectRedirectTemplate: true,
+        expectSessionTasksContext: true,
       };
     case "brief_clarification":
       return {
@@ -179,6 +185,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: true,
         expectNextLine: true,
         expectRedirectTemplate: false,
+        expectSessionTasksContext: true,
       };
     case "full_tutoring":
     default:
@@ -189,6 +196,7 @@ export function getProfileRequirements(profile: AdhdTurnProfile): AdhdProfileReq
         expectTopSummary: true,
         expectNextLine: true,
         expectRedirectTemplate: false,
+        expectSessionTasksContext: true,
       };
   }
 }

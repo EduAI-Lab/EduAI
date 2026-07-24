@@ -94,6 +94,20 @@ export type AdhdStructuralCompliance = AdhdResponseMetrics & {
   structuralPass: boolean;
 };
 
+/**
+ * The Session Tasks checklist (v2.0) is instructed to render before
+ * **Top summary** when present. Strip a leading checklist paragraph before
+ * checking the **Top summary** anchor so a compliant Session Tasks-prefixed
+ * reply isn't scored as missing Top summary.
+ */
+function stripLeadingSessionTasksBlock(text: string): string {
+  const trimmed = text.trimStart();
+  if (!/^\*\*Session Tasks:\*\*/i.test(trimmed)) return text;
+  const blankLineIdx = trimmed.search(/\n\s*\n/);
+  if (blankLineIdx === -1) return text;
+  return trimmed.slice(blankLineIdx).trimStart();
+}
+
 export function computeAdhdResponseMetrics(
   assistantText: string,
   options?: { wordCap?: number },
@@ -104,7 +118,8 @@ export function computeAdhdResponseMetrics(
     trimmed.length === 0 ? [] : trimmed.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
 
-  const leadingStripped = trimmed.replace(/^\s{0,2}/, "");
+  const topSummarySource = stripLeadingSessionTasksBlock(trimmed);
+  const leadingStripped = topSummarySource.replace(/^\s{0,2}/, "");
   const topSummary = leadingStripped.startsWith("**Top summary**");
 
   const lines = trimmed.split(/\r?\n/);
@@ -185,6 +200,50 @@ export function isRedirectTemplatePass(
     trimmed.endsWith("?") &&
     /want to|would you like|or switch|come back|ready to/i.test(trimmed);
   return hasRedirectCue || hasForwardOffer;
+}
+
+const SESSION_TASKS_CHECKLIST_RE = /\*\*Session Tasks:\*\*/i;
+const SESSION_TASKS_ASK_RE = /what are we working on today/i;
+const SESSION_TASKS_DONE_RE =
+  /session (goal|list) is (done|empty|complete)|list is empty|nothing(?:'s| is)? active|what.*work on next/i;
+
+export function hasSessionTasksChecklist(text: string): boolean {
+  return SESSION_TASKS_CHECKLIST_RE.test(text ?? "");
+}
+
+export function asksSessionTasksGoal(text: string): boolean {
+  return SESSION_TASKS_ASK_RE.test(text ?? "");
+}
+
+export function acknowledgesSessionTasksDone(text: string): boolean {
+  return SESSION_TASKS_DONE_RE.test(text ?? "");
+}
+
+/**
+ * Session Tasks bootstrap/continuity check (v2.0). There is no persisted
+ * session-task state, so this enforces only the two invariants derivable
+ * from conversation text alone:
+ *  - First turn: the reply must either start a checklist or ask the
+ *    "What are we working on today?" clarifying question.
+ *  - Continuity: once a prior assistant turn showed a checklist, this turn
+ *    must keep showing one, or explicitly say the list is done/empty.
+ * Profiles that never carry the Session Tasks instruction (greeting,
+ * confirmation) are always compliant - not applicable to them.
+ */
+export function isSessionTasksCompliant(
+  assistantText: string,
+  options: {
+    profileExpectsSessionTasks: boolean;
+    isFirstTurn: boolean;
+    priorHadSessionTasks: boolean;
+  },
+): boolean {
+  if (!options.profileExpectsSessionTasks) return true;
+  const trimmed = assistantText ?? "";
+  if (hasSessionTasksChecklist(trimmed)) return true;
+  if (options.isFirstTurn) return asksSessionTasksGoal(trimmed);
+  if (options.priorHadSessionTasks) return acknowledgesSessionTasksDone(trimmed);
+  return true;
 }
 
 /** Profile-conditional structural pass (Approach A). */

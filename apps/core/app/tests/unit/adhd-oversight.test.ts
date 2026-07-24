@@ -574,4 +574,137 @@ Two: Second
     expect(result.method).toBe("none");
     expect(generateText).not.toHaveBeenCalled();
   });
+
+  it("forces a Dean rewrite when the first turn of a goal-setting message has no checklist or goal-ask (reproduces a live gap: model skipped Session Tasks entirely)", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Session Tasks:**
+- [ ] Define API endpoints and data models <- now
+- [ ] Select a backend framework
+- [ ] Implement CRUD operations
+
+**Top summary**
+- Let's break your REST API into concrete steps.
+
+**Next?** Ready to start with the endpoints?`,
+      usage: { promptTokens: 10, completionTokens: 40 },
+    } as never);
+
+    const draftWithoutChecklist = `**Top summary**
+- Let's break your REST API into concrete steps.
+
+**Next?** Ready to start?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: draftWithoutChecklist,
+      model: mockModel,
+      profile: "brief_clarification",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText: "I want to build a REST API for a todo app today.",
+      priorAssistantText: "",
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.text).toContain("**Session Tasks:**");
+    expect(result.method).toBe("llm");
+  });
+
+  it("does not force a rewrite when the first-turn draft already asks the goal-setting question instead of a checklist", async () => {
+    const draft = `**Top summary**
+- Happy to help you plan this out.
+
+**Next?** What are we working on today?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "brief_clarification",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText: "I want to build something today.",
+      priorAssistantText: "",
+    });
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("none");
+  });
+
+  it("does not enforce Session Tasks when the caller omits priorAssistantText entirely (unknown conversation state)", async () => {
+    const draft = `**Top summary**
+- Here is the answer to your question.
+
+**Next?** Want more detail?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "brief_clarification",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText: "What is a REST API?",
+    });
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("none");
+  });
+
+  it("forces a Dean rewrite when a prior turn showed a checklist and this draft silently dropped it", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Session Tasks:**
+- [x] ~~Define API endpoints~~
+- [ ] Select a backend framework <- now
+
+**Top summary**
+- Nice, on to picking a framework.
+
+**Next?** Node/Express or Python/Flask?`,
+      usage: { promptTokens: 10, completionTokens: 40 },
+    } as never);
+
+    const draftMissingChecklist = `**Top summary**
+- Nice, on to picking a framework.
+
+**Next?** Node/Express or Python/Flask?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: draftMissingChecklist,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "great, endpoints are defined",
+      priorAssistantText: `**Session Tasks:**
+- [ ] Define API endpoints <- now
+- [ ] Select a backend framework
+
+**Top summary**
+- Let's define your endpoints first.
+
+**Next?** Ready?`,
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.text).toContain("**Session Tasks:**");
+    expect(result.method).toBe("llm");
+  });
+
+  it("accepts a continuation draft that says the session goal is done instead of repeating a finished checklist", async () => {
+    const draft = `**Top summary**
+- Nice, the session goal is done! Great work finishing the API.
+
+**Next?** What do you want to work on next?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "that's everything, thanks!",
+      priorAssistantText: `**Session Tasks:**
+- [x] ~~Define API endpoints~~
+- [x] ~~Select a backend framework~~
+
+**Top summary**
+- Framework picked.
+
+**Next?** Ready for CRUD?`,
+    });
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("none");
+  });
 });

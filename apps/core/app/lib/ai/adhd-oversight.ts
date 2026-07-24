@@ -8,8 +8,10 @@ import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
   computeAdhdResponseMetrics,
+  hasSessionTasksChecklist,
   isProfileStructuralPass,
   isRedirectTemplatePass,
+  isSessionTasksCompliant,
   isStructuralCompliancePass,
   resolveAdhdResponseWordCap,
   withProfileStructuralPass,
@@ -51,6 +53,26 @@ DIAGRAM REQUIRED (learner asked for a visual):
 - Do NOT describe the diagram in prose instead of emitting the fence.
 - Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
+/**
+ * Appended when the draft fails the Session Tasks bootstrap/continuity check
+ * (see isSessionTasksCompliant in adhd-metrics.ts) — either this is the first
+ * turn of a goal-setting message with no checklist or clarifying ask, or a
+ * prior turn showed a checklist that this draft silently dropped.
+ */
+const ADHD_OVERSIGHT_SESSION_TASKS_REQUIRED_ADDENDUM = `
+
+SESSION TASKS REQUIRED (missing from the draft):
+- If this is the first turn and the learner's message states or implies a
+  working goal: add a "**Session Tasks:**" checklist (a few concrete
+  verb+object subtasks derived from the learner's message), OR, if the goal
+  isn't concrete enough yet, ask "What are we working on today?" before
+  answering.
+- If a prior turn already showed a "**Session Tasks:**" checklist: reconstruct
+  and continue that same checklist near the top of this reply (same items/
+  order where still relevant), unless the goal is now done - then say so
+  briefly instead.
+Do not invent unrelated tasks.`;
+
 const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode topic-switch flags.
 The learner asked about a second topic while another is in progress.
 
@@ -73,10 +95,14 @@ Return ONLY the rewritten response.`;
 export function buildOversightRewriteSystem(
   profile: AdhdTurnProfile,
   wordCap: number,
-  options?: { requireDiagram?: boolean },
+  options?: { requireDiagram?: boolean; requireSessionTasks?: boolean },
 ): string {
   if (profile === "redirect") {
-    return ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
+    let redirectSystem = ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM;
+    if (options?.requireSessionTasks) {
+      redirectSystem += ADHD_OVERSIGHT_SESSION_TASKS_REQUIRED_ADDENDUM;
+    }
+    return redirectSystem;
   }
   let system: string;
   if (profile === "brief_clarification") {
@@ -92,6 +118,9 @@ export function buildOversightRewriteSystem(
   }
   if (options?.requireDiagram) {
     system += ADHD_OVERSIGHT_DIAGRAM_REQUIRED_ADDENDUM;
+  }
+  if (options?.requireSessionTasks) {
+    system += ADHD_OVERSIGHT_SESSION_TASKS_REQUIRED_ADDENDUM;
   }
   return system;
 }
@@ -340,6 +369,7 @@ export async function auditAndMaybeRewrite(args: {
   wordCap?: number;
   profile?: AdhdTurnProfile;
   userText?: string;
+  priorAssistantText?: string;
 }): Promise<AuditAndMaybeRewriteResult> {
   const wordCap = args.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const profile = args.profile ?? "full_tutoring";
@@ -354,6 +384,21 @@ export async function auditAndMaybeRewrite(args: {
     userRequestedDiagram(args.userText) &&
     !hasEduaiDiagramFence(trimmed);
   const diagramOpts = { userText: args.userText };
+
+  // Only enforce the first-turn bootstrap when the caller explicitly signals
+  // conversation state (chat.ts always passes priorAssistantText, even as an
+  // empty string on a genuine first message). Callers that omit the field
+  // entirely (e.g. most existing unit tests) get no Session Tasks
+  // bootstrap/continuity enforcement rather than being treated as "first turn".
+  const isFirstTurn =
+    args.priorAssistantText !== undefined && !args.priorAssistantText.trim();
+  const priorHadSessionTasks = hasSessionTasksChecklist(args.priorAssistantText ?? "");
+  const sessionTasksContext = {
+    profileExpectsSessionTasks: profileReq.expectSessionTasksContext,
+    isFirstTurn,
+    priorHadSessionTasks,
+  };
+  const sessionTasksOk = isSessionTasksCompliant(trimmed, sessionTasksContext);
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap }),
@@ -409,9 +454,11 @@ export async function auditAndMaybeRewrite(args: {
   // Content pass = profile structure AND no urgency language. Citations are
   // measured (metrics.hasSources) but not enforced here: the Dean has no access
   // to the source material and must never confabulate a Sources footer.
-  // Diagram requests with no fence never early-exit — they need a rewrite/inject.
+  // Diagram requests with no fence, and drafts missing a required Session
+  // Tasks checklist/ask, never early-exit — they need a rewrite/inject.
   if (
     !requireDiagram &&
+    sessionTasksOk &&
     passesProfileStructure(beforeMetrics, profile, trimmed) &&
     beforeMetrics.noUrgency
   ) {
@@ -427,7 +474,7 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   const deterministic = tryDeterministicStructuralFix(trimmed, { wordCap, profile });
-  if (deterministic && !requireDiagram) {
+  if (deterministic && !requireDiagram && sessionTasksOk) {
     const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(deterministic, { wordCap }),
       profile,
@@ -449,16 +496,27 @@ export async function auditAndMaybeRewrite(args: {
     }
   }
 
+  const requireSessionTasksFix = !sessionTasksOk;
+  const sessionTasksNote = requireSessionTasksFix
+    ? isFirstTurn
+      ? '\n\nThe learner\'s message states or implies a working goal - your reply is missing the required opening: either a "**Session Tasks:**" checklist for it, or the "What are we working on today?" question.'
+      : '\n\nThe previous turn showed a "**Session Tasks:**" checklist - continue it near the top of this reply (or say the goal is done), don\'t drop it.'
+    : "";
+
   const oversightStartedAt = Date.now();
   try {
     const { text: rewritten, usage } = await generateText({
       model: args.model,
       temperature: 0.2,
       maxTokens: resolveOversightRewriteMaxTokens(wordCap),
-      system: buildOversightRewriteSystem(profile, wordCap, { requireDiagram }),
-      prompt: requireDiagram
-        ? `The learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.\n\nLEARNER MESSAGE:\n${args.userText ?? "(unknown)"}\n\nDRAFT TO REWRITE:\n\n${trimmed}`
-        : `DRAFT TO REWRITE:\n\n${trimmed}`,
+      system: buildOversightRewriteSystem(profile, wordCap, {
+        requireDiagram,
+        requireSessionTasks: requireSessionTasksFix,
+      }),
+      prompt:
+        (requireDiagram
+          ? `The learner asked for a diagram. Rewrite so the reply includes one eduai-diagram fence with topic-specific stage labels (type: process-flow, gradient-descent, hierarchy, or compare — default process-flow). Stages must match Top summary / Step ladder names.\n\nLEARNER MESSAGE:\n${args.userText ?? "(unknown)"}\n\nDRAFT TO REWRITE:\n\n${trimmed}`
+          : `DRAFT TO REWRITE:\n\n${trimmed}`) + sessionTasksNote,
     });
 
     let llmText = (rewritten ?? "").trim();
@@ -474,10 +532,13 @@ export async function auditAndMaybeRewrite(args: {
 
     // When urgency triggered the rewrite, only accept a result that is clean;
     // a rewrite that still trips urgency is rejected and the draft is kept.
-    // requireDiagram must NOT bypass profileStructuralPass — diagram inject still
-    // needs valid Top summary / Next? (or a structural score gain) before adopt.
+    // requireDiagram/requireSessionTasksFix must NOT bypass profileStructuralPass —
+    // an inject still needs valid Top summary / Next? (or a structural score gain)
+    // before adopt.
     const urgencyWasProblem = !beforeMetrics.noUrgency;
     const diagramOk = !requireDiagram || hasEduaiDiagramFence(llmText);
+    const sessionTasksOkAfter =
+      !requireSessionTasksFix || isSessionTasksCompliant(llmText, sessionTasksContext);
     const structuralOk =
       afterMetrics.profileStructuralPass ||
       profileStructuralScore(afterMetrics, profile, llmText) >
@@ -486,6 +547,7 @@ export async function auditAndMaybeRewrite(args: {
       llmText.length > 0 &&
       afterMetrics.underCap &&
       diagramOk &&
+      sessionTasksOkAfter &&
       (!urgencyWasProblem || afterMetrics.noUrgency) &&
       structuralOk;
 

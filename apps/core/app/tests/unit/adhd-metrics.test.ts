@@ -1,12 +1,16 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
 import {
+  acknowledgesSessionTasksDone,
+  asksSessionTasksGoal,
   computeAdhdResponseMetrics,
   detectUrgencyTerms,
+  hasSessionTasksChecklist,
   hasSourcesFooter,
   hasTopicSwitchAbcOptions,
   isProfileStructuralPass,
   isRedirectTemplatePass,
+  isSessionTasksCompliant,
   isStructuralCompliancePass,
   resolveAdhdResponseWordCap,
   withStructuralPass,
@@ -240,5 +244,85 @@ Switch now and I'll save your progress?`;
     });
     expect(hasTopicSwitchAbcOptions(malformed)).toBe(false);
     expect(isRedirectTemplatePass(metrics, malformed)).toBe(false);
+  });
+});
+
+describe("isSessionTasksCompliant (v2.0 Session Tasks bootstrap/continuity)", () => {
+  it("detects the checklist, the goal-ask question, and the done acknowledgement", () => {
+    expect(hasSessionTasksChecklist("**Session Tasks:**\n- [ ] Build the API <- now")).toBe(true);
+    expect(hasSessionTasksChecklist("Sure, here's how REST works.")).toBe(false);
+    expect(asksSessionTasksGoal("What are we working on today?")).toBe(true);
+    expect(asksSessionTasksGoal("What should we build?")).toBe(false);
+    expect(acknowledgesSessionTasksDone("Nice, the session goal is done!")).toBe(true);
+    expect(acknowledgesSessionTasksDone("Here's the next step.")).toBe(false);
+  });
+
+  it("is always compliant for profiles that don't carry the Session Tasks contract", () => {
+    expect(
+      isSessionTasksCompliant("Plain answer, no checklist.", {
+        profileExpectsSessionTasks: false,
+        isFirstTurn: true,
+        priorHadSessionTasks: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("requires a checklist or the goal-ask question on the first turn of a goal-setting message", () => {
+    const noChecklistNoAsk = "Here's a plan: define endpoints, pick a framework, add auth.";
+    expect(
+      isSessionTasksCompliant(noChecklistNoAsk, {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: true,
+        priorHadSessionTasks: false,
+      }),
+    ).toBe(false);
+
+    const withAsk = "What are we working on today?";
+    expect(
+      isSessionTasksCompliant(withAsk, {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: true,
+        priorHadSessionTasks: false,
+      }),
+    ).toBe(true);
+
+    const withChecklist = "**Session Tasks:**\n- [ ] Define endpoints <- now";
+    expect(
+      isSessionTasksCompliant(withChecklist, {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: true,
+        priorHadSessionTasks: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("requires the checklist to continue once a prior turn showed one, unless the goal is done", () => {
+    const dropped = "Sure, here's the next step without a checklist.";
+    expect(
+      isSessionTasksCompliant(dropped, {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: false,
+        priorHadSessionTasks: true,
+      }),
+    ).toBe(false);
+
+    const doneInstead = "Nice, the session goal is done! What do you want to work on next?";
+    expect(
+      isSessionTasksCompliant(doneInstead, {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: false,
+        priorHadSessionTasks: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not enforce anything on a mid-conversation turn with no prior checklist", () => {
+    expect(
+      isSessionTasksCompliant("Just a normal follow-up answer.", {
+        profileExpectsSessionTasks: true,
+        isFirstTurn: false,
+        priorHadSessionTasks: false,
+      }),
+    ).toBe(true);
   });
 });

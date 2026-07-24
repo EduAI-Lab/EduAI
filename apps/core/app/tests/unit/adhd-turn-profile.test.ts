@@ -175,6 +175,15 @@ describe("getProfileRequirements", () => {
     expect(req.wordCap).toBe(ADHD_CLARIFICATION_WORD_CAP);
   });
 
+  it("expects the Session Tasks contract for every profile that renders it, not greeting/confirmation", () => {
+    expect(getProfileRequirements("greeting").expectSessionTasksContext).toBe(false);
+    expect(getProfileRequirements("confirmation").expectSessionTasksContext).toBe(false);
+    expect(getProfileRequirements("meta").expectSessionTasksContext).toBe(true);
+    expect(getProfileRequirements("redirect").expectSessionTasksContext).toBe(true);
+    expect(getProfileRequirements("brief_clarification").expectSessionTasksContext).toBe(true);
+    expect(getProfileRequirements("full_tutoring").expectSessionTasksContext).toBe(true);
+  });
+
   it("uses a tighter cap for greetings", () => {
     expect(getProfileRequirements("greeting").wordCap).toBe(ADHD_GREETING_WORD_CAP);
   });
