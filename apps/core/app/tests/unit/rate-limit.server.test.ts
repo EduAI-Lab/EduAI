@@ -67,6 +67,17 @@ describe("isRateLimited", () => {
     isRateLimited("10.0.0.7");
     expect(isRateLimited("10.0.0.7")).toBe(true);
   });
+
+  it("excludes a hit exactly at the window boundary (half-open window)", () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimited("10.0.0.8", 1, 1_000);
+    vi.setSystemTime(start + 1_000); // exactly at the boundary, not past it
+
+    expect(isRateLimited("10.0.0.8", 1, 1_000)).toBe(false);
+  });
 });
 
 // #990: the store must stay bounded even when many distinct keys never
@@ -150,5 +161,80 @@ describe("isRateLimited — bounded store (#990)", () => {
     // The most recently inserted keys should have survived the eviction and
     // still be tracked as repeat callers (not reset to fresh).
     expect(isRateLimitedBounded("hot-10", 1, 60_000)).toBe(true);
+  });
+
+  it("evicts a defined-but-stale last hit even when it's not among the oldest keys the fallback would trim anyway", async () => {
+    // A stale key sitting in the *middle* of insertion order isolates the
+    // sweep from the oldest-key fallback: if only the fallback ran (sweep a
+    // no-op), it would trim the two positionally-oldest keys and never
+    // touch this one, even though it's the one that's actually stale.
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("stale-mid", 5, 60_000); // never touched again
+
+    vi.setSystemTime(start + 61 * 60_000); // past STALE_ENTRY_MS
+    // Refresh old-1/old-2 so they're NOT stale despite being positionally
+    // oldest, then push the store over the cap to trigger eviction.
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // A day-long window means a retained stale hit would still count toward
+    // the limit — only actual sweep eviction resets the key to a clean slate.
+    expect(isRateLimitedBounded("stale-mid", 1, 24 * 60 * 60_000)).toBe(false);
+  });
+
+  it("does NOT evict a key exactly at the STALE_ENTRY_MS boundary (strictly-greater-than)", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = floor(3 * 0.9) = 2
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    vi.useFakeTimers();
+    const start = Date.now();
+    vi.setSystemTime(start);
+
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("boundary-mid", 5, 60_000); // never touched again
+
+    vi.setSystemTime(start + 60 * 60_000); // exactly STALE_ENTRY_MS, not past it
+    isRateLimitedBounded("old-1", 5, 60_000);
+    isRateLimitedBounded("old-2", 5, 60_000);
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // At exactly the boundary the sweep must NOT evict it — a retained hit
+    // still counts toward the limit under a day-long window.
+    expect(isRateLimitedBounded("boundary-mid", 1, 24 * 60 * 60_000)).toBe(true);
+  });
+
+  it("stops evicting exactly at EVICTION_TARGET_KEYS, not past it", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10"); // EVICTION_TARGET_KEYS = floor(10 * 0.9) = 9
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    for (let i = 0; i < 11; i++) {
+      isRateLimitedBounded(`hot-${i}`, 5, 60_000);
+    }
+
+    // hot-0 and hot-1 are evicted to bring size from 11 down to the target
+    // (9, i.e. floor(10 * 0.9) — not floor(10 / 0.9), which would exceed
+    // MAX_STORE_KEYS and disable trimming entirely). hot-0 must be gone;
+    // hot-2 must survive — evicting it too would overshoot the target.
+    expect(isRateLimitedBounded("hot-0", 1, 60_000)).toBe(false);
+    expect(isRateLimitedBounded("hot-2", 1, 60_000)).toBe(true);
   });
 });
