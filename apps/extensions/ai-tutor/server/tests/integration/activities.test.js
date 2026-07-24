@@ -935,6 +935,69 @@ describe('Activities routes', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // ── Activity ordering (#1047) ─────────────────────────────────────
+
+  describe('activity ordering', () => {
+    it('appends new activities to the end of the lesson', async () => {
+      // A pre-existing activity anchors position 0.
+      const first = await createActivityInDb({ position: 0 });
+      const res = await request(profApp)
+        .post(`/api/lessons/${seed.lesson.id}/activities`)
+        .send({
+          title: 'Appended',
+          mainTopicId: seed.topic.id,
+          question: 'What is 3+3?',
+          type: 'MCQ',
+          options: ['5', '6', '7'],
+          answer: 1,
+          enableTeachMode: true,
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(first.position + 1);
+    });
+
+    describe('PUT /api/lessons/:lessonId/activities/order', () => {
+      async function seedThreeActivities() {
+        const a = await createActivityInDb({ position: 0 });
+        const b = await createActivityInDb({ position: 1 });
+        const c = await createActivityInDb({ position: 2 });
+        return { a, b, c };
+      }
+
+      it('reassigns positions 0..n-1 from the ordered id list', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, a.id, b.id] });
+
+        expect(res.status).toBe(200);
+        expect(res.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+        expect(res.body.map((x) => x.position)).toEqual([0, 1, 2]);
+
+        const list = await request(profApp).get(`/api/lessons/${seed.lesson.id}/activities`);
+        expect(list.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+      });
+
+      it('rejects an id set that does not match the lesson activities', async () => {
+        const { a, b } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [a.id, b.id] });
+        expect(res.status).toBe(400);
+      });
+
+      it('returns 403 for a TA', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const ta = await enrollTa();
+        const taApp = await createApp({ mockUser: ta });
+        const res = await request(taApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, b.id, a.id] });
+        expect(res.status).toBe(403);
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1043,7 +1106,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     // Question bank content appears in at least one EduAI chat call (supervisor hidden context)
     const chatCalls = fetchCalls.filter(
       ([url, opts]) =>
-        typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+        typeof url === 'string' && url.includes('/completion') && opts?.method === 'POST',
     );
     const bankInjected = chatCalls.some(([, opts]) => {
       const body = JSON.parse(opts.body);
@@ -1058,6 +1121,83 @@ describe('Tutoring-flow: question consumption via Core', () => {
   // `getCourseCode`'s falsy-coreOfferingId short-circuit (via
   // `resolveCoreCourseById`) is dead code now, harmlessly so; left in place
   // rather than removed as part of this migration.
+
+  // #1021 review: assert the activities → EduAI wiring layer, not only
+  // generate*Response with an explicitly passed courseId.
+  it('/teach and /guide EduAI completion bodies include linked coreOfferingId as courseId (#1021)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+        }),
+    );
+
+    const teachRes = await request(studentApp)
+      .post(`/api/activities/${activity.id}/teach`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(teachRes.status).toBe(200);
+
+    const teachCompletionBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' &&
+          url.includes('/api/completion') &&
+          opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(teachCompletionBodies.length).toBeGreaterThan(0);
+    for (const body of teachCompletionBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
+
+    fetch.mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-2' }),
+        }),
+    );
+
+    const guideRes = await request(studentApp)
+      .post(`/api/activities/${activity.id}/guide`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(guideRes.status).toBe(200);
+
+    const guideCompletionBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' &&
+          url.includes('/api/completion') &&
+          opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(guideCompletionBodies.length).toBeGreaterThan(0);
+    for (const body of guideCompletionBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
+  });
+
+  // The "coreOfferingId is null" scenario is no longer constructible: #1072
+  // step 4 made `coreOfferingId` required at the DB level, so every
+  // CourseOffering row is Core-linked by construction. Linked-course
+  // courseId forwarding is covered by the test above; omitting courseId for
+  // an unlinked offering cannot be integration-tested against Prisma.
 
   it('/teach proceeds with empty question bank and returns 200 when Core questions fetch fails', async () => {
     vi.stubGlobal(
@@ -1095,7 +1235,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url, opts) => {
-        if (typeof url === 'string' && url.includes('/chat')) {
+        if (typeof url === 'string' && url.includes('/completion')) {
           onFetchCalled();
           return new Promise((_resolve, reject) => {
             opts.signal.addEventListener('abort', () => {

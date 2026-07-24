@@ -41,6 +41,7 @@ import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../../utils/aiModels';
 import {
     DIFFICULTY_META,
     difficultyChipClass,
@@ -174,7 +175,7 @@ const defaultForm: FormState = {
     primaryTopicId: '',
     questionOrder: '',
     generationPrompt: '',
-    generationModel: 'ollama:gpt-oss:120b'
+    generationModel: FALLBACK_GENERATION_MODEL
 };
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
@@ -579,10 +580,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 setAvailableModels(models);
                 setAvailableEduCourses(eduCourses);
                 if (models.length > 0) {
-                    const defaultModel = models.find((model) => model.isDefault) ?? models[0];
                     setForm((prev) => {
                         if (models.some((model) => model.id === prev.generationModel)) return prev;
-                        return { ...prev, generationModel: defaultModel.id };
+                        return { ...prev, generationModel: pickPreferredGenerationModel(models) };
                     });
                 }
             } catch (optionsError) {
@@ -1258,7 +1258,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                             vp.onUpdateQuestionMetadata?.(viewEntry.questionId, { description: editDescription || null, primaryTopicId: editPrimaryTopicId, type: editType, primaryTopicName });
                                                             if (Object.keys(variantUpdates).length > 0) vp.onUpdateVariant?.(viewEntry.variant.id, variantUpdates);
                                                             setEditingMetadata(false);
-                                                            toast({ title: 'Metadata saved', description: Object.keys(variantPayload).length > 0 ? 'Question metadata and variant fields updated.' : 'Question metadata updated.' });
+                                                            toast({ title: 'Question details saved', description: Object.keys(variantPayload).length > 0 ? 'Question details and variant fields updated.' : 'Question details updated.' });
                                                         } catch (err: unknown) {
                                                             toast({ variant: 'destructive', title: 'Failed to save', description: err instanceof Error ? err.message : 'Could not update metadata.' });
                                                         } finally {

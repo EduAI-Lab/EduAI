@@ -67,7 +67,7 @@ export function MaterialPreviewDialog({
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Could not load preview");
+        setError("Could not load preview");
       })
       .finally(() => {
         setIsLoading(false);
