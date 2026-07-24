@@ -241,13 +241,15 @@ model AiJob {
   errorMessage  String?
   userId        String
   courseId      String?
-  bullJobId     String?      @unique          // link back to the BullMQ job
+  queueName     String?                       // pool queue the job was pushed onto (§4)
+  bullJobId     String?                       // link back to the BullMQ job — unique per queue only
   attempts      Int          @default(0)
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
+  @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
   @@map("ai_jobs")
@@ -257,6 +259,11 @@ model AiJob {
 **No `queuePosition` column.** Position is not a stored fact — a snapshot taken at enqueue is stale
 the instant a job ahead drains. It is **computed live at read time** (count of `PENDING` jobs ahead
 in the same queue) and returned only by `serializeAiJob()`; nothing persists it. See [§8](#8-status--eta-read-model-917).
+
+**`bullJobId` is unique per queue, not globally.** BullMQ's auto-generated ids are per-queue
+counters, so `ai-jobs:chat` and `ai-jobs:heavy` both issue `"1"`. The row therefore stores the
+`queueName` it was pushed onto and the uniqueness is the pair `(queueName, bullJobId)`. Every
+lookup by BullMQ id — producer dedupe (§6) and worker transition (§7) — MUST key on the pair.
 
 A `serializeAiJob()` helper returns the client-facing shape with ISO timestamps, exactly like
 `serializeReEmbedJob` in `re-embed-job.server.ts` — see [§8](#8-status--eta-read-model-917).
@@ -276,10 +283,12 @@ Steps (all-or-nothing on the DB row):
 2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs:heavy` when the heavy
    pool is configured for a `background` job, else `ai-jobs:chat`) and the **priority** from
    `job.type` (`interactive → high`, `background → low`).
-3. **Create** the `AiJob` row as `PENDING` (`payload = job`). Position is not stored (§5).
+3. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queueName` = the queue resolved in
+   step 2). Position is not stored (§5).
 4. **Add** to that queue with priority:
    `queue.add(job.kind, job, { jobId: job.idempotencyKey, priority })`.
-5. **Persist** the returned BullMQ id into `AiJob.bullJobId`.
+5. **Persist** the returned BullMQ id into `AiJob.bullJobId` — unique against `queueName`, never
+   on its own (§5).
 6. **Return** `{ jobId: aiJob.id }` — the durable handle only. Queue position / ETA are **not**
    returned here; the client reads them from the status endpoint (§8), which is the single source
    of position (computed live per poll). `enqueue` accepts work; it does not report on the queue.
@@ -300,7 +309,8 @@ The worker consumes each pool queue and is the **only** writer of terminal state
    to the shared ioredis connection, one worker per pool sized to that pool's capacity. BullMQ
    drains higher-priority jobs first, so interactive work is served ahead of background whenever a
    queue holds both.
-2. **Transition** the `AiJob` (looked up by `bullJobId`) `PENDING → RUNNING`, set `startedAt`,
+2. **Transition** the `AiJob` (looked up by `(queueName, bullJobId)` — the id alone is ambiguous
+   across pools, §5) `PENDING → RUNNING`, set `startedAt`,
    increment `attempts`.
 3. **Route:** map `job.type → fleet pool` via `resolveFleetHost()` (fleet layer). Resolve the
    model id (`requestedModel` or Auto) *before* the fleet pick, exactly as the live chat path
