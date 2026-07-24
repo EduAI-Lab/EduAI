@@ -154,7 +154,10 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       toast({
         variant: 'destructive',
         title: 'Could not approve variant',
-        description: err?.response?.data?.error ?? 'Only instructors can approve. Try again.',
+        description:
+          err?.response?.status === 403
+            ? 'Only instructors can approve. Try again.'
+            : 'Could not approve this variant. Please try again.',
       });
     }
   };
@@ -251,7 +254,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                       {g.type ?? 'Question'} #{g.questionMetadataId}
                     </Badge>
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                      {g.description?.trim() || `Metadata #${g.questionMetadataId}`}
+                      {g.description?.trim() || 'Untitled question'}
                     </span>
                   </div>
 
