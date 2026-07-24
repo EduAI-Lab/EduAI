@@ -7,28 +7,22 @@ import { QUEUE_CHAT, QUEUE_HEAVY, type QueueName } from "./resolve-pool.server";
  * (contract §4). Both share the single hot-reload-safe ioredis connection from
  * `connection.server.ts` (`maxRetriesPerRequest: null`, required by BullMQ).
  *
- * Cached on `globalThis` in dev so hot-reload doesn't leak a new Queue (and its
- * own Redis duplicate) per reload, mirroring `prisma.server.ts` / `connection.server.ts`.
+ * The registry is a process-wide singleton (all environments) so a Queue — and
+ * its BullMQ script/handler registration — is built once per pool; `globalThis`
+ * additionally carries it across dev hot-reloads.
  */
 
 declare global {
   var __aiJobQueues: Map<QueueName, Queue> | undefined;
 }
 
-function getRegistry(): Map<QueueName, Queue> {
-  const cached = globalThis.__aiJobQueues;
-  if (cached) {
-    return cached;
-  }
-  const registry = new Map<QueueName, Queue>();
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__aiJobQueues = registry;
-  }
-  return registry;
-}
+// Module-level singleton, also parked on `globalThis` so a dev hot-reload reuses
+// it instead of leaking a Queue per reload. Unlike `prisma.server.ts` this must
+// stay a single instance in production too: every `new Queue` re-registers
+// BullMQ's Lua scripts and event handlers on the shared connection.
+const registry: Map<QueueName, Queue> = (globalThis.__aiJobQueues ??= new Map<QueueName, Queue>());
 
 export function getQueue(name: QueueName): Queue {
-  const registry = getRegistry();
   let queue = registry.get(name);
   if (!queue) {
     // The shared ioredis instance works at runtime, but BullMQ's `connection`

@@ -1,3 +1,4 @@
+import type { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
@@ -5,7 +6,7 @@ import { JobPayloadSchema, type JobPayload } from "./job-schema";
 import { getQueue } from "./queues.server";
 import { priorityFor, resolveQueueName } from "./resolve-pool.server";
 
-/** True for a unique-constraint violation on `AiJob.bullJobId`. */
+/** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
 function isBullJobIdConflict(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -26,8 +27,10 @@ function isBullJobIdConflict(error: unknown): boolean {
  * guarantees the signature and the row lifecycle below.
  *
  * Idempotency: when `idempotencyKey` is set it is the BullMQ job id (dedupes the
- * queue) AND the `AiJob.bullJobId` (`@unique`), so one logical key maps to exactly
- * one row. A repeat enqueue returns the existing row instead of writing a new one.
+ * queue) AND the `AiJob.bullJobId`, so one logical key maps to exactly one row.
+ * A repeat enqueue returns the existing row instead of writing a new one. The
+ * uniqueness is `(queueName, bullJobId)`, not `bullJobId` alone: BullMQ's
+ * auto-generated ids are per-queue counters, so two pools both hand out `"1"`.
  *
  * `jobId` returned to callers is always the `AiJob.id` (stable, DB-backed),
  * never the raw BullMQ id.
@@ -44,7 +47,7 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
   //    create a second row for the same logical job.
   if (payload.idempotencyKey) {
     const existing = await prisma.aiJob.findUnique({
-      where: { bullJobId: payload.idempotencyKey },
+      where: { queueName_bullJobId: { queueName, bullJobId: payload.idempotencyKey } },
       select: { id: true },
     });
     if (existing) {
@@ -62,44 +65,24 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
       payload,
       userId: payload.userId,
       courseId: payload.courseId ?? null,
+      queueName,
     },
     select: { id: true },
   });
 
   // 5. Add to that queue with priority; BullMQ job name = kind.
   //    idempotencyKey, when present, becomes the BullMQ job id so a re-enqueue is a no-op.
+  let bullJob: Job;
   try {
-    const bullJob = await getQueue(queueName).add(payload.kind, payload, {
+    bullJob = await getQueue(queueName).add(payload.kind, payload, {
       jobId: payload.idempotencyKey,
       priority,
     });
-
-    // 6. Persist the BullMQ id back onto the row.
-    if (bullJob.id) {
-      try {
-        await prisma.aiJob.update({
-          where: { id: aiJob.id },
-          data: { bullJobId: bullJob.id },
-        });
-      } catch (updateError) {
-        // A concurrent enqueue with the same idempotencyKey already claimed this
-        // bullJobId. Drop our duplicate PENDING row and return the row that won.
-        if (isBullJobIdConflict(updateError)) {
-          await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
-          const winner = await prisma.aiJob.findUnique({
-            where: { bullJobId: bullJob.id },
-            select: { id: true },
-          });
-          if (winner) {
-            return { jobId: winner.id };
-          }
-        }
-        throw updateError;
-      }
-    }
   } catch (error) {
     // Redis down / queue unreachable: the PENDING row stays without a bullJobId
     // for the #915 reaper. Surface the failure to the caller so the route can 5xx.
+    // Scoped to the `add` alone — a failure of the step-6 update below is a
+    // different fault and must not be logged as a queue outage.
     fireAndForget(
       logSystemError({
         source: "AI",
@@ -111,6 +94,44 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
       }),
     );
     throw error;
+  }
+
+  // 6. Persist the BullMQ id back onto the row.
+  if (bullJob.id) {
+    try {
+      await prisma.aiJob.update({
+        where: { id: aiJob.id },
+        data: { bullJobId: bullJob.id },
+      });
+    } catch (updateError) {
+      // A concurrent enqueue with the same idempotencyKey already claimed this
+      // (queueName, bullJobId). Drop our duplicate PENDING row and return the row
+      // that won. Same queue by construction, so this is a real duplicate — never
+      // an unrelated job that happens to share a per-queue counter value.
+      if (isBullJobIdConflict(updateError)) {
+        await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
+        const winner = await prisma.aiJob.findUnique({
+          where: { queueName_bullJobId: { queueName, bullJobId: bullJob.id } },
+          select: { id: true },
+        });
+        if (winner) {
+          return { jobId: winner.id };
+        }
+      }
+      // The job is queued but the row never got its bullJobId — log it as its own
+      // fault so the #915 reaper's orphans aren't confused with a Redis outage.
+      fireAndForget(
+        logSystemError({
+          source: "AI",
+          code: "ai_job_bull_id_persist_failed",
+          message: `Queued AI job ${aiJob.id} but failed to persist bullJobId ${bullJob.id}`,
+          error: updateError,
+          actorUserId: payload.userId,
+          details: { jobId: aiJob.id, bullJobId: bullJob.id, queueName },
+        }),
+      );
+      throw updateError;
+    }
   }
 
   // 6. Return the durable handle only. Queue position / ETA come from the status
