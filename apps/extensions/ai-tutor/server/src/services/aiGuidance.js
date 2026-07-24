@@ -52,6 +52,26 @@ const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
 const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
 
+function resolveRetryDelayMs(retryAfter, remainingMs, nowMs = Date.now()) {
+  const safeRemainingMs = Math.max(remainingMs, 0);
+  let requestedDelayMs = EDUAI_RETRY_DELAY_MS;
+
+  if (typeof retryAfter === 'string') {
+    const value = retryAfter.trim();
+
+    if (/^-?\d+(?:\.\d+)?$/.test(value)) {
+      requestedDelayMs = Number(value) * 1_000;
+    } else {
+      const retryAt = Date.parse(value);
+      if (Number.isFinite(retryAt)) {
+        requestedDelayMs = retryAt - nowMs;
+      }
+    }
+  }
+
+  return Math.min(Math.max(requestedDelayMs, 0), safeRemainingMs);
+}
+
 function isRetryableEduAiResponse(status, errorText) {
   if (status === 503) {
     return true;
@@ -149,6 +169,7 @@ async function callEduAI({
   };
 
   try {
+    const deadline = Date.now() + EDUAI_CALL_TIMEOUT_MS;
     // The same signal covers both attempts and the backoff, preserving the
     // existing 45-second upper bound for the complete logical call.
     const requestSignal = signal
@@ -177,7 +198,18 @@ async function callEduAI({
             response.status,
             errorText,
           );
-          await wait(EDUAI_RETRY_DELAY_MS, undefined, { signal: requestSignal });
+          const nowMs = Date.now();
+          const remainingMs = Math.max(deadline - nowMs, 0);
+          const retryDelayMs = resolveRetryDelayMs(
+            response.headers.get('Retry-After'),
+            remainingMs,
+            nowMs,
+          );
+          await wait(retryDelayMs, undefined, { signal: requestSignal });
+          requestSignal.throwIfAborted();
+          if (Date.now() >= deadline) {
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+          }
           continue;
         }
 
@@ -924,6 +956,7 @@ export async function generateCustomResponse({
 
 // Exposed for unit testing only — not part of the public API.
 export const _testExports = {
+  resolveRetryDelayMs,
   stripMarkdownFence,
   normalizeSupervisorVerdict,
   buildSystemPrompt,
