@@ -54,9 +54,17 @@ const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 // route's graph alone under-counts (framework code hides under entry.client)
 // and shifts when manualChunks moves modules between graphs.
 const entries = Object.entries(manifest).filter(([, v]) => v.isEntry);
-const findKey = (needle) =>
-  entries.find(([k]) => k.includes(needle))?.[0] ?? null;
-const baseKeys = [findKey("entry.client"), findKey("root")].filter(Boolean);
+// Match on the file name, not a substring of the whole key — `includes("root")`
+// would also pick up a route module like `app/routes/rooms-root.tsx`. Route
+// keys carry a query suffix (`app/root.tsx?__react-router-build-client-route`),
+// so strip it before taking the basename.
+const isModule = (key, file) =>
+  path.posix.basename(key.replace(/\?.*$/, "")) === file;
+const findKey = (file) =>
+  entries.find(([k]) => isModule(k, file))?.[0] ?? null;
+const baseKeys = [findKey("entry.client.tsx"), findKey("root.tsx")].filter(
+  Boolean,
+);
 
 const rows = entries
   .map(([key, v]) => {
@@ -79,7 +87,7 @@ if (asJson) {
       `${r.route.padEnd(pad)}  ${String(r.chunks).padStart(6)}  ${kb(r.bytes)}`,
     );
   }
-  const root = rows.find((r) => r.key.includes("root")) ?? rows[0];
+  const root = rows.find((r) => isModule(r.key, "root.tsx")) ?? rows[0];
   console.log(
     `\n${rows.length} route entries; root baseline: ${kb(root.bytes)}; largest: ${kb(rows[0].bytes)}`,
   );
