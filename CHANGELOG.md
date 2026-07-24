@@ -8,6 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [question-maker] feat: Server-side pagination for QM's six remaining full-set list endpoints (course list, course topics, assessment questions/sections, question variants, question export) behind a shared `{ success, data, total, page, pageSize }` envelope and `parsePaginationParams` helper, with pagination UI on the unbounded lists. (#1044, @mochi_21, 2026-07-24)
 - [ui] feat: New shared primitives in `@eduai/ui` — `EmptyState` (replaces 7+ per-app copies), `MaterialStatusIcon`/`MaterialStatusChip`, `MaterialList` (unifies 3 drifted Core inline lists), `HeroShell` + `HERO_GLASS_STYLE` (single source for the hero surface `CourseHeroCard` and ai-tutor's `ModuleHero` previously hand-copied), presentational `CourseTopicsHeroAction` (collapses the name-identical QM/ai-tutor forks into data-wiring adapters), and `DetailPageScaffold` (the hero→content page skeleton previously hand-assembled on 8 surfaces); `QuickActionsPanel` gains optional `onClick`/`disabled` so action cards can be buttons, not just links. (#1145, @yta3216, 2026-07-21) — [#1148](https://github.com/EduAI-Lab/EduAI/pull/1148)
 
 ### Changed
