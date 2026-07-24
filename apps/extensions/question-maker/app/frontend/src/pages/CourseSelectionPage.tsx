@@ -6,8 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
-import { CoursesAdminView } from '@/components/courses/courses-admin-view';
-import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
+import { CoursesRoleView } from '@/components/courses/courses-role-view';
 import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
 import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
@@ -159,10 +158,10 @@ export const CourseSelectionPage = () => {
   };
 
   if (user?.role === 'ADMIN') {
-    return <CoursesAdminView {...gridProps} />;
+    return <CoursesRoleView role="admin" {...gridProps} />;
   }
   if (user?.role === 'UNIT_ADMIN') {
     return <CoursesUnitAdminView {...gridProps} />;
   }
-  return <CoursesInstructorView {...gridProps} />;
+  return <CoursesRoleView role="instructor" {...gridProps} />;
 };

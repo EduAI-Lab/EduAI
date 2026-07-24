@@ -18,7 +18,7 @@ vi.mock('../../src/config/database.js', () => ({
 }));
 
 vi.mock('../../src/services/eduaiClient.js', () => ({
-  getEduAiChatUrl: () => 'http://mock-eduai/api/chat',
+  getEduAiCompletionUrl: () => 'http://mock-eduai/api/completion',
 }));
 
 const originalTimeout = process.env.EDUAI_CALL_TIMEOUT_MS;

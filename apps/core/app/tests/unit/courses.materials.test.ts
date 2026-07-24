@@ -156,6 +156,16 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     expect(res.status).toBe(401);
   });
 
+  it("passes request.headers into getSession (not the raw Request)", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
+    const args = makeArgs("GET");
+    await loader(args);
+    expect(auth.api.getSession).toHaveBeenCalledWith({ headers: args.request.headers });
+    expect(auth.api.getSession).not.toHaveBeenCalledWith(args.request);
+  });
+
   it("returns 404 when course not found", async () => {
     mockSession("STUDENT");
     mockAccess(null, null);
@@ -536,7 +546,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe(
-      "Material indexing failed due to a database error. Please try again or contact support.",
+      "Couldn't save this material's search data due to a database error. Please try again or contact support.",
     );
     expect(body.error).not.toMatch(/prisma/i);
   });

@@ -21,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   cn,
+  EmptyState,
 } from '@eduai/ui';
 import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
@@ -44,7 +45,6 @@ import {
   IconCertificate,
 } from '@tabler/icons-react';
 import { Assessment, AssessmentGenerationParams } from '../../types/question';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { ListSkeleton } from '@/components/shared/Skeletons';
 import GenerateAssessmentModal from './GenerateAssessmentModal';
 
@@ -341,19 +341,23 @@ export const AssessmentSection = ({
           icon={<IconClipboardList className="size-6" />}
           title="No assessments yet"
           description="Assemble quizzes, labs, midterms and finals from your question bank, then export to Canvas, Word or plain text."
-          primaryAction={
-            canManage && selectedCourseId
-              ? {
-                  label: 'Create your first assessment',
-                  icon: <IconPlus className="size-4" />,
-                  onClick: handleOpenCreateModal,
-                }
-              : undefined
-          }
-          secondaryAction={
-            canManage && onImportFromCanvas
-              ? { label: 'Import from Canvas', onClick: onImportFromCanvas, variant: 'outline' }
-              : undefined
+          bare={false}
+          action={
+            (canManage && (selectedCourseId || onImportFromCanvas)) && (
+              <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                {selectedCourseId && (
+                  <Button onClick={handleOpenCreateModal}>
+                    <IconPlus className="size-4" />
+                    Create your first assessment
+                  </Button>
+                )}
+                {onImportFromCanvas && (
+                  <Button variant="outline" onClick={onImportFromCanvas}>
+                    Import from Canvas
+                  </Button>
+                )}
+              </div>
+            )
           }
         />
       )}

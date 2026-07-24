@@ -11,7 +11,7 @@
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconCloud } from '@tabler/icons-react';
 import type { QuestionGenerationPhase } from '../../hooks/useEduAIStatus';
-import { isCloudProvider, type AIProvider } from '../../services/apiKeyStorage';
+import { isCloudProvider, isCampusProvider, type AIProvider, type CampusProvider } from '../../services/apiKeyStorage';
 
 type EduAIStatus = 'loading' | 'ok' | 'error';
 type DotState = 'online' | 'idle' | 'error' | 'loading';
@@ -19,7 +19,7 @@ type DotState = 'online' | 'idle' | 'error' | 'loading';
 interface AIServiceIndicatorsProps {
   status: EduAIStatus;
   message?: string;
-  provider?: AIProvider | 'ollama';
+  provider?: AIProvider | CampusProvider;
   questionGenerationPhase?: QuestionGenerationPhase;
   onRefresh?: () => void;
   className?: string;
@@ -76,7 +76,7 @@ export const AIServiceIndicators = ({
   className,
 }: AIServiceIndicatorsProps) => {
   const isOk = status === 'ok';
-  const ubcOnline = isOk && provider === 'ollama';
+  const ubcOnline = isOk && isCampusProvider(provider);
   const cloudOnline = isOk && isCloudProvider(provider);
 
   const ubcDot: DotState =
