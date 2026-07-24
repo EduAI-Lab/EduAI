@@ -49,6 +49,8 @@ vi.mock('../../src/services/topicSync.js', () => ({
 }));
 
 vi.mock('../../src/services/enrollmentSync.js', () => ({
+  AUTO_SYNC_TTL_MS: 30_000,
+  AUTO_SYNC_TIMEOUT_MS: 3_000,
   syncCourseEnrollments: vi.fn().mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
 }));
 
@@ -328,6 +330,27 @@ describe('Courses routes', () => {
       const res = await request(profApp).get('/api/courses/999999');
 
       expect(res.status).toBe(404);
+    });
+
+    it('auto-syncs enrollments from Core before checking membership (#1065)', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(syncCourseEnrollments).toHaveBeenCalledWith(
+        seed.course.id,
+        expect.objectContaining({ ttlMs: expect.any(Number), signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the enrollment auto-sync fails', async () => {
+      vi.mocked(syncCourseEnrollments).mockRejectedValueOnce(new Error('Core unavailable'));
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.course.id);
     });
   });
 

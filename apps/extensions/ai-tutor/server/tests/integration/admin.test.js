@@ -43,6 +43,13 @@ describe('Admin routes', () => {
     await truncateAll();
     admin = makeAdmin();
     adminApp = await createApp({ mockUser: admin });
+    // GET .../enrollments now auto-syncs from Core before reading the local
+    // mirror (#1065) — default to an empty active list so a leftover
+    // `.mockResolvedValue` from another describe block can't leak a phantom
+    // enrollment into this test's course via a real DB write. Individual
+    // tests override this per-course via mockResolvedValue/mockResolvedValueOnce.
+    listEduAiCourseEnrollmentsServiceKey.mockReset();
+    listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
   });
 
   // ── GET /api/admin/users ──────────────────────────────────────────
@@ -523,6 +530,47 @@ describe('Admin routes', () => {
       );
 
       expect(fallback.body.enrolledStudents[0].name).toBe(student.id);
+    });
+
+    it('auto-syncs the local CourseEnrollment mirror from Core before listing (#1065)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: 'core-only-student',
+          studentEmail: 'core-only@test.com',
+          studentName: 'Core Only Student',
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain('core-only-student');
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: {
+          courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: 'core-only-student' },
+        },
+      });
+      expect(row).not.toBeNull();
+    });
+
+    it('falls back to the local mirror when the Core enrollment sync fails (#1065)', async () => {
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: 'local-only-student', role: 'STUDENT' },
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(new Error('Core unavailable'));
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain('local-only-student');
     });
 
     it('UNIT_ADMIN gets 403 for a course outside their department', async () => {
