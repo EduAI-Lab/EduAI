@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { Badge, Button, PanelCard } from '@eduai/ui';
+import { Badge, Button, PanelCard, EmptyState } from '@eduai/ui';
 import {
   IconSchool,
   IconDownload,
@@ -14,7 +14,6 @@ import {
   IconPlugConnected,
   IconExternalLink,
 } from '@tabler/icons-react';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { canvasService, type CanvasIntegration } from '@/services/canvasService';
 
 interface CourseCanvasTabProps {
@@ -60,11 +59,15 @@ export function CourseCanvasTab({ courseId, canWrite, onImportFromCanvas }: Cour
         icon={<IconSchool className="size-6" />}
         title="Canvas isn't connected"
         description="Connect your Canvas account to import quizzes as assessments and export assessments back to Canvas."
-        primaryAction={{
-          label: 'Connect Canvas in Settings',
-          href: '/settings',
-          icon: <IconPlugConnected className="size-4" />,
-        }}
+        bare={false}
+        action={
+          <Button asChild>
+            <a href="/settings">
+              <IconPlugConnected className="size-4" />
+              Connect Canvas in Settings
+            </a>
+          </Button>
+        }
       />
     );
   }
