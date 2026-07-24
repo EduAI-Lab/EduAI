@@ -800,11 +800,11 @@ export const createVariant = async (questionId, variantData, userId) => {
         questionText: variantData.questionText,
         difficulty: variantData.difficulty || 'medium',
         reasoningLevel,
-        assessmentId: variantData.assessmentId || null,
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
         secondaryTopicsId: secondaryTopics,
         answer,
         choices,
-        referenceId: variantData.referenceId || null,
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
         isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
         isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
         createdBy: variantData.createdBy ?? null
@@ -868,6 +868,12 @@ export const updateVariant = async (variantId, variantData, userId) => {
       ...Object.fromEntries(
         Object.entries(variantData).filter(([key]) => ALLOWED_VARIANT_UPDATE_FIELDS.includes(key))
       ),
+      ...(variantData.assessmentId !== undefined && {
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null
+      }),
+      ...(variantData.referenceId !== undefined && {
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null
+      }),
       ...(variantData.secondaryTopicsId !== undefined && {
         secondaryTopicsId: normalizeSecondaryTopics(variantData.secondaryTopicsId)
       }),

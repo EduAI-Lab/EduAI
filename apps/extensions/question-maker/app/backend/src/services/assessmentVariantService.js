@@ -13,6 +13,18 @@ import {
 
 const VALID_STUDY_ROLES = ['reference_baseline', 'generated_variant'];
 
+/**
+ * Prisma's interactive-transaction default timeout is 5s. Assembly runs several
+ * sequential round-trips per slot (candidate lookup, cursor SELECT ... FOR UPDATE
+ * with a possible savepoint retry, section-variant insert, variant update) across
+ * every slot of every requested exam, so a modest multi-exam batch can comfortably
+ * exceed 5s even on a healthy connection — and a timeout here aborts and rolls back
+ * all work done so far in the batch. Sized generously above a realistic worst case
+ * (see the "large exam" cases in assessmentVariantService.integration.test.js)
+ * rather than tuned to the common case.
+ */
+const ASSEMBLY_TRANSACTION_TIMEOUT_MS = 60000;
+
 /** Non-draft variant count per base question required before parallel assembly can swap alternate wording. */
 export const MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW = 2;
 
@@ -364,7 +376,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
 
       createdAssessments.push(assessment);
     }
-  });
+  }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
 
@@ -389,11 +401,11 @@ const MIN_METADATA_SCORE = 75;
 /**
  * Picks the best bank `question_metadata` row for a baseline slot (excluding already-used base ids).
  */
-export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds) {
+export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, client = prisma) {
   const slotMeta = slotVariant.questionMetadata;
   if (!slotMeta) return null;
 
-  const bankRows = await prisma.questionMetadata.findMany({
+  const bankRows = await client.questionMetadata.findMany({
     where: { courseId, variants: { some: {} } },
     include: { variants: { orderBy: { id: 'asc' } } }
   });
@@ -496,7 +508,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
 
       for (let i = 0; i < refVariants.length; i++) {
         const slotVariant = refVariants[i];
-        const match = await findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds);
+        const match = await findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, tx);
 
         if (!match) {
           throw new Error(
@@ -549,7 +561,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
 
       createdAssessments.push(assessment);
     }
-  });
+  }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
 
