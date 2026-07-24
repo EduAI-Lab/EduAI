@@ -125,10 +125,15 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
-  const [lesson, activities] = await Promise.all([
+  const [lesson, activitiesPage] = await Promise.all([
     api.lessonById(lessonId) as Promise<Lesson>,
-    api.activitiesForLesson(lessonId) as Promise<Activity[]>,
+    // #1043: activities endpoint returns the pagination envelope. This is a
+    // reorder host — keep `total` so the UI can refuse to persist a partial
+    // order if a lesson ever exceeds the bounded page.
+    api.activitiesForLesson(lessonId),
   ]);
+  const activities = activitiesPage.data;
+  const activitiesTotal = activitiesPage.total;
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
@@ -141,8 +146,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     if (module.courseOfferingId) {
       const [courseData, siblingModules, siblingLessons] = await Promise.all([
         api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
-        api.lessonsForModule(lesson.moduleId) as Promise<Lesson[]>,
+        api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+        api.lessonsForModule(lesson.moduleId).then((r) => r.data),
       ]);
       course = courseData;
       const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
@@ -153,14 +158,18 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     }
   }
 
-  return { course, module, lesson, activities, orderText };
+  return { course, module, lesson, activities, activitiesTotal, orderText };
 }
 
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
-  const { course, module, lesson, activities: initialActivities, orderText } = loaderData;
+  const { course, module, lesson, activities: initialActivities, activitiesTotal, orderText } = loaderData;
+  // #1043: true if the lesson has more activities than the bounded page we
+  // loaded. Reorder is disabled in that case — dragging a partial page would
+  // persist positions that orphan the unseen tail.
+  const activitiesTruncated = activitiesTotal > initialActivities.length;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [oActivities, addActivityOpt] = useOptimistic(
@@ -310,7 +319,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     if (!numericLessonId) return;
     try {
       const activityData = await api.activitiesForLesson(numericLessonId);
-      setActivities(activityData);
+      setActivities(activityData.data);
     } catch (error) {
       console.error('Failed to refresh activities', error);
     }
@@ -321,6 +330,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderActivitiesList = async (orderedIds: number[]) => {
     if (!numericLessonId) return;
+    if (activitiesTruncated) {
+      // The loaded page is a subset of the lesson's activities; persisting this
+      // order would reassign positions 0..n-1 and orphan the unseen tail.
+      toast.error('This lesson has more activities than can be reordered at once.');
+      return;
+    }
     const current = activities;
     const byId = new Map(current.map((a) => [a.id, a]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];

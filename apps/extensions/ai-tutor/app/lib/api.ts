@@ -40,9 +40,12 @@ import type {
   Course,
   EduAiApiKeyStatus,
   EnrollmentRole,
+  Lesson,
+  Module,
   StudentMetricRow,
   SubmissionRow,
   SuggestedPrompt,
+  Topic,
   User,
 } from './types';
 import { getCoreLoginUrl } from './coreUrl';
@@ -58,6 +61,46 @@ import { getCoreLoginUrl } from './coreUrl';
 const CORE_STATUS_HEADER = 'X-Core-Status';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+/**
+ * The platform pagination envelope (#1043), matching the AI-Tutor server's
+ * `paginated()` helper and EduAI Core's contract (#1041). Every list endpoint
+ * that was previously a bare array now returns this shape.
+ *
+ * `total` is the full count matching the query (not the page length) — reader
+ * code that used to rely on `array.length` for a total, drive "select all", or
+ * derive a tree/ordinal from a complete list MUST read `total` and treat a
+ * short `data` as a page, not the whole set.
+ */
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Default page size for the structure-bounded "tree" endpoints (modules,
+ * lessons, activities, topics). Their readers need the whole set (reorder,
+ * ordinals, the lesson player), so they request one bounded page this large
+ * rather than rendering a pager. See #1043 Group B. A course whose tree
+ * exceeds this silently truncates — tracked as a follow-up.
+ */
+const TREE_PAGE_SIZE = 200;
+
+/**
+ * Serialize pagination params into a query string. Returns '' when empty so
+ * callers can append unconditionally.
+ */
+function pageQuery(params?: { page?: number; pageSize?: number; search?: string }): string {
+  if (!params) return '';
+  const qs = new URLSearchParams();
+  if (params.page !== undefined) qs.set('page', String(params.page));
+  if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+  if (params.search) qs.set('search', params.search);
+  const s = qs.toString();
+  return s ? `?${s}` : '';
+}
 
 /**
  * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
@@ -291,7 +334,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  modulesForCourse: (courseId: number) => http(`/api/courses/${courseId}/modules`),
+  modulesForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/courses/${courseId}/modules${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Module>>,
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (
     courseId: number,
@@ -328,7 +374,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
+  lessonsForModule: (moduleId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/modules/${moduleId}/lessons${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Lesson>>,
   createLesson: (
     moduleId: number,
     payload: { title: string; contentMd?: string; position?: number },
@@ -364,7 +413,10 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
-  activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
+  activitiesForLesson: (lessonId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/lessons/${lessonId}/activities${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Activity>>,
   createActivity: (
     lessonId: number,
     payload: {
@@ -435,7 +487,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  topicsForCourse: (courseId: number) => http(`/api/courses/${courseId}/topics`),
+  topicsForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/courses/${courseId}/topics${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Topic>>,
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
       method: 'POST',
