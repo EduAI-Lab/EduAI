@@ -85,6 +85,9 @@ export const errorHandler = (err, req, res, next) => {
     success: false,
     error: error.message || 'Server Error',
     ...(error.body?.error ? { code: error.body.error } : {}),
+    // Coded errors (e.g. PaginationError's PAGINATION_REQUIRED) surface `code`
+    // so clients can branch on it; wins over the legacy body.error mapping.
+    ...(error.code ? { code: error.code } : {}),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

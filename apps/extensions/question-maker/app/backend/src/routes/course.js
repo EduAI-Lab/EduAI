@@ -20,6 +20,7 @@ import { listCoursesForUser, enrichCourseDetail } from '../services/courseListSe
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
+import { parsePaginationParams, paginated } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -123,20 +124,31 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * GET /api/course – lists the courses the caller may access, role-scoped per the
  * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees
  * courses they are enrolled in. Optionally includes per-course question/topic stats.
+ *
+ * Paginated (#1044, required `page`/`pageSize`). Role visibility is resolved in
+ * JS after the full local `Course.findAll()` (per-row Core roundtrip for
+ * `callerEnrollmentRole`), so honest SQL `limit`/`offset` isn't possible without
+ * a larger refactor — the visible set is sliced in memory here and `total`
+ * reflects the caller's true visible count. Same bounded-interim call #1041 made
+ * for Core's pickers; a server-side role filter is a follow-up.
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
+    const pagination = parsePaginationParams(req, { required: true });
+
     runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 
-    const courses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+    const allCourses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+    const total = allCourses.length;
+    const courses = allCourses.slice(pagination.offset, pagination.offset + pagination.limit);
 
     if (includeStats !== 'true') {
-      return res.json({ success: true, data: courses });
+      return res.json(paginated(courses, total, pagination));
     }
 
-    // Stats are scoped to the courses the caller can already see.
+    // Stats are scoped to the courses on the current page only.
     const visibleIds = courses.map((course) => course.id);
     const statRows = visibleIds.length
       ? await Course.findAll({
@@ -181,7 +193,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
       }
     }));
 
-    res.json({ success: true, data: coursesWithStats });
+    res.json(paginated(coursesWithStats, total, pagination));
   } catch (error) {
     next(error);
   }
@@ -310,6 +322,11 @@ router.get(
   requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
   try {
+    // Structure-bounded list (#1044): optional paging, one bounded page of 200
+    // by default so existing whole-set readers keep working while the unbounded
+    // query is gone. Flat query → true DB-level limit/offset via findAndCountAll.
+    const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
@@ -317,15 +334,14 @@ router.get(
       await syncTopicsFromCoreForCourse(course, cookie);
     }
 
-    const topics = await Topics.findAll({
+    const { count, rows } = await Topics.findAndCountAll({
       where: { courseId: req.params.id },
-      order: [['createdAt', 'ASC']]
+      order: [['createdAt', 'ASC']],
+      limit: pagination.limit,
+      offset: pagination.offset
     });
 
-    res.json({
-      success: true,
-      data: topics
-    });
+    res.json(paginated(rows, count, pagination));
   } catch (error) {
     next(error);
   }

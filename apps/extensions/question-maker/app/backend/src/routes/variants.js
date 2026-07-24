@@ -32,6 +32,7 @@ import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
 import { LEVELS } from '../middleware/courseAccess.js';
 import { logger } from '../utils/logger.js';
+import { parsePaginationParams, paginated } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -117,12 +118,15 @@ router.get(
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const variants = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
+      // Structure-bounded (#1044): optional paging, default one bounded page of
+      // 200 so variant editors keep the whole set. Sliced in memory (`total` =
+      // the question's full variant count) to stay uniform with the other
+      // structure-bounded lists in this app.
+      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+      const all = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
+      const page = all.slice(pagination.offset, pagination.offset + pagination.limit);
 
-      res.json({
-        success: true,
-        data: variants
-      });
+      res.json(paginated(page, all.length, pagination));
     } catch (error) {
       next(error);
     }
