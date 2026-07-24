@@ -12,7 +12,7 @@ import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
 type CoursesUnitAdminViewProps = Omit<
   CoursesGridProps,
-  'emptyHint' | 'showAddCourse' | 'courses' | 'showDepartment' | 'roleView' | 'currentUserId'
+  'emptyHint' | 'courses' | 'showDepartment'
 > & {
   courses: CoursesGridProps['courses'];
 };
@@ -68,8 +68,6 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         {...gridProps}
         courses={courses}
         showDepartment
-        roleView="unit-admin"
-        currentUserId={user?.id}
         filters={unitSelect}
         matchesFilter={
           units.length > 1

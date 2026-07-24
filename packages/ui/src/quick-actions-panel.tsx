@@ -6,13 +6,11 @@ import { cn } from "./utils"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type QuickAction = {
+type QuickActionBase = {
   /** Short action title. */
   label: string
   /** One-line supporting description. */
   description: string
-  /** Destination path. */
-  href: string
   /** Pre-rendered icon element (e.g. a Tabler icon). Rendered inside the swatch. */
   icon: React.ReactNode
   /**
@@ -23,6 +21,30 @@ export type QuickAction = {
    */
   color?: string
 }
+
+/** Navigating action: renders a link to `href`. Anchors can't be disabled. */
+type QuickActionLink = QuickActionBase & {
+  /** Destination path. Renders a link. */
+  href: string
+  onClick?: never
+  disabled?: never
+}
+
+/** In-page action: renders a `<button>` that invokes `onClick`. */
+type QuickActionButton = QuickActionBase & {
+  /** In-page handler (opens a modal, switches a tab, ...). Renders a `<button>`. */
+  onClick: () => void
+  href?: never
+  /** Greys out and disables the button. Only meaningful for button actions. */
+  disabled?: boolean
+}
+
+/**
+ * A quick action is either a link (`href`) or an in-page button (`onClick`) —
+ * never both, never neither. Modelled as a union so an inert card (no target)
+ * is a compile error, and `disabled` only exists where it's actually honoured.
+ */
+export type QuickAction = QuickActionLink | QuickActionButton
 
 export interface QuickActionsPanelProps {
   actions: QuickAction[]
@@ -39,8 +61,9 @@ export interface QuickActionsPanelProps {
 
 /**
  * Responsive grid of quick-action cards (1 column, 2 columns from `sm`).
- * Each card is a tinted icon swatch + label + description linking to `href`.
- * Shared across Core, AI Tutor, and Question Maker dashboards.
+ * Each card is a tinted icon swatch + label + description linking to `href`
+ * (or invoking `onClick` for in-page actions). Shared across Core, AI Tutor,
+ * and Question Maker dashboards.
  */
 export function QuickActionsPanel({ actions, LinkComponent, className }: QuickActionsPanelProps) {
   if (actions.length === 0) return null
@@ -49,17 +72,15 @@ export function QuickActionsPanel({ actions, LinkComponent, className }: QuickAc
     React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; className?: string }
   >
 
+  const cardClassName =
+    "flex items-start gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 text-left shadow-[var(--shadow-2xs)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-[var(--shadow-2xs)]"
+
   return (
     <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2", className)}>
       {actions.map((action, index) => {
-        const linkProps = LinkComponent ? { to: action.href } : { href: action.href }
         const color = action.color ?? paletteColorAtIndex(index)
-        return (
-          <LinkEl
-            key={action.href + action.label}
-            {...linkProps}
-            className="flex items-start gap-3 rounded-[var(--radius-xl)] border border-border bg-card p-4 text-left shadow-[var(--shadow-2xs)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-          >
+        const content = (
+          <>
             <div
               className="flex size-9 flex-shrink-0 items-center justify-center rounded-lg"
               style={{ background: `color-mix(in oklch, ${color} 15%, transparent)`, color }}
@@ -72,6 +93,27 @@ export function QuickActionsPanel({ actions, LinkComponent, className }: QuickAc
                 {action.description}
               </div>
             </div>
+          </>
+        )
+
+        if (!action.href) {
+          return (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              disabled={action.disabled}
+              className={cardClassName}
+            >
+              {content}
+            </button>
+          )
+        }
+
+        const linkProps = LinkComponent ? { to: action.href } : { href: action.href }
+        return (
+          <LinkEl key={action.href + action.label} {...linkProps} className={cardClassName}>
+            {content}
           </LinkEl>
         )
       })}
