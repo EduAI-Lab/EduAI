@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { QuickActionsPanel, type QuickAction } from "../quick-actions-panel";
 
@@ -44,5 +44,31 @@ describe("QuickActionsPanel", () => {
   it("renders nothing when there are no actions", () => {
     const { container } = render(<QuickActionsPanel actions={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders an onClick action as a <button> and fires the callback", () => {
+    const onClick = vi.fn();
+    render(
+      <QuickActionsPanel
+        actions={[{ label: "Open modal", description: "In-page action", onClick, icon: <span>*</span> }]}
+      />,
+    );
+    const button = screen.getByText("Open modal").closest("button") as HTMLButtonElement;
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the button and suppresses its callback when disabled", () => {
+    const onClick = vi.fn();
+    render(
+      <QuickActionsPanel
+        actions={[{ label: "Locked", description: "Not yet", onClick, icon: <span>*</span>, disabled: true }]}
+      />,
+    );
+    const button = screen.getByText("Locked").closest("button") as HTMLButtonElement;
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });
