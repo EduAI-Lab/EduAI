@@ -6,10 +6,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 import { auth } from '~/lib/auth/server'
 import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
-import { CoursesAdminView } from '~/components/courses/courses-admin-view'
-import { CoursesUnitAdminView } from '~/components/courses/courses-unit-admin-view'
-import { CoursesInstructorView } from '~/components/courses/courses-instructor-view'
-import { CoursesMixedView } from '~/components/courses/courses-mixed-view'
+import { CoursesView, type CoursesRole } from '~/components/courses/courses-view'
 import { useCourses } from '~/hooks/api/use-courses'
 import {
   Breadcrumb,
@@ -77,6 +74,16 @@ export default function CoursesPage() {
   // TA is a course-level enrollment role, not a platform role (#499).
   const isTA = taCourseIds.length > 0
 
+  // Effective role drives which config/branch of the single CoursesView renders
+  // (#1087 Group A) — order matters and mirrors the old ternary dispatch.
+  const effectiveRole: CoursesRole = isAdmin
+    ? 'admin'
+    : isUnitAdmin
+      ? 'unit-admin'
+      : isInstructor
+        ? 'instructor'
+        : 'mixed'
+
   const [pendingPublish, setPendingPublish] = useState<{
     id: string
     publish: boolean
@@ -125,8 +132,9 @@ export default function CoursesPage() {
             </button>
           </div>
         )}
-        {isAdmin ? (
-          <CoursesAdminView
+        {effectiveRole === 'admin' ? (
+          <CoursesView
+            role="admin"
             courses={courses}
             instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
@@ -134,8 +142,10 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggleRequest}
           />
-        ) : isUnitAdmin ? (
-          <CoursesUnitAdminView
+        ) : effectiveRole === 'unit-admin' ? (
+          <CoursesView
+            role="unit-admin"
+            // Unit-admin scoping stays here in the route/dispatch, not the view.
             courses={courses.filter(
               (c) => c.department !== null && authorizedUnits.includes(c.department)
             )}
@@ -146,8 +156,9 @@ export default function CoursesPage() {
             onDeleteCourse={async (id) => { await deleteCourse(id) }}
             onPublishToggle={handlePublishToggleRequest}
           />
-        ) : isInstructor ? (
-          <CoursesInstructorView
+        ) : effectiveRole === 'instructor' ? (
+          <CoursesView
+            role="instructor"
             courses={courses}
             onCreateCourse={async (data) => { await createCourse(data) }}
             onEditCourse={async (id, data) => { await updateCourse(id, data) }}
@@ -155,7 +166,8 @@ export default function CoursesPage() {
             onPublishToggle={handlePublishToggleRequest}
           />
         ) : (
-          <CoursesMixedView
+          <CoursesView
+            role="mixed"
             courses={courses}
             taCourseIds={taCourseIds}
             enrolledCourseIds={enrolledCourseIds}
