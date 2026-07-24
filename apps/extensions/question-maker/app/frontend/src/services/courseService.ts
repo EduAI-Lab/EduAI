@@ -7,33 +7,43 @@ import { Course, CourseCreate } from '../types/question';
 import { Topic } from '../types/topic';
 import type { QmCourseAccess } from '@/lib/rbac';
 
-/** One bounded page of courses for surfaces that read the whole set client-side
- * (the course selector does its own search/filter/term-grouping over `courses`,
- * so it can't take a server pager without a server-search refactor — #1044). */
+/** Server page size for course reads. Matches `MAX_PAGE_SIZE` in the backend's
+ * `utils/pagination.js` — asking for more is clamped there, so this is the
+ * fewest roundtrips the whole-set read can make. */
 const COURSE_LIST_PAGE_SIZE = 200;
+
+/** Fetches one server page of courses with pagination metadata (#1044). */
+async function fetchCoursesPage(
+    page: number,
+    pageSize: number = COURSE_LIST_PAGE_SIZE,
+): Promise<Paginated<Course>> {
+    const response = await api.get('/api/course', { params: { page, pageSize } });
+    return response.data;
+}
 
 export const courseService = {
     /**
-     * Fetches courses visible to the caller (role-scoped on the server).
-     * The list endpoint requires pagination (#1044); this convenience form asks
-     * for a single bounded page so client-side search/filter keeps the whole
-     * set. Use `getCoursesPage` for an explicitly paged view.
+     * Fetches every course visible to the caller (role-scoped on the server).
+     *
+     * The list endpoint requires pagination (#1044) and clamps `pageSize` to
+     * 200, so this walks pages until `total` is covered. It has to return the
+     * whole set: the course selector does its own search/filter/term-grouping
+     * client-side over `courses`, and an ADMIN's list is Core's entire catalog,
+     * which routinely exceeds one page. Use `getCoursesPage` for a paged view.
      */
     async getCourses(): Promise<Course[]> {
-        const response = await api.get('/api/course', {
-            params: { page: 1, pageSize: COURSE_LIST_PAGE_SIZE },
-        });
-        return response.data.data;
+        const courses: Course[] = [];
+        for (let page = 1; ; page++) {
+            const { data, total } = await fetchCoursesPage(page, COURSE_LIST_PAGE_SIZE);
+            courses.push(...data);
+            // Stop on a short page too, so a shrinking list mid-walk can't loop.
+            if (courses.length >= total || data.length < COURSE_LIST_PAGE_SIZE) break;
+        }
+        return courses;
     },
 
     /** Fetches one server page of courses with pagination metadata (#1044). */
-    async getCoursesPage(
-        page: number,
-        pageSize: number = COURSE_LIST_PAGE_SIZE,
-    ): Promise<Paginated<Course>> {
-        const response = await api.get('/api/course', { params: { page, pageSize } });
-        return response.data;
-    },
+    getCoursesPage: fetchCoursesPage,
 
     /** Gets a single course by ID. */
     async getCourse(id: number): Promise<Course> {

@@ -3,6 +3,7 @@
  * Provides a 404 generator for unknown routes and a centralized formatter/logger for unexpected failures.
  */
 import { logger } from '../utils/logger.js';
+import { PaginationError } from '../utils/pagination.js';
 
 /** Creates a 404 error for unmatched routes so the main handler can respond consistently. */
 export const notFound = (req, res, next) => {
@@ -84,10 +85,13 @@ export const errorHandler = (err, req, res, next) => {
   res.status(error.status || 500).json({
     success: false,
     error: error.message || 'Server Error',
+    // `PaginationError`'s code surfaces so clients can branch on it. Gated on
+    // the error type rather than on `error.code` being present: transport
+    // failures (`ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT` from the Core fetch
+    // paths) also carry `code`, and leaking those would both expose internal
+    // infrastructure detail and clobber the semantic `body.error` code below.
+    ...(err instanceof PaginationError ? { code: err.code } : {}),
     ...(error.body?.error ? { code: error.body.error } : {}),
-    // Coded errors (e.g. PaginationError's PAGINATION_REQUIRED) surface `code`
-    // so clients can branch on it; wins over the legacy body.error mapping.
-    ...(error.code ? { code: error.code } : {}),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

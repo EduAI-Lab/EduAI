@@ -6,14 +6,17 @@
  * is presentational and holds no state of its own. Renders nothing when there
  * is only a single page.
  *
- * Mirrors ai-tutor's `PaginationControls` (#1043): button-based (client-side
- * page swaps, not `href` routing) on the shared `@eduai/ui` `Button` and the
- * tabler icons the rest of QM already uses.
+ * Built on `@eduai/ui`'s shared `Pagination`/`PaginationContent`/`PaginationItem`
+ * shell so QM's pager doesn't drift from the other apps'. The prev/next controls
+ * stay `Button`s rather than the package's `PaginationPrevious`/`PaginationNext`:
+ * those render bare `<a>` elements, which aren't focusable without an `href` and
+ * have no disabled state — wrong for a callback-driven pager that must disable
+ * at the ends. Mirrors ai-tutor's `PaginationControls` (#1043).
  *
  * Related: `services/api.ts` (`Paginated<T>`), `services/courseService.ts`
  * (`getCoursesPage`).
  */
-import { Button } from '@eduai/ui';
+import { Button, Pagination, PaginationContent, PaginationItem } from '@eduai/ui';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 
 export type PaginationControlsProps = {
@@ -49,38 +52,39 @@ export function PaginationControls({
   const rangeEnd = Math.min(clampedPage * pageSize, total);
 
   return (
-    <nav
-      className="flex items-center justify-between gap-4 pt-2"
-      aria-label="Pagination"
-    >
+    <Pagination className="mx-0 w-full items-center justify-between gap-4 pt-2">
       <p className="text-sm text-muted-foreground">
         Showing {rangeStart}–{rangeEnd} of {total}
       </p>
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || !canPrev}
-          onClick={() => onPageChange(clampedPage - 1)}
-        >
-          <IconChevronLeft size={16} aria-hidden="true" />
-          Previous
-        </Button>
-        <span className="text-sm text-muted-foreground" aria-current="page">
+      <PaginationContent>
+        <PaginationItem>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || !canPrev}
+            onClick={() => onPageChange(clampedPage - 1)}
+          >
+            <IconChevronLeft size={16} aria-hidden="true" />
+            Previous
+          </Button>
+        </PaginationItem>
+        <PaginationItem className="px-2 text-sm text-muted-foreground">
           Page {clampedPage} of {pageCount}
-        </span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || !canNext}
-          onClick={() => onPageChange(clampedPage + 1)}
-        >
-          Next
-          <IconChevronRight size={16} aria-hidden="true" />
-        </Button>
-      </div>
-    </nav>
+        </PaginationItem>
+        <PaginationItem>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || !canNext}
+            onClick={() => onPageChange(clampedPage + 1)}
+          >
+            Next
+            <IconChevronRight size={16} aria-hidden="true" />
+          </Button>
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
   );
 }

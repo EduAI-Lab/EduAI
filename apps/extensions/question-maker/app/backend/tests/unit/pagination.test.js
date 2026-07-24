@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_PAGE_SIZE,
   PaginationError,
+  pageOf,
   paginated,
   parsePaginationParams,
 } from '../../src/utils/pagination.js';
@@ -19,7 +20,13 @@ const req = (query = {}) => ({ query });
 describe('parsePaginationParams — required mode (default)', () => {
   it('parses valid page/pageSize into limit/offset', () => {
     const r = parsePaginationParams(req({ page: '3', pageSize: '20' }));
-    expect(r).toEqual({ page: 3, pageSize: 20, limit: 20, offset: 40 });
+    expect(r).toEqual({
+      page: 3,
+      pageSize: 20,
+      limit: 20,
+      offset: 40,
+      explicit: true,
+    });
   });
 
   it('throws PAGINATION_REQUIRED when page is missing', () => {
@@ -91,7 +98,13 @@ describe('parsePaginationParams — clamping', () => {
 describe('parsePaginationParams — optional mode', () => {
   it('defaults to page 1 at defaultPageSize when params absent', () => {
     const r = parsePaginationParams(req({}), { required: false });
-    expect(r).toEqual({ page: 1, pageSize: 25, limit: 25, offset: 0 });
+    expect(r).toEqual({
+      page: 1,
+      pageSize: 25,
+      limit: 25,
+      offset: 0,
+      explicit: false,
+    });
   });
 
   it('honours a custom defaultPageSize', () => {
@@ -106,7 +119,13 @@ describe('parsePaginationParams — optional mode', () => {
     const r = parsePaginationParams(req({ page: '2', pageSize: '30' }), {
       required: false,
     });
-    expect(r).toEqual({ page: 2, pageSize: 30, limit: 30, offset: 30 });
+    expect(r).toEqual({
+      page: 2,
+      pageSize: 30,
+      limit: 30,
+      offset: 30,
+      explicit: true,
+    });
   });
 
   it('falls back to defaults for non-numeric params (no throw)', () => {
@@ -115,6 +134,49 @@ describe('parsePaginationParams — optional mode', () => {
     });
     expect(r.page).toBe(1);
     expect(r.pageSize).toBe(25);
+  });
+});
+
+describe('parsePaginationParams — page upper bound', () => {
+  it('clamps an unbounded page so the offset stays in bigint range', () => {
+    // Un-clamped this yields OFFSET 2e+22, which Postgres rejects — the client
+    // would get a 500 instead of an empty page.
+    const r = parsePaginationParams(req({ page: '1e20' }), { required: false });
+    expect(Number.isSafeInteger(r.offset)).toBe(true);
+    expect(r.page).toBe(1_000_000);
+  });
+});
+
+describe('pageOf', () => {
+  const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
+
+  it('returns the whole set when the caller sent no page params', () => {
+    const p = parsePaginationParams(req({}), { required: false, defaultPageSize: 2 });
+    expect(pageOf(rows, p)).toEqual({
+      success: true,
+      data: rows,
+      total: 5,
+      page: 1,
+      pageSize: 5,
+    });
+  });
+
+  it('slices the requested window and still reports the full total', () => {
+    const p = parsePaginationParams(req({ page: '2', pageSize: '2' }), {
+      required: false,
+    });
+    expect(pageOf(rows, p)).toEqual({
+      success: true,
+      data: [{ id: 3 }, { id: 4 }],
+      total: 5,
+      page: 2,
+      pageSize: 2,
+    });
+  });
+
+  it('reports pageSize 1 for an empty unpaged set rather than 0', () => {
+    const p = parsePaginationParams(req({}), { required: false });
+    expect(pageOf([], p)).toMatchObject({ data: [], total: 0, pageSize: 1 });
   });
 });
 
