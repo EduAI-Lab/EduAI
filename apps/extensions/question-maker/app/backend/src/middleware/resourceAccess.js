@@ -9,14 +9,14 @@
  * insufficient access, then attaches the resource, `req.qmCourse`, and
  * `req.courseAccess` for downstream handlers.
  */
-import { Variants, Question_Metadata, Assessments, Course } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { resolveAccessForCourse, minRank } from './courseAccess.js';
 
 /**
  * Parse a route id into a positive integer, or null when it isn't one. The schema PKs
- * are INTEGER, so a non-numeric id (`Number('abc')` → NaN) must never reach the query —
- * Postgres rejects NaN with `invalid input syntax for type integer`, which errorHandler
- * leaks as a 500. A null here makes the guard 404 (resource not found), mirroring
+ * are INTEGER, so a non-numeric id must never reach the query — Prisma throws a
+ * validation error on a non-integer `where.id`, which errorHandler leaks as a 500.
+ * A null here makes the guard 404 (resource not found), mirroring
  * `courseAccess.resolveCourseAccessWithCourse`.
  */
 function parseResourceId(raw) {
@@ -52,26 +52,27 @@ function makeGuard({ min, attachAs, loader }) {
   };
 }
 
-const variantInclude = {
-  model: Question_Metadata,
-  as: 'questionMetadata',
-  include: [{ model: Course, as: 'course' }],
-};
+/** Builds a loader that fetches a resource by id and extracts its owning course via `getCourse`. */
+function resourceLoader(delegate, include, getCourse, param) {
+  return async (req) => {
+    const id = parseResourceId(req.params[param]);
+    if (id === null) return null;
+    const resource = await delegate.findUnique({ where: { id }, include });
+    return { resource, course: getCourse(resource) };
+  };
+}
 
 /** Gate a variant route (`:variantId`); attaches `req.variant`. */
 export function requireVariantAccess({ min } = { min: 'ta' }) {
   return makeGuard({
     min,
     attachAs: 'variant',
-    loader: async (req) => {
-      const id = parseResourceId(req.params.variantId);
-      if (id === null) return null;
-      const variant = await Variants.findOne({
-        where: { id },
-        include: [variantInclude],
-      });
-      return { resource: variant, course: variant?.questionMetadata?.course };
-    },
+    loader: resourceLoader(
+      prisma.variants,
+      { questionMetadata: { include: { course: true } } },
+      (variant) => variant?.questionMetadata?.course,
+      'variantId'
+    ),
   });
 }
 
@@ -80,15 +81,7 @@ export function requireQuestionAccess({ min = 'ta', param = 'id' } = {}) {
   return makeGuard({
     min,
     attachAs: 'question',
-    loader: async (req) => {
-      const id = parseResourceId(req.params[param]);
-      if (id === null) return null;
-      const question = await Question_Metadata.findOne({
-        where: { id },
-        include: [{ model: Course, as: 'course' }],
-      });
-      return { resource: question, course: question?.course };
-    },
+    loader: resourceLoader(prisma.questionMetadata, { course: true }, (question) => question?.course, param),
   });
 }
 
@@ -101,14 +94,6 @@ export function requireAssessmentAccess({ min, param = 'id' } = {}) {
   return makeGuard({
     min,
     attachAs: 'assessment',
-    loader: async (req) => {
-      const id = parseResourceId(req.params[param]);
-      if (id === null) return null;
-      const assessment = await Assessments.findOne({
-        where: { id },
-        include: [{ model: Course, as: 'course' }],
-      });
-      return { resource: assessment, course: assessment?.course };
-    },
+    loader: resourceLoader(prisma.assessments, { course: true }, (assessment) => assessment?.course, param),
   });
 }
