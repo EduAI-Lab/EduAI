@@ -97,7 +97,10 @@ export type EnrolledStudent = AdminUser & {
 export type AdminEnrollmentData = {
   courseId: number;
   enrolledStudents: EnrolledStudent[];
+  /** One page of Core's STUDENT list, minus anyone already enrolled (#1041). */
   availableStudents: AdminUser[];
+  /** Paging state for `availableStudents`; `total` counts Core's STUDENT matches. */
+  availableStudentsPage: { total: number; page: number; pageSize: number };
 };
 
 export type BugReportStatus = 'unhandled' | 'in progress' | 'resolved';

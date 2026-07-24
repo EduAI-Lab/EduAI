@@ -9,7 +9,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [monorepo] perf!: Core's `/api/users`, `/api/courses`, `/api/ai-models`, and `/api/ai-providers` are now server-paginated with required `page`/`pageSize` and a unified `{ data, total, page, pageSize }` envelope (plus `?ids=`/`?search=` lookups), and every reader in Core, AI Tutor, Question Maker, and the example extension is migrated. (#1041, #1125, @mochi_21, 2026-07-20) — [#1129](https://github.com/EduAI-Lab/EduAI/pull/1129)
+- [monorepo] perf!: Core's `/api/users`, `/api/courses`, `/api/ai-models`, and `/api/ai-providers` are now server-paginated with required `page`/`pageSize` and a unified `{ data, total, page, pageSize }` envelope (plus `?ids=`/`?search=` lookups), and every reader in Core, AI Tutor, Question Maker, and the example extension is migrated — the course switcher, command palette, and AI Tutor's add-student picker search Core server-side so they stay reachable past the first page. (#1041, #1125, #1143, @mochi_21, 2026-07-20) — [#1129](https://github.com/EduAI-Lab/EduAI/pull/1129)
 
 ### Fixed
 

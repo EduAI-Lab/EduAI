@@ -36,6 +36,7 @@ import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/cour
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
 import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
+  CORE_PAGE_SIZE,
   deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
@@ -116,11 +117,17 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
  * GET /admin/courses/:courseId/enrollments — list enrolled + addable students.
  *
  * Auth: ADMIN.
- * Returns: `{ courseId, enrolledStudents, availableStudents }`.
+ * Returns: `{ courseId, enrolledStudents, availableStudents, availableStudentsPage }`.
  *
  * Why: bundles both lists in one response so the admin enrollment editor can
  * render add/remove pickers without a second roundtrip; `availableStudents`
  * excludes anyone already enrolled.
+ *
+ * `availableStudents` is a page of Core's STUDENT list, driven by `?search=`,
+ * `?page=`, and `?pageSize=` (#1041). Before pagination the picker read Core's
+ * whole user table and filtered client-side, so it must stay reachable past the
+ * first page — the caller narrows with `search` or walks `page`, and
+ * `availableStudentsPage.total` says how many students matched.
  */
 router.get(
   '/admin/courses/:courseId/enrollments',
@@ -131,6 +138,15 @@ router.get(
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: 'Invalid course id' });
     }
+
+    const studentSearch = (req.query.search ?? '').toString().trim() || undefined;
+    const requestedPage = Number.parseInt(req.query.page, 10);
+    const studentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const requestedPageSize = Number.parseInt(req.query.pageSize, 10);
+    const studentPageSize =
+      Number.isFinite(requestedPageSize) && requestedPageSize > 0
+        ? Math.min(requestedPageSize, CORE_PAGE_SIZE)
+        : CORE_PAGE_SIZE;
 
     try {
       const course = await prisma.courseOffering.findUnique({
@@ -165,16 +181,22 @@ router.get(
       const enrolledUserIds = new Set(course.enrollments.map((e) => e.userId));
       let coreUserMap = new Map();
       let availableStudents = [];
+      let availableStudentsPage = { total: 0, page: studentPage, pageSize: studentPageSize };
 
       try {
         const cookie = req.headers.cookie ?? '';
         // #1041/#1125: two targeted reads instead of one full-table fetch —
         // an `?ids=` lookup for the enrolled users' display names, and a
-        // role-scoped page for the "add a student" picker.
+        // searchable, role-scoped page for the "add a student" picker.
         const enrolledIds = [...enrolledUserIds];
         const [enrolledEnvelope, studentEnvelope] = await Promise.all([
           listCoreAdminUsers(cookie, { ids: enrolledIds }),
-          listCoreAdminUsers(cookie, { role: 'STUDENT', page: 1, pageSize: 200 }),
+          listCoreAdminUsers(cookie, {
+            role: 'STUDENT',
+            search: studentSearch,
+            page: studentPage,
+            pageSize: studentPageSize,
+          }),
         ]);
         for (const user of (enrolledEnvelope?.data ?? []).map(mapCoreAdminUser)) {
           coreUserMap.set(user.id, { name: user.name, email: user.email });
@@ -183,6 +205,14 @@ router.get(
           .map(mapCoreAdminUser)
           .filter((user) => !enrolledUserIds.has(user.id))
           .toSorted((a, b) => a.name.localeCompare(b.name));
+        // `total` counts Core's STUDENT matches before the already-enrolled
+        // filter above, so the caller can tell "no more pages" from "this page
+        // was all enrolled already".
+        availableStudentsPage = {
+          total: studentEnvelope?.total ?? availableStudents.length,
+          page: studentEnvelope?.page ?? studentPage,
+          pageSize: studentEnvelope?.pageSize ?? studentPageSize,
+        };
       } catch (err) {
         console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
       }
@@ -203,6 +233,7 @@ router.get(
             };
           }),
         availableStudents,
+        availableStudentsPage,
       });
     } catch (e) {
       res.status(500).json({ error: String(e) });
