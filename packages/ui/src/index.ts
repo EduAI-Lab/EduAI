@@ -28,8 +28,14 @@ export {
 export type { CourseAccentColor } from "./course-theme"
 export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
+export { EmptyState } from "./empty-state"
+export type { EmptyStateProps } from "./empty-state"
+export { MaterialList } from "./material-list"
+export type { MaterialListProps, MaterialListItem } from "./material-list"
 export { QuickActionsPanel } from "./quick-actions-panel"
 export type { QuickActionsPanelProps, QuickAction } from "./quick-actions-panel"
+export { SortableProvider, SortableItem, DragHandle } from "./sortable"
+export type { SortableProviderProps, SortableItemProps, DragHandleProps } from "./sortable"
 export { Avatar } from "./avatar"
 export type { AvatarProps } from "./avatar"
 export { PageHeading } from "./page-heading"
@@ -38,6 +44,10 @@ export { PageLoader } from "./page-loader"
 export type { PageLoaderProps } from "./page-loader"
 export { CourseHeroCard } from "./course-hero-card"
 export type { CourseHeroCardProps } from "./course-hero-card"
+export { CourseTopicsHeroAction } from "./course-topics-hero-action"
+export type { CourseTopicsHeroActionProps } from "./course-topics-hero-action"
+export { HeroShell, HERO_GLASS_STYLE } from "./hero-shell"
+export type { HeroShellProps } from "./hero-shell"
 export { CourseCard } from "./course-card"
 export type { CourseCardProps, CourseCardAction } from "./course-card"
 export {
@@ -61,6 +71,12 @@ export type {
 } from "./question-card"
 export { AnswerOption } from "./answer-option"
 export type { AnswerOptionProps, AnswerOptionState } from "./answer-option"
+export { MaterialStatusIcon, MaterialStatusChip } from "./material-status"
+export type {
+  MaterialStatus,
+  MaterialStatusIconProps,
+  MaterialStatusChipProps,
+} from "./material-status"
 export { StatusBadge } from "./status-badge"
 export type { StatusBadgeProps } from "./status-badge"
 export { QuestionStatusBadge, questionStatus } from "./question-status-badge"
@@ -116,6 +132,7 @@ export {
   TERM_CODES,
   isTermCode,
   termFromMonth,
+  termFromDate,
   termInfoFromDate,
   normalizeTerm,
   termName,
@@ -205,3 +222,5 @@ export * from "./ui/message"
 export { useIsMobile } from "./hooks/use-mobile"
 export { Combobox, MultiSelect } from "./ui/combobox"
 export type { ComboboxOption, ComboboxProps, MultiSelectProps } from "./ui/combobox"
+export { DetailPageScaffold } from "./detail-page-scaffold"
+export type { DetailPageScaffoldProps } from "./detail-page-scaffold"

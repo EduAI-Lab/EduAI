@@ -5,6 +5,7 @@ import {
   groupCoursesByTerm,
   isTermCode,
   normalizeTerm,
+  termFromDate,
   termFromMonth,
   termInfoFromDate,
   termLabel,
@@ -13,6 +14,7 @@ import {
   termSortKey,
   TERM_CODES,
 } from "../lib/term";
+import { UBC_TERM_BOUNDARY_CASES } from "./fixtures/term-boundary-fixtures";
 
 describe("term codes", () => {
   it("exposes the four UBC codes", () => {
@@ -35,6 +37,15 @@ describe("termFromMonth", () => {
     expect(termFromMonth(4)).toBe("S1"); // May
     expect(termFromMonth(6)).toBe("S2"); // Jul
   });
+});
+
+describe("termFromDate", () => {
+  it.each(UBC_TERM_BOUNDARY_CASES)(
+    "maps %s to %s in America/Vancouver, not UTC (#1010)",
+    (iso, expected) => {
+      expect(termFromDate(new Date(iso))).toBe(expected);
+    },
+  );
 });
 
 describe("termInfoFromDate", () => {
@@ -63,6 +74,21 @@ describe("normalizeTerm", () => {
     expect(normalizeTerm("Fall", "2026-09-05")).toBe("W1");
     // Date wins even if the string disagrees.
     expect(normalizeTerm("Summer", "2026-01-10")).toBe("W2");
+  });
+
+  it("buckets a midnight-UTC month-boundary start date by Vancouver time, not UTC", () => {
+    // 2026-09-01T00:00:00Z is still 2026-08-31 evening in Vancouver (S2),
+    // not September (W1) — the exact divergence fixed in #1010.
+    expect(normalizeTerm(null, "2026-09-01T00:00:00Z")).toBe("S2");
+  });
+
+  it("reads a bare calendar date (e.g. from <input type=\"date\">) as-is, not as a UTC instant", () => {
+    // Unlike a full ISO instant, "2026-09-01" names a calendar day with no
+    // attached time. Parsing it as UTC midnight and reprojecting through the
+    // Vancouver offset would shift it back to Aug 31 (S2) — wrong for a date
+    // that plainly means September 1st (W1).
+    expect(normalizeTerm(null, "2026-09-01")).toBe("W1");
+    expect(normalizeTerm(null, "2026-05-01")).toBe("S1");
   });
 
   it("passes through canonical codes", () => {
@@ -141,6 +167,29 @@ describe("ordering", () => {
     ];
     const sorted = [...courses].sort(compareByTerm).map((c) => c.id);
     expect(sorted).toEqual(["w2", "w1", "s2", "s1"]); // most recent first
+  });
+});
+
+describe("termSortKey with a date-only startDate string (#1087 regression)", () => {
+  it("derives term/year from the string itself, matching termInfoFromDate's local-Date attribution, regardless of runtime timezone", () => {
+    const fromString = termSortKey({ term: "Fall", year: 2025, startDate: "2025-09-01" });
+    // new Date(2025, 8, 15) is constructed in LOCAL time, deliberately avoiding
+    // any UTC-midnight shift — this must land in the same W1 2025 bucket.
+    const fromLocalDate = termSortKey(termInfoFromDate(new Date(2025, 8, 15)));
+    expect(fromString).toBe(fromLocalDate);
+  });
+
+  it("does not let a mismatched term/year field override the date-only string", () => {
+    // term/year say something else entirely; the startDate string must win.
+    const key = termSortKey({ term: "S1", year: 1999, startDate: "2025-09-01" });
+    const expected = termSortKey(termInfoFromDate(new Date(2025, 8, 15)));
+    expect(key).toBe(expected);
+  });
+
+  it("attributes a Jan-dated string to the previous academic year's W2", () => {
+    const key = termSortKey({ term: "ignored", year: 9999, startDate: "2026-01-01" });
+    const expected = termSortKey({ term: "W2", year: 2025 });
+    expect(key).toBe(expected);
   });
 });
 

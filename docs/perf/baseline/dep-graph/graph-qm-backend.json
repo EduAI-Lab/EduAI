@@ -1,0 +1,271 @@
+{
+  "../scripts/seedData.js": [],
+  "app.js": [
+    "config/settings.js",
+    "middleware/errorHandler.js",
+    "routes/assessmentVariant.js",
+    "routes/assessments.js",
+    "routes/auth.js",
+    "routes/bug-reports.js",
+    "routes/canvas.js",
+    "routes/course.js",
+    "routes/eduai.js",
+    "routes/internal.js",
+    "routes/questions.js",
+    "routes/topics.js",
+    "routes/variants.js",
+    "schema/index.js",
+    "utils/logger.js"
+  ],
+  "config/database.js": [
+    "utils/logger.js"
+  ],
+  "config/settings.js": [],
+  "index.js": [
+    "app.js",
+    "config/database.js",
+    "config/settings.js",
+    "jobs/scheduler.js",
+    "utils/logger.js"
+  ],
+  "jobs/reconcile.js": [
+    "schema/index.js",
+    "services/coreApiService.js",
+    "utils/logger.js"
+  ],
+  "jobs/scheduler.js": [
+    "jobs/reconcile.js",
+    "utils/logger.js"
+  ],
+  "middleware/auth.js": [
+    "middleware/roles.js",
+    "services/authService.js"
+  ],
+  "middleware/courseAccess.js": [
+    "schema/index.js",
+    "services/coreApiService.js"
+  ],
+  "middleware/errorHandler.js": [
+    "utils/logger.js"
+  ],
+  "middleware/resourceAccess.js": [
+    "middleware/courseAccess.js",
+    "schema/index.js"
+  ],
+  "middleware/roles.js": [],
+  "middleware/serviceAuth.js": [
+    "config/settings.js"
+  ],
+  "routes/assessmentVariant.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/resourceAccess.js",
+    "middleware/roles.js",
+    "services/assessmentVariantService.js"
+  ],
+  "routes/assessments.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/resourceAccess.js",
+    "middleware/roles.js",
+    "services/assessmentSectionService.js",
+    "services/assessmentService.js"
+  ],
+  "routes/auth.js": [
+    "config/settings.js",
+    "middleware/auth.js",
+    "services/coreApiService.js"
+  ],
+  "routes/bug-reports.js": [
+    "config/settings.js",
+    "middleware/auth.js"
+  ],
+  "routes/canvas.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/resourceAccess.js",
+    "middleware/roles.js",
+    "schema/index.js",
+    "services/canvasService.js"
+  ],
+  "routes/course.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "schema/index.js",
+    "services/coreApiService.js",
+    "services/coreCourseLinkService.js",
+    "services/courseListService.js",
+    "services/importTaughtCoursesService.js",
+    "services/topicSyncService.js",
+    "utils/logger.js"
+  ],
+  "routes/eduai.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/roles.js",
+    "schema/Course.js",
+    "services/courseCodeUtils.js",
+    "services/eduaiService.js"
+  ],
+  "routes/internal.js": [
+    "middleware/serviceAuth.js",
+    "schema/index.js",
+    "utils/logger.js"
+  ],
+  "routes/questions.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/resourceAccess.js",
+    "middleware/roles.js",
+    "schema/index.js",
+    "services/aiService.js",
+    "services/questionService.js"
+  ],
+  "routes/topics.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "schema/index.js",
+    "services/coreApiService.js"
+  ],
+  "routes/variants.js": [
+    "middleware/auth.js",
+    "middleware/courseAccess.js",
+    "middleware/resourceAccess.js",
+    "middleware/roles.js",
+    "schema/index.js",
+    "services/coreApiService.js",
+    "services/coreWiringService.js",
+    "services/questionService.js",
+    "utils/logger.js"
+  ],
+  "schema/AssessmentSections.js": [
+    "config/database.js"
+  ],
+  "schema/Assessments.js": [
+    "config/database.js"
+  ],
+  "schema/CanvasCourseMapping.js": [
+    "config/database.js"
+  ],
+  "schema/CanvasIntegration.js": [
+    "config/database.js",
+    "utils/encryption.js"
+  ],
+  "schema/Course.js": [
+    "config/database.js"
+  ],
+  "schema/Question_Metadata.js": [
+    "config/database.js"
+  ],
+  "schema/SectionVariants.js": [
+    "config/database.js"
+  ],
+  "schema/Topics.js": [
+    "config/database.js"
+  ],
+  "schema/User.js": [
+    "config/database.js"
+  ],
+  "schema/VariantSelectionCursor.js": [
+    "config/database.js"
+  ],
+  "schema/Variants.js": [
+    "config/database.js"
+  ],
+  "schema/index.js": [
+    "config/database.js",
+    "schema/AssessmentSections.js",
+    "schema/Assessments.js",
+    "schema/CanvasCourseMapping.js",
+    "schema/CanvasIntegration.js",
+    "schema/Course.js",
+    "schema/Question_Metadata.js",
+    "schema/SectionVariants.js",
+    "schema/Topics.js",
+    "schema/User.js",
+    "schema/VariantSelectionCursor.js",
+    "schema/Variants.js"
+  ],
+  "services/aiService.js": [
+    "config/settings.js",
+    "schema/index.js",
+    "services/eduaiService.js",
+    "services/extractionUtils.js"
+  ],
+  "services/assessmentSectionService.js": [
+    "schema/index.js"
+  ],
+  "services/assessmentService.js": [
+    "schema/index.js"
+  ],
+  "services/assessmentVariantMetadataScoring.js": [],
+  "services/assessmentVariantService.js": [
+    "config/database.js",
+    "schema/index.js",
+    "services/assessmentVariantMetadataScoring.js",
+    "services/assessmentVariantUtils.js",
+    "services/eduaiService.js"
+  ],
+  "services/assessmentVariantUtils.js": [
+    "schema/index.js"
+  ],
+  "services/authService.js": [
+    "schema/index.js",
+    "services/seedNewUserService.js"
+  ],
+  "services/canvasService.js": [
+    "schema/index.js",
+    "services/assessmentSectionService.js",
+    "services/assessmentService.js",
+    "services/questionService.js"
+  ],
+  "services/coreApiService.js": [
+    "config/settings.js",
+    "services/courseCodeUtils.js"
+  ],
+  "services/coreCourseLinkService.js": [
+    "services/coreApiService.js",
+    "utils/logger.js"
+  ],
+  "services/coreWiringService.js": [
+    "schema/index.js",
+    "services/coreApiService.js"
+  ],
+  "services/courseCodeUtils.js": [],
+  "services/courseListService.js": [
+    "middleware/courseAccess.js",
+    "schema/index.js",
+    "services/coreApiService.js",
+    "services/courseCodeUtils.js"
+  ],
+  "services/eduaiService.js": [
+    "config/settings.js",
+    "utils/logger.js"
+  ],
+  "services/extractionUtils.js": [],
+  "services/importTaughtCoursesService.js": [
+    "schema/index.js",
+    "services/assessmentService.js",
+    "services/coreApiService.js",
+    "services/courseCodeUtils.js",
+    "services/topicSyncService.js",
+    "utils/logger.js"
+  ],
+  "services/questionService.js": [
+    "schema/Course.js",
+    "schema/index.js"
+  ],
+  "services/seedNewUserService.js": [
+    "../scripts/seedData.js",
+    "schema/index.js"
+  ],
+  "services/topicSyncService.js": [
+    "schema/index.js",
+    "services/coreApiService.js",
+    "utils/logger.js"
+  ],
+  "utils/encryption.js": [
+    "config/settings.js"
+  ],
+  "utils/logger.js": []
+}

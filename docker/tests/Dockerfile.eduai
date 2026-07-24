@@ -35,8 +35,14 @@ COPY --from=deps /app/packages/types ./packages/types
 COPY packages/ui                 ./packages/ui/
 COPY apps/core/app               ./apps/core/app
 COPY apps/core/prisma            ./apps/core/prisma
+# Imported directly by the backfill-match unit test.
+COPY apps/core/scripts           ./apps/core/scripts
+# Imported directly by the rapl-util unit test.
+COPY tools/energy-meter          ./tools/energy-meter
 COPY apps/core/vitest.config.ts  ./apps/core/
 COPY apps/core/vitest.integration.config.ts ./apps/core/
+# Shared vitest options imported by both configs above.
+COPY apps/core/vitest.shared.ts  ./apps/core/
 COPY apps/core/vite.config.ts    ./apps/core/
 COPY apps/core/react-router.config.ts ./apps/core/
 COPY apps/core/tsconfig.json     ./apps/core/
