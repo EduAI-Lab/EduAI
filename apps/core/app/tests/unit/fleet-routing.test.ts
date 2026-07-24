@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetFleetHealthCache } from "~/lib/ai/routing/fleet/health";
+import {
+  invalidateFleetHealthCacheForUrl,
+  resetFleetHealthCache,
+} from "~/lib/ai/routing/fleet/health";
 import {
   fleetRoutingEnabled,
   resetFleetRegistryCache,
@@ -9,6 +12,7 @@ import {
   FleetUnavailableError,
   resetFleetRoundRobin,
   resolveFleetHost,
+  resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
 import {
   buildFleetRouterFeatures,
@@ -328,5 +332,85 @@ describe("resolveFleetHost", () => {
         resolvedModelId: "vllm:qwen2.5-7b-instruct",
       }),
     ).rejects.toBeInstanceOf(FleetUnavailableError);
+  });
+
+  it("excludes a failed server id on retry pick", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "qwen2.5-7b-instruct" }, { id: "qwen2.5-32b-instruct" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const pick = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      excludeServerIds: ["cmps01"],
+    });
+
+    expect(pick?.serverId).toBe("cmps02");
+    expect(pick?.reason).toBe("interactive-round-robin-retry");
+  });
+
+  it("resolveFleetHostAfterFailure invalidates and picks the other host", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS =
+      "http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "qwen2.5-7b-instruct" }, { id: "qwen2.5-32b-instruct" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const failed = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+    expect(failed?.serverId).toBe("cmps01");
+
+    invalidateFleetHealthCacheForUrl(failed!.baseUrl);
+    const next = await resolveFleetHostAfterFailure({
+      failedPick: failed!,
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      jobType: "interactive",
+    });
+
+    expect(next?.serverId).toBe("cmps02");
+    expect(next?.reason).toContain("retry");
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("resolveFleetHostAfterFailure returns null when no alternate host remains", async () => {
+    process.env.VLLM_FLEET_CHAT_URLS = "http://cmps01.ok.ubc.ca:8001";
+    resetFleetRegistryCache();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: "qwen2.5-7b-instruct" }] }), {
+        status: 200,
+      }),
+    );
+
+    const failed = await resolveFleetHost({
+      jobType: "interactive",
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+    });
+
+    const next = await resolveFleetHostAfterFailure({
+      failedPick: failed!,
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      jobType: "interactive",
+    });
+
+    expect(next).toBeNull();
   });
 });
