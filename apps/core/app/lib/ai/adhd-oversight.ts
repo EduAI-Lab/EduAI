@@ -7,6 +7,8 @@ import {
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
+  acknowledgesSessionTasksDone,
+  asksSessionTasksGoal,
   computeAdhdResponseMetrics,
   hasSessionTasksChecklist,
   isProfileStructuralPass,
@@ -283,6 +285,87 @@ export function applyNextLineAnchor(text: string): string | null {
   return `${body}\n\n**Next?** ${candidate}`;
 }
 
+const CHECKLIST_LINE_RE = /^(?:\d+\.|[-*])\s+(.+)$/gm;
+
+function cleanChecklistItemLabel(raw: string): string {
+  return raw
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^Start here:\s*/i, "")
+    .split(/[:.]/)[0]
+    .trim()
+    .slice(0, 60);
+}
+
+/** Pull up to 5 candidate task labels from the draft's own numbered/bulleted list. */
+function extractChecklistItemsFromDraft(draftText: string): string[] {
+  const items: string[] = [];
+  const re = new RegExp(CHECKLIST_LINE_RE);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(draftText)) !== null && items.length < 5) {
+    const label = cleanChecklistItemLabel(match[1]);
+    if (label) items.push(label);
+  }
+  return items;
+}
+
+function deriveGoalLabel(userText?: string): string {
+  const trimmed = (userText ?? "").trim();
+  if (!trimmed) return "Get started";
+  return trimmed.replace(/[.!?]+$/, "").split(/\s+/).slice(0, 8).join(" ");
+}
+
+function buildSessionTasksChecklist(items: string[]): string {
+  const capped = (items.length > 0 ? items : ["Get started"]).slice(0, 5);
+  const lines = capped.map((item, i) => `- [ ] ${item}${i === 0 ? " <- now" : ""}`);
+  return `**Session Tasks:**\n${lines.join("\n")}`;
+}
+
+/**
+ * Deterministic, hard-guarantee fallback for the Session Tasks BOOTSTRAP
+ * requirement (v2.0) — mirrors ensureDiagramBeforeNext's role for diagrams.
+ * Only reached when neither the model's draft nor the Dean's LLM rewrite
+ * added a checklist or asked the goal-setting question, on the first turn
+ * of a goal-setting message (relying on an LLM to fix its own omission is
+ * not a hard guarantee; this is). Derives items from the draft's own
+ * numbered/bulleted list when present so it never invents unrelated tasks;
+ * falls back to a single item paraphrased from the learner's own message.
+ */
+export function ensureSessionTasksBootstrap(text: string, userText?: string): string {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return trimmed;
+  if (hasSessionTasksChecklist(trimmed) || asksSessionTasksGoal(trimmed)) return trimmed;
+  const items = extractChecklistItemsFromDraft(trimmed);
+  const checklist = buildSessionTasksChecklist(
+    items.length > 0 ? items : [deriveGoalLabel(userText)],
+  );
+  return `${checklist}\n\n${trimmed}`;
+}
+
+/** Extract the "**Session Tasks:**" paragraph verbatim (through the next blank line). */
+function extractSessionTasksBlock(text: string | undefined): string | null {
+  const match = /\*\*Session Tasks:\*\*[\s\S]*?(?=\n\s*\n|$)/i.exec((text ?? "").trim());
+  return match ? match[0].trim() : null;
+}
+
+/**
+ * Deterministic, hard-guarantee fallback for Session Tasks CONTINUITY
+ * (v2.0) — carries the prior turn's checklist over verbatim when this
+ * draft silently dropped it and didn't say the goal is done. Best-effort
+ * (the carried-over list may be slightly stale) but never worse than
+ * showing nothing, which is the failure mode this closes.
+ */
+export function ensureSessionTasksContinuity(
+  text: string,
+  priorAssistantText?: string,
+): string {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return trimmed;
+  if (hasSessionTasksChecklist(trimmed) || acknowledgesSessionTasksDone(trimmed)) return trimmed;
+  const priorChecklist = extractSessionTasksBlock(priorAssistantText);
+  if (!priorChecklist) return trimmed;
+  return `${priorChecklist}\n\n${trimmed}`;
+}
+
 function profileStructuralScore(
   metrics: AdhdStructuralCompliance,
   profile: AdhdTurnProfile,
@@ -399,6 +482,7 @@ export async function auditAndMaybeRewrite(args: {
     priorHadSessionTasks,
   };
   const sessionTasksOk = isSessionTasksCompliant(trimmed, sessionTasksContext);
+  const requireSessionTasksFix = !sessionTasksOk;
 
   const beforeMetrics = withProfileStructuralPass(
     computeAdhdResponseMetrics(trimmed, { wordCap, allowLeadingSessionTasks: true }),
@@ -411,29 +495,27 @@ export async function auditAndMaybeRewrite(args: {
   }
 
   if (!profileReq.runDean) {
-    // Even when Dean is off, never ship a diagram-request reply with no fence.
+    // Even when Dean is off, never ship a diagram-request reply with no
+    // fence, or (meta profile) a Session Tasks bootstrap/continuity gap.
+    let withoutDeanText = trimmed;
     if (requireDiagram) {
-      const withDiagram = ensureDiagramBeforeNext(trimmed, diagramOpts);
-      return {
-        text: withDiagram,
-        rewritten: withDiagram !== trimmed,
-        method: withDiagram !== trimmed ? "deterministic" : "none",
-        beforeMetrics,
-        afterMetrics: withProfileStructuralPass(
-          computeAdhdResponseMetrics(withDiagram, { wordCap, allowLeadingSessionTasks: true }),
-          profile,
-          withDiagram,
-        ),
-        oversightDurationMs: 0,
-        oversightUsage: null,
-      };
+      withoutDeanText = ensureDiagramBeforeNext(withoutDeanText, diagramOpts);
+    }
+    if (requireSessionTasksFix && !isSessionTasksCompliant(withoutDeanText, sessionTasksContext)) {
+      withoutDeanText = isFirstTurn
+        ? ensureSessionTasksBootstrap(withoutDeanText, args.userText)
+        : ensureSessionTasksContinuity(withoutDeanText, args.priorAssistantText);
     }
     return {
-      text: trimmed,
-      rewritten: false,
-      method: "none",
+      text: withoutDeanText,
+      rewritten: withoutDeanText !== trimmed,
+      method: withoutDeanText !== trimmed ? "deterministic" : "none",
       beforeMetrics,
-      afterMetrics: beforeMetrics,
+      afterMetrics: withProfileStructuralPass(
+        computeAdhdResponseMetrics(withoutDeanText, { wordCap, allowLeadingSessionTasks: true }),
+        profile,
+        withoutDeanText,
+      ),
       oversightDurationMs: 0,
       oversightUsage: null,
     };
@@ -496,7 +578,6 @@ export async function auditAndMaybeRewrite(args: {
     }
   }
 
-  const requireSessionTasksFix = !sessionTasksOk;
   const sessionTasksNote = requireSessionTasksFix
     ? isFirstTurn
       ? '\n\nThe learner\'s message states or implies a working goal - your reply is missing the required opening: either a "**Session Tasks:**" checklist for it, or the "What are we working on today?" question.'
@@ -555,6 +636,15 @@ export async function auditAndMaybeRewrite(args: {
     if (requireDiagram && !hasEduaiDiagramFence(finalText)) {
       finalText = ensureDiagramBeforeNext(finalText, diagramOpts);
     }
+    // Hard guarantee: the model's draft AND the Dean's own LLM rewrite can
+    // both fail to add a required checklist/ask (same underlying model, same
+    // blind spot) — deterministic injection is the only path with no
+    // dependency on the model actually complying.
+    if (requireSessionTasksFix && !isSessionTasksCompliant(finalText, sessionTasksContext)) {
+      finalText = isFirstTurn
+        ? ensureSessionTasksBootstrap(finalText, args.userText)
+        : ensureSessionTasksContinuity(finalText, args.priorAssistantText);
+    }
     const finalMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(finalText, { wordCap, allowLeadingSessionTasks: true }),
       profile,
@@ -580,10 +670,15 @@ export async function auditAndMaybeRewrite(args: {
     };
   } catch (error) {
     console.error("[adhd-oversight] LLM rewrite failed", error);
-    const fallback =
+    let fallback =
       requireDiagram && !hasEduaiDiagramFence(trimmed)
         ? ensureDiagramBeforeNext(trimmed, diagramOpts)
         : trimmed;
+    if (requireSessionTasksFix && !isSessionTasksCompliant(fallback, sessionTasksContext)) {
+      fallback = isFirstTurn
+        ? ensureSessionTasksBootstrap(fallback, args.userText)
+        : ensureSessionTasksContinuity(fallback, args.priorAssistantText);
+    }
     return {
       text: fallback,
       rewritten: fallback !== trimmed,

@@ -14,6 +14,8 @@ import {
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
   buildOversightRewriteSystem,
+  ensureSessionTasksBootstrap,
+  ensureSessionTasksContinuity,
   extractNextPromptCandidate,
   findLastInlineNextMatch,
   isAdhdOversightEnabled,
@@ -155,6 +157,74 @@ Next? Want to continue with step 2?`;
     const match = findLastInlineNextMatch(draft);
     expect(match?.prompt).toBe("Want to continue with step 2?");
     expect(match?.body).toContain("Next? old prompt here");
+  });
+});
+
+describe("ensureSessionTasksBootstrap", () => {
+  it("is a no-op when the draft already has a checklist or asks the goal", () => {
+    const withChecklist = "**Session Tasks:**\n- [ ] A <- now\n\nBody.";
+    expect(ensureSessionTasksBootstrap(withChecklist)).toBe(withChecklist);
+
+    const withAsk = "Happy to help. What are we working on today?";
+    expect(ensureSessionTasksBootstrap(withAsk)).toBe(withAsk);
+  });
+
+  it("derives checklist items from the draft's own numbered list, never inventing unrelated tasks", () => {
+    const draft = `Here's a plan:
+1. Define API endpoints and data models.
+2. Select a backend framework.
+3. Implement CRUD operations.
+
+**Next?** Ready?`;
+    const fixed = ensureSessionTasksBootstrap(draft, "I want to build a REST API today.");
+    expect(fixed.startsWith("**Session Tasks:**")).toBe(true);
+    expect(fixed).toContain("Define API endpoints and data models");
+    expect(fixed).toContain("<- now");
+    expect(fixed).toContain(draft);
+  });
+
+  it("falls back to a label derived from the learner's message when the draft has no list", () => {
+    const draft = "TLDR\n\nYou are building a REST API for a todo application.";
+    const fixed = ensureSessionTasksBootstrap(
+      draft,
+      "I want to build a REST API for a todo app today.",
+    );
+    expect(fixed.startsWith("**Session Tasks:**")).toBe(true);
+    expect(fixed.toLowerCase()).toContain("rest api");
+    expect(fixed).toContain(draft);
+  });
+
+  it("returns empty input unchanged", () => {
+    expect(ensureSessionTasksBootstrap("")).toBe("");
+  });
+});
+
+describe("ensureSessionTasksContinuity", () => {
+  it("is a no-op when the draft already has a checklist or says the goal is done", () => {
+    const withChecklist = "**Session Tasks:**\n- [ ] A <- now\n\nBody.";
+    expect(ensureSessionTasksContinuity(withChecklist, "prior")).toBe(withChecklist);
+
+    const done = "Nice, the session goal is done!";
+    expect(ensureSessionTasksContinuity(done, "prior")).toBe(done);
+  });
+
+  it("carries the prior turn's checklist over verbatim when this draft dropped it", () => {
+    const prior = `**Session Tasks:**
+- [x] ~~Define API endpoints~~
+- [ ] Select a backend framework <- now
+
+**Top summary**
+- On to picking a framework.`;
+    const draft = "**Top summary**\n- Node/Express or Python/Flask?\n\n**Next?** Pick one.";
+    const fixed = ensureSessionTasksContinuity(draft, prior);
+    expect(fixed).toContain("**Session Tasks:**");
+    expect(fixed).toContain("Select a backend framework");
+    expect(fixed).toContain(draft);
+  });
+
+  it("returns the draft unchanged when there is no prior checklist to restore", () => {
+    const draft = "A normal reply.";
+    expect(ensureSessionTasksContinuity(draft, "no checklist here")).toBe(draft);
   });
 });
 
@@ -606,6 +676,80 @@ Two: Second
     expect(generateText).toHaveBeenCalledOnce();
     expect(result.text).toContain("**Session Tasks:**");
     expect(result.method).toBe("llm");
+  });
+
+  it("deterministically injects the checklist when the Dean's own LLM rewrite ALSO omits it (live gap: same model, same blind spot)", async () => {
+    // The Dean ran (forced by requireSessionTasksFix) but its rewrite still
+    // has no checklist and no goal-ask - reproduces exactly what shipped to
+    // the user: relying on the LLM to fix its own omission is not a hard
+    // guarantee, so the deterministic injector must be the final backstop.
+    vi.mocked(generateText).mockResolvedValue({
+      text: `TLDR
+
+You are building a REST API for a todo application.
+We will break this project into smaller, manageable tasks.
+
+**Next?** How would you like to proceed?`,
+      usage: { promptTokens: 10, completionTokens: 30 },
+    } as never);
+
+    const draftWithoutChecklist = `TLDR
+
+You are building a REST API for a todo application.
+We will break this project into smaller, manageable tasks.
+
+**Next?** How would you like to proceed?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: draftWithoutChecklist,
+      model: mockModel,
+      profile: "brief_clarification",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText: "I want to build a REST API for a todo app today.",
+      priorAssistantText: "",
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.text).toContain("**Session Tasks:**");
+    // Injected checklist item should be derived from the learner's own
+    // message, not an invented/unrelated task.
+    expect(result.text.toLowerCase()).toContain("rest api");
+    expect(result.method).toBe("deterministic");
+  });
+
+  it("deterministically restores a dropped checklist when the Dean's rewrite ALSO fails continuity", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Top summary**
+- Nice, on to picking a framework.
+
+**Next?** Node/Express or Python/Flask?`,
+      usage: { promptTokens: 10, completionTokens: 30 },
+    } as never);
+
+    const draftMissingChecklist = `**Top summary**
+- Nice, on to picking a framework.
+
+**Next?** Node/Express or Python/Flask?`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: draftMissingChecklist,
+      model: mockModel,
+      profile: "full_tutoring",
+      userText: "great, endpoints are defined",
+      priorAssistantText: `**Session Tasks:**
+- [ ] Define API endpoints <- now
+- [ ] Select a backend framework
+
+**Top summary**
+- Let's define your endpoints first.
+
+**Next?** Ready?`,
+    });
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.text).toContain("**Session Tasks:**");
+    expect(result.text).toContain("Define API endpoints");
+    expect(result.method).toBe("deterministic");
   });
 
   it("does not force a rewrite when the first-turn draft already asks the goal-setting question instead of a checklist", async () => {
