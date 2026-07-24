@@ -10,6 +10,13 @@
 
 export const DEFAULT_PAGE_SIZE = 25;
 
+/**
+ * Max ids accepted by an unpaged `?ids=` lookup — mirrors the server's
+ * `MAX_IDS_PER_REQUEST` (`pagination.server.ts`). Callers with a larger set
+ * must chunk at this size or the request 400s with `IDS_TOO_MANY`.
+ */
+export const MAX_IDS_PER_REQUEST = 200;
+
 export type PaginationState = {
   pageIndex: number;
   pageSize: number;
@@ -42,7 +49,11 @@ export function paginationQuery(
   return params.toString();
 }
 
-/** Serialize an unpaged `?ids=` batch lookup (#1125). */
+/**
+ * Serialize one unpaged `?ids=` batch lookup (#1125). Serializes a single batch
+ * only — callers with more than {@link MAX_IDS_PER_REQUEST} ids must chunk at
+ * that size (see `fetchUsersByIds`) or the request 400s with `IDS_TOO_MANY`.
+ */
 export function idsQuery(ids: string[]): string {
   return new URLSearchParams({ ids: ids.join(",") }).toString();
 }
