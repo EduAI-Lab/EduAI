@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   enforceAdminIfApiKey,
+  requireAdmin,
   requireInviter,
   requireServiceKey,
   validateRedirectUrl,
@@ -8,6 +9,7 @@ import {
 import { auth } from "~/lib/auth/server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
+import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 
 vi.mock("~/lib/auth/server", () => ({
@@ -35,6 +37,14 @@ vi.mock("~/lib/policy.server", () => ({
     ),
 }));
 
+// Real logging.server hits Prisma (unmocked auditLog table) if left unmocked; mocking it lets
+// tests assert exactly which security event fields each denial path reports (actionCode,
+// outcome, entityType, entityId/entityLabel) without touching the DB layer.
+vi.mock("~/lib/logging.server", () => ({
+    fireAndForget: vi.fn(),
+    logSecurityEvent: vi.fn(),
+}));
+
 function makeRequest(authorization?: string, apiKey?: string): Request {
     const headers = new Headers();
     if (authorization !== undefined) headers.set("Authorization", authorization);
@@ -51,6 +61,7 @@ const VALID_KEY = "super-secret-service-key-abc123";
 describe("requireServiceKey", () => {
     beforeEach(() => {
         vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
+        vi.mocked(logSecurityEvent).mockClear();
     });
 
     afterEach(() => {
@@ -61,7 +72,15 @@ describe("requireServiceKey", () => {
         const res = await requireServiceKey(makeRequest());
         expect(res).not.toBeNull();
         expect(res!.status).toBe(401);
+        expect(res!.headers.get("Content-Type")).toBe("application/json");
         expect(await parseBody(res!)).toEqual({ error: "MISSING_SERVICE_KEY" });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "SERVICE_KEY_MISSING",
+                outcome: "DENIED",
+                entityType: "Auth",
+            }),
+        );
     });
 
     it("returns 401 MISSING_SERVICE_KEY when Authorization uses a non-Bearer scheme", async () => {
@@ -75,7 +94,15 @@ describe("requireServiceKey", () => {
         const res = await requireServiceKey(makeRequest("Bearer completely-wrong-key"));
         expect(res).not.toBeNull();
         expect(res!.status).toBe(403);
+        expect(res!.headers.get("Content-Type")).toBe("application/json");
         expect(await parseBody(res!)).toEqual({ error: "INVALID_SERVICE_KEY" });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "SERVICE_KEY_INVALID",
+                outcome: "DENIED",
+                entityType: "Auth",
+            }),
+        );
     });
 
     it("returns 403 INVALID_SERVICE_KEY when EDUAI_API_KEY is not configured", async () => {
@@ -83,7 +110,15 @@ describe("requireServiceKey", () => {
         const res = await requireServiceKey(makeRequest(`Bearer ${VALID_KEY}`));
         expect(res).not.toBeNull();
         expect(res!.status).toBe(403);
+        expect(res!.headers.get("Content-Type")).toBe("application/json");
         expect(await parseBody(res!)).toEqual({ error: "INVALID_SERVICE_KEY" });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "SERVICE_KEY_INVALID",
+                outcome: "DENIED",
+                entityType: "Auth",
+            }),
+        );
     });
 
     it("returns null (passes through) when Bearer token exactly matches EDUAI_API_KEY", async () => {
@@ -113,6 +148,7 @@ describe("enforceAdminIfApiKey", () => {
         vi.mocked(prisma.user.findUnique).mockReset();
         vi.mocked(isActiveAdminUser).mockReset();
         vi.mocked(isActiveAdminUser).mockResolvedValue(false);
+        vi.mocked(logSecurityEvent).mockClear();
     });
 
     it("passes through when x-api-key is absent", async () => {
@@ -131,6 +167,55 @@ describe("enforceAdminIfApiKey", () => {
         expect(gate.response).toBeNull();
         expect(gate.session?.user.role).toBe("ADMIN");
         expect(auth.api.verifyApiKey).not.toHaveBeenCalled();
+        // The cookie-session lookup must forward the real request headers, and the fast-path
+        // check must actually look at this user's id (not some other/undefined value).
+        expect(auth.api.getSession).toHaveBeenCalledWith({ headers: expect.any(Headers) });
+        expect(isActiveAdminUser).toHaveBeenCalledWith("a1");
+    });
+
+    it("trims surrounding whitespace from the x-api-key header before verifying", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: false,
+            error: { message: "invalid", code: "KEY_NOT_FOUND" },
+            key: null,
+        } as never);
+        await enforceAdminIfApiKey(makeRequest(undefined, "  eduai-admin-key  "));
+        expect(auth.api.verifyApiKey).toHaveBeenCalledWith({ body: { key: "eduai-admin-key" } });
+    });
+
+    it("treats a verifyApiKey result with valid:true but no key record as invalid", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: null,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"));
+        expect(gate.response?.status).toBe(401);
+        expect(gate.session).toBeNull();
+    });
+
+    it("treats a verifyApiKey result of null the same as invalid (no crash, no fast-path)", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue(null as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-admin-key"));
+        expect(gate.response?.status).toBe(401);
+        expect(gate.response?.headers.get("Content-Type")).toBe("application/json");
+        expect(gate.session).toBeNull();
+    });
+
+    it("does not crash when the cookie session has no `user` field, and still checks x-api-key", async () => {
+        // Guards against `cookieSession?.user?.role` being weakened to `cookieSession?.user.role`,
+        // which would throw on a truthy-but-userless session instead of falling through safely.
+        vi.mocked(auth.api.getSession).mockResolvedValue({} as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: false,
+            error: { message: "invalid", code: "KEY_NOT_FOUND" },
+            key: null,
+        } as never);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "bad-key"));
+        expect(gate.response?.status).toBe(401);
     });
 
     it("does not fast-path an inactive ADMIN cookie session", async () => {
@@ -183,7 +268,17 @@ describe("enforceAdminIfApiKey", () => {
         } as never);
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "bad-key"));
         expect(gate.response?.status).toBe(401);
+        expect(gate.response?.headers.get("Content-Type")).toBe("application/json");
         expect(await parseBody(gate.response!)).toEqual({ error: "Unauthorized" });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "API_KEY_DENIED",
+                outcome: "DENIED",
+                entityType: "Auth",
+                entityId: null,
+                entityLabel: null,
+            }),
+        );
     });
 
     it("returns 401 when x-api-key is expired and no cookie session exists", async () => {
@@ -223,9 +318,39 @@ describe("enforceAdminIfApiKey", () => {
         } as never);
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-student-key"));
         expect(gate.response?.status).toBe(403);
+        expect(gate.response?.headers.get("Content-Type")).toBe("application/json");
         expect(await parseBody(gate.response!)).toEqual({
             error: "Forbidden: x-api-key access restricted to admin users",
         });
+        expect(prisma.user.findUnique).toHaveBeenCalledWith({
+            where: { id: "s1" },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                image: true,
+                role: true,
+                isActive: true,
+                emailVerified: true,
+                authorizedUnits: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "API_KEY_DENIED",
+                outcome: "DENIED",
+                entityType: "Auth",
+                entityId: "s1",
+                entityLabel: "student1@eduai.local",
+                details: { email: "student1@eduai.local" },
+                // Attributes the denial to the resolved (student) user, not a phantom cookie
+                // session or an anonymous actor.
+                actorUserId: "s1",
+                actorType: "USER",
+            }),
+        );
     });
 
     it("returns 403 when x-api-key belongs to an inactive admin", async () => {
@@ -269,6 +394,45 @@ describe("enforceAdminIfApiKey", () => {
         expect(gate.response?.status).toBe(403);
     });
 
+    it("does not crash when the cookie session is a truthy but userless object and the x-api-key owner record is gone", async () => {
+        // Guards against `cookieSession?.user?.id` (etc.) being weakened to `cookieSession?.user.id`,
+        // which would throw on a truthy-but-userless cookie session instead of falling back to null.
+        vi.mocked(auth.api.getSession).mockResolvedValue({} as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: { id: "k-orphan", referenceId: "missing-user", createdAt: new Date(), updatedAt: new Date(), expiresAt: null },
+        } as never);
+        vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-orphan-key"));
+        expect(gate.response?.status).toBe(403);
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({ entityId: null, entityLabel: null }),
+        );
+    });
+
+    it("attributes the denial to the cookie-session user when the x-api-key's owner record is gone", async () => {
+        // user (prisma lookup) is null here, so the log must fall back to cookieSession's user
+        // instead of silently logging with no actor at all.
+        vi.mocked(auth.api.getSession).mockResolvedValue({
+            user: { id: "c1", role: "STUDENT", email: "cookie-owner@test.com" },
+        } as never);
+        vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
+            valid: true,
+            error: null,
+            key: { id: "k-orphan", referenceId: "missing-user", createdAt: new Date(), updatedAt: new Date(), expiresAt: null },
+        } as never);
+        vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+        const gate = await enforceAdminIfApiKey(makeRequest(undefined, "eduai-orphan-key"));
+        expect(gate.response?.status).toBe(403);
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                entityId: "c1",
+                entityLabel: "cookie-owner@test.com",
+            }),
+        );
+    });
+
     it("admits a verified active ADMIN-owned x-api-key", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
         vi.mocked(auth.api.verifyApiKey).mockResolvedValue({
@@ -300,8 +464,83 @@ describe("enforceAdminIfApiKey", () => {
     });
 });
 
+describe("requireAdmin", () => {
+    const sessionReq = () => new Request("http://localhost/api/admin-only");
+
+    beforeEach(() => {
+        vi.mocked(auth.api.getSession).mockReset();
+        vi.mocked(logSecurityEvent).mockClear();
+    });
+
+    it("admits an ADMIN session", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({
+            user: { id: "a1", role: "ADMIN", email: "admin@test.com" },
+        } as never);
+        const gate = await requireAdmin(sessionReq());
+        expect(gate.response).toBeNull();
+        expect(gate.session?.user.role).toBe("ADMIN");
+        expect(logSecurityEvent).not.toHaveBeenCalled();
+    });
+
+    it("403s a non-ADMIN role and logs ADMIN_ACCESS_DENIED with the actor's identity", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({
+            user: { id: "u1", role: "UNIT_ADMIN", email: "unit-admin@test.com" },
+        } as never);
+        const req = sessionReq();
+        const gate = await requireAdmin(req);
+        expect(gate.response?.status).toBe(403);
+        expect(gate.response?.headers.get("Content-Type")).toBe("application/json");
+        expect(gate.session).toBeNull();
+        expect(await parseBody(gate.response!)).toEqual({ error: "Forbidden: Admins only" });
+        expect(auth.api.getSession).toHaveBeenCalledWith({ headers: req.headers });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "ADMIN_ACCESS_DENIED",
+                outcome: "DENIED",
+                entityType: "Auth",
+                entityId: "u1",
+                entityLabel: "unit-admin@test.com",
+                details: { email: "unit-admin@test.com" },
+                // Attributes the denial to the real (unit-admin) actor, not an anonymous one.
+                actorUserId: "u1",
+                actorType: "USER",
+            }),
+        );
+    });
+
+    it("403s an anonymous request and logs the denial without a user-scoped entity", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        const gate = await requireAdmin(sessionReq());
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "ADMIN_ACCESS_DENIED",
+                outcome: "DENIED",
+                entityType: "Auth",
+                entityId: null,
+                entityLabel: null,
+            }),
+        );
+        const call = vi.mocked(logSecurityEvent).mock.calls[0][0];
+        expect(call).not.toHaveProperty("details");
+    });
+
+    it("does not crash when getSession resolves a truthy but userless object", async () => {
+        // Guards against `resolved?.user?.email` (etc.) being weakened to `resolved?.user.email`,
+        // which would throw on a truthy-but-userless session instead of degrading to anonymous.
+        vi.mocked(auth.api.getSession).mockResolvedValue({} as never);
+        const gate = await requireAdmin(sessionReq());
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+    });
+});
+
 describe("requireInviter", () => {
-    const sessionReq = () => new Request("http://localhost/api/invitations");
+    const sessionReq = (authorization?: string) =>
+        new Request("http://localhost/api/invitations", {
+            headers: authorization !== undefined ? { Authorization: authorization } : undefined,
+        });
 
     beforeEach(() => {
         vi.mocked(auth.api.getSession).mockReset();
@@ -309,14 +548,22 @@ describe("requireInviter", () => {
         // Flag on by default; UNIT_ADMIN-flag-off cases override per test.
         vi.mocked(getPolicy).mockResolvedValue(true);
         vi.mocked(denyByPolicy).mockClear();
+        vi.mocked(logSecurityEvent).mockClear();
+        vi.stubEnv("EDUAI_API_KEY", VALID_KEY);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
     });
 
     it("admits an ADMIN session without consulting the policy flag", async () => {
+        const req = sessionReq();
         vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "a1", role: "ADMIN" } } as never);
-        const gate = await requireInviter(sessionReq(), "invitation.list");
+        const gate = await requireInviter(req, "invitation.list");
         expect(gate.response).toBeNull();
         expect(gate.session?.user.role).toBe("ADMIN");
         expect(getPolicy).not.toHaveBeenCalled();
+        expect(auth.api.getSession).toHaveBeenCalledWith({ headers: req.headers });
     });
 
     it("admits a UNIT_ADMIN when unitAdmins.canInvite is on", async () => {
@@ -329,30 +576,95 @@ describe("requireInviter", () => {
     });
 
     it("403s a UNIT_ADMIN when unitAdmins.canInvite is off (gate enforced in the guard)", async () => {
-        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "UNIT_ADMIN" } } as never);
+        const req = sessionReq();
+        const unitAdmin = { id: "u1", role: "UNIT_ADMIN" };
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: unitAdmin } as never);
         vi.mocked(getPolicy).mockResolvedValue(false);
-        const gate = await requireInviter(sessionReq(), "invitation.create");
+        const gate = await requireInviter(req, "invitation.create");
         expect(gate.response?.status).toBe(403);
         expect(gate.session).toBeNull();
-        expect(denyByPolicy).toHaveBeenCalled();
+        expect(denyByPolicy).toHaveBeenCalledWith({
+            policyKey: "unitAdmins.canInvite",
+            user: unitAdmin,
+            action: "invitation.create",
+            request: req,
+        });
     });
 
     it("403s a STUDENT/INSTRUCTOR/TA (non-platform-admin) and yields no session", async () => {
         for (const role of ["STUDENT", "INSTRUCTOR", "TA"]) {
-            vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "x", role } } as never);
+            vi.mocked(auth.api.getSession).mockResolvedValue({
+                user: { id: "x", role, email: `${role.toLowerCase()}@test.com` },
+            } as never);
             const gate = await requireInviter(sessionReq(), "invitation.list");
             expect(gate.response?.status).toBe(403);
             expect(gate.session).toBeNull();
+            expect(await parseBody(gate.response!)).toEqual({ error: "Forbidden" });
+            // The denial must attribute to this actual (non-admin) user, not an anonymous actor.
+            expect(logSecurityEvent).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    actorUserId: "x",
+                    actorType: "USER",
+                    entityId: "x",
+                    entityLabel: `${role.toLowerCase()}@test.com`,
+                    details: { email: `${role.toLowerCase()}@test.com` },
+                }),
+            );
         }
     });
 
-    it("403s an anonymous request", async () => {
+    it("403s an anonymous request with no service key and logs INVITATION_ACCESS_DENIED", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        const gate = await requireInviter(sessionReq(), "invitation.list");
+        expect(gate.response?.status).toBe(403);
+        expect(gate.response?.headers.get("Content-Type")).toBe("application/json");
+        expect(gate.session).toBeNull();
+        expect(await parseBody(gate.response!)).toEqual({ error: "Forbidden" });
+        expect(logSecurityEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actionCode: "INVITATION_ACCESS_DENIED",
+                outcome: "DENIED",
+                entityType: "Auth",
+                entityId: null,
+                entityLabel: null,
+            }),
+        );
+        const call = vi.mocked(logSecurityEvent).mock.calls[0][0];
+        expect(call).not.toHaveProperty("details");
+    });
+
+    it("treats a session resolution with no `user` field the same as anonymous (no crash, still 403)", async () => {
+        // Guards against `resolved?.user?.role` being weakened to `resolved?.user.role`,
+        // which would throw on a truthy-but-userless session instead of degrading safely.
+        vi.mocked(auth.api.getSession).mockResolvedValue({} as never);
         const gate = await requireInviter(sessionReq(), "invitation.list");
         expect(gate.response?.status).toBe(403);
         expect(gate.session).toBeNull();
     });
 
+    it("does not let an authenticated non-admin bypass via a valid service key (service-key fallback is anonymous-only)", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "x", role: "STUDENT" } } as never);
+        const gate = await requireInviter(sessionReq(`Bearer ${VALID_KEY}`), "invitation.list");
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+    });
+
+    it("403s an anonymous request bearing an invalid service key", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        const gate = await requireInviter(sessionReq("Bearer not-the-real-key"), "invitation.list");
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+    });
+
+    it("admits an anonymous caller bearing a valid server-to-server key as a synthetic service ADMIN, bypassing the policy check", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        const gate = await requireInviter(sessionReq(`Bearer ${VALID_KEY}`), "invitation.create");
+        expect(gate.response).toBeNull();
+        expect(gate.session?.user).toEqual({ id: "service", name: "Service", role: "ADMIN" });
+        // The service-key shortcut returns before the UNIT_ADMIN policy check is reached.
+        expect(getPolicy).not.toHaveBeenCalled();
+        expect(logSecurityEvent).not.toHaveBeenCalled();
+    });
 });
 
 describe("validateRedirectUrl", () => {

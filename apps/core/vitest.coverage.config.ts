@@ -1,7 +1,10 @@
-import tsconfigPaths from 'vite-tsconfig-paths';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { baseVitestConfig } from './vitest.shared';
 
-import { uiAliases } from './vitest.ui-aliases';
+const coreDir = path.dirname(fileURLToPath(import.meta.url));
+const base = baseVitestConfig(coreDir);
 
 /**
  * Coverage config — runs the unit AND integration suites in a single pass so the reported
@@ -16,10 +19,7 @@ import { uiAliases } from './vitest.ui-aliases';
  * up), not the default `npm test` path.
  */
 export default defineConfig({
-  plugins: [tsconfigPaths()],
-  resolve: {
-    alias: uiAliases,
-  },
+  ...base,
   test: {
     projects: [
       { extends: 'vitest.config.ts', test: { name: 'unit' } },

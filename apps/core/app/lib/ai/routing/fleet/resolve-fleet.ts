@@ -1,5 +1,5 @@
 import { parseModelIdentifier } from "~/lib/ai/provider-types";
-import { getServerHealth, serverHostsModel } from "./health";
+import { getServerHealth, invalidateFleetHealthCacheForUrl, serverHostsModel } from "./health";
 import { fleetRoutingEnabled, getServersForJobType, heavyFleetConfigured } from "./registry";
 import {
   jobTypeForWorkloadFeature,
@@ -10,6 +10,8 @@ import {
 
 type ResolveFleetInputBase = {
   resolvedModelId: string;
+  /** Skip these server ids (Slice 2 retry after a failed host). */
+  excludeServerIds?: string[];
 };
 
 export type ResolveFleetInput =
@@ -77,10 +79,15 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
       health: await getServerHealth(server.baseUrl),
     })),
   );
+  const excluded = new Set(
+    (input.excludeServerIds ?? []).map((id) => id.trim()).filter(Boolean),
+  );
   const eligible = healthResults
     .filter(
       ({ server, health }) =>
-        health.ok && serverHostsModel(parsed.modelId, health.modelIds, server.models),
+        !excluded.has(server.id) &&
+        health.ok &&
+        serverHostsModel(parsed.modelId, health.modelIds, server.models),
     )
     .map(({ server }) => server);
 
@@ -97,6 +104,28 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
     serverId: server.id,
     baseUrl: server.baseUrl,
     energySidecarUrl: server.energySidecarUrl,
-    reason: pickReason(jobType),
+    reason: excluded.size > 0 ? `${pickReason(jobType)}-retry` : pickReason(jobType),
   };
+}
+
+/**
+ * Slice 2: after inference fails on `failedPick`, invalidate that host and pick
+ * another healthy server once. Returns null when no alternate is available.
+ */
+export async function resolveFleetHostAfterFailure(input: {
+  failedPick: FleetPick;
+  resolvedModelId: string;
+  jobType: JobType;
+}): Promise<FleetPick | null> {
+  invalidateFleetHealthCacheForUrl(input.failedPick.baseUrl);
+  try {
+    return await resolveFleetHost({
+      jobType: input.jobType,
+      resolvedModelId: input.resolvedModelId,
+      excludeServerIds: [input.failedPick.serverId],
+    });
+  } catch (err) {
+    if (err instanceof FleetUnavailableError) return null;
+    throw err;
+  }
 }
