@@ -4,7 +4,7 @@
  */
 import { termLabelLong } from '@eduai/ui';
 import api from './api';
-import { apiKeyStorage, type AIProvider } from './apiKeyStorage';
+import { apiKeyStorage, type AIProvider, type CampusProvider } from './apiKeyStorage';
 
 export interface EduAIMessage {
     role: 'user' | 'assistant' | 'system';
@@ -78,7 +78,6 @@ export interface EduAIModelOption {
     label: string;
     provider: string;
     description?: string;
-    isDefault?: boolean;
 }
 
 export interface EduAICourseOption {
@@ -128,8 +127,8 @@ export interface EduAITestResponse {
     message?: string;
     error?: string;
     configured: boolean;
-    /** Which provider path was validated: a cloud provider (google/openai/deepseek/anthropic) or 'ollama' (UBC-hosted). */
-    provider?: AIProvider | 'ollama';
+    /** Which provider path was validated: a cloud provider or campus (`vllm` / legacy `ollama`). */
+    provider?: AIProvider | CampusProvider;
 }
 
 class EduAIService {
@@ -160,7 +159,7 @@ class EduAIService {
      */
     async testApiKey(
         overrideApiKeys?: Record<string, any>,
-        opts?: { forceProvider?: string },
+        opts?: { forceProvider?: CampusProvider },
     ): Promise<EduAITestResponse> {
         // Build the apiKeys payload the backend expects from any locally-stored keys,
         // unless the caller supplied an explicit override.
@@ -210,13 +209,16 @@ class EduAIService {
 
             return models
                 .filter((model: any) => model.isActive !== false)
-                .map((model: any) => ({
-                    id: `${model.provider?.name ?? model.provider}:${model.modelId}`,
-                    label: model.name ?? model.modelId,
-                    provider: model.provider?.name ?? String(model.provider ?? 'unknown'),
-                    description: model.description,
-                    isDefault: model.modelId === 'gpt-oss:120b' || model.modelId === 'gemini-2.5-flash',
-                }));
+                .map((model: any) => {
+                    const provider = model.provider?.name ?? String(model.provider ?? 'unknown');
+                    const modelId = model.modelId;
+                    return {
+                        id: `${provider}:${modelId}`,
+                        label: model.name ?? modelId,
+                        provider,
+                        description: model.description,
+                    };
+                });
         } catch (error) {
             console.error('Failed to fetch AI models from the AI service:', error);
             return [];
