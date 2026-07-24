@@ -23,8 +23,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('assessmentVariantService (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants, VariantSelectionCursor;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let setAssessmentStudyRole, getBlueprintSnapshot, getBaselineVariantReadiness,
     assembleEquivalentExamVariants, assembleExamVariantsByMetadataSimilarity;
@@ -33,11 +32,9 @@ describeDb('assessmentVariantService (integration)', () => {
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants, VariantSelectionCursor } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({
       setAssessmentStudyRole,
@@ -52,17 +49,17 @@ describeDb('assessmentVariantService (integration)', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
 
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   // ---------------------------------------------------------------------------
@@ -70,23 +67,25 @@ describeDb('assessmentVariantService (integration)', () => {
   // ---------------------------------------------------------------------------
 
   async function makeAssessment(name = 'Reference Exam', blueprintConfig = null) {
-    return Assessments.create({ courseId, type: 'Midterm', name, semester: 'Fall 2026', blueprintConfig });
+    return prisma.assessments.create({ data: { courseId, type: 'Midterm', name, blueprintConfig } });
   }
 
   async function makeQuestion(type = 'SA') {
-    return Question_Metadata.create({ courseId, primaryTopicId: topicId, type, questionOrder: {} });
+    return prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type, questionOrder: {} } });
   }
 
   async function makeVariant(questionMetadataId, { isDraft = false, difficulty = 'medium', reasoningLevel = 'factual' } = {}) {
-    return Variants.create({
-      questionMetadataId,
-      questionText: `Question text for ${questionMetadataId}`,
-      difficulty,
-      reasoningLevel,
-      isDraft,
-      isAiGenerated: false,
-      secondaryTopicsId: [],
-      assessmentId: null
+    return prisma.variants.create({
+      data: {
+        questionMetadataId,
+        questionText: `Question text for ${questionMetadataId}`,
+        difficulty,
+        reasoningLevel,
+        isDraft,
+        isAiGenerated: false,
+        secondaryTopicsId: [],
+        assessmentId: null
+      }
     });
   }
 
@@ -96,8 +95,8 @@ describeDb('assessmentVariantService (integration)', () => {
    */
   async function buildReferenceWithVariants(slotCount = 2, variantsPerSlot = 2) {
     const assessment = await makeAssessment();
-    const section = await AssessmentSections.create({
-      assessmentId: assessment.id, name: 'Main', position: 0
+    const section = await prisma.assessmentSections.create({
+      data: { assessmentId: assessment.id, name: 'Main', position: 0 }
     });
 
     const slots = [];
@@ -109,7 +108,7 @@ describeDb('assessmentVariantService (integration)', () => {
         variants.push(v);
       }
       // Place first variant in section
-      await SectionVariants.create({ sectionId: section.id, variantId: variants[0].id, displayOrder: i });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: variants[0].id, displayOrder: i } });
       slots.push({ meta, variants });
     }
 
@@ -124,23 +123,23 @@ describeDb('assessmentVariantService (integration)', () => {
     it('sets studyRole on an assessment that has no prior blueprintConfig', async () => {
       const assessment = await makeAssessment('Clean Exam', null);
       await setAssessmentStudyRole(assessment.id, USER.id, 'reference_baseline');
-      await assessment.reload();
-      expect(assessment.blueprintConfig?.studyRole).toBe('reference_baseline');
+      const reloaded = await prisma.assessments.findUnique({ where: { id: assessment.id } });
+      expect(reloaded.blueprintConfig?.studyRole).toBe('reference_baseline');
     });
 
     it('merges studyRole with existing blueprintConfig fields without overwriting them', async () => {
       const assessment = await makeAssessment('Existing Config', { existingKey: 'keep-me' });
       await setAssessmentStudyRole(assessment.id, USER.id, 'reference_baseline');
-      await assessment.reload();
-      expect(assessment.blueprintConfig.studyRole).toBe('reference_baseline');
-      expect(assessment.blueprintConfig.existingKey).toBe('keep-me');
+      const reloaded = await prisma.assessments.findUnique({ where: { id: assessment.id } });
+      expect(reloaded.blueprintConfig.studyRole).toBe('reference_baseline');
+      expect(reloaded.blueprintConfig.existingKey).toBe('keep-me');
     });
 
     it('removes studyRole from blueprintConfig when null is passed', async () => {
       const assessment = await makeAssessment('Has Role', { studyRole: 'reference_baseline' });
       await setAssessmentStudyRole(assessment.id, USER.id, null);
-      await assessment.reload();
-      expect(assessment.blueprintConfig?.studyRole).toBeUndefined();
+      const reloaded = await prisma.assessments.findUnique({ where: { id: assessment.id } });
+      expect(reloaded.blueprintConfig?.studyRole).toBeUndefined();
     });
 
     it('throws when an invalid studyRole string is supplied', async () => {
@@ -246,7 +245,7 @@ describeDb('assessmentVariantService (integration)', () => {
 
     it('returns allReady=false when even one slot is not ready', async () => {
       const assessment = await makeAssessment();
-      const section = await AssessmentSections.create({ assessmentId: assessment.id, name: 'Main', position: 0 });
+      const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });
 
       const readyMeta = await makeQuestion();
       const notReadyMeta = await makeQuestion();
@@ -255,8 +254,8 @@ describeDb('assessmentVariantService (integration)', () => {
       const v2 = await makeVariant(readyMeta.id, { isDraft: false });
       const v3 = await makeVariant(notReadyMeta.id, { isDraft: false });
 
-      await SectionVariants.create({ sectionId: section.id, variantId: v1.id, displayOrder: 0 });
-      await SectionVariants.create({ sectionId: section.id, variantId: v3.id, displayOrder: 1 });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: v1.id, displayOrder: 0 } });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: v3.id, displayOrder: 1 } });
 
       const result = await getBaselineVariantReadiness(USER.id, { assessmentId: assessment.id, courseId });
       expect(result.allReady).toBe(false);
@@ -310,7 +309,7 @@ describeDb('assessmentVariantService (integration)', () => {
       // Add a third non-draft variant so all three exams can pick a distinct one
       await makeVariant(slots[0].meta.id, { isDraft: false });
 
-      const before = await Assessments.count({ where: { courseId } });
+      const before = await prisma.assessments.count({ where: { courseId } });
 
       await assembleEquivalentExamVariants(USER.id, {
         referenceAssessmentId: assessment.id,
@@ -318,7 +317,7 @@ describeDb('assessmentVariantService (integration)', () => {
         examLabels: ['Form A', 'Form B', 'Form C']
       });
 
-      expect(await Assessments.count({ where: { courseId } })).toBe(before + 3);
+      expect(await prisma.assessments.count({ where: { courseId } })).toBe(before + 3);
     });
 
     it("names each created assessment '<name> — <label>'", async () => {
@@ -356,7 +355,7 @@ describeDb('assessmentVariantService (integration)', () => {
       });
 
       for (const created of result.createdAssessments) {
-        const row = await Assessments.findByPk(created.id);
+        const row = await prisma.assessments.findUnique({ where: { id: created.id } });
         expect(row.blueprintConfig?.studyRole).toBe('generated_variant');
       }
     });
@@ -370,7 +369,7 @@ describeDb('assessmentVariantService (integration)', () => {
         examLabels: ['A']
       });
 
-      const row = await Assessments.findByPk(result.createdAssessments[0].id);
+      const row = await prisma.assessments.findUnique({ where: { id: result.createdAssessments[0].id } });
       expect(row.blueprintConfig?.referenceAssessmentId).toBe(assessment.id);
     });
 
@@ -383,19 +382,19 @@ describeDb('assessmentVariantService (integration)', () => {
         examLabels: ['A']
       });
 
-      const section = await AssessmentSections.findOne({
+      const section = await prisma.assessmentSections.findFirst({
         where: { assessmentId: result.createdAssessments[0].id }
       });
-      const links = await SectionVariants.findAll({ where: { sectionId: section.id } });
+      const links = await prisma.sectionVariants.findMany({ where: { sectionId: section.id } });
       expect(links).toHaveLength(slots.length);
     });
 
     it('emits a warning when it must reuse the reference variant because there is no alternative', async () => {
       const assessment = await makeAssessment('One Variant Ref');
-      const section = await AssessmentSections.create({ assessmentId: assessment.id, name: 'Main', position: 0 });
+      const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });
       const meta = await makeQuestion();
       const singleVariant = await makeVariant(meta.id, { isDraft: false });
-      await SectionVariants.create({ sectionId: section.id, variantId: singleVariant.id, displayOrder: 0 });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: singleVariant.id, displayOrder: 0 } });
 
       const result = await assembleEquivalentExamVariants(USER.id, {
         referenceAssessmentId: assessment.id,
@@ -414,17 +413,17 @@ describeDb('assessmentVariantService (integration)', () => {
       //   slot 2 (metaDraft): only a draft variant placed in the section
       // With includeDrafts=false, slot 2 has no candidates → throws → must roll back slot 1's work too.
       const assessment = await makeAssessment('Partial Ref');
-      const section = await AssessmentSections.create({ assessmentId: assessment.id, name: 'Main', position: 0 });
+      const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });
 
       const metaOk = await makeQuestion();
       const metaDraft = await makeQuestion();
       const v1 = await makeVariant(metaOk.id, { isDraft: false });
       const vDraft = await makeVariant(metaDraft.id, { isDraft: true });
 
-      await SectionVariants.create({ sectionId: section.id, variantId: v1.id, displayOrder: 0 });
-      await SectionVariants.create({ sectionId: section.id, variantId: vDraft.id, displayOrder: 1 });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: v1.id, displayOrder: 0 } });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: vDraft.id, displayOrder: 1 } });
 
-      const before = await Assessments.count({ where: { courseId } });
+      const before = await prisma.assessments.count({ where: { courseId } });
 
       await expect(
         assembleEquivalentExamVariants(USER.id, {
@@ -436,7 +435,7 @@ describeDb('assessmentVariantService (integration)', () => {
       ).rejects.toThrow(/no variant available/i);
 
       // The entire transaction must have rolled back — no new assessment persisted
-      expect(await Assessments.count({ where: { courseId } })).toBe(before);
+      expect(await prisma.assessments.count({ where: { courseId } })).toBe(before);
     });
 
     it('reports slotsProcessed and examCount in the return value', async () => {
@@ -454,12 +453,12 @@ describeDb('assessmentVariantService (integration)', () => {
 
     it('round-robin: prefers a different variant per successive exam when the bank allows', async () => {
       const assessment = await makeAssessment('Multi-Variant Ref');
-      const section = await AssessmentSections.create({ assessmentId: assessment.id, name: 'Main', position: 0 });
+      const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });
       const meta = await makeQuestion();
 
       const vRef = await makeVariant(meta.id, { isDraft: false });
       const vAlt = await makeVariant(meta.id, { isDraft: false });
-      await SectionVariants.create({ sectionId: section.id, variantId: vRef.id, displayOrder: 0 });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: vRef.id, displayOrder: 0 } });
 
       const result = await assembleEquivalentExamVariants(USER.id, {
         referenceAssessmentId: assessment.id,
@@ -467,8 +466,8 @@ describeDb('assessmentVariantService (integration)', () => {
         examLabels: ['A']
       });
 
-      const newSection = await AssessmentSections.findOne({ where: { assessmentId: result.createdAssessments[0].id } });
-      const link = await SectionVariants.findOne({ where: { sectionId: newSection.id } });
+      const newSection = await prisma.assessmentSections.findFirst({ where: { assessmentId: result.createdAssessments[0].id } });
+      const link = await prisma.sectionVariants.findFirst({ where: { sectionId: newSection.id } });
 
       // The assembler should prefer the alternate variant, not the reference one
       expect(link.variantId).toBe(vAlt.id);
@@ -511,7 +510,7 @@ describeDb('assessmentVariantService (integration)', () => {
         includeDrafts: true
       });
 
-      const row = await Assessments.findByPk(result.createdAssessments[0].id);
+      const row = await prisma.assessments.findUnique({ where: { id: result.createdAssessments[0].id } });
       expect(row.blueprintConfig?.assemblyMode).toBe('metadata_similarity');
     });
 
@@ -521,12 +520,12 @@ describeDb('assessmentVariantService (integration)', () => {
       // but pickVariantForSlot with includeDrafts=false will return null since the only variant is a draft.
       // This triggers the "No variant available" throw → the entire transaction must roll back.
       const assessment = await makeAssessment('Draft Only Ref');
-      const section = await AssessmentSections.create({ assessmentId: assessment.id, name: 'Main', position: 0 });
+      const section = await prisma.assessmentSections.create({ data: { assessmentId: assessment.id, name: 'Main', position: 0 } });
       const meta = await makeQuestion();
       const draftVariant = await makeVariant(meta.id, { isDraft: true });
-      await SectionVariants.create({ sectionId: section.id, variantId: draftVariant.id, displayOrder: 0 });
+      await prisma.sectionVariants.create({ data: { sectionId: section.id, variantId: draftVariant.id, displayOrder: 0 } });
 
-      const before = await Assessments.count({ where: { courseId } });
+      const before = await prisma.assessments.count({ where: { courseId } });
 
       await expect(
         assembleExamVariantsByMetadataSimilarity(USER.id, {
@@ -537,7 +536,7 @@ describeDb('assessmentVariantService (integration)', () => {
         })
       ).rejects.toThrow(/no variant available/i);
 
-      expect(await Assessments.count({ where: { courseId } })).toBe(before);
+      expect(await prisma.assessments.count({ where: { courseId } })).toBe(before);
     });
 
     it('creates exactly one new assessment per exam label when assembly succeeds', async () => {
@@ -546,7 +545,7 @@ describeDb('assessmentVariantService (integration)', () => {
       const bankMeta = await makeQuestion('SA');
       await makeVariant(bankMeta.id, { isDraft: false });
 
-      const before = await Assessments.count({ where: { courseId } });
+      const before = await prisma.assessments.count({ where: { courseId } });
 
       await assembleExamVariantsByMetadataSimilarity(USER.id, {
         referenceAssessmentId: assessment.id,
@@ -555,7 +554,7 @@ describeDb('assessmentVariantService (integration)', () => {
         includeDrafts: true
       });
 
-      expect(await Assessments.count({ where: { courseId } })).toBe(before + 2);
+      expect(await prisma.assessments.count({ where: { courseId } })).toBe(before + 2);
     });
   });
 });

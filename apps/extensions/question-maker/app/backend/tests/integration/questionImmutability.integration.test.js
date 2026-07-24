@@ -66,8 +66,7 @@ function coreFetchStub() {
 }
 
 describeDb('Reviewed questions are immutable (#1080)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let courseId, topicId, otherTopicId;
   let fetchStub;
@@ -76,29 +75,27 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
     const testDb = await import('../helpers/testDb.js');
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
 
-    await User.create({ id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name });
+    await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
     await seedCoursesForNewUser(TEST_USER.id);
 
-    const course = await Course.findOne({ where: { userId: TEST_USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
     courseId = course.id;
-    const courseTopics = await Topics.findAll({ where: { courseId }, limit: 2, order: [['id', 'ASC']] });
+    const courseTopics = await prisma.topics.findMany({ where: { courseId }, take: 2, orderBy: { id: 'asc' } });
     topicId = courseTopics[0].id;
     otherTopicId = courseTopics[1].id;
     // Pre-link both topics to Core so pushVariantToCore's resolveCoreTopicId
     // skips the (separately-mocked) topic-push call and uses these directly.
-    await Topics.update({ coreTopicId: 'core-topic-primary' }, { where: { id: topicId } });
-    await Topics.update({ coreTopicId: 'core-topic-secondary' }, { where: { id: otherTopicId } });
+    await prisma.topics.update({ where: { id: topicId }, data: { coreTopicId: 'core-topic-primary' } });
+    await prisma.topics.update({ where: { id: otherTopicId }, data: { coreTopicId: 'core-topic-secondary' } });
 
     fetchStub = coreFetchStub();
     vi.stubGlobal('fetch', fetchStub);
@@ -107,7 +104,7 @@ describeDb('Reviewed questions are immutable (#1080)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   /** Creates a question + draft variant, then approves the variant (triggering the first Core push). */

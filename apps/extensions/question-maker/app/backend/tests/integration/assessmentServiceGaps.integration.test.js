@@ -15,8 +15,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants, Assessments;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let createAssessment, deleteAssessment, getQuestionsInAssessment, addQuestionToAssessment;
 
@@ -24,11 +23,9 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants, Assessments } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment, deleteAssessment, getQuestionsInAssessment, addQuestionToAssessment } =
       await import('../../src/services/assessmentService.js'));
@@ -38,36 +35,38 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
 
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   async function makeAssessment(name = 'Test Exam') {
-    return createAssessment(USER.id, { type: 'Quiz', name, semester: 'Fall 2026', courseId });
+    return createAssessment(USER.id, { type: 'Quiz', name, courseId });
   }
 
   async function makeQuestion(order = {}) {
-    return Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: order });
+    return prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: 'SA', questionOrder: order } });
   }
 
   async function makeVariant(questionMetadataId, assessmentId = null) {
-    return Variants.create({
-      questionMetadataId,
-      questionText: 'Some question text',
-      difficulty: 'medium',
-      assessmentId,
-      isDraft: true,
-      isAiGenerated: false,
-      secondaryTopicsId: []
+    return prisma.variants.create({
+      data: {
+        questionMetadataId,
+        questionText: 'Some question text',
+        difficulty: 'medium',
+        assessmentId,
+        isDraft: true,
+        isAiGenerated: false,
+        secondaryTopicsId: []
+      }
     });
   }
 
@@ -75,7 +74,7 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
     it('removes the assessment row from the database', async () => {
       const assessment = await makeAssessment();
       await deleteAssessment(assessment.id, USER.id);
-      const found = await Assessments.findByPk(assessment.id);
+      const found = await prisma.assessments.findUnique({ where: { id: assessment.id } });
       expect(found).toBeNull();
     });
 
@@ -88,10 +87,12 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
 
       await deleteAssessment(assessment.id, USER.id);
 
-      await v1.reload();
-      await v2.reload();
-      expect(v1.assessmentId).toBeNull();
-      expect(v2.assessmentId).toBeNull();
+      const [r1, r2] = await Promise.all([
+        prisma.variants.findUnique({ where: { id: v1.id } }),
+        prisma.variants.findUnique({ where: { id: v2.id } }),
+      ]);
+      expect(r1.assessmentId).toBeNull();
+      expect(r2.assessmentId).toBeNull();
     });
 
     it('does NOT touch variants that belong to a different assessment', async () => {
@@ -102,8 +103,8 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
 
       await deleteAssessment(asmA.id, USER.id);
 
-      await variant.reload();
-      expect(variant.assessmentId).toBe(asmB.id);
+      const reloaded = await prisma.variants.findUnique({ where: { id: variant.id } });
+      expect(reloaded.assessmentId).toBe(asmB.id);
     });
 
     it('throws when the assessment does not belong to the requesting user', async () => {
