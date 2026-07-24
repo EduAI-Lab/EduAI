@@ -2,9 +2,10 @@
  * GET  /api/courses/:id/rag-settings  — read per-course RAG tuning values.
  * PATCH /api/courses/:id/rag-settings — update ragTopK and/or ragSimilarityThreshold.
  *
- * Auth:
- *   GET  — any authenticated session.
- *   PATCH — ADMIN or INSTRUCTOR only.
+ * Auth: caller must have instructor-or-above access to the target course
+ * (`resolveCourseAccessWithCourse`, rank >= 2 — ADMIN, UNIT_ADMIN of the
+ * course's department, or the course's own INSTRUCTOR). TAs and students
+ * never see or set RAG tuning values.
  *
  * Both fields are nullable. Sending `null` for a field clears the override and
  * restores the global default.
@@ -12,6 +13,7 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourseRagSettings, invalidateCourseRagSettingsCache } from "~/lib/courses/server";
 import { UpdateCourseRagSettingsSchema } from "~/lib/courses/schemas";
 import prisma from "~/lib/prisma.server";
@@ -32,6 +34,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+  if (!course) {
+    return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -77,14 +93,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  const { role } = session.user;
-  if (role !== "ADMIN" && role !== "INSTRUCTOR") {
-    return new Response(JSON.stringify({ error: "Forbidden: ADMIN or INSTRUCTOR required" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -103,13 +111,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  const course = await prisma.course.findUnique({
-    where: { id: courseId },
-    select: { id: true },
-  });
+  const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
   if (!course) {
     return new Response(JSON.stringify({ error: "COURSE_NOT_FOUND" }), {
       status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (!access || access.rank < 2) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
       headers: { "Content-Type": "application/json" },
     });
   }

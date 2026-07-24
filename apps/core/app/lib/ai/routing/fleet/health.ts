@@ -34,6 +34,15 @@ export function resetFleetHealthCache(): void {
   healthCache.clear();
 }
 
+/**
+ * Drop a host from the health cache so the next probe is live.
+ * Slice 2: call after inference failure before retrying on another host.
+ */
+export function invalidateFleetHealthCacheForUrl(baseUrl: string): void {
+  const normalized = baseUrl.replace(/\/$/, "");
+  healthCache.delete(normalized);
+}
+
 export async function getServerHealth(baseUrl: string): Promise<FleetHealthResult> {
   const normalized = baseUrl.replace(/\/$/, "");
   const cached = healthCache.get(normalized);

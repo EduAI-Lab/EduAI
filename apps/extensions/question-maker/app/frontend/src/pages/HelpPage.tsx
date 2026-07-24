@@ -98,7 +98,7 @@ const ARTICLES: HelpArticle[] = [
                     <ol className="list-inside list-decimal space-y-1">
                         <li>Select a course.</li>
                         <li>Click “Add Question”.</li>
-                        <li>Fill question metadata: Primary Topic (required), Description, Type (MCQ / SA / LA).</li>
+                        <li>Fill in the question details: Primary Topic (required), Description, Type (MCQ / SA / LA).</li>
                         <li>
                             Fill variant details (every question needs at least one variant): Question Text (required),
                             Difficulty, optional Answer / Secondary Topics / Assessment link / Reference ID, and the
@@ -164,7 +164,7 @@ const ARTICLES: HelpArticle[] = [
                     <li>Pick an AI model (campus-hosted by default; external allowed with API key).</li>
                     <li>Upload PDF or image; progress shows OCR → extraction.</li>
                     <li>Review extracted drafts: edit fields, include/exclude per question, remove unwanted entries.</li>
-                    <li>Click “Create Questions”; items become questions with draft variants under a new assessment.</li>
+                    <li>Click “Save questions”; items become questions with draft variants under a new assessment.</li>
                 </ol>
                 <p className="text-sm">Note: exports are blocked until draft flags are cleared.</p>
             </div>
@@ -195,7 +195,7 @@ const ARTICLES: HelpArticle[] = [
                 </p>
                 <p className="text-sm">
                     <span className="font-medium text-foreground">Import from Canvas:</span> connect Canvas, pick a
-                    course and quiz, choose a local course + primary topic, set metadata, then import. Unsupported
+                    course and quiz, choose a local course + primary topic, fill in the question details, then import. Unsupported
                     question types are skipped.
                 </p>
             </div>

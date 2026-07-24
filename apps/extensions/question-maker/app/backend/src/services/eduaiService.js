@@ -5,6 +5,7 @@
 import axios from "axios";
 import { config } from "../config/settings.js";
 import { logger } from "../utils/logger.js";
+import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
 const DEBUG_PREFIX = "[EduAI]";
@@ -135,44 +136,34 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/chat.
-   *
-   * Prefer the caller's Core session cookie so generation runs as that user
-   * (course access, audit, RBAC). Fall back to `Authorization: Bearer
-   * <EDUAI_API_KEY>` only when no cookie is available (e.g. background jobs).
-   * Do not send x-api-key — Core's chat route ignores it.
+   * Builds auth headers for Core /api/completion. The service key is the primary
+   * credential for server-to-server proxying — Core's requireServiceKey guard
+   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
+   * completion route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
+   * session cookie only when no service key is configured.
    */
   buildChatAuthHeaders(cookie) {
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
+    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
-    }
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }
 
   /**
    * Picks a lightweight model for connectivity checks. Prefers whichever cloud
-   * provider the caller has a key for (browser-stored key), then the server's
-   * Google key — so the badge reflects cloud availability for ANY supported cloud
-   * provider, not just Google, even when the UBC-hosted (Ollama) provider is
-   * offline. Falls back to Ollama only when no cloud key exists at all.
-   *
-   * `forceProvider` overrides the auto-selection so a caller can probe a specific
-   * path regardless of what keys exist. The status chips rely on this: the UBC
-   * chip must probe the UBC-hosted (Ollama) path even when a server Google key is
-   * configured — otherwise the auto-selection would test Google and the UBC chip
-   * would report Google's state, never its own.
+   * provider the caller has a key for, then the server's Google key. Campus
+   * probes (`forceProvider` vllm/ollama) resolve the smallest active campus
+   * model from Core's live catalog when `campusModels` is provided.
    */
-  getConnectivityTestParams(clientApiKeys = {}, forceProvider) {
-    if (forceProvider === "ollama") {
-      return {
-        provider: "ollama",
-        model: "ollama:gpt-oss:120b",
-        apiKeys: { ollama: { isEnabled: true } },
-      };
+  getConnectivityTestParams(clientApiKeys = {}, forceProvider, campusModels = null) {
+    // UBC-hosted path. Accept legacy `ollama` force so older status-chip callers
+    // still pin the campus provider.
+    if (forceProvider === "ollama" || forceProvider === "vllm") {
+      return campusProbeParams(campusModels);
     }
 
     for (const provider of Object.keys(CLOUD_PROBE_MODELS)) {
@@ -196,11 +187,7 @@ class EduAIService {
       };
     }
 
-    return {
-      provider: "ollama",
-      model: "ollama:gpt-oss:120b",
-      apiKeys: { ollama: { isEnabled: true } },
-    };
+    return campusProbeParams(campusModels);
   }
 
   /** Fills in server-side provider keys when the client did not supply one (local dev). */
@@ -215,66 +202,83 @@ class EduAIService {
     if (provider === "ollama" && !merged.ollama) {
       merged.ollama = { isEnabled: true };
     }
+    if (provider === "vllm" && !merged.vllm) {
+      merged.vllm = { isEnabled: true };
+    }
     return merged;
   }
 
-  /** Sends a chat payload to EduAI, handling logging, timeouts, and API error translation. */
+  /**
+   * Hoists a system prompt from params or the first system message so Core's
+   * stateless /api/completion endpoint receives an explicit systemPrompt field.
+   */
+  buildCompletionPayload(params) {
+    const rawMessages = Array.isArray(params.messages) ? params.messages : [];
+    const systemFromMessages = rawMessages.find((m) => m?.role === "system");
+    const systemPrompt =
+      typeof params.systemPrompt === "string" && params.systemPrompt.trim()
+        ? params.systemPrompt.trim()
+        : typeof systemFromMessages?.content === "string"
+          ? systemFromMessages.content.trim()
+          : null;
+    const messages = rawMessages.filter(
+      (m) => m?.role === "user" || m?.role === "assistant",
+    );
+    return { systemPrompt, messages };
+  }
+
+  /** Sends a completion payload to EduAI (#858 — no chat/RAG/tool overhead). */
   async chat(params) {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
       throw new Error(
-        "EduAI chat requires a Core session. Sign in via Core, or set EDUAI_API_KEY for server-only calls."
+        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
       );
     }
 
     let chatStartMs;
     try {
       const model = params.model || "google:gemini-2.5-flash";
-      // Core strips non-user roles from `messages` (ALLOWED_CLIENT_MESSAGE_ROLES).
-      // System instructions must go in top-level `systemPrompt` or they are discarded
-      // and Core falls back to the course-tutor persona (markdown prose, not JSON).
-      const incoming = Array.isArray(params.messages) ? params.messages : [];
-      const systemParts = incoming
-        .filter((m) => m?.role === "system" && typeof m.content === "string" && m.content.trim())
-        .map((m) => m.content.trim());
-      const userMessages = incoming.filter((m) => m?.role === "user");
-      const systemPrompt =
-        (typeof params.systemPrompt === "string" && params.systemPrompt.trim()) ||
-        systemParts.join("\n\n") ||
-        undefined;
-
+      const { systemPrompt, messages } = this.buildCompletionPayload(params);
       const requestPayload = {
-        messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
+        systemPrompt,
+        messages,
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
-        courseCode: params.courseCode,
         // Background pool (#878) — QM generation/chat maps to VLLM_FLEET_HEAVY_URL when set.
-        // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
         streaming: params.streaming === true,
         routingContext: {
           feature: "question-maker",
           jobType: "background",
           ...(params.routingContext || {}),
         },
-        ...(systemPrompt ? { systemPrompt } : {}),
+        ...(params.temperature != null ? { temperature: params.temperature } : {}),
+        ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       };
+      if (params.courseId) {
+        requestPayload.courseId = params.courseId;
+      }
+      if (params.courseCode) {
+        requestPayload.courseCode = params.courseCode;
+      }
 
       // Allow caller to override (e.g. extraction needs longer than default 60s)
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
       chatStartMs = Date.now();
-      console.log(`${DEBUG_PREFIX} chat request starting`, {
-        url: `${this.baseURL}/api/chat`,
+      console.log(`${DEBUG_PREFIX} completion request starting`, {
+        url: `${this.baseURL}/api/completion`,
         timeoutMs,
         model: requestPayload.model,
-        courseCode: requestPayload.courseCode,
+        courseId: requestPayload.courseId ?? null,
+        courseCode: requestPayload.courseCode ?? null,
         messageCount: (requestPayload.messages || []).length,
-        hasSystemPrompt: Boolean(systemPrompt),
-        systemPromptLength: systemPrompt?.length ?? 0,
+        hasSystemPrompt: Boolean(requestPayload.systemPrompt),
+        systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
       const response = await axios.post(
-        `${this.baseURL}/api/chat`,
+        `${this.baseURL}/api/completion`,
         requestPayload,
         {
           headers: {
@@ -315,7 +319,7 @@ class EduAIService {
           status: statusCode,
           statusText: error.response.statusText,
           data: error.response.data,
-          url: `${this.baseURL}/api/chat`,
+          url: `${this.baseURL}/api/completion`,
           headers: error.response.headers,
         });
         throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
@@ -370,6 +374,7 @@ class EduAIService {
     const {
       prompt,
       courseCode,
+      courseId,
       model = "google:gemini-2.5-flash",
       apiKeys = {},
       numQuestions = 5,
@@ -381,9 +386,9 @@ class EduAIService {
       cookie,
     } = params;
 
-    if (!prompt || !courseCode) {
+    if (!prompt || (!courseCode && !courseId)) {
       throw new Error(
-        "Prompt and courseCode are required for question generation"
+        "Prompt and courseCode (or courseId) are required for question generation"
       );
     }
 
@@ -460,7 +465,8 @@ OUTPUT RULES (mandatory):
     try {
       const genStartMs = Date.now();
       console.log(`${DEBUG_PREFIX} generateQuestions calling chat`, {
-        courseCode,
+        courseId: courseId ?? null,
+        courseCode: courseCode ?? null,
         model,
         numQuestions,
         mcqRequiredChoiceCount: mcqCountEnforced ? mcqRequiredChoiceCount : undefined,
@@ -477,6 +483,7 @@ OUTPUT RULES (mandatory):
         ],
         model,
         apiKeys,
+        courseId,
         courseCode,
         streaming: false,
         timeoutMs: 180000, // 3 minutes for question generation/extraction
@@ -521,6 +528,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
             ],
             model,
             apiKeys,
+            courseId,
             courseCode,
             streaming: false,
             timeoutMs: 180000,
@@ -950,6 +958,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
   }
 
   /**
+   * Course context for connectivity probes. Prefer configured Core `courseId`,
+   * then `courseCode`. When neither is set, omit course so service-key probes
+   * can use Core's course-free API-key path instead of hardcoding a seed course
+   * that may not exist on every environment.
+   */
+  getConnectivityProbeCourse() {
+    const courseId = config.eduaiProbeCourseId || "";
+    const courseCode = config.eduaiProbeCourseCode || "";
+    if (courseId) return { courseId };
+    if (courseCode) return { courseCode };
+    return {};
+  }
+
+  /**
    * Issues a lightweight chat call to validate Core AI connectivity.
    * `apiKeys` carries any browser-stored provider keys (e.g. the user's Google
    * key) so the check can validate the cloud provider rather than always testing
@@ -972,20 +994,37 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       };
     }
 
-    const { provider, model, apiKeys } = this.getConnectivityTestParams(clientApiKeys, forceProvider);
+    let campusModels = null;
+    if (forceProvider === "ollama" || forceProvider === "vllm" || !Object.keys(clientApiKeys || {}).length) {
+      try {
+        campusModels = await this.listAIModels({ cookie });
+      } catch (err) {
+        console.warn(`${DEBUG_PREFIX} campus model catalog unavailable for probe`, err.message);
+      }
+    }
+
+    const { provider, model, apiKeys } = this.getConnectivityTestParams(
+      clientApiKeys,
+      forceProvider,
+      campusModels,
+    );
+    const probeCourse = this.getConnectivityProbeCourse();
     try {
       const response = await this.chat({
+        systemPrompt: "Reply briefly.",
         messages: [{ role: "user", content: "test" }],
         model,
         apiKeys,
-        courseCode: "COSC 121",
+        ...probeCourse,
         streaming: false,
+        // Status chips should fail fast — full extract uses a longer timeout.
+        timeoutMs: 20000,
         cookie,
       });
 
       return {
         success: true,
-        message: cookie?.trim() ? "Core session can reach AI" : "Service key can reach AI",
+        message: this.apiKey ? "Service key can reach AI" : "Core session can reach AI",
         provider,
         response: response,
       };
