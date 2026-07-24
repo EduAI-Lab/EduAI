@@ -35,7 +35,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess, requireQuestionAccess } from '../middleware/resourceAccess.js';
-import { parsePaginationParams, paginated } from '../utils/pagination.js';
+import { parsePaginationParams, pageOf } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -230,17 +230,17 @@ router.delete('/:id/questions/:questionId', authenticateToken, requireRole(QM_AU
 /** GET /api/assessments/:id/questions – returns questions associated with the assessment (TA view). */
 router.get('/:id/questions', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment, async (req, res, next) => {
   try {
-    // Structure-bounded (#1044): the assessment builder reads the whole ordered
-    // working set, so this is optional paging with a bounded default page of 200
-    // rather than a required pager. Sliced in memory (`total` = the assessment's
-    // full question count) — the service query joins per-assessment variant rows
-    // and orders by a JSON display-key, so a nested findAndCountAll would fight
-    // the join/ordering.
+    // Structure-bounded (#1044): optional paging. The assessment builder reads
+    // the whole ordered working set and sends no page params, so `pageOf`
+    // returns everything — only an explicit `page`/`pageSize` narrows it, and
+    // `total` always reports the assessment's full question count. Sliced in
+    // memory because the service query joins per-assessment variant rows and
+    // orders by a JSON display-key, so a nested findAndCountAll would fight the
+    // join/ordering.
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const all = await getQuestionsInAssessment(req.params.id, req.qmCourse.userId);
-    const page = all.slice(pagination.offset, pagination.offset + pagination.limit);
 
-    res.json(paginated(page, all.length, pagination));
+    res.json(pageOf(all, pagination));
   } catch (error) {
     next(error);
   }
@@ -250,15 +250,14 @@ router.get('/:id/questions', authenticateToken, requireRole(QM_AUTHORIZED), view
 /** GET /api/assessments/:id/sections – lists sections tied to the assessment (TA view). */
 router.get('/:id/sections', authenticateToken, requireRole(QM_AUTHORIZED), viewAssessment, async (req, res, next) => {
   try {
-    // Structure-bounded (#1044): optional paging, default one bounded page of
-    // 200 so the assembled-assessment reader keeps the whole set. Sliced in
-    // memory — the service eager-loads a deep section→variant→question tree, so
+    // Structure-bounded (#1044): optional paging — the assembled-assessment
+    // reader sends no page params and gets the whole set back. Sliced in memory
+    // because the service eager-loads a deep section→variant→question tree, so
     // a nested findAndCountAll would miscount/mislimit.
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const all = await getSectionsForAssessment(req.params.id, req.qmCourse.userId);
-    const page = all.slice(pagination.offset, pagination.offset + pagination.limit);
 
-    res.json(paginated(page, all.length, pagination));
+    res.json(pageOf(all, pagination));
   } catch (error) {
     next(error);
   }

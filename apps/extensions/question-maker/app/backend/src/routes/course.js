@@ -322,9 +322,10 @@ router.get(
   requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
   try {
-    // Structure-bounded list (#1044): optional paging, one bounded page of 200
-    // by default so existing whole-set readers keep working while the unbounded
-    // query is gone. Flat query → true DB-level limit/offset via findAndCountAll.
+    // Structure-bounded list (#1044): optional paging. Flat query, so an
+    // explicit page maps to a true DB-level limit/offset; a caller that sends
+    // no page params still gets the whole topic list rather than a silently
+    // truncated first page.
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
 
     const course = req.qmCourse;
@@ -336,12 +337,22 @@ router.get(
 
     const { count, rows } = await Topics.findAndCountAll({
       where: { courseId: req.params.id },
-      order: [['createdAt', 'ASC']],
-      limit: pagination.limit,
-      offset: pagination.offset
+      // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
+      // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
+      // pages can repeat and drop rows across requests.
+      order: [['createdAt', 'ASC'], ['id', 'ASC']],
+      ...(pagination.explicit
+        ? { limit: pagination.limit, offset: pagination.offset }
+        : {})
     });
 
-    res.json(paginated(rows, count, pagination));
+    res.json(
+      paginated(
+        rows,
+        count,
+        pagination.explicit ? pagination : { page: 1, pageSize: Math.max(count, 1) }
+      )
+    );
   } catch (error) {
     next(error);
   }

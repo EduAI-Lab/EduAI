@@ -188,7 +188,11 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
  * local rows only.
  */
 export async function listCoursesForUser(reqUser, { cookie } = {}) {
-  const allCourses = await Course.findAll({ order: [['createdAt', 'DESC']] });
+  // `id` breaks ties so the caller's offset slice is stable across requests:
+  // ADMIN anchor materialization below `bulkCreate`s many rows in one statement,
+  // giving them an identical `createdAt` that would otherwise let a course show
+  // up on two pages while another never appears.
+  const allCourses = await Course.findAll({ order: [['createdAt', 'DESC'], ['id', 'DESC']] });
 
   let coreById = new Map();
   try {

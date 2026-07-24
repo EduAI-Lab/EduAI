@@ -18,8 +18,9 @@
  *     unparseable values throw a 400-shaped `PaginationError`. Used by the
  *     unbounded lists (course list, questions-in-assessment).
  *   - optional (`required: false`): missing params fall back to page 1 at
- *     `defaultPageSize`. Used by structure-bounded lists (topics, sections,
- *     variants) whose readers want the whole set and request one bounded page.
+ *     `defaultPageSize`, and `explicit` is false so `pageOf`/route callers
+ *     return the whole set instead of truncating a caller that never asked to
+ *     page. Used by structure-bounded lists (topics, sections, variants).
  *
  * Related: `src/utils/` siblings, `app/frontend/src/services/api.ts`
  * (`Paginated<T>`).
@@ -27,6 +28,14 @@
 
 export const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * Upper clamp for `page`. Without it an unbounded value (`?page=1e20`) reaches
+ * Sequelize as `OFFSET 2e+22`, which Postgres rejects as out of bigint range —
+ * the client gets a 500 instead of an empty page. Optional mode deliberately
+ * doesn't throw on junk params, so the guard has to be a clamp, not a check.
+ */
+const MAX_PAGE = 1_000_000;
 
 /**
  * A 400-shaped error thrown when required pagination params are missing or
@@ -89,12 +98,44 @@ export function parsePaginationParams(req, opts = {}) {
     );
   }
 
-  const page = Number.isFinite(pageNum) ? clampInt(pageNum, 1) : 1;
+  const page = Number.isFinite(pageNum) ? clampInt(pageNum, 1, MAX_PAGE) : 1;
   const pageSize = Number.isFinite(pageSizeNum)
     ? clampInt(pageSizeNum, 1, maxPageSize)
     : defaultPageSize;
 
-  return { page, pageSize, limit: pageSize, offset: (page - 1) * pageSize };
+  return {
+    page,
+    pageSize,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+    // Did the caller actually ask to page? Optional-mode routes use this to
+    // tell "wants page N" from "wants the whole set" — without it they'd
+    // silently truncate every legacy caller at `defaultPageSize`.
+    explicit: hasPage || hasPageSize,
+  };
+}
+
+/**
+ * Envelope a full in-memory result set as one page.
+ *
+ * When the caller passed no pagination params (optional mode), the whole set is
+ * returned rather than the first `defaultPageSize` rows — a reader that never
+ * asked to page must not have rows silently dropped. When they did ask, the
+ * requested window is sliced out and `total` still reports the full count.
+ *
+ * @template T
+ * @param {T[]} rows Full ordered result set.
+ * @param {ReturnType<typeof parsePaginationParams>} pagination
+ */
+export function pageOf(rows, pagination) {
+  if (!pagination.explicit) {
+    return paginated(rows, rows.length, {
+      page: 1,
+      pageSize: Math.max(rows.length, 1),
+    });
+  }
+  const window = rows.slice(pagination.offset, pagination.offset + pagination.limit);
+  return paginated(window, rows.length, pagination);
 }
 
 /**
