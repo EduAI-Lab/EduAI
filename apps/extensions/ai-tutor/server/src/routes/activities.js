@@ -27,7 +27,7 @@ import { randomUUID } from 'crypto';
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapActivity } from '../utils/mappers.js';
+import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
 import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
@@ -1080,8 +1080,20 @@ router.get(
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: 'courseId is required' });
     }
+    // #1043: the picker previously filtered out the current lesson client-side
+    // over the full result set; under pagination that could empty a page, so
+    // push it into the query as an optional exclusion.
+    let excludeLessonId = null;
+    if (req.query.excludeLessonId !== undefined) {
+      excludeLessonId = Number(req.query.excludeLessonId);
+      if (!Number.isFinite(excludeLessonId)) {
+        return res.status(400).json({ error: 'excludeLessonId must be a number' });
+      }
+    }
 
     try {
+      // #1043: unbounded list — require explicit paging (Group A contract).
+      const pageParams = parsePaginationParams(req);
       const course = await prisma.courseOffering.findUnique({
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
@@ -1130,28 +1142,28 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
-      const activities = await prisma.activity.findMany({
-        where: { lesson: { module: { courseOfferingId: { in: manageableCourseIds } } } },
-        orderBy: [{ lessonId: 'asc' }, { position: 'asc' }],
-        include: {
-          lesson: { select: { title: true, module: { select: { title: true } } } },
-        },
-      });
+      const importableWhere = {
+        lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
+        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
+      };
+      const [total, activities] = await prisma.$transaction([
+        prisma.activity.count({ where: importableWhere }),
+        prisma.activity.findMany({
+          where: importableWhere,
+          orderBy: [{ lessonId: 'asc' }, { position: 'asc' }],
+          skip: pageParams.skip,
+          take: pageParams.take,
+          include: {
+            lesson: { select: { title: true, module: { select: { title: true } } } },
+          },
+        }),
+      ]);
 
-      const importable = activities.map((activity) => {
-        const config = activity.config ?? {};
-        return {
-          id: activity.id,
-          title: activity.title ?? config.question ?? activity.instructionsMd,
-          type: config.questionType ?? 'MCQ',
-          lessonId: activity.lessonId,
-          lessonTitle: activity.lesson?.title ?? null,
-          moduleTitle: activity.lesson?.module?.title ?? null,
-        };
-      });
-
-      res.json(importable);
+      res.json(paginated(activities.map(mapImportableActivity), total, pageParams));
     } catch (e) {
+      if (e instanceof PaginationError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
       console.error('Error listing importable activities:', e);
       res.status(500).json({ error: String(e) });
     }
