@@ -53,7 +53,6 @@ vi.mock('~/components/AddActivityPanel', () => ({ default: () => null }));
 vi.mock('~/components/EditActivityPanel', () => ({ default: () => null }));
 vi.mock('~/components/ActivityDetailsCard', () => ({ default: () => null }));
 vi.mock('~/components/AddCourseTopicsButton', () => ({ default: () => null }));
-vi.mock('~/components/TopicSyncMappingDialog', () => ({ default: () => null }));
 vi.mock('~/components/bug-report/useBugReport', () => ({ useBugReport: () => ({ setBugContext: vi.fn() }) }));
 vi.mock('~/components/TourButton', () => ({ default: () => null }));
 vi.mock('~/components/TourProvider', () => ({ TourProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>, useAppTour: () => ({}) }));

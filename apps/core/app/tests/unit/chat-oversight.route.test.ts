@@ -68,12 +68,17 @@ vi.mock("~/lib/prisma.server", () => ({
 	  },
 	}));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 	import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 	import { withStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 	import { invalidatePolicyCache } from "~/lib/policy.server";
+	import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 	import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -159,6 +164,7 @@ function baseBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+	  resetRateLimitsForTests();
 	  process.env.VLLM_BASE_URL = "http://localhost:8001";
 	  process.env.ADHD_ASSIST_OVERSIGHT = "true";
 	  invalidatePolicyCache();
@@ -208,6 +214,12 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     expect(persisted[0]).toMatchObject({ messageId: "tool-step", role: "assistant" });
     expect(persisted[1]).toMatchObject({ messageId: "final-step", role: "assistant" });
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Top summary**");
+    expect(persisted[0]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
+    expect(persisted[1]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
   });
 
   it("persists overseen content before streaming the reply", async () => {
@@ -221,6 +233,9 @@ describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
     const persisted = lastPersistedRows();
     expect(persisted).toHaveLength(2);
     expect(JSON.stringify(persisted[1]?.content)).toContain("**Next?**");
+    expect(persisted[1]?.content).toMatchObject({
+      metadata: { resolvedModelId: "vllm:test-model" },
+    });
     expect(await res.text()).toContain("Want to continue?");
   });
 

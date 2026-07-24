@@ -22,6 +22,7 @@
  *   match the server mappers; silent breakage risk if they drift.
  */
 
+import { toast } from 'sonner';
 import type {
   AdminBugReportRow,
   AdminEnrollmentData,
@@ -44,6 +45,16 @@ import type {
   User,
 } from './types';
 import { getCoreLoginUrl } from './coreUrl';
+
+/**
+ * Set by course endpoints (#1072 step 2) when a request degraded gracefully
+ * because EduAI Core couldn't be reached — the response still succeeds (200)
+ * with locally-anchored, possibly-stale data instead of hard-erroring (mirrors
+ * the #1066 topic fail-soft pattern). `http()` below surfaces it as a single
+ * deduped toast (stable `id`, so concurrent course/stat calls during one page
+ * load collapse into one notice instead of stacking).
+ */
+const CORE_STATUS_HEADER = 'X-Core-Status';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -218,6 +229,13 @@ async function http(path: string, init?: RequestInit & { timeoutMs?: number }) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
   }
+  // Optional chaining: some lightweight test doubles for `Response` omit
+  // `headers` entirely — a real `fetch` Response always has it.
+  if (res.headers?.get?.(CORE_STATUS_HEADER) === 'unavailable') {
+    toast.warning('EduAI Core is unavailable — course data may be out of date.', {
+      id: 'core-unavailable',
+    });
+  }
   // 204 No Content (e.g. DELETE) has no body — `res.json()` would throw on the
   // empty payload, so short-circuit to null.
   if (res.status === 204) return null;
@@ -251,19 +269,6 @@ export const api = {
     }>,
   listCourses: () => http('/api/courses'),
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
-  updateCourse: (
-    courseId: number,
-    payload: {
-      title?: string;
-      description?: string | null;
-      startDate?: string | null;
-      endDate?: string | null;
-    },
-  ) =>
-    http(`/api/courses/${courseId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    }),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
       method: 'PATCH',
@@ -315,6 +320,13 @@ export const api = {
     http(`/api/modules/${moduleId}`, {
       method: 'DELETE',
     }),
+  // Bulk-reorder every module in a course. `orderedIds` is the full ordered
+  // set of module ids; the server reassigns positions 0..n-1 atomically.
+  reorderModules: (courseId: number, orderedIds: number[]) =>
+    http(`/api/courses/${courseId}/modules/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
+    }),
   lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
   createLesson: (
     moduleId: number,
@@ -343,6 +355,12 @@ export const api = {
   deleteLesson: (lessonId: number) =>
     http(`/api/lessons/${lessonId}`, {
       method: 'DELETE',
+    }),
+  // Bulk-reorder every lesson within a module (see reorderModules).
+  reorderLessons: (moduleId: number, orderedIds: number[]) =>
+    http(`/api/modules/${moduleId}/lessons/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
@@ -410,25 +428,22 @@ export const api = {
     http(`/api/activities/${activityId}`, {
       method: 'DELETE',
     }),
+  // Bulk-reorder every activity within a lesson (see reorderModules).
+  reorderActivities: (lessonId: number, orderedIds: number[]) =>
+    http(`/api/lessons/${lessonId}/activities/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
+    }),
   topicsForCourse: (courseId: number) => http(`/api/courses/${courseId}/topics`),
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  syncCourseTopics: (courseId: number) =>
-    http(`/api/courses/${courseId}/topics/sync`, {
-      method: 'POST',
-    }),
   syncCourseEnrollments: (courseId: number) =>
     http(`/api/courses/${courseId}/sync-enrollments`, {
       method: 'POST',
     }) as Promise<{ synced: number; created: number; updated: number; deleted: number; errors: [] }>,
-  remapCourseTopics: (courseId: number, mappings: { fromTopicId: number; toTopicId: number }[]) =>
-    http(`/api/courses/${courseId}/topics/remap`, {
-      method: 'POST',
-      body: JSON.stringify({ mappings }),
-    }),
   submitAnswer: (activityId: number, payload: any) =>
     http(`/api/questions/${activityId}/answer`, {
       method: 'POST',
@@ -550,6 +565,20 @@ export const api = {
     const qs = search.toString();
     return http(`/api/courses/${courseId}/submissions${qs ? `?${qs}` : ''}`) as Promise<
       SubmissionRow[]
+    >;
+  },
+  listCourseFeedback: (
+    courseId: number,
+    params?: { activityId?: number; studentId?: string; take?: number; skip?: number },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.activityId != null) search.set('activityId', String(params.activityId));
+    if (params?.studentId) search.set('studentId', params.studentId);
+    if (params?.take != null) search.set('take', String(params.take));
+    if (params?.skip != null) search.set('skip', String(params.skip));
+    const qs = search.toString();
+    return http(`/api/courses/${courseId}/feedback${qs ? `?${qs}` : ''}`) as Promise<
+      ActivityFeedbackRow[]
     >;
   },
   courseStudentMetrics: (courseId: number) =>

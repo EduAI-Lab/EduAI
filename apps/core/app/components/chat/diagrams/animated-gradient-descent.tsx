@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useId } from "react";
 import { AnimatedDiagramShell } from "~/components/chat/diagrams/animated-diagram-shell";
 import {
-  defaultStagesForType,
-  normalizeStagesForType,
-  type EduaiDiagramPayload,
-} from "~/lib/ai/eduai-diagram-payload";
+  StageChipButton,
+  useDiagramStageUi,
+} from "~/components/chat/diagrams/diagram-stage-ui";
+import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 import { cn } from "~/lib/utils";
 
 /**
@@ -16,58 +16,40 @@ export function AnimatedGradientDescent({
   payload,
 }: {
   className?: string;
-  payload?: EduaiDiagramPayload;
+  payload: EduaiDiagramPayload;
 }) {
-  const stages = normalizeStagesForType(
+  const { stages, selected, setSelected, detail } = useDiagramStageUi(
     "gradient-descent",
-    payload?.stages && payload.stages.length > 0
-      ? payload.stages
-      : defaultStagesForType("gradient-descent"),
+    payload,
   );
-  const [selected, setSelected] = useState(0);
-
-  useEffect(() => {
-    setSelected(0);
-  }, [payload?.title, stages.map((s) => s.label).join("|")]);
+  const fillId = `gd-fill-${useId().replace(/:/g, "")}`;
 
   return (
     <AnimatedDiagramShell
       className={className}
       diagramId="gradient-descent"
-      title={payload?.title?.trim() || "Gradient descent — stepping downhill"}
+      title={payload.title?.trim() || "Gradient descent — stepping downhill"}
       ariaLabel="Animated diagram of gradient descent stepping down a cost valley toward a minimum"
       caption="Each step moves opposite the gradient, walking downhill toward lower cost. Tap a stage for a short explanation."
-      detail={
-        <>
-          <span className="font-medium">{stages[selected]?.label}</span>
-          {stages[selected]?.detail ? (
-            <span className="text-muted-foreground">
-              {" — "}
-              {stages[selected]?.detail}
-            </span>
-          ) : null}
-        </>
-      }
+      detail={detail}
     >
       {({ playKey, reducedMotion }) => (
         <div className="flex flex-col items-center gap-2">
-          <GradientDescentSvg playKey={playKey} reducedMotion={reducedMotion} />
+          <GradientDescentSvg
+            playKey={playKey}
+            reducedMotion={reducedMotion}
+            fillId={fillId}
+            selected={selected}
+            stageCount={stages.length}
+          />
           <ol className="flex w-full flex-wrap items-stretch justify-center gap-1.5">
             {stages.map((stage, i) => (
               <li key={`${stage.label}-${i}`}>
-                <button
-                  type="button"
-                  onClick={() => setSelected(i)}
-                  aria-pressed={selected === i}
-                  className={cn(
-                    "min-h-11 min-w-[4.5rem] max-w-[7.5rem] rounded-lg border px-2 py-2 text-center text-[11px] font-medium leading-snug transition-colors sm:text-xs",
-                    selected === i
-                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                      : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-muted/60",
-                  )}
-                >
-                  {stage.label}
-                </button>
+                <StageChipButton
+                  label={stage.label}
+                  selected={selected === i}
+                  onSelect={() => setSelected(i)}
+                />
               </li>
             ))}
           </ol>
@@ -77,13 +59,30 @@ export function AnimatedGradientDescent({
   );
 }
 
+const GD_MARKERS = [
+  { cx: 70, cy: 48, delay: "0s" },
+  { cx: 110, cy: 70, delay: "0.9s" },
+  { cx: 140, cy: 110, delay: "1.8s" },
+  { cx: 160, cy: 130, delay: "2.7s" },
+] as const;
+
 function GradientDescentSvg({
   playKey,
   reducedMotion,
+  fillId,
+  selected,
+  stageCount,
 }: {
   playKey: number;
   reducedMotion: boolean;
+  fillId: string;
+  selected: number;
+  stageCount: number;
 }) {
+  const markerCount = Math.min(GD_MARKERS.length, Math.max(stageCount, 1));
+  const markers = GD_MARKERS.slice(0, markerCount);
+  const active = markers[Math.min(selected, markers.length - 1)] ?? markers[0]!;
+
   return (
     <svg
       key={playKey}
@@ -91,7 +90,7 @@ function GradientDescentSvg({
       className="h-auto w-full max-w-md"
     >
       <defs>
-        <linearGradient id="gd-fill" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="currentColor" stopOpacity="0.08" />
           <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
         </linearGradient>
@@ -124,7 +123,7 @@ function GradientDescentSvg({
 
       <path
         d="M 50 40 Q 120 40 160 130 Q 200 40 270 40"
-        fill="url(#gd-fill)"
+        fill={`url(#${fillId})`}
         stroke="currentColor"
         strokeOpacity="0.55"
         strokeWidth="2"
@@ -137,7 +136,9 @@ function GradientDescentSvg({
       <circle
         r="7"
         className={cn("fill-primary stroke-background")}
-        {...(reducedMotion ? { cx: 160, cy: 130 } : { cx: 70, cy: 48 })}
+        {...(reducedMotion
+          ? { cx: active.cx, cy: active.cy }
+          : { cx: 70, cy: 48 })}
       >
         {!reducedMotion && (
           <animateMotion
@@ -152,21 +153,16 @@ function GradientDescentSvg({
         )}
       </circle>
 
-      {!reducedMotion &&
-        [
-          { cx: 70, cy: 48, delay: "0s" },
-          { cx: 110, cy: 70, delay: "0.9s" },
-          { cx: 140, cy: 110, delay: "1.8s" },
-          { cx: 160, cy: 130, delay: "2.7s" },
-        ].map((p, i) => (
-          <circle
-            key={`${playKey}-step-${i}`}
-            cx={p.cx}
-            cy={p.cy}
-            r="3.5"
-            className="fill-primary/40"
-            opacity="0"
-          >
+      {markers.map((p, i) => (
+        <circle
+          key={`${playKey}-step-${i}`}
+          cx={p.cx}
+          cy={p.cy}
+          r={selected === i ? 5 : 3.5}
+          className={selected === i ? "fill-primary" : "fill-primary/40"}
+          opacity={reducedMotion ? (selected === i ? 1 : 0.35) : undefined}
+        >
+          {!reducedMotion && (
             <animate
               attributeName="opacity"
               values="0;1;1"
@@ -175,8 +171,9 @@ function GradientDescentSvg({
               begin={p.delay}
               fill="freeze"
             />
-          </circle>
-        ))}
+          )}
+        </circle>
+      ))}
     </svg>
   );
 }

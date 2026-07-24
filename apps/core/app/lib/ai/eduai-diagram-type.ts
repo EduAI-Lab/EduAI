@@ -21,21 +21,41 @@ const HIERARCHY_PATTERN =
 const COMPARE_PATTERN =
   /\b(compar(e|ison|ing)|versus|\bvs\.?\b|difference\s+between|contrast|pros?\s+and\s+cons?)\b/i;
 
+const TYPE_ALIASES: Record<string, EduaiDiagramCanonicalId> = {
+  gd: "gradient-descent",
+  gradient: "gradient-descent",
+  process: "process-flow",
+  flow: "process-flow",
+  steps: "process-flow",
+  tree: "hierarchy",
+  structure: "hierarchy",
+  vs: "compare",
+  contrast: "compare",
+};
+
+/**
+ * Map a fence type token / alias to a canonical id, or null if unknown.
+ * Does not fall back to process-flow — use for parse gating so bare labels
+ * like "Start" are not swallowed as type ids.
+ */
+export function matchExplicitDiagramTypeId(
+  raw: string,
+): EduaiDiagramCanonicalId | null {
+  const explicit = raw.trim().toLowerCase().replace(/_/g, "-");
+  if (!explicit) return null;
+  if ((EDUAI_DIAGRAM_CANONICAL_IDS as readonly string[]).includes(explicit)) {
+    return explicit as EduaiDiagramCanonicalId;
+  }
+  return TYPE_ALIASES[explicit] ?? null;
+}
+
 export function resolveEduaiDiagramTypeId(args: {
   userText?: string;
   draftText?: string;
   explicitTypeId?: string;
 }): EduaiDiagramCanonicalId {
-  const explicit = (args.explicitTypeId ?? "").trim().toLowerCase().replace(/_/g, "-");
-  if (explicit && (EDUAI_DIAGRAM_CANONICAL_IDS as readonly string[]).includes(explicit)) {
-    return explicit as EduaiDiagramCanonicalId;
-  }
-
-  // Aliases the model might emit
-  if (explicit === "gd" || explicit === "gradient") return "gradient-descent";
-  if (explicit === "process" || explicit === "flow" || explicit === "steps") return "process-flow";
-  if (explicit === "tree" || explicit === "structure") return "hierarchy";
-  if (explicit === "vs" || explicit === "contrast") return "compare";
+  const matched = matchExplicitDiagramTypeId(args.explicitTypeId ?? "");
+  if (matched) return matched;
 
   const haystack = `${args.userText ?? ""}\n${args.draftText ?? ""}`;
 
@@ -46,8 +66,11 @@ export function resolveEduaiDiagramTypeId(args: {
   return "process-flow";
 }
 
-/** @deprecated Prefer buildEduaiDiagramFence from eduai-diagram-payload (supports stages). */
-export function buildEduaiDiagramFence(typeId: string): string {
-  const id = resolveEduaiDiagramTypeId({ explicitTypeId: typeId });
-  return ["```eduai-diagram", id, "```"].join("\n");
+/** Shared fence detection used by assist policy, split, and display transform. */
+export function hasEduaiDiagramFence(text: string): boolean {
+  return /```eduai-diagram\b/i.test(text ?? "");
 }
+
+/** Global regex for splitting / extracting eduai-diagram fences (reset lastIndex). */
+export const EDUAI_DIAGRAM_FENCE_GLOBAL =
+  /```eduai-diagram[^\n]*\r?\n([\s\S]*?)```/gi;

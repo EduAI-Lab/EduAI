@@ -60,7 +60,7 @@ const PERMISSION_GROUPS: {
   {
     id: 'general',
     title: 'General',
-    description: 'Platform-wide switches not scoped to a single role.',
+    description: 'Settings that apply to everyone, not just one role.',
     match: () => true,
   },
 ]

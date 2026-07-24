@@ -4,6 +4,8 @@ import path from 'node:path';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { clearStudentIdStorage, prepareStudentIdStorage } from '../app/lib/canvas/student-id.server';
+// Canonical UBC term code + academic-year attribution (source of truth: packages/ui/src/lib/term.ts).
+import { termInfoFromDate, type TermCode } from '@eduai/ui/term';
 
 export const prisma = new PrismaClient();
 
@@ -33,13 +35,13 @@ export const SEED_IDS = {
     student4: 'seed_user_student_04',
     student5: 'seed_user_student_05',
   },
-  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). */
+  /** Canvas-compatible sis_user_id values for seeded students (matches mock roster + local Canvas seed). UBC format: 8 digits (#818). */
   studentNumbers: {
-    student1: 'student_1',
-    student2: 'student_2',
-    student3: 'student_3',
-    student4: 'student_4',
-    student5: 'student_5',
+    student1: '10000001',
+    student2: '10000002',
+    student3: '10000003',
+    student4: '10000004',
+    student5: '10000005',
   },
   courses: {
     cosc101: 'seed_course_cosc101',
@@ -72,7 +74,7 @@ type SeedCourse = {
   section: string;
   name: string;
   description: string;
-  term: string;
+  term: TermCode;
   year: number;
   startDate: Date;
   endDate: Date;
@@ -109,7 +111,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Computer Studies',
     description: 'Introductory course covering computational thinking and digital literacy.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -184,8 +186,8 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Computer Programming II',
     description: 'Object-oriented design, data structures, algorithms, and testing.',
-    term: 'Spring',
-    year: 2026,
+    term: 'W2',
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'COSC',
@@ -255,7 +257,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Machine Architecture',
     description: 'Instruction sets, pipelining, memory hierarchy, and performance.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -317,7 +319,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Calculus III',
     description: 'Multivariable calculus: partial derivatives, multiple integrals, vector calculus.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -380,8 +382,8 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Real Analysis',
     description: 'Rigorous treatment of limits, continuity, differentiation, and Riemann integration.',
-    term: 'Spring',
-    year: 2026,
+    term: 'W2',
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'MATH',
@@ -430,7 +432,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Intermediate Statistics',
     description: 'Estimation, hypothesis testing, regression, and resampling.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -492,8 +494,8 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Applied Machine Learning',
     description: 'Supervised and unsupervised learning, model selection, and evaluation.',
-    term: 'Spring',
-    year: 2026,
+    term: 'W2',
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'DATA',
@@ -554,7 +556,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Introduction to Psychology',
     description: 'Survey of major topics in psychology.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -616,7 +618,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Cell Biology',
     description: 'Structure and function of eukaryotic and prokaryotic cells.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -666,7 +668,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Mechanics',
     description: 'Newtonian mechanics: kinematics, dynamics, energy, and momentum.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -716,8 +718,8 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'World History: 1500 to Present',
     description: 'Major themes in global history from the early modern period.',
-    term: 'Winter',
-    year: 2026,
+    term: 'W2',
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'HIST',
@@ -766,7 +768,7 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Composition',
     description: 'Academic writing and argumentation.',
-    term: 'Fall',
+    term: 'W1',
     year: 2026,
     startDate: new Date('2026-09-08'),
     endDate: new Date('2026-12-12'),
@@ -808,8 +810,8 @@ const COURSES: SeedCourse[] = [
     section: '001',
     name: 'Introduction to Ethics',
     description: 'Major ethical theories and contemporary applied problems.',
-    term: 'Spring',
-    year: 2026,
+    term: 'W2',
+    year: 2025,
     startDate: new Date('2026-01-05'),
     endDate: new Date('2026-04-24'),
     department: 'PHIL',
@@ -848,6 +850,59 @@ const COURSES: SeedCourse[] = [
 ];
 
 // ---------------------------------------------------------------------------
+
+/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
+const ROUTING_TIER_ASSIGNMENTS = [
+  {
+    providerName: 'vllm',
+    modelId: 'qwen2.5-7b-instruct',
+    routerTier: 'TIER_1' as const,
+    estEnergyJoulesPerToken: 0.08,
+    averageCarbonGramsPerToken: 1.78e-6,
+  },
+  {
+    providerName: 'vllm',
+    modelId: 'qwen2.5-32b-instruct',
+    routerTier: 'TIER_3' as const,
+    estEnergyJoulesPerToken: 0.5,
+    averageCarbonGramsPerToken: 1.11e-5,
+  },
+];
+
+async function applyRoutingTierAssignments() {
+  console.log('Applying routing tier and energy constants...');
+
+  for (const row of ROUTING_TIER_ASSIGNMENTS) {
+    const provider = await prisma.aIProvider.findUnique({
+      where: { name: row.providerName },
+    });
+    if (!provider) {
+      console.warn(`   Skip tier row (unknown provider): ${row.providerName}`);
+      continue;
+    }
+
+    const result = await prisma.aIModel.updateMany({
+      where: { providerId: provider.id, modelId: row.modelId },
+      data: {
+        routerTier: row.routerTier,
+        estEnergyJoulesPerToken: row.estEnergyJoulesPerToken,
+        averageCarbonGramsPerToken: row.averageCarbonGramsPerToken,
+      },
+    });
+
+    if (result.count === 0) {
+      console.warn(`   No AIModel row for ${row.providerName}:${row.modelId}`);
+    }
+  }
+
+  const google = await prisma.aIProvider.findUnique({ where: { name: "google" } });
+  if (google) {
+    await prisma.aIModel.updateMany({
+      where: { providerId: google.id, routerTier: { not: null } },
+      data: { routerTier: null },
+    });
+  }
+}
 
 async function seedAIProvidersAndModels() {
   const openai = await prisma.aIProvider.upsert({
@@ -935,7 +990,7 @@ async function seedAIProvidersAndModels() {
     {
       modelId: 'qwen2.5-7b-instruct',
       name: 'Qwen 2.5 7B (vLLM)',
-      description: 'House chat — hybrid RAG',
+      description: 'House chat — tier 1, hybrid RAG',
       maxTokens: 8192,
       supportsTools: false,
     },
@@ -951,17 +1006,18 @@ async function seedAIProvidersAndModels() {
   for (const m of vllmModels) {
     await prisma.aIModel.upsert({
       where: { providerId_modelId: { providerId: vllm.id, modelId: m.modelId } },
-      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools },
+      update: { maxTokens: m.maxTokens, supportsTools: m.supportsTools, supportsImages: false },
       create: {
         ...m,
         type: 'CHAT',
-        supportsImages: true,
+        supportsImages: false,
         supportsStreaming: true,
         providerId: vllm.id,
       },
     });
   }
 
+  await applyRoutingTierAssignments();
 }
 
 async function releaseStudentIdClaim(
@@ -1119,6 +1175,28 @@ async function seedDisciplines(): Promise<number> {
     });
   }
   return lines.length;
+}
+
+/**
+ * Invariant: each seeded course's literal `term` AND `year` must agree with
+ * the canonical UBC academic-year derivation from its `startDate` (mirrors
+ * `packages/ui/src/lib/term.ts` `termInfoFromDate`, the single source of
+ * truth shared by Core's `CreateCourseSchema` and every app). `year` is the
+ * academic-year label, not the calendar year — a W2 course starting Jan–Apr
+ * derives the PREVIOUS year (#1088). Throws — rather than silently seeding
+ * mismatched data — if a literal and its date ever drift.
+ */
+function assertCanonicalTerms(courses: SeedCourse[]) {
+  for (const course of courses) {
+    const derived = termInfoFromDate(course.startDate);
+    if (course.term !== derived.term || course.year !== derived.year) {
+      throw new Error(
+        `Seed course ${course.id} has term '${course.term}' year ${course.year} but startDate ` +
+          `${course.startDate.toISOString()} derives '${derived.term}' year ${derived.year} via ` +
+          `termInfoFromDate (packages/ui/src/lib/term.ts). Fix the literal to match.`,
+      );
+    }
+  }
 }
 
 async function seedCourses() {
@@ -1561,9 +1639,12 @@ async function main() {
   await seedUsers();
   await seedPasswords();
   console.log(
-    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with student_1–student_5 IDs) with default password',
+    '  Users seeded (admin, 2 unit admins, 4 instructors, 2 TAs, 5 students with 8-digit IDs 10000001–10000005) with default password',
   );
 
+  // Fail fast BEFORE any course row is written — a bad term literal must not
+  // leave the DB partially seeded.
+  assertCanonicalTerms(COURSES);
   await seedCourses();
   console.log(`  ${COURSES.length} courses seeded with topics, enrollments, and questions`);
 

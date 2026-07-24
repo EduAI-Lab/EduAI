@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
+import { DashboardStandardBody } from "~/components/dashboard/dashboard-view-config";
 
 function renderTaDashboard() {
   const router = createMemoryRouter(
-    [{ path: "/", element: <DashboardTaView /> }],
+    [{ path: "/", element: <DashboardStandardBody effectiveRole="TA" /> }],
     { initialEntries: ["/"] },
   );
 
   return render(<RouterProvider router={router} />);
 }
 
-describe("DashboardTaView", () => {
+describe("DashboardStandardBody (TA)", () => {
   it("does not show the Question Maker dashboard card", () => {
     renderTaDashboard();
 

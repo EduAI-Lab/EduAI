@@ -12,7 +12,7 @@ import { CoursesGrid, type CoursesGridProps } from './CoursesGrid';
 
 type CoursesUnitAdminViewProps = Omit<
   CoursesGridProps,
-  'emptyHint' | 'showAddCourse' | 'courses' | 'showDepartment' | 'roleView' | 'currentUserId'
+  'emptyHint' | 'courses' | 'showDepartment'
 > & {
   courses: CoursesGridProps['courses'];
 };
@@ -60,16 +60,14 @@ export function CoursesUnitAdminView({ courses, ...gridProps }: CoursesUnitAdmin
         heading="Courses"
         subheading={
           unitsLabel
-            ? `Courses in ${unitsLabel} that you can author in Question Maker. Cross-unit edits are blocked server-side.`
-            : 'Courses you can author in Question Maker. Cross-unit edits are blocked server-side.'
+            ? `Courses in ${unitsLabel} that you can author in Question Maker. You can only edit courses in your own units.`
+            : 'Courses you can author in Question Maker. You can only edit courses in your own units.'
         }
       />
       <CoursesGrid
         {...gridProps}
         courses={courses}
         showDepartment
-        roleView="unit-admin"
-        currentUserId={user?.id}
         filters={unitSelect}
         matchesFilter={
           units.length > 1

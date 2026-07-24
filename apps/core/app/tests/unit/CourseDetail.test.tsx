@@ -245,7 +245,6 @@ describe('CourseDetailManagerView', () => {
 const TA_PROPS = {
   onCreateTopic: NOOP,
   onDeleteTopic: NOOP,
-  onUpdateAiInstructions: NOOP,
 }
 
 describe('CourseDetailTaView', () => {
@@ -317,6 +316,19 @@ describe('CourseDetailStudentView', () => {
     wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[]} />)
     expect(screen.queryByTestId('upload-widget')).not.toBeInTheDocument()
   })
+
+  it('does NOT render upload widget for students when upload policy is disabled even if onFileSelect is provided', () => {
+  wrap(
+    <CourseDetailStudentView
+      course={COURSE}
+      materials={[]}
+      topics={[]}
+      onFileSelect={onFileSelect}
+    />
+  )
+
+  expect(screen.queryByTestId('upload-widget')).not.toBeInTheDocument()
+})
 
   it('does NOT have a Topics management tab', () => {
     wrap(<CourseDetailStudentView course={COURSE} materials={[]} topics={[TOPIC]} />)

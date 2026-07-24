@@ -1,9 +1,12 @@
 import prisma from "~/lib/prisma.server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import { assertValidUnits } from "~/lib/disciplines/guards.server";
+import { reconcileUserTACourses } from "~/lib/courses/tas.server";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
+import { withIdempotency } from "~/lib/idempotency.server";
 import { applyStudentIdAndResolveEnrollments } from "~/lib/canvas/link-roster.server";
 import { normalizeStudentId } from "~/lib/canvas/enrollment-link.server";
 import {
@@ -22,6 +25,11 @@ function userEntityLabel(
   if (email && name) return `${name} <${email}>`;
   return email ?? name ?? null;
 }
+
+const activeStudentEnrollmentWhere = {
+  role: "STUDENT",
+  isActive: true,
+} satisfies Prisma.EnrollmentWhereInput;
 
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -66,7 +74,7 @@ export async function handleUsersApiRequest(request: Request) {
           updatedAt: true,
           _count: {
             select: {
-              enrollments: true,
+              enrollments: { where: activeStudentEnrollmentWhere },
               taughtCourses: true,
               aiInteractions: true,
             },
@@ -75,18 +83,23 @@ export async function handleUsersApiRequest(request: Request) {
         orderBy: { createdAt: "desc" },
       });
 
-      const taCounts = await prisma.enrollment.groupBy({
-        by: ["userId"],
+      const taEnrollments = await prisma.enrollment.findMany({
         where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
-        _count: { _all: true },
+        select: { userId: true, courseId: true },
       });
-      const taCountByUser = new Map(taCounts.map((t) => [t.userId, t._count._all]));
+      const taCourseIdsByUser = new Map<string, string[]>();
+      for (const enrollment of taEnrollments) {
+        const courseIds = taCourseIdsByUser.get(enrollment.userId) ?? [];
+        courseIds.push(enrollment.courseId);
+        taCourseIdsByUser.set(enrollment.userId, courseIds);
+      }
 
       const mapped = users.map(({ _count, ...u }) => ({
         ...u,
+        taCourseIds: taCourseIdsByUser.get(u.id) ?? [],
         _count: {
           enrolledCourses: _count.enrollments,
-          assistedCourses: taCountByUser.get(u.id) ?? 0,
+          assistedCourses: taCourseIdsByUser.get(u.id)?.length ?? 0,
           taughtCourses: _count.taughtCourses,
           aiInteractions: _count.aiInteractions,
         },
@@ -105,79 +118,10 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(403, "Forbidden");
       }
 
-      const body = await request.json();
-      const result = createUserSchema.safeParse(body);
-
-      if (!result.success) {
-        return validationErrorFromZod(result.error);
-      }
-
-      // §541: authorizedUnits codes must exist in the Discipline table (array
-      // field — no FK backstop, so the check is the only guard).
-      if (result.data.authorizedUnits) {
-        const unitGuard = await assertValidUnits(result.data.authorizedUnits);
-        if (unitGuard) return unitGuard;
-      }
-
-      try {
-        const { _count, ...created } = await prisma.user.create({
-          data: {
-            ...result.data,
-            emailVerified: false,
-          },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            image: true,
-            role: true,
-            isActive: true,
-            emailVerified: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: {
-              select: {
-                enrollments: true,
-                taughtCourses: true,
-                aiInteractions: true,
-              },
-            },
-          },
-        });
-
-        const user = {
-          ...created,
-          _count: {
-            enrolledCourses: _count.enrollments,
-            assistedCourses: 0,
-            taughtCourses: _count.taughtCourses,
-            aiInteractions: _count.aiInteractions,
-          },
-        };
-
-        fireAndForget(
-          logAuditAction({
-            ...getActorContext(session.user),
-            ...requestContext,
-            actionCode: "USER_CREATED",
-            category: "USER",
-            entityType: "User",
-            entityId: created.id,
-            entityLabel: userEntityLabel(created.name, created.email),
-            details: { role: created.role, email: created.email },
-          }),
-        );
-
-        return new Response(JSON.stringify(user), {
-          status: 201,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error: any) {
-        if (error.code === "P2002") {
-          return apiError(409, "EMAIL_ALREADY_EXISTS");
-        }
-        throw error;
-      }
+      return withIdempotency(
+        { request, route: "POST /api/users", actorId: session.user.id },
+        async (body) => createUserFromBody(body, session.user, requestContext),
+      );
     }
 
     case "PATCH": {
@@ -216,6 +160,15 @@ export async function handleUsersApiRequest(request: Request) {
         // since code validity is independent of the target user.
         const unitGuard = await assertValidUnits(result.data.authorizedUnits);
         if (unitGuard) return unitGuard;
+      }
+
+      let effectiveRole = result.data.role;
+      let previousRole: typeof effectiveRole;
+      if (
+        result.data.role !== undefined ||
+        result.data.authorizedUnits !== undefined ||
+        result.data.taCourseIds !== undefined
+      ) {
         const target = await prisma.user.findUnique({
           where: { id: userId },
           select: { role: true },
@@ -223,15 +176,26 @@ export async function handleUsersApiRequest(request: Request) {
         if (!target) {
           return apiError(404, "USER_NOT_FOUND");
         }
-        const effectiveRole = result.data.role ?? target.role;
-        if (effectiveRole !== "UNIT_ADMIN") {
+        previousRole = target.role;
+        effectiveRole = result.data.role ?? target.role;
+        if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
+      const platformRoleChanged =
+        result.data.role !== undefined && previousRole !== effectiveRole;
 
       try {
-        const { studentId: studentIdInput, ...userUpdateFields } = result.data;
+        const {
+          studentId: studentIdInput,
+          taCourseIds,
+          ...userUpdateFields
+        } = result.data;
         const updateData: Record<string, unknown> = { ...userUpdateFields };
+
+        if (result.data.role !== undefined && result.data.role !== "UNIT_ADMIN") {
+          updateData.authorizedUnits = [];
+        }
 
         if (studentIdInput !== undefined) {
           const normalizedStudentId = normalizeStudentId(studentIdInput);
@@ -252,7 +216,7 @@ export async function handleUsersApiRequest(request: Request) {
           }
         }
 
-        const { _count, ...updated } = await prisma.user.update({
+        const updateUser = (client: Pick<Prisma.TransactionClient, "user">) => client.user.update({
           where: { id: userId },
           data: updateData,
           select: {
@@ -269,7 +233,7 @@ export async function handleUsersApiRequest(request: Request) {
             updatedAt: true,
             _count: {
               select: {
-                enrollments: true,
+                enrollments: { where: activeStudentEnrollmentWhere },
                 taughtCourses: true,
                 aiInteractions: true,
               },
@@ -277,34 +241,98 @@ export async function handleUsersApiRequest(request: Request) {
           },
         });
 
+        const shouldReconcileTACourses =
+          taCourseIds !== undefined ||
+          (result.data.role !== undefined && effectiveRole !== "STUDENT");
+
+        let previousTACourseIds: string[] = [];
+        let activeTACourseIds: string[];
+        let updatedWithCount;
+        if (shouldReconcileTACourses) {
+          const transactionResult = await prisma.$transaction(async (tx) => {
+            const previousTAEnrollments = await tx.enrollment.findMany({
+              where: { userId, role: "TA", isActive: true },
+              select: { courseId: true },
+            });
+            const reconciliation = await reconcileUserTACourses(
+              tx,
+              userId,
+              effectiveRole!,
+              taCourseIds ?? [],
+            );
+            if (reconciliation.error) {
+              return { error: reconciliation.error } as const;
+            }
+            return {
+              updated: await updateUser(tx),
+              activeTACourseIds: reconciliation.activeTACourseIds,
+              previousTACourseIds: previousTAEnrollments.map(
+                (enrollment) => enrollment.courseId,
+              ),
+            } as const;
+          });
+
+          if (transactionResult.error) {
+            const status =
+              transactionResult.error === "TA_INSTRUCTOR_ENROLLMENT_CONFLICT"
+                ? 409
+                : transactionResult.error === "TA_COURSE_NOT_FOUND"
+                  ? 404
+                  : 422;
+            return apiError(status, transactionResult.error);
+          }
+          updatedWithCount = transactionResult.updated!;
+          activeTACourseIds = transactionResult.activeTACourseIds!;
+          previousTACourseIds = transactionResult.previousTACourseIds!;
+        } else {
+          updatedWithCount = await updateUser(prisma);
+          const activeTAEnrollments = await prisma.enrollment.findMany({
+            where: { userId, role: "TA", isActive: true },
+            select: { courseId: true },
+          });
+          activeTACourseIds = activeTAEnrollments.map(
+            (enrollment) => enrollment.courseId,
+          );
+        }
+
+        const { _count, ...updated } = updatedWithCount;
+
         if (studentIdInput !== undefined) {
           await applyStudentIdAndResolveEnrollments(userId, studentIdInput);
         }
 
-        const assistedCourses = await prisma.enrollment.count({
-          where: { userId, role: "TA", isActive: true },
-        });
+        const previousTACourseIdSet = new Set(previousTACourseIds);
+        const activeTACourseIdSet = new Set(activeTACourseIds);
+        const taCourseIdsAdded = activeTACourseIds.filter(
+          (courseId) => !previousTACourseIdSet.has(courseId),
+        );
+        const taCourseIdsRemoved = previousTACourseIds.filter(
+          (courseId) => !activeTACourseIdSet.has(courseId),
+        );
 
         const user = {
           ...updated,
           studentId: readStoredStudentId(updated.studentId),
+          taCourseIds: activeTACourseIds,
           _count: {
             enrolledCourses: _count.enrollments,
-            assistedCourses,
+            assistedCourses: activeTACourseIds.length,
             taughtCourses: _count.taughtCourses,
             aiInteractions: _count.aiInteractions,
           },
         };
 
         const changedFields = Object.keys(result.data);
-        const actionCode =
-          result.data.role !== undefined
-            ? "USER_ROLE_CHANGED"
-            : result.data.isActive === false
-              ? "USER_DEACTIVATED"
-              : result.data.isActive === true
-                ? "USER_REACTIVATED"
-                : "USER_UPDATED";
+        let actionCode = "USER_UPDATED";
+        if (platformRoleChanged) {
+          actionCode = "USER_ROLE_CHANGED";
+        } else if (taCourseIds !== undefined) {
+          actionCode = "USER_TA_COURSES_CHANGED";
+        } else if (result.data.isActive === false) {
+          actionCode = "USER_DEACTIVATED";
+        } else if (result.data.isActive === true) {
+          actionCode = "USER_REACTIVATED";
+        }
         fireAndForget(
           logAuditAction({
             ...getActorContext(session.user),
@@ -317,7 +345,12 @@ export async function handleUsersApiRequest(request: Request) {
             details: {
               email: updated.email,
               changedFields,
-              ...(result.data.role !== undefined ? { newRole: result.data.role } : {}),
+              ...(platformRoleChanged
+                ? { previousRole, newRole: effectiveRole }
+                : {}),
+              ...(shouldReconcileTACourses
+                ? { taCourseIdsAdded, taCourseIdsRemoved }
+                : {}),
             },
           }),
         );
@@ -394,5 +427,99 @@ export async function handleUsersApiRequest(request: Request) {
 
     default:
       return apiError(405, "METHOD_NOT_ALLOWED");
+  }
+}
+
+async function createUserFromBody(
+  body: Record<string, unknown> | null,
+  actor: { id: string; name?: string | null; email?: string | null },
+  requestContext: ReturnType<typeof getRequestContext>,
+): Promise<Response> {
+  const result = createUserSchema.safeParse(body);
+
+  if (!result.success) {
+    return validationErrorFromZod(result.error);
+  }
+
+  // §541: authorizedUnits codes must exist in the Discipline table (array
+  // field — no FK backstop, so the check is the only guard).
+  if (result.data.authorizedUnits) {
+    const unitGuard = await assertValidUnits(result.data.authorizedUnits);
+    if (unitGuard) return unitGuard;
+  }
+
+  if (result.data.role !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
+    return apiError(422, "ROLE_MISMATCH");
+  }
+
+  try {
+    const createData = {
+      ...result.data,
+      authorizedUnits:
+        result.data.role === "UNIT_ADMIN" ? (result.data.authorizedUnits ?? []) : [],
+    };
+    const { _count, ...created } = await prisma.user.create({
+      data: {
+        ...createData,
+        emailVerified: false,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        image: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            enrollments: true,
+            taughtCourses: true,
+            aiInteractions: true,
+          },
+        },
+      },
+    });
+
+    const user = {
+      ...created,
+      taCourseIds: [],
+      _count: {
+        enrolledCourses: _count.enrollments,
+        assistedCourses: 0,
+        taughtCourses: _count.taughtCourses,
+        aiInteractions: _count.aiInteractions,
+      },
+    };
+
+    fireAndForget(
+      logAuditAction({
+        ...getActorContext(actor),
+        ...requestContext,
+        actionCode: "USER_CREATED",
+        category: "USER",
+        entityType: "User",
+        entityId: created.id,
+        entityLabel: userEntityLabel(created.name, created.email),
+        details: { role: created.role, email: created.email },
+      }),
+    );
+
+    return new Response(JSON.stringify(user), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code: string }).code === "P2002"
+    ) {
+      return apiError(409, "EMAIL_ALREADY_EXISTS");
+    }
+    throw error;
   }
 }

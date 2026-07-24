@@ -4,6 +4,7 @@ import { requireInviter } from "~/lib/auth/guards.server";
 import { resendInvitation, revokeInvitation } from "~/lib/invitations/service.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { apiError } from "~/lib/api-error.server";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -31,7 +32,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const requestContext = getRequestContext(request);
 
   const id = params.id;
-  if (!id) return new Response("Missing invitation ID", { status: 400 });
+  if (!id) return apiError(400, "INVITATION_ID_REQUIRED");
 
   if (request.method === "DELETE") {
     const result = await revokeInvitation(id, scope);
@@ -79,5 +80,5 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  return new Response("Method not allowed", { status: 405 });
+  return apiError(405, "METHOD_NOT_ALLOWED");
 }

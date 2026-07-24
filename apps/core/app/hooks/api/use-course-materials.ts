@@ -1,9 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { UserProviderSettings } from '~/lib/ai/providers'
-
-export const STUB_ONLY = {
-  deleteMaterial: true, // pending #300
-} as const
 
 export interface CourseMaterial {
   id: string
@@ -47,10 +42,9 @@ export function useCourseMaterials(courseId: string) {
 
   useEffect(() => { fetchMaterials() }, [fetchMaterials])
 
-  const uploadMaterial = useCallback(async (file: File, apiKeys: UserProviderSettings): Promise<CourseMaterial> => {
+  const uploadMaterial = useCallback(async (file: File): Promise<CourseMaterial> => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('apiKeys', JSON.stringify(apiKeys))
     const res = await fetch(`/api/courses/${courseId}/materials`, {
       method: 'POST',
       body: formData,
@@ -61,11 +55,13 @@ export function useCourseMaterials(courseId: string) {
     return data
   }, [courseId, fetchMaterials])
 
-  // STUB: DELETE /api/courses/:id/materials/:materialId not yet implemented (#300)
-  const deleteMaterial = useCallback(async (_materialId: string): Promise<void> => {
-    console.warn('deleteMaterial is a stub — pending #300')
-    throw new Error('Material deletion not yet available')
-  }, [])
+  const deleteMaterial = useCallback(async (materialId: string): Promise<void> => {
+    const res = await fetch(`/api/courses/${courseId}/materials/${materialId}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error(await res.text())
+    await fetchMaterials()
+  }, [courseId, fetchMaterials])
 
   return { materials, loading, error, uploadMaterial, deleteMaterial, refetch: fetchMaterials }
 }

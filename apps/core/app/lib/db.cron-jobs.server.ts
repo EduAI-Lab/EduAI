@@ -43,6 +43,13 @@ export const KNOWN_CRON_JOBS: KnownCronJob[] = [
     script: "cleanup-invitations.sh",
   },
   {
+    name: "notify-api-key-expiry",
+    description: "Email users whose AI provider API keys expire in 7 days",
+    schedule: "0 4 * * *",
+    scheduleLabel: "Daily at 04:00 UTC",
+    script: "notify-api-key-expiry.sh",
+  },
+  {
     name: "ai-tutor-reconcile",
     description: "Nullify stale coreOfferingId / coreTopicId references on Core 404",
     schedule: "0 2 * * *",
@@ -170,8 +177,27 @@ export async function getRecentCronJobRuns(jobName: string, limit = 10): Promise
   }));
 }
 
-export async function startCronRun(jobName: string): Promise<string> {
+export async function findRunningCronRun(
+  jobName: string,
+): Promise<{ id: string } | null> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id
+    FROM cron_job_runs
+    WHERE "jobName" = ${jobName}
+      AND status = 'RUNNING'::"CronJobStatus"
+    ORDER BY "startedAt" DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function startCronRun(
+  jobName: string,
+): Promise<{ runId: string; created: boolean }> {
+  // Insert first; partial unique index (one RUNNING per jobName) makes concurrent
+  // triggers conflict instead of double-spawning. ON CONFLICT DO NOTHING + reclaim.
+  // `created: true` only when this caller won the INSERT — losers must not spawn.
+  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO cron_job_runs (id, "jobName", status, "startedAt", "createdAt")
     VALUES (
       gen_random_uuid()::text,
@@ -180,9 +206,19 @@ export async function startCronRun(jobName: string): Promise<string> {
       NOW(),
       NOW()
     )
+    ON CONFLICT ("jobName") WHERE (status = 'RUNNING') DO NOTHING
     RETURNING id
   `;
-  return rows[0].id;
+  if (inserted[0]?.id) {
+    return { runId: inserted[0].id, created: true };
+  }
+
+  const running = await findRunningCronRun(jobName);
+  if (running) {
+    return { runId: running.id, created: false };
+  }
+
+  throw new Error(`Failed to start or reclaim cron run for job "${jobName}"`);
 }
 
 export async function finishCronRun(

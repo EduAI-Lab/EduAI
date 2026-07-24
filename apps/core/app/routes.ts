@@ -60,6 +60,7 @@ export default [
     "routes/api/courses.enrollments.$enrollmentId.ts",
   ),
   route("/api/courses/:id/rag-settings", "routes/api/courses.id.rag-settings.ts"),
+  route("/api/courses/:id/response-style", "routes/api/courses.id.response-style.ts"),
   route("/api/questions", "routes/api/questions.ts"),
   route("/api/questions/:id", "routes/api/questions.$id.ts"),
   route("/admin/ai-models", "routes/admin.ai-models.tsx"),
@@ -92,4 +93,6 @@ export default [
   route("/api/admin/cron-jobs", "routes/api/admin.cron-jobs.ts"),
   route("/api/dashboard/stats", "routes/api/dashboard.stats.ts"),
   route("/api/e2e/promote", "routes/api/e2e.promote.ts"),
+  route("/api/user-provider-settings", "routes/api/user-provider-settings.ts"),
+  route("/api/cron/notify-api-key-expiry", "routes/api/cron.notify-api-key-expiry.ts"),
 ] satisfies RouteConfig;

@@ -1,7 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeAdmin, makeStudent, makeTA, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+
+// `isPublished` is Core-owned (#1072 step 4) — the "parent course is
+// published" gate on lesson publish resolves it live via
+// `fetchCoreCourseSafe`. Default every seeded course to published so
+// existing behavior holds; individual tests override this.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 describe('Lessons routes', () => {
   let prof;
@@ -13,6 +24,10 @@ describe('Lessons routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -394,6 +409,71 @@ describe('Lessons routes', () => {
         .patch('/api/lessons/9999999')
         .send({ title: 'Ghost' });
       expect(res.status).toBe(404);
+    });
+  });
+
+  // ── POST append order + PUT reorder (#1046 / #1047) ───────────────
+
+  describe('POST /api/modules/:moduleId/lessons (append order)', () => {
+    it('appends a new lesson to the end when no position is supplied', async () => {
+      // seedMinimalCourse creates one lesson at position 0.
+      const res = await request(profApp)
+        .post(`/api/modules/${seed.module.id}/lessons`)
+        .send({ title: 'Second Lesson' });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(1);
+    });
+
+    it('honors an explicit position when supplied', async () => {
+      const res = await request(profApp)
+        .post(`/api/modules/${seed.module.id}/lessons`)
+        .send({ title: 'Pinned', position: 7 });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(7);
+    });
+  });
+
+  describe('PUT /api/modules/:moduleId/lessons/order', () => {
+    async function seedThreeLessons() {
+      const b = await prisma.lesson.create({
+        data: { title: 'B', position: 1, moduleId: seed.module.id },
+      });
+      const c = await prisma.lesson.create({
+        data: { title: 'C', position: 2, moduleId: seed.module.id },
+      });
+      return { a: seed.lesson, b, c };
+    }
+
+    it('reassigns positions 0..n-1 from the ordered id list', async () => {
+      const { a, b, c } = await seedThreeLessons();
+      const res = await request(profApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [c.id, a.id, b.id] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
+      expect(res.body.map((l) => l.position)).toEqual([0, 1, 2]);
+
+      const list = await request(profApp).get(`/api/modules/${seed.module.id}/lessons`);
+      expect(list.body.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
+    });
+
+    it('rejects an id set that does not match the module lessons', async () => {
+      const { a, b } = await seedThreeLessons();
+      const res = await request(profApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [a.id, b.id] });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 403 for a TA', async () => {
+      const { a, b, c } = await seedThreeLessons();
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .put(`/api/modules/${seed.module.id}/lessons/order`)
+        .send({ orderedIds: [c.id, b.id, a.id] });
+      expect(res.status).toBe(403);
     });
   });
 });

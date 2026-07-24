@@ -71,6 +71,10 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
@@ -79,6 +83,7 @@ import { getChatModelCapabilities } from "~/lib/ai/providers.server";
 import { auditAndMaybeRewrite } from "~/lib/ai/adhd-oversight";
 import { computeAdhdResponseMetrics, withStructuralPass } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -145,6 +150,7 @@ function mockAuditResult(text: string = "Audited reply.") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   delete process.env.CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE;
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
@@ -266,6 +272,7 @@ describe("Smart course RAG gate (#484)", () => {
 
   describe("tool path (supportsTools = true)", () => {
     beforeEach(() => {
+      process.env.VLLM_CHAT_TOOLS = "1";
       vi.mocked(getChatModelCapabilities).mockResolvedValue({
         supportsTools: true,
         maxTokens: 8192,

@@ -6,6 +6,7 @@ import { AnimatedProcessFlow } from "~/components/chat/diagrams/animated-process
 import {
   EDUAI_DIAGRAM_CANONICAL_IDS,
   resolveEduaiDiagramTypeId,
+  type EduaiDiagramCanonicalId,
 } from "~/lib/ai/eduai-diagram-type";
 import type { EduaiDiagramPayload } from "~/lib/ai/eduai-diagram-payload";
 
@@ -14,25 +15,17 @@ type DiagramComponent = ComponentType<{
   payload: EduaiDiagramPayload;
 }>;
 
-const REGISTRY: Record<string, DiagramComponent> = {
+/** Registry keyed only by canonical ids — aliases resolve before lookup. */
+const REGISTRY: Record<EduaiDiagramCanonicalId, DiagramComponent> = {
   "process-flow": AnimatedProcessFlow,
-  process: AnimatedProcessFlow,
-  flow: AnimatedProcessFlow,
-  steps: AnimatedProcessFlow,
-  "gradient-descent": AnimatedGradientDescent as DiagramComponent,
-  gradient_descent: AnimatedGradientDescent as DiagramComponent,
-  gd: AnimatedGradientDescent as DiagramComponent,
+  "gradient-descent": AnimatedGradientDescent,
   hierarchy: AnimatedHierarchy,
-  tree: AnimatedHierarchy,
-  structure: AnimatedHierarchy,
   compare: AnimatedCompare,
-  vs: AnimatedCompare,
-  contrast: AnimatedCompare,
 };
 
 export const EDUAI_DIAGRAM_TYPE_IDS = [...EDUAI_DIAGRAM_CANONICAL_IDS];
 
-export function normalizeEduaiDiagramTypeId(raw: string): string {
+export function normalizeEduaiDiagramTypeId(raw: string): EduaiDiagramCanonicalId {
   return resolveEduaiDiagramTypeId({ explicitTypeId: raw });
 }
 

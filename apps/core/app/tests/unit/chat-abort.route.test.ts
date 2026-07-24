@@ -69,6 +69,10 @@ vi.mock("~/lib/policy.server", () => ({
   invalidatePolicyCache: vi.fn(),
 }));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -82,6 +86,7 @@ vi.mock("~/lib/prisma.server", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -136,6 +141,7 @@ function lastAbortSignal(): AbortSignal | undefined {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -169,6 +175,20 @@ beforeEach(() => {
 });
 
 describe("Chat API client abort (#267)", () => {
+  it("requests streaming usage from OpenAI-compatible local providers", async () => {
+    mockStream();
+
+    await action(makeRequest(baseBody()));
+
+    expect(vi.mocked(streamText).mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        providerOptions: {
+          vllm: { streamOptions: { includeUsage: true } },
+        },
+      }),
+    );
+  });
+
   it("passes the request AbortSignal to streamText", async () => {
     const controller = new AbortController();
     const args = makeRequest(baseBody(), controller.signal);

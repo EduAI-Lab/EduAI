@@ -16,6 +16,10 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 vi.mock("~/lib/auth/server", () => ({ auth: { api: { getSession: vi.fn() } } }));
+vi.mock("~/lib/auth/guards.server", () => ({
+  enforceAdminIfApiKey: vi.fn().mockResolvedValue({ response: null, session: null }),
+  requireServiceKey: vi.fn(),
+}));
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
@@ -40,9 +44,14 @@ vi.mock("~/lib/prisma.server", () => ({
   },
 }));
 
+vi.mock("~/lib/user-provider-settings.server", () => ({
+  getUserProviderSettings: vi.fn().mockResolvedValue({}),
+}));
+
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import { getPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
 
@@ -79,6 +88,7 @@ function policy(values: Record<string, boolean>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([] as never);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 } as never);

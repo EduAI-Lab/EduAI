@@ -156,6 +156,16 @@ describe("GET /api/courses/:courseId/materials loader", () => {
     expect(res.status).toBe(401);
   });
 
+  it("passes request.headers into getSession (not the raw Request)", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([] as never);
+    const args = makeArgs("GET");
+    await loader(args);
+    expect(auth.api.getSession).toHaveBeenCalledWith({ headers: args.request.headers });
+    expect(auth.api.getSession).not.toHaveBeenCalledWith(args.request);
+  });
+
   it("returns 404 when course not found", async () => {
     mockSession("STUDENT");
     mockAccess(null, null);
@@ -274,6 +284,19 @@ describe("GET /api/courses/:courseId/materials loader", () => {
       where: Record<string, unknown>;
     };
     expect("OR" in call.where).toBe(false);
+  });
+
+  it("calls getSession with a plain { headers } object, not the raw Request — better-auth rejects a raw Request (#1049)", async () => {
+    mockSession("INSTRUCTOR");
+    mockAccess({ level: "instructor", rank: 2 });
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([]);
+    const args = makeArgs("GET");
+    const res = await loader(args);
+    expect(res.status).toBe(200);
+    const callArg = vi.mocked(auth.api.getSession).mock.calls[0][0] as { headers: Headers };
+    expect(callArg).not.toBeInstanceOf(Request);
+    expect(Object.keys(callArg)).toEqual(["headers"]);
+    expect(callArg.headers).toBe(args.request.headers);
   });
 });
 

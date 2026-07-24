@@ -9,9 +9,43 @@ import {
   parseModelIdentifier,
 } from "~/lib/ai/providers";
 import {
+  activeRouterVersion,
+  parseRouterMode,
+  resolveRoutedModel,
+  resolveRoutedModelRules,
+  type RouterDecision,
+  type RouterMode,
+} from "~/lib/ai/routing/router";
+import {
+  startSidecarMeasurement,
+  stopSidecarMeasurement,
+} from "~/lib/ai/energy/measurement.server";
+import {
+  AdmissionTimeoutError,
+  acquireAiAdmission,
+  withAdmissionRelease,
+} from "~/lib/ai/admission.server";
+import { coalesceTokenUsage } from "~/lib/ai/routing/telemetry";
+import { persistAiInteractionTelemetry } from "~/lib/ai/routing/telemetry.server";
+import {
+  FleetUnavailableError,
+  resolveFleetHost,
+  resolveFleetHostAfterFailure,
+} from "~/lib/ai/routing/fleet/resolve-fleet";
+import { createStreamStartupProbe } from "~/lib/ai/routing/fleet/probe-stream";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import {
+  buildFleetRouterFeatures,
+  parseWorkloadFeature,
+} from "~/lib/ai/routing/fleet/types";
+import { parseJobType, type FleetPick } from "~/lib/ai/routing/fleet/types";
+import {
   capMaxOutputTokensForPrompt,
   estimateTokensFromChars,
+  estimateToolDefinitionTokens,
+  estimateAdminToolStepReserve,
   getChatModelCapabilities,
+  promptFitsContextWindow,
   resolveActiveChatModel,
   resolveMaxOutputTokens,
   resolveModelContextWindow,
@@ -19,6 +53,7 @@ import {
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
 import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
+import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
   buildChatToolRegistry,
@@ -45,11 +80,18 @@ import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdRespons
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
 import { findRelevantContent } from "~/lib/ai/embedding";
 import {
+  courseCodeLookupCandidates,
+  pickCourseIdByCandidatePriority,
+} from "~/lib/courses/course-code-candidates";
+import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
+import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
+import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
@@ -60,6 +102,7 @@ import {
 import prisma from "~/lib/prisma.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
 import {
   shouldInjectCourseRag,
@@ -72,6 +115,7 @@ import {
   capToolResultsInMessages,
   estimateMessageCharsForModel,
   extractMessageText,
+  messageHasImageParts,
   LATEST_TURN_FOCUS_INSTRUCTION,
   prepareBoundedSessionContext,
   resolveMaxContextMessages,
@@ -79,6 +123,63 @@ import {
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
 } from "~/lib/chat-rag";
+import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+import { withResolvedModelMetadata } from "~/lib/chat/chat-message-metadata";
+
+function autoRoutingHeaders(
+  resolvedModelId: string,
+  routingTier: 1 | 2 | 3 | null,
+  wasAuto: boolean,
+  routerVersion?: string | null,
+  fleetServerId?: string | null,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-Routed-Model": resolvedModelId,
+  };
+  if (wasAuto) {
+    if (routingTier != null) {
+      headers["X-Routing-Tier"] = String(routingTier);
+    }
+    headers["X-Router-Version"] = routerVersion ?? activeRouterVersion();
+  }
+  if (fleetServerId) {
+    headers["X-Fleet-Server"] = fleetServerId;
+  }
+  return headers;
+}
+
+/** OpenAI-compatible local backends need explicit stream usage for token telemetry. */
+function usageProviderOptions(providerId: string) {
+  if (providerId === "vllm" || providerId === "ollama") {
+    return {
+      [providerId]: { streamOptions: { includeUsage: true } },
+    } as const;
+  }
+  return undefined;
+}
+
+function resolveAutoRouting(
+  model: string | undefined,
+): { routeWithAuto: boolean; modeOverride?: RouterMode; requestedAuto: string | null } {
+  if (model === undefined || model === "auto") {
+    return { routeWithAuto: true, requestedAuto: model ?? "auto" };
+  }
+  if (model === "auto-llm") {
+    return {
+      routeWithAuto: true,
+      modeOverride: "llm",
+      requestedAuto: "auto-llm",
+    };
+  }
+  if (model === "auto-hybrid") {
+    return {
+      routeWithAuto: true,
+      modeOverride: "hybrid",
+      requestedAuto: "auto-hybrid",
+    };
+  }
+  return { routeWithAuto: false, requestedAuto: null };
+}
 
 const TOOL_MAX_STEPS = Math.min(
   32,
@@ -367,8 +468,8 @@ function clientAbortResponse(): Response {
  * - Message IDs should be client-generated (UUID v4) for best results.
  */
 export async function action({ request }: ActionFunctionArgs) {
+  const requestStartMs = Date.now();
   try {
-    const apiKeyHeader = request.headers.get("x-api-key");
     const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
@@ -390,8 +491,27 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const body = await request.json();
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
-    const model = typeof body.model === "string" ? body.model : undefined;
-    const apiKeys = body.apiKeys as unknown;
+    let model = typeof body.model === "string" ? body.model.trim() : undefined;
+    if (model === "") {
+      model = undefined;
+    }
+
+    if (!routerAutoDefaultEnabled() && model === undefined) {
+      return new Response(
+        JSON.stringify({
+          error: "Missing model",
+          details:
+            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", "auto-hybrid", or a concrete registry id.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const autoRouting = resolveAutoRouting(model);
+    const routeWithAuto = autoRouting.routeWithAuto;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
     const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
@@ -399,10 +519,12 @@ export async function action({ request }: ActionFunctionArgs) {
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
+    const jobType = parseJobType(body.routingContext);
 
     chatApiTrace("request received", {
       chatMode,
       chatbotType: expectedChatbotType,
+      jobType,
       chatId: chatId ?? null,
       model: model ?? null,
       courseCode: courseCode ?? null,
@@ -414,6 +536,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
     const proxyUserPayload =
       body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
+    const workloadFeature = parseWorkloadFeature(body.routingContext);
 
     const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
     const adhdAssist = body.adhdAssist === true;
@@ -428,7 +551,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     let actingUser = session.user;
     if (proxyUserPayload) {
-      if (!apiKeyHeader) {
+      if (!apiKeySession) {
         return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
           status: 403,
           headers: { "Content-Type": "application/json" },
@@ -457,11 +580,41 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    if (chatMode === "admin" && actingUser.role !== UserRole.ADMIN) {
+    if (
+      chatMode === "admin" &&
+      (isServiceKeyCaller || actingUser.role !== UserRole.ADMIN)
+    ) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // #987: cap LLM completion requests per real end-user. Keyed by
+    // actingUser.id (post-proxy-resolution) so AI Tutor's proxied traffic is
+    // metered per underlying student, not lumped under the shared "service"
+    // caller id. Pure server-to-server calls with no proxyUser stay
+    // unmetered here — they're already gated by the EDUAI_API_KEY secret.
+    if (actingUser.id !== "service") {
+      const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
+      const chatRateWindowMs = parseEnvInt(process.env.CHAT_RATE_WINDOW_MS, 60_000);
+      if (isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)) {
+        const requestContext = getRequestContext(request);
+        fireAndForget(
+          logSecurityEvent({
+            ...getActorContext({ id: actingUser.id, role: actingUser.role }),
+            ...requestContext,
+            actionCode: "RATE_LIMIT_EXCEEDED",
+            outcome: "DENIED",
+            entityType: "Chat",
+            details: { userId: actingUser.id },
+          }),
+        );
+        return new Response(JSON.stringify({ error: "Too Many Requests" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
     }
 
     const normalizedIncomingMessages = filterIncomingClientMessages(
@@ -470,12 +623,26 @@ export async function action({ request }: ActionFunctionArgs) {
         .filter((m): m is GenericMessage => m !== null),
     );
 
-    // Resolve course code to internal ID when needed
+    // Resolve course code to internal ID when needed.
+    // Prefer exact match; fall back to common whitespace variants because
+    // callers (e.g. QM before coreCourseId pass-through) sometimes send
+    // "COSC121" while Core stores "COSC 121". Prefer courseId when available.
+    // Single findMany keeps candidate priority without N round-trips; case is
+    // insensitive so "cosc121" still resolves.
     let resolvedCourseId: string | null = null;
     if (courseCode && typeof courseCode === "string") {
       try {
-        const course = await prisma.course.findFirst({ where: { code: courseCode, deletedAt: null } });
-        resolvedCourseId = course?.id || null;
+        const candidates = courseCodeLookupCandidates(courseCode);
+        if (candidates.length > 0) {
+          const rows = await prisma.course.findMany({
+            where: {
+              code: { in: candidates, mode: "insensitive" },
+              deletedAt: null,
+            },
+            select: { id: true, code: true },
+          });
+          resolvedCourseId = pickCourseIdByCandidatePriority(candidates, rows);
+        }
       } catch (e) {
         console.error("Failed to resolve course by code", e);
       }
@@ -558,6 +725,8 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
+    let effectiveCourse: { responseStyleTags: string[]; aiInstructions: string } | null =
+      null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -576,6 +745,10 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+      effectiveCourse = {
+        responseStyleTags: course.responseStyleTags ?? [],
+        aiInstructions: course.aiInstructions ?? null,
+      };
     }
 
     // §839: students must not see materials that are hidden or scheduled for a
@@ -736,7 +909,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    if (!model || typeof apiKeys !== "object" || apiKeys === null) {
+    if (!routeWithAuto && !model) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         {
@@ -746,21 +919,94 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Validate API keys
-    const apiKeysParsed = clientApiKeysBodySchema.safeParse(apiKeys);
-    if (!apiKeysParsed.success) {
-      return new Response(
-        JSON.stringify({
-          error: "Invalid apiKeys",
-          details: apiKeysParsed.error.flatten(),
-        }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+    const lastUserMessageForRouting = [...trimmedMessages].reverse().find((m) => m.role === "user");
+    const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
+    const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
+    const hasCourse = Boolean(effectiveCourseId);
+    const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
+
+    let ragTopSimilarity: number | null = null;
+    let ragChunkCount: number | null = null;
+    let ragContextTokenEstimate: number | null = null;
+    let routerRagPrefetch: HybridRagHit[] | null = null;
+
+    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
+      try {
+        routerRagPrefetch = await findRelevantContent(
+          lastUserMessageTextForRouting,
+          effectiveCourseId,
+          HYBRID_RAG_MAX_CHUNKS,
+          undefined,
+          restrictRagToStudentVisible,
+        );
+        ragChunkCount = routerRagPrefetch.length;
+        ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
+        ragContextTokenEstimate = routerRagPrefetch.reduce(
+          (acc, hit) => acc + Math.ceil(hit.content.length / 4),
+          0,
+        );
+      } catch (err) {
+        chatApiDebug("Router RAG prefetch failed", { err });
+      }
     }
-    const parsedModel = parseModelIdentifier(model);
+
+    let wasAuto = false;
+    let routingTier: 1 | 2 | 3 | null = null;
+    let routerContext: Record<string, unknown> | null = null;
+    let resolvedRouterVersion: string | null = null;
+
+    if (routeWithAuto) {
+      const routingContext = {
+        courseId: effectiveCourseId,
+        courseCode: courseCode ?? null,
+        imagesPresent,
+        ragTopSimilarity,
+        ragChunkCount,
+        ragContextTokenEstimate,
+        courseRagNeeded,
+      };
+      let decision: RouterDecision;
+      try {
+        decision = await resolveRoutedModel(
+          lastUserMessageTextForRouting,
+          routingContext,
+          autoRouting.modeOverride
+            ? { modeOverride: autoRouting.modeOverride }
+            : undefined,
+        );
+      } catch (error) {
+        const fallbackReason = formatStreamError(error);
+        chatApiDebug("Auto routing failed; falling back to rules", {
+          err: error,
+          requestedAuto: autoRouting.requestedAuto,
+        });
+        decision = await resolveRoutedModelRules(
+          lastUserMessageTextForRouting,
+          routingContext,
+        );
+        decision.features.fallbackReason = fallbackReason;
+      }
+      model = decision.modelId;
+      wasAuto = true;
+      routingTier = decision.tier;
+      routerContext = {
+        ...decision.features,
+        requestedAuto: autoRouting.requestedAuto,
+      };
+      resolvedRouterVersion =
+        typeof decision.features.routerVersion === "string"
+          ? decision.features.routerVersion
+          : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
+      chatApiDebug("Auto routing resolved model", {
+        resolvedModelId: decision.modelId,
+        routingTier: decision.tier,
+        rule: decision.features.rule,
+        requestedAuto: autoRouting.requestedAuto,
+      });
+    }
+
+    const resolvedModelId = model!;
+    const parsedModel = parseModelIdentifier(resolvedModelId);
     if (!parsedModel) {
       return new Response(
         JSON.stringify({
@@ -774,10 +1020,86 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const validatedApiKeys = mergeLocalInferenceFromEnv(
-      toUserProviderSettings(apiKeysParsed.data),
-      model,
-    );
+    let fleetPick: FleetPick | null = null;
+    if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
+      try {
+        fleetPick = await resolveFleetHost({
+          jobType,
+          resolvedModelId,
+        });
+        if (fleetPick) {
+          chatApiTrace("fleet host selected", {
+            fleetServerId: fleetPick.serverId,
+            fleetReason: fleetPick.reason,
+            jobType,
+            model: resolvedModelId,
+          });
+        }
+      } catch (err) {
+        if (err instanceof FleetUnavailableError) {
+          return new Response(
+            JSON.stringify({
+              error: "No healthy vLLM fleet server available",
+              details: err.message,
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+
+    routerContext = {
+      ...(routerContext ?? {}),
+      ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+    };
+
+    // Service key callers (AI Tutor, QM) have no real User row to look up DB
+    // settings for (actingUser.id is the synthetic "service" id), so they
+    // must still pass apiKeys in the body, same as before the DB migration.
+    // Regular users' keys are always loaded from the DB.
+    let providerSettingsBase: Awaited<ReturnType<typeof getUserProviderSettings>>;
+    let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
+    if (isServiceKeyCaller) {
+      if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
+        return new Response(
+          JSON.stringify({ error: "Missing required fields" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      const apiKeysParsed = clientApiKeysBodySchema.safeParse(body.apiKeys);
+      if (!apiKeysParsed.success) {
+        return new Response(
+          JSON.stringify({
+            error: "Invalid apiKeys",
+            details: apiKeysParsed.error.flatten(),
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      providerSettingsBase = toUserProviderSettings(apiKeysParsed.data);
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        providerSettingsBase,
+        resolvedModelId,
+        fleetPick?.baseUrl,
+      );
+    } else {
+      providerSettingsBase = await getUserProviderSettings(actingUser.id);
+      validatedApiKeys = mergeLocalInferenceFromEnv(
+        providerSettingsBase,
+        resolvedModelId,
+        fleetPick?.baseUrl,
+      );
+    }
 
     if (!validatedApiKeys[parsedModel.providerId]?.isEnabled) {
       const envHint =
@@ -814,11 +1136,16 @@ export async function action({ request }: ActionFunctionArgs) {
           continue;
         }
 
+        const messageToPersist =
+          message.role === "assistant"
+            ? withResolvedModelMetadata(message, resolvedModelId)
+            : message;
+
         rows.push({
           chatId: chat!.id,
           messageId: message.id,
           role: message.role,
-          content: serializeMessage(message) as Prisma.InputJsonValue,
+          content: serializeMessage(messageToPersist) as Prisma.InputJsonValue,
         });
 
         existingMessageIds.add(message.id);
@@ -832,7 +1159,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     };
 
-    const registry = createAIProviderRegistry(validatedApiKeys);
+    let registry = createAIProviderRegistry(validatedApiKeys);
     const enabledProviders = listEnabledRegistryProviders(validatedApiKeys);
 
     if (!enabledProviders.includes(parsedModel.providerId)) {
@@ -860,12 +1187,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
     const userQuestion = extractMessageText(lastUserMessage);
-    const hasCourse = Boolean(effectiveCourseId);
-    const courseRagNeeded = needsCourseRag(userQuestion, hasCourse);
 
     let aiModel;
     try {
-      aiModel = registry.languageModel(model);
+      aiModel = registry.languageModel(resolvedModelId);
     } catch (err: unknown) {
       const available =
         typeof err === "object" &&
@@ -876,7 +1201,7 @@ export async function action({ request }: ActionFunctionArgs) {
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
-          error: `Model "${model}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
+          error: `Model "${resolvedModelId}" could not be loaded (providers on server: ${available}). For vLLM set VLLM_BASE_URL in .env and deploy the feat/VLLM provider code.`,
         }),
         {
           status: 503,
@@ -896,6 +1221,10 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagHits: HybridRagHit[] = [];
     let courseRagContextText = "";
     let courseRagInject = false;
+    let effectiveForceHybridRag = forceHybridRag;
+    /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
+    let adminContextWindow: number | undefined;
+    let adminDesiredMaxOutput: number | undefined;
 
     if (chatMode === "admin") {
       const rbacUser = {
@@ -909,6 +1238,7 @@ export async function action({ request }: ActionFunctionArgs) {
           effectiveCourseId,
           effectiveCourseCode,
           restrictToStudentVisible: restrictRagToStudentVisible,
+          turnId: crypto.randomUUID(),
         },
         chatMode,
       );
@@ -924,26 +1254,36 @@ export async function action({ request }: ActionFunctionArgs) {
         activeChatModel?.maxTokens,
         parsedModel.providerId,
       );
-      const desiredMaxOutput = resolveMaxOutputTokens(
-        activeChatModel?.maxTokens,
-        parsedModel.providerId,
+      // 16k windows: tool schemas + multi-step list payloads leave little room.
+      // Cap completion aggressively; mid-turn tool results are reserved separately.
+      const desiredMaxOutput = Math.min(
+        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
+        contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
+      // Leave room for the ~17 admin tool schemas on small context models.
       const adminSessionBudget =
-        contextWindow <= 32_768
-          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.42)
-          : undefined;
+        contextWindow <= 16_384
+          ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.12)
+          : contextWindow <= 32_768
+            ? Math.floor(contextWindow * ESTIMATED_CHARS_PER_TOKEN * 0.25)
+            : undefined;
+
+      const toolResultCapChars = contextWindow <= 16_384 ? 1_200 : 3_000;
 
       modelMessages = prepareBoundedSessionContext(
-        capToolResultsInMessages(trimmedMessages, 3000),
+        capToolResultsInMessages(trimmedMessages, toolResultCapChars),
         adminSessionBudget
           ? {
               charBudget: adminSessionBudget,
-              recentCount: 4,
-              digestMaxChars: 3000,
+              recentCount: 3,
+              digestMaxChars: toolResultCapChars,
             }
           : undefined,
       );
+
+      adminContextWindow = contextWindow;
+      adminDesiredMaxOutput = desiredMaxOutput;
 
       chatApiTrace("model capability check", {
         chatMode,
@@ -970,37 +1310,21 @@ export async function action({ request }: ActionFunctionArgs) {
 
       useToolCalling = true;
 
+      const adminMaxSteps =
+        contextWindow <= 16_384 ? Math.min(TOOL_MAX_STEPS, 6) : TOOL_MAX_STEPS;
+
+      // Provisional maxTokens — final cap runs after composeSecurityPrompt below
+      // so the security block and tool schemas are included in the budget.
       streamConfig = {
         model: aiModel,
         messages: modelMessages,
         temperature: 0.2,
         maxTokens: desiredMaxOutput,
-        maxSteps: TOOL_MAX_STEPS,
+        maxSteps: adminMaxSteps,
         tools,
         toolCallStreaming: streaming && parsedModel.providerId !== "vllm",
         system: buildDefaultSystemPrompt(),
       };
-
-      const systemChars = typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
-      let messageChars = 0;
-      for (const message of modelMessages) {
-        messageChars += estimateMessageCharsForModel(message);
-      }
-      const estimatedInputTokens = estimateTokensFromChars(systemChars + messageChars);
-      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-      });
-
-      chatApiTrace("max output tokens capped", {
-        contextWindow,
-        estimatedInputTokens,
-        desiredMaxOutput,
-        effectiveMaxTokens: streamConfig.maxTokens,
-        systemChars,
-        messageChars,
-      });
     } else {
       const tools = buildChatToolRegistry({
         effectiveCourseId,
@@ -1009,30 +1333,44 @@ export async function action({ request }: ActionFunctionArgs) {
       });
       const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
-      useToolCalling = supportsTools && !forceHybridRag;
+      effectiveForceHybridRag =
+        forceHybridRag ||
+        (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
+      useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
-      const defaultCourseSystemPrompt =
-        resolvedSystemPrompt ||
-        `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+      const courseStyleBlock = effectiveCourse
+        ? buildCourseResponseStylePrompt(
+            effectiveCourse.responseStyleTags,
+            effectiveCourse.aiInstructions,
+          )
+        : "";
+
+      const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}
 
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
-
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
+
+      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
+        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+        courseStyleBlock,
+      );
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
-          courseRagHits = await findRelevantContent(
-            userQuestion,
-            effectiveCourseId,
-            HYBRID_RAG_MAX_CHUNKS,
-            undefined,
-            restrictRagToStudentVisible,
-          );
+          courseRagHits =
+            routerRagPrefetch ??
+            (await findRelevantContent(
+              userQuestion,
+              effectiveCourseId,
+              HYBRID_RAG_MAX_CHUNKS,
+              undefined,
+              restrictRagToStudentVisible,
+            ));
           courseRagInject = shouldInjectCourseRag({
             hasCourse,
             courseRagNeeded,
@@ -1089,11 +1427,15 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = resolvedSystemPrompt || `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ??
+            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
-${LATEST_TURN_FOCUS_INSTRUCTION}`;
+${LATEST_TURN_FOCUS_INSTRUCTION}`,
+          courseStyleBlock,
+        );
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,
@@ -1154,6 +1496,74 @@ ${buildEmptyCourseRagBlock()}`;
         profile: adhdProfile,
       }),
     );
+
+    // Re-cap after composeSecurityPrompt so the security block is included, and
+    // reserve room for admin tool JSON schemas (the previous 512 flat allowance
+    // under-counted ~17 tools and blew 16k windows: ContextWindowExceededError).
+    if (
+      chatMode === "admin" &&
+      adminContextWindow != null &&
+      adminDesiredMaxOutput != null
+    ) {
+      const systemChars =
+        typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+      let messageChars = 0;
+      for (const message of modelMessages) {
+        messageChars += estimateMessageCharsForModel(message);
+      }
+      const toolCount =
+        streamConfig.tools && typeof streamConfig.tools === "object"
+          ? Object.keys(streamConfig.tools).length
+          : 0;
+      const toolDefinitionTokens = estimateToolDefinitionTokens(toolCount);
+      const toolStepReserve = estimateAdminToolStepReserve(adminContextWindow);
+      const estimatedInputTokens =
+        estimateTokensFromChars(systemChars + messageChars) +
+        toolDefinitionTokens +
+        toolStepReserve;
+
+      streamConfig.maxTokens = capMaxOutputTokensForPrompt({
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        toolDefinitionTokens: 0,
+        safetyBuffer: 512,
+        minOutput: 256,
+      });
+
+      chatApiTrace("max output tokens capped", {
+        contextWindow: adminContextWindow,
+        estimatedInputTokens,
+        toolCount,
+        toolDefinitionTokens,
+        toolStepReserve,
+        desiredMaxOutput: adminDesiredMaxOutput,
+        effectiveMaxTokens: streamConfig.maxTokens,
+        systemChars,
+        messageChars,
+      });
+
+      if (
+        !promptFitsContextWindow({
+          contextWindow: adminContextWindow,
+          estimatedInputTokens,
+          maxOutputTokens: streamConfig.maxTokens,
+          safetyBuffer: 256,
+        })
+      ) {
+        return chatApiReject(
+          400,
+          {
+            error: `Admin chat prompt (system + ${toolCount} tools + history) is too large for this model's ${adminContextWindow}-token context window. Pick a larger-context tool-capable model, start a new chat, or shorten the custom system prompt.`,
+            code: "ADMIN_CONTEXT_TOO_LARGE",
+            estimatedInputTokens,
+            contextWindow: adminContextWindow,
+            toolCount,
+          },
+          { model, chatId: chat?.id ?? null },
+        );
+      }
+    }
 
     const streamStartedAt = Date.now();
     // True when course material reached the model this turn: either a tool
@@ -1229,7 +1639,7 @@ ${buildEmptyCourseRagBlock()}`;
       ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
       ragChunkCount: courseRagHits.length,
       webToolsEnabled,
-      forceHybridRag,
+      forceHybridRag: effectiveForceHybridRag,
       approach: useToolCalling ? "tool_calling" : "hybrid_rag",
       toolMaxTokens: useToolCalling ? toolMaxTokens : undefined,
       adhdOversight: needsOversight,
@@ -1243,12 +1653,108 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    let result;
-    try {
-      result = await streamText({
+    let energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
+    let sidecarTag: string | null = null;
+
+    const needsAdmission =
+      parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
+    let admissionRelease: (() => void) | null = null;
+    let admissionWaitedMs = 0;
+    if (needsAdmission) {
+      try {
+        const slot = await acquireAiAdmission(request.signal);
+        admissionRelease = slot.release;
+        admissionWaitedMs = slot.waitedMs;
+      } catch (err) {
+        if (isClientAbort(err, request.signal)) {
+          return clientAbortResponse();
+        }
+        if (err instanceof AdmissionTimeoutError) {
+          return new Response(
+            JSON.stringify({
+              error: "Server busy — too many concurrent AI requests. Try again shortly.",
+              code: "AI_ADMISSION_TIMEOUT",
+            }),
+            {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        throw err;
+      }
+    }
+    const releaseAdmission = () => {
+      if (admissionRelease) {
+        admissionRelease();
+        admissionRelease = null;
+      }
+    };
+    const admissionHeaders = (): Record<string, string> =>
+      admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
+
+    // Start energy measurement only after admission so timeout 503 cannot leak sessions.
+    sidecarTag = await startSidecarMeasurement(`chat-${chat.id}-${randomUUID()}`, {
+      sidecarBaseUrl: energySidecarBaseUrl,
+    });
+
+    const abandonSidecar = (baseUrl: string | null, tag: string | null) => {
+      if (!tag || !baseUrl) return;
+      void stopSidecarMeasurement(tag, { sidecarBaseUrl: baseUrl }).catch(() => undefined);
+    };
+
+    const persistTurnTelemetry = async (params: {
+      responseText: string;
+      usage:
+        | {
+            promptTokens?: number;
+            completionTokens?: number;
+            totalTokens?: number;
+          }
+        | undefined;
+      finishReason: string;
+    }) => {
+      await persistAiInteractionTelemetry({
+        userId: actingUser.id,
+        courseId: effectiveCourseId,
+        resolvedModelId,
+        query: lastUserMessageTextForRouting,
+        responseText: params.responseText,
+        usage: params.usage,
+        finishReason: params.finishReason,
+        durationMs: Date.now() - requestStartMs,
+        wasAuto,
+        routingTier,
+        routerVersion: wasAuto ? resolvedRouterVersion : null,
+        routerFeatures: routerContext,
+        sidecarTag,
+        energySidecarBaseUrl,
+      });
+    };
+
+    const fleetStreamProbeMs = parseEnvInt(process.env.FLEET_STREAM_PROBE_MS, 10_000);
+    // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
+    // connection/startup failures throw from runStreamText and Slice 2 can retry.
+    // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
+    const shouldProbeFleetStream =
+      Boolean(fleetPick) && parsedModel.providerId === "vllm";
+
+    const runStreamText = async () => {
+      const probe = shouldProbeFleetStream
+        ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
+        : null;
+
+      const result = streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
+        providerOptions: usageProviderOptions(parsedModel.providerId),
         abortSignal: request.signal,
+        onChunk: probe
+          ? () => {
+              probe.hooks.signalReady();
+            }
+          : undefined,
         onStepFinish: ({ toolCalls, toolResults }) => {
+          probe?.hooks.signalReady();
           if ((toolCalls?.length ?? 0) > 0 || (toolResults?.length ?? 0) > 0) {
             adhdToolsUsed = true;
           }
@@ -1256,15 +1762,27 @@ ${buildEmptyCourseRagBlock()}`;
         onFinish: needsOversight
           ? undefined
           : async ({ text, usage, finishReason, response }) => {
-              // For streaming responses, persist here. Non-streaming path calls
-              // consumeStream() which also triggers onFinish, so we skip here to
-              // avoid saving the assistant message twice with different UUIDs.
+              probe?.hooks.signalReady();
+              if (!streaming) {
+                return;
+              }
+              const normalizedUsage = coalesceTokenUsage(
+                usage as Record<string, unknown> | undefined,
+              );
+              await persistTurnTelemetry({
+                responseText: text ?? "",
+                usage: {
+                  promptTokens: normalizedUsage.promptTokens ?? undefined,
+                  completionTokens: normalizedUsage.completionTokens ?? undefined,
+                  totalTokens: normalizedUsage.totalTokens ?? undefined,
+                },
+                finishReason: String(finishReason ?? "stop"),
+              });
               logResponseCompliance(text, {
                 finishReason,
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
-              if (!streaming) return;
               const assistantText = text || extractAssistantText(response?.messages);
               if (assistantText) {
                 await appendMessages([
@@ -1274,33 +1792,125 @@ ${buildEmptyCourseRagBlock()}`;
                 });
               }
             },
-        onError:
-          chatMode === "admin"
-            ? ({ error }) => {
-                logStreamError(error, streamTrace);
-              }
-            : undefined,
+        onError: ({ error }) => {
+          logStreamError(error, streamTrace);
+          probe?.hooks.signalError(error);
+        },
       });
+
+      if (probe) {
+        await probe.wait();
+      }
+      return result;
+    };
+
+    let result;
+    let fleetRetry = false;
+    try {
+      result = await runStreamText();
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
+        abandonSidecar(energySidecarBaseUrl, sidecarTag);
+        releaseAdmission();
         return clientAbortResponse();
       }
-      if (chatMode === "admin") {
-        logStreamError(error, streamTrace);
-        const hint =
-          parsedModel.providerId === "vllm"
-            ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
-            : "";
-        return chatApiReject(
-          502,
-          {
-            error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
-            code: "LLM_STREAM_FAILED",
-          },
-          streamTrace,
-        );
+
+      // Slice 2: one inference retry on an alternate healthy fleet host.
+      if (fleetPick && parsedModel.providerId === "vllm") {
+        const failedPick = fleetPick;
+        try {
+          const nextPick = await resolveFleetHostAfterFailure({
+            failedPick,
+            resolvedModelId,
+            jobType,
+          });
+          if (nextPick) {
+            abandonSidecar(failedPick.energySidecarUrl, sidecarTag);
+            fleetPick = nextPick;
+            energySidecarBaseUrl = nextPick.energySidecarUrl;
+            sidecarTag = await startSidecarMeasurement(
+              `chat-${chat.id}-${randomUUID()}`,
+              { sidecarBaseUrl: energySidecarBaseUrl },
+            );
+            validatedApiKeys = mergeLocalInferenceFromEnv(
+              providerSettingsBase,
+              resolvedModelId,
+              nextPick.baseUrl,
+            );
+            registry = createAIProviderRegistry(validatedApiKeys);
+            aiModel = registry.languageModel(resolvedModelId);
+            streamConfig.model = aiModel;
+            console.log("[fleet] retry attempt", {
+              from: failedPick.serverId,
+              to: nextPick.serverId,
+              model: resolvedModelId,
+            });
+            chatApiTrace("fleet retry host selected", {
+              fleetServerId: nextPick.serverId,
+              fleetReason: nextPick.reason,
+              previousServerId: failedPick.serverId,
+              fleetRetryAttempt: true,
+            });
+            result = await runStreamText();
+            // #876 success marker — only after the alternate attempt succeeds.
+            fleetRetry = true;
+            routerContext = {
+              ...(routerContext ?? {}),
+              ...buildFleetRouterFeatures(workloadFeature, fleetPick),
+              fleetRetry: true,
+            };
+            console.log("[fleet] fleetRetry: true", {
+              from: failedPick.serverId,
+              to: nextPick.serverId,
+              model: resolvedModelId,
+            });
+          } else {
+            throw error;
+          }
+        } catch (retryError) {
+          abandonSidecar(energySidecarBaseUrl, sidecarTag);
+          releaseAdmission();
+          if (isClientAbort(retryError, request.signal)) {
+            return clientAbortResponse();
+          }
+          if (chatMode === "admin") {
+            logStreamError(retryError, streamTrace);
+            const hint =
+              parsedModel.providerId === "vllm"
+                ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+                : "";
+            return chatApiReject(
+              502,
+              {
+                error: `LLM stream failed: ${formatStreamError(retryError)}.${hint}`,
+                code: "LLM_STREAM_FAILED",
+                fleetRetry,
+              },
+              streamTrace,
+            );
+          }
+          throw retryError;
+        }
+      } else {
+        abandonSidecar(energySidecarBaseUrl, sidecarTag);
+        releaseAdmission();
+        if (chatMode === "admin") {
+          logStreamError(error, streamTrace);
+          const hint =
+            parsedModel.providerId === "vllm"
+              ? " Pick a tool-capable vLLM model registered in Admin → AI Models."
+              : "";
+          return chatApiReject(
+            502,
+            {
+              error: `LLM stream failed: ${formatStreamError(error)}.${hint}`,
+              code: "LLM_STREAM_FAILED",
+            },
+            streamTrace,
+          );
+        }
+        throw error;
       }
-      throw error;
     }
 
     if (needsOversight) {
@@ -1342,6 +1952,18 @@ ${buildEmptyCourseRagBlock()}`;
           : emptyOversightAuditResult();
 
         finalText = audited.text || draft;
+        const normalizedOversightUsage = coalesceTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+        await persistTurnTelemetry({
+          responseText: finalText,
+          usage: {
+            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
         logResponseCompliance(finalText, {
           finishReason,
           promptTokens: usage?.promptTokens,
@@ -1371,11 +1993,22 @@ ${buildEmptyCourseRagBlock()}`;
             headers["X-Chat-Id"] = chat.id;
           }
           headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
+          Object.assign(
+            headers,
+            autoRoutingHeaders(
+              resolvedModelId,
+              routingTier,
+              wasAuto,
+              resolvedRouterVersion,
+              fleetPick?.serverId ?? null,
+            ),
+          );
 
           await persistOverseenAssistantMessages(finalText);
 
+          releaseAdmission();
           return createDataStreamResponse({
-            headers,
+            headers: { ...headers, ...admissionHeaders() },
             execute: (dataStream) => {
               if (finalText) {
                 dataStream.write(formatDataStreamPart("text", finalText));
@@ -1391,6 +2024,7 @@ ${buildEmptyCourseRagBlock()}`;
 
         await persistOverseenAssistantMessages(finalText);
 
+        releaseAdmission();
         return new Response(
           JSON.stringify({
             content: finalText,
@@ -1405,10 +2039,15 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...admissionHeaders(),
+              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+            },
           },
         );
       } catch (error) {
+        releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }
@@ -1431,26 +2070,42 @@ ${buildEmptyCourseRagBlock()}`;
         "Content-Encoding": "none",
         "Transfer-Encoding": "chunked",
         Connection: "keep-alive",
+        ...admissionHeaders(),
       };
       if (chat?.id) {
         headers["X-Chat-Id"] = chat.id;
       }
       headers["X-Web-Tools-Enabled"] = webToolsEnabled ? "1" : "0";
-      return result.toDataStreamResponse({
+      Object.assign(
         headers,
-        ...(chatMode === "admin"
-          ? {
-              getErrorMessage: (error) => {
-                logStreamError(error, streamTrace);
-                const base = formatStreamError(error);
-                if (parsedModel.providerId === "vllm") {
-                  return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
-                }
-                return base;
-              },
-            }
-          : {}),
-      });
+        autoRoutingHeaders(
+          resolvedModelId,
+          routingTier,
+          wasAuto,
+          resolvedRouterVersion,
+          fleetPick?.serverId ?? null,
+        ),
+      );
+      const release = admissionRelease;
+      admissionRelease = null;
+      return withAdmissionRelease(
+        result.toDataStreamResponse({
+          headers,
+          ...(chatMode === "admin"
+            ? {
+                getErrorMessage: (error) => {
+                  logStreamError(error, streamTrace);
+                  const base = formatStreamError(error);
+                  if (parsedModel.providerId === "vllm") {
+                    return `${base} — Check that the selected model supports tools and that max output tokens fit the vLLM context window.`;
+                  }
+                  return base;
+                },
+              }
+            : {}),
+        }),
+        release,
+      );
     } else {
       try {
         await result.consumeStream();
@@ -1480,6 +2135,20 @@ ${buildEmptyCourseRagBlock()}`;
           }
         }
 
+        const normalizedUsage = coalesceTokenUsage(
+          usage as Record<string, unknown> | undefined,
+        );
+        await persistTurnTelemetry({
+          responseText: text ?? "",
+          usage: {
+            promptTokens: normalizedUsage.promptTokens ?? undefined,
+            completionTokens: normalizedUsage.completionTokens ?? undefined,
+            totalTokens: normalizedUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
+
+        releaseAdmission();
         return new Response(
           JSON.stringify({
             content: text,
@@ -1494,10 +2163,15 @@ ${buildEmptyCourseRagBlock()}`;
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...admissionHeaders(),
+              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+            },
           },
         );
       } catch (error) {
+        releaseAdmission();
         if (isClientAbort(error, request.signal)) {
           return clientAbortResponse();
         }

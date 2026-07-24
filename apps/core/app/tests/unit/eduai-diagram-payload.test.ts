@@ -49,6 +49,18 @@ Axon: Sends signals
 Synapse: Connects cells`).stages[0]?.label,
     ).toBe("Neuron");
   });
+
+  it("keeps bare stage labels instead of swallowing the first as a type id", () => {
+    const payload = parseEduaiDiagramBody(`Start
+Middle
+End`);
+    expect(payload.typeId).toBe("process-flow");
+    expect(payload.stages.map((s) => s.label)).toEqual([
+      "Start",
+      "Middle",
+      "End",
+    ]);
+  });
 });
 
 describe("extractStagesFromDraft", () => {
@@ -83,6 +95,16 @@ describe("extractStagesFromDraft", () => {
     expect(stages[0]?.label).toBe("Light reactions");
     expect(stages.length).toBeGreaterThanOrEqual(3);
   });
+
+  it("returns raw stages without process-flow padding", () => {
+    const draft = `**Top summary**
+- **Alpha** — first
+- **Beta** — second
+
+**Next?** More?`;
+    const stages = extractStagesFromDraft(draft);
+    expect(stages.map((s) => s.label)).toEqual(["Alpha", "Beta"]);
+  });
 });
 
 describe("buildEduaiDiagramFence", () => {
@@ -113,5 +135,21 @@ describe("buildEduaiDiagramFence", () => {
     expect(fence).toContain("title:");
     expect(fence).toContain("Start point:");
     expect(fence).toContain("Step downhill:");
+  });
+
+  it("pads short drafts with type-specific defaults, not process-flow Step", () => {
+    const fence = buildEduaiDiagramFence({
+      typeId: "gradient-descent",
+      userText: "explain gradient descent",
+      draftText: `**Top summary**
+- **Start high** — pick a point
+- **Step downhill** — move opposite gradient
+
+**Next?** More?`,
+    });
+    expect(fence).toContain("Start high:");
+    expect(fence).toContain("Step downhill:");
+    expect(fence).toContain("Start point:");
+    expect(fence).not.toContain("Another intermediate stage");
   });
 });

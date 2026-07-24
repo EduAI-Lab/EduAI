@@ -10,8 +10,22 @@
  *   - Topics for imported (EduAI) courses are managed exclusively by sync;
  *     manual creation is rejected (POST /courses/:id/topics).
  *   - Sync is name-keyed and additive — it never deletes local topics that
- *     drift away upstream. Drift is surfaced via the `missingTopics` array so
- *     the instructor can act on it deliberately.
+ *     drift away upstream. Drift is surfaced via the `missingTopics` array on
+ *     the deprecated POST .../sync response, but as of #1031 there is no UI
+ *     surface left that reads it (TopicSyncMappingDialog was removed) —
+ *     drifted local topics now accumulate silently rather than being
+ *     resolved. POST .../remap still exists to consolidate them by hand via
+ *     direct API call, but is otherwise dead code.
+ *   - GET auto-syncs from Core for imported courses (#1031); POST .../sync
+ *     and POST .../remap are kept for API compatibility but are no longer
+ *     called by the UI. This means any enrolled student's read can now
+ *     trigger a Core call + local `createMany`, where before sync was an
+ *     explicit admin-only action — deliberate, so the topic list is current
+ *     without a manual step; `AUTO_SYNC_TTL_MS` caps the resulting Core/DB
+ *     load to at most one sync per course per TTL window regardless of how
+ *     many students are reading concurrently. `jobs/reconcile.js` still owns
+ *     periodic reconciliation independent of reads; this is a read-time
+ *     top-up on top of that, not a replacement for it.
  *   - Remap rewrites both `Activity.mainTopicId` and the
  *     `ActivitySecondaryTopic` join table inside a transaction, then drops the
  *     source topic. If the source is still referenced (e.g. another module),
@@ -22,7 +36,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
-import { syncExternalCourseTopics } from '../services/topicSync.js';
+import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
 
 const router = express.Router();
 
@@ -53,8 +67,16 @@ async function ensureCourseAccess(courseId, user) {
  *
  * Auth: enrolled student or course instructor.
  *
- * Why: deliberately does NOT auto-sync from EduAI; sync is an explicit
- * instructor action so the topic list never changes underneath an active UI.
+ * Why: Core is the source of truth for topics. For EduAI-imported courses,
+ * this pulls the latest topic list from Core before responding, so the topic
+ * list is always current without a manual sync action. Pulls are throttled
+ * per course to `AUTO_SYNC_TTL_MS` (services/topicSync.js) so a page with
+ * many concurrent viewers doesn't fire a Core call per request, and bounded
+ * to `AUTO_SYNC_TIMEOUT_MS` so a Core that's up but slow/hung degrades to
+ * the local mirror the same way a hard failure does, instead of blocking
+ * the request on the OS socket timeout. A failed or timed-out pull (Core
+ * fetch or local write) falls back to serving the local mirror rather than
+ * failing the request — mirrors the tolerance pattern in jobs/reconcile.js.
  */
 router.get('/courses/:courseId/topics', async (req, res) => {
   const courseId = Number(req.params.courseId);
@@ -74,13 +96,29 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    // Do not auto-sync here to avoid surprising UI changes.
-    // Imported courses can be synced explicitly via the sync endpoint.
+    let topics;
+    if (course.coreOfferingId) {
+      try {
+        const synced = await syncExternalCourseTopics(courseId, {
+          ttlMs: AUTO_SYNC_TTL_MS,
+          signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+        });
+        topics = synced?.topics;
+      } catch (e) {
+        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+        console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+      }
+    }
 
-    const topics = await prisma.topic.findMany({
-      where: { courseOfferingId: courseId },
-      orderBy: { name: 'asc' },
-    });
+    // Native courses skip the sync branch above; a failed/aborted sync
+    // leaves `topics` unset — either way, fall back to a fresh local read
+    // instead of double-querying when the sync already returned the list.
+    if (!topics) {
+      topics = await prisma.topic.findMany({
+        where: { courseOfferingId: courseId },
+        orderBy: { name: 'asc' },
+      });
+    }
     res.json(topics);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -113,12 +151,12 @@ router.post('/courses/:courseId/topics', requireRole(['INSTRUCTOR', 'UNIT_ADMIN'
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
     // Block manual topic creation for imported (external) courses
-    if (course.externalId) {
+    if (course.coreOfferingId) {
       return res.status(403).json({
         error: 'Topics for imported courses are managed by EduAI and cannot be added here',
       });
@@ -145,6 +183,11 @@ export default router;
 /**
  * POST /courses/:courseId/topics/sync — pull EduAI topic list into local DB.
  *
+ * Deprecated (#1031): the UI no longer calls this — GET .../topics now
+ * auto-syncs imported courses on every read. Kept unreachable-from-UI for API
+ * compatibility, same treatment as the old `POST /courses/import-external`
+ * (see docs/ARCHITECTURE.md §8).
+ *
  * Auth: course admin (LEAD instructor / unit-admin / admin); course must be
  *   EduAI-imported.
  * Returns: `{ ok, topics, missingTopics }` — `missingTopics` are local topics
@@ -169,11 +212,11 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
     if (!course) {
       return res.status(404).json({ error: 'Course not found' });
     }
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    if (!course.externalId) {
+    if (!course.coreOfferingId) {
       return res.status(400).json({ error: 'Course is not imported from EduAI' });
     }
 
@@ -201,15 +244,23 @@ router.post('/courses/:courseId/topics/sync', requireRole(['INSTRUCTOR', 'UNIT_A
 /**
  * POST /courses/:courseId/topics/remap — move activities between topics.
  *
+ * Deprecated (#1031): the UI no longer surfaces this — TopicSyncMappingDialog
+ * (the only caller) was removed along with the "Sync now" button. Kept
+ * unreachable-from-UI for API compatibility, same treatment as the now-dead
+ * `POST /courses/:courseId/topics/sync` above.
+ *
  * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Body: `{ mappings: [{ fromTopicId, toTopicId }, ...] }`
  * Side effects: in a single transaction, reassigns `Activity.mainTopicId`,
  *   migrates `ActivitySecondaryTopic` rows (creating missing target rows,
  *   deleting source rows), then deletes each source topic if no longer used.
  *
- * Why: post-sync cleanup tool — when EduAI renames or splits a topic, the
- * instructor uses this to consolidate the orphaned local topic into the new
- * upstream-synced one without losing activity associations.
+ * Why: post-sync cleanup tool — when EduAI renames or splits a topic, an
+ * admin can still consolidate the orphaned local topic into the new
+ * upstream-synced one without losing activity associations, via direct API
+ * call. Since GET .../topics now auto-syncs (#1031) and there's no UI path
+ * to `missingTopics` anymore, drifted local topics otherwise pile up
+ * silently — this is the only remaining way to clean them up.
  */
 router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
   const instructor = req.user;
@@ -238,7 +289,7 @@ router.post('/courses/:courseId/topics/remap', requireRole(['INSTRUCTOR', 'UNIT_
       include: { instructors: { select: { userId: true } } },
     });
     if (!course) return res.status(404).json({ error: 'Course not found' });
-    if (!isCourseAdmin(instructor, course)) {
+    if (!await isCourseAdmin(instructor, course)) {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 

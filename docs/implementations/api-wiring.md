@@ -40,7 +40,7 @@
 
 ## Auth
 
-> **Updated after the auth-unification work.** Core's Better Auth has **no `bearer` or `apiKey` plugin** — `auth.api.getSession()` reads **session cookies only**, never an `Authorization` or `x-api-key` header. The legacy `x-api-key` backend API key plugin has been removed (#158). There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
+> **Updated after the auth-unification work.** Core's Better Auth has no `bearer` plugin — `auth.api.getSession()` reads **session cookies only**, never an `Authorization` header. The Better Auth `apiKey` plugin verifies `x-api-key` separately with session synthesis disabled; `enforceAdminIfApiKey` loads the key owner and restricts supported routes to active ADMIN users. There is no `getEduAiAccessTokenForUser`; the helper is `getEduAiCookieForRequest`.
 
 ### User auth — session cookie forwarding (existing)
 
@@ -66,7 +66,7 @@ Standard RFC 6750 Bearer. Both extensions read `EDUAI_API_KEY` from env. Used fo
 3. Return `401 { "error": "MISSING_SERVICE_KEY" }` if the header is absent / not `Bearer`
 4. Return `403 { "error": "INVALID_SERVICE_KEY" }` if the token does not match (or `EDUAI_API_KEY` is unset)
 
-> **`enforceAdminIfApiKey` has been removed** (#158). The legacy `x-api-key` plugin is gone. `requireServiceKey` is the only non-cookie auth path: it validates `Authorization: Bearer <EDUAI_API_KEY>` for server-to-server calls. All user-facing routes authenticate via session cookie only.
+`enforceAdminIfApiKey` is applied to `/api/chat`, `/api/me`, `/api/users`, `/api/ai-providers`, and `/api/ai-models`. When `x-api-key` is present, it verifies the key through Better Auth and admits only keys owned by active ADMIN users. `requireServiceKey` remains the separate `Authorization: Bearer <EDUAI_API_KEY>` path for extension server-to-server calls; other user-facing routes authenticate via session cookie.
 
 ### RBAC scope (per #275 / #292)
 
@@ -458,5 +458,17 @@ Per #275, new endpoints ship with **minimum-viable auth**, not the full role mat
 
 | Item | Status |
 |---|---|
-| Admin chatbot + tool coverage snapshot | ✅ [`AGENT_READINESS.md`](../rag-ai/AGENT_READINESS.md) |
+| Admin chatbot + tool coverage snapshot | ✅ [`AGENT_READINESS.md`](../AGENT_READINESS.md) |
 | API hygiene — JSON course create, error envelope, enrollment idempotency ([#572](https://github.com/EduAI-Lab/EduAI/issues/572)) | ✅ |
+| Automated agent-readiness tests (full API manifest + JSON envelope + email) ([#672](https://github.com/EduAI-Lab/EduAI/issues/672)) | ✅ `app/lib/agent-readiness/manifest.ts` — all `/api/*` endpoints inventoried |
+| Centralized idempotency layer ([#828](https://github.com/EduAI-Lab/EduAI/issues/828)) | ✅ Phase 1–3 (`POST /api/users`, enrollments, questions) |
+
+### Centralized idempotency ([#828](https://github.com/EduAI-Lab/EduAI/issues/828))
+
+Retry-safe POST creates may opt into `withIdempotency()` (`app/lib/idempotency.server.ts`). Clients send **`Idempotency-Key`** (preferred) or body `idempotencyKey`. The wrapper atomically claims `(key, route)`, replays cached responses on retry, returns `422 IDEMPOTENCY_KEY_MISMATCH` when the body hash differs, and `409 IDEMPOTENCY_IN_PROGRESS` for concurrent duplicates.
+
+| Route | Status |
+|---|---|
+| `POST /api/users` | ✅ Centralized layer |
+| `POST /api/courses/:id/enrollments` | Entity-column `idempotencyKey` (migrate in phase 3) |
+| `POST /api/questions` | Entity-column `idempotencyKey` (migrate in phase 3) |

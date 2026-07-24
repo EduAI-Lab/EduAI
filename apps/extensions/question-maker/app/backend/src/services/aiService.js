@@ -6,6 +6,7 @@ import axios from "axios";
 import { config } from "../config/settings.js";
 import { Question_Metadata, Topics, Course } from "../schema/index.js";
 import eduaiService from "./eduaiService.js";
+import { enrichCourseDetail } from "./courseListService.js";
 import {
   normalizeExtractText,
   chunkText,
@@ -295,9 +296,14 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
     );
   }
 
-  const rawCode =
+  // Preserve original spacing/casing so Core can resolve by code when
+  // coreCourseId is absent. Prefer course.coreCourseId (Core CUID) below.
+  const courseCode =
     (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
-  const courseCode = rawCode.replace(/\s+/g, "").toUpperCase();
+  const coreCourseId =
+    typeof course?.coreCourseId === "string" && course.coreCourseId.trim()
+      ? course.coreCourseId.trim()
+      : undefined;
   const { chunks, blockCountsPerChunk } = chunkByQuestionBlocks(text, 5000);
   const extracted = [];
 
@@ -384,6 +390,7 @@ ${chunk}
       const questions = await eduaiService.generateQuestions({
         prompt: chunk,
         courseCode,
+        courseId: coreCourseId,
         model,
         apiKeys,
         numQuestions,
@@ -710,11 +717,12 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
     return [];
   }
 
-  const course = await Course.findByPk(courseId, {
-    attributes: ["id", "code", "name"],
-  });
+  // `code`/`name` are Core-owned and no longer stored locally (#1072 §4 step
+  // 10) — read through Core for the display code used in the extraction prompt.
+  const course = await Course.findByPk(courseId, { attributes: ["id", "coreCourseId"] });
+  const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
 
-  const extracted = await extractQuestionsWithEduAI(normalized, course, model, apiKeys, { cookie });
+  const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, { cookie });
   return extracted;
 };
 

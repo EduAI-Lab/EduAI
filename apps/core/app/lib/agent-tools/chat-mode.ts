@@ -8,6 +8,11 @@ export type ChatToolContext = {
   effectiveCourseCode?: string | null;
   /** #839: when true (student caller), exclude hidden/scheduled materials from RAG. */
   restrictToStudentVisible?: boolean;
+  /**
+   * Unique id for this HTTP chat turn. Admin write confirms must use a later
+   * turn than the preview (rejects same-generation confirmed:true).
+   */
+  turnId?: string;
 };
 
 export function parseChatMode(value: unknown): ChatMode {
@@ -79,31 +84,17 @@ type AdminPromptOptions = PromptOptions & {
 export function formatAdminCourseContext(): string {
   return `Admin chat is platform-wide (no UI course filter).
 Pass courseId or courseCode to listCourseEnrollments, listCourseTopics, getCourseTopic, topic write tools, and enrollment write tools when the admin names a specific course.
-listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.`;
+listUsers lists all platform accounts; for course rosters use listCourseEnrollments with an explicit course.
+When looking up one enrollment for update/deactivate, call listCourseEnrollments with userId or userEmail — do not rely on an unfiltered newest-page browse.`;
 }
 
-export function buildAdminSystemPrompt({
-  customPrompt,
-}: Pick<AdminPromptOptions, "customPrompt">): string {
-  const courseContext = formatAdminCourseContext();
-
-  if (customPrompt) {
-    return `${customPrompt.trim()}\n\n${courseContext}`;
-  }
-
-  return `You are EduAI Admin Assistant for platform administrators at UBC Okanagan (UBCO).
-
-CRITICAL RULES:
-- You MUST call the appropriate admin tool before answering ANY question about users, enrollments, courses, or bug reports.
-- NEVER guess or invent data. Only state facts returned by tool results.
-- Tool results include dataSource: "database". Quote exact fields from the tool JSON.
-- If truncated is true or count < total, tell the admin how many rows were returned vs total in the database.
-- You do NOT tutor students or search course materials.
-
-Read tools:
-- listCourses, getCourse, listCourseEnrollments, listCourseTopics, getCourseTopic, listUsers, listBugReports
-
-Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
+/**
+ * Write-safety confirmation rules. Always appended to the admin system prompt —
+ * including when a caller supplies a custom prompt — since these are the only
+ * thing standing between a write tool call and an unconfirmed mutation (#988).
+ */
+export function formatAdminWriteSafetyRules(): string {
+  return `Write tools (require explicit admin confirmation in chat, then pass confirmed: true):
 - createUser, updateUser, deleteUser
 - createCourseEnrollment, updateCourseEnrollment, deactivateCourseEnrollment
 - createCourseTopic, updateCourseTopic, deleteCourseTopic
@@ -111,12 +102,39 @@ Write tools (require explicit admin confirmation in chat, then pass confirmed: t
 
 Write safety:
 1. Before ANY write, restate exactly what will change (who, which course, which role/status).
-2. Wait for the admin to explicitly confirm (e.g. "yes, do it") in the conversation.
-3. Only then call the write tool with confirmed: true. If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
+2. Call the write tool once with confirmed: false to register a preview, then wait for the admin to explicitly confirm in a *new* chat message (e.g. "yes, do it"). Same-turn confirmed:true after confirmed:false is rejected.
+3. Only after that later admin message, call the write tool again with confirmed: true (same arguments). If you call with confirmed: false, the tool returns CONFIRMATION_REQUIRED and nothing is written — that is expected until the admin confirms.
 4. A write ONLY succeeded if the tool result JSON contains writeSucceeded: true. If writeSucceeded is false or error is CONFIRMATION_REQUIRED, tell the admin the write was not applied yet.
-5. After a successful write (writeSucceeded: true), call the matching read tool (listUsers, listCourseEnrollments, listCourseTopics, listBugReports) to show the updated database state.
-6. For user-targeting writes, pass userId from listUsers OR userEmail — never invent ids.
-7. You cannot deactivate yourself, change your own role, or delete your own account.
+5. After a successful write (writeSucceeded: true), call the matching read tool to show the updated database state. Prefer listUsers with email=… (or query) instead of an unfiltered directory dump.
+6. For user-targeting writes, pass userEmail when the admin gave an email, or userId from a tool result — never invent ids or substitute a similar-looking email.
+7. When looking up a named user, call listUsers with email=… (exact) or query=…. If count is 0, say the user was not found — do NOT guess a different email/name from an unfiltered list.
+8. You cannot deactivate yourself, change your own role, or delete your own account.`;
+}
+
+export function buildAdminSystemPrompt({
+  customPrompt,
+}: Pick<AdminPromptOptions, "customPrompt">): string {
+  const courseContext = formatAdminCourseContext();
+  const writeSafetyRules = formatAdminWriteSafetyRules();
+
+  if (customPrompt) {
+    return `${customPrompt.trim()}\n\n${writeSafetyRules}\n\n${courseContext}`;
+  }
+
+  return `You are EduAI Admin Assistant for platform administrators at UBC Okanagan (UBCO).
+
+CRITICAL RULES:
+- You MUST call the appropriate admin tool before answering ANY question about users, enrollments, courses, or bug reports.
+- NEVER guess or invent data. Only state facts returned by tool results.
+- NEVER replace an admin-supplied email with a similar one from a browse list.
+- Tool results include dataSource: "database". Quote exact fields from the tool JSON.
+- If truncated is true or count < total, tell the admin how many rows were returned vs total in the database.
+- You do NOT tutor students or search course materials.
+
+Read tools:
+- listCourses, getCourse, listCourseEnrollments (supports userId / userEmail exact lookup), listCourseTopics, getCourseTopic, listUsers (supports email / query filters), listBugReports
+
+${writeSafetyRules}
 
 When answering:
 1. Call the relevant read tool(s) first when listing or verifying current state.

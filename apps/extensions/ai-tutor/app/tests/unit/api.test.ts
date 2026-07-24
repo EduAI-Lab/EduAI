@@ -127,7 +127,6 @@ describe('api methods', () => {
       'me',
       'listCourses',
       'courseById',
-      'updateCourse',
       'modulesForCourse',
       'moduleById',
       'createModule',
@@ -246,5 +245,29 @@ describe('api methods', () => {
     expect(options.method).toBe('POST');
     expect(options.credentials).toBe('include');
     expect(result).toEqual({ ok: true });
+  });
+
+  it('api.listCourseFeedback() builds query params for course feedback (#784)', async () => {
+    const mockData = [{ id: 1, userId: 's1', activityId: 2, rating: 5, createdAt: '2026-07-01' }];
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockData),
+    });
+
+    const { api } = await import('~/lib/api');
+    const result = await api.listCourseFeedback(9, {
+      activityId: 2,
+      studentId: 's1',
+      take: 100,
+      skip: 50,
+    });
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe(
+      'http://localhost:4000/api/courses/9/feedback?activityId=2&studentId=s1&take=100&skip=50',
+    );
+    expect(options.credentials).toBe('include');
+    expect(result).toEqual(mockData);
   });
 });

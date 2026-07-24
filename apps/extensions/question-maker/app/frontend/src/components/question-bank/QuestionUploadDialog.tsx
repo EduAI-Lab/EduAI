@@ -25,6 +25,7 @@ import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { useOCRHistory } from '../../hooks/use-ocr-history';
 import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
 import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
+import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
 import type { OCRJob, StoredQuestion } from '../../types/ocr';
 
 // Configure PDF.js worker
@@ -282,13 +283,8 @@ export const QuestionUploadDialog = ({
     const [lastFileName, setLastFileName] = useState<string>('');
     const [assessmentType, setAssessmentType] = useState<typeof assessmentTypes[number]>('Assignment');
     const [assessmentName, setAssessmentName] = useState('Uploaded Assessment');
-    const [assessmentSemester, setAssessmentSemester] = useState(() => {
-        const now = new Date();
-        const year = now.getFullYear();
-        return `Fall ${year}`;
-    });
     const [availableModels, setAvailableModels] = useState<EduAIModelOption[]>([]);
-    const [aiModel, setAiModel] = useState('ollama:gpt-oss:120b');
+    const [aiModel, setAiModel] = useState(FALLBACK_GENERATION_MODEL);
     const [providerApiKey, setProviderApiKey] = useState('');
     const [apiKeySaveState, setApiKeySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [uploadSectionCollapsed, setUploadSectionCollapsed] = useState(true);
@@ -312,7 +308,10 @@ export const QuestionUploadDialog = ({
         [aiModel, availableModels]
     );
     const isExternalModel = useMemo(
-        () => (selectedModel ? selectedModel.provider !== 'ollama' : !aiModel.startsWith('ollama')),
+        () =>
+            selectedModel
+                ? !isCampusModel(selectedModel)
+                : apiKeyStorage.requiresApiKey(aiModel),
         [aiModel, selectedModel]
     );
 
@@ -344,11 +343,6 @@ export const QuestionUploadDialog = ({
             setProgress(0);
             setLastFileName('');
         }
-        setAssessmentSemester(() => {
-            const now = new Date();
-            const year = now.getFullYear();
-            return `Fall ${year}`;
-        });
     }, [open, providedTopics, initialDraftQuestions]);
 
     useEffect(() => {
@@ -397,6 +391,9 @@ export const QuestionUploadDialog = ({
             try {
                 const models = await eduaiService.listModels();
                 setAvailableModels(models);
+                setAiModel((prev) =>
+                    models.some((m) => m.id === prev) ? prev : pickPreferredGenerationModel(models),
+                );
             } catch (error) {
                 console.error('Failed to fetch AI models:', error);
                 setAvailableModels([]);
@@ -543,7 +540,6 @@ export const QuestionUploadDialog = ({
             assessmentDetails: {
                 type: assessmentType,
                 name: assessmentName,
-                semester: assessmentSemester,
             },
         });
         setCurrentJobId(jobId);
@@ -584,7 +580,7 @@ export const QuestionUploadDialog = ({
                 duration: Number.POSITIVE_INFINITY,
             });
         }
-    }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName, assessmentSemester]);
+    }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName]);
 
     const updateDraft = useCallback((id: string, updates: Partial<DraftQuestion>) => {
         setDraftQuestions((prev) =>
@@ -649,11 +645,10 @@ export const QuestionUploadDialog = ({
         if (!courseId) return false;
         if (includedDrafts.length === 0) return false;
         if (saveTarget === 'bank') return true;
-        if (!assessmentType || !assessmentName.trim() || !assessmentSemester.trim()) return false;
+        if (!assessmentType || !assessmentName.trim()) return false;
         return true;
     }, [
         assessmentName,
-        assessmentSemester,
         assessmentType,
         courseId,
         includedDrafts.length,
@@ -670,7 +665,6 @@ export const QuestionUploadDialog = ({
             if (saveTarget === 'assessment') {
                 if (!assessmentType) reasons.push('assessment type');
                 if (!assessmentName.trim()) reasons.push('assessment name');
-                if (!assessmentSemester.trim()) reasons.push('assessment semester');
             }
 
             if (reasons.length > 0) {
@@ -763,7 +757,6 @@ export const QuestionUploadDialog = ({
         if (job.assessmentDetails) {
             setAssessmentType(job.assessmentDetails.type as typeof assessmentTypes[number]);
             setAssessmentName(job.assessmentDetails.name);
-            setAssessmentSemester(job.assessmentDetails.semester);
         }
         toast({
             title: 'Questions restored',
@@ -862,8 +855,8 @@ export const QuestionUploadDialog = ({
             setError('Each question must include the AI-generated summary before saving.');
             return;
         }
-        if (saveTarget === 'assessment' && (!assessmentType || !assessmentName.trim() || !assessmentSemester.trim())) {
-            setError('Assessment type, name, and semester are required.');
+        if (saveTarget === 'assessment' && (!assessmentType || !assessmentName.trim())) {
+            setError('Assessment type and name are required.');
             return;
         }
         setProcessingStage('saving');
@@ -885,8 +878,7 @@ export const QuestionUploadDialog = ({
                     ? {
                           assessment: {
                               type: assessmentType,
-                              name: assessmentName.trim(),
-                              semester: assessmentSemester.trim()
+                              name: assessmentName.trim()
                           }
                       }
                     : {})
@@ -913,7 +905,6 @@ export const QuestionUploadDialog = ({
         }
     }, [
         assessmentName,
-        assessmentSemester,
         assessmentType,
         canSave,
         courseId,
@@ -937,11 +928,6 @@ export const QuestionUploadDialog = ({
         setNewTopicName(topics.length > 0 ? '' : 'Uploaded Questions');
         setAssessmentType('Assignment');
         setAssessmentName('Assignment 1');
-        setAssessmentSemester(() => {
-            const now = new Date();
-            const year = now.getFullYear();
-            return `Fall ${year}`;
-        });
     }, [topics]);
 
     if (!courseId) {
@@ -963,8 +949,8 @@ export const QuestionUploadDialog = ({
     return (
         <>
         <Dialog open={open} onOpenChange={(value) => { if (!value) handleCloseAttempt(); }}>
-            <DialogContent className={`max-h-[90vh] overflow-hidden transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
-                <DialogHeader>
+            <DialogContent className={`max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0 transition-all duration-200 ${showHistoryPanel ? 'max-w-[95vw] sm:max-w-[1400px]' : 'max-w-6xl sm:max-w-7xl w-[95vw]'}`}>
+                <DialogHeader className="px-6 pt-6 pb-2">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <DialogTitle>Upload Questions</DialogTitle>
@@ -997,7 +983,7 @@ export const QuestionUploadDialog = ({
                     </div>
                 </DialogHeader>
 
-                <div className="h-[70vh] min-h-0 overflow-y-auto pr-1">
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 pr-7">
                 <div className="flex flex-col gap-6 py-2 min-h-full md:flex-row">
                     {/* Left: Assessment details — narrow, vertical fields */}
                     {saveTarget === 'bank' ? (
@@ -1043,15 +1029,6 @@ export const QuestionUploadDialog = ({
                                         placeholder="e.g. Midterm Review Set"
                                         value={assessmentName}
                                         onChange={(event) => setAssessmentName(event.target.value)}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="assessment-semester">Semester</Label>
-                                    <Input
-                                        id="assessment-semester"
-                                        placeholder="e.g. Fall 2024"
-                                        value={assessmentSemester}
-                                        onChange={(event) => setAssessmentSemester(event.target.value)}
                                     />
                                 </div>
                             </CardContent>
@@ -1109,7 +1086,7 @@ export const QuestionUploadDialog = ({
                                                             <>
                                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
                                                                 {availableModels
-                                                                    .filter((option) => option.provider === 'ollama')
+                                                                    .filter((option) => isCampusModel(option))
                                                                     .map((option) => (
                                                                         <SelectItem key={option.id} value={option.id}>
                                                                             {option.label}
@@ -1117,7 +1094,7 @@ export const QuestionUploadDialog = ({
                                                                     ))}
                                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
                                                                 {availableModels
-                                                                    .filter((option) => option.provider !== 'ollama')
+                                                                    .filter((option) => !isCampusModel(option))
                                                                     .map((option) => (
                                                                         <SelectItem key={option.id} value={option.id}>
                                                                             {option.label} ({option.provider})
@@ -1413,7 +1390,7 @@ export const QuestionUploadDialog = ({
                                             <>
                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">UBC Hosted</div>
                                                 {availableModels
-                                                    .filter((option) => option.provider === 'ollama')
+                                                    .filter((option) => isCampusModel(option))
                                                     .map((option) => (
                                                         <SelectItem key={option.id} value={option.id}>
                                                             {option.label}
@@ -1421,7 +1398,7 @@ export const QuestionUploadDialog = ({
                                                     ))}
                                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2">External</div>
                                                 {availableModels
-                                                    .filter((option) => option.provider !== 'ollama')
+                                                    .filter((option) => !isCampusModel(option))
                                                     .map((option) => (
                                                         <SelectItem key={option.id} value={option.id}>
                                                             {option.label} ({option.provider})
@@ -1557,11 +1534,11 @@ export const QuestionUploadDialog = ({
                 </div>
                 </div>
 
-                <DialogFooter className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <DialogFooter className="shrink-0 border-t border-border px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="text-sm text-muted-foreground">
                         {includedDrafts.length} question{includedDrafts.length === 1 ? '' : 's'} ready to save.
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 sm:justify-end">
                         <Tooltip
                             content={draftQuestions.length > 0 && processingStage === 'review' ? 'Close will ask you to save or discard your current questions.' : 'Close this dialog.'}
                             side="top"
@@ -1575,7 +1552,7 @@ export const QuestionUploadDialog = ({
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
                                         {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                        Create Questions
+                                        {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>
                             </Tooltip>
@@ -1592,7 +1569,7 @@ export const QuestionUploadDialog = ({
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
                                         {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                        Create Questions
+                                        {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>
                             </Tooltip>

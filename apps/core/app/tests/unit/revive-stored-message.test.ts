@@ -77,4 +77,41 @@ describe("reviveStoredMessage", () => {
     expect(revived.role).toBe("user");
     expect(revived.content).toBe("plain");
   });
+
+  it("preserves validated resolved-model metadata on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m5",
+      role: "assistant",
+      content: {
+        id: "m5",
+        role: "assistant",
+        content: "answer",
+        metadata: { resolvedModelId: "openai:gpt-4o" },
+      },
+    });
+
+    expect(revived.metadata).toEqual({ resolvedModelId: "openai:gpt-4o" });
+  });
+
+  it("drops malformed or non-assistant resolved-model metadata", () => {
+    const malformed = reviveStoredMessage({
+      messageId: "m6",
+      role: "assistant",
+      content: {
+        content: "answer",
+        metadata: { resolvedModelId: "not-a-registry-id" },
+      },
+    });
+    const user = reviveStoredMessage({
+      messageId: "m7",
+      role: "user",
+      content: {
+        content: "question",
+        metadata: { resolvedModelId: "openai:gpt-4o" },
+      },
+    });
+
+    expect(malformed).not.toHaveProperty("metadata");
+    expect(user).not.toHaveProperty("metadata");
+  });
 });

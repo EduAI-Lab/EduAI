@@ -34,14 +34,15 @@ import {
 } from "@eduai/ui";
 import { useCourses } from "~/hooks/api/use-courses";
 import { useAssistiveReorientation } from "~/hooks/use-assistive-reorientation";
-import { useApiKeys } from "~/hooks/use-api-keys";
 import { postAssistiveClientEvent } from "~/lib/assistive-events.client";
 import {
   acknowledgeChatPrivacyNotice,
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -55,7 +56,7 @@ export interface ChatScreenProps {
 }
 
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
-  const { chatModels, user, assistDefault, lastCourseCode } = data;
+  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } = data;
   // Only an editable (owned) transcript seeds the live composer; everything else
   // opens in the read-only viewer.
   const editableTranscript =
@@ -77,8 +78,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const isStudentWithCourseChat = user.role === "STUDENT";
   const hasNoCourses = availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
+  const [selectedModel, setSelectedModel] = useState(() =>
+    defaultChatModelId(chatModels, routerAutoEnabled),
   );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
@@ -104,10 +105,29 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   );
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  /** Persisted/header registry ids keyed by their assistant message id. */
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >(() => {
+    const hydrated: Record<string, string> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      const resolvedModelId = resolvedModelIdFromMessage(message);
+      if (id && resolvedModelId) hydrated[id] = resolvedModelId;
+    }
+    return hydrated;
+  });
+  /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
-  const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
@@ -221,7 +241,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const requestMetadata = {
     chatMode: "learning" as const,
     model: selectedModel,
-    apiKeys: getValidApiKeys(),
     courseCode: selectedCourseCode || undefined,
     chatId: chatId || undefined,
     systemPrompt: systemPrompt || undefined,
@@ -249,6 +268,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         messages: messages.slice(-1),
       }),
       onResponse: async (response) => {
+        const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+        const routed =
+          routedHeader && routedHeader.length > 0 ? routedHeader : null;
+        pendingRoutedRegistryIdRef.current = routed;
+        setStreamingRoutedRegistryId(routed);
+
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
@@ -261,14 +286,25 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           setWebToolsEnabled(webToolsHeader === "1");
         }
       },
-      onFinish: () => {
+      onFinish: (message) => {
+        const routed = pendingRoutedRegistryIdRef.current;
+        if (message.role === "assistant" && routed) {
+          setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+        }
+        pendingRoutedRegistryIdRef.current = null;
+        setStreamingRoutedRegistryId(null);
+
         const id = pendingNavigateChatId.current;
         if (id && location.pathname === "/chat") {
           pendingNavigateChatId.current = null;
           navigate(`/chat/${id}`, { replace: true, state: { focusMode } });
         }
       },
-      onError: (error) => logChatUseChatError(error, "learning-chat"),
+      onError: (error) => {
+        logChatUseChatError(error, "learning-chat");
+        pendingRoutedRegistryIdRef.current = null;
+        setStreamingRoutedRegistryId(null);
+      },
     });
 
   const onSubmit = useCallback(
@@ -355,7 +391,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           systemPrompt: prompt,
           messages: messages.length > 0 ? messages : [],
           model: selectedModel,
-          apiKeys: getValidApiKeys(),
           courseCode: selectedCourseCode || undefined,
           adhdAssist,
           streaming: false,
@@ -415,6 +450,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,
+    routedModelByMessageId,
+    streamingRoutedRegistryId,
   };
 
   return (

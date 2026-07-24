@@ -101,6 +101,8 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `EDUAI_API_URL`                          | For EduAI   | Base URL (default UBC EduAI)                                                               |
 | `EDUAI_API_KEY`                          | For EduAI   | API key from EduAI                                                                         |
 | `EDUAI_IGNORED_COURSE_CODES`             | No          | Comma-separated codes hidden in the course list                                            |
+| `EDUAI_PROBE_COURSE_ID`                  | No          | Core course CUID for AI connectivity probes (preferred over code)                          |
+| `EDUAI_PROBE_COURSE_CODE`                | No          | Core course code for probes when `EDUAI_PROBE_COURSE_ID` is unset                          |
 | `GROQ_API_KEY`                           | No          | Direct LLM provider for question generation                                                |
 | `OPENAI_API_KEY`                         | No          | Same                                                                                       |
 | `DEEPSEEK_API_KEY`                       | No          | Same                                                                                       |
@@ -113,6 +115,18 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 
 **Production Compose** may use `POSTGRES_PASSWORD_PRODUCTION` (see [docker-compose.yml](docker-compose.yml)). **Automated server deploys** may use `GITHUB_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN`, or `PERSONAL_ACCESS_TOKEN` — see [docs/deployment/cron.md](docs/deployment/cron.md) and [docs/deployment/README.md](docs/deployment/README.md).
 
+## Campus vLLM defaults
+
+Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLLM** path (replacing the retired `gpt-oss:120b` Ollama model):
+
+| Use case | Fallback model id | Notes |
+| -------- | ----------------- | ----- |
+| Generation / OCR / variants | `vllm:qwen2.5-32b-instruct` | Prefer the largest active campus model from Core’s `/api/ai-models` catalog when available |
+| Connectivity probes (status chips) | `vllm:qwen2.5-7b-instruct` | Prefer the smallest active campus model; 20s timeout |
+| Provider | `vllm` | Server-managed — no client API key. Legacy `forceProvider=ollama` still pins the campus path |
+
+**Probe course context:** `testApiKey` no longer hardcodes `COSC 121`. Set `EDUAI_PROBE_COURSE_ID` (preferred) or `EDUAI_PROBE_COURSE_CODE` for cookie/session probes. When unset, service-key probes omit course context (Core allows course-free chat for API keys).
+
 ## Scripts
 
 ### Root
@@ -124,7 +138,6 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `npm run dev:down`         | Stop dev stack                               |
 | `npm run dev:logs`         | Follow Compose logs                          |
 | `npm run dev:build`        | Dev stack with rebuild                       |
-| `npm run populate:backend` | Run backend populate script from root        |
 | `npm run seed:production`  | Seed production-style questions (see script) |
 
 
@@ -138,8 +151,8 @@ Copy [.env.example](.env.example) to `.env` in the **question-maker root** (`app
 | `npm test`                 | Unit tests                   |
 | `npm run test:integration` | Integration tests (needs DB) |
 | `npm run lint`             | ESLint                       |
-| `npm run populate`         | Populate DB helper           |
 | `npm run seed:production`  | Seed script                  |
+| `npm run migrate:1072`     | One-time hand-run migration: drops `courses.name`/`code` and `assessments.semester` (#1072 §4 step 10 — Core-owned, superseded by read-through). Idempotent; safe to re-run. |
 
 
 ### Frontend (`app/frontend`)

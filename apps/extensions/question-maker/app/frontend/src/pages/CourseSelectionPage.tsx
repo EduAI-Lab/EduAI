@@ -6,19 +6,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQmLayout } from '../components/layout/QmLayoutContext';
-import { CoursesAdminView } from '@/components/courses/courses-admin-view';
-import { CoursesInstructorView } from '@/components/courses/courses-instructor-view';
+import { CoursesRoleView } from '@/components/courses/courses-role-view';
 import { CoursesUnitAdminView } from '@/components/courses/courses-unit-admin-view';
 import { useDisplayCourses } from '../hooks/useDisplayCourses';
 import { Course } from '../types/question';
 import { useGuidedTour } from '../contexts/GuidedTourContext';
-import { isSandboxCourse } from '@/utils/courseDisplay';
 
 const TOUR_COURSE_STORAGE_KEY = 'qm:tour-course-id';
-
-function isTestCourse(course: Course): boolean {
-  return isSandboxCourse(course);
-}
 
 function readTourCourseId(): number | null {
   try {
@@ -71,9 +65,6 @@ export const CourseSelectionPage = () => {
     const stored = readTourCourseId();
     if (stored != null && displayCourses.some((c) => c.id === stored)) return stored;
 
-    const sandbox = displayCourses.find(isTestCourse);
-    if (sandbox) return sandbox.id;
-
     return displayCourses[0]?.id ?? null;
   }, [displayCourses, location.state]);
 
@@ -81,10 +72,9 @@ export const CourseSelectionPage = () => {
     if (isStartingTour) return;
     setIsStartingTour(true);
     try {
-      // Course creation is owned by EduAI Core; the tour uses an existing course
-      // (preferring a sandbox if the user has one). With no courses, guide the
-      // user to link one from Core via the profile/link flow.
-      const tourCourse = displayCourses.find(isTestCourse) ?? displayCourses[0];
+      // Course creation is owned by EduAI Core; the tour uses an existing course.
+      // With no courses, guide the user to link one from Core via the profile flow.
+      const tourCourse = displayCourses[0];
       if (tourCourse?.id) {
         writeTourCourseId(tourCourse.id);
         setTourHighlightCourseId(tourCourse.id);
@@ -168,10 +158,10 @@ export const CourseSelectionPage = () => {
   };
 
   if (user?.role === 'ADMIN') {
-    return <CoursesAdminView {...gridProps} />;
+    return <CoursesRoleView role="admin" {...gridProps} />;
   }
   if (user?.role === 'UNIT_ADMIN') {
     return <CoursesUnitAdminView {...gridProps} />;
   }
-  return <CoursesInstructorView {...gridProps} />;
+  return <CoursesRoleView role="instructor" {...gridProps} />;
 };

@@ -1,7 +1,7 @@
 'use strict';
 const { execSync } = require('node:child_process');
 
-const PORTS = [3000, 3001, 3002, 3003, 4000, 5173, 8000];
+const PORTS = [3000, 3001, 3002, 3003, 4000, 5173, 8000, 9000];
 
 if (process.platform === 'win32') {
   let netstat = '';
