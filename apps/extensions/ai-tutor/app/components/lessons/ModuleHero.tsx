@@ -2,11 +2,11 @@
  * @file ModuleHero — the banner atop a module's lesson list (instructor +
  * student module views).
  *
- * Shares the platform hero family with `@eduai/ui`'s `CourseHeroCard` — same
- * solid course-accent surface (`courseHeroBackgroundStyle`), white text,
- * `radius-xl`, `p-6`, glow shadow, `text-xl font-bold` title, and the same
- * translucent-white glass badges — so a module reads as the *container* and its
- * lessons (the light `LessonCard` tiles below) as the *children*.
+ * Composes the shared `@eduai/ui` `HeroShell` — the same solid course-accent
+ * surface, white text, `radius-xl`, `p-6`, glow shadow — and its
+ * `HERO_GLASS_STYLE` badge treatment, the same shell `CourseHeroCard` uses, so
+ * a module reads as the *container* and its lessons (the light `LessonCard`
+ * tiles below) as the *children*.
  *
  * What makes it its OWN hero, not a course-hero clone: a ghosted order-number
  * watermark tucked into the bottom-right (the `LessonCard`/`ModuleCard` motif,
@@ -28,18 +28,8 @@
  * UI create. When it can't be resolved, omit it and the watermark hides.
  */
 import type { ReactNode } from 'react';
-import {
-  courseHeroBackgroundStyle,
-  courseThemeVars,
-  type CourseAccentColor,
-} from '@eduai/ui';
+import { HERO_GLASS_STYLE, HeroShell, type CourseAccentColor } from '@eduai/ui';
 import { titleName } from '~/lib/course-title';
-
-/** Translucent-white glass, matching CourseHeroCard's badge/topic chips. */
-const GLASS_STYLE = {
-  background: 'rgba(255,255,255,0.16)',
-  border: '1px solid rgba(255,255,255,0.28)',
-} as const;
 
 export interface ModuleHeroStat {
   label: string;
@@ -106,10 +96,7 @@ export function ModuleHero({
   const hasOrder = orderLabel != null;
 
   return (
-    <div
-      className="relative overflow-hidden rounded-[var(--radius-xl)] p-6 text-white shadow-[0_8px_28px_var(--course-glow)]"
-      style={{ ...courseThemeVars(accent), ...courseHeroBackgroundStyle(accent) }}
-    >
+    <HeroShell accentColor={accent}>
       {/* Ghost order watermark — the module-tier signature. */}
       {hasOrder && (
         <span
@@ -149,7 +136,7 @@ export function ModuleHero({
                     {isPublished != null && (
                       <span
                         className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold backdrop-blur-sm"
-                        style={GLASS_STYLE}
+                        style={HERO_GLASS_STYLE}
                       >
                         <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
                         {isPublished ? 'Published' : 'Draft'}
@@ -159,7 +146,7 @@ export function ModuleHero({
                       <span
                         key={stat.label}
                         className="rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
-                        style={GLASS_STYLE}
+                        style={HERO_GLASS_STYLE}
                       >
                         <span className="font-bold tabular-nums">{stat.value}</span> {stat.label}
                       </span>
@@ -193,6 +180,6 @@ export function ModuleHero({
           </div>
         )}
       </div>
-    </div>
+    </HeroShell>
   );
 }
