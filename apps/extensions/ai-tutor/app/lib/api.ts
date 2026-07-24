@@ -153,6 +153,7 @@ export interface DashboardStats {
   yourCourses?: number;
   publishedCourses?: number;
   draftCourses?: number;
+  syncedCourses?: number;
   totalUsers?: number;
   totalCourses?: number;
   openBugReports?: number;
