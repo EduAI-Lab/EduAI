@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -12,10 +12,10 @@ const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: (options: unknown) => {
+  useChat: (options: { initialMessages?: unknown[] }) => {
     captureUseChatOptions(options);
     return {
-      messages: [],
+      messages: options.initialMessages ?? [],
       input: "",
       handleInputChange: vi.fn(),
       handleSubmit: vi.fn(),
@@ -27,7 +27,10 @@ vi.mock("@ai-sdk/react", () => ({
 
 vi.mock("~/hooks/api/use-courses", () => ({
   useCourses: () => ({
-    courses: [{ id: "c1", code: "COSC 101", name: "Intro to CS" }],
+    courses: [
+      { id: "c1", code: "COSC 101", name: "Intro to CS" },
+      { id: "c2", code: "PHYS 121", name: "Mechanics" },
+    ],
     loading: false,
   }),
 }));
@@ -154,6 +157,67 @@ function renderChatScreen(
   return { router, ...render(<RouterProvider router={router} />) };
 }
 
+function makePersistedTranscript(): ChatTranscript {
+  return {
+    chat: {
+      id: "chat-1",
+      title: "Stored chat",
+      systemPrompt: null,
+      adhdAssist: false,
+      courseId: "c1",
+      courseCode: "COSC 101",
+      courseName: "Intro to CS",
+      ownerId: "user-1",
+      ownerName: "Test User",
+      updatedAt: new Date().toISOString(),
+    },
+    messages: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Stored answer",
+        metadata: { resolvedModelId: "openai:gpt-4" },
+      },
+    ],
+    canEdit: true,
+  };
+}
+
+function renderPersistedChatWithBlankChatRoute(transcript: ChatTranscript) {
+  const wrap = (initialTranscript: ChatTranscript | null) => (
+    <PolicyProvider policies={{}}>
+      <SidebarProvider>
+        <ChatScreen data={baseData} initialTranscript={initialTranscript} />
+      </SidebarProvider>
+    </PolicyProvider>
+  );
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/chat/:chatId",
+        action: async () => null,
+        element: wrap(transcript),
+      },
+      {
+        path: "/chat",
+        action: async () => null,
+        element: wrap(null),
+      },
+    ],
+    { initialEntries: [`/chat/${transcript.chat.id}`] },
+  );
+  const visited: string[] = [];
+  router.subscribe((state) => {
+    visited.push(`${state.location.pathname}${state.location.search}`);
+  });
+
+  return {
+    router,
+    visited,
+    ...render(<RouterProvider router={router} />),
+  };
+}
+
 describe("ChatScreen — header", () => {
   it('renders the live page header as "Course Chat"', () => {
     renderChatScreen();
@@ -163,29 +227,7 @@ describe("ChatScreen — header", () => {
   });
 
   it("hydrates routed model ids from the stored transcript", () => {
-    const transcript: ChatTranscript = {
-      chat: {
-        id: "chat-1",
-        title: "Stored chat",
-        systemPrompt: null,
-        adhdAssist: false,
-        courseId: "c1",
-        courseCode: "COSC 101",
-        courseName: "Intro to CS",
-        ownerId: "user-1",
-        ownerName: "Test User",
-        updatedAt: new Date().toISOString(),
-      },
-      messages: [
-        {
-          id: "assistant-1",
-          role: "assistant",
-          content: "Stored answer",
-          metadata: { resolvedModelId: "openai:gpt-4" },
-        },
-      ],
-      canEdit: true,
-    };
+    const transcript = makePersistedTranscript();
 
     renderChatScreen(transcript);
 
@@ -232,5 +274,27 @@ describe("ChatScreen — header", () => {
     expect(captureCourseViewProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedModel: "openai:gpt-4" }),
     );
+  });
+
+  it("starts a blank chat with the selected course when switching a persisted chat", async () => {
+    const { router, visited } = renderPersistedChatWithBlankChatRoute(
+      makePersistedTranscript(),
+    );
+    const persistedViewProps = captureCourseViewProps.mock.lastCall?.[0];
+
+    await act(async () => {
+      persistedViewProps.setSelectedCourseCode("PHYS 121");
+    });
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/chat");
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({
+          selectedCourseCode: "PHYS 121",
+          messages: [],
+        }),
+      );
+    });
+    expect(visited).toContain("/chat?courseCode=PHYS%20121");
   });
 });
