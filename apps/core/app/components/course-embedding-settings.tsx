@@ -74,7 +74,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       const result = parsed.data;
       if (!response.ok) {
         throw new Error(
-          [result.error, result.hint].filter(Boolean).join(" ") || "Failed to load embedding settings",
+          [result.error, result.hint].filter(Boolean).join(" ") || "Failed to load search settings",
         );
       }
 
@@ -82,7 +82,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       setProviderChoice(result.settings.embeddingProvider ?? "env");
       setModelChoice(result.settings.embeddingModel ?? "default");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load settings");
+      setError(err instanceof Error ? err.message : "Failed to load search settings");
     } finally {
       setLoading(false);
     }
@@ -136,7 +136,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
 
       const result = parsed.data;
       if (!response.ok) {
-        throw new Error([result.error, result.hint].filter(Boolean).join(" ") || "Failed to save embedding settings");
+        throw new Error([result.error, result.hint].filter(Boolean).join(" ") || "Failed to save search settings");
       }
 
       setData((prev) => ({
@@ -152,29 +152,29 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       setModelChoice(result.settings.embeddingModel ?? "default");
 
       if (result.reEmbedJob?.id) {
-        setReEmbedProgress("Re-indexing materials…");
+        setReEmbedProgress("Processing materials…");
         const finalJob = await pollReEmbedJobUntilDone(courseId, result.reEmbedJob.id, {
           onUpdate: (job) => {
             if (job.currentMaterialTitle) {
               setReEmbedProgress(
-                `Re-indexing ${job.processedCount + 1}/${job.totalMaterials}: ${job.currentMaterialTitle}`,
+                `Processing ${job.processedCount + 1}/${job.totalMaterials}: ${job.currentMaterialTitle}`,
               );
             } else if (job.totalMaterials > 0) {
-              setReEmbedProgress(`Re-indexing ${job.processedCount}/${job.totalMaterials}…`);
+              setReEmbedProgress(`Processing ${job.processedCount}/${job.totalMaterials}…`);
             }
           },
         });
         setReEmbedProgress(null);
         if (finalJob.status === "FAILED") {
-          throw new Error(finalJob.errorMessage || "Re-index failed after saving settings");
+          throw new Error(finalJob.errorMessage || "Processing failed after saving settings");
         }
         await loadSettings();
         setSuccess(`Settings saved. ${formatReEmbedJobMessage(finalJob)}`);
         onSettingsSaved?.();
       } else if (result.needsReEmbed) {
-        setSuccess("Settings saved. Re-index materials so RAG uses the new embedding model.");
+        setSuccess("Settings saved. Reprocess materials so course chat uses the new model.");
       } else {
-        setSuccess("Embedding settings saved.");
+        setSuccess("Search settings saved.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -189,7 +189,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
       <Card>
         <CardContent className="flex items-center gap-2 py-8 text-muted-foreground">
           <IconLoader className="h-4 w-4 animate-spin" />
-          Loading embedding settings…
+          Loading search settings…
         </CardContent>
       </Card>
     );
@@ -198,10 +198,10 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Embedding settings</CardTitle>
+        <CardTitle>Search settings</CardTitle>
         <CardDescription>
-          Choose which embedding model indexes this course&apos;s materials. All models use 1024
-          dimensions; changing the model requires re-indexing.
+          Choose the AI model used to search this course&apos;s materials. Changing the model
+          requires reprocessing your materials.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -214,7 +214,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
             </p>
             {data.settings.embeddedWithModel && (
               <p>
-                Indexed with: {data.settings.embeddedWithProvider} / {data.settings.embeddedWithModel}
+                Last processed with: {data.settings.embeddedWithProvider} / {data.settings.embeddedWithModel}
                 {data.settings.lastEmbeddedAt &&
                   ` · ${new Date(data.settings.lastEmbeddedAt).toLocaleString()}`}
               </p>
@@ -226,8 +226,8 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
           <Alert>
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Materials were indexed with a different model. Re-index all materials before relying on
-              course chat RAG.
+              Materials were processed with a different model. Reprocess all materials before course
+              chat can search them accurately.
             </AlertDescription>
           </Alert>
         )}
@@ -276,7 +276,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
             onCheckedChange={(checked) => setReEmbedOnSave(checked === true)}
           />
           <Label htmlFor="re-embed-on-save" className="font-normal">
-            Re-index all materials after saving
+            Reprocess all materials after saving
           </Label>
         </div>
 
