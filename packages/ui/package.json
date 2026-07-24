@@ -32,6 +32,10 @@
     "vitest": "^4.1.9"
   },
   "peerDependencies": {
+    "@dnd-kit/core": "*",
+    "@dnd-kit/modifiers": "*",
+    "@dnd-kit/sortable": "*",
+    "@dnd-kit/utilities": "*",
     "@radix-ui/react-accordion": "*",
     "@radix-ui/react-alert-dialog": "*",
     "@radix-ui/react-aspect-ratio": "*",
