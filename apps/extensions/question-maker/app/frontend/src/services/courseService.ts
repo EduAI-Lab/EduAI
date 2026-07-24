@@ -2,16 +2,37 @@
  * Course API client for CRUD operations and topic retrieval scoped to the authenticated user.
  * Simplifies requests/responses for use in hooks and pages.
  */
-import api from './api';
+import api, { type Paginated } from './api';
 import { Course, CourseCreate } from '../types/question';
 import { Topic } from '../types/topic';
 import type { QmCourseAccess } from '@/lib/rbac';
 
+/** One bounded page of courses for surfaces that read the whole set client-side
+ * (the course selector does its own search/filter/term-grouping over `courses`,
+ * so it can't take a server pager without a server-search refactor — #1044). */
+const COURSE_LIST_PAGE_SIZE = 200;
+
 export const courseService = {
-    /** Fetches courses visible to the caller (role-scoped on the server). */
+    /**
+     * Fetches courses visible to the caller (role-scoped on the server).
+     * The list endpoint requires pagination (#1044); this convenience form asks
+     * for a single bounded page so client-side search/filter keeps the whole
+     * set. Use `getCoursesPage` for an explicitly paged view.
+     */
     async getCourses(): Promise<Course[]> {
-        const response = await api.get('/api/course');
+        const response = await api.get('/api/course', {
+            params: { page: 1, pageSize: COURSE_LIST_PAGE_SIZE },
+        });
         return response.data.data;
+    },
+
+    /** Fetches one server page of courses with pagination metadata (#1044). */
+    async getCoursesPage(
+        page: number,
+        pageSize: number = COURSE_LIST_PAGE_SIZE,
+    ): Promise<Paginated<Course>> {
+        const response = await api.get('/api/course', { params: { page, pageSize } });
+        return response.data;
     },
 
     /** Gets a single course by ID. */
