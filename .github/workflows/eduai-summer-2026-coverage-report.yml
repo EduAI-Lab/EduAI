@@ -7,8 +7,10 @@ name: Test Coverage Report
 
 on:
   schedule:
-    # Weekly: Mondays 09:00 UTC.
-    - cron: '0 9 * * 1'
+    # Every 3 days: on days 1,4,7,…,28,31 of the month at 09:00 UTC. (Cron has no true
+    # "every N days" operator; `*/3` on day-of-month resets each month, so the 31→1
+    # boundary is a 1-day gap — close enough for a full-suite coverage snapshot.)
+    - cron: '0 9 */3 * *'
   workflow_dispatch: {}
 
 permissions:

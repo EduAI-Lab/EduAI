@@ -14,7 +14,9 @@ export default defineConfig({
       reportOnFailure: true,
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.test.{ts,tsx}', 'src/tests/**'],
-      reporter: ['text-summary', 'json-summary'],
+      // lcov.info feeds the per-PR patch-coverage warning (pr-coverage.yml); json-summary
+      // feeds the scheduled full-suite report. Both stay gitignored under coverage/.
+      reporter: ['text-summary', 'json-summary', 'lcov'],
     },
   },
 });
