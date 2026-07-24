@@ -196,7 +196,13 @@ describe("GET /api/admin/bug-reports (#304)", () => {
     expect(prisma.bugReport.count).toHaveBeenCalledWith({
       where: { source: "QUESTION_MAKER", status: "RESOLVED" },
     });
-    expect(prisma.$queryRaw).toHaveBeenCalled();
+    const listCall = vi.mocked(prisma.$queryRaw).mock.calls[0];
+    expect(listCall).toBeDefined();
+    // Tagged template: [strings, whereSql, clampedLimit, offset]
+    const whereSql = listCall![1] as { values: unknown[] };
+    expect(whereSql.values).toEqual(["QUESTION_MAKER", "RESOLVED"]);
+    expect(listCall![2]).toBe(50); // default clampedLimit
+    expect(listCall![3]).toBe(0); // default offset
   });
 
   it("rejects an unknown source filter with 400", async () => {
@@ -215,7 +221,19 @@ describe("GET /api/admin/bug-reports (#304)", () => {
     mockUser("ADMIN");
     await adminLoader(makeArgs("/api/admin/bug-reports?limit=10&offset=20"));
     expect(prisma.bugReport.count).toHaveBeenCalled();
-    expect(prisma.$queryRaw).toHaveBeenCalled();
+    const listCall = vi.mocked(prisma.$queryRaw).mock.calls[0];
+    expect(listCall).toBeDefined();
+    // Tagged template: [strings, whereSql, clampedLimit, offset]
+    expect(listCall![2]).toBe(10);
+    expect(listCall![3]).toBe(20);
+  });
+
+  it("clamps list limit to at most 200", async () => {
+    mockUser("ADMIN");
+    await adminLoader(makeArgs("/api/admin/bug-reports?limit=999&offset=5"));
+    const listCall = vi.mocked(prisma.$queryRaw).mock.calls[0];
+    expect(listCall![2]).toBe(200);
+    expect(listCall![3]).toBe(5);
   });
 });
 

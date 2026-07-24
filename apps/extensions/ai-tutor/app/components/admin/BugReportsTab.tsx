@@ -39,6 +39,7 @@
 
 import { useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@eduai/ui';
+import { hasAttachmentContent } from '@eduai/types';
 import { IconAlertCircle } from '@tabler/icons-react';
 import {
   Card,
@@ -78,7 +79,6 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const [error, setError] = useState<string | null>(null);
   const [viewerType, setViewerType] = useState<ViewerType>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [detailReport, setDetailReport] = useState<AdminBugReportRow | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
@@ -107,30 +107,23 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   };
 
   const selectedReport =
-    detailReport && detailReport.id === selectedReportId
-      ? detailReport
-      : selectedReportId === null
-        ? null
-        : (reports.find((report) => report.id === selectedReportId) ?? null);
+    selectedReportId === null
+      ? null
+      : (reports.find((report) => report.id === selectedReportId) ?? null);
 
   /** List rows omit diagnostic blobs (#979); load full detail on demand. */
   const loadReportDetail = async (reportId: string): Promise<AdminBugReportRow> => {
     const detailed = await api.getAdminBugReport(reportId);
+    const merged: AdminBugReportRow = {
+      ...detailed,
+      hasConsoleLogs: hasAttachmentContent(detailed.consoleLogs, detailed.hasConsoleLogs),
+      hasNetworkLogs: hasAttachmentContent(detailed.networkLogs, detailed.hasNetworkLogs),
+      hasScreenshot: hasAttachmentContent(detailed.screenshot, detailed.hasScreenshot),
+    };
     setReports((current) =>
-      current.map((report) =>
-        report.id === reportId
-          ? {
-              ...report,
-              ...detailed,
-              hasConsoleLogs: detailed.hasConsoleLogs ?? Boolean(detailed.consoleLogs),
-              hasNetworkLogs: detailed.hasNetworkLogs ?? Boolean(detailed.networkLogs),
-              hasScreenshot: detailed.hasScreenshot ?? Boolean(detailed.screenshot),
-            }
-          : report,
-      ),
+      current.map((report) => (report.id === reportId ? { ...report, ...merged } : report)),
     );
-    setDetailReport(detailed);
-    return detailed;
+    return merged;
   };
 
   const toggleSort = (nextSortKey: SortKey) => {
@@ -145,22 +138,21 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
 
   const openViewer = async (type: Exclude<ViewerType, null>, reportId: string) => {
     setError(null);
-    setSelectedReportId(reportId);
-    setViewerType(type);
     try {
+      // Open only after detail resolves so list-row null blobs don't flash empty viewers.
       await loadReportDetail(reportId);
+      setSelectedReportId(reportId);
+      setViewerType(type);
     } catch {
       setError('Could not load bug report details. Please try again.');
       setViewerType(null);
       setSelectedReportId(null);
-      setDetailReport(null);
     }
   };
 
   const closeViewer = () => {
     setViewerType(null);
     setSelectedReportId(null);
-    setDetailReport(null);
   };
 
   const onStatusChange = async (reportId: string, status: BugReportStatus) => {
@@ -181,11 +173,15 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const onCopyReport = async (report: AdminBugReportRow) => {
     setError(null);
     try {
-      // Copy dossier needs diagnostic blobs; list rows may only have has* flags.
+      const alreadyHasBlobs =
+        report.consoleLogs != null || report.networkLogs != null || report.screenshot != null;
+      const hasAnyAttachment =
+        hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
+        hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
+        hasAttachmentContent(report.screenshot, report.hasScreenshot);
+      // Skip the detail fetch when the report has no diagnostics at all.
       const detailed =
-        report.consoleLogs != null || report.networkLogs != null || report.screenshot != null
-          ? report
-          : await loadReportDetail(report.id);
+        alreadyHasBlobs || !hasAnyAttachment ? report : await loadReportDetail(report.id);
       await copyTextToClipboard(buildBugReportCopyText(detailed));
       setCopiedReportId(report.id);
       window.setTimeout(() => {

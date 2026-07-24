@@ -1,6 +1,7 @@
 /**
  * Bug report submission and admin listing API.
  */
+import { hasAttachmentContent } from '@eduai/types';
 import api from './api';
 
 export type BugReportType =
@@ -68,18 +69,18 @@ function mapCoreReport(report: Record<string, unknown>): BugReportRow {
     consoleLogs,
     networkLogs,
     screenshot,
-    hasConsoleLogs:
-      typeof report.hasConsoleLogs === 'boolean'
-        ? report.hasConsoleLogs
-        : Boolean(consoleLogs),
-    hasNetworkLogs:
-      typeof report.hasNetworkLogs === 'boolean'
-        ? report.hasNetworkLogs
-        : Boolean(networkLogs),
-    hasScreenshot:
-      typeof report.hasScreenshot === 'boolean'
-        ? report.hasScreenshot
-        : Boolean(screenshot),
+    hasConsoleLogs: hasAttachmentContent(
+      consoleLogs,
+      typeof report.hasConsoleLogs === 'boolean' ? report.hasConsoleLogs : undefined,
+    ),
+    hasNetworkLogs: hasAttachmentContent(
+      networkLogs,
+      typeof report.hasNetworkLogs === 'boolean' ? report.hasNetworkLogs : undefined,
+    ),
+    hasScreenshot: hasAttachmentContent(
+      screenshot,
+      typeof report.hasScreenshot === 'boolean' ? report.hasScreenshot : undefined,
+    ),
     pageUrl: (report.pageUrl as string | null) ?? null,
     userAgent: (report.userAgent as string | null) ?? null,
     isAnonymous: Boolean(report.isAnonymous),

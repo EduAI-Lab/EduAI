@@ -56,11 +56,9 @@ const URL_USERINFO_RE = /\/\/[^/@\s"']+:[^@\s"']+@/g;
 function isHarHeaderEntry(
   value: Record<string, unknown>,
 ): value is { name: string; value: unknown } {
-  return (
-    typeof value.name === "string" &&
-    Object.prototype.hasOwnProperty.call(value, "value") &&
-    Object.keys(value).every((key) => key === "name" || key === "value" || key === "comment")
-  );
+  // Real HAR cookie rows also carry domain/path/httpOnly/secure/expires — match
+  // on string name + string value rather than a strict key allowlist.
+  return typeof value.name === "string" && typeof value.value === "string";
 }
 
 export function shouldRedactKey(key: string): boolean {

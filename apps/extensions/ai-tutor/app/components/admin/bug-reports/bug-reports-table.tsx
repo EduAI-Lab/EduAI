@@ -8,6 +8,7 @@
  */
 
 import { Badge, Button, RoleBadge } from '@eduai/ui';
+import { hasAttachmentContent } from '@eduai/types';
 import {
   Select,
   SelectContent,
@@ -285,7 +286,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('console', report.id)}
-                      disabled={!(report.hasConsoleLogs ?? Boolean(report.consoleLogs))}
+                      disabled={!hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs)}
                     >
                       Console
                     </Button>
@@ -294,7 +295,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('network', report.id)}
-                      disabled={!(report.hasNetworkLogs ?? Boolean(report.networkLogs))}
+                      disabled={!hasAttachmentContent(report.networkLogs, report.hasNetworkLogs)}
                     >
                       Network
                     </Button>
@@ -303,7 +304,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('screenshot', report.id)}
-                      disabled={!(report.hasScreenshot ?? Boolean(report.screenshot))}
+                      disabled={!hasAttachmentContent(report.screenshot, report.hasScreenshot)}
                     >
                       Screenshot
                     </Button>
