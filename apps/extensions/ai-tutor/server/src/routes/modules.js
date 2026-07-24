@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapModule, mapProgressData } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -66,10 +67,19 @@ router.get('/courses/:courseId/modules', async (req, res) => {
       ? { courseOfferingId: courseId }
       : { courseOfferingId: courseId, isPublished: true };
 
-    const modules = await prisma.module.findMany({
-      where: whereClause,
-      orderBy: { position: 'asc' },
-    });
+    // Structure-bounded list (a course has dozens of modules, not thousands).
+    // The tree UI + drag-and-drop reorder need the whole set, so callers
+    // request one bounded page (pageSize=200); pagination is optional here.
+    const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const [total, modules] = await prisma.$transaction([
+      prisma.module.count({ where: whereClause }),
+      prisma.module.findMany({
+        where: whereClause,
+        orderBy: { position: 'asc' },
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
 
     // For students, add progress to each module
     if (isStudent && !hasElevatedAccess) {
@@ -82,11 +92,14 @@ router.get('/courses/:courseId/modules', async (req, res) => {
           };
         }),
       );
-      res.json(modulesWithProgress);
+      res.json(paginated(modulesWithProgress, total, pageParams));
     } else {
-      res.json(modules.map(mapModule));
+      res.json(paginated(modules.map(mapModule), total, pageParams));
     }
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });
