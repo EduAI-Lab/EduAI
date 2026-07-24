@@ -24,8 +24,12 @@ import {
  * (the "first step only" progressive-disclosure rule applies only without a diagram).
  * v1.9: every catalog type (including gradient-descent) uses the same labeled
  * stage contract for Step ladder / TLDR; only the visual widget may be specialized.
+ * v2.0: Dean Track B harden — reject→retry→forced deterministic wrap (no
+ * fail-open on tutoring turns); learner message + profile policy slice in
+ * rewrite prompt; Top summary / Next? variant normalization; Sources footer
+ * when tools/RAG ran (generic line if page unknown).
  */
-export const ADHD_ASSIST_POLICY_VERSION = "1.9";
+export const ADHD_ASSIST_POLICY_VERSION = "2.0";
 
 export const ADHD_ASSIST_POLICY_BLOCK = `=== ADHD ASSIST MODE ===
 You are responding to a learner who benefits from low cognitive load and

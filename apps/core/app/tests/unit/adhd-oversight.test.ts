@@ -371,55 +371,70 @@ describe("auditAndMaybeRewrite", () => {
     });
   });
 
-  it("flags LLM rewrite that improves structure but exceeds word cap as llm_rejected", async () => {
+  it("retries then forced-wraps when LLM rewrite exceeds word cap (Track B)", async () => {
     const longBody = Array(280).fill("word").join(" ");
-    vi.mocked(generateText).mockResolvedValue({
-      text: `**Top summary**
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
 - Point
 
 **Next?** Continue?
 
 ${longBody}`,
-      usage: { promptTokens: 10, completionTokens: 20 },
-    } as never);
+        usage: { promptTokens: 10, completionTokens: 20 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
+- Point
+
+**Next?** Continue?
+
+${longBody}`,
+        usage: { promptTokens: 12, completionTokens: 22 },
+      } as never);
 
     const messy = Array(300).fill("word").join(" ");
     const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
-    // #714: the LLM ran but its rewrite was not adopted — distinct from "none".
-    expect(result.method).toBe("llm_rejected");
-    expect(result.rewritten).toBe(false);
-    expect(result.text).toBe(messy);
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.rewritten).toBe(true);
+    expect(result.afterMetrics.underCap).toBe(true);
+    expect(result.afterMetrics.topSummary).toBe(true);
+    expect(result.afterMetrics.nextLine).toBe(true);
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(generateText).mock.calls[1][0].prompt).toMatch(/REJECTED/i);
   });
 
-  it("does not silently ship the original when a long-draft rewrite is truncated (#714)", async () => {
-    // Simulate a truncated rewrite of a long draft: the output budget runs out
-    // before the **Next?** anchor lands, so the partial rewrite is still over
-    // the word cap and fails profile validation.
+  it("forced-wraps instead of shipping a truncated long-draft rewrite (#714 / Track B)", async () => {
     const truncated = `**Top summary**
 - Restating the draft ${Array(300).fill("word").join(" ")}`;
-    vi.mocked(generateText).mockResolvedValue({
-      text: truncated,
-      usage: { promptTokens: 600, completionTokens: 1024 },
-    } as never);
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: truncated,
+        usage: { promptTokens: 600, completionTokens: 1024 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: truncated,
+        usage: { promptTokens: 600, completionTokens: 1024 },
+      } as never);
 
     const longDraft = Array(800).fill("word").join(" ");
     const result = await auditAndMaybeRewrite({ draft: longDraft, model: mockModel, wordCap: 250 });
-    // The original non-compliant draft is still returned, but the method makes
-    // the rejected rewrite observable instead of indistinguishable from "none".
-    expect(result.method).toBe("llm_rejected");
-    expect(result.rewritten).toBe(false);
-    expect(result.text).toBe(longDraft);
-    expect(result.afterMetrics.structuralPass).toBe(false);
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.rewritten).toBe(true);
+    expect(result.text).not.toBe(longDraft);
+    expect(result.afterMetrics.structuralPass).toBe(true);
+    expect(result.afterMetrics.underCap).toBe(true);
   });
 
-  it("returns draft when LLM rewrite fails", async () => {
+  it("returns forced wrap when LLM rewrite fails (Track B)", async () => {
     vi.mocked(generateText).mockRejectedValue(new Error("provider down"));
 
     const messy = Array(300).fill("word").join(" ");
     const result = await auditAndMaybeRewrite({ draft: messy, model: mockModel, wordCap: 250 });
-    expect(result.method).toBe("llm_failed");
-    expect(result.text).toBe(messy);
-    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.text).not.toBe(messy);
+    expect(result.rewritten).toBe(true);
+    expect(result.afterMetrics.structuralPass).toBe(true);
   });
 
   it("rewrites a structurally valid draft that still contains urgency language", async () => {
@@ -447,14 +462,22 @@ ${longBody}`,
     expect(generateText).toHaveBeenCalledOnce();
   });
 
-  it("rejects an LLM rewrite that still contains urgency, keeping the draft", async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: `**Top summary**
+  it("retries then strips urgency via forced wrap when LLM keeps urgency (Track B)", async () => {
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
 - Still do this quickly.
 
 **Next?** Want to try step one?`,
-      usage: { promptTokens: 8, completionTokens: 12 },
-    } as never);
+        usage: { promptTokens: 8, completionTokens: 12 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
+- Still do this quickly.
+
+**Next?** Want to try step one?`,
+        usage: { promptTokens: 8, completionTokens: 12 },
+      } as never);
 
     const urgent = `**Top summary**
 - Do this quickly before the exam.
@@ -465,18 +488,107 @@ ${longBody}`,
       model: mockModel,
       profile: "full_tutoring",
     });
-    expect(result.rewritten).toBe(false);
-    // The LLM ran but its rewrite was rejected (still urgent), so this is
-    // `llm_rejected`, not `none` — #714 distinguishes the two for telemetry.
-    expect(result.method).toBe("llm_rejected");
-    expect(result.text).toBe(urgent);
-    expect(generateText).toHaveBeenCalledOnce();
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.rewritten).toBe(true);
+    expect(result.afterMetrics.noUrgency).toBe(true);
+    expect(result.text).not.toMatch(/quickly/i);
+    expect(generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes learner message and policy slice in the Dean rewrite prompt", async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: `**Top summary**
+- Still on topic
+
+**Next?** Continue?`,
+      usage: { promptTokens: 10, completionTokens: 20 },
+    } as never);
+
+    const messy = Array(300).fill("word").join(" ");
+    await auditAndMaybeRewrite({
+      draft: messy,
+      model: mockModel,
+      wordCap: 250,
+      userText: "Explain gradient descent simply.",
+      profile: "full_tutoring",
+    });
+    const prompt = String(vi.mocked(generateText).mock.calls[0][0].prompt);
+    expect(prompt).toMatch(/LEARNER MESSAGE/);
+    expect(prompt).toMatch(/Explain gradient descent simply/);
+    expect(prompt).toMatch(/TEACHER POLICY SLICE/);
+    expect(prompt).toMatch(/ADHD ASSIST MODE/);
+  });
+
+  it("normalizes * Top summary variants deterministically", async () => {
+    const draft = `* Top summary
+- Gradient descent nudges parameters downhill.
+
+Want me to expand step 2?`;
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+    });
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("deterministic");
+    expect(result.text).toMatch(/^\*\*Top summary\*\*/);
+    expect(result.text).toMatch(/\*\*Next\?\*\*/);
+    expect(result.afterMetrics.structuralPass).toBe(true);
+  });
+
+  it("adds a generic Sources footer when toolsUsed without calling LLM when anchors already pass", async () => {
+    const draft = `**Top summary**
+- From the notes.
+
+**Next?** Continue?`;
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+      toolsUsed: true,
+    });
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result.method).toBe("deterministic");
+    expect(result.text).toMatch(/Sources:\s*Retrieved materials used this turn/i);
+    expect(result.afterMetrics.hasSources).toBe(true);
+  });
+
+  it("forced-wraps Sources when toolsUsed and LLM omits citation", async () => {
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
+- Restated without citation.
+
+**Next?** Continue?`,
+        usage: { promptTokens: 10, completionTokens: 20 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: `**Top summary**
+- Still no citation.
+
+**Next?** Continue?`,
+        usage: { promptTokens: 10, completionTokens: 20 },
+      } as never);
+
+    // Over-cap so we enter the LLM path; Sources still expected.
+    const draft = Array(300).fill("word").join(" ");
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "full_tutoring",
+      wordCap: 250,
+      toolsUsed: true,
+    });
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.text).toMatch(/Sources:\s*Retrieved materials used this turn/i);
+    expect(result.afterMetrics.hasSources).toBe(true);
   });
 
   it("does not let requireDiagram bypass Top summary / Next? structure", async () => {
     // Diagram-only rewrite: has a fence but no Top summary / Next? anchors.
-    vi.mocked(generateText).mockResolvedValue({
-      text: `Here is a diagram:
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: `Here is a diagram:
 
 \`\`\`eduai-diagram
 process-flow
@@ -485,8 +597,20 @@ One: First
 Two: Second
 \`\`\`
 `,
-      usage: { promptTokens: 8, completionTokens: 20 },
-    } as never);
+        usage: { promptTokens: 8, completionTokens: 20 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: `Here is a diagram:
+
+\`\`\`eduai-diagram
+process-flow
+title: Steps
+One: First
+Two: Second
+\`\`\`
+`,
+        usage: { promptTokens: 8, completionTokens: 20 },
+      } as never);
 
     const draft = `**Top summary**
 - Existing point without a diagram
@@ -499,12 +623,11 @@ Two: Second
       userText: "Can you draw a diagram of the steps?",
     });
 
-    // LLM ran (diagram was missing), but rewrite lacked structure → rejected.
-    expect(generateText).toHaveBeenCalledOnce();
+    expect(generateText).toHaveBeenCalled();
     expect(result.method).not.toBe("llm");
-    // Saved reply must still expose Top summary + Next? (profile structure).
     expect(result.text).toMatch(/\*\*Top summary\*\*/i);
     expect(result.text).toMatch(/\*\*Next\?\*\*/);
+    expect(result.text).toMatch(/```eduai-diagram/);
     expect(
       isProfileStructuralPass(
         computeAdhdResponseMetrics(result.text),

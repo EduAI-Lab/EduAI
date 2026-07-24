@@ -105,10 +105,15 @@ export function computeAdhdResponseMetrics(
   const wordCount = words.length;
 
   const leadingStripped = trimmed.replace(/^\s{0,2}/, "");
-  const topSummary = leadingStripped.startsWith("**Top summary**");
+  // Accept common Top summary variants (* Top summary, Top summary:) — oversight
+  // still normalizes to **Top summary** before emit.
+  const topSummary =
+    leadingStripped.startsWith("**Top summary**") ||
+    /^(?:\*{1,2}\s*)?Top\s+summary(?:\*{1,2})?\b/i.test(leadingStripped);
 
   const lines = trimmed.split(/\r?\n/);
   const tail = lines.slice(-3).join("\n");
+  // Next? must be the bold policy anchor; unbolded "Next?" is not enough.
   const nextLine = /\*\*Next\?\*\*/.test(tail);
 
   const underCap = wordCount <= wordCap;
