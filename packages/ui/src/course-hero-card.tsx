@@ -1,5 +1,6 @@
 import type * as React from "react"
-import { courseHeroBackgroundStyle, courseThemeVars, type CourseAccentColor } from "./course-theme"
+import type { CourseAccentColor } from "./course-theme"
+import { HERO_GLASS_STYLE, HeroShell } from "./hero-shell"
 import { termLabel } from "./lib/term"
 
 export interface CourseHeroCardProps {
@@ -38,13 +39,7 @@ export function CourseHeroCard({
   className,
 }: CourseHeroCardProps) {
   return (
-    <div
-      className={`relative overflow-hidden rounded-[var(--radius-xl)] p-6 text-white mb-4 shadow-[0_8px_28px_var(--course-glow)]${className ? ` ${className}` : ""}`}
-      style={{
-        ...courseThemeVars(accentColor),
-        ...courseHeroBackgroundStyle(accentColor),
-      }}
-    >
+    <HeroShell accentColor={accentColor} className={`mb-4${className ? ` ${className}` : ""}`}>
       {headerAction && (
         <div className="absolute top-3 right-3 z-10 pointer-events-auto">{headerAction}</div>
       )}
@@ -86,7 +81,7 @@ export function CourseHeroCard({
               <span
                 key={t}
                 className="text-[11px] font-medium px-2.5 py-1 rounded-full backdrop-blur-sm"
-                style={{ background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}
+                style={HERO_GLASS_STYLE}
               >
                 {t}
               </span>
@@ -109,6 +104,6 @@ export function CourseHeroCard({
           ))}
         </div>
       )}
-    </div>
+    </HeroShell>
   )
 }
