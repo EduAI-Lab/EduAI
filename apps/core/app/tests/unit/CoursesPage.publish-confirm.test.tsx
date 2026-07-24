@@ -9,20 +9,14 @@ vi.mock('sonner', () => ({ toast: { error: mockToastError, success: vi.fn() } })
 // trigger it directly without going through the Radix DropdownMenu.
 let capturedPublishToggle: ((id: string, publish: boolean) => Promise<void>) | null = null
 
-vi.mock('~/components/courses/courses-admin-view', () => ({
-  CoursesAdminView: (props: any) => {
-    capturedPublishToggle = props.onPublishToggle
-    return <div data-testid="admin-view" />
+vi.mock('~/components/courses/courses-view', () => ({
+  CoursesView: (props: any) => {
+    if (props.role === 'admin') {
+      capturedPublishToggle = props.onPublishToggle
+      return <div data-testid="admin-view" />
+    }
+    return null
   },
-}))
-vi.mock('~/components/courses/courses-unit-admin-view', () => ({
-  CoursesUnitAdminView: () => null,
-}))
-vi.mock('~/components/courses/courses-instructor-view', () => ({
-  CoursesInstructorView: () => null,
-}))
-vi.mock('~/components/courses/courses-mixed-view', () => ({
-  CoursesMixedView: () => null,
 }))
 
 vi.mock('~/components/app-sidebar', () => ({ AppSidebar: () => null }))
