@@ -251,3 +251,20 @@ export function mapProgressData(progressResult) {
     percentage: progressResult.percentage ?? 0,
   };
 }
+
+/**
+ * Map a Topic row to its public DTO.
+ *
+ * Why: topics were historically serialized as raw Prisma rows (the only
+ * entity without a mapper). As of #1043 the topics endpoint paginates and
+ * both the sync and local-read paths funnel through here so the wire shape
+ * is stable. The client contract (`app/lib/types.ts` `Topic`) is only
+ * `{ id, name }`; `id` is a cuid string and the client coerces it with
+ * `String(...)` at every read site.
+ */
+export function mapTopic(topic) {
+  return {
+    id: topic.id,
+    name: topic.name,
+  };
+}
