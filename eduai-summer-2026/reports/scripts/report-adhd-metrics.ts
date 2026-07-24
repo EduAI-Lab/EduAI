@@ -36,6 +36,11 @@ type ComplianceRow = {
   wordCount: number;
   structuralPass: boolean;
   durationMs: number | null;
+  /** Oversight path taken by the Dean; null on baseline turns. */
+  oversightMethod: string | null;
+  /** Profile-aware pass (the criterion the Dean is held to), null when unscored. */
+  profileStructuralPass: boolean | null;
+  policyVersion: string | null;
 };
 
 type BehavioralRow = {
@@ -93,6 +98,10 @@ function parseCompliance(metricsJson: unknown): ComplianceRow | null {
     wordCount: m.wordCount,
     structuralPass: Boolean(m.structuralPass),
     durationMs: typeof m.durationMs === "number" ? m.durationMs : null,
+    oversightMethod: typeof m.oversightMethod === "string" ? m.oversightMethod : null,
+    profileStructuralPass:
+      typeof m.profileStructuralPass === "boolean" ? m.profileStructuralPass : null,
+    policyVersion: typeof m.policyVersion === "string" ? m.policyVersion : null,
   };
 }
 
@@ -144,7 +153,43 @@ export function complianceSection(eventType: string, events: EventRow[]): string
     `| Mean duration (ms) | ${fmt(mean(offDur), 0)} | ${fmt(mean(onDur), 0)} | ${fmt(cohensDIndependent(offDur, onDur), 2)} |`,
     "",
     "Note: negative Cohen's d on word count means ON responses are longer than OFF.",
+    ...oversightBreakdown(on),
   ];
+}
+
+/**
+ * Which path the Dean took on Assist turns, and whether that path landed on a
+ * profile-aware pass. `forced_deterministic` and `llm_retry` only appear from
+ * policy 2.0 onward (Track B); a run with neither is pre-hardening data.
+ */
+export function oversightBreakdown(on: ComplianceRow[]): string[] {
+  const scored = on.filter((r) => r.oversightMethod != null);
+  if (scored.length === 0) return [];
+
+  const byMethod = new Map<string, ComplianceRow[]>();
+  for (const row of scored) {
+    const key = row.oversightMethod as string;
+    byMethod.set(key, [...(byMethod.get(key) ?? []), row]);
+  }
+
+  const versions = [...new Set(scored.map((r) => r.policyVersion ?? "(unstamped)"))].sort();
+  const lines = [
+    "",
+    "### Oversight path (Assist turns)",
+    "",
+    `Policy versions in cohort: ${versions.join(", ")}`,
+    "",
+    "| Method | Turns | Share | Profile pass |",
+    "| --- | ---: | ---: | ---: |",
+  ];
+  for (const [method, rows] of [...byMethod].sort((a, b) => b[1].length - a[1].length)) {
+    const passScored = rows.filter((r) => r.profileStructuralPass !== null);
+    const passed = passScored.filter((r) => r.profileStructuralPass).length;
+    lines.push(
+      `| ${method} | ${rows.length} | ${pct(rows.length, scored.length)} | ${pct(passed, passScored.length)} |`,
+    );
+  }
+  return lines;
 }
 
 /** Behavioural client events: event count, success rate, interaction duration. */
