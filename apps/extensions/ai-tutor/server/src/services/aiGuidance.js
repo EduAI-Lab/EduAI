@@ -50,8 +50,27 @@ const FALLBACK_MESSAGE =
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
 const EDUAI_RETRY_DELAY_MS = 250;
 const EDUAI_MAX_ATTEMPTS = 2;
-const RETRYABLE_EDUAI_STATUSES = new Set([429, 503]);
 const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
+
+function isRetryableEduAiResponse(status, errorText) {
+  if (status === 503) {
+    return true;
+  }
+
+  if (status !== 429) {
+    return false;
+  }
+
+  // /api/completion currently normalizes provider failures to 502, so a 429
+  // here is normally proxy-level. Preserve one retry unless this is the known
+  // Core application rate-limit payload, whose window is much longer than the
+  // bounded backoff.
+  try {
+    return JSON.parse(errorText)?.error !== 'Too Many Requests';
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Single logical call to the EduAI chat completion endpoint. Transient 429 or
@@ -150,7 +169,7 @@ async function callEduAI({
       if (!response.ok) {
         const errorText = await response.text();
         const shouldRetry =
-          RETRYABLE_EDUAI_STATUSES.has(response.status) && attempt < EDUAI_MAX_ATTEMPTS;
+          isRetryableEduAiResponse(response.status, errorText) && attempt < EDUAI_MAX_ATTEMPTS;
 
         if (shouldRetry) {
           console.warn(
