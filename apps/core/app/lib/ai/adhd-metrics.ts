@@ -110,7 +110,17 @@ function stripLeadingSessionTasksBlock(text: string): string {
 
 export function computeAdhdResponseMetrics(
   assistantText: string,
-  options?: { wordCap?: number },
+  options?: {
+    wordCap?: number;
+    /**
+     * Allow a leading "**Session Tasks:**" block before the **Top summary**
+     * anchor (v2.0 Assist-mode contract). Defaults to false so this metrics
+     * function's behavior is unchanged for baseline (non-Assist) text and any
+     * caller that hasn't opted in — baseline replies never carry a Session
+     * Tasks block, so this only matters for genuine Assist-mode scoring.
+     */
+    allowLeadingSessionTasks?: boolean;
+  },
 ): AdhdResponseMetrics {
   const wordCap = options?.wordCap ?? ADHD_TUTORING_WORD_CAP;
   const trimmed = (assistantText ?? "").trim();
@@ -118,7 +128,9 @@ export function computeAdhdResponseMetrics(
     trimmed.length === 0 ? [] : trimmed.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
 
-  const topSummarySource = stripLeadingSessionTasksBlock(trimmed);
+  const topSummarySource = options?.allowLeadingSessionTasks
+    ? stripLeadingSessionTasksBlock(trimmed)
+    : trimmed;
   const leadingStripped = topSummarySource.replace(/^\s{0,2}/, "");
   const topSummary = leadingStripped.startsWith("**Top summary**");
 

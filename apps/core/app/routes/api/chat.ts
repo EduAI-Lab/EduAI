@@ -1597,7 +1597,10 @@ ${buildEmptyCourseRagBlock()}`;
     ) => {
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
-      const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
+      const metrics = computeAdhdResponseMetrics(trimmed, {
+        wordCap: adhdWordCap,
+        allowLeadingSessionTasks: effectiveAdhdAssist,
+      });
       const profileStructuralPass =
         adhdProfile != null
           ? isProfileStructuralPass(metrics, adhdProfile, trimmed)

@@ -34,6 +34,24 @@ describe("computeAdhdResponseMetrics", () => {
     expect(isStructuralCompliancePass(metrics)).toBe(true);
   });
 
+  it("allowLeadingSessionTasks defaults to false, preserving pre-v2.0 baseline scoring exactly", () => {
+    const text = "**Session Tasks:**\n\n**Top summary**\n- A\n\n**Next?** More?";
+    // No option passed: must behave exactly as before v2.0 existed.
+    expect(computeAdhdResponseMetrics(text).topSummary).toBe(false);
+    // Explicit false / other options with the flag omitted: same, unaffected.
+    expect(computeAdhdResponseMetrics(text, { wordCap: 250 }).topSummary).toBe(false);
+    expect(
+      computeAdhdResponseMetrics(text, { allowLeadingSessionTasks: false }).topSummary,
+    ).toBe(false);
+  });
+
+  it("allowLeadingSessionTasks: true tolerates a leading Session Tasks checklist before Top summary", () => {
+    const text = "**Session Tasks:**\n- [ ] Build the API <- now\n\n**Top summary**\n- A\n\n**Next?** More?";
+    const metrics = computeAdhdResponseMetrics(text, { allowLeadingSessionTasks: true });
+    expect(metrics.topSummary).toBe(true);
+    expect(isStructuralCompliancePass(metrics)).toBe(true);
+  });
+
   it("fails when Next? anchor lacks bold markers", () => {
     const text = `Gradient descent is like walking down a hill.
 

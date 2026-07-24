@@ -274,7 +274,10 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
       priorAssistantText,
     });
     const wordCap = getProfileRequirements(responseProfile).wordCap;
-    const profileMetrics = computeAdhdResponseMetrics(assistantText, { wordCap });
+    const profileMetrics = computeAdhdResponseMetrics(assistantText, {
+      wordCap,
+      allowLeadingSessionTasks: true,
+    });
     return {
       expectedShape: shape.label,
       contextualPass: isProfileStructuralPass(
@@ -335,8 +338,11 @@ async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adh
   }
 }
 
-function computeMetrics(assistantText) {
-  return computeAdhdResponseMetrics(assistantText);
+// allowLeadingSessionTasks stays false for baseline (non-Assist) scoring —
+// baseline replies never carry a Session Tasks checklist, so this keeps
+// baseline compliance scoring identical to pre-v2.0 for cohort comparability.
+function computeMetrics(assistantText, adhdAssist = false) {
+  return computeAdhdResponseMetrics(assistantText, { allowLeadingSessionTasks: adhdAssist });
 }
 
 function escapeCsv(value) {
@@ -379,7 +385,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         model: resp.model ?? config.model,
         responseId: resp.responseId ?? null,
       };
-      const metrics = computeMetrics(lastAssistantText);
+      const metrics = computeMetrics(lastAssistantText, adhdAssist);
       const structuralPass = isStructuralCompliancePass(metrics);
       const { expectedShape, contextualPass, responseProfile } = evaluateContextualPass(
         turnRef,
@@ -439,7 +445,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
     }
   }
 
-  const metrics = computeMetrics(lastAssistantText);
+  const metrics = computeMetrics(lastAssistantText, adhdAssist);
   return {
     scenarioId,
     mode,

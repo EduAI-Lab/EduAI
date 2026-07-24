@@ -316,7 +316,7 @@ export function tryDeterministicStructuralFix(
 
   if (profile) {
     const before = withProfileStructuralPass(
-      computeAdhdResponseMetrics(trimmed, { wordCap }),
+      computeAdhdResponseMetrics(trimmed, { wordCap, allowLeadingSessionTasks: true }),
       profile,
       trimmed,
     );
@@ -328,7 +328,7 @@ export function tryDeterministicStructuralFix(
       const withNext = applyNextLineAnchor(trimmed);
       if (withNext) {
         const after = withProfileStructuralPass(
-          computeAdhdResponseMetrics(withNext, { wordCap }),
+          computeAdhdResponseMetrics(withNext, { wordCap, allowLeadingSessionTasks: true }),
           profile,
           withNext,
         );
@@ -342,7 +342,7 @@ export function tryDeterministicStructuralFix(
     }
   }
 
-  const before = computeAdhdResponseMetrics(trimmed, { wordCap });
+  const before = computeAdhdResponseMetrics(trimmed, { wordCap, allowLeadingSessionTasks: true });
   if (isStructuralCompliancePass(before)) {
     return trimmed;
   }
@@ -359,7 +359,7 @@ export function tryDeterministicStructuralFix(
     fixed = withNext;
   }
 
-  const after = computeAdhdResponseMetrics(fixed, { wordCap });
+  const after = computeAdhdResponseMetrics(fixed, { wordCap, allowLeadingSessionTasks: true });
   return isStructuralCompliancePass(after) ? fixed : null;
 }
 
@@ -401,7 +401,7 @@ export async function auditAndMaybeRewrite(args: {
   const sessionTasksOk = isSessionTasksCompliant(trimmed, sessionTasksContext);
 
   const beforeMetrics = withProfileStructuralPass(
-    computeAdhdResponseMetrics(trimmed, { wordCap }),
+    computeAdhdResponseMetrics(trimmed, { wordCap, allowLeadingSessionTasks: true }),
     profile,
     trimmed,
   );
@@ -420,7 +420,7 @@ export async function auditAndMaybeRewrite(args: {
         method: withDiagram !== trimmed ? "deterministic" : "none",
         beforeMetrics,
         afterMetrics: withProfileStructuralPass(
-          computeAdhdResponseMetrics(withDiagram, { wordCap }),
+          computeAdhdResponseMetrics(withDiagram, { wordCap, allowLeadingSessionTasks: true }),
           profile,
           withDiagram,
         ),
@@ -476,7 +476,7 @@ export async function auditAndMaybeRewrite(args: {
   const deterministic = tryDeterministicStructuralFix(trimmed, { wordCap, profile });
   if (deterministic && !requireDiagram && sessionTasksOk) {
     const afterMetrics = withProfileStructuralPass(
-      computeAdhdResponseMetrics(deterministic, { wordCap }),
+      computeAdhdResponseMetrics(deterministic, { wordCap, allowLeadingSessionTasks: true }),
       profile,
       deterministic,
     );
@@ -525,7 +525,7 @@ export async function auditAndMaybeRewrite(args: {
     }
 
     const afterMetrics = withProfileStructuralPass(
-      computeAdhdResponseMetrics(llmText, { wordCap }),
+      computeAdhdResponseMetrics(llmText, { wordCap, allowLeadingSessionTasks: true }),
       profile,
       llmText,
     );
@@ -556,7 +556,7 @@ export async function auditAndMaybeRewrite(args: {
       finalText = ensureDiagramBeforeNext(finalText, diagramOpts);
     }
     const finalMetrics = withProfileStructuralPass(
-      computeAdhdResponseMetrics(finalText, { wordCap }),
+      computeAdhdResponseMetrics(finalText, { wordCap, allowLeadingSessionTasks: true }),
       profile,
       finalText,
     );
@@ -590,7 +590,7 @@ export async function auditAndMaybeRewrite(args: {
       method: fallback !== trimmed ? "deterministic" : "llm_failed",
       beforeMetrics,
       afterMetrics: withProfileStructuralPass(
-        computeAdhdResponseMetrics(fallback, { wordCap }),
+        computeAdhdResponseMetrics(fallback, { wordCap, allowLeadingSessionTasks: true }),
         profile,
         fallback,
       ),

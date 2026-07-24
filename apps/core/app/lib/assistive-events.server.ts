@@ -79,6 +79,11 @@ export async function recordResponseComplianceEvent(args: {
   const metrics = withStructuralPass(
     computeAdhdResponseMetrics(args.assistantText, {
       wordCap: args.extras?.wordCap,
+      // Baseline (non-Assist) turns never carry a Session Tasks checklist, so
+      // this must stay false for them — keeps compliance scoring identical to
+      // pre-v2.0 for baseline, and only relaxes the Top summary anchor check
+      // for genuine Assist-mode replies that legitimately lead with one.
+      allowLeadingSessionTasks: args.adhdAssist,
     }),
   );
   const profileStructuralPass =

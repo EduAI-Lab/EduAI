@@ -126,6 +126,33 @@ describe("recordResponseComplianceEvent", () => {
     const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
     expect(metricsJson.policyVersion).toBeNull();
   });
+
+  it("v2.0: does not relax the Top summary anchor for a baseline reply that happens to start with a Session Tasks-shaped line", async () => {
+    // A baseline (non-Assist) reply was never instructed to lead with a
+    // checklist, so scoring must stay byte-for-byte identical to pre-v2.0:
+    // this must be scored as topSummary=false, exactly as it always was.
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: false,
+      assistantText: "**Session Tasks:**\n\n**Top summary**\n- A\n\n**Next?** More?",
+    });
+
+    const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
+    expect(metricsJson).toMatchObject({ topSummary: false, structuralPass: false });
+  });
+
+  it("v2.0: relaxes the Top summary anchor for an Assist-mode reply that correctly leads with Session Tasks", async () => {
+    await recordResponseComplianceEvent({
+      userId: "u1",
+      chatId: "c1",
+      adhdAssist: true,
+      assistantText: "**Session Tasks:**\n\n**Top summary**\n- A\n\n**Next?** More?",
+    });
+
+    const metricsJson = db.assistiveEvent.create.mock.calls[0][0].data.metricsJson;
+    expect(metricsJson).toMatchObject({ topSummary: true, structuralPass: true });
+  });
 });
 
 describe("sanitizeClientMetrics", () => {
