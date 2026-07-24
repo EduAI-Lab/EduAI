@@ -9,12 +9,16 @@ RUN apk add --no-cache curl dumb-init
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --omit=dev && npm cache clean --force
+# Install dependencies. The `prisma` CLI (a devDependency) is needed at
+# runtime for `prisma migrate deploy` below, so dev deps aren't omitted here.
+RUN npm ci && npm cache clean --force
 
 # Copy source code and scripts (for seed:production inside container)
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+COPY prisma/ ./prisma/
+
+RUN npx prisma generate
 
 # Copy environment file (if it exists)
 COPY .env* ./
@@ -42,5 +46,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # This prevents hanging shutdowns and zombie processes when running as PID 1
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application
-CMD ["node", "src/index.js"]
+# Apply pending migrations, then start the application
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
