@@ -44,15 +44,30 @@ const CIRCULAR_VALUE = "[CIRCULAR]";
 // `apikey` catches x-api-key, `accesskey`/`privatekey` catch provider key fields.
 const REDACT_KEY_SUBSTRINGS = [
   "password",
+  "passwd",
+  "jwt",
+  "pwd",
   "token",
   "cookie",
   "phone",
   "authorization",
+  "auth",
+  "bearer",
   "secret",
   "apikey",
   "accesskey",
   "privatekey",
+  "encryptionkey",
   "credential",
+  "databaseurl",
+  "connectionstring",
+  "dsn",
+  "otp",
+  "totp",
+  "mfa",
+  "pin",
+  "signature",
+  "sessionid",
 ];
 
 function shouldRedactKey(key: string) {
