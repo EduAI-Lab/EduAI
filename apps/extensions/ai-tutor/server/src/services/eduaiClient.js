@@ -245,19 +245,36 @@ export async function listCoreAdminUsers(cookie, options = {}) {
     throw error;
   }
 
-  const params = new URLSearchParams();
+  // Resolve a known id set (#1125). Core caps `ids` at CORE_PAGE_SIZE per
+  // request, so dedupe and chunk — a course with more than CORE_PAGE_SIZE
+  // enrolled users would otherwise exceed the cap and 400 with IDS_TOO_MANY,
+  // losing the whole id->name map. Combine each chunk's envelope back into one.
   if (Array.isArray(options.ids)) {
-    if (options.ids.length === 0) {
+    const unique = [...new Set(options.ids.filter(Boolean))];
+    if (unique.length === 0) {
       return { data: [], total: 0, page: 1, pageSize: 0 };
     }
-    params.set('ids', options.ids.join(','));
-  } else {
-    params.set('page', String(options.page ?? 1));
-    params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
-    if (options.role) params.set('role', options.role);
-    if (options.search) params.set('search', options.search);
+    const data = [];
+    for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
+      const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
+      const params = new URLSearchParams();
+      params.set('ids', chunk.join(','));
+      const envelope = await fetchCoreUsers(cookie, params);
+      data.push(...(envelope?.data ?? []));
+    }
+    return { data, total: data.length, page: 1, pageSize: data.length };
   }
 
+  const params = new URLSearchParams();
+  params.set('page', String(options.page ?? 1));
+  params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
+  if (options.role) params.set('role', options.role);
+  if (options.search) params.set('search', options.search);
+  return fetchCoreUsers(cookie, params);
+}
+
+/** Single `GET /api/users` request with the ADMIN session cookie. */
+async function fetchCoreUsers(cookie, params) {
   const url = `${getCoreBaseUrl()}/api/users?${params}`;
   const response = await fetch(url, {
     headers: { cookie },
