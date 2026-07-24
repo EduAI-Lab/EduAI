@@ -1,3 +1,4 @@
+import type { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
@@ -11,7 +12,7 @@ import {
 import { getQueue } from "./queues.server";
 import { priorityFor, resolveQueueName, type QueueName } from "./resolve-pool.server";
 
-/** True for a unique-constraint violation on `AiJob.bullJobId`. */
+/** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
 function isBullJobIdConflict(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -36,7 +37,7 @@ export type EnqueueResult = {
  * skips the depth query when the caller already counted (backpressure check).
  */
 async function queueStatsFor(
-  row: { id: string; type: JobType; status: string; createdAt: Date },
+  row: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null },
   queueName: QueueName,
   knownDepth?: number,
 ): Promise<{ queuePosition: number | null; queueDepth: number | null }> {
@@ -68,8 +69,10 @@ async function queueStatsFor(
  * idempotent replay of an existing job is never rejected (nothing new is added).
  *
  * Idempotency: when `idempotencyKey` is set it is the BullMQ job id (dedupes the
- * queue) AND the `AiJob.bullJobId` (`@unique`), so one logical key maps to exactly
- * one row. A repeat enqueue returns the existing row instead of writing a new one.
+ * queue) AND the `AiJob.bullJobId`, so one logical key maps to exactly one row.
+ * A repeat enqueue returns the existing row instead of writing a new one. The
+ * uniqueness is `(queueName, bullJobId)`, not `bullJobId` alone: BullMQ's
+ * auto-generated ids are per-queue counters, so two pools both hand out `"1"`.
  *
  * `jobId` returned to callers is always the `AiJob.id` (stable, DB-backed),
  * never the raw BullMQ id. `queuePosition` (1-based, null once not PENDING) and
@@ -88,13 +91,13 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   //    create a second row for the same logical job.
   if (payload.idempotencyKey) {
     const existing = await prisma.aiJob.findUnique({
-      where: { bullJobId: payload.idempotencyKey },
-      select: { id: true, type: true, status: true, createdAt: true },
+      where: { queueName_bullJobId: { queueName, bullJobId: payload.idempotencyKey } },
+      select: { id: true, type: true, status: true, createdAt: true, queueName: true },
     });
     if (existing) {
-      // Depth/position follow the existing row's own type — a replay may carry
-      // a different `type` than the row that owns the key.
-      return { jobId: existing.id, ...(await queueStatsFor(existing, resolveQueueName(existing.type))) };
+      // The key is scoped to `queueName`, so the winner is in this queue by
+      // construction — its own row is still what the snapshot is computed from.
+      return { jobId: existing.id, ...(await queueStatsFor(existing, queueName)) };
     }
   }
 
@@ -123,49 +126,31 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
       payload,
       userId: payload.userId,
       courseId: payload.courseId ?? null,
+      queueName,
     },
-    select: { id: true, type: true, status: true, createdAt: true },
+    select: { id: true, type: true, status: true, createdAt: true, queueName: true },
   });
 
   // 6. Add to that queue with priority; BullMQ job name = kind.
   //    idempotencyKey, when present, becomes the BullMQ job id so a re-enqueue is a no-op.
+  let bullJob: Job;
   try {
-    const bullJob = await getQueue(queueName).add(payload.kind, payload, {
+    bullJob = await getQueue(queueName).add(payload.kind, payload, {
       jobId: payload.idempotencyKey,
       priority,
     });
-
-    // 7. Persist the BullMQ id back onto the row.
-    if (bullJob.id) {
-      try {
-        await prisma.aiJob.update({
-          where: { id: aiJob.id },
-          data: { bullJobId: bullJob.id },
-        });
-      } catch (updateError) {
-        // A concurrent enqueue with the same idempotencyKey already claimed this
-        // bullJobId. Drop our duplicate PENDING row and return the row that won.
-        if (isBullJobIdConflict(updateError)) {
-          await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
-          const winner = await prisma.aiJob.findUnique({
-            where: { bullJobId: bullJob.id },
-            select: { id: true, type: true, status: true, createdAt: true },
-          });
-          if (winner) {
-            return { jobId: winner.id, ...(await queueStatsFor(winner, resolveQueueName(winner.type))) };
-          }
-        }
-        throw updateError;
-      }
-    }
   } catch (error) {
-    // Redis down / queue unreachable. A keyed job must not leave an orphan: the
-    // idempotency fast path looks rows up by bullJobId (= the key), which was
-    // never persisted here, so the orphan would be invisible to the client's
-    // retry and the retry would create a duplicate row for the same logical
-    // job. Drop it so the replay recreates cleanly. Unkeyed orphans stay for
-    // the (deferred) reaper; stats reads age them out after
-    // PENDING_WITHOUT_BULL_GRACE_MS so they can't wedge the backpressure cap.
+    // Redis down / queue unreachable. Scoped to the `add` alone — a failure of
+    // the step-7 update below is a different fault and must not be logged as a
+    // queue outage.
+    //
+    // A keyed job must not leave an orphan: the idempotency fast path looks
+    // rows up by (queueName, bullJobId), and the key was never persisted here,
+    // so the orphan would be invisible to the client's retry and the retry
+    // would create a duplicate row for the same logical job. Drop it so the
+    // replay recreates cleanly. Unkeyed orphans stay for the (deferred) reaper;
+    // stats reads age them out after PENDING_WITHOUT_BULL_GRACE_MS so they
+    // can't wedge the backpressure cap.
     if (payload.idempotencyKey) {
       await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
     }
@@ -181,6 +166,44 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
       }),
     );
     throw error;
+  }
+
+  // 7. Persist the BullMQ id back onto the row.
+  if (bullJob.id) {
+    try {
+      await prisma.aiJob.update({
+        where: { id: aiJob.id },
+        data: { bullJobId: bullJob.id },
+      });
+    } catch (updateError) {
+      // A concurrent enqueue with the same idempotencyKey already claimed this
+      // (queueName, bullJobId). Drop our duplicate PENDING row and return the row
+      // that won. Same queue by construction, so this is a real duplicate — never
+      // an unrelated job that happens to share a per-queue counter value.
+      if (isBullJobIdConflict(updateError)) {
+        await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
+        const winner = await prisma.aiJob.findUnique({
+          where: { queueName_bullJobId: { queueName, bullJobId: bullJob.id } },
+          select: { id: true, type: true, status: true, createdAt: true, queueName: true },
+        });
+        if (winner) {
+          return { jobId: winner.id, ...(await queueStatsFor(winner, queueName)) };
+        }
+      }
+      // The job is queued but the row never got its bullJobId — log it as its own
+      // fault so the reaper's orphans aren't confused with a Redis outage.
+      fireAndForget(
+        logSystemError({
+          source: "AI",
+          code: "ai_job_bull_id_persist_failed",
+          message: `Queued AI job ${aiJob.id} but failed to persist bullJobId ${bullJob.id}`,
+          error: updateError,
+          actorUserId: payload.userId,
+          details: { jobId: aiJob.id, bullJobId: bullJob.id, queueName },
+        }),
+      );
+      throw updateError;
+    }
   }
 
   // 8. Return the durable handle plus a live position/depth snapshot (#915).

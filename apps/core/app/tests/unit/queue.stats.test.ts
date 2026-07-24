@@ -13,7 +13,6 @@ import {
   getQueuePosition,
   maxQueueDepth,
   QueueFullError,
-  typesForQueue,
 } from "~/lib/queue/queue-stats.server";
 import { QUEUE_CHAT, QUEUE_HEAVY } from "~/lib/queue/resolve-pool.server";
 
@@ -21,19 +20,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
   prismaMock.aiJob.count.mockResolvedValue(0);
-});
-
-describe("typesForQueue", () => {
-  it("maps both types to the chat queue while the heavy pool is off (v1 reality)", () => {
-    expect(typesForQueue(QUEUE_CHAT)).toEqual(["interactive", "background"]);
-    expect(typesForQueue(QUEUE_HEAVY)).toEqual([]);
-  });
-
-  it("splits background off to the heavy queue once the heavy pool is configured", () => {
-    vi.stubEnv("VLLM_FLEET_HEAVY_URL", "http://cmps03:8000");
-    expect(typesForQueue(QUEUE_CHAT)).toEqual(["interactive"]);
-    expect(typesForQueue(QUEUE_HEAVY)).toEqual(["background"]);
-  });
 });
 
 // PENDING rows only count while plausibly in Redis: bullJobId persisted, or
@@ -44,18 +30,22 @@ const inTransport = {
 };
 
 describe("getQueueDepth", () => {
-  it("counts PENDING in-transport rows whose type resolves to the queue", async () => {
+  it("counts PENDING in-transport rows pushed onto the queue", async () => {
     prismaMock.aiJob.count.mockResolvedValueOnce(7);
 
     await expect(getQueueDepth(QUEUE_CHAT)).resolves.toBe(7);
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
-      where: { status: "PENDING", type: { in: ["interactive", "background"] }, ...inTransport },
+      where: { status: "PENDING", queueName: QUEUE_CHAT, ...inTransport },
     });
   });
 
-  it("returns 0 without querying when no type resolves to the queue", async () => {
-    await expect(getQueueDepth(QUEUE_HEAVY)).resolves.toBe(0);
-    expect(prismaMock.aiJob.count).not.toHaveBeenCalled();
+  it("scopes the count to the requested queue, not the current type mapping", async () => {
+    prismaMock.aiJob.count.mockResolvedValueOnce(2);
+
+    await expect(getQueueDepth(QUEUE_HEAVY)).resolves.toBe(2);
+    expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
+      where: { status: "PENDING", queueName: QUEUE_HEAVY, ...inTransport },
+    });
   });
 });
 
@@ -65,6 +55,7 @@ describe("getQueuePosition", () => {
     type: "background" as const,
     status: "PENDING",
     createdAt: new Date("2026-07-20T00:00:00Z"),
+    queueName: QUEUE_CHAT,
   };
 
   it("returns null for a job that is no longer PENDING, without querying", async () => {
@@ -83,6 +74,7 @@ describe("getQueuePosition", () => {
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
       where: {
         status: "PENDING",
+        queueName: QUEUE_CHAT,
         id: { not: "aijob_1" },
         AND: [
           inTransport,
@@ -113,6 +105,7 @@ describe("getQueuePosition", () => {
     expect(prismaMock.aiJob.count).toHaveBeenCalledWith({
       where: {
         status: "PENDING",
+        queueName: QUEUE_CHAT,
         id: { not: "aijob_1" },
         AND: [
           inTransport,
@@ -130,6 +123,27 @@ describe("getQueuePosition", () => {
         ],
       },
     });
+  });
+
+  it("stays on the row's persisted queue even after the heavy pool is turned on", async () => {
+    // The row was pushed onto ai-jobs:chat; flipping VLLM_FLEET_HEAVY_URL now
+    // routes new background jobs to ai-jobs:heavy but must not silently move
+    // this one — position is read against the queue it actually sits in.
+    vi.stubEnv("VLLM_FLEET_HEAVY_URL", "http://cmps03:8000");
+
+    await getQueuePosition(pendingBackground);
+
+    expect(prismaMock.aiJob.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ queueName: QUEUE_CHAT }) }),
+    );
+  });
+
+  it("falls back to the current type mapping for a row with no persisted queueName", async () => {
+    await getQueuePosition({ ...pendingBackground, queueName: null });
+
+    expect(prismaMock.aiJob.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ queueName: QUEUE_CHAT }) }),
+    );
   });
 });
 

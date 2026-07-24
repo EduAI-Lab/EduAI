@@ -197,13 +197,17 @@ model AiJob {
   errorMessage String?
   userId       String
   courseId     String?
-  bullJobId    String?     @unique // link back to the BullMQ job
+  queueName    String? // BullMQ queue the job was pushed onto (pool, contract §4)
+  bullJobId    String? // link back to the BullMQ job — only unique within `queueName`
   attempts     Int         @default(0)
   startedAt    DateTime?
   completedAt  DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
+  // BullMQ auto-generated ids are per-queue counters, so `bullJobId` alone is not
+  // globally unique — `ai-jobs:chat` and `ai-jobs:heavy` both hand out "1".
+  @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
   @@map("ai_jobs")

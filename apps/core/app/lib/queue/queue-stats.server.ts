@@ -8,12 +8,10 @@ import { priorityFor, resolveQueueName, type QueueName } from "./resolve-pool.se
  *
  * All reads are computed against the durable `ai_jobs` rows (source of truth),
  * never against Redis — a Redis flush must not change what the client sees.
- * A queue's population is derived from `AiJob.type` through the same
- * `resolveQueueName()` mapping the producer uses. Known limitation: that
- * mapping is re-resolved per read, so jobs physically added to a BullMQ queue
- * before a `VLLM_FLEET_HEAVY_URL` flip stay in the old Redis queue while these
- * reads attribute them to the new one — the snapshot can disagree with the
- * transport until those jobs drain (goes away with #168 fleet routing).
+ * Queue membership comes from the persisted `AiJob.queueName` (written at
+ * enqueue time), not from re-resolving `type`, so a `VLLM_FLEET_HEAVY_URL` flip
+ * can't retroactively move already-queued jobs between queues in these reads.
+ * Rows with a null `queueName` never reached a queue and are counted by none.
  */
 
 const ALL_JOB_TYPES: readonly JobType[] = JobTypeSchema.options;
@@ -73,46 +71,44 @@ export class QueueFullError extends Error {
   }
 }
 
-/** Job types that currently resolve to `queueName` (heavy pool may be off). */
-export function typesForQueue(queueName: QueueName): JobType[] {
-  return ALL_JOB_TYPES.filter((type) => resolveQueueName(type) === queueName);
-}
-
-/** Live depth of `queueName`: count of PENDING rows whose type resolves to it. */
+/** Live depth of `queueName`: count of PENDING rows pushed onto that queue. */
 export async function getQueueDepth(queueName: QueueName): Promise<number> {
-  const types = typesForQueue(queueName);
-  if (types.length === 0) return 0;
   return prisma.aiJob.count({
-    where: { status: "PENDING", type: { in: types }, ...inTransportFilter() },
+    where: { status: "PENDING", queueName, ...inTransportFilter() },
   });
 }
 
 /**
- * Live 1-based position of a job in its resolved queue, or `null` when the job
- * is no longer PENDING (position is meaningless once it runs or finishes).
+ * Live 1-based position of a job in its queue, or `null` when the job is no
+ * longer PENDING (position is meaningless once it runs or finishes).
  *
  * "Ahead" means it drains first under the producer's ordering (contract §4):
  * a stronger (numerically lower) BullMQ priority, or the same priority with an
  * earlier `createdAt` (ties broken by `id` so two same-millisecond jobs never
  * report the same position). Position 1 = next up.
+ *
+ * Priority is derived from `type` — the same input the producer passed to
+ * `priorityFor()` — while queue membership comes from the row's persisted
+ * `queueName` (falling back to the current mapping for a row that predates it).
  */
 export async function getQueuePosition(job: {
   id: string;
   type: JobType;
   status: string;
   createdAt: Date;
+  queueName?: string | null;
 }): Promise<number | null> {
   if (job.status !== "PENDING") return null;
 
-  const queueName = resolveQueueName(job.type);
+  const queueName = job.queueName ?? resolveQueueName(job.type);
   const priority = priorityFor(job.type);
-  const sameQueueTypes = typesForQueue(queueName);
-  const strongerTypes = sameQueueTypes.filter((type) => priorityFor(type) < priority);
-  const samePriorityTypes = sameQueueTypes.filter((type) => priorityFor(type) === priority);
+  const strongerTypes = ALL_JOB_TYPES.filter((type) => priorityFor(type) < priority);
+  const samePriorityTypes = ALL_JOB_TYPES.filter((type) => priorityFor(type) === priority);
 
   const ahead = await prisma.aiJob.count({
     where: {
       status: "PENDING",
+      queueName,
       id: { not: job.id },
       AND: [
         inTransportFilter(),

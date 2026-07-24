@@ -320,6 +320,13 @@ export const api = {
     http(`/api/modules/${moduleId}`, {
       method: 'DELETE',
     }),
+  // Bulk-reorder every module in a course. `orderedIds` is the full ordered
+  // set of module ids; the server reassigns positions 0..n-1 atomically.
+  reorderModules: (courseId: number, orderedIds: number[]) =>
+    http(`/api/courses/${courseId}/modules/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
+    }),
   lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
   createLesson: (
     moduleId: number,
@@ -348,6 +355,12 @@ export const api = {
   deleteLesson: (lessonId: number) =>
     http(`/api/lessons/${lessonId}`, {
       method: 'DELETE',
+    }),
+  // Bulk-reorder every lesson within a module (see reorderModules).
+  reorderLessons: (moduleId: number, orderedIds: number[]) =>
+    http(`/api/modules/${moduleId}/lessons/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
@@ -415,25 +428,22 @@ export const api = {
     http(`/api/activities/${activityId}`, {
       method: 'DELETE',
     }),
+  // Bulk-reorder every activity within a lesson (see reorderModules).
+  reorderActivities: (lessonId: number, orderedIds: number[]) =>
+    http(`/api/lessons/${lessonId}/activities/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
+    }),
   topicsForCourse: (courseId: number) => http(`/api/courses/${courseId}/topics`),
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  syncCourseTopics: (courseId: number) =>
-    http(`/api/courses/${courseId}/topics/sync`, {
-      method: 'POST',
-    }),
   syncCourseEnrollments: (courseId: number) =>
     http(`/api/courses/${courseId}/sync-enrollments`, {
       method: 'POST',
     }) as Promise<{ synced: number; created: number; updated: number; deleted: number; errors: [] }>,
-  remapCourseTopics: (courseId: number, mappings: { fromTopicId: number; toTopicId: number }[]) =>
-    http(`/api/courses/${courseId}/topics/remap`, {
-      method: 'POST',
-      body: JSON.stringify({ mappings }),
-    }),
   submitAnswer: (activityId: number, payload: any) =>
     http(`/api/questions/${activityId}/answer`, {
       method: 'POST',
