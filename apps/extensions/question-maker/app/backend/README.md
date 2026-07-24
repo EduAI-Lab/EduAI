@@ -9,7 +9,7 @@ A modern Node.js/Express backend API for the EduQuery.ai question generation pla
 - **Class Management**: Organize questions by classes/courses
 - **AI Integration**: Support for multiple AI providers (Groq, OpenAI, DeepSeek)
 - **File Upload**: Upload and process text files for question generation
-- **Database**: PostgreSQL with Sequelize ORM
+- **Database**: PostgreSQL with Prisma ORM
 - **Security**: Rate limiting, CORS, helmet security headers
 - **Validation**: Input validation and error handling
 
@@ -17,7 +17,7 @@ A modern Node.js/Express backend API for the EduQuery.ai question generation pla
 
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js
-- **Database**: PostgreSQL with Sequelize ORM
+- **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: JWT + bcrypt
 - **File Upload**: Multer
 - **AI APIs**: Groq, OpenAI, DeepSeek
