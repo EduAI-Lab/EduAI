@@ -12,8 +12,15 @@ export function getEduAiBaseUrl() {
 }
 
 /**
- * AI completion endpoint. Used by `aiGuidance.js` rather than the
- * `requestEduAi` helper because chat needs custom headers and a non-trivial body shape.
+ * Stateless AI completion endpoint (#858). Used by `aiGuidance.js` for tutor/supervisor
+ * loops without course-chat persistence, RAG, or tool overhead.
+ */
+export function getEduAiCompletionUrl() {
+  return `${getEduAiBaseUrl()}/completion`;
+}
+
+/**
+ * @deprecated Use getEduAiCompletionUrl() for AI assist flows.
  */
 /**
  * Core's list endpoints require paging (#1041) and cap `pageSize` at 200.

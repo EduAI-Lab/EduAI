@@ -1258,7 +1258,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                             vp.onUpdateQuestionMetadata?.(viewEntry.questionId, { description: editDescription || null, primaryTopicId: editPrimaryTopicId, type: editType, primaryTopicName });
                                                             if (Object.keys(variantUpdates).length > 0) vp.onUpdateVariant?.(viewEntry.variant.id, variantUpdates);
                                                             setEditingMetadata(false);
-                                                            toast({ title: 'Metadata saved', description: Object.keys(variantPayload).length > 0 ? 'Question metadata and variant fields updated.' : 'Question metadata updated.' });
+                                                            toast({ title: 'Question details saved', description: Object.keys(variantPayload).length > 0 ? 'Question details and variant fields updated.' : 'Question details updated.' });
                                                         } catch (err: unknown) {
                                                             toast({ variant: 'destructive', title: 'Failed to save', description: err instanceof Error ? err.message : 'Could not update metadata.' });
                                                         } finally {
