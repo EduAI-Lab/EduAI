@@ -107,7 +107,14 @@ async function fetchCoursePages(path, request, options = {}) {
   if (!options.all) return first.data;
 
   const courses = [...first.data];
-  const pageCount = Math.min(Math.ceil(first.total / pageSize) || 1, CORE_MAX_PAGES);
+  const wantedPages = Math.ceil(first.total / pageSize) || 1;
+  const pageCount = Math.min(wantedPages, CORE_MAX_PAGES);
+  if (wantedPages > CORE_MAX_PAGES) {
+    console.warn(
+      `[eduaiClient] ${path}: ${first.total} rows exceed the ${CORE_MAX_PAGES}×${pageSize} page-walk cap; ` +
+        `reconciling against the first ${CORE_MAX_PAGES * pageSize} only.`,
+    );
+  }
   for (let page = 2; page <= pageCount; page += 1) {
     const next = await readPage(page);
     courses.push(...next.data);

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "~/hooks/api/config";
 import {
   DEFAULT_PAGE_SIZE,
+  MAX_IDS_PER_REQUEST,
   paginationQuery,
   type PaginatedResponse,
   type PaginationState,
@@ -166,10 +167,21 @@ export function useUsers(options: UseUsersOptions = {}) {
  * Callers that previously fetched the whole table to build an id→user map use
  * this instead; under required paging that map could otherwise only be built by
  * page-looping.
+ *
+ * `?ids=` is capped server-side at {@link MAX_IDS_PER_REQUEST}, so callers with
+ * a larger set (e.g. a course with >200 enrollments) are chunked here rather
+ * than tripping `IDS_TOO_MANY`.
  */
 export async function fetchUsersByIds(ids: string[]): Promise<PlatformUser[]> {
-  if (ids.length === 0) return [];
-  const params = new URLSearchParams({ ids: ids.join(",") });
-  const response = await apiFetch<PaginatedResponse<PlatformUser>>(`/api/users?${params}`);
-  return response.data;
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const users: PlatformUser[] = [];
+  for (let start = 0; start < unique.length; start += MAX_IDS_PER_REQUEST) {
+    const chunk = unique.slice(start, start + MAX_IDS_PER_REQUEST);
+    const params = new URLSearchParams({ ids: chunk.join(",") });
+    const response = await apiFetch<PaginatedResponse<PlatformUser>>(`/api/users?${params}`);
+    users.push(...response.data);
+  }
+  return users;
 }

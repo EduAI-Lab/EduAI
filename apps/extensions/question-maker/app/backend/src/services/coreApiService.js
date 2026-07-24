@@ -89,7 +89,14 @@ async function fetchCoursePages(
 
   const courses = [...first.courses];
   const size = Math.min(pageSize, CORE_PAGE_SIZE);
-  const pageCount = Math.min(Math.ceil(first.total / size) || 1, CORE_MAX_PAGES);
+  const wantedPages = Math.ceil(first.total / size) || 1;
+  const pageCount = Math.min(wantedPages, CORE_MAX_PAGES);
+  if (wantedPages > CORE_MAX_PAGES) {
+    console.warn(
+      `[coreApiService] /api/courses: ${first.total} rows exceed the ${CORE_MAX_PAGES}×${size} page-walk cap; ` +
+        `reconciling against the first ${CORE_MAX_PAGES * size} only.`,
+    );
+  }
   for (let next = page + 1; next <= pageCount; next += 1) {
     courses.push(...(await readPage(next)).courses);
   }
