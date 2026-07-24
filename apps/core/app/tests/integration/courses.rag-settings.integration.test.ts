@@ -69,13 +69,27 @@ describe("GET /api/courses/:id/rag-settings", () => {
   });
 
   it("returns null defaults for a course with no overrides", async () => {
-    mockSession({ id: studentId, role: "STUDENT" });
+    mockSession({ id: instructorId, role: "INSTRUCTOR" });
     const res = await loader(getArgs(courseId));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       ragTopK: null,
       ragSimilarityThreshold: null,
     });
+  });
+
+  it("returns 403 for a student enrolled in the course", async () => {
+    mockSession({ id: studentId, role: "STUDENT" });
+    const res = await loader(getArgs(courseId));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for an instructor with no relationship to the course (IDOR)", async () => {
+    const outsider = await seedUser({ role: "INSTRUCTOR" });
+    mockSession({ id: outsider.id, role: "INSTRUCTOR" });
+    const res = await loader(getArgs(courseId));
+    expect(res.status).toBe(403);
+    await cleanupRbac({ userIds: [outsider.id] });
   });
 
   it("returns 404 for an unknown course", async () => {
@@ -107,6 +121,22 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 for an instructor with no relationship to the course (IDOR)", async () => {
+    const outsider = await seedUser({ role: "INSTRUCTOR" });
+    const res = await action(
+      patchArgs(courseId, { ragTopK: 5 }, { id: outsider.id, role: "INSTRUCTOR" }),
+    );
+    expect(res.status).toBe(403);
+
+    const row = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { ragTopK: true },
+    });
+    expect(row?.ragTopK).not.toBe(5);
+
+    await cleanupRbac({ userIds: [outsider.id] });
+  });
+
   it("persists ragTopK and ragSimilarityThreshold for instructors", async () => {
     const res = await action(
       patchArgs(
@@ -128,7 +158,7 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     });
     expect(row).toEqual({ ragTopK: 8, ragSimilarityThreshold: 0.65 });
 
-    mockSession({ id: studentId, role: "STUDENT" });
+    mockSession({ id: instructorId, role: "INSTRUCTOR" });
     const readBack = await loader(getArgs(courseId));
     expect(await readBack.json()).toEqual({
       ragTopK: 8,
