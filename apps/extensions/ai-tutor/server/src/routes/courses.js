@@ -1133,6 +1133,10 @@ router.get('/me/dashboard-stats', async (req, res) => {
         role: 'ADMIN',
         totalCourses: courses.length,
         publishedCourses,
+        // #1043: the dashboard donut derived these from the full course array;
+        // now that GET /courses is paged, they come from here (whole-set counts).
+        draftCourses: courses.length - publishedCourses,
+        syncedCourses: courses.filter((c) => c.coreOfferingId != null).length,
       };
 
       try {
@@ -1209,6 +1213,8 @@ router.get('/me/dashboard-stats', async (req, res) => {
         totalCourses: courses.length,
         publishedCourses,
         draftCourses: courses.length - publishedCourses,
+        // #1043: the "synced" tile derived this from the full course array.
+        syncedCourses: courses.filter((c) => c.coreOfferingId != null).length,
         enrolledStudents,
         submissionsToReview,
       });
