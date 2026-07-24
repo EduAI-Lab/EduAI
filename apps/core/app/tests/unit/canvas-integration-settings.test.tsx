@@ -163,6 +163,27 @@ describe("CanvasIntegrationSettings — connect form", () => {
       expect(screen.getByText("Invalid Canvas API token")).toBeInTheDocument();
     });
   });
+
+  it("shows a generic error when connect fails without a message", async () => {
+    vi.mocked(connectCanvas).mockRejectedValue(new Error());
+
+    render(<CanvasIntegrationSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Connect Canvas" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Personal access token"), {
+      target: { value: "bad-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Canvas" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Could not connect to Canvas. Please try again."),
+      ).toBeInTheDocument();
+    });
+  });
 });
 
 describe("CanvasIntegrationSettings — disconnect", () => {

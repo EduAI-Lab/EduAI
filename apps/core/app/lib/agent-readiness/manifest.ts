@@ -151,13 +151,20 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/completion",
+    readiness: "excluded",
+    reason: "Stateless LLM completion (#858) — streaming + apiKeys; extension AI-assist only",
+    gaps: ["streaming"],
+    routeFile: "routes/api/completion.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/chats",
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",
     routeFile: "routes/api/chats.ts",
-  }),
-  entry({
+  }),  entry({
     method: "GET",
     path: "/api/chats/:chatId",
     readiness: "excluded",
