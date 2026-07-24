@@ -67,6 +67,21 @@ async function generateResponse({ signal } = {}) {
 }
 
 describe('callEduAI transient failure retry (#1001)', () => {
+  it('resolves Retry-After delays and clamps them to the remaining timeout', async () => {
+    const { _testExports } = await import('../../src/services/aiGuidance.js');
+    const { resolveRetryDelayMs } = _testExports;
+    const retryAt = Date.parse('Wed, 21 Oct 2015 07:28:00 GMT');
+
+    expect(resolveRetryDelayMs('2', 5_000, 0)).toBe(2_000);
+    expect(resolveRetryDelayMs('Wed, 21 Oct 2015 07:28:00 GMT', 5_000, retryAt - 2_000)).toBe(
+      2_000,
+    );
+    expect(resolveRetryDelayMs(null, 5_000, 0)).toBe(250);
+    expect(resolveRetryDelayMs('not-a-delay', 5_000, 0)).toBe(250);
+    expect(resolveRetryDelayMs('-3', 5_000, 0)).toBe(0);
+    expect(resolveRetryDelayMs('60', 1_000, 0)).toBe(1_000);
+  });
+
   it.each([429, 503])(
     'retries once after a %i response and returns the successful second response',
     async (status) => {
