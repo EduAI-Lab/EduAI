@@ -20,7 +20,7 @@ describe("CourseSelector — rendering", () => {
     render(
       <CourseSelector courses={sampleCourses} selectedCourseId={null} onCourseSelect={vi.fn()} />
     );
-    expect(screen.getByText(/enable RAG chat/)).toBeInTheDocument();
+    expect(screen.getByText(/search its materials in chat/)).toBeInTheDocument();
   });
 
   it("shows the active-course message when a course is selected", () => {

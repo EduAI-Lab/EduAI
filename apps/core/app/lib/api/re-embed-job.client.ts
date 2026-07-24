@@ -33,7 +33,7 @@ export async function fetchReEmbedJob(
   }
 
   if (!response.ok || !parsed.data.job) {
-    throw new Error(parsed.data.error || "Failed to load re-index job status");
+    throw new Error(parsed.data.error || "Failed to load processing status");
   }
 
   return parsed.data.job;
@@ -63,17 +63,17 @@ export async function pollReEmbedJobUntilDone(
 
 export function formatReEmbedJobMessage(job: ReEmbedJobResponse): string {
   if (job.status === "FAILED") {
-    return job.errorMessage || "Re-index failed.";
+    return job.errorMessage || "Processing failed.";
   }
   if (job.status === "COMPLETED") {
-    return `Re-indexed ${job.processedCount} material(s).`;
+    return `Processed ${job.processedCount} material(s).`;
   }
   if (job.status === "PARTIAL") {
     return (
-      `Re-indexed ${job.processedCount} of ${job.totalMaterials} material(s)` +
+      `Processed ${job.processedCount} of ${job.totalMaterials} material(s)` +
       (job.failed.length > 0 ? `; ${job.failed.length} failed` : "") +
       "."
     );
   }
-  return "Re-index in progress…";
+  return "Processing…";
 }
