@@ -45,7 +45,10 @@ function isRetryableAuthFailure(status, body) {
  */
 const CORE_PAGE_SIZE = 200;
 
-/** Safety stop for page-walks so a bad `total` cannot spin forever. */
+/**
+ * Safety stop for page-walks so a bad `total` cannot spin forever. An `all`
+ * read past this cap throws rather than returning a partial catalog.
+ */
 const CORE_MAX_PAGES = 50;
 
 /** GET a Core path with service-key headers, mirroring the pre-#1041 catalog read. */
@@ -89,12 +92,15 @@ async function fetchCoursePages(
 
   const courses = [...first.courses];
   const size = Math.min(pageSize, CORE_PAGE_SIZE);
-  const wantedPages = Math.ceil(first.total / size) || 1;
-  const pageCount = Math.min(wantedPages, CORE_MAX_PAGES);
-  if (wantedPages > CORE_MAX_PAGES) {
-    console.warn(
-      `[coreApiService] /api/courses: ${first.total} rows exceed the ${CORE_MAX_PAGES}×${size} page-walk cap; ` +
-        `reconciling against the first ${CORE_MAX_PAGES * size} only.`,
+  const pageCount = Math.ceil(first.total / size) || 1;
+  if (pageCount > CORE_MAX_PAGES) {
+    // `all` promises the caller's complete visible set. Returning a truncated
+    // catalog would let the reconcile flows read the missing tail as "deleted
+    // in Core", so this fails instead of silently capping.
+    throw coreError(
+      `Core returned ${first.total} courses, past the ${CORE_MAX_PAGES}×${size} page-walk cap; ` +
+        'refusing to return a partial catalog.',
+      502,
     );
   }
   for (let next = page + 1; next <= pageCount; next += 1) {

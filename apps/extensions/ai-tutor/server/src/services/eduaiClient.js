@@ -20,9 +20,12 @@ export function getEduAiBaseUrl() {
  * Requests that genuinely need a caller's whole visible set page-loop at this
  * size rather than asking for an unbounded list.
  */
-const CORE_PAGE_SIZE = 200;
+export const CORE_PAGE_SIZE = 200;
 
-/** Safety stop for page-loops, so a bad `total` cannot spin forever. */
+/**
+ * Safety stop for page-loops, so a bad `total` cannot spin forever. An
+ * `all: true` read past this cap throws rather than returning a partial set.
+ */
 const CORE_MAX_PAGES = 50;
 
 export function getEduAiChatUrl() {
@@ -107,13 +110,18 @@ async function fetchCoursePages(path, request, options = {}) {
   if (!options.all) return first.data;
 
   const courses = [...first.data];
-  const wantedPages = Math.ceil(first.total / pageSize) || 1;
-  const pageCount = Math.min(wantedPages, CORE_MAX_PAGES);
-  if (wantedPages > CORE_MAX_PAGES) {
-    console.warn(
-      `[eduaiClient] ${path}: ${first.total} rows exceed the ${CORE_MAX_PAGES}×${pageSize} page-walk cap; ` +
-        `reconciling against the first ${CORE_MAX_PAGES * pageSize} only.`,
+  const pageCount = Math.ceil(first.total / pageSize) || 1;
+  if (pageCount > CORE_MAX_PAGES) {
+    // `all: true` promises the caller's complete set, so a truncated walk must
+    // not be returned as if it were whole — the reconcile flows that use it
+    // would read the missing tail as "deleted in Core". Every caller already
+    // catches and degrades closed, so failing here is the safe direction.
+    const error = new Error(
+      `EduAI ${path} returned ${first.total} rows, past the ${CORE_MAX_PAGES}×${pageSize} page-walk cap; ` +
+        'refusing to return a partial set for an all: true read.',
     );
+    error.status = 502;
+    throw error;
   }
   for (let page = 2; page <= pageCount; page += 1) {
     const next = await readPage(page);

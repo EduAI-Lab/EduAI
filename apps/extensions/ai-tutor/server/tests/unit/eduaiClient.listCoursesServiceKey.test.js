@@ -83,6 +83,41 @@ describe('listEduAiCoursesServiceKey', () => {
     await expect(listEduAiCoursesServiceKey()).rejects.toMatchObject({ status: 502 });
   });
 
+  it('refuses to return a partial catalog when an all: true walk would exceed the page cap (#1129 review)', async () => {
+    process.env.EDUAI_API_KEY = 'test-service-key-abc';
+    // 50 pages × 200 is the cap; anything past it can only be answered partially,
+    // and reconcile callers would read the missing tail as "deleted in Core".
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () =>
+        Promise.resolve({ data: [{ id: 'core-1', name: 'One' }], total: 10_001, page: 1, pageSize: 200 }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(listEduAiCoursesServiceKey({ all: true })).rejects.toMatchObject({ status: 502 });
+    // Fails on the first page rather than walking 50 pages to return a partial set.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('walks every page when the total sits exactly on the cap', async () => {
+    process.env.EDUAI_API_KEY = 'test-service-key-abc';
+    const mockFetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(''),
+        json: () =>
+          Promise.resolve({ data: [{ id: 'core-1', name: 'One' }], total: 10_000, page: 1, pageSize: 200 }),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(listEduAiCoursesServiceKey({ all: true })).resolves.toHaveLength(50);
+    expect(mockFetch).toHaveBeenCalledTimes(50);
+  });
+
   it('surfaces an upstream HTTP failure with its status', async () => {
     process.env.EDUAI_API_KEY = 'test-service-key-abc';
     vi.stubGlobal(

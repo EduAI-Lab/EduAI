@@ -339,6 +339,20 @@ describe('listCoursesFromCore', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
+
+  it('refuses to return a partial catalog when an all page-walk would exceed the cap (#1129 review)', async () => {
+    // Past 50×200 the walk can only answer partially, and the reconcile callers
+    // that pass `all` would read the missing tail as "deleted in Core".
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(ok({ data: [{ id: 'cuid-1' }], total: 10_001, page: 1, pageSize: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(listCoursesFromCore('session=abc', { all: true })).rejects.toMatchObject({
+      status: 502,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('isCoreCourseInScopedList', () => {
