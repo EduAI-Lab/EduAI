@@ -91,7 +91,7 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
-| `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit |
+| `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit. When enabled (default), Dean reject→retry→forced wrap ships structure-compliant text (policy v2.0+). |
 | `EDUAI_API_KEY` | required for cross-service calls | dev/prod | Shared service key — **must match** AI Tutor server's and QM's `EDUAI_API_KEY` exactly |
 | `SESSION_VALIDATE_RATE_LIMIT` | optional (default 300) | dev/prod | Rate limit for `POST /api/sessions/validate` |
 | `CHAT_RATE_LIMIT`, `CHAT_RATE_WINDOW_MS` | optional (default 20 per 60000ms) | dev/prod | Per-user rate limit for `POST /api/chat` |

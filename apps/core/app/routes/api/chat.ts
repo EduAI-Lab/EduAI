@@ -2009,6 +2009,7 @@ ${buildEmptyCourseRagBlock()}`;
               wordCap: adhdWordCap,
               profile: adhdProfile ?? "full_tutoring",
               userText: lastUserText,
+              toolsUsed: adhdToolsUsed,
             })
           : emptyOversightAuditResult();
 
