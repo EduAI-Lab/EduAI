@@ -303,7 +303,7 @@ export async function listEduAiCourseTopics(externalCourseId, options = {}) {
   }
 }
 
-export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
+export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId, options = {}) {
   if (!externalCourseId) return [];
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
@@ -311,6 +311,7 @@ export async function listEduAiCourseEnrollmentsServiceKey(externalCourseId) {
   }
   const data = await requestEduAi(`/courses/${externalCourseId}/enrollments`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
+    signal: options.signal,
   });
   try {
     const parsed = EduAiEnrollmentListSchema.parse(data);
