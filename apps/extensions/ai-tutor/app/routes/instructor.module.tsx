@@ -172,7 +172,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setLoadingSourceCourses(true);
     api
       .listCourses()
-      .then((data: Course[]) => {
+      .then((page) => {
+        const data = page.data;
         const nextCourses = module?.courseOfferingId
           ? data.filter((course: Course) => course.id !== module.courseOfferingId)
           : data;

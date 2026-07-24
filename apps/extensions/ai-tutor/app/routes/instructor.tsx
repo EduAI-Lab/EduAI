@@ -40,8 +40,10 @@ import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext'
  */
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
-  const courses = (await api.listCourses()) as Course[];
-  return { courses };
+  // #1043: /courses is paginated. This list takes one bounded page; the shared
+  // CourseListView still searches/filters within it. `total` drives the pager.
+  const page = await api.listCourses();
+  return { courses: page.data, total: page.total, page: page.page, pageSize: page.pageSize };
 }
 
 /** Shared centered empty/no-results card used by the course list. */
