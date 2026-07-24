@@ -16,7 +16,7 @@ vi.mock('../../src/config/database.js', () => ({
 }));
 
 vi.mock('../../src/services/eduaiClient.js', () => ({
-  getEduAiChatUrl: () => 'http://not-actually-called.test/api/chat',
+  getEduAiCompletionUrl: () => 'http://not-actually-called.test/api/completion',
 }));
 
 const originalFetch = global.fetch;
@@ -26,22 +26,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function failedResponse(status, chatId = null) {
+function failedResponse(status, headers = {}) {
   return {
     ok: false,
     status,
-    headers: new Headers(chatId ? { 'X-Chat-Id': chatId } : {}),
+    headers: new Headers(headers),
     text: () => Promise.resolve(`Upstream returned ${status}`),
   };
 }
 
-function successfulResponse(chatId = 'chat-after-retry') {
+function successfulResponse() {
   return {
     ok: true,
     json: () =>
       Promise.resolve({
         content: 'Start by identifying the base case.',
-        chatId,
       }),
   };
 }
@@ -80,7 +79,7 @@ describe('callEduAI transient failure retry (#1001)', () => {
 
       expect(result).toMatchObject({
         message: 'Start by identifying the base case.',
-        chatId: 'chat-after-retry',
+        chatId: null,
         trace: {
           finalOutcome: 'single_pass',
         },
@@ -89,19 +88,23 @@ describe('callEduAI transient failure retry (#1001)', () => {
     },
   );
 
-  it('reuses the chat Core persisted before retrying an initial request after a 503', async () => {
+  it('keeps retries stateless when a 503 includes a legacy X-Chat-Id header', async () => {
     global.fetch = vi
       .fn()
-      .mockResolvedValueOnce(failedResponse(503, 'chat-created-on-attempt-one'))
-      .mockResolvedValueOnce(successfulResponse('chat-created-on-attempt-one'));
+      .mockResolvedValueOnce(failedResponse(503, { 'X-Chat-Id': 'legacy-chat-id' }))
+      .mockResolvedValueOnce(successfulResponse());
 
     const result = await generateResponse();
     const firstRequestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     const secondRequestBody = JSON.parse(global.fetch.mock.calls[1][1].body);
 
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      'http://not-actually-called.test/api/completion',
+      'http://not-actually-called.test/api/completion',
+    ]);
     expect(firstRequestBody).not.toHaveProperty('chatId');
-    expect(secondRequestBody.chatId).toBe('chat-created-on-attempt-one');
-    expect(result.chatId).toBe('chat-created-on-attempt-one');
+    expect(secondRequestBody).not.toHaveProperty('chatId');
+    expect(result.chatId).toBeNull();
   });
 
   it('stops after one retry when both attempts return a transient failure', async () => {

@@ -148,16 +148,6 @@ function autoRoutingHeaders(
   return headers;
 }
 
-/** Let retrying callers resume a chat that was persisted before an error. */
-function persistedChatJsonHeaders(
-  chatId: string | null | undefined,
-): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-  };
-}
-
 /** OpenAI-compatible local backends need explicit stream usage for token telemetry. */
 function usageProviderOptions(providerId: string) {
   if (providerId === "vllm" || providerId === "ollama") {
@@ -1054,7 +1044,7 @@ export async function action({ request }: ActionFunctionArgs) {
             }),
             {
               status: 503,
-              headers: persistedChatJsonHeaders(chat?.id),
+              headers: { "Content-Type": "application/json" },
             },
           );
         }
@@ -1181,7 +1171,7 @@ export async function action({ request }: ActionFunctionArgs) {
         }),
         {
           status: 503,
-          headers: persistedChatJsonHeaders(chat?.id),
+          headers: { "Content-Type": "application/json" },
         },
       );
     }
@@ -1215,7 +1205,7 @@ export async function action({ request }: ActionFunctionArgs) {
         }),
         {
           status: 503,
-          headers: persistedChatJsonHeaders(chat?.id),
+          headers: { "Content-Type": "application/json" },
         },
       );
     }

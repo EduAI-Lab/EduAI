@@ -153,13 +153,6 @@ async function callEduAI({
           RETRYABLE_EDUAI_STATUSES.has(response.status) && attempt < EDUAI_MAX_ATTEMPTS;
 
         if (shouldRetry) {
-          // Core can persist a new chat before returning a transient 503. Carry
-          // that server-generated ID into attempt two so the retry resumes the
-          // same chat instead of creating an orphan plus a replacement.
-          const persistedChatId = response.headers.get('X-Chat-Id');
-          if (!requestBody.chatId && persistedChatId) {
-            requestBody.chatId = persistedChatId;
-          }
           console.warn(
             '[aiGuidance] Transient API error; retrying once:',
             response.status,
