@@ -440,10 +440,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  syncCourseEnrollments: (courseId: number) =>
-    http(`/api/courses/${courseId}/sync-enrollments`, {
-      method: 'POST',
-    }) as Promise<{ synced: number; created: number; updated: number; deleted: number; errors: [] }>,
   submitAnswer: (activityId: number, payload: any) =>
     http(`/api/questions/${activityId}/answer`, {
       method: 'POST',
