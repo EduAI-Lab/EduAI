@@ -10,7 +10,7 @@ import {
   enrichRowWithCourse,
   formatSemesterDisplay
 } from './courseListService.js';
-import { sanitizeLikeLiteral } from '../utils/listPagination.js';
+import { escapeLikeLiteral } from '../utils/listPagination.js';
 
 /**
  * Overwrites each question row's nested `variant.assessment.semester` with the
@@ -229,7 +229,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
 
     // Apply search in SQL before limit/offset so pagination stays correct (#1040).
     if (search && String(search).trim()) {
-      const needle = sanitizeLikeLiteral(String(search).trim());
+      const needle = escapeLikeLiteral(String(search).trim());
       if (needle) {
         whereClause.description = { [Op.iLike]: `%${needle}%` };
       }
@@ -265,7 +265,9 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       include,
       distinct: true,
       col: 'id',
-      order: [['createdAt', 'DESC']],
+      // `id DESC` tie-breaker: createdAt alone isn't unique, so offset pagination
+      // over ties could duplicate or skip rows across page requests (#1040 review).
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
       limit: appliedLimit,
       offset: appliedOffset
     });

@@ -136,4 +136,31 @@ describe('question/assessment list pagination (#1040)', () => {
     expect(all).toHaveLength(150);
     expect(getMock).toHaveBeenCalledTimes(2);
   });
+
+  it('getQuestions throws instead of silently truncating when total exceeds the fetch-all safety cap', async () => {
+    // A single page reporting more total rows than the 10,000-row cap allows the
+    // loop to reach without ever returning an empty page — reproduces a result
+    // set larger than MAX_FETCH_ALL without needing 100+ mocked page responses.
+    getMock.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: Array.from({ length: 100 }, (_, i) => ({
+            id: i + 1,
+            description: `Q${i + 1}`,
+            type: 'MCQ',
+            courseId: 1,
+            createdAt: 'a',
+            updatedAt: 'b',
+            variants: [],
+          })),
+          total: 50_000,
+          limit: 100,
+          offset: 0,
+        },
+      },
+    });
+
+    await expect(questionService.getQuestions({ courseId: 1 })).rejects.toThrow(/fetch-all safety cap/i);
+  });
 });

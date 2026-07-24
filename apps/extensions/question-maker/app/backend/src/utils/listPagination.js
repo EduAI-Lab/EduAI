@@ -4,11 +4,14 @@ export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 200;
 
 /**
- * Strips LIKE/ILIKE wildcards (`%`, `_`) from user search so they are not
- * interpreted as patterns (Postgres LIKE has no default backslash escape).
+ * Escapes LIKE/ILIKE metacharacters (`\`, `%`, `_`) in user search text so they
+ * are matched literally instead of interpreted as patterns. Postgres LIKE/ILIKE
+ * defaults to `\` as the escape character, so no `ESCAPE` clause is needed at
+ * the call site. Backslash must be escaped first so a literal backslash in the
+ * input isn't re-interpreted as escaping the `%`/`_` we add after it.
  */
-export function sanitizeLikeLiteral(value) {
-  return String(value).replace(/[%_]/g, '');
+export function escapeLikeLiteral(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 /**

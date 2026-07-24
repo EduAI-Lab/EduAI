@@ -119,6 +119,17 @@ async function fetchAllPages<T>(
     offset += page.items.length;
     if (offset >= total) break;
   }
+
+  // The hard safety ceiling itself must never truncate silently — that's the exact bug
+  // this PR fixes for the server's 50-row cap. If a caller asked for fewer than
+  // MAX_FETCH_ALL explicitly, getting exactly that many back is expected, not a truncation.
+  if (maxItems === MAX_FETCH_ALL && all.length >= MAX_FETCH_ALL && all.length < total) {
+    throw new Error(
+      `Result set has ${total} rows, exceeding the ${MAX_FETCH_ALL}-row fetch-all safety cap. ` +
+        'Use getQuestionsPage() with explicit pagination instead of fetching all rows.',
+    );
+  }
+
   return all.slice(0, maxItems);
 }
 
