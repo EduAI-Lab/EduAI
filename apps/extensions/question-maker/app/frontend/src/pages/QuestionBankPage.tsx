@@ -5,7 +5,7 @@
  * authoring always happens inside a course. Clicking a row opens a read-only preview.
  */
 import { useMemo, useState } from 'react';
-import { PageHeading, Badge, QuestionStatusBadge } from '@eduai/ui';
+import { PageHeading, Badge, QuestionStatusBadge, EmptyState, Button } from '@eduai/ui';
 import {
   IconStack2,
   IconAlertTriangle,
@@ -19,7 +19,6 @@ import {
 import { useAllQuestions } from '@/hooks/useAllQuestions';
 import type { Question } from '@/types/question';
 import { questionTypeLabels } from '@/types/question';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { ListSkeleton } from '@/components/shared/Skeletons';
 import {
   QuestionFilterToolbar,
@@ -190,13 +189,19 @@ export default function QuestionBankPage() {
           icon={<IconAlertTriangle className="size-6" />}
           title="Couldn't load questions"
           description={error}
+          bare={false}
         />
       ) : questions.length === 0 ? (
         <EmptyState
           icon={<IconStack2 className="size-6" />}
           title="Your library is empty"
           description="Questions you create in any course show up here. Open a course to add your first one."
-          primaryAction={{ label: 'Browse courses', href: '/courses' }}
+          bare={false}
+          action={
+            <Button asChild>
+              <a href="/courses">Browse courses</a>
+            </Button>
+          }
         />
       ) : filtered.length === 0 ? (
         <EmptyState
@@ -204,7 +209,12 @@ export default function QuestionBankPage() {
           icon={<IconFilterX className="size-6" />}
           title="No questions match your filters"
           description="Try a different search term or clear the filters."
-          primaryAction={{ label: 'Clear filters', onClick: clearFilters, variant: 'outline' }}
+          bare={false}
+          action={
+            <Button variant="outline" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          }
         />
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">

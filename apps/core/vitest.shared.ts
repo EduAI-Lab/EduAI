@@ -21,11 +21,11 @@ export function findMonorepoRoot(startDir: string): string {
   return dir;
 }
 
-// Shared base for vitest.config.ts and vitest.mutation.config.ts, so the
-// two never drift apart on plugins/aliases/environment. Callers spread this
-// and override `test.include` — plain object spread, not vite's
-// mergeConfig, so `include` is a clean override rather than an array
-// concatenation.
+// Shared base for vitest.config.ts, vitest.mutation.config.ts, and
+// vitest.coverage.config.ts, so plugins/aliases never drift (and so Stryker's
+// nested sandbox still resolves @eduai/ui). Callers spread this and override
+// `test` fields — plain object spread, not vite's mergeConfig, so `include`
+// is a clean override rather than an array concatenation.
 export function baseVitestConfig(coreDir: string): ViteUserConfig {
   const rootDir = findMonorepoRoot(coreDir);
 

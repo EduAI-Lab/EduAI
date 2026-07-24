@@ -42,6 +42,7 @@ export default defineConfig({
       'app/tests/unit/chat-admin-budget.route.test.ts',
       'app/tests/unit/chat-always-on-rag.route.test.ts',
       'app/tests/unit/chat-oversight.route.test.ts',
+      'app/tests/unit/chat-rate-limit.route.test.ts',
       'app/tests/unit/chats.visibility.test.ts',
       'app/tests/unit/chat-stream-error-logging.route.test.ts',
       'app/tests/unit/course-access.server.test.ts',
