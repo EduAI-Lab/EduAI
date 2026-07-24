@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -633,6 +633,32 @@ export const PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB = 512;
 /** Wall-clock ceiling for the isolated PDF extraction worker process. */
 export const PDF_EXTRACTION_WORKER_TIMEOUT_MS = 30_000;
 
+/** Cap on stderr bytes buffered from a worker before its own crash message is truncated. */
+const PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES = 4096;
+
+/**
+ * Caps how many PDF extraction subprocesses (each up to `PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB`
+ * of heap) run at once, so a burst of concurrent uploads can't multiply the per-worker memory
+ * ceiling into a fleet-wide OOM the same way an unbounded single worker would.
+ */
+const MAX_CONCURRENT_PDF_EXTRACTIONS = 4;
+let activePdfExtractions = 0;
+const pdfExtractionQueue: Array<() => void> = [];
+
+async function acquirePdfExtractionSlot(): Promise<() => void> {
+  if (activePdfExtractions < MAX_CONCURRENT_PDF_EXTRACTIONS) {
+    activePdfExtractions += 1;
+  } else {
+    await new Promise<void>((resolve) => pdfExtractionQueue.push(resolve));
+    activePdfExtractions += 1;
+  }
+
+  return () => {
+    activePdfExtractions -= 1;
+    pdfExtractionQueue.shift()?.();
+  };
+}
+
 // Runs as a plain Node CommonJS script piped over stdin (`node - <in> <out>`), so it
 // ships as part of this module rather than a separate file the build/Docker image
 // would need to know to copy. `@opendocsg/pdf2md` resolves via the worker's cwd
@@ -667,6 +693,7 @@ export async function extractPdfTextIsolated(
 ): Promise<{ content: string }> {
   const maxOldSpaceMb = limits.maxOldSpaceMb ?? PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB;
   const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
+  const release = await acquirePdfExtractionSlot();
   const dir = await mkdtemp(join(tmpdir(), 'pdf-extract-'));
   const inputPath = join(dir, 'input.pdf');
   const outputPath = join(dir, 'output.json');
@@ -690,7 +717,9 @@ export async function extractPdfTextIsolated(
       }, timeoutMs);
 
       child.stderr?.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString();
+        if (stderr.length < PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES) {
+          stderr += chunk.toString();
+        }
       });
 
       child.on('error', (error) => {
@@ -715,7 +744,7 @@ export async function extractPdfTextIsolated(
           new Error(
             signal
               ? `PDF extraction worker was killed (signal ${signal}), likely exceeding the ${maxOldSpaceMb}MB memory limit`
-              : `PDF extraction worker failed: ${stderr.trim() || `exit code ${code}`}`,
+              : `PDF extraction worker failed: ${stderr.slice(0, PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES).trim() || `exit code ${code}`}`,
           ),
         );
       });
@@ -724,10 +753,21 @@ export async function extractPdfTextIsolated(
       child.stdin?.end();
     });
 
+    // The worker's own heap ceiling bounds its peak memory while inflating, but a
+    // non-crashing extraction can still produce a very large result; check the
+    // file size before reading it fully into this process's memory.
+    const { size } = await stat(outputPath);
+    if (size > MAX_EXTRACTED_CONTENT_CHARS) {
+      throw new Error(`PDF extraction result of ${size} bytes exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`);
+    }
+
     const raw = await readFile(outputPath, 'utf8');
     return JSON.parse(raw) as { content: string };
   } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    release();
+    await rm(dir, { recursive: true, force: true }).catch((error) => {
+      console.error('[PDF_EXTRACTION_TEMP_CLEANUP_FAILED]', { dir, error });
+    });
   }
 }
 
