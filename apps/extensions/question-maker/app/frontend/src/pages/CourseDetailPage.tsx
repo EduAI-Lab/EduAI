@@ -37,6 +37,10 @@ import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  ListPaginationBar,
+} from '../components/shared/ListPaginationBar';
 import { QuestionModal } from '../components/questions/QuestionModal';
 import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
 import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
@@ -113,17 +117,23 @@ export const CourseDetailPage = () => {
 
   // ── Question state ──────────────────────────────────────────────────────────
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionsTotal, setQuestionsTotal] = useState(0);
+  const [questionsOffset, setQuestionsOffset] = useState(0);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
+  const questionsPageSize = DEFAULT_LIST_PAGE_SIZE;
 
   // ── Assessment state ────────────────────────────────────────────────────────
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [assessmentsTotal, setAssessmentsTotal] = useState(0);
+  const [assessmentsOffset, setAssessmentsOffset] = useState(0);
   const [isAssessmentsLoading, setIsAssessmentsLoading] = useState(false);
   const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
+  const assessmentsPageSize = DEFAULT_LIST_PAGE_SIZE;
   const [isCanvasExportOpen, setIsCanvasExportOpen] = useState(false);
   const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{ id: number; name: string } | null>(null);
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
@@ -153,23 +163,32 @@ export const CourseDetailPage = () => {
     [topicsByCourse],
   );
 
-  // Load questions whenever the route course changes.
+  // Load questions whenever the route course or page offset changes.
   useEffect(() => {
     let cancelled = false;
     const fetchQuestions = async () => {
       if (!courseId) {
         setQuestions([]);
+        setQuestionsTotal(0);
         setSelectedVariant(null);
         return;
       }
       setIsQuestionsLoading(true);
       setQuestionsError(null);
       try {
-        const data = await questionService.getQuestions({ courseId });
-        if (!cancelled) setQuestions(data);
+        const page = await questionService.getQuestionsPage({
+          courseId,
+          limit: questionsPageSize,
+          offset: questionsOffset,
+        });
+        if (!cancelled) {
+          setQuestions(page.items);
+          setQuestionsTotal(page.total);
+        }
       } catch (error: any) {
         if (!cancelled) {
           setQuestions([]);
+          setQuestionsTotal(0);
           setQuestionsError(error?.response?.data?.error || 'Failed to load questions');
         }
       } finally {
@@ -178,26 +197,39 @@ export const CourseDetailPage = () => {
     };
     void fetchQuestions();
     return () => { cancelled = true; };
+  }, [courseId, questionsOffset, questionsPageSize]);
+
+  // Reset paging when the course changes.
+  useEffect(() => {
+    setQuestionsOffset(0);
+    setAssessmentsOffset(0);
   }, [courseId]);
 
   // Load assessments for the route course.
   const fetchAssessments = useCallback(async () => {
     if (!courseId) {
       setAssessments([]);
+      setAssessmentsTotal(0);
       return;
     }
     try {
       setIsAssessmentsLoading(true);
       setAssessmentsError(null);
-      const data = await assessmentService.getAssessments({ courseId });
-      setAssessments(data);
+      const page = await assessmentService.getAssessmentsPage({
+        courseId,
+        limit: assessmentsPageSize,
+        offset: assessmentsOffset,
+      });
+      setAssessments(page.items);
+      setAssessmentsTotal(page.total);
     } catch (error: any) {
       setAssessments([]);
+      setAssessmentsTotal(0);
       setAssessmentsError(error?.response?.data?.error || 'Failed to load assessments');
     } finally {
       setIsAssessmentsLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, assessmentsOffset, assessmentsPageSize]);
 
   useEffect(() => {
     void fetchAssessments();
@@ -309,14 +341,14 @@ export const CourseDetailPage = () => {
         { label: 'Medium', value: medium, color: DIFF_COLORS.medium },
         { label: 'Hard', value: hard, color: DIFF_COLORS.hard },
       ],
-      totalQuestions: questions.length,
+      totalQuestions: questionsTotal,
       totalVariants,
       aiCount: ai,
       humanCount: human,
       reviewedCount: reviewed,
       topicCoverage: { covered: topicsCovered, total: courseTopics.length },
     };
-  }, [questions, variantEntries, topicsByCourse, courseId]);
+  }, [questions, questionsTotal, variantEntries, topicsByCourse, courseId]);
 
   const emptyStateMessage =
     questionsError || 'No questions found for this course yet. Try adding or uploading questions.';
@@ -770,8 +802,8 @@ export const CourseDetailPage = () => {
 
         <PageTabsContent value="overview" className="space-y-6">
           <CourseOverviewTab
-            questionsCount={questions.length}
-            assessmentsCount={assessments.length}
+            questionsCount={questionsTotal}
+            assessmentsCount={assessmentsTotal}
             topicsCount={topicsByCourse[course.id]?.length ?? 0}
             analytics={courseAnalytics}
             canWrite={!writesDisabled}
@@ -800,6 +832,13 @@ export const CourseDetailPage = () => {
             disableUpload={writesDisabled}
             onOpenProfile={() => startTour('main')}
           />
+          <ListPaginationBar
+            total={questionsTotal}
+            limit={questionsPageSize}
+            offset={questionsOffset}
+            onPageChange={setQuestionsOffset}
+            itemLabel="questions"
+          />
         </PageTabsContent>
 
         <PageTabsContent value="assessments" className="space-y-6">
@@ -810,6 +849,7 @@ export const CourseDetailPage = () => {
           )}
           <AssessmentSection
             assessments={assessments}
+            totalCount={assessmentsTotal}
             onAddAssessment={handleCreateAssessment}
             isLoading={isAssessmentsLoading}
             loadError={assessmentsError}
@@ -819,6 +859,13 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+          />
+          <ListPaginationBar
+            total={assessmentsTotal}
+            limit={assessmentsPageSize}
+            offset={assessmentsOffset}
+            onPageChange={setAssessmentsOffset}
+            itemLabel="assessments"
           />
         </PageTabsContent>
 

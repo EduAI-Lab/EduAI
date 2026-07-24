@@ -4,7 +4,7 @@
  * (a row list) rather than a card wall, since this is a discovery/reuse surface;
  * authoring always happens inside a course. Clicking a row opens a read-only preview.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageHeading, Badge, QuestionStatusBadge, EmptyState, Button } from '@eduai/ui';
 import {
   IconStack2,
@@ -17,9 +17,14 @@ import {
   IconChevronRight,
 } from '@tabler/icons-react';
 import { useAllQuestions } from '@/hooks/useAllQuestions';
+import { useDisplayCourses } from '@/hooks/useDisplayCourses';
 import type { Question } from '@/types/question';
 import { questionTypeLabels } from '@/types/question';
 import { ListSkeleton } from '@/components/shared/Skeletons';
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  ListPaginationBar,
+} from '@/components/shared/ListPaginationBar';
 import {
   QuestionFilterToolbar,
   EMPTY_QUESTION_FILTERS,
@@ -53,21 +58,48 @@ const timeOf = (q: Question) => {
 };
 
 export default function QuestionBankPage() {
-  const { questions, isLoading, error } = useAllQuestions();
-
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filters, setFilters] = useState<QuestionFilters>(EMPTY_QUESTION_FILTERS);
   const [courseFilter, setCourseFilter] = useState<string>(COURSE_ALL);
   const [sortBy, setSortBy] = useState<QuestionSort>('newest');
   const [preview, setPreview] = useState<Question | null>(null);
+  const [offset, setOffset] = useState(0);
+  const pageSize = DEFAULT_LIST_PAGE_SIZE;
 
-  const courseOptions = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const q of questions) map.set(q.courseId, courseLabel(q));
-    return Array.from(map, ([id, label]) => ({ value: String(id), label })).sort((a, b) =>
-      a.label.localeCompare(b.label),
-    );
-  }, [questions]);
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  // Reset to the first page when server-side search or course scope changes.
+  useEffect(() => {
+    setOffset(0);
+  }, [debouncedSearch, courseFilter]);
+
+  const courseId =
+    courseFilter !== COURSE_ALL && Number.isFinite(Number(courseFilter))
+      ? Number(courseFilter)
+      : undefined;
+
+  const { questions, total, isLoading, error } = useAllQuestions({
+    courseId,
+    search: debouncedSearch || undefined,
+    limit: pageSize,
+    offset,
+  });
+  const { displayCourses } = useDisplayCourses();
+
+  const courseOptions = useMemo(
+    () =>
+      displayCourses
+        .map((c) => ({
+          value: String(c.id),
+          label: c.code ?? c.name ?? `Course ${c.id}`,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [displayCourses],
+  );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -157,11 +189,14 @@ export default function QuestionBankPage() {
         onCourseChange={setCourseFilter}
       />
 
-      {!isLoading && !error && questions.length > 0 && (
+      {!isLoading && !error && total > 0 && (
         <div className="-mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-foreground">
-              {filtered.length} question{filtered.length === 1 ? '' : 's'}
+              {filtered.length} on this page
+            </span>
+            <span>
+              · {total} total question{total === 1 ? '' : 's'}
             </span>
             {courseCount > 0 && <span>across {courseCount} course{courseCount === 1 ? '' : 's'}</span>}
             {aiCount > 0 && (
@@ -191,7 +226,7 @@ export default function QuestionBankPage() {
           description={error}
           bare={false}
         />
-      ) : questions.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState
           icon={<IconStack2 className="size-6" />}
           title="Your library is empty"
@@ -217,64 +252,73 @@ export default function QuestionBankPage() {
           }
         />
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
-          {filtered.map((q) => {
-            const variant = repVariant(q);
-            const difficulty = difficultyOf(q);
-            const TypeIcon = TYPE_ICON[q.type] ?? IconListCheck;
-            return (
-              <li key={q.id}>
-                <button
-                  type="button"
-                  onClick={() => setPreview(q)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <TypeIcon className="size-[18px]" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {questionTextOf(q) || 'Untitled question'}
-                    </p>
-                    <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground/80">{courseLabel(q)}</span>
-                      <span aria-hidden className="text-muted-foreground/40">
-                        ·
-                      </span>
-                      <span className="shrink-0 font-mono text-[0.6875rem] text-muted-foreground/70">
-                        #{q.id}
-                      </span>
-                      {topicLabel(q) && (
-                        <>
-                          <span aria-hidden className="text-muted-foreground/40">
-                            ·
-                          </span>
-                          <span className="truncate">{topicLabel(q)}</span>
-                        </>
+        <>
+          <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
+            {filtered.map((q) => {
+              const variant = repVariant(q);
+              const difficulty = difficultyOf(q);
+              const TypeIcon = TYPE_ICON[q.type] ?? IconListCheck;
+              return (
+                <li key={q.id}>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(q)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <TypeIcon className="size-[18px]" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {questionTextOf(q) || 'Untitled question'}
+                      </p>
+                      <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground/80">{courseLabel(q)}</span>
+                        <span aria-hidden className="text-muted-foreground/40">
+                          ·
+                        </span>
+                        <span className="shrink-0 font-mono text-[0.6875rem] text-muted-foreground/70">
+                          #{q.id}
+                        </span>
+                        {topicLabel(q) && (
+                          <>
+                            <span aria-hidden className="text-muted-foreground/40">
+                              ·
+                            </span>
+                            <span className="truncate">{topicLabel(q)}</span>
+                          </>
+                        )}
+                        <span aria-hidden className="text-muted-foreground/40">
+                          ·
+                        </span>
+                        <span className="shrink-0">{questionTypeLabels[q.type]}</span>
+                      </p>
+                    </div>
+                    <div className="hidden shrink-0 items-center gap-2 sm:flex">
+                      {variant?.isAiGenerated && (
+                        <Badge variant="secondary" className="gap-1">
+                          <IconSparkles className="size-3" /> AI
+                        </Badge>
                       )}
-                      <span aria-hidden className="text-muted-foreground/40">
-                        ·
-                      </span>
-                      <span className="shrink-0">{questionTypeLabels[q.type]}</span>
-                    </p>
-                  </div>
-                  <div className="hidden shrink-0 items-center gap-2 sm:flex">
-                    {variant?.isAiGenerated && (
-                      <Badge variant="secondary" className="gap-1">
-                        <IconSparkles className="size-3" /> AI
-                      </Badge>
-                    )}
-                    {difficulty && (
-                      <Badge variant={difficultyBadge[difficulty] ?? 'warning'}>{capitalize(difficulty)}</Badge>
-                    )}
-                    <QuestionStatusBadge isDraft={!!variant?.isDraft} />
-                  </div>
-                  <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                      {difficulty && (
+                        <Badge variant={difficultyBadge[difficulty] ?? 'warning'}>{capitalize(difficulty)}</Badge>
+                      )}
+                      <QuestionStatusBadge isDraft={!!variant?.isDraft} />
+                    </div>
+                    <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <ListPaginationBar
+            total={total}
+            limit={pageSize}
+            offset={offset}
+            onPageChange={setOffset}
+            itemLabel="questions"
+          />
+        </>
       )}
 
       <QuestionPreviewSheet question={preview} open={preview != null} onOpenChange={(o) => !o && setPreview(null)} />
