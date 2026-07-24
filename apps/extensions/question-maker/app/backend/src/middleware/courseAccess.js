@@ -13,7 +13,7 @@
  * enrollment/unit data, NOT QM ownership — except for courses not yet linked to
  * Core, where we fall back to owner-only instructor access.
  */
-import { Course } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import {
   getCourseEnrollmentsFromCore,
   getCourseFromCore,
@@ -130,7 +130,7 @@ export async function resolveCourseAccessWithCourse(reqUser, qmCourseId, opts = 
   const parsedId = Number(qmCourseId);
   if (!Number.isInteger(parsedId) || parsedId <= 0) return { course: null, access: null };
 
-  const course = await Course.findOne({ where: { id: parsedId } });
+  const course = await prisma.course.findUnique({ where: { id: parsedId } });
   if (!course) return { course: null, access: null };
 
   const access = await resolveAccessForCourse(reqUser, course, opts);
