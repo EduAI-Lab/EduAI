@@ -1,4 +1,8 @@
 import { createHash } from 'crypto';
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
 export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
@@ -612,16 +616,129 @@ export async function readFileAsText(file: File | any): Promise<string> {
  * This avoids server-side compatibility issues and provides better performance
  */
 
+// ---------------------------------------------------------------------------
+// PDF extraction isolation (decompression-bomb follow-up to the ZIP guardrails above)
+// ---------------------------------------------------------------------------
+// `@opendocsg/pdf2md` fully inflates a PDF's FlateDecode streams into memory in a
+// single call, with no streaming/limit hook and no up-front declared size the way
+// a ZIP central directory gives PPTX/DOCX. A crafted <50MB PDF whose streams expand
+// to gigabytes can still OOM the host during inflation. The only reliable bound on
+// an opaque third-party inflater is to run it in its own process with a hard
+// memory ceiling (`--max-old-space-size`) and a wall-clock timeout, so a breach
+// kills the worker instead of the main server.
+
+/** Heap ceiling for the isolated PDF extraction worker process. */
+export const PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB = 512;
+
+/** Wall-clock ceiling for the isolated PDF extraction worker process. */
+export const PDF_EXTRACTION_WORKER_TIMEOUT_MS = 30_000;
+
+// Runs as a plain Node CommonJS script piped over stdin (`node - <in> <out>`), so it
+// ships as part of this module rather than a separate file the build/Docker image
+// would need to know to copy. `@opendocsg/pdf2md` resolves via the worker's cwd
+// (the app root), same as it would for a `require` in this file.
+const PDF_EXTRACTION_WORKER_SOURCE = `
+  const fs = require("node:fs");
+  const pdf2md = require("@opendocsg/pdf2md");
+
+  const [, , inputPath, outputPath] = process.argv;
+
+  Promise.resolve()
+    .then(async () => {
+      const buffer = fs.readFileSync(inputPath);
+      const markdown = await pdf2md(buffer);
+      fs.writeFileSync(outputPath, JSON.stringify({ content: markdown }));
+    })
+    .catch((error) => {
+      process.stderr.write(String((error && error.stack) || error));
+      process.exit(1);
+    });
+`;
+
 /**
- * Extract text from PDF files using @opendocsg/pdf2md (client-side)
+ * Run `@opendocsg/pdf2md` in an isolated subprocess with a hard memory ceiling and
+ * wall-clock timeout, so a decompression-bomb PDF kills the worker instead of
+ * over-allocating the main server. Throws if the worker breaches either limit,
+ * exits non-zero, or fails to start.
+ */
+export async function extractPdfTextIsolated(
+  buffer: Buffer,
+  limits: { maxOldSpaceMb?: number; timeoutMs?: number } = {},
+): Promise<{ content: string }> {
+  const maxOldSpaceMb = limits.maxOldSpaceMb ?? PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB;
+  const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
+  const dir = await mkdtemp(join(tmpdir(), 'pdf-extract-'));
+  const inputPath = join(dir, 'input.pdf');
+  const outputPath = join(dir, 'output.json');
+
+  try {
+    await writeFile(inputPath, buffer);
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath],
+        { cwd: process.cwd(), stdio: ['pipe', 'ignore', 'pipe'] },
+      );
+
+      let stderr = '';
+      let timedOut = false;
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, timeoutMs);
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      child.on('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+
+      child.on('exit', (code, signal) => {
+        clearTimeout(timer);
+        if (timedOut) {
+          reject(new Error(`PDF extraction exceeded the ${timeoutMs}ms wall-clock limit and was terminated`));
+          return;
+        }
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        // A non-zero exit with no signal is the worker's own catch handler (bad PDF,
+        // malformed stream); a signal (e.g. SIGABRT/SIGTRAP from V8's OOM abort) means
+        // the process itself was killed by the OS/V8 for breaching the heap ceiling.
+        reject(
+          new Error(
+            signal
+              ? `PDF extraction worker was killed (signal ${signal}), likely exceeding the ${maxOldSpaceMb}MB memory limit`
+              : `PDF extraction worker failed: ${stderr.trim() || `exit code ${code}`}`,
+          ),
+        );
+      });
+
+      child.stdin?.write(PDF_EXTRACTION_WORKER_SOURCE);
+      child.stdin?.end();
+    });
+
+    const raw = await readFile(outputPath, 'utf8');
+    return JSON.parse(raw) as { content: string };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Extract text from PDF files using @opendocsg/pdf2md, isolated in a memory- and
+ * time-capped subprocess (see PDF extraction isolation guardrails above).
  */
 export async function extractPdfText(file: File): Promise<{ content: string; pageCount?: number; metadata?: any }> {
   try {
-    // Dynamic import for client-side PDF processing
-    const pdf2md = await import('@opendocsg/pdf2md');
-
     const arrayBuffer = await file.arrayBuffer();
-    const markdown = await pdf2md.default(arrayBuffer);
+    const { content: markdown } = await extractPdfTextIsolated(Buffer.from(arrayBuffer));
 
     // Estimate page count from markdown structure
     const pageCount = (markdown.match(/---\s*PAGE\s*\d+\s*---/gi) || []).length || 1;
