@@ -154,7 +154,10 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       toast({
         variant: 'destructive',
         title: 'Could not approve variant',
-        description: 'Only instructors can approve. Try again.',
+        description:
+          err?.response?.status === 403
+            ? 'Only instructors can approve. Try again.'
+            : 'Could not approve this variant. Please try again.',
       });
     }
   };
