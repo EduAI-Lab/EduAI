@@ -28,12 +28,14 @@ import {
   Card,
   CardContent,
   ConfirmDialog,
+  DetailPageScaffold,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Input,
   Label,
   Select,
@@ -411,46 +413,49 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   ];
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <ModuleHero
-        order={moduleOrder > 0 ? moduleOrder : undefined}
-        title={module?.title || 'Module'}
-        description={module?.description}
-        accentColor={accentColor}
-        isPublished={module?.isPublished}
-        stats={heroStats}
-        actions={
-          <PermissionGate allow={perms.canManageContent}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-              onClick={() => {
-                if (!showImport) {
-                  ensureSourceCoursesLoaded();
-                } else {
-                  void handleSourceCourseSelection(null);
-                }
-                setShowImport((prev) => !prev);
-              }}
-            >
-              <IconUpload size={15} aria-hidden="true" />
-              {showImport ? 'Close import' : 'Import lessons'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
-              onClick={() => setCreateOpen(true)}
-            >
-              <IconPlus size={15} aria-hidden="true" />
-              Add lesson
-            </Button>
-          </PermissionGate>
-        }
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <ModuleHero
+          order={moduleOrder > 0 ? moduleOrder : undefined}
+          title={module?.title || 'Module'}
+          description={module?.description}
+          accentColor={accentColor}
+          isPublished={module?.isPublished}
+          stats={heroStats}
+          actions={
+            <PermissionGate allow={perms.canManageContent}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => {
+                  if (!showImport) {
+                    ensureSourceCoursesLoaded();
+                  } else {
+                    void handleSourceCourseSelection(null);
+                  }
+                  setShowImport((prev) => !prev);
+                }}
+              >
+                <IconUpload size={15} aria-hidden="true" />
+                {showImport ? 'Close import' : 'Import lessons'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                onClick={() => setCreateOpen(true)}
+              >
+                <IconPlus size={15} aria-hidden="true" />
+                Add lesson
+              </Button>
+            </PermissionGate>
+          }
+        />
+      }
+    >
       <PermissionGate allow={perms.canManageContent}>
         {showImport && (
           <Card>
@@ -722,17 +727,11 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
       {oLessons.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconNotebook size={22} aria-hidden="true" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold text-foreground">No lessons yet</h3>
-              <p className="text-sm text-muted-foreground">
-                Add a lesson, or import one from another course to get started.
-              </p>
-            </div>
-          </CardContent>
+          <EmptyState
+            icon={<IconNotebook size={22} aria-hidden="true" />}
+            title="No lessons yet"
+            description="Add a lesson, or import one from another course to get started."
+          />
         </Card>
       ) : (
         <SortableProvider
@@ -843,6 +842,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
-    </div>
+    </DetailPageScaffold>
   );
 }

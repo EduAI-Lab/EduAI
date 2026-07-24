@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'crypto';
 import { prisma } from '../config/database.js';
-import { getEduAiChatUrl } from './eduaiClient.js';
+import { getEduAiCompletionUrl } from './eduaiClient.js';
 import { trimNonEmpty } from '../utils/coreCourseId.js';
 import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
 
@@ -76,7 +76,7 @@ async function callEduAI({
   courseId = null,
   signal,
 }) {
-  const endpoint = getEduAiChatUrl();
+  const endpoint = getEduAiCompletionUrl();
   const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
