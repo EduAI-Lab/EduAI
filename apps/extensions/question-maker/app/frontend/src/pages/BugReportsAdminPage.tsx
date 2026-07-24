@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
+import { hasAttachmentContent } from '@eduai/types';
 import { bugReportApi, BugReportRow, BugReportType } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 import { canTriageBugReports } from '@/lib/rbac';
@@ -215,9 +216,18 @@ export function BugReportsAdminPage() {
               ? {
                   ...r,
                   ...detailed,
-                  hasConsoleLogs: detailed.hasConsoleLogs ?? Boolean(detailed.consoleLogs),
-                  hasNetworkLogs: detailed.hasNetworkLogs ?? Boolean(detailed.networkLogs),
-                  hasScreenshot: detailed.hasScreenshot ?? Boolean(detailed.screenshot),
+                  hasConsoleLogs: hasAttachmentContent(
+                    detailed.consoleLogs,
+                    detailed.hasConsoleLogs,
+                  ),
+                  hasNetworkLogs: hasAttachmentContent(
+                    detailed.networkLogs,
+                    detailed.hasNetworkLogs,
+                  ),
+                  hasScreenshot: hasAttachmentContent(
+                    detailed.screenshot,
+                    detailed.hasScreenshot,
+                  ),
                 }
               : r,
           ),
@@ -500,7 +510,7 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!(row.hasConsoleLogs ?? Boolean(row.consoleLogs))}
+                            disabled={!hasAttachmentContent(row.consoleLogs, row.hasConsoleLogs)}
                             onClick={() => void openAttachment(row, 'console')}
                           >
                             Console
@@ -509,7 +519,7 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!(row.hasNetworkLogs ?? Boolean(row.networkLogs))}
+                            disabled={!hasAttachmentContent(row.networkLogs, row.hasNetworkLogs)}
                             onClick={() => void openAttachment(row, 'network')}
                           >
                             Network
@@ -518,7 +528,7 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!(row.hasScreenshot ?? Boolean(row.screenshot))}
+                            disabled={!hasAttachmentContent(row.screenshot, row.hasScreenshot)}
                             onClick={() => void openAttachment(row, 'screenshot')}
                           >
                             Screenshot

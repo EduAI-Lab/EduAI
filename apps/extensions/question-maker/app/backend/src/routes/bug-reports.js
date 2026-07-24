@@ -78,9 +78,12 @@ router.get('/admin/bug-reports', requireAuth, requireRole('ADMIN'), async (req, 
  */
 router.get('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
   try {
-    const response = await fetch(`${config.coreUrl}/api/admin/bug-reports/${req.params.id}`, {
-      headers: { cookie: req.headers.cookie ?? '' },
-    });
+    const response = await fetch(
+      `${config.coreUrl}/api/admin/bug-reports/${encodeURIComponent(req.params.id)}`,
+      {
+        headers: { cookie: req.headers.cookie ?? '' },
+      },
+    );
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       return res.status(response.status).json({ success: false, ...body });
@@ -98,14 +101,17 @@ router.get('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (r
 /** PATCH /api/admin/bug-reports/:id — ADMIN-only status update via Core. */
 router.patch('/admin/bug-reports/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
   try {
-    const response = await fetch(`${config.coreUrl}/api/admin/bug-reports/${req.params.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        cookie: req.headers.cookie ?? '',
+    const response = await fetch(
+      `${config.coreUrl}/api/admin/bug-reports/${encodeURIComponent(req.params.id)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: req.headers.cookie ?? '',
+        },
+        body: JSON.stringify(req.body ?? {}),
       },
-      body: JSON.stringify(req.body ?? {}),
-    });
+    );
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       return res.status(response.status).json({ success: false, ...body });

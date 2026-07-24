@@ -129,6 +129,32 @@ describe("sanitizeSensitiveData (key + value)", () => {
       { name: "Accept", value: "application/json" },
     ]);
   });
+
+  it("redacts HAR cookie rows that carry extra domain/path fields", () => {
+    expect(
+      sanitizeSensitiveData([
+        {
+          name: "auth_token",
+          value: "abc123",
+          domain: "example.com",
+          path: "/",
+          httpOnly: true,
+          secure: true,
+          expires: "2026-12-01T00:00:00.000Z",
+        },
+      ]),
+    ).toEqual([
+      {
+        name: "auth_token",
+        value: REDACTED_VALUE,
+        domain: "example.com",
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        expires: "2026-12-01T00:00:00.000Z",
+      },
+    ]);
+  });
 });
 
 describe("redactDiagnosticLogString", () => {
