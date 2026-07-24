@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { IconFolders } from '@tabler/icons-react';
-import { Card, CardContent, CourseHeroCard } from '@eduai/ui';
+import { Card, CourseHeroCard, DetailPageScaffold, EmptyState } from '@eduai/ui';
 import { ModuleCard } from '../components/courses/ModuleCard';
 import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
 import type { Course, Module } from '../lib/types';
@@ -49,31 +49,28 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
   ]);
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <CourseHeroCard
-        code={courseCode(course)}
-        term={courseTerm(course)}
-        year={courseYear(course)}
-        name={courseName(course)}
-        description={course.description}
-        accentColor={accentForCourse(course)}
-        topics={topics.map((topic) => topic.name)}
-        topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <CourseHeroCard
+          code={courseCode(course)}
+          term={courseTerm(course)}
+          year={courseYear(course)}
+          name={courseName(course)}
+          description={course.description}
+          accentColor={accentForCourse(course)}
+          topics={topics.map((topic) => topic.name)}
+          topRightBadges={[`${moduleList.length} ${moduleList.length === 1 ? 'module' : 'modules'}`]}
+        />
+      }
+    >
       {moduleList.length === 0 ? (
         <Card className="mx-auto max-w-lg">
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconFolders size={22} aria-hidden="true" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold text-foreground">No modules available</h3>
-              <p className="text-sm text-muted-foreground">
-                This course doesn&apos;t have any modules yet. Check back later.
-              </p>
-            </div>
-          </CardContent>
+          <EmptyState
+            icon={<IconFolders size={22} aria-hidden="true" />}
+            title="No modules available"
+            description="This course doesn't have any modules yet. Check back later."
+          />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -93,6 +90,6 @@ export default function StudentCourseModules({ loaderData }: Route.ComponentProp
           ))}
         </div>
       )}
-    </div>
+    </DetailPageScaffold>
   );
 }
