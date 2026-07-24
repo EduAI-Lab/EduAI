@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
 
 const prismaMock = vi.hoisted(() => ({
@@ -45,7 +46,12 @@ describe("enqueue", () => {
 
     expect(prismaMock.aiJob.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: "PENDING", kind: "question-generation", source: "question-maker" }),
+        data: expect.objectContaining({
+          status: "PENDING",
+          kind: "question-generation",
+          source: "question-maker",
+          queueName: "ai-jobs:chat",
+        }),
       }),
     );
     // background → chat pool (heavy pool unset in v1), low priority (10), BullMQ name = kind.
@@ -66,7 +72,9 @@ describe("enqueue", () => {
   it("passes idempotencyKey through as the BullMQ jobId", async () => {
     await enqueue({ ...job, idempotencyKey: "idem-9" });
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { bullJobId: "idem-9" } }),
+      expect.objectContaining({
+        where: { queueName_bullJobId: { queueName: "ai-jobs:chat", bullJobId: "idem-9" } },
+      }),
     );
     expect(queueAdd).toHaveBeenCalledWith(
       "question-generation",
@@ -95,5 +103,46 @@ describe("enqueue", () => {
     await expect(enqueue(job)).rejects.toThrow("redis down");
     expect(prismaMock.aiJob.create).toHaveBeenCalled();
     expect(prismaMock.aiJob.update).not.toHaveBeenCalled();
+  });
+
+  it("scopes the row and its lookups to the resolved queue when the heavy pool is configured", async () => {
+    vi.stubEnv("VLLM_FLEET_HEAVY_URL", "http://cmps03:8000");
+    try {
+      await enqueue({ ...job, idempotencyKey: "idem-9" });
+
+      // background + heavy pool configured → ai-jobs:heavy, and the dedupe lookup
+      // must be keyed on that queue: a chat job may legitimately share bullJobId "1".
+      expect(getQueueMock).toHaveBeenCalledWith("ai-jobs:heavy");
+      expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { queueName_bullJobId: { queueName: "ai-jobs:heavy", bullJobId: "idem-9" } },
+        }),
+      );
+      expect(prismaMock.aiJob.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ queueName: "ai-jobs:heavy" }) }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("returns the winning row on a same-queue bullJobId race and drops its own", async () => {
+    const conflict = new Prisma.PrismaClientKnownRequestError("dup", {
+      code: "P2002",
+      clientVersion: "6",
+      meta: { target: ["queueName", "bullJobId"] },
+    });
+    prismaMock.aiJob.update.mockRejectedValueOnce(conflict);
+    prismaMock.aiJob.findUnique.mockResolvedValueOnce({ id: "aijob_winner" });
+
+    const result = await enqueue(job);
+
+    expect(result).toEqual({ jobId: "aijob_winner" });
+    expect(prismaMock.aiJob.delete).toHaveBeenCalledWith({ where: { id: "aijob_1" } });
+    expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { queueName_bullJobId: { queueName: "ai-jobs:chat", bullJobId: "bull_1" } },
+      }),
+    );
   });
 });
