@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
+import { baseVitestConfig } from './vitest.shared';
 
 const coreDir = path.dirname(fileURLToPath(import.meta.url));
+const base = baseVitestConfig(coreDir);
 
 /**
  * Coverage config — runs the unit AND integration suites in a single pass so the reported
@@ -18,14 +19,7 @@ const coreDir = path.dirname(fileURLToPath(import.meta.url));
  * up), not the default `npm test` path.
  */
 export default defineConfig({
-  plugins: [tsconfigPaths()],
-  resolve: {
-    alias: {
-      // More specific subpath must precede the barrel alias (prefix match).
-      '@eduai/ui/term': path.resolve(coreDir, '../../packages/ui/src/lib/term.ts'),
-      '@eduai/ui': path.resolve(coreDir, '../../packages/ui/src/index.ts'),
-    },
-  },
+  ...base,
   test: {
     projects: [
       { extends: 'vitest.config.ts', test: { name: 'unit' } },

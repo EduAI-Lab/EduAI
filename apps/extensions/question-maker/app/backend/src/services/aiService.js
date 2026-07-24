@@ -296,9 +296,14 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
     );
   }
 
-  const rawCode =
+  // Preserve original spacing/casing so Core can resolve by code when
+  // coreCourseId is absent. Prefer course.coreCourseId (Core CUID) below.
+  const courseCode =
     (course?.code && course.code.trim()) || `COURSE-${course?.id ?? "UNKNOWN"}`;
-  const courseCode = rawCode.replace(/\s+/g, "").toUpperCase();
+  const coreCourseId =
+    typeof course?.coreCourseId === "string" && course.coreCourseId.trim()
+      ? course.coreCourseId.trim()
+      : undefined;
   const { chunks, blockCountsPerChunk } = chunkByQuestionBlocks(text, 5000);
   const extracted = [];
 
@@ -385,6 +390,7 @@ ${chunk}
       const questions = await eduaiService.generateQuestions({
         prompt: chunk,
         courseCode,
+        courseId: coreCourseId,
         model,
         apiKeys,
         numQuestions,

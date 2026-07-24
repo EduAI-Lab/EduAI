@@ -50,7 +50,8 @@
 - `enum AiJobStatus { PENDING RUNNING COMPLETED FAILED CANCELLED }`
 - `model AiJob { … @@index([userId, status]) @@index([status, type]) @@map("ai_jobs") }`
   (id cuid, kind String, type, source, status @default(PENDING), payload Json, result Json?,
-  errorMessage String?, userId, courseId String?, bullJobId String? @unique, attempts Int @default(0),
+  errorMessage String?, userId, courseId String?, queueName String?, bullJobId String?,
+  @@unique([queueName, bullJobId]) — BullMQ ids are per-queue counters, attempts Int @default(0),
   startedAt/completedAt DateTime?, createdAt/updatedAt).
 - `npm run db:migrate` → migration `add_ai_jobs`. **No `queuePosition` column** (computed live, #917).
 

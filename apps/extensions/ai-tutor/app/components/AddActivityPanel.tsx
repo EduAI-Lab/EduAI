@@ -372,6 +372,13 @@ export default function AddActivityPanel({
               </SelectContent>
             </Select>
             {topicSelectionError && <p className="text-xs text-destructive">{topicSelectionError}</p>}
+            {!loadingTopics && !topicsError && topics.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No topics on this course yet. Open the course page and use{' '}
+                <span className="font-medium text-foreground">Sync topics from EduAI Core</span>, then
+                try again.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

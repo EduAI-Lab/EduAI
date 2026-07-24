@@ -30,6 +30,8 @@ export { StatCard } from "./stat-card"
 export type { StatCardProps } from "./stat-card"
 export { QuickActionsPanel } from "./quick-actions-panel"
 export type { QuickActionsPanelProps, QuickAction } from "./quick-actions-panel"
+export { SortableProvider, SortableItem, DragHandle } from "./sortable"
+export type { SortableProviderProps, SortableItemProps, DragHandleProps } from "./sortable"
 export { Avatar } from "./avatar"
 export type { AvatarProps } from "./avatar"
 export { PageHeading } from "./page-heading"
@@ -116,6 +118,7 @@ export {
   TERM_CODES,
   isTermCode,
   termFromMonth,
+  termFromDate,
   termInfoFromDate,
   normalizeTerm,
   termName,
