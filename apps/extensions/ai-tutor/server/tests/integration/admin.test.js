@@ -15,6 +15,9 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
   getEduAiBaseUrl: vi.fn(() => 'http://localhost:5174/api'),
   getEduAiChatUrl: vi.fn(() => 'http://localhost:5174/api/chat'),
   postCoreBugReport: vi.fn(),
+  // admin.js clamps the enrollment picker's pageSize against this — the mock
+  // must re-export it or the handler throws on the missing binding and 500s.
+  CORE_PAGE_SIZE: 200,
   listCoreAdminUsers: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
   listCourseTestableQuestions: vi.fn(),
   patchCoreEnrollmentRole: vi.fn(),
