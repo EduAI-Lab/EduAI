@@ -111,7 +111,10 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca
 # Multi-server fleet (optional) — see docs/DEPLOYMENT.md:
 # VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
 # VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
-# npm run fleet:smoke  # from apps/core — pre-flight health check
+# AI_MAX_INFLIGHT=8              # process-local chat admission (0 = off)
+# AI_ADMISSION_WAIT_MS=15000     # wait before 503 AI_ADMISSION_TIMEOUT
+# FLEET_STREAM_PROBE_MS=10000    # soft-timeout waiting for first stream chunk before treating host as ready
+# npm run fleet:smoke  # from apps/core — pre-flight health check (Slice 2 retries once on alternate healthy host)
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
@@ -531,6 +534,21 @@ See `docs/rag-ai/routing/eduai-summer-2026/` and `infra/cmps01/README.md` for cm
 - The Vitest config (`vitest.config.ts`) uses `pool: vmThreads` and environment `jsdom`.
 - If `npm run test` fails with `ERR_REQUIRE_ESM` from `html-encoding-sniffer`, that is a known jsdom 29 dependency issue in the monorepo — track fix separately; component test files themselves are valid.
 - Tests must live under `app/tests/` and be named `*.test.ts` or `*.test.tsx`.
+
+### Mutation testing
+
+`npm run test:mutation` runs [Stryker](https://stryker-mutator.io/) against the RBAC, auth,
+and Canvas-credential-encryption modules (`stryker.config.mjs`) to verify the unit suite
+actually catches regressions in that code, not just covers it. It reuses `vitest.shared.ts`
+(the same plugins/aliases as the main `vitest.config.ts`) with a narrowed `include` list
+(`vitest.mutation.config.ts`) scoped to the ~40 test files that exercise the mutated modules —
+running the full 199-file suite would exceed Stryker's dry-run timeout and pull in an
+unrelated, pre-existing Ollama-dependent test failure. Results are written to
+`reports/mutation/mutation.html` (gitignored, not committed). This is a local/on-demand
+command — it is not run in CI. `stryker.config.mjs` sets a local `thresholds.break` of 70
+(tied to the ~73.65% overall baseline) so score regressions fail the command locally.
+
+To re-check a single file after adding tests: `npx stryker run --mutate <path/to/file.ts>`.
 
 ## Contributing
 

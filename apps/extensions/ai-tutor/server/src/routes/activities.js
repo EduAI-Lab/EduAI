@@ -60,6 +60,7 @@ import {
   TeachRequestSchema,
 } from '../../../shared/schemas/aiGuidance.js';
 import { CreateActivitySchema, UpdateActivitySchema } from '../../../shared/schemas/activity.js';
+import { getCoreCourseId } from '../utils/coreCourseId.js';
 
 const router = express.Router();
 
@@ -282,6 +283,7 @@ async function handleAiInteraction({ req, res, activity, mode, payload, generate
       chatId,
       messageId,
       courseCode,
+      courseId: getCoreCourseId(course),
       testableQuestions,
       signal: abortController.signal,
     });
@@ -518,10 +520,21 @@ router.post('/lessons/:lessonId/activities', requireRole(['INSTRUCTOR', 'UNIT_AD
       }
     }
 
+    // Append to the end of the lesson's activity list. Historically create
+    // never set a position, so every activity landed at 0 and order was
+    // undefined; assign max(position)+1 so new activities append (issue #1047).
+    const lastActivity = await prisma.activity.findFirst({
+      where: { lessonId },
+      orderBy: { position: 'desc' },
+      select: { position: true },
+    });
+    const resolvedPosition = lastActivity ? lastActivity.position + 1 : 0;
+
     const activity = await prisma.activity.create({
       data: {
         title: payload.title ?? null,
         instructionsMd: payload.instructionsMd ?? 'Answer the question.',
+        position: resolvedPosition,
         lessonId,
         promptTemplateId: payload.promptTemplateId ?? null,
         customPrompt: normalizeCustomPrompt(payload.customPrompt),
@@ -1900,5 +1913,86 @@ router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req,
     res.status(500).json({ error: String(e) });
   }
 });
+
+// Reorder every activity within a lesson in one atomic write. Positions are
+// reassigned 0..n-1 from the client-supplied ordered id list (issue #1047).
+router.put(
+  '/lessons/:lessonId/activities/order',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isFinite(lessonId)) {
+      return res.status(400).json({ error: 'Invalid lesson id' });
+    }
+
+    const { orderedIds } = req.body || {};
+    if (
+      !Array.isArray(orderedIds) ||
+      orderedIds.length === 0 ||
+      !orderedIds.every((id) => Number.isInteger(id))
+    ) {
+      return res.status(400).json({ error: 'orderedIds must be a non-empty array of integers' });
+    }
+    if (new Set(orderedIds).size !== orderedIds.length) {
+      return res.status(400).json({ error: 'orderedIds must not contain duplicates' });
+    }
+
+    try {
+      const lesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
+        include: {
+          module: {
+            include: {
+              courseOffering: { include: { instructors: { select: { userId: true } } } },
+            },
+          },
+        },
+      });
+      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+      const isInstructor = lesson.module.courseOffering.instructors.some(
+        (i) => i.userId === authUser.id,
+      );
+      const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      }
+
+      const existing = await prisma.activity.findMany({
+        where: { lessonId },
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((a) => a.id));
+      if (
+        orderedIds.length !== existingIds.size ||
+        !orderedIds.every((id) => existingIds.has(id))
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'orderedIds must match the full set of activity ids for this lesson' });
+      }
+
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.activity.update({ where: { id }, data: { position: index } }),
+        ),
+      );
+
+      const activities = await prisma.activity.findMany({
+        where: { lessonId },
+        orderBy: { position: 'asc' },
+        include: {
+          promptTemplate: { select: { id: true, name: true } },
+          mainTopic: true,
+          secondaryTopics: { include: { topic: true } },
+        },
+      });
+      res.json(activities.map(mapActivity));
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 export default router;

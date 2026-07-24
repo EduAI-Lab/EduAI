@@ -5,7 +5,7 @@
  * Library (pages/QuestionBankPage) shares the same toolbar for a consistent feel.
  */
 import { useMemo, useState } from 'react';
-import { Button, cn } from '@eduai/ui';
+import { Button, cn, EmptyState } from '@eduai/ui';
 import {
   IconStack2,
   IconInfoCircle,
@@ -24,7 +24,6 @@ import {
   type QuestionFilters,
   type QuestionSort,
 } from './QuestionFilterToolbar';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { CardGridSkeleton } from '@/components/shared/Skeletons';
 
 interface QuestionBankProps {
@@ -241,11 +240,13 @@ export const QuestionBank = ({
             icon={<IconInfoCircle className="size-6" />}
             title={emptyMessage || 'No courses available'}
             description="Take a quick guided tour to see how Question Maker works."
-            primaryAction={{
-              label: 'Start guided tour',
-              onClick: onOpenProfile,
-              icon: <IconCompass className="size-4" />,
-            }}
+            bare={false}
+            action={
+              <Button onClick={onOpenProfile}>
+                <IconCompass className="size-4" />
+                Start guided tour
+              </Button>
+            }
           />
         ) : (
           <EmptyState
@@ -254,12 +255,24 @@ export const QuestionBank = ({
             description={
               emptyMessage || "Add your first question or upload a batch to start building this course's bank."
             }
-            primaryAction={
-              !disableAdd
-                ? { label: 'Add question', onClick: onAddQuestion, icon: <IconPlus className="size-4" /> }
-                : undefined
+            bare={false}
+            action={
+              (!disableAdd || !disableUpload) && (
+                <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                  {!disableAdd && (
+                    <Button onClick={onAddQuestion}>
+                      <IconPlus className="size-4" />
+                      Add question
+                    </Button>
+                  )}
+                  {!disableUpload && (
+                    <Button variant="outline" onClick={onUploadQuestions}>
+                      Upload
+                    </Button>
+                  )}
+                </div>
+              )
             }
-            secondaryAction={!disableUpload ? { label: 'Upload', onClick: onUploadQuestions } : undefined}
           />
         )
       ) : filteredVariants.length === 0 ? (
@@ -268,7 +281,12 @@ export const QuestionBank = ({
           icon={<IconFilterX className="size-6" />}
           title="No questions match your filters"
           description="Try a different search term or clear the filters."
-          primaryAction={{ label: 'Clear filters', onClick: clearAll, variant: 'outline' }}
+          bare={false}
+          action={
+            <Button variant="outline" onClick={clearAll}>
+              Clear filters
+            </Button>
+          }
         />
       ) : (
         <div

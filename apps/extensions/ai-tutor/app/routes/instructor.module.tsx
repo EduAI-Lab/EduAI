@@ -21,18 +21,21 @@
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { toast } from 'sonner';
 import { IconNotebook, IconPlus, IconUpload } from '@tabler/icons-react';
 import {
   Button,
   Card,
   CardContent,
   ConfirmDialog,
+  DetailPageScaffold,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Input,
   Label,
   Select,
@@ -40,6 +43,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SortableProvider,
+  SortableItem,
+  DragHandle,
   Textarea,
 } from '@eduai/ui';
 import { LessonCard } from '../components/lessons/LessonCard';
@@ -126,6 +132,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingLesson, setDeletingLesson] = useState<Lesson | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [reorderingLessons, setReorderingLessons] = useState(false);
   const sourceModulesRequestIdRef = useRef(0);
   const sourceLessonsRequestIdRef = useRef(0);
 
@@ -312,6 +319,36 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
+  // Persist a drag-reordered lesson list: reorder the local list to match the
+  // dropped order optimistically, then confirm with the bulk reorder endpoint;
+  // a failure rolls back to the prior order.
+  const reorderLessonsList = async (orderedIds: number[]) => {
+    if (!numericModuleId) return;
+    const current = lessons;
+    const byId = new Map(current.map((l) => [l.id, l]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
+    if (next.length !== current.length) {
+      // Dropped order came from a stale render (list changed mid-drag);
+      // refetch rather than persisting a partial order.
+      toast.error('The lesson list changed while reordering. Refreshing — please try again.');
+      await refreshLessons();
+      return;
+    }
+
+    setLessons(next);
+    setReorderingLessons(true);
+    try {
+      const updated = await api.reorderLessons(numericModuleId, orderedIds);
+      setLessons(updated);
+    } catch (error) {
+      console.error('Failed to reorder lessons', error);
+      toast.error('Failed to reorder lessons. The previous order was restored.');
+      setLessons(current);
+    } finally {
+      setReorderingLessons(false);
+    }
+  };
+
   const openEditLesson = (lesson: Lesson) => {
     setEditingLesson(lesson);
     setEditTitle(lesson.title);
@@ -376,46 +413,49 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   ];
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <ModuleHero
-        order={moduleOrder > 0 ? moduleOrder : undefined}
-        title={module?.title || 'Module'}
-        description={module?.description}
-        accentColor={accentColor}
-        isPublished={module?.isPublished}
-        stats={heroStats}
-        actions={
-          <PermissionGate allow={perms.canManageContent}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-              onClick={() => {
-                if (!showImport) {
-                  ensureSourceCoursesLoaded();
-                } else {
-                  void handleSourceCourseSelection(null);
-                }
-                setShowImport((prev) => !prev);
-              }}
-            >
-              <IconUpload size={15} aria-hidden="true" />
-              {showImport ? 'Close import' : 'Import lessons'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
-              onClick={() => setCreateOpen(true)}
-            >
-              <IconPlus size={15} aria-hidden="true" />
-              Add lesson
-            </Button>
-          </PermissionGate>
-        }
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <ModuleHero
+          order={moduleOrder > 0 ? moduleOrder : undefined}
+          title={module?.title || 'Module'}
+          description={module?.description}
+          accentColor={accentColor}
+          isPublished={module?.isPublished}
+          stats={heroStats}
+          actions={
+            <PermissionGate allow={perms.canManageContent}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                onClick={() => {
+                  if (!showImport) {
+                    ensureSourceCoursesLoaded();
+                  } else {
+                    void handleSourceCourseSelection(null);
+                  }
+                  setShowImport((prev) => !prev);
+                }}
+              >
+                <IconUpload size={15} aria-hidden="true" />
+                {showImport ? 'Close import' : 'Import lessons'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-white font-semibold text-[var(--course-accent)] hover:bg-white/90 hover:text-[var(--course-accent)]"
+                onClick={() => setCreateOpen(true)}
+              >
+                <IconPlus size={15} aria-hidden="true" />
+                Add lesson
+              </Button>
+            </PermissionGate>
+          }
+        />
+      }
+    >
       <PermissionGate allow={perms.canManageContent}>
         {showImport && (
           <Card>
@@ -687,19 +727,19 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
       {oLessons.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <IconNotebook size={22} aria-hidden="true" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-semibold text-foreground">No lessons yet</h3>
-              <p className="text-sm text-muted-foreground">
-                Add a lesson, or import one from another course to get started.
-              </p>
-            </div>
-          </CardContent>
+          <EmptyState
+            icon={<IconNotebook size={22} aria-hidden="true" />}
+            title="No lessons yet"
+            description="Add a lesson, or import one from another course to get started."
+          />
         </Card>
       ) : (
+        <SortableProvider
+          ids={oLessons.map((l) => l.id)}
+          onReorder={reorderLessonsList}
+          strategy="grid"
+          disabled={!perms.canManageContent || oLessons.length < 2 || reorderingLessons}
+        >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {oLessons.map((lesson, idx) => {
             const canPublish = course?.isPublished && module?.isPublished;
@@ -714,41 +754,50 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
                 : null;
             const busy = publishingId === lesson.id;
+            const canReorder = perms.canManageContent && oLessons.length > 1;
             return (
-              <LessonCard
-                key={lesson.id}
-                index={idx + 1}
-                orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
-                title={lesson.title}
-                content={lesson.contentMd}
-                accentColor={accentColor}
-                onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
-                isPublished={lesson.isPublished}
-                menuSlot={
-                  perms.canPublishContent || perms.canManageContent ? (
-                    <PublishMenu
+              <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
+                {({ handleProps }) => (
+                    <LessonCard
+                      index={idx + 1}
+                      orderText={moduleOrder > 0 ? `${moduleOrder}.${idx + 1}` : undefined}
+                      title={lesson.title}
+                      content={lesson.contentMd}
+                      accentColor={accentColor}
+                      onClick={() => navigate(`/instructor/lesson/${lesson.id}`)}
                       isPublished={lesson.isPublished}
-                      pending={busy}
-                      blockedReason={tooltipMessage}
-                      itemLabel="lesson"
-                      onToggle={
-                        perms.canPublishContent
-                          ? () => {
-                              if (busy || blocked) return;
-                              setPendingPublish({
-                                id: lesson.id,
-                                isPublished: lesson.isPublished,
-                                title: lesson.title,
-                              });
-                            }
-                          : undefined
+                      leading={
+                        canReorder ? (
+                          <DragHandle handleProps={handleProps} label={`Drag to reorder ${lesson.title}`} />
+                        ) : undefined
                       }
-                      onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
-                      onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
+                      menuSlot={
+                        perms.canPublishContent || perms.canManageContent ? (
+                          <PublishMenu
+                            isPublished={lesson.isPublished}
+                            pending={busy}
+                            blockedReason={tooltipMessage}
+                            itemLabel="lesson"
+                            onToggle={
+                              perms.canPublishContent
+                                ? () => {
+                                    if (busy || blocked) return;
+                                    setPendingPublish({
+                                      id: lesson.id,
+                                      isPublished: lesson.isPublished,
+                                      title: lesson.title,
+                                    });
+                                  }
+                                : undefined
+                            }
+                            onEdit={perms.canManageContent ? () => openEditLesson(lesson) : undefined}
+                            onDelete={perms.canManageContent ? () => setDeletingLesson(lesson) : undefined}
+                          />
+                        ) : undefined
+                      }
                     />
-                  ) : undefined
-                }
-              />
+                )}
+              </SortableItem>
             );
           })}
           <PermissionGate allow={perms.canManageContent}>
@@ -764,6 +813,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
             </button>
           </PermissionGate>
         </div>
+        </SortableProvider>
       )}
       <ConfirmDialog
         open={pendingPublish !== null}
@@ -792,6 +842,6 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
-    </div>
+    </DetailPageScaffold>
   );
 }
