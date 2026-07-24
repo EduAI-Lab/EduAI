@@ -1,9 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  IconFileText,
-  IconLoader,
-  IconCircleCheck,
-  IconCircleX,
   IconUpload,
   IconSettings,
   IconBook,
@@ -15,6 +11,9 @@ import { Card, CardContent } from '@eduai/ui'
 import { Button } from '@eduai/ui'
 import { termLabel } from '@eduai/ui'
 import { Input } from '@eduai/ui'
+import { StatCard } from '@eduai/ui'
+import { EmptyState } from '@eduai/ui'
+import { MaterialList, type MaterialListItem } from '@eduai/ui'
 import {
   Dialog,
   DialogContent,
@@ -35,6 +34,7 @@ import {
 } from '@eduai/ui'
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from '@eduai/ui'
 import { CourseHeroCard } from '@eduai/ui'
+import { DetailPageScaffold } from '@eduai/ui'
 import { resolvePaletteAccent } from '@eduai/ui'
 import { StatusBadge } from '@eduai/ui'
 import { Avatar } from '@eduai/ui'
@@ -81,29 +81,6 @@ function formatSize(bytes: number): string {
   if (!bytes) return '–'
   const mb = bytes / 1_048_576
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`
-}
-
-function MaterialStatusIcon({ status }: { status: CourseMaterial['status'] }) {
-  if (status === 'PROCESSING') return <IconLoader className="h-4 w-4 text-yellow-500 animate-spin" />
-  if (status === 'READY') return <IconCircleCheck className="h-4 w-4 text-green-500" />
-  if (status === 'FAILED') return <IconCircleX className="h-4 w-4 text-red-500" />
-  return <IconFileText className="h-4 w-4 text-muted-foreground" />
-}
-
-function MaterialStatusChip({ status }: { status: CourseMaterial['status'] }) {
-  const cfg = {
-    READY:      { label: 'Embedded',   bg: 'var(--color-success-100)', color: 'var(--color-success-700)' },
-    PROCESSING: { label: 'Processing', bg: 'oklch(0.97 0.03 90)',      color: 'oklch(0.55 0.18 90)' },
-    FAILED:     { label: 'Failed',     bg: 'var(--color-error-100)',   color: 'var(--destructive)' },
-  }[status] ?? { label: 'Unknown', bg: 'var(--muted)', color: 'var(--muted-foreground)' }
-  return (
-    <span
-      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-      style={{ background: cfg.bg, color: cfg.color }}
-    >
-      {cfg.label}
-    </span>
-  )
 }
 
 export function CourseDetailTaView({
@@ -208,9 +185,23 @@ export function CourseDetailTaView({
     ...(course.isActive ? ['Active'] : []),
     ...(courseHasAiConfig(course.responseStyleTags ?? [], course.aiInstructions) ? ['AI-enabled'] : []),
   ]
+  const readyMaterials = materials.filter((m) => m.status === 'READY').length
 
   return (
-    <div className="flex flex-col gap-6">
+    <DetailPageScaffold
+      hero={
+        <CourseHeroCard
+          code={course.code}
+          term={course.term}
+          year={course.year}
+          name={course.name}
+          description={course.description}
+          accentColor={resolvePaletteAccent(course.id)}
+          topRightBadges={topRightBadges}
+          topics={topics.map((t) => t.name)}
+        />
+      }
+    >
       {/* Delete material confirmation (TA own uploads only) */}
       <AlertDialog
         open={!!deleteMaterialId}
@@ -339,18 +330,6 @@ export function CourseDetailTaView({
         </Dialog>
       )}
 
-      {/* B2: Topics in hero, badges top-right */}
-      <CourseHeroCard
-        code={course.code}
-        term={course.term}
-        year={course.year}
-        name={course.name}
-        description={course.description}
-        accentColor={resolvePaletteAccent(course.id)}
-        topRightBadges={topRightBadges}
-        topics={topics.map((t) => t.name)}
-      />
-
       <PageTabs defaultValue="overview">
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
@@ -361,6 +340,12 @@ export function CourseDetailTaView({
 
         {/* ── Overview ── */}
         <PageTabsContent value="overview" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
+          {/* Stat row (matches manager view) */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <StatCard label="Materials" value={materials.length} />
+            <StatCard label="Embedded" value={readyMaterials} />
+          </div>
+
           <div className="grid gap-4 mb-4 grid-cols-1 sm:grid-cols-2">
             {/* B3: Enriched info card */}
             <Card>
@@ -384,14 +369,6 @@ export function CourseDetailTaView({
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Status</p>
                     <StatusBadge active={course.isActive} />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Materials</p>
-                    <p className="text-sm text-foreground">{materials.length} file{materials.length !== 1 ? 's' : ''}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Embedded in AI</p>
-                    <p className="text-sm text-foreground">{materials.filter(m => m.status === 'READY').length} of {materials.length}</p>
                   </div>
                 </div>
                 {/* tas.canSetAiInstructions: editable field when granted, else
@@ -485,118 +462,96 @@ export function CourseDetailTaView({
 
         {/* ── Materials (TA may upload when tas.canManageMaterials is on) — A1+A2 rework ── */}
         <PageTabsContent value="materials" forceMount className="data-[state=inactive]:hidden flex-1 outline-none">
-          {/* A2: Header row: title left, action buttons right */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-[16px] font-semibold text-foreground">Course materials</p>
-              <p className="text-[13px] text-muted-foreground">
-                {materials.length} file{materials.length !== 1 ? 's' : ''}
-                {' · '}{materials.filter(m => m.status === 'READY').length} embedded in AI
-              </p>
-            </div>
-            {/* §807: keep upload/embedding controls visible, greyed when the
-                TA's manage-materials policy is off. */}
-            <div className="flex items-center gap-2">
-              {courseId && (
+          <MaterialList
+            items={materials.map(
+              (m): MaterialListItem => ({
+                id: m.id,
+                name: m.title,
+                status: m.status,
+                mimeType: m.mimeType,
+                meta: (
+                  <>
+                    {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
+                  </>
+                ),
+              }),
+            )}
+            fileTypeColor={(item) => fileTypeColor(item.mimeType ?? '')}
+            headerActions={
+              // §807: keep upload/embedding controls visible, greyed when the
+              // TA's manage-materials policy is off.
+              <>
+                {courseId && (
+                  <PolicyTooltip flag="tas.canManageMaterials">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEmbeddingOpen(true)}
+                    >
+                      <IconSettings className="h-4 w-4 mr-1.5" />
+                      Embedding settings
+                    </Button>
+                  </PolicyTooltip>
+                )}
                 <PolicyTooltip flag="tas.canManageMaterials">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEmbeddingOpen(true)}
-                  >
-                    <IconSettings className="h-4 w-4 mr-1.5" />
-                    Embedding settings
-                  </Button>
-                </PolicyTooltip>
-              )}
-              <PolicyTooltip flag="tas.canManageMaterials">
-                <Button size="sm" onClick={() => setUploadOpen(true)}>
-                  <IconUpload className="h-4 w-4 mr-1.5" />
-                  Upload material
-                </Button>
-              </PolicyTooltip>
-            </div>
-          </div>
-
-          {/* A1: Single materials list (no duplicate) */}
-          {materials.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div
-                className="w-14 h-14 rounded-[14px] flex items-center justify-center mb-4"
-                style={{ background: 'var(--muted)' }}
-              >
-                <IconBook size={26} className="text-muted-foreground" stroke={1.5} />
-              </div>
-              <p className="text-[15px] font-semibold text-foreground mb-1">No materials yet</p>
-              {canManageMaterials ? (
-                <>
-                  <p className="text-[13px] text-muted-foreground mb-4">
-                    Upload documents to make them available for AI chat.
-                  </p>
                   <Button size="sm" onClick={() => setUploadOpen(true)}>
                     <IconUpload className="h-4 w-4 mr-1.5" />
                     Upload material
                   </Button>
-                </>
-              ) : (
-                <p className="text-[13px] text-muted-foreground">
-                  Course materials will appear here once they are uploaded.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {materials.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-border bg-card"
-                >
-                  <div
-                    className="w-8 h-8 rounded-[7px] flex items-center justify-center flex-shrink-0"
-                    style={{ background: fileTypeColor(m.mimeType) }}
+                </PolicyTooltip>
+              </>
+            }
+            emptyState={
+              <EmptyState
+                icon={<IconBook size={26} stroke={1.5} />}
+                title="No materials yet"
+                description={
+                  canManageMaterials
+                    ? 'Upload documents to make them available for AI chat.'
+                    : 'Course materials will appear here once they are uploaded.'
+                }
+                action={
+                  canManageMaterials ? (
+                    <Button size="sm" onClick={() => setUploadOpen(true)}>
+                      <IconUpload className="h-4 w-4 mr-1.5" />
+                      Upload material
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+            renderItemActions={(item) => {
+              const m = materials.find((mat) => mat.id === item.id)
+              if (!m) return null
+              // §7: TA may rename/delete only their own uploads.
+              if (!currentUserId || m.uploadedBy !== currentUserId) return null
+              return (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Rename material"
+                    onClick={() => {
+                      setRenameMaterialId(m.id)
+                      setRenameTitle(m.title)
+                      setRenameError(null)
+                    }}
                   >
-                    <IconFileText size={14} color="white" stroke={2} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-foreground truncate">{m.title}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {formatSize(m.fileSize)} · {new Date(m.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <MaterialStatusChip status={m.status} />
-                    <MaterialStatusIcon status={m.status} />
-                    {/* §7: TA may rename/delete only their own uploads. */}
-                    {!!currentUserId && m.uploadedBy === currentUserId && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Rename material"
-                          onClick={() => {
-                            setRenameMaterialId(m.id)
-                            setRenameTitle(m.title)
-                            setRenameError(null)
-                          }}
-                        >
-                          <IconPencil className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Delete material"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteMaterialId(m.id)}
-                        >
-                          <IconTrash className="w-4 h-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                    <IconPencil className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Delete material"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleteMaterialId(m.id)}
+                  >
+                    <IconTrash className="w-4 h-4" />
+                  </Button>
+                </>
+              )
+            }}
+          />
         </PageTabsContent>
 
         {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
@@ -628,11 +583,7 @@ export function CourseDetailTaView({
               </PolicyTooltip>
             )}
             {topics.length === 0 ? (
-              <Card>
-                <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
-                  No topics yet.
-                </CardContent>
-              </Card>
+              <EmptyState title="No topics yet." size="sm" />
             ) : (
               <div className="grid gap-2">
                 {topics.map((t) => (
@@ -669,6 +620,6 @@ export function CourseDetailTaView({
           </div>
         </PageTabsContent>
       </PageTabs>
-    </div>
+    </DetailPageScaffold>
   )
 }
