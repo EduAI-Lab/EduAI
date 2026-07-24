@@ -466,7 +466,7 @@ function contentOk(
 
 /** Explain why a candidate rewrite failed acceptance (fed into one retry). */
 export function describeOversightRejectReasons(
-  metrics: AdhdStructuralCompliance,
+  metrics: AdhdStructuralCompliance & { profileStructuralPass: boolean },
   profile: AdhdTurnProfile,
   text: string,
   options?: { requireDiagram?: boolean; expectSources?: boolean },
