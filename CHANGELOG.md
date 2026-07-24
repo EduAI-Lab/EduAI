@@ -56,6 +56,29 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 - [ai-tutor] test: Add component-level regression coverage for `StudentAiChat` and `StudentChatHistoryPanel` — tab switching maintains independent message history per mode; the API key dialog opens with the correct initial `tempApiKey`, validates via `validateKey`, and saves on success; send/receive round trip confirms user and assistant messages appear in order and input clears; chatId threading verifies the second request carries the `chatId` from the first response; history restoration calls `loadSessionMessages` and renders loaded messages; the history panel covers loading, empty state, session rows with mode badge and relative timestamp, active-session highlighting, and session/new-chat interactions. (#1003, @evanbones, 2026-07-13)
+- [ai-tutor] fix: Auto-sync topics from Core on every read instead of a manual "Sync now" button — `GET /courses/:courseId/topics` now pulls the latest topics for EduAI-imported courses before responding (falling back to the local mirror if Core is unreachable), and the now-redundant frontend sync button/dialog was removed. (#1031, @evanbones, 2026-07-15)
+
+## [Week 10 — July 6–12, 2026]
+
+### Fixed
+
+- [core] fix: Admin Chatbot layout — remove `inset` sidebar variant on `/admin/chat` that exposed a white frame around the page; align the shell with `/chat` (`SidebarInset` flex layout). (#822, @ssaada08, 2026-07-06) — [#929](https://github.com/EduAI-Lab/EduAI/pull/929)
+### Added
+- [infra] feat: Host AI Tutor and Question Maker on s378 (`dev.aitutor` / `dev.questionmaker`) with Apache reverse proxies, env sync (`go-live-env.sh`), and systemd user units (`eduai-dev.target`) for reliable restarts — preferred over long-lived tmux. (#936, @superbolt08, 2026-07-11) — [#1009](https://github.com/EduAI-Lab/EduAI/pull/1009)
+- [core] feat: Multi-server vLLM fleet routing (Slice 1) — round-robin load balancing across `VLLM_FLEET_CHAT_URLS` with health checks, per-request vLLM base URL override, `X-Fleet-Server` response header, `fleetServerId`/`fleetReason` request logs, and 503 when no healthy host hosts the model (including empty `/v1/models`); pool selection uses `routingContext.jobType` only (`interactive` | `background`) — AI Tutor sends `interactive`, Question Maker sends `background` for the heavy pool. Closes #840, #874, #875, #877, #878. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] tests: `fleet-routing.test.ts` — job-type parsing, empty-model-list 503, interactive/background pool routing, round-robin, and background-pool fallback. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+- [core] chore: `npm run fleet:smoke` — pre-flight health check for every fleet host. (@ssaada08, 2026-07-08) — [#960](https://github.com/EduAI-Lab/EduAI/pull/960)
+### Changed
+
+- [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
+## [Week 11 — July 13–19, 2026]
+
+### Added
+
+- [core] feat: Async AI-job queue producer — `enqueue()` validates a job against the frozen contract, creates a durable `AiJob` Postgres row (source of truth), and pushes it onto the resolved per-pool BullMQ queue, wired at the `/api/chat` question-generation call site behind the off-by-default `QUEUE_ENQUEUE_ENABLED` flag; dequeue/dispatch is epic #168. (#914, @abdullahmoh21, 2026-07-18) — [#1092](https://github.com/EduAI-Lab/EduAI/pull/1092)
+
+### Changed
+
 - [monorepo] feat: Term labels now follow UBC academic-year semantics — a W2 term spanning Jan–Apr belongs to the previous year (Jan–Apr 2026 ⇒ 2025W2). New `termInfoFromDate` in `@eduai/ui/term` is the single year-attribution authority; `termSortKey`'s startDate and rank paths now agree, fixing the inconsistent course-list ordering between AI Tutor and QM. Core seed relabeled, idempotent backfill migration for existing rows, Canvas sync no longer mislabels Jan–Apr courses' year, and course-form term/year defaults can no longer disagree in Jan–Apr. (#1088, @yta3216, 2026-07-17) — [#1085](https://github.com/EduAI-Lab/EduAI/pull/1085)
 - [question-maker] feat: Reviewed (approved) questions now lock their type and topic assignments — editing type or primary/secondary topics after review is rejected with 409 (the same contract as the existing text/difficulty lock), so a question can no longer silently diverge from the copy already pushed to Core. Un-reviewing a question clears its Core link so the next approval re-pushes the edited content under a fresh, content-derived idempotency key — an edit-then-re-approve cycle previously reused the stale pre-edit key and relinked the old Core row instead of pushing the new one. (#1080, @yta3216, 2026-07-17) — [#1085](https://github.com/EduAI-Lab/EduAI/pull/1085)
 - [core] feat: Assist interactive `eduai-diagram` catalog (process-flow, gradient-descent, hierarchy, compare) with labeled tappable stages, plus display-only Step ladder → diagram → TLDR → Continue layout (storage anchors unchanged). (#1060, @Ayyhab, 2026-07-18) — [#1091](https://github.com/EduAI-Lab/EduAI/pull/1091)
