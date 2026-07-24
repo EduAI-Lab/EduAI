@@ -120,6 +120,27 @@ describe("resolveAdhdTurnProfile", () => {
     expect(resolveAdhdTurnProfile({ userText: "" })).toBe("full_tutoring");
   });
 
+  it("classifies the v2.0 spec's named topic-switch cues as redirect", () => {
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "wait actually, how do I file my taxes?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("redirect");
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "random question, what's the capital of France?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("redirect");
+    expect(
+      resolveAdhdTurnProfile({
+        userText: "real quick, can you explain photosynthesis instead?",
+        priorAssistantText: PRIOR_TUTOR,
+      }),
+    ).toBe("redirect");
+  });
+
   it("classifies short diagram asks as full tutoring (not brief)", () => {
     expect(
       resolveAdhdTurnProfile({

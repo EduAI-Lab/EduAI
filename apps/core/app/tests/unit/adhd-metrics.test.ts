@@ -4,6 +4,7 @@ import {
   computeAdhdResponseMetrics,
   detectUrgencyTerms,
   hasSourcesFooter,
+  hasTopicSwitchAbcOptions,
   isProfileStructuralPass,
   isRedirectTemplatePass,
   isStructuralCompliancePass,
@@ -183,5 +184,61 @@ describe("isProfileStructuralPass", () => {
     const text = "Hello! How can I help you today?";
     const metrics = computeAdhdResponseMetrics(text, { wordCap: 80 });
     expect(isProfileStructuralPass(metrics, "greeting", text)).toBe(true);
+  });
+});
+
+describe("hasTopicSwitchAbcOptions / v2.0 A/B/C topic-switch flag", () => {
+  const ABC_FLAG = `Looks like a topic switch. We were working on **defining the API contract**. Want to:
+**A)** Finish defining the API contract first, then come back to this
+**B)** Add this to the todo list and stay on defining the API contract
+**C)** Switch now (I'll save progress on defining the API contract)`;
+
+  it("detects the A/B/C template", () => {
+    expect(hasTopicSwitchAbcOptions(ABC_FLAG)).toBe(true);
+  });
+
+  it("rejects text missing an option or the topic switch cue", () => {
+    expect(hasTopicSwitchAbcOptions("**A)** Finish this **B)** Park it")).toBe(false);
+    expect(
+      hasTopicSwitchAbcOptions(
+        "**A)** Finish this\n**B)** Park it\n**C)** Switch now",
+      ),
+    ).toBe(false);
+  });
+
+  it("passes the A/B/C flag as a compliant redirect template", () => {
+    const metrics = computeAdhdResponseMetrics(ABC_FLAG, { wordCap: ADHD_CLARIFICATION_WORD_CAP });
+    expect(isRedirectTemplatePass(metrics, ABC_FLAG)).toBe(true);
+    expect(isProfileStructuralPass(metrics, "redirect", ABC_FLAG)).toBe(true);
+  });
+
+  it("still passes the legacy pre-v2.0 single-question redirect (baseline fixtures)", () => {
+    const metrics = computeAdhdResponseMetrics(S2_ON_T2_ASSISTANT, {
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
+    expect(hasTopicSwitchAbcOptions(S2_ON_T2_ASSISTANT)).toBe(false);
+    expect(isRedirectTemplatePass(metrics, S2_ON_T2_ASSISTANT)).toBe(true);
+  });
+
+  it("requires A before B before C, not just all three present", () => {
+    const outOfOrder = `Looks like a topic switch. Want to:
+**C)** Switch now (I'll save progress on the plan)
+**B)** Add this to the todo list and stay on the plan
+**A)** Finish the plan first, then come back to this`;
+    expect(hasTopicSwitchAbcOptions(outOfOrder)).toBe(false);
+  });
+
+  it("does not let a malformed A/B/C attempt fall through to the legacy fallback", () => {
+    // Missing the **C)** marker, but reuses the template's own wording
+    // ("come back", "switch now") that the legacy cue regex matches on.
+    const malformed = `Looks like a topic switch. We were working on **the plan**. Want to:
+**A)** Finish the plan first, then come back to this
+**B)** Add this to the todo list and stay on the plan
+Switch now and I'll save your progress?`;
+    const metrics = computeAdhdResponseMetrics(malformed, {
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
+    expect(hasTopicSwitchAbcOptions(malformed)).toBe(false);
+    expect(isRedirectTemplatePass(metrics, malformed)).toBe(false);
   });
 });

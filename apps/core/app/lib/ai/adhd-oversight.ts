@@ -31,6 +31,7 @@ REQUIRED MARKDOWN STRUCTURE:
 3) If steps are needed, add a "### Step ladder" section with at most 5 numbered steps.
 4) If a diagram is present, keep exactly one fenced eduai-diagram block (preferred) or ASCII text fence AFTER the body/steps and BEFORE **Next?**. Do not invent a diagram if the draft had none; do not split one diagram into multiple frames.
 5) End with a standalone line: **Next?** <one short continuation offer>
+6) If the draft includes a "**Session Tasks:**" checklist, keep it verbatim near the top, before **Top summary**. Do not drop or shorten it.
 
 LENGTH: Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.
 Remove any urgency or time-pressure wording (e.g. "quickly", "fast", "hurry", "right away"); never rush the learner.
@@ -50,13 +51,20 @@ DIAGRAM REQUIRED (learner asked for a visual):
 - Do NOT describe the diagram in prose instead of emitting the fence.
 - Do NOT use a plain text/ASCII fence when eduai-diagram fits.`;
 
-const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode redirect responses.
+const ADHD_OVERSIGHT_REDIRECT_REWRITE_SYSTEM = `You are a formatting editor for ADHD Assist Mode topic-switch flags.
 The learner asked about a second topic while another is in progress.
 
 RULES:
-- Do NOT add a "Top summary" block.
-- Keep a single-topic boundary: acknowledge the new topic and offer to return or switch.
-- End with one clear forward continuation question if missing.
+- Do NOT add a "Top summary" block. Do NOT answer the new topic.
+- Rewrite so the response uses this exact A/B/C structure, keeping the
+  learner's real current task name from the draft (never invent one; keep
+  it a short label, a few words - not a full sentence):
+  Looks like a topic switch. We were working on **<current task>**. Want to:
+  **A)** Finish <current task> first, then come back to this
+  **B)** Add this to the todo list and stay on <current task>
+  **C)** Switch now (I'll save progress on <current task>)
+- If the draft includes a "**Session Tasks:**" checklist, keep it verbatim
+  before the A/B/C block. Do not drop or shorten it.
 - Hard cap ${ADHD_CLARIFICATION_WORD_CAP} words.
 - Remove any urgency or time-pressure wording ("quickly", "fast", "hurry"); never rush the learner.
 - No emojis. No filler.
@@ -337,8 +345,14 @@ export async function auditAndMaybeRewrite(args: {
   const profile = args.profile ?? "full_tutoring";
   const trimmed = (args.draft ?? "").trim();
   const profileReq = getProfileRequirements(profile);
+  // Redirect turns must never answer the new topic (policy §5), so a diagram
+  // request embedded in the off-topic message must not force one into the
+  // A/B/C flag - that would hand the Dean contradictory instructions (system
+  // prompt says withhold the new topic, user prompt says draw it).
   const requireDiagram =
-    userRequestedDiagram(args.userText) && !hasEduaiDiagramFence(trimmed);
+    profile !== "redirect" &&
+    userRequestedDiagram(args.userText) &&
+    !hasEduaiDiagramFence(trimmed);
   const diagramOpts = { userText: args.userText };
 
   const beforeMetrics = withProfileStructuralPass(

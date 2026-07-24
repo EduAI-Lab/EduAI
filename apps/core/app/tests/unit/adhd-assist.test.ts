@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ADHD_ASSIST_POLICY_BLOCK,
+  ADHD_ASSIST_POLICY_VERSION,
   composeSystemPrompt,
   ensureDiagramBeforeNext,
   hasDiagramBlock,
@@ -52,6 +53,10 @@ Be helpful, conversational, and accurate. Use markdown for formatting.`;
     const result = composeSystemPrompt(base, { adhdAssist: true, profile: "redirect" });
     expect(result).toContain("ADHD ASSIST MODE (redirect)");
     expect(result).toContain("one-topic boundary");
+    expect(result).toContain("topic switch");
+    expect(result).toContain("**A)**");
+    expect(result).toContain("**B)**");
+    expect(result).toContain("**C)**");
   });
 
   it("resolveAdhdAssistPolicyBlock returns full block by default", () => {
@@ -204,5 +209,69 @@ gradient-descent
 
 **Next?** More?`;
     expect(ensureDiagramBeforeNext(draft)).toBe(draft.trim());
+  });
+});
+
+describe("v2.0 session tasks + topic-switch A/B/C flag", () => {
+  it("bumps the policy version", () => {
+    expect(ADHD_ASSIST_POLICY_VERSION).toBe("2.0");
+  });
+
+  it("full tutoring block carries the Session Tasks contract", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("SESSION TASKS");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("What are we working on today?");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Session Tasks:**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("<- now");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Added to\n  your list. Finishing <current task> first."');
+  });
+
+  it("meta and brief_clarification also carry the Session Tasks contract", () => {
+    const meta = composeSystemPrompt("", { adhdAssist: true, profile: "meta" });
+    expect(meta).toContain("SESSION TASKS");
+    expect(meta).toContain("**Session Tasks:**");
+
+    const brief = composeSystemPrompt("", { adhdAssist: true, profile: "brief_clarification" });
+    expect(brief).toContain("SESSION TASKS");
+  });
+
+  it("excludes the Session Tasks checklist from greeting and confirmation (word-cap / no-re-explain conflict)", () => {
+    const greeting = composeSystemPrompt("", { adhdAssist: true, profile: "greeting" });
+    expect(greeting).not.toContain("SESSION TASKS");
+    expect(greeting).not.toContain("**Session Tasks:**");
+
+    const confirmation = composeSystemPrompt("", { adhdAssist: true, profile: "confirmation" });
+    expect(confirmation).not.toContain("SESSION TASKS");
+    expect(confirmation).not.toContain("**Session Tasks:**");
+  });
+
+  it("the Session Tasks block is defined once and interpolated, not copy-pasted per profile", () => {
+    const meta = composeSystemPrompt("", { adhdAssist: true, profile: "meta" });
+    const redirect = composeSystemPrompt("", { adhdAssist: true, profile: "redirect" });
+    const sessionTasksSnippet = "Show at most 5 items at once";
+    expect(meta).toContain(sessionTasksSnippet);
+    expect(redirect).toContain(sessionTasksSnippet);
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain(sessionTasksSnippet);
+  });
+
+  it("redirect block spells out the A/B/C topic-switch template and post-choice handling", () => {
+    const redirect = composeSystemPrompt("", { adhdAssist: true, profile: "redirect" });
+    expect(redirect).toContain("Looks like a topic switch");
+    expect(redirect).toContain("Finish <current task> first");
+    expect(redirect).toContain("Add this to the todo list");
+    expect(redirect).toContain("Switch now (I'll save progress");
+    expect(redirect).toContain("Session Tasks");
+  });
+
+  it("uses a single consistent <current task> placeholder (no <current active task> drift)", () => {
+    const redirect = composeSystemPrompt("", { adhdAssist: true, profile: "redirect" });
+    expect(redirect).not.toContain("<current active task>");
+    expect(redirect).toContain("<current task>");
+  });
+
+  it("main policy FOCUS section points off-topic drift at the A/B/C flag, not a silent redirect", () => {
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("A / B / C topic-switch choice");
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
+      "gently redirect:\n  \"That's a separate question",
+    );
   });
 });

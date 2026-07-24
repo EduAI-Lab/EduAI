@@ -35,9 +35,14 @@ const CONFIRMATION_PATTERN =
 const META_PATTERN =
   /^(what can you do|how does this (work|chat|tutor)|what are you|who are you|what do you do)\b/i;
 
-/** Off-topic or multi-topic injection when a tutor turn already exists. */
+/**
+ * Off-topic or multi-topic injection when a tutor turn already exists.
+ * Includes the v2.0 topic-switch-flag spec's named cues (wait actually /
+ * random question / real quick / off-topic) alongside the original
+ * multi-topic-injection phrases.
+ */
 const REDIRECT_PATTERN =
-  /\b(also explain|in the same answer|ignore (your )?(earlier|previous)|can we (talk|switch|discuss)|let's (talk|switch|discuss)|want to switch)\b/i;
+  /\b(also explain|in the same answer|ignore (your )?(earlier|previous)|can we (talk|switch|discuss)|let's (talk|switch|discuss)|want to switch|wait,? actually|random question|real quick|off[- ]topic|unrelated question)\b/i;
 
 /** Short follow-ups that refer to an ongoing tutoring thread (not bare confirmations). */
 const SUBSTANTIVE_CONTINUATION_PATTERN =

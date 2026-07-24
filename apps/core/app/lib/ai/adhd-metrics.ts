@@ -141,13 +141,43 @@ export function resolveAdhdResponseWordCap(userText?: string): number {
     : ADHD_TUTORING_WORD_CAP;
 }
 
-/** §5 drift redirect: one-topic boundary without Top summary scaffolding. */
+/**
+ * Topic-switch flag: the reply must name the A/B/C choice explicitly, in
+ * order (finish current task / park new topic / switch now), rather than
+ * silently following the drift.
+ */
+export function hasTopicSwitchAbcOptions(assistantText: string): boolean {
+  const trimmed = (assistantText ?? "").trim();
+  return /\btopic switch\b[\s\S]*\*\*A\)\*\*[\s\S]*\*\*B\)\*\*[\s\S]*\*\*C\)\*\*/i.test(
+    trimmed,
+  );
+}
+
+/** True when a draft looks like an attempt at the v2.0 A/B/C template. */
+function looksLikeAbcAttempt(assistantText: string): boolean {
+  return /\btopic switch\b|\*\*A\)\*\*|\*\*B\)\*\*|\*\*C\)\*\*/i.test(assistantText);
+}
+
+/**
+ * §5 drift redirect: one-topic boundary without Top summary scaffolding.
+ * Accepts the v2.0 A/B/C topic-switch template, or the legacy single-question
+ * redirect offer (pre-v2.0 policy / baseline study transcripts) so older
+ * captured fixtures keep scoring as compliant. A draft that looks like an
+ * attempt at the A/B/C template but botches it (missing a marker, wrong
+ * order) must NOT fall through to the legacy check - the v2.0 template's own
+ * wording ("come back", "switch now") would otherwise satisfy the legacy
+ * cues too, silently accepting a malformed new-style draft.
+ */
 export function isRedirectTemplatePass(
   metrics: AdhdResponseMetrics,
   assistantText: string,
 ): boolean {
   if (!metrics.underCap || metrics.topSummary) return false;
   const trimmed = (assistantText ?? "").trim();
+
+  if (hasTopicSwitchAbcOptions(trimmed)) return true;
+  if (looksLikeAbcAttempt(trimmed)) return false;
+
   const hasRedirectCue = /separate question|one topic|come back|switch now|separate topic/i.test(
     trimmed,
   );

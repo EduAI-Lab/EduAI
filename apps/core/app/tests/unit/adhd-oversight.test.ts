@@ -13,6 +13,7 @@ import {
   applyNextLineAnchor,
   auditAndMaybeRewrite,
   buildOverseenAssistantMessagesToPersist,
+  buildOversightRewriteSystem,
   extractNextPromptCandidate,
   findLastInlineNextMatch,
   isAdhdOversightEnabled,
@@ -41,6 +42,27 @@ describe("ADHD_OVERSIGHT_REWRITE_SYSTEM", () => {
     expect(ADHD_OVERSIGHT_REWRITE_SYSTEM).toContain(
       `Hard cap ${ADHD_TUTORING_WORD_CAP} words for tutoring answers; ${ADHD_CLARIFICATION_WORD_CAP} for brief clarifications.`,
     );
+  });
+});
+
+describe("buildOversightRewriteSystem (redirect / v2.0 A/B/C flag)", () => {
+  it("targets the A/B/C topic-switch template for the redirect profile", () => {
+    const system = buildOversightRewriteSystem("redirect", ADHD_CLARIFICATION_WORD_CAP);
+    expect(system).toContain("Looks like a topic switch");
+    expect(system).toContain("**A)**");
+    expect(system).toContain("**B)**");
+    expect(system).toContain("**C)**");
+    expect(system).toContain('Do NOT add a "Top summary" block');
+    expect(system).toContain("<current task>");
+    expect(system).not.toContain("<current active task>");
+  });
+
+  it("instructs the Dean to preserve a Session Tasks checklist instead of dropping it (redirect and full_tutoring)", () => {
+    const redirectSystem = buildOversightRewriteSystem("redirect", ADHD_CLARIFICATION_WORD_CAP);
+    expect(redirectSystem).toContain("Session Tasks");
+
+    const tutoringSystem = buildOversightRewriteSystem("full_tutoring", ADHD_TUTORING_WORD_CAP);
+    expect(tutoringSystem).toContain("Session Tasks");
   });
 });
 
@@ -342,6 +364,23 @@ describe("auditAndMaybeRewrite", () => {
     expect(generateText).not.toHaveBeenCalled();
   });
 
+  it("passes a compliant v2.0 A/B/C topic-switch draft without a Dean call", async () => {
+    const draft = `Looks like a topic switch. We were working on **defining the API contract**. Want to:
+**A)** Finish defining the API contract first, then come back to this
+**B)** Add this to the todo list and stay on defining the API contract
+**C)** Switch now (I'll save progress on defining the API contract)`;
+
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+    });
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   it("uses deterministic fix for S1-on baseline drift", async () => {
     const result = await auditAndMaybeRewrite({ draft: S1_ON_ASSISTANT, model: mockModel });
     expect(result.rewritten).toBe(true);
@@ -512,5 +551,27 @@ Two: Second
         result.text,
       ),
     ).toBe(true);
+  });
+
+  it("does not force a diagram into a compliant redirect flag when the off-topic message also asks for one", async () => {
+    // The learner's off-topic message embeds a diagram request ("switch to a
+    // diagram of X"), which must NOT make the Dean answer the new topic -
+    // the A/B/C flag withholds it entirely (policy §5).
+    const abcFlag = `Looks like a topic switch. We were working on **the essay outline**. Want to:
+**A)** Finish the essay outline first, then come back to this
+**B)** Add this to the todo list and stay on the essay outline
+**C)** Switch now (I'll save progress on the essay outline)`;
+
+    const result = await auditAndMaybeRewrite({
+      draft: abcFlag,
+      model: mockModel,
+      profile: "redirect",
+      wordCap: ADHD_CLARIFICATION_WORD_CAP,
+      userText: "wait actually, can we switch and draw a diagram of gradient descent instead?",
+    });
+
+    expect(result.rewritten).toBe(false);
+    expect(result.method).toBe("none");
+    expect(generateText).not.toHaveBeenCalled();
   });
 });
