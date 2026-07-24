@@ -38,19 +38,19 @@ const AUDIT_SAFE_ID_KEYS = new Set(["studentid", "ubcemployeeid"]);
 const REDACTED_VALUE = "[REDACTED]";
 const CIRCULAR_VALUE = "[CIRCULAR]";
 
-// Substrings that — after stripping non-alphanumerics and lowercasing the key — mark a value
-// as a credential or direct-contact PII that must never be persisted in log details. Matched as
-// substrings so compound keys are covered too: `secret` catches sessionSecret/clientSecret,
-// `apikey` catches x-api-key, `accesskey`/`privatekey` catch provider key fields.
+// Longer, reasonably unique needles matched as substrings against the alphanumerics-only
+// lowercased key so compound names stay covered (`secret` → sessionSecret/clientSecret,
+// `apikey` → x-api-key, `dburl`/`databaseuri` → dbUrl/databaseUri, etc.).
 const REDACT_KEY_SUBSTRINGS = [
   "password",
   "passwd",
+  "passcode",
+  "passphrase",
   "jwt",
   "pwd",
   "token",
   "cookie",
   "phone",
-  "auth",
   "bearer",
   "secret",
   "apikey",
@@ -59,14 +59,37 @@ const REDACT_KEY_SUBSTRINGS = [
   "encryptionkey",
   "credential",
   "databaseurl",
+  "databaseuri",
+  "dburl",
   "connectionstring",
   "dsn",
   "otp",
-  "mfa",
-  "pin",
   "signature",
   "sessionid",
+  "authorization",
 ];
+
+// Short / ambiguous tokens that must match a whole camelCase / snake_case / kebab segment
+// rather than a raw substring — otherwise `auth` redacts authorId and `pin` redacts mapping /
+// shippingAddress via includes().
+const REDACT_KEY_EXACT_SEGMENTS = new Set(["auth", "pin"]);
+
+// Bare `mfa` is secret-shaped when used as the full key, but status flags like `mfaEnabled`
+// must remain visible — so match the normalized full key only, not a segment of a compound name.
+const REDACT_KEY_EXACT_KEYS = new Set(["mfa"]);
+
+/** Split a key into lowercased segments on non-alphanumerics and camelCase boundaries. */
+function splitKeySegments(key: string): string[] {
+  const parts = key.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const segments: string[] = [];
+  for (const part of parts) {
+    const camelParts = part.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/);
+    for (const camel of camelParts) {
+      if (camel) segments.push(camel.toLowerCase());
+    }
+  }
+  return segments;
+}
 
 function shouldRedactKey(key: string) {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -81,7 +104,15 @@ function shouldRedactKey(key: string) {
   // NOTE: `email` is intentionally NOT redacted right now — full email addresses are logged
   // across all logs by current product decision. This is a temporary measure; emails will be
   // purged/redacted later for privacy. Add `"email"` to REDACT_KEY_SUBSTRINGS to restore redaction.
-  return REDACT_KEY_SUBSTRINGS.some((needle) => normalized.includes(needle));
+  if (REDACT_KEY_SUBSTRINGS.some((needle) => normalized.includes(needle))) {
+    return true;
+  }
+
+  if (REDACT_KEY_EXACT_KEYS.has(normalized)) {
+    return true;
+  }
+
+  return splitKeySegments(key).some((segment) => REDACT_KEY_EXACT_SEGMENTS.has(segment));
 }
 
 function sanitizeDetails(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
