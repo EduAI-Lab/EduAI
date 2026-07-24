@@ -51,6 +51,8 @@ AI tutoring platform with a two-agent supervisor system (primary tutor + pedagog
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
 
+Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+
 ## Docs
 
 System-wide architecture and planning documents live in [`docs/`](docs/). App-specific docs live alongside each app under their own `docs/` directory.
@@ -146,7 +148,7 @@ After `npm install`, each app gets a `.env` copied from its `.env.example` (only
 
 **Service API key (`EDUAI_API_KEY`)**
 
-AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and Question Maker AI chat / question generation (proxied to Core's `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
 You must set the **same value** in all three services:
 

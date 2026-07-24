@@ -70,14 +70,14 @@ export const ApiTestPage = () => {
   const [eduaiChatForm, setEduaiChatForm] = useState({
     courseCode: 'COSC121',
     message: '',
-    model: 'ollama:gpt-oss:120b'
+    model: 'vllm:qwen2.5-32b-instruct'
   });
   const [eduaiChatResult, setEduaiChatResult] = useState<ResultState>(defaultResult);
 
   const [eduaiQuestionForm, setEduaiQuestionForm] = useState({
     courseCode: 'COSC121',
     prompt: '',
-    model: 'ollama:gpt-oss:120b',
+    model: 'vllm:qwen2.5-32b-instruct',
     numQuestions: '5',
     difficultyEasy: '1',
     difficultyMedium: '2',
@@ -716,7 +716,8 @@ export const ApiTestPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (No API key needed)</SelectItem>
+                    <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (UBC, no API key)</SelectItem>
+                    <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct (UBC, no API key)</SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
                   </SelectContent>
@@ -747,11 +748,11 @@ export const ApiTestPage = () => {
                       messages: [{ role: 'user', content: eduaiChatForm.message }],
                       courseCode: eduaiChatForm.courseCode,
                       model: eduaiChatForm.model,
-                      apiKeys: eduaiChatForm.model.includes('ollama') ? {
-                        ollama: {
-                          isEnabled: true
-                        }
-                      } : {}
+                      apiKeys: eduaiChatForm.model.startsWith('ollama')
+                        ? { ollama: { isEnabled: true } }
+                        : eduaiChatForm.model.startsWith('vllm')
+                          ? { vllm: { isEnabled: true } }
+                          : {}
                     }),
                     (data) => {
                       setEduaiChatResult({ status: 'success', payload: data });
@@ -792,7 +793,8 @@ export const ApiTestPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ollama:gpt-oss:120b">Ollama GPT OSS 120B (No API key needed)</SelectItem>
+                    <SelectItem value="vllm:qwen2.5-32b-instruct">Qwen2.5 32B Instruct (UBC, no API key)</SelectItem>
+                    <SelectItem value="vllm:qwen2.5-7b-instruct">Qwen2.5 7B Instruct (UBC, no API key)</SelectItem>
                     <SelectItem value="google:gemini-2.5-flash">Google Gemini 2.5 Flash</SelectItem>
                     <SelectItem value="openai:gpt-4">OpenAI GPT-4</SelectItem>
                   </SelectContent>
@@ -880,11 +882,11 @@ export const ApiTestPage = () => {
                       prompt: eduaiQuestionForm.prompt,
                       courseCode: eduaiQuestionForm.courseCode,
                       model: eduaiQuestionForm.model,
-                      apiKeys: eduaiQuestionForm.model.includes('ollama') ? {
-                        ollama: {
-                          isEnabled: true
-                        }
-                      } : {},
+                      apiKeys: eduaiQuestionForm.model.startsWith('ollama')
+                        ? { ollama: { isEnabled: true } }
+                        : eduaiQuestionForm.model.startsWith('vllm')
+                          ? { vllm: { isEnabled: true } }
+                          : {},
                       numQuestions,
                       difficultyDistribution: { easy, medium, hard }
                     }),
