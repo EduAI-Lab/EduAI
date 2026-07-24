@@ -409,10 +409,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setImportableError(null);
     setLoadingImportable(true);
     try {
-      const results = await api.listImportableActivities(courseOfferingId ?? undefined);
-      // Importing an activity that already lives in this lesson is a no-op —
-      // the per-activity "Duplicate" action covers that case instead.
-      setImportableActivities(results.filter((item) => item.lessonId !== numericLessonId));
+      // #1043: importing an activity that already lives in this lesson is a
+      // no-op (the per-activity "Duplicate" action covers that), so exclude the
+      // current lesson server-side — a client-side filter over one paginated
+      // page could otherwise render an empty picker.
+      const page = await api.listImportableActivities(courseOfferingId ?? undefined, {
+        excludeLessonId: numericLessonId ?? undefined,
+      });
+      setImportableActivities(page.data);
     } catch (error) {
       console.error('Failed to load importable activities', error);
       setImportableError('Could not load activities to import. Please try again.');

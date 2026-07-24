@@ -89,6 +89,17 @@ export interface Paginated<T> {
 const TREE_PAGE_SIZE = 200;
 
 /**
+ * Default page size for course lists (#1043 Group A). The server now REQUIRES
+ * page/pageSize, so callers that don't drive an explicit pager (dashboards,
+ * the course switcher, the command palette, import-source dropdowns) send this
+ * bounded page instead of an unbounded read. Views with a real pager pass their
+ * own page/pageSize. A deployment with more courses than this in one of those
+ * non-pager surfaces truncates — those surfaces are tracked for a follow-up
+ * server-search UX (mirrors #1041's landed course-picker decision).
+ */
+export const COURSE_LIST_PAGE_SIZE = 200;
+
+/**
  * Serialize pagination params into a query string. Returns '' when empty so
  * callers can append unconditionally.
  */
@@ -311,7 +322,10 @@ export const api = {
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
       ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
     }>,
-  listCourses: () => http('/api/courses'),
+  listCourses: (params?: { page?: number; pageSize?: number; search?: string }) =>
+    http(
+      `/api/courses${pageQuery({ pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Course>>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
@@ -604,7 +618,10 @@ export const api = {
     http(
       `/api/admin/users?page=${params.page ?? 1}&pageSize=${params.pageSize ?? 25}`,
     ) as Promise<AdminUserPage>,
-  listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
+  listAdminCourses: (params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/admin/courses${pageQuery({ pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Course>>,
   /**
    * `availableStudents` is one page of Core's STUDENT list (#1041) — pass
    * `search`/`page` to reach students past the first page.
@@ -719,11 +736,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ sourceActivityId }),
     }) as Promise<Activity>,
-  listImportableActivities: (courseId?: number) => {
+  listImportableActivities: (
+    courseId?: number,
+    params?: { excludeLessonId?: number; page?: number; pageSize?: number },
+  ) => {
     const search = new URLSearchParams();
     if (courseId != null) search.set('courseId', String(courseId));
-    const qs = search.toString();
-    return http(`/api/activities/importable${qs ? `?${qs}` : ''}`) as Promise<ImportableActivity[]>;
+    if (params?.excludeLessonId != null) {
+      search.set('excludeLessonId', String(params.excludeLessonId));
+    }
+    // Group A endpoint — server requires page/pageSize; the picker takes one
+    // bounded page (server-side excludeLessonId keeps it from emptying).
+    search.set('page', String(params?.page ?? 1));
+    search.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
+    return http(`/api/activities/importable?${search.toString()}`) as Promise<
+      Paginated<ImportableActivity>
+    >;
   },
   dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {
