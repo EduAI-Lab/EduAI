@@ -26,15 +26,16 @@ import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
   Button,
   Card,
-  CardContent,
   ConfirmDialog,
   CourseHeroCard,
+  DetailPageScaffold,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  EmptyState,
   Input,
   Label,
   PageTabs,
@@ -367,19 +368,22 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   ]);
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
-      <CourseHeroCard
-        code={courseCode(course)}
-        term={courseTerm(course)}
-        year={courseYear(course)}
-        name={courseName(course)}
-        description={course.description}
-        accentColor={accentForCourse(course)}
-        topics={courseTopics.topics.map((topic) => topic.name)}
-        topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
-        topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
-      />
-
+    <DetailPageScaffold
+      padding="app"
+      hero={
+        <CourseHeroCard
+          code={courseCode(course)}
+          term={courseTerm(course)}
+          year={courseYear(course)}
+          name={courseName(course)}
+          description={course.description}
+          accentColor={accentForCourse(course)}
+          topics={courseTopics.topics.map((topic) => topic.name)}
+          topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
+          topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
+        />
+      }
+    >
       <PageTabs
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as (typeof tabs)[number]['id'])}
@@ -661,12 +665,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
           {oModules.length === 0 ? (
             <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <IconLayoutGrid size={22} aria-hidden="true" />
-                </div>
-                <p className="text-sm text-muted-foreground">No modules yet.</p>
-              </CardContent>
+              <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
             </Card>
           ) : (
             <SortableProvider
@@ -775,6 +774,6 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           setPendingPublish(null);
         }}
       />
-    </div>
+    </DetailPageScaffold>
   );
 }
