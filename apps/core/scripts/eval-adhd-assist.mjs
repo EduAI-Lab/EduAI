@@ -100,10 +100,14 @@ Options:
 Required environment variables:
   EDUAI_COOKIE          Cookie header from a logged-in browser session
   EDUAI_API_KEYS_JSON   JSON, e.g. {"openai":{"isEnabled":true,"apiKey":"sk-..."}}
+  EDUAI_COURSE_ID       Course to scope the chats to (or EDUAI_COURSE_CODE).
+                        Interactive chats are course-scoped since #657; a run
+                        without one fails with COURSE_REQUIRED.
 
 Optional environment variables:
   EDUAI_BASE_URL        Default http://localhost:5173 (core dev: http://localhost:3000)
   EDUAI_MODEL           Default openai:gpt-4o-mini
+  EDUAI_COURSE_CODE     Alternative to EDUAI_COURSE_ID, e.g. "MATH 320"
 
 Phase 3 after-capture (oversight ON on server):
   EDUAI_BASE_URL=http://localhost:3000 \\
@@ -195,9 +199,14 @@ function resolveConfig(cli) {
   const cookie = process.env.EDUAI_COOKIE;
   const model = process.env.EDUAI_MODEL || "openai:gpt-4o-mini";
   const apiKeysJson = process.env.EDUAI_API_KEYS_JSON;
+  const courseId = process.env.EDUAI_COURSE_ID?.trim() || null;
+  const courseCode = process.env.EDUAI_COURSE_CODE?.trim() || null;
 
   if (!cookie) fail("EDUAI_COOKIE is required (paste your browser session cookie header).");
   if (!apiKeysJson) fail("EDUAI_API_KEYS_JSON is required.");
+  if (!courseId && !courseCode) {
+    fail("EDUAI_COURSE_ID (or EDUAI_COURSE_CODE) is required; interactive chats are course-scoped.");
+  }
 
   let apiKeys;
   try {
@@ -237,6 +246,8 @@ function resolveConfig(cli) {
     cookie,
     model,
     apiKeys,
+    courseId,
+    courseCode,
     scenarioIds,
     conditions,
     modes,
@@ -304,7 +315,17 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
   };
 }
 
-async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adhdAssist }) {
+async function postChat({
+  baseUrl,
+  cookie,
+  model,
+  apiKeys,
+  chatId,
+  userText,
+  adhdAssist,
+  courseId,
+  courseCode,
+}) {
   const body = {
     messages: [{ id: randomUUID(), role: "user", content: userText }],
     model,
@@ -312,6 +333,8 @@ async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adh
     streaming: false,
     adhdAssist,
     chatId,
+    ...(courseId ? { courseId } : {}),
+    ...(courseCode ? { courseCode } : {}),
   };
 
   const res = await fetch(`${baseUrl}/api/chat`, {
@@ -369,6 +392,8 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         chatId,
         userText,
         adhdAssist,
+        courseId: config.courseId,
+        courseCode: config.courseCode,
       });
       const elapsed = Date.now() - tStart;
       chatId = resp.chatId ?? chatId;
@@ -583,6 +608,7 @@ function buildFormASnapshot({ config, results }) {
   lines.push(`- label: ${config.label ?? "(none)"}`);
   lines.push(`- gitSha: ${gitSha() ?? "?"}`);
   lines.push(`- model: ${config.model}`);
+  lines.push(`- course: ${config.courseId ?? config.courseCode ?? "(none)"}`);
   lines.push(`- oversight: ${JSON.stringify(oversightMetaFromEnv())}`);
   lines.push(`- scenarios: ${config.scenarioIds.join(", ")}`);
   lines.push(`- modes: ${config.modes.join(", ")}`);
@@ -618,6 +644,8 @@ async function writeOutputs({ config, results }) {
     baseUrl: config.baseUrl,
     model: config.model,
     label: config.label,
+    courseId: config.courseId,
+    courseCode: config.courseCode,
     scenarios: config.scenarioIds,
     modes: config.modes,
     oversight,
