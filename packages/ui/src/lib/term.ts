@@ -201,6 +201,20 @@ export function termSortKey(info: TermInfo): number {
   let code: TermCode | null
   let year: number
   if (info.startDate != null) {
+    // A bare "YYYY-MM-DD" string names a calendar date, not an instant —
+    // parsing it as UTC midnight and reading local fields can shift it into
+    // the previous day (and term/year) near a boundary. Read the fields
+    // straight from the string instead (same guard as `normalizeTerm`).
+    const dateOnly =
+      typeof info.startDate === "string"
+        ? info.startDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+        : null
+    if (dateOnly) {
+      code = termFromMonth(Number(dateOnly[2]) - 1)
+      const calendarYear = Number(dateOnly[1])
+      year = code === "W2" ? calendarYear - 1 : calendarYear
+      return year * 10 + TERM_RANK[code]
+    }
     const date = info.startDate instanceof Date ? info.startDate : new Date(info.startDate)
     if (!Number.isNaN(date.getTime())) {
       const derived = termInfoFromDate(date)

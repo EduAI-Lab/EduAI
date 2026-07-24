@@ -10,11 +10,12 @@ import {
 
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
-import { DashboardAdminView } from "~/components/dashboard/dashboard-admin-view";
-import { DashboardInstructorView } from "~/components/dashboard/dashboard-instructor-view";
-import { DashboardStudentView } from "~/components/dashboard/dashboard-student-view";
-import { DashboardTaView } from "~/components/dashboard/dashboard-ta-view";
-import { DashboardUnitAdminView } from "~/components/dashboard/dashboard-unit-admin-view";
+import {
+  DASHBOARD_CONFIG,
+  DashboardAdminBody,
+  DashboardStandardBody,
+  type EffectiveRole,
+} from "~/components/dashboard/dashboard-view-config";
 import { ProductTour } from "~/components/tour/product-tour";
 import { DASHBOARD_TOUR_STEPS, DASHBOARD_TOUR_STORAGE_KEY } from "~/components/tour/tour-steps";
 import { redirectToStudentIdOnboardingIfNeeded } from "~/lib/canvas/onboarding.server";
@@ -55,22 +56,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const CANVAS_SYNC_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
-function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
+/**
+ * `user.role` is `better-auth`'s loosely-typed `string | undefined` — narrow
+ * it to a `DASHBOARD_CONFIG` key, falling back to "STUDENT" (its historical
+ * default) for anything unrecognized, then swap in "TA" when the enrollment
+ * lookup says so.
+ */
+function resolveEffectiveRole(user: User, isTA: boolean): EffectiveRole {
+  if (isTA) return "TA";
+  switch (user.role) {
+    case "ADMIN":
+    case "UNIT_ADMIN":
+    case "INSTRUCTOR":
+      return user.role;
+    default:
+      return "STUDENT";
+  }
+}
+
+function DashboardHero({ user, effectiveRole }: { user: User; effectiveRole: EffectiveRole }) {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const name = (user.name ?? "").split(" ");
   const firstName = (name.length == 3 && name[0].endsWith('.') ? name[1] : name[0])
-  const heroTitle =
-    user.role === "ADMIN" ? "Platform overview" :
-    user.role === "UNIT_ADMIN" ? `Welcome back, ${firstName}.` :
-    user.role === "INSTRUCTOR" ? `Welcome back, ${firstName}.` :
-    `${greeting}, ${firstName}.`;
-  const heroSub =
-    user.role === "ADMIN" ? "EduAI platform health and usage at a glance." :
-    user.role === "UNIT_ADMIN" ? "Your unit courses and administration." :
-    user.role === "INSTRUCTOR" ? "Your courses and teaching activity." :
-    isTA ? "Your assigned courses and student activity." :
-    "Your AI-powered learning companion.";
+  const { heading, subheading } = DASHBOARD_CONFIG[effectiveRole].heroCopy(firstName, greeting);
   const dateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
   });
@@ -78,8 +87,8 @@ function DashboardHero({ user, isTA }: { user: User; isTA: boolean }) {
   return (
     <div className="px-4 lg:px-6 pt-6 pb-4" data-tour="dashboard-hero">
       <PageHeading
-        heading={heroTitle}
-        subheading={`${dateStr} · ${heroSub}`}
+        heading={heading}
+        subheading={`${dateStr} · ${subheading}`}
       />
     </div>
   );
@@ -96,28 +105,17 @@ function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
     isEnabled("instructors.canManageCanvasIntegration");
   const showCanvasSync = CANVAS_SYNC_ROLES.has(user.role ?? "");
 
-  let view;
-  switch (user.role) {
-    case "ADMIN":
-      view = <DashboardAdminView />;
-      break;
-    case "UNIT_ADMIN":
-      view = <DashboardUnitAdminView />;
-      break;
-    case "INSTRUCTOR":
-      view = <DashboardInstructorView />;
-      break;
-    case "STUDENT":
-    default:
-      // STUDENT-platform users who hold a TA enrollment get the TA dashboard.
-      view = isTA ? <DashboardTaView /> : <DashboardStudentView />;
-      break;
-  }
+  // STUDENT-platform users who hold a TA enrollment get the TA dashboard.
+  const effectiveRole = resolveEffectiveRole(user, isTA);
 
   return (
     <>
-      <DashboardHero user={user} isTA={isTA} />
-      {view}
+      <DashboardHero user={user} effectiveRole={effectiveRole} />
+      {effectiveRole === "ADMIN" ? (
+        <DashboardAdminBody />
+      ) : (
+        <DashboardStandardBody effectiveRole={effectiveRole} />
+      )}
       {showCanvasSync && (
         <div className="px-4 lg:px-6 pb-6 w-auto">
           <CanvasDashboardCard disabled={!canvasPolicyOk} />
