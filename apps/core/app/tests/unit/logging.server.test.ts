@@ -95,6 +95,55 @@ describe("logging.server", () => {
     );
   });
 
+  it("redacts secret-bearing key names missed by the pre-#973 deny-list", async () => {
+    await logAuditAction({
+      actionCode: "PROVIDER_CONFIG_SAVED",
+      category: "AI_CONFIG",
+      entityType: "Provider",
+      details: {
+        jwt: "eyJ...",
+        encryptionKey: "ek-1",
+        databaseUrl: "postgres://u:secret@host/db",
+        connectionString: "Server=x;Password=y",
+        dsn: "https://key@sentry.io/1",
+        passwd: "p1",
+        pwd: "p2",
+        otp: "123456",
+        totp: "654321",
+        mfa: "enabled",
+        pin: "0000",
+        auth: "Bearer xyz",
+        bearer: "xyz",
+        signature: "sig-abc",
+        sessionId: "sess-123",
+        canvasUrl: "https://canvas.example.com",
+      },
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: {
+          jwt: "[REDACTED]",
+          encryptionKey: "[REDACTED]",
+          databaseUrl: "[REDACTED]",
+          connectionString: "[REDACTED]",
+          dsn: "[REDACTED]",
+          passwd: "[REDACTED]",
+          pwd: "[REDACTED]",
+          otp: "[REDACTED]",
+          totp: "[REDACTED]",
+          mfa: "[REDACTED]",
+          pin: "[REDACTED]",
+          auth: "[REDACTED]",
+          bearer: "[REDACTED]",
+          signature: "[REDACTED]",
+          sessionId: "[REDACTED]",
+          canvasUrl: "https://canvas.example.com",
+        },
+      }),
+    );
+  });
+
   it("does not overflow on circular details and still redacts the rest", async () => {
     const details: Record<string, unknown> = { password: "nope", note: "ok" };
     details.self = details;
