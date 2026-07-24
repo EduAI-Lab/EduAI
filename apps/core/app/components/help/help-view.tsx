@@ -86,8 +86,8 @@ const TOPICS: HelpTopic[] = [
     icon: IconFileText,
     roles: STAFF,
     points: [
-      "Upload materials on a course's Materials tab. Each file is processed and embedded so the chatbot can cite it.",
-      "Watch the status chip: Processing means embedding is underway, Ready means it's live for chat, Failed means it needs a re-upload.",
+      "Upload materials on a course's Materials tab. Each file is processed so the chatbot can search and cite it.",
+      "Watch the status chip: Processing means the file is still being prepared, Ready means it's live for chat, Failed means it needs a re-upload.",
       "Control per-material visibility and scheduled availability so students only see what you've released.",
     ],
   },
