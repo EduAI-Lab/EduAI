@@ -11,14 +11,17 @@
  * Run from `apps/extensions/question-maker/app/backend` with:
  *   node scripts/seedUnified.js
  *
- * Uses `sequelize.sync({ force: true })` to recreate tables — destructive
- * but appropriate for dev / pre-production where no real data exists yet.
+ * Truncates every table first — destructive but appropriate for dev /
+ * pre-production where no real data exists yet. Assumes migrations have
+ * already been applied (`npx prisma migrate deploy`), unlike the old
+ * Sequelize version which created tables itself via `sync({ force: true })`.
  */
 
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
+import { createId } from '@paralleldrive/cuid2';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -45,17 +48,17 @@ if (process.env.DATABASE_URL.includes('@postgres:')) {
   }
 }
 
-const dbModule = await import('../src/config/database.js');
-const schemaModule = await import('../src/schema/index.js');
-const { sequelize } = dbModule;
-const {
-  User,
-  Course,
-  Topics,
-  Question_Metadata,
-  Assessments,
-  Variants,
-} = schemaModule;
+const { prisma } = await import('../src/config/database.js');
+
+/** Truncates every table in the `public` schema (dev/seed only). */
+async function truncateAll() {
+  const tables = await prisma.$queryRaw`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+  `;
+  if (tables.length === 0) return;
+  const list = tables.map((r) => `"${r.tablename}"`).join(', ');
+  await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+}
 
 /**
  * Mirror of `SEED_IDS` from `apps/core/prisma/seed.ts`. Keep in sync with
@@ -394,15 +397,15 @@ const COURSES = [
 
 async function seed() {
   console.log('Connecting to database...');
-  await sequelize.authenticate();
+  await prisma.$queryRaw`SELECT 1`;
   console.log('Database connection established.');
 
-  console.log('Syncing schema (force: true — drops and recreates tables)...');
-  await sequelize.sync({ force: true });
-  console.log('Schema synced.');
+  console.log('Truncating tables...');
+  await truncateAll();
+  console.log('Tables truncated.');
 
   console.log('Seeding users...');
-  await User.bulkCreate(USERS);
+  await prisma.user.createMany({ data: USERS });
 
   let courseCount = 0;
   let topicCount = 0;
@@ -415,18 +418,23 @@ async function seed() {
     // step 10) — the anchor row is just userId + coreCourseId; `course.name`/
     // `course.code` above stay in this file's own COURSES literal purely as
     // seed-data documentation.
-    const createdCourse = await Course.create({
-      userId: course.ownerId,
-      coreCourseId: course.coreCourseId,
+    const createdCourse = await prisma.course.create({
+      data: {
+        userId: course.ownerId,
+        coreCourseId: course.coreCourseId,
+      },
     });
     courseCount += 1;
 
     const topicBySlug = new Map();
     for (const topic of course.topics) {
-      const created = await Topics.create({
-        name: topic.name,
-        courseId: createdCourse.id,
-        coreTopicId: CORE.topic(course.coreCourseSlug, topic.slug),
+      const created = await prisma.topics.create({
+        data: {
+          id: createId(),
+          name: topic.name,
+          courseId: createdCourse.id,
+          coreTopicId: CORE.topic(course.coreCourseSlug, topic.slug),
+        },
       });
       topicBySlug.set(topic.slug, created);
       topicCount += 1;
@@ -434,10 +442,12 @@ async function seed() {
 
     // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077) —
     // it's derived from the course's Core term at the read seam.
-    const assessment = await Assessments.create({
-      courseId: createdCourse.id,
-      type: 'Quiz',
-      name: course.assessmentName,
+    const assessment = await prisma.assessments.create({
+      data: {
+        courseId: createdCourse.id,
+        type: 'Quiz',
+        name: course.assessmentName,
+      },
     });
 
     for (const [qIdx, question] of course.questions.entries()) {
@@ -446,12 +456,14 @@ async function seed() {
         throw new Error(`Unknown primary topic slug ${question.primaryTopicSlug} in ${course.code}`);
       }
 
-      const metadata = await Question_Metadata.create({
-        description: question.description,
-        type: question.type,
-        courseId: createdCourse.id,
-        primaryTopicId: primaryTopic.id,
-        questionOrder: { [assessment.id]: qIdx + 1 },
+      const metadata = await prisma.questionMetadata.create({
+        data: {
+          description: question.description,
+          type: question.type,
+          courseId: createdCourse.id,
+          primaryTopicId: primaryTopic.id,
+          questionOrder: { [assessment.id]: qIdx + 1 },
+        },
       });
       metadataCount += 1;
 
@@ -466,18 +478,20 @@ async function seed() {
             ? CORE.question(course.coreCourseSlug, question.coreQuestionN)
             : null;
 
-        await Variants.create({
-          questionText: variant.text,
-          difficulty: variant.difficulty,
-          reasoningLevel: variant.reasoningLevel,
-          questionMetadataId: metadata.id,
-          assessmentId: assessment.id,
-          secondaryTopicsId: secondaryTopicIds,
-          isAiGenerated: false,
-          isDraft: variant.isDraft,
-          answer: variant.answer,
-          choices: variant.choices,
-          coreQuestionId,
+        await prisma.variants.create({
+          data: {
+            questionText: variant.text,
+            difficulty: variant.difficulty,
+            reasoningLevel: variant.reasoningLevel,
+            questionMetadataId: metadata.id,
+            assessmentId: assessment.id,
+            secondaryTopicsId: secondaryTopicIds,
+            isAiGenerated: false,
+            isDraft: variant.isDraft,
+            answer: variant.answer,
+            choices: variant.choices,
+            coreQuestionId,
+          },
         });
         variantCount += 1;
         if (coreQuestionId) linkedVariantCount += 1;
@@ -494,11 +508,11 @@ async function seed() {
 
 seed()
   .then(async () => {
-    await sequelize.close();
+    await prisma.$disconnect();
     process.exit(0);
   })
   .catch(async (err) => {
     console.error('Seed failed:', err);
-    await sequelize.close();
+    await prisma.$disconnect();
     process.exit(1);
   });
