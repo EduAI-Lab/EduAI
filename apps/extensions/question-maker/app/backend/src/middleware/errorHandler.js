@@ -2,6 +2,7 @@
  * Express error-handling middleware that converts thrown errors into structured JSON responses.
  * Provides a 404 generator for unknown routes and a centralized formatter/logger for unexpected failures.
  */
+import { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 /** Creates a 404 error for unmatched routes so the main handler can respond consistently. */
@@ -32,42 +33,21 @@ export const errorHandler = (err, req, res, next) => {
     status: error.status || 500,
   }, error.message || 'Request error');
 
-  // Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = { message, status: 404 };
-  }
-
-  // Mongoose duplicate key
-  if (err.code === 11000) {
-    const message = 'Duplicate field value entered';
-    error = { message, status: 400 };
-  }
-
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message);
-    error = { message, status: 400 };
-  }
-
-  // Sequelize unique-constraint violation → 409 Conflict
-  if (err.name === 'SequelizeUniqueConstraintError') {
-    const fields = err.errors?.map((e) => e.path).filter(Boolean);
-    const message = fields?.length
-      ? `A record with this ${fields.join(', ')} already exists`
-      : 'Resource already exists';
-    error = { message, status: 409 };
-  }
-
-  // Sequelize validation error → 400
-  if (err.name === 'SequelizeValidationError') {
-    const message = err.errors?.map((e) => e.message).join('; ') || 'Validation failed';
-    error = { message, status: 400 };
-  }
-
-  // Sequelize foreign-key violation → 400 (references a missing record)
-  if (err.name === 'SequelizeForeignKeyConstraintError') {
-    error = { message: 'Referenced resource does not exist', status: 400 };
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    if (err.code === 'P2002') {
+      // Unique-constraint violation → 409 Conflict
+      const fields = Array.isArray(err.meta?.target) ? err.meta.target : [];
+      const message = fields.length
+        ? `A record with this ${fields.join(', ')} already exists`
+        : 'Resource already exists';
+      error = { message, status: 409 };
+    } else if (err.code === 'P2003') {
+      // Foreign-key violation → 400 (references a missing record)
+      error = { message: 'Referenced resource does not exist', status: 400 };
+    } else if (err.code === 'P2025') {
+      // Record required for the operation was not found → 404
+      error = { message: 'Resource not found', status: 404 };
+    }
   }
 
   // JWT errors

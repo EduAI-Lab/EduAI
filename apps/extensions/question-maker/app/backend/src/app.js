@@ -23,7 +23,6 @@ import bugReportRoutes from './routes/bug-reports.js';
 import internalRoutes from './routes/internal.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
-import './schema/index.js';
 
 const app = express();
 
