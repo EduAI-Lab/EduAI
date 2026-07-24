@@ -72,7 +72,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [core] feat: AI-job queue position/depth reads + backpressure — `enqueue()` (and the `/api/chat` 202 response) now returns a live 1-based `queuePosition` and `queueDepth` computed from the durable `ai_jobs` rows, and rejects with 429 + `Retry-After` when the target queue holds `QUEUE_MAX_DEPTH` PENDING jobs (unset/0 disables the cap; idempotent replays are never rejected). (#915, @abdullahmoh21, 2026-07-24)
+- [core] feat: AI-job queue position/depth reads + backpressure — `enqueue()` (and the `/api/chat` 202 response) now returns a live 1-based `queuePosition` and `queueDepth` computed from the durable `ai_jobs` rows, and rejects with 429 + `Retry-After` when the target queue holds `QUEUE_MAX_DEPTH` PENDING jobs (unset/0 disables the cap; idempotent replays are never rejected). (#915, @abdullahmoh21, 2026-07-24) — [#1172](https://github.com/EduAI-Lab/EduAI/pull/1172)
 - [core] feat: Async AI-job queue producer — `enqueue()` validates a job against the frozen contract, creates a durable `AiJob` Postgres row (source of truth), and pushes it onto the resolved per-pool BullMQ queue, wired at the `/api/chat` question-generation call site behind the off-by-default `QUEUE_ENQUEUE_ENABLED` flag; dequeue/dispatch is epic #168. (#914, @abdullahmoh21, 2026-07-18) — [#1092](https://github.com/EduAI-Lab/EduAI/pull/1092)
 
 ### Changed
