@@ -206,62 +206,74 @@ function main() {
     }
   }
 
+  const assessable = results.filter((r) => r.neverImported || r.executable > 0);
+  const flagged = assessable.filter(
+    (r) => r.neverImported || (r.covered / r.executable) * 100 < WARN_THRESHOLD
+  );
+  let totalExec = 0;
+  let totalCov = 0;
+  for (const r of assessable) {
+    if (r.neverImported) continue;
+    totalExec += r.executable;
+    totalCov += r.covered;
+  }
+
   const out = [];
   out.push(MARKER);
-  out.push("## 🧪 Patch coverage (advisory)");
-  out.push("");
-  out.push(
-    "_Non-blocking. Measures how many of the **lines this PR added/changed** are executed by a test — not a whole-file percentage. Low numbers flag code that shipped without a test exercising it._"
-  );
-  out.push("");
 
-  const assessable = results.filter((r) => r.neverImported || r.executable > 0);
-
+  // Lead with the verdict + numbers — the part that stays useful once the check is familiar.
   if (!changedFiles.length) {
-    out.push("No changed files detected against `" + BASE_REF + "`.");
-  } else if (!ranWorkspaces.length && !skippedWorkspaces.length) {
-    out.push("No changed files fall under a coverage-tracked workspace — nothing to assess.");
-  } else if (!assessable.length) {
-    out.push("No added **executable** lines in coverage-tracked source files — nothing to assess. ✅");
-  } else {
-    let totalExec = 0;
-    let totalCov = 0;
-    for (const r of assessable) {
-      if (r.neverImported) continue;
-      totalExec += r.executable;
-      totalCov += r.covered;
-    }
-    const overall = fmtPct(totalCov, totalExec);
-    out.push(`**Overall patch coverage: ${overall}** (${totalCov}/${totalExec} added executable lines covered)`);
+    out.push("### 🧪 Patch coverage — no changes");
     out.push("");
-    out.push("| File | Patch coverage | Covered / added-exec | Flag |");
-    out.push("| --- | --- | --- | --- |");
+    out.push(`Nothing changed against \`${BASE_REF}\`.`);
+  } else if (!ranWorkspaces.length && !skippedWorkspaces.length) {
+    out.push("### 🧪 Patch coverage — n/a");
+    out.push("");
+    out.push("No changed files fall under a coverage-tracked workspace.");
+  } else if (!assessable.length) {
+    out.push("### 🧪 Patch coverage — n/a ✅");
+    out.push("");
+    out.push("No added executable lines in tracked source files (changes were config, comments, or types).");
+  } else {
+    const verdict = flagged.length ? "⚠️" : "✅";
+    out.push(`### 🧪 Patch coverage: ${fmtPct(totalCov, totalExec)} ${verdict}`);
+    out.push("");
+    const nFiles = assessable.length;
+    let sub = `**${totalCov}/${totalExec}** added executable lines covered across **${nFiles}** file${nFiles === 1 ? "" : "s"}.`;
+    sub += flagged.length
+      ? ` **${flagged.length} flagged** below ${WARN_THRESHOLD}% — see below. 👇`
+      : ` All at or above ${WARN_THRESHOLD}%. Nothing to action.`;
+    out.push(sub);
+    out.push("");
+
+    out.push("| File | Coverage | Covered / added | |");
+    out.push("| --- | --: | --: | --- |");
     assessable.sort((a, b) => {
       const pa = a.neverImported ? -1 : a.covered / a.executable;
       const pb = b.neverImported ? -1 : b.covered / b.executable;
-      return pa - pb;
+      return pa - pb; // worst first
     });
     for (const r of assessable) {
       if (r.neverImported) {
-        out.push(`| \`${r.file}\` | **0%** | 0 / ? | ⚠️ no test imports this file |`);
+        out.push(`| \`${r.file}\` | **0%** | 0 / ${r.addedCount} | ⚠️ no test imports this file |`);
         continue;
       }
       const pctNum = (r.covered / r.executable) * 100;
-      const flag = pctNum < WARN_THRESHOLD ? "⚠️ below " + WARN_THRESHOLD + "%" : "✅";
-      let cell = `| \`${r.file}\` | ${fmtPct(r.covered, r.executable)} | ${r.covered} / ${r.executable} | ${flag} |`;
-      out.push(cell);
+      const mark = pctNum < WARN_THRESHOLD ? "⚠️" : "✅";
+      out.push(`| \`${r.file}\` | ${fmtPct(r.covered, r.executable)} | ${r.covered} / ${r.executable} | ${mark} |`);
     }
-    // Show the specific uncovered added lines for flagged files, to make the warning actionable.
-    const flagged = assessable.filter(
-      (r) => r.neverImported || (r.executable > 0 && (r.covered / r.executable) * 100 < WARN_THRESHOLD)
-    );
-    if (flagged.some((r) => r.uncovered.length)) {
+
+    // Exact uncovered lines for flagged files — the actionable payload.
+    if (flagged.length) {
       out.push("");
-      out.push("<details><summary>Uncovered added lines</summary>");
+      out.push(`<details open><summary><strong>Uncovered added lines</strong> (${flagged.length} file${flagged.length === 1 ? "" : "s"})</summary>`);
       out.push("");
       for (const r of flagged) {
-        if (!r.uncovered.length) continue;
-        out.push(`- \`${r.file}\`: ${compressRanges(r.uncovered)}`);
+        if (r.neverImported) {
+          out.push(`- \`${r.file}\` — entire file (${r.addedCount} added line${r.addedCount === 1 ? "" : "s"}); no test imports it`);
+        } else if (r.uncovered.length) {
+          out.push(`- \`${r.file}\` — lines ${compressRanges(r.uncovered)}`);
+        }
       }
       out.push("");
       out.push("</details>");
@@ -271,16 +283,24 @@ function main() {
   if (skippedWorkspaces.length) {
     out.push("");
     out.push(
-      "> ⚠️ Coverage did not run for some touched workspaces (turbo `--affected` skipped them or the run failed): " +
+      "> ⚠️ Not assessed — coverage didn't run for " +
         skippedWorkspaces.map((s) => `**${s.label}** (${s.count} file${s.count === 1 ? "" : "s"})`).join(", ") +
-        ". Those files are not assessed above."
+        ` (turbo \`--affected\` skipped it or the suite failed).`
     );
   }
 
   out.push("");
   out.push(
-    `<sub>Base: \`${BASE_REF}\` · threshold: ${WARN_THRESHOLD}% · ran: ${ranWorkspaces.join(", ") || "none"}</sub>`
+    `<sub>base \`${BASE_REF}\` · threshold ${WARN_THRESHOLD}% · ran ${ranWorkspaces.join(", ") || "none"} · advisory, never blocks merge</sub>`
   );
+  out.push("");
+  out.push("<details><summary>What is patch coverage?</summary>");
+  out.push("");
+  out.push(
+    "The share of the lines **this PR added or changed** that a test executes — not a whole-file %, which is noisy (it swings on unrelated deletions and moves). A low number means new code shipped without a test running it. A file that no test imports shows as 0%."
+  );
+  out.push("");
+  out.push("</details>");
 
   process.stdout.write(out.join("\n") + "\n");
 }
