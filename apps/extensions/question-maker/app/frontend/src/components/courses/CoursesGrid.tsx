@@ -6,12 +6,11 @@ import {
   buildDepartmentFilterGroup,
   defaultColorIndexForCourse,
   type CourseFilterGroup,
+  EmptyState,
 } from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
-import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
 import { getDepartmentLabel } from '@/lib/units';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { CardGridSkeleton } from '@/components/shared/Skeletons';
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
@@ -33,8 +32,6 @@ export type CoursesGridProps = {
   onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
-  roleView?: QmRoleView;
-  currentUserId?: string;
   /** Course card to highlight for guided tour step 1 */
   tourHighlightCourseId?: number | null;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
@@ -134,6 +131,7 @@ export function CoursesGrid({
       gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       emptyState={
         <EmptyState
+          bare={false}
           icon={<IconBooks className="size-6" />}
           title="No courses yet"
           description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
@@ -141,6 +139,7 @@ export function CoursesGrid({
       }
       noResultsState={
         <EmptyState
+          bare={false}
           icon={<IconSearch className="size-6" />}
           title="No courses match"
           description="Try a different search or filter."

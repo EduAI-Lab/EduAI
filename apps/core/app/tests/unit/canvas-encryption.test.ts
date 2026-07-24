@@ -21,11 +21,11 @@ describe("canvas encryption", () => {
     vi.stubEnv("ENCRYPTION_KEY", TEST_KEY);
     const { encrypt, decrypt } = await import("~/lib/canvas/encryption");
 
-    // Non-ASCII characters only decode correctly if cipher.update/decipher.update/
-    // decipher.final are called with the "utf8" encoding argument specifically —
-    // an empty-string encoding argument corrupts multi-byte sequences, unlike
-    // pure-ASCII content (used by the other round-trip test), which can decode
-    // byte-identically under either encoding and so can't distinguish the two.
+    // Exercises multi-byte UTF-8 content end-to-end. This does not kill
+    // `"utf8" → ""` encoding mutants: on Node 22, cipher/decipher update/final
+    // still round-trip this payload with an empty encoding argument. Pure-ASCII
+    // round-trips are likewise encoding-insensitive. Kept as a regression guard
+    // for real UTF-8 mishandling elsewhere in the encrypt/decrypt path.
     const secret = "café-tökén-🔑-日本語";
     const blob = encrypt(secret);
     expect(decrypt(blob)).toBe(secret);

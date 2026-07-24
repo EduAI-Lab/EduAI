@@ -75,6 +75,8 @@ export interface LessonCardProps {
   isPublished?: boolean;
   /** Eyebrow-right action slot, e.g. the publish `PublishMenu`. */
   menuSlot?: ReactNode;
+  /** Eyebrow-left lead slot rendered before the order chip (e.g. a drag handle). */
+  leading?: ReactNode;
   className?: string;
   dataTour?: string;
   dataTourRoute?: string;
@@ -91,6 +93,7 @@ export function LessonCard({
   activityCount,
   isPublished,
   menuSlot,
+  leading,
   className,
   dataTour,
   dataTourRoute,
@@ -157,6 +160,7 @@ export function LessonCard({
       <CardHeader className="relative gap-2">
         <div className="flex items-start justify-between gap-2">
           <span className="inline-flex items-center gap-2.5">
+            {leading}
             <span
               className="flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums"
               style={{
