@@ -18,7 +18,10 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
 
 import { prisma } from '../../src/config/database.js';
 import { listEduAiCourseEnrollmentsServiceKey } from '../../src/services/eduaiClient.js';
-import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
+import {
+  resetEnrollmentSyncThrottleForTests,
+  syncCourseEnrollments,
+} from '../../src/services/enrollmentSync.js';
 
 const COURSE = {
   id: 1,
@@ -45,6 +48,7 @@ const TA_ENROLLMENT = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetEnrollmentSyncThrottleForTests();
   prisma.courseOffering.findUnique.mockResolvedValue(COURSE);
   prisma.courseEnrollment.findMany.mockResolvedValue([]);
   prisma.courseEnrollment.createMany.mockResolvedValue({ count: 0 });
@@ -116,8 +120,23 @@ describe('syncCourseEnrollments', () => {
       expect(result).toEqual({ synced: 1, created: 1, updated: 0, deleted: 0, errors: [] });
     });
 
-    it('does not create TA enrollment rows (#578)', async () => {
+    it('creates TA enrollment rows (#1065)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([TA_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
+        data: [{ courseOfferingId: 1, userId: 'user-cuid-ta', role: 'TA' }],
+        skipDuplicates: true,
+      });
+      expect(result).toEqual({ synced: 1, created: 1, updated: 0, deleted: 0, errors: [] });
+    });
+
+    it('does not create INSTRUCTOR enrollment rows', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        { ...ACTIVE_ENROLLMENT, studentId: 'inst-1', role: 'INSTRUCTOR' },
+      ]);
       prisma.courseEnrollment.findMany.mockResolvedValue([]);
 
       const result = await syncCourseEnrollments(1);
@@ -151,7 +170,7 @@ describe('syncCourseEnrollments', () => {
   });
 
   describe('update path (role changed)', () => {
-    it('does not promote students to TA when Core reports TA (#578)', async () => {
+    it('promotes local STUDENT rows to TA when Core reports TA (#1065)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
         { ...ACTIVE_ENROLLMENT, studentId: 'user-cuid-1', role: 'TA' },
       ]);
@@ -159,8 +178,11 @@ describe('syncCourseEnrollments', () => {
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.update).not.toHaveBeenCalled();
-      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
+      expect(prisma.courseEnrollment.update).toHaveBeenCalledWith({
+        where: { courseOfferingId_userId: { courseOfferingId: 1, userId: 'user-cuid-1' } },
+        data: { role: 'TA' },
+      });
+      expect(result).toEqual({ synced: 1, created: 0, updated: 1, deleted: 0, errors: [] });
     });
 
     it('does not update when role is unchanged', async () => {
@@ -204,7 +226,7 @@ describe('syncCourseEnrollments', () => {
       expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 1, errors: [] });
     });
 
-    it('does not delete local TA rows when syncing STUDENT enrollments only (#578)', async () => {
+    it('deletes local TA rows no longer active in Core (#1065)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
       prisma.courseEnrollment.findMany.mockResolvedValue([
         { userId: 'user-cuid-1', role: 'STUDENT' },
@@ -213,8 +235,10 @@ describe('syncCourseEnrollments', () => {
 
       const result = await syncCourseEnrollments(1);
 
-      expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
-      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 0, errors: [] });
+      expect(prisma.courseEnrollment.deleteMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ['user-cuid-ta'] } },
+      });
+      expect(result).toEqual({ synced: 1, created: 0, updated: 0, deleted: 1, errors: [] });
     });
 
     it('skips deleteMany when no stale STUDENT rows exist', async () => {
@@ -257,7 +281,9 @@ describe('syncCourseEnrollments', () => {
 
       await syncCourseEnrollments(1);
 
-      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith('core-course-cuid-1');
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith('core-course-cuid-1', {
+        signal: undefined,
+      });
     });
   });
 
@@ -278,7 +304,7 @@ describe('syncCourseEnrollments', () => {
       expect(result).toEqual({ synced: 1, created: 1, updated: 0, deleted: 0, errors: [] });
     });
 
-    it('syncs STUDENT enrollments only (#578)', async () => {
+    it('syncs STUDENT and TA enrollments, excluding INSTRUCTOR (#1065)', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
         ACTIVE_ENROLLMENT,
         { ...ACTIVE_ENROLLMENT, studentId: 'ta-1', role: 'TA' },
@@ -289,10 +315,13 @@ describe('syncCourseEnrollments', () => {
       const result = await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.createMany).toHaveBeenCalledWith({
-        data: [{ courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' }],
+        data: [
+          { courseOfferingId: 1, userId: 'user-cuid-1', role: 'STUDENT' },
+          { courseOfferingId: 1, userId: 'ta-1', role: 'TA' },
+        ],
         skipDuplicates: true,
       });
-      expect(result.synced).toBe(1);
+      expect(result.synced).toBe(2);
     });
   });
 
@@ -304,6 +333,72 @@ describe('syncCourseEnrollments', () => {
       await expect(syncCourseEnrollments(1)).rejects.toThrow('EDUAI_API_KEY not configured');
       expect(prisma.courseEnrollment.createMany).not.toHaveBeenCalled();
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('tags a Core fetch failure with phase "fetch"', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(new Error('network down'));
+
+      await expect(syncCourseEnrollments(1)).rejects.toMatchObject({ phase: 'fetch' });
+    });
+
+    it('tags a local write failure with phase "write"', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+      prisma.courseEnrollment.createMany.mockRejectedValue(new Error('DB unavailable'));
+
+      await expect(syncCourseEnrollments(1)).rejects.toMatchObject({ phase: 'write' });
+    });
+
+    it('passes options.signal through to the Core client', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      const signal = new AbortController().signal;
+
+      await syncCourseEnrollments(1, { signal });
+
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledWith('core-course-cuid-1', { signal });
+    });
+  });
+
+  describe('options.ttlMs throttling', () => {
+    it('skips the Core call when a sync succeeded within the TTL window', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
+      listEduAiCourseEnrollmentsServiceKey.mockClear();
+
+      const result = await syncCourseEnrollments(1, { ttlMs: 30_000 });
+
+      expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
+      expect(result.skipped).toBe(true);
+    });
+
+    it('calls Core again once the TTL window has elapsed', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+      const nowSpy = vi.spyOn(Date, 'now');
+      nowSpy.mockReturnValue(1_000);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
+      listEduAiCourseEnrollmentsServiceKey.mockClear();
+      nowSpy.mockReturnValue(1_000 + 30_001);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
+
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
+      nowSpy.mockRestore();
+    });
+
+    it('always calls Core when ttlMs is not passed, regardless of a prior sync', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
+      listEduAiCourseEnrollmentsServiceKey.mockClear();
+
+      await syncCourseEnrollments(1);
+
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
     });
   });
 });
