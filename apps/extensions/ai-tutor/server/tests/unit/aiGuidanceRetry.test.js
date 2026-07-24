@@ -26,12 +26,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function failedResponse(status, headers = {}) {
+function failedResponse(status, headers = {}, body = `Upstream returned ${status}`) {
   return {
     ok: false,
     status,
     headers: new Headers(headers),
-    text: () => Promise.resolve(`Upstream returned ${status}`),
+    text: () => Promise.resolve(body),
   };
 }
 
@@ -105,6 +105,32 @@ describe('callEduAI transient failure retry (#1001)', () => {
     expect(firstRequestBody).not.toHaveProperty('chatId');
     expect(secondRequestBody).not.toHaveProperty('chatId');
     expect(result.chatId).toBeNull();
+  });
+
+  it('retries a generic upstream 429 response once', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(failedResponse(429, {}, JSON.stringify({ error: 'Proxy rate limit' })))
+      .mockResolvedValueOnce(successfulResponse());
+
+    const result = await generateResponse();
+
+    expect(result).toMatchObject({
+      message: 'Start by identifying the base case.',
+      chatId: null,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry Core application rate-limit responses', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        failedResponse(429, {}, JSON.stringify({ error: 'Too Many Requests' })),
+      );
+
+    await expect(generateResponse()).rejects.toMatchObject({ status: 429 });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('stops after one retry when both attempts return a transient failure', async () => {
