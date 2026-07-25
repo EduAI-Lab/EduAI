@@ -21,7 +21,6 @@ import {
 } from '@eduai/ui';
 import { PermissionGate } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
-import { useToast } from '@/components/ui/use-toast';
 import { useCourses } from '../hooks/useCourses';
 import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
@@ -35,6 +34,7 @@ import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
+import { toast } from 'sonner';
 
 /** Hover text for the Variants column — counts are reviewed-only (drafts excluded). */
 const REVIEWED_VARIANTS_TOOLTIP =
@@ -214,7 +214,6 @@ export function AssessmentVariantPage() {
   // Support both nested route params and query params for backward compatibility
   const courseIdParam = routeCourseIdParam || searchParams.get('courseId');
   const baselineAssessmentIdParam = routeAssessmentIdParam || searchParams.get('baselineAssessmentId');
-  const { toast } = useToast();
   const { courses, isLoading: coursesLoading, fetchCourses } = useCourses();
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -377,11 +376,10 @@ export function AssessmentVariantPage() {
     if (meta?.assessmentId) {
       setBaselineAssessmentId(String(meta.assessmentId));
     }
-    toast({
-      title: 'Baseline exam saved',
-      description: meta?.assessmentId
+    toast('Baseline exam saved', {
+        description: meta?.assessmentId
         ? 'Selected as the current baseline. Mark it as reference, then generate variants.'
-        : 'Select the assessment below.'
+        : 'Select the assessment below.',
     });
   };
 
@@ -389,27 +387,24 @@ export function AssessmentVariantPage() {
     setCanvasImportOpen(false);
     setBaselineAssessmentId(String(result.assessmentId));
     if (selectedCourse?.id) await loadAssessments(selectedCourse.id);
-    toast({
-      title: 'Imported from Canvas',
-      description: `"${result.assessmentName}" — mark as reference, then generate variants.`
+    toast('Imported from Canvas', {
+        description: `"${result.assessmentName}" — mark as reference, then generate variants.`,
     });
   };
 
   const markBaseline = async () => {
     const id = Number(baselineAssessmentId);
     if (!id) {
-      toast({ variant: 'destructive', title: 'Select a baseline exam first' });
+      toast.error('Select a baseline exam first');
       return;
     }
     try {
       await assessmentVariantService.setStudyRole(id, 'reference_baseline');
       await loadAssessments(selectedCourse!.id);
-      toast({ title: 'Marked as reference baseline' });
+      toast('Marked as reference baseline');
     } catch (e: unknown) {
-      toast({
-        variant: 'destructive',
-        title: 'Failed',
-        description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.'
+      toast.error('Failed', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
       });
     }
   };
@@ -417,7 +412,7 @@ export function AssessmentVariantPage() {
   const generateVariantsFromBaseline = async (mode: 'all' | 'missing') => {
     const refId = Number(baselineAssessmentId);
     if (!selectedCourse?.id || !refId) {
-      toast({ variant: 'destructive', title: 'Select a course and baseline exam first' });
+      toast.error('Select a course and baseline exam first');
       return;
     }
     setGeneratingVariants(true);
@@ -427,10 +422,8 @@ export function AssessmentVariantPage() {
       const detail = await loadAssessmentDetail(refId);
       const allQuestionIds = collectQuestionMetadataIdsFromAssessment(detail);
       if (allQuestionIds.length === 0) {
-        toast({
-          variant: 'destructive',
-          title: 'No questions found',
-          description: 'Add questions to the baseline exam (sections with variants), then try again.'
+        toast.error('No questions found', {
+            description: 'Add questions to the baseline exam (sections with variants), then try again.',
         });
         return;
       }
@@ -444,12 +437,10 @@ export function AssessmentVariantPage() {
       }
 
       if (questionIds.length === 0) {
-        toast({
-          title: 'Nothing to generate',
-          description:
-            mode === 'missing'
+        toast('Nothing to generate', {
+            description: mode === 'missing'
               ? 'No questions are missing variants right now.'
-              : `Each base question already has at least ${variantReadiness?.minRequiredNonDraft ?? 2} variants (reviewed only). Continue to assembly.`
+              : `Each base question already has at least ${variantReadiness?.minRequiredNonDraft ?? 2} variants (reviewed only). Continue to assembly.`,
         });
         return;
       }
@@ -472,30 +463,25 @@ export function AssessmentVariantPage() {
       }
 
       if (createdCount === 0) {
-        toast({
-          variant: 'destructive',
-          title: 'No variants were generated',
-          description: failed
+        toast.error('No variants were generated', {
+            description: failed
             ? `All ${failed} generation attempt(s) failed (details in console). Check the selected AI model / EduAI configuration and try again.`
             : 'The AI returned no new variants. Try again or choose another model.',
-          duration: Number.POSITIVE_INFINITY
+            duration: Infinity,
         });
       } else {
         // Generated variants are DRAFTS — open the review modal so the instructor can
         // inspect and explicitly approve them. Nothing is marked reviewed automatically.
         setVariantReviewResult(result);
         setVariantReviewOpen(true);
-        toast({
-          title: `${createdCount} draft variant(s) generated`,
-          description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ''}`
+        toast(`${createdCount} draft variant(s) generated`, {
+            description: `Review and approve them below.${failed ? ` ${failed} step(s) failed (see console).` : ''}`,
         });
       }
     } catch (e: unknown) {
-      toast({
-        variant: 'destructive',
-        title: 'Variant generation failed',
-        description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Check EduAI configuration.',
-        duration: Number.POSITIVE_INFINITY
+      toast.error('Variant generation failed', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Check EduAI configuration.',
+          duration: Infinity,
       });
     } finally {
       setGeneratingVariants(false);
@@ -535,7 +521,7 @@ export function AssessmentVariantPage() {
   const assembleStructureMatchedExams = async () => {
     const refId = Number(baselineAssessmentId);
     if (!selectedCourse?.id || !refId) {
-      toast({ variant: 'destructive', title: 'Select a course and baseline exam' });
+      toast.error('Select a course and baseline exam');
       return;
     }
     setAssembling(true);
@@ -552,20 +538,17 @@ export function AssessmentVariantPage() {
       if (firstId != null) {
         setAiReviewVariantId(String(firstId));
       }
-      toast({
-        title: 'Variant exam assembled',
-        description: `${result.examCount} exam(s) in ${result.assemblyTimeMs} ms — same structure as baseline (different variants per slot when available).`
+      toast('Variant exam assembled', {
+          description: `${result.examCount} exam(s) in ${result.assemblyTimeMs} ms — same structure as baseline (different variants per slot when available).`,
       });
       if (result.warnings?.length) {
         console.warn('Assembly warnings', result.warnings);
       }
       await loadAssessments(selectedCourse.id);
     } catch (e: unknown) {
-      toast({
-        variant: 'destructive',
-        title: 'Assembly failed',
-        description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Need enough distinct variants per baseline slot (at least one alternate per question, reviewed non-drafts unless drafts are allowed).',
-        duration: Number.POSITIVE_INFINITY
+      toast.error('Assembly failed', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Need enough distinct variants per baseline slot (at least one alternate per question, reviewed non-drafts unless drafts are allowed).',
+          duration: Infinity,
       });
     } finally {
       setAssembling(false);
@@ -577,11 +560,11 @@ export function AssessmentVariantPage() {
     const baselineId = Number(aiReviewBaselineId || baselineAssessmentId);
     const variantId = Number(aiReviewVariantId);
     if (!cid || !baselineId || !variantId) {
-      toast({ variant: 'destructive', title: 'Select baseline, variant exam, and course first' });
+      toast.error('Select baseline, variant exam, and course first');
       return;
     }
     if (baselineId === variantId) {
-      toast({ variant: 'destructive', title: 'Variant exam must be different from baseline' });
+      toast.error('Variant exam must be different from baseline');
       return;
     }
 
@@ -609,15 +592,12 @@ export function AssessmentVariantPage() {
         result
       };
       setAiReviewHistory((prev) => [historyItem, ...prev].slice(0, AI_REVIEW_HISTORY_MAX_ITEMS));
-      toast({
-        title: 'AI review complete',
-        description: `Compared ${result.comparedSlots} slot(s). See the results below.`
+      toast('AI review complete', {
+          description: `Compared ${result.comparedSlots} slot(s). See the results below.`,
       });
     } catch (e: unknown) {
-      toast({
-        variant: 'destructive',
-        title: 'AI review failed',
-        description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.'
+      toast.error('AI review failed', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
       });
     } finally {
       setAiReviewLoading(false);
@@ -713,16 +693,9 @@ export function AssessmentVariantPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      toast({
-        title: 'Export started',
-        description: 'AI review downloaded as a Word document (.docx).'
-      });
+      toast('Export started', { description: 'AI review downloaded as a Word document (.docx).' });
     } catch {
-      toast({
-        title: 'Export failed',
-        description: 'Could not build the Word file. Please try again.',
-        variant: 'destructive'
-      });
+      toast.error('Export failed', { description: 'Could not build the Word file. Please try again.' });
     }
   };
 

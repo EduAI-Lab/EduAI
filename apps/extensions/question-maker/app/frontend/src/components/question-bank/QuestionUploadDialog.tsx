@@ -12,7 +12,6 @@ import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
 import { Button, Textarea, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, ScrollArea, Progress, Card, CardContent, CardHeader, CardTitle } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
-import { useToast } from '@/components/ui/use-toast';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
 
@@ -27,6 +26,7 @@ import { OCRHistoryPanel } from '../ocr/OCRHistoryPanel';
 import { UnsavedChangesDialog } from '../ocr/UnsavedChangesDialog';
 import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel } from '../../utils/aiModels';
 import type { OCRJob, StoredQuestion } from '../../types/ocr';
+import { toast } from 'sonner';
 
 // Configure PDF.js worker
 // In production, use CDN to avoid issues with worker file path resolution
@@ -271,7 +271,6 @@ export const QuestionUploadDialog = ({
     initialDraftQuestions,
     saveTarget = 'assessment'
 }: QuestionUploadDialogProps) => {
-    const { toast } = useToast();
 
     const [topics, setTopics] = useState<Topic[]>(providedTopics);
     const [primaryTopicId, setPrimaryTopicId] = useState<string>('');
@@ -428,15 +427,10 @@ export const QuestionUploadDialog = ({
         try {
             await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
             setApiKeySaveState('saved');
-            toast({
-                title: 'API key saved',
-                description: 'Stored locally in your browser for this provider.',
-            });
+            toast('API key saved', { description: 'Stored locally in your browser for this provider.' });
         } catch {
             setApiKeySaveState('error');
-            toast({
-                variant: 'destructive',
-                title: 'Failed to save API key',
+            toast.error('Failed to save API key', {
                 description: 'Could not store the key locally. Try again.',
             });
         }
@@ -518,10 +512,9 @@ export const QuestionUploadDialog = ({
         setProcessingStage('review');
         setProgress(100);
 
-        toast({
-            title: 'Questions extracted',
+        toast('Questions extracted', {
             description: `Parsed ${drafts.length} question${drafts.length === 1 ? '' : 's'} from the upload.`,
-            duration: Number.POSITIVE_INFINITY,
+            duration: Infinity,
         });
     }, [courseId, toast, aiModel]);
 
@@ -573,12 +566,7 @@ export const QuestionUploadDialog = ({
             setProcessingStage('idle');
             setProgress(0);
             updateJobStatus(jobId, 'error', { error: message });
-            toast({
-                variant: 'destructive',
-                title: 'Question extraction failed',
-                description: message,
-                duration: Number.POSITIVE_INFINITY,
-            });
+            toast.error('Question extraction failed', { description: message, duration: Infinity });
         }
     }, [courseId, courseName, handleExtractQuestions, performOcr, toast, onExtractInBackground, onClose, aiModel, addJob, updateJobStatus, assessmentType, assessmentName]);
 
@@ -719,8 +707,7 @@ export const QuestionUploadDialog = ({
         }
         setShowUnsavedDialog(false);
         onClose();
-        toast({
-            title: 'Questions discarded',
+        toast('Questions discarded', {
             description: 'You can restore them later from the History panel in the upload dialog.',
             duration: 10000,
         });
@@ -758,8 +745,7 @@ export const QuestionUploadDialog = ({
             setAssessmentType(job.assessmentDetails.type as typeof assessmentTypes[number]);
             setAssessmentName(job.assessmentDetails.name);
         }
-        toast({
-            title: 'Questions restored',
+        toast('Questions restored', {
             description: `Restored ${restoredDrafts.length} question(s) from history. Choices and answers are included.`,
             duration: 10000,
         });
@@ -767,11 +753,9 @@ export const QuestionUploadDialog = ({
 
     const handleSelectHistoryJob = useCallback((job: OCRJob) => {
         if (job.courseId !== courseId) {
-            toast({
-                title: 'Different course',
+            toast.error('Different course', {
                 description: `This upload was for "${job.courseName}". Switch to that course to restore these questions.`,
-                variant: 'destructive',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
             return;
         }
@@ -813,17 +797,14 @@ export const QuestionUploadDialog = ({
 
         try {
             await navigator.clipboard.writeText(lines.join('\n\n'));
-            toast({
-                title: 'Copied',
+            toast('Copied', {
                 description: 'Extracted questions copied to clipboard.',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
         } catch (err) {
-            toast({
-                variant: 'destructive',
-                title: 'Copy failed',
+            toast.error('Copy failed', {
                 description: 'Could not copy questions to clipboard.',
-                duration: Number.POSITIVE_INFINITY,
+                duration: Infinity,
             });
         }
     }, [draftQuestions, toast]);
@@ -885,8 +866,7 @@ export const QuestionUploadDialog = ({
             });
 
             onQuestionsSaved(result.questions, { assessmentId: result.assessmentId ?? null });
-            toast({
-                title: 'Questions added',
+            toast('Questions added', {
                 description: `${result.questions.length} question${result.questions.length === 1 ? '' : 's'} saved successfully.`,
                 duration: 10000,
             });
@@ -895,12 +875,7 @@ export const QuestionUploadDialog = ({
             console.error('Failed to save extracted questions', err);
             const message = err?.response?.data?.error || err?.message || 'Failed to save questions.';
             setError(message);
-            toast({
-                variant: 'destructive',
-                title: 'Save failed',
-                description: message,
-                duration: Number.POSITIVE_INFINITY,
-            });
+            toast.error('Save failed', { description: message, duration: Infinity });
             setProcessingStage('review');
         }
     }, [
@@ -1623,10 +1598,9 @@ export const QuestionUploadDialog = ({
                         onClick={() => {
                             clearHistory();
                             setShowClearHistoryConfirm(false);
-                            toast({
-                                title: 'History cleared',
+                            toast('History cleared', {
                                 description: 'Upload history has been cleared. Saved questions are unchanged.',
-                                duration: Number.POSITIVE_INFINITY,
+                                duration: Infinity,
                             });
                         }}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

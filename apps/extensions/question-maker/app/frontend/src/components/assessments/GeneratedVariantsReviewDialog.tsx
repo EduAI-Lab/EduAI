@@ -15,7 +15,6 @@ import {
   DialogHeader, DialogTitle, cn,
 } from '@eduai/ui';
 import { questionService } from '../../services/questionService';
-import { useToast } from '@/components/ui/use-toast';
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -24,6 +23,7 @@ import {
 } from '../../lib/difficulty';
 import type { QuestionDifficulty } from '../../types/question';
 import type { GenerateBankVariantsResult, GeneratedVariantPreview } from '../../services/assessmentVariantService';
+import { toast } from 'sonner';
 
 type VariantStatus = 'pending' | 'approving' | 'approved' | 'discarding' | 'discarded';
 
@@ -62,7 +62,6 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 );
 
 export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onReviewed }: Props) {
-  const { toast } = useToast();
   const [statuses, setStatuses] = useState<Record<number, VariantStatus>>({});
   const [hydrating, setHydrating] = useState(false);
 
@@ -151,11 +150,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         return;
       }
       setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not approve variant',
-        description:
-          err?.response?.status === 403
+      toast.error('Could not approve variant', {
+          description: err?.response?.status === 403
             ? 'Only instructors can approve. Try again.'
             : 'Could not approve this variant. Please try again.',
       });
@@ -170,11 +166,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       onReviewed?.();
     } catch (e: unknown) {
       setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not discard variant',
-        description:
-          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
+      toast.error('Could not discard variant', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
       });
     }
   };

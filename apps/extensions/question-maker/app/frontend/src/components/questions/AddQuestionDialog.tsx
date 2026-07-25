@@ -6,13 +6,13 @@
  * choices, AI Tutor preview, and variant management actions. Folded in from QuestionDetailView.
  */
 import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, MultiSelect } from '@eduai/ui';
 import { Popover, PopoverContent, PopoverTrigger } from '@eduai/ui';
 import { Badge, Switch, cn, QuestionStatusBadge, VariantBadge, ConfirmDialog } from '@eduai/ui';
 import { PermissionGate } from '@eduai/ui';
-import { useToast, ToastAction } from '@/components/ui/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
     Question,
@@ -337,9 +337,11 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             };
             viewProps.onSelectVariant(updatedEntry);
             viewProps.onUpdateVariant?.(viewEntry.variant.id, { isAiGenerated: newIsAiGenerated });
-            toast({ title: 'AI tag toggled', description: `Variant is now ${newIsAiGenerated ? 'marked as' : 'unmarked from'} AI-generated.` });
+            toast('AI tag toggled', {
+                description: `Variant is now ${newIsAiGenerated ? 'marked as' : 'unmarked from'} AI-generated.`,
+            });
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Failed to toggle AI tag', description: error?.message || 'An error occurred' });
+            toast.error('Failed to toggle AI tag', { description: error?.message || 'An error occurred' });
         } finally {
             setIsToggling(false);
         }
@@ -358,13 +360,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             };
             viewProps.onSelectVariant(updatedEntry);
             viewProps.onUpdateVariant?.(viewEntry.variant.id, { isDraft: newIsDraft });
-            toast({ title: 'Review status updated', description: `Variant is now ${newIsDraft ? 'marked as draft' : 'marked as reviewed'}.` });
+            toast('Review status updated', {
+                description: `Variant is now ${newIsDraft ? 'marked as draft' : 'marked as reviewed'}.`,
+            });
         } catch (error: any) {
             // Server-side failures surface under response.data.error; fall back to the
             // client-side message so neither shape renders "undefined".
-            toast({
-                variant: 'destructive',
-                title: 'Failed to toggle draft status',
+            toast.error('Failed to toggle draft status', {
                 description: error?.response?.data?.error || error?.message || 'An error occurred',
             });
         } finally {
@@ -375,9 +377,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
     const handleToggleTestable = async (next: boolean) => {
         if (!viewEntry || !viewProps) return;
         if (!coreQuestionId) {
-            toast({
-                variant: 'destructive',
-                title: 'Not synced to Core',
+            toast.error('Not synced to Core', {
                 description: 'Mark the variant as reviewed and ensure the course is linked to Core before enabling AI Tutor preview.',
             });
             return;
@@ -392,15 +392,14 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             };
             viewProps.onSelectVariant(updatedEntry);
             viewProps.onUpdateVariant?.(viewEntry.variant.id, { testable: result.testable });
-            toast({
-                title: result.testable ? 'Available in AI Tutor' : 'Removed from AI Tutor',
+            toast(result.testable ? 'Available in AI Tutor' : 'Removed from AI Tutor', {
                 description: result.testable
                     ? 'Students may encounter this question in AI Tutor tutoring sessions for this course.'
                     : 'This question is no longer marked testable on Core.',
             });
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Could not update testable status.';
-            toast({ variant: 'destructive', title: 'Failed to update AI Tutor visibility', description: message });
+            toast.error('Failed to update AI Tutor visibility', { description: message });
         } finally {
             setIsTogglingTestable(false);
         }
@@ -439,7 +438,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
     const [errorModalMessage, setErrorModalMessage] = useState<string>('');
     const [modalTourOpen, setModalTourOpen] = useState(false);
     const [modalTourStepIndex, setModalTourStepIndex] = useState(0);
-    const { toast } = useToast();
     const showNewUserHint = createProps?.totalQuestionsInBank === 0;
     const isDialogOpenRef = useRef(open);
 
@@ -782,13 +780,12 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             setError('Enter a topic or prompt before asking the AI service to generate a question.');
             return;
         }
-        let processingToast: { dismiss: () => void } | null = null;
+        let processingToast: string | number | undefined;
         try {
             setIsGenerating(true);
             setError(null);
             setQuestionGenerationPhase('generating');
-            processingToast = toast({
-                title: createMode === 'variant' ? 'Variant generation in progress' : 'Question generation in progress',
+            processingToast = toast(createMode === 'variant' ? 'Variant generation in progress' : 'Question generation in progress', {
                 description: 'Your request is being processed. This may take 30–60 seconds.',
             });
             const difficultyDistribution = {
@@ -889,8 +886,10 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             });
             setIsAiGenerated(true);
             if (isDialogOpenRef.current) { setQuestionGenerationPhase('review'); } else { setQuestionGenerationPhase(null); }
-            processingToast?.dismiss();
-            toast({ title: createMode === 'variant' ? 'Variant generated' : 'Question generated', description: 'Review the generated text and adjust any details before saving.' });
+            if (processingToast !== undefined) toast.dismiss(processingToast);
+            toast(createMode === 'variant' ? 'Variant generated' : 'Question generated', {
+                description: 'Review the generated text and adjust any details before saving.',
+            });
         } catch (generateError: any) {
             console.error('AI service generation failed', generateError);
             const aiErrorReason = generateError?.response?.data?.aiErrorReason;
@@ -900,10 +899,14 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             setError(message);
             setQuestionGenerationPhase(null);
             setErrorModalMessage(message);
-            processingToast?.dismiss();
-            toast({ variant: 'destructive', title: 'AI service has thrown an error', description: 'Click to see why', duration: Infinity, action: (<ToastAction altText="View error details" onClick={() => setErrorModalOpen(true)}>View Details</ToastAction>) });
+            if (processingToast !== undefined) toast.dismiss(processingToast);
+            toast.error('AI service has thrown an error', {
+                description: 'Click to see why',
+                duration: Infinity,
+                action: { label: 'View Details', onClick: () => setErrorModalOpen(true) },
+            });
         } finally {
-            processingToast?.dismiss();
+            if (processingToast !== undefined) toast.dismiss(processingToast);
             setIsGenerating(false);
         }
     };
@@ -1091,9 +1094,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                     vp.onSelectVariant(updatedEntry);
                                                     vp.onUpdateVariant?.(viewVariant.id, { choices: validChoices, answer: editAnswer });
                                                     setEditingChoices(false);
-                                                    toast({ title: 'Choices saved', description: 'Variant choices and correct answer updated.' });
+                                                    toast('Choices saved', {
+                                                        description: 'Variant choices and correct answer updated.',
+                                                    });
                                                 } catch (err: any) {
-                                                    toast({ variant: 'destructive', title: 'Failed to save choices', description: err?.message });
+                                                    toast.error('Failed to save choices', {
+                                                        description: err?.message,
+                                                    });
                                                 }
                                             }}>Save choices</Button>
                                             <Button size="sm" variant="outline" onClick={() => setEditingChoices(false)}>Cancel</Button>
@@ -1266,9 +1273,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                             vp.onUpdateQuestionMetadata?.(viewEntry.questionId, { description: editDescription || null, primaryTopicId: editPrimaryTopicId, type: editType, primaryTopicName });
                                                             if (Object.keys(variantUpdates).length > 0) vp.onUpdateVariant?.(viewEntry.variant.id, variantUpdates);
                                                             setEditingMetadata(false);
-                                                            toast({ title: 'Question details saved', description: Object.keys(variantPayload).length > 0 ? 'Question details and variant fields updated.' : 'Question details updated.' });
+                                                            toast('Question details saved', {
+                                                                description: Object.keys(variantPayload).length > 0 ? 'Question details and variant fields updated.' : 'Question details updated.',
+                                                            });
                                                         } catch (err: unknown) {
-                                                            toast({ variant: 'destructive', title: 'Failed to save', description: err instanceof Error ? err.message : 'Could not update metadata.' });
+                                                            toast.error('Failed to save', {
+                                                                description: err instanceof Error ? err.message : 'Could not update metadata.',
+                                                            });
                                                         } finally {
                                                             setSavingMetadata(false);
                                                         }
@@ -1415,12 +1426,16 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                     setProviderKeySaved(true);
                     setProviderApiKey('');
                     setApiKeySaveState('saved');
-                    toast({ title: 'API key saved', description: 'Stored locally in your browser for this provider.' });
+                    toast('API key saved', {
+                        description: 'Stored locally in your browser for this provider.',
+                    });
                     // Re-check connectivity now that a cloud key exists — flips the badge to Online if valid.
                     void eduaiStatus.refresh();
                 } catch {
                     setApiKeySaveState('error');
-                    toast({ variant: 'destructive', title: 'Failed to save API key', description: 'Could not store the key locally. Try again.' });
+                    toast.error('Failed to save API key', {
+                        description: 'Could not store the key locally. Try again.',
+                    });
                 }
             }}
             apiKeySaveState={apiKeySaveState}

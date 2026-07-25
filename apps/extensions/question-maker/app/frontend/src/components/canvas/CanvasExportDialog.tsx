@@ -7,9 +7,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { Button, Label, Input } from '@eduai/ui';
 import { PermissionGate } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration } from '../../services/canvasService';
+import { toast } from 'sonner';
 
 interface CanvasExportDialogProps {
   open: boolean;
@@ -28,7 +28,6 @@ export const CanvasExportDialog = ({
   courseId = null,
   onExportSuccess
 }: CanvasExportDialogProps) => {
-  const { toast } = useToast();
   const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
@@ -70,10 +69,8 @@ export const CanvasExportDialog = ({
       const canvasCourses = await canvasService.getCourses();
       setCourses(canvasCourses);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load Canvas courses',
-        description: error.response?.data?.error || 'Please check your Canvas connection.',
-        variant: 'destructive'
+      toast.error('Failed to load Canvas courses', {
+          description: error.response?.data?.error || 'Please check your Canvas connection.',
       });
     } finally {
       setIsLoadingCourses(false);
@@ -82,20 +79,12 @@ export const CanvasExportDialog = ({
 
   const handleConnect = async () => {
     if (!canvasUrl) {
-      toast({
-        title: 'Canvas URL required',
-        description: 'Please enter your Canvas instance URL.',
-        variant: 'destructive'
-      });
+      toast.error('Canvas URL required', { description: 'Please enter your Canvas instance URL.' });
       return;
     }
 
     if (!apiKey) {
-      toast({
-        title: 'API Key required',
-        description: 'Please enter your Canvas API key.',
-        variant: 'destructive'
-      });
+      toast.error('API Key required', { description: 'Please enter your Canvas API key.' });
       return;
     }
 
@@ -108,17 +97,14 @@ export const CanvasExportDialog = ({
       setIntegration(result);
       setShowConnectForm(false);
       if (usedTestMode) {
-        toast({
-          title: 'Canvas test mode',
-          description: 'Using mock Canvas data because live credentials were unavailable.',
+        toast('Canvas test mode', {
+            description: 'Using mock Canvas data because live credentials were unavailable.',
         });
       }
       await loadCourses();
     } catch (error: any) {
-      toast({
-        title: 'Failed to connect Canvas',
-        description: error.response?.data?.error || 'Please check your credentials and try again.',
-        variant: 'destructive'
+      toast.error('Failed to connect Canvas', {
+          description: error.response?.data?.error || 'Please check your credentials and try again.',
       });
     } finally {
       setIsConnecting(false);
@@ -127,11 +113,7 @@ export const CanvasExportDialog = ({
 
   const handleExport = async () => {
     if (!selectedCourseId) {
-      toast({
-        title: 'Course required',
-        description: 'Please select a Canvas course to export to.',
-        variant: 'destructive'
-      });
+      toast.error('Course required', { description: 'Please select a Canvas course to export to.' });
       return;
     }
 
@@ -139,9 +121,8 @@ export const CanvasExportDialog = ({
     try {
       const result = await canvasService.exportAssessment(assessmentId, parseInt(selectedCourseId));
       
-      toast({
-        title: 'Export successful!',
-        description: `Assessment exported to Canvas. ${result.questionsCreated} questions created.`,
+      toast('Export successful!', {
+          description: `Assessment exported to Canvas. ${result.questionsCreated} questions created.`,
       });
 
       if (onExportSuccess) {
@@ -153,10 +134,8 @@ export const CanvasExportDialog = ({
 
       onClose();
     } catch (error: any) {
-      toast({
-        title: 'Export failed',
-        description: error.response?.data?.error || 'Failed to export assessment to Canvas.',
-        variant: 'destructive'
+      toast.error('Export failed', {
+          description: error.response?.data?.error || 'Failed to export assessment to Canvas.',
       });
     } finally {
       setIsLoading(false);

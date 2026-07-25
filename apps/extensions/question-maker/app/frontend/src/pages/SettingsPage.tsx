@@ -38,7 +38,7 @@ import apiKeyStorage, { type AIProvider } from '../services/apiKeyStorage';
 import { eduaiService, type EduAIModelOption } from '../services/eduaiService';
 import { canvasService, type CanvasIntegration } from '../services/canvasService';
 import { useAuth } from '../contexts/AuthContext';
-import { toast } from '../components/ui/use-toast';
+import { toast } from 'sonner';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -175,19 +175,19 @@ export default function SettingsPage() {
         await refreshKeys();
         setDrafts((prev) => ({ ...prev, [provider]: '' }));
         setSavingProvider(null);
-        toast({ title: `${PROVIDER_LABELS[provider]} API key saved` });
+        toast(`${PROVIDER_LABELS[provider]} API key saved`);
     };
 
     const handleRemoveKey = async (provider: AIProvider): Promise<void> => {
         apiKeyStorage.removeApiKey(provider);
         await refreshKeys();
-        toast({ title: `${PROVIDER_LABELS[provider]} API key removed` });
+        toast(`${PROVIDER_LABELS[provider]} API key removed`);
     };
 
     const handleDefaultModelChange = (value: string): void => {
         setDefaultModel(value);
         localStorage.setItem(DEFAULT_MODEL_KEY, value);
-        toast({ title: 'Default model updated' });
+        toast('Default model updated');
     };
 
     const handleExportPrefChange = (key: keyof ExportPrefs, checked: boolean): void => {
@@ -230,18 +230,15 @@ export default function SettingsPage() {
             );
             setCanvasIntegration(integration);
             setCanvasApiKey('');
-            toast({
-                title: usedTestMode ? 'Canvas test mode enabled' : 'Canvas connected',
+            toast(usedTestMode ? 'Canvas test mode enabled' : 'Canvas connected', {
                 description: usedTestMode
                     ? 'Connected in test mode — no real Canvas token required.'
                     : 'Your API key is stored encrypted on the server and not shown again.',
             });
         } catch (error) {
             console.error('Failed to connect Canvas:', error);
-            toast({
-                title: 'Failed to connect Canvas',
+            toast.error('Failed to connect Canvas', {
                 description: error instanceof Error ? error.message : 'Check the URL and API key.',
-                variant: 'destructive',
             });
         } finally {
             setCanvasConnecting(false);
@@ -254,10 +251,10 @@ export default function SettingsPage() {
             await canvasService.disconnectCanvas();
             setCanvasIntegration(null);
             setCanvasApiKey('');
-            toast({ title: 'Canvas disconnected' });
+            toast('Canvas disconnected');
         } catch (error) {
             console.error('Failed to disconnect Canvas:', error);
-            toast({ title: 'Failed to disconnect Canvas', variant: 'destructive' });
+            toast.error('Failed to disconnect Canvas');
         } finally {
             setCanvasDisconnecting(false);
         }
