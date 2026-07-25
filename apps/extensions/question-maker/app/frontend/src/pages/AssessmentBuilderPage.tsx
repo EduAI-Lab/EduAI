@@ -13,6 +13,7 @@ import {
     StackedBar,
     cn,
 } from '@eduai/ui';
+import { PermissionGate } from '@eduai/ui';
 import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
@@ -43,7 +44,6 @@ import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { QuestionModal } from '../components/questions/QuestionModal';

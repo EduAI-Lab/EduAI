@@ -19,6 +19,7 @@ import {
   DialogDescription, DialogFooter, DialogHeader, DialogTitle, ScrollArea, Badge,
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, Separator, cn,
 } from '@eduai/ui';
+import { PermissionGate } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import { useCourses } from '../hooks/useCourses';
@@ -32,7 +33,6 @@ import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
 import type { Assessment, Course, Question } from '../types/question';
 import type { Topic } from '../types/topic';
 import { buildAiReviewDocxBlob } from '../utils/aiReviewExportDocx';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { pickPreferredGenerationModel, FALLBACK_GENERATION_MODEL } from '../utils/aiModels';
 
