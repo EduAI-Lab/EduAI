@@ -137,7 +137,9 @@ export function useBugReportCapture(enabled: boolean) {
           useCORS: true,
           scale: 0.5
         });
-        screenshotRef.current = canvas.toDataURL('image/png', 0.7);
+        // JPEG, not PNG: PNG ignores the quality arg, and a full-page PNG data
+        // URL easily exceeds Core's 512k screenshot cap (dropped server-side).
+        screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
       } catch {
         // ignore capture failures
       } finally {
