@@ -3,6 +3,18 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeStudent, makeTA, makeAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
 
+// `isPublished` (and `code`, used for AI-prompt context) are Core-owned
+// (#1072 step 2/4) — the publish gate on every question/AI-tutoring route
+// below resolves them live via `fetchCoreCourseSafe`, not a local column.
+// Default every seeded course to published so the bulk of these tests keep
+// their pre-#1072 behavior; individual "unpublished" tests override this.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
+
 describe('Activities routes', () => {
   let prof;
   let seed; // { user, course, module, lesson, topic }
@@ -13,6 +25,10 @@ describe('Activities routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create an activity directly in DB ───────────────────
@@ -156,7 +172,7 @@ describe('Activities routes', () => {
     it('returns 400 for cross-course topic', async () => {
       // Create a topic in a different course
       const otherCourse = await prisma.courseOffering.create({
-        data: { title: 'Other Course', description: 'Other', isPublished: true },
+        data: { coreOfferingId: 'core-other-course' },
       });
       const otherTopic = await prisma.topic.create({
         data: { name: 'Alien Topic', courseOfferingId: otherCourse.id },
@@ -393,7 +409,7 @@ describe('Activities routes', () => {
     });
 
     it('returns 403 when course is unpublished', async () => {
-      await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: false });
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
@@ -919,6 +935,69 @@ describe('Activities routes', () => {
       expect(res.status).toBe(403);
     });
   });
+
+  // ── Activity ordering (#1047) ─────────────────────────────────────
+
+  describe('activity ordering', () => {
+    it('appends new activities to the end of the lesson', async () => {
+      // A pre-existing activity anchors position 0.
+      const first = await createActivityInDb({ position: 0 });
+      const res = await request(profApp)
+        .post(`/api/lessons/${seed.lesson.id}/activities`)
+        .send({
+          title: 'Appended',
+          mainTopicId: seed.topic.id,
+          question: 'What is 3+3?',
+          type: 'MCQ',
+          options: ['5', '6', '7'],
+          answer: 1,
+          enableTeachMode: true,
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(first.position + 1);
+    });
+
+    describe('PUT /api/lessons/:lessonId/activities/order', () => {
+      async function seedThreeActivities() {
+        const a = await createActivityInDb({ position: 0 });
+        const b = await createActivityInDb({ position: 1 });
+        const c = await createActivityInDb({ position: 2 });
+        return { a, b, c };
+      }
+
+      it('reassigns positions 0..n-1 from the ordered id list', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, a.id, b.id] });
+
+        expect(res.status).toBe(200);
+        expect(res.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+        expect(res.body.map((x) => x.position)).toEqual([0, 1, 2]);
+
+        const list = await request(profApp).get(`/api/lessons/${seed.lesson.id}/activities`);
+        expect(list.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+      });
+
+      it('rejects an id set that does not match the lesson activities', async () => {
+        const { a, b } = await seedThreeActivities();
+        const res = await request(profApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [a.id, b.id] });
+        expect(res.status).toBe(400);
+      });
+
+      it('returns 403 for a TA', async () => {
+        const { a, b, c } = await seedThreeActivities();
+        const ta = await enrollTa();
+        const taApp = await createApp({ mockUser: ta });
+        const res = await request(taApp)
+          .put(`/api/lessons/${seed.lesson.id}/activities/order`)
+          .send({ orderedIds: [c.id, b.id, a.id] });
+        expect(res.status).toBe(403);
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1036,30 +1115,85 @@ describe('Tutoring-flow: question consumption via Core', () => {
     expect(bankInjected).toBe(true);
   });
 
-  it('/teach skips question fetch when coreOfferingId is null and proceeds normally', async () => {
-    await prisma.courseOffering.update({
-      where: { id: seed.course.id },
-      data: { coreOfferingId: null },
-    });
+  // The "coreOfferingId is null" scenario this test used to cover is no
+  // longer constructible: #1072 step 4 made `coreOfferingId` required at the
+  // DB level, so every CourseOffering row is Core-linked by construction.
+  // `getCourseCode`'s falsy-coreOfferingId short-circuit (via
+  // `resolveCoreCourseById`) is dead code now, harmlessly so; left in place
+  // rather than removed as part of this migration.
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
-    }));
+  // #1021 review: assert the activities → EduAI wiring layer, not only
+  // generate*Response with an explicitly passed courseId.
+  it('/teach and /guide EduAI chat bodies include linked coreOfferingId as courseId (#1021)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
+        }),
+    );
 
-    const res = await request(studentApp)
+    const teachRes = await request(studentApp)
       .post(`/api/activities/${activity.id}/teach`)
       .set('Cookie', 'session=test-cookie')
       .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(teachRes.status).toBe(200);
 
-    expect(res.status).toBe(200);
+    const teachChatBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(teachChatBodies.length).toBeGreaterThan(0);
+    for (const body of teachChatBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
 
-    // No Core questions call should have been made
-    const questionsFetchCall = fetch.mock.calls.find(
-      ([url]) => typeof url === 'string' && url.includes('/questions'),
+    fetch.mockClear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ questions: [], total: 0 }),
+          text: () => Promise.resolve(''),
+        })
+        .mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-2' }),
+        }),
     );
-    expect(questionsFetchCall).toBeUndefined();
+
+    const guideRes = await request(studentApp)
+      .post(`/api/activities/${activity.id}/guide`)
+      .set('Cookie', 'session=test-cookie')
+      .send({ message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' });
+    expect(guideRes.status).toBe(200);
+
+    const guideChatBodies = fetch.mock.calls
+      .filter(
+        ([url, opts]) =>
+          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+      )
+      .map(([, opts]) => JSON.parse(opts.body));
+    expect(guideChatBodies.length).toBeGreaterThan(0);
+    for (const body of guideChatBodies) {
+      expect(body.courseId).toBe('cuid-core-offering');
+    }
   });
+
+  // The "coreOfferingId is null" scenario is no longer constructible: #1072
+  // step 4 made `coreOfferingId` required at the DB level, so every
+  // CourseOffering row is Core-linked by construction. Linked-course
+  // courseId forwarding is covered by the test above; omitting courseId for
+  // an unlinked offering cannot be integration-tested against Prisma.
 
   it('/teach proceeds with empty question bank and returns 200 when Core questions fetch fails', async () => {
     vi.stubGlobal(
@@ -1218,7 +1352,7 @@ describe('teach/guide/custom: enrollment and publish gate (§308)', () => {
   });
 
   it('enrolled STUDENT gets 403 on /teach when course is unpublished', async () => {
-    await prisma.courseOffering.update({ where: { id: seed.course.id }, data: { isPublished: false } });
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: seed.course.coreOfferingId, isPublished: false });
     const student = makeStudent();
     await prisma.courseEnrollment.create({
       data: { courseOfferingId: seed.course.id, userId: student.id, role: 'STUDENT' },

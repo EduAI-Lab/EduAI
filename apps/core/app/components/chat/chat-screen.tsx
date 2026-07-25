@@ -41,7 +41,9 @@ import {
   hasAcknowledgedChatPrivacyNotice,
 } from "~/lib/chat/chat-privacy-notice";
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
+import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
 import { isLongOutputIntent } from "~/lib/ai/long-output-intent";
 
 export interface ChatScreenProps {
@@ -56,7 +58,7 @@ export interface ChatScreenProps {
 }
 
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
-  const { chatModels, user, assistDefault, lastCourseCode } = data;
+  const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } = data;
   // Only an editable (owned) transcript seeds the live composer; everything else
   // opens in the read-only viewer.
   const editableTranscript =
@@ -78,8 +80,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const isStudentWithCourseChat = user.role === "STUDENT";
   const hasNoCourses = availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
-  const [selectedModel, setSelectedModel] = useState(
-    chatModels.length > 0 ? chatModels[0].id : "",
+  const [selectedModel, setSelectedModel] = useState(() =>
+    defaultChatModelId(chatModels, routerAutoEnabled),
   );
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
@@ -105,6 +107,26 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   );
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
+  /** Persisted/header registry ids keyed by their assistant message id. */
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >(() => {
+    const hydrated: Record<string, string> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      const resolvedModelId = resolvedModelIdFromMessage(message);
+      if (id && resolvedModelId) hydrated[id] = resolvedModelId;
+    }
+    return hydrated;
+  });
+  /** Latest streamed response registry id (shown on the in-flight assistant bubble). */
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
@@ -179,6 +201,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     return () => el.removeAttribute("data-assistive-focus-mode");
   }, [focusMode]);
 
+  // Lock document scroll while chat owns an internal message scroller — otherwise
+  // the page can grow past the composer and show empty space underneath.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   useAssistiveReorientation({
     enabled: assistive && reorientationEpoch > 0,
     adhdAssist,
@@ -245,6 +282,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         messages: messages.slice(-1),
       }),
       onResponse: async (response) => {
+        const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+        const routed =
+          routedHeader && routedHeader.length > 0 ? routedHeader : null;
+        pendingRoutedRegistryIdRef.current = routed;
+        setStreamingRoutedRegistryId(routed);
+
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
         if (chatIdHeader && !chatId) {
@@ -280,7 +323,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           navigate(`/chat/${id}`, { replace: true, state: { focusMode } });
         }
       },
-      onError: (error) => logChatUseChatError(error, "learning-chat"),
+      onError: (error) => {
+        logChatUseChatError(error, "learning-chat");
+        pendingRoutedRegistryIdRef.current = null;
+        setStreamingRoutedRegistryId(null);
+      },
     });
 
   const onSubmit = useCallback(
@@ -452,6 +499,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,
+    routedModelByMessageId,
+    streamingRoutedRegistryId,
     cappedMessageIds,
     onContinue: handleContinue,
   };
@@ -478,12 +527,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           </Tooltip>
         </TooltipProvider>
       }
-      insetClassName="min-h-0"
-      mainClassName="flex flex-1 min-h-0 flex-col"
+      insetClassName="min-h-0 h-svh max-h-svh overflow-hidden"
+      mainClassName="flex flex-1 min-h-0 flex-col overflow-hidden"
+      providerClassName="h-svh max-h-svh overflow-hidden"
     >
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <ChatHistoryRail {...historyListProps} />
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <ChatCourseScopedView {...sharedViewProps} />
         </div>
       </div>

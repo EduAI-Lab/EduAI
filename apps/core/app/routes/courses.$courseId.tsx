@@ -25,6 +25,7 @@ import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
 import { getPolicy } from '~/lib/policy.server'
 import type { RbacUser } from '~/lib/rbac'
+import { courseHasAiConfig } from '~/lib/ai/response-style-tags'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await auth.api.getSession({ headers: request.headers })
@@ -99,6 +100,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : Promise.resolve([]),
   ])
 
+  const isStudent = access === 'student'
+
   return {
     course: {
       id: course.id,
@@ -109,7 +112,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       year: course.year,
       isActive: course.isActive,
       isPublished: course.isPublished,
-      aiInstructions: course.aiInstructions,
+      ...(isStudent
+        ? {
+            hasAiConfig: courseHasAiConfig(
+              course.responseStyleTags ?? [],
+              course.aiInstructions,
+            ),
+          }
+        : { aiInstructions: course.aiInstructions }),
+      responseStyleTags: course.responseStyleTags,
+      ragTopK: course.ragTopK,
+      ragSimilarityThreshold: course.ragSimilarityThreshold,
       instructorId: course.instructorId,
       department: course.department,
       startDate: course.startDate.toISOString(),
@@ -142,7 +155,7 @@ export default function CourseDetailPage() {
     removeEnrollment,
     refetch: refetchEnrollments,
   } = useCourseEnrollments(course.id)
-  const { materials, uploadMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
+  const { materials, uploadMaterial, deleteMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const [isUploading, setIsUploading] = useState(false)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
@@ -175,19 +188,6 @@ export default function CourseDetailPage() {
     },
     [removeEnrollment],
   )
-
-  const handleUpdateAiInstructions = useCallback(async (aiInstructions: string) => {
-    const res = await fetch(`/api/courses/${course.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aiInstructions }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.error ?? 'Failed to update AI instructions')
-    }
-    revalidator.revalidate()
-  }, [course.id, revalidator])
 
   const uploadMaterials: UploadMaterial[] = materials.map((m) => ({
     id: m.id,
@@ -264,6 +264,7 @@ export default function CourseDetailPage() {
               onAddTA={addTA}
               onRemoveTA={removeTA}
               onRefreshMaterials={refetchMaterials}
+              onDeleteMaterial={deleteMaterial}
               courseId={course.id}
               currentUserId={user.id}
               showCanvasMaterialSync={
@@ -285,10 +286,10 @@ export default function CourseDetailPage() {
               courseId={course.id}
               currentUserId={user.id}
               onRefreshMaterials={refetchMaterials}
+              onDeleteMaterial={deleteMaterial}
               tas={tas}
               onCreateTopic={async (name) => { await createTopic(name) }}
               onDeleteTopic={async (id) => { await deleteTopic(id) }}
-              onUpdateAiInstructions={handleUpdateAiInstructions}
             />
           ) : (
             <CourseDetailStudentView

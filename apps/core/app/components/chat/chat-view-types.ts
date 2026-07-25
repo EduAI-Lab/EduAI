@@ -41,7 +41,11 @@ export type ChatViewSharedProps = {
   onSelectPrompt: (prompt: string) => void;
   isStudentWithCourseChat?: boolean;
   disabledReason?: string;
-
   cappedMessageIds?: Set<string>;
   onContinue?: (messageId: string) => void;
+
+  /** Registry ids from X-Routed-Model, keyed by assistant message id. */
+  routedModelByMessageId?: Record<string, string>;
+  /** In-flight assistant bubble before onFinish assigns message id. */
+  streamingRoutedRegistryId?: string | null;
 };

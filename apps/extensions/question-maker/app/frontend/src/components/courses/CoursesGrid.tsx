@@ -4,13 +4,13 @@ import {
   CourseListView,
   buildTermFilterGroup,
   buildDepartmentFilterGroup,
+  defaultColorIndexForCourse,
   type CourseFilterGroup,
+  EmptyState,
 } from '@eduai/ui';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
-import type { QmRoleView } from '@/lib/rbac';
 import { Course } from '@/types/question';
 import { getDepartmentLabel } from '@/lib/units';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { CardGridSkeleton } from '@/components/shared/Skeletons';
 
 /** Short "last synced" label from a course's Core metadata timestamp. */
@@ -32,8 +32,6 @@ export type CoursesGridProps = {
   onSelectCourse: (course: Course) => void;
   emptyHint?: string;
   showDepartment?: boolean;
-  roleView?: QmRoleView;
-  currentUserId?: string;
   /** Course card to highlight for guided tour step 1 */
   tourHighlightCourseId?: number | null;
   /** Optional role-specific filter control (e.g. unit-admin's unit picker). */
@@ -71,7 +69,11 @@ export function CoursesGrid({
   ];
 
   const renderCard = (course: Course) => {
-    const colorIndex = course.id % 5;
+    // Cross-platform visual identity: the accent is keyed off the CORE course
+    // id (the one identity all three apps share), so the same course renders
+    // the same color in Core, AI Tutor, and QM. Local id only as a fallback
+    // for legacy unlinked rows.
+    const colorIndex = defaultColorIndexForCourse(course.coreCourseId ?? String(course.id));
     const synced = syncedLabel(course.updatedAt);
     const extraBadges = [course.coreCourseId ? 'EduAI Core' : 'Local', synced].filter(
       (b): b is string => Boolean(b),
@@ -102,7 +104,7 @@ export function CoursesGrid({
           description={course.description ?? undefined}
           term={course.term || ''}
           year={course.year}
-          isPublished={true}
+          isPublished={course.isPublished ?? false}
           department={showDepartment ? course.department : undefined}
           departmentLabel={
             showDepartment && course.department ? getDepartmentLabel(course.department) : undefined
@@ -129,6 +131,7 @@ export function CoursesGrid({
       gridClassName="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       emptyState={
         <EmptyState
+          bare={false}
           icon={<IconBooks className="size-6" />}
           title="No courses yet"
           description={emptyHint || 'Courses you can access from EduAI Core will appear here.'}
@@ -136,6 +139,7 @@ export function CoursesGrid({
       }
       noResultsState={
         <EmptyState
+          bare={false}
           icon={<IconSearch className="size-6" />}
           title="No courses match"
           description="Try a different search or filter."

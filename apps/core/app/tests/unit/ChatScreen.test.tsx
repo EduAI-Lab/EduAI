@@ -6,6 +6,9 @@ import { ChatScreen } from "~/components/chat/chat-screen";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { SidebarProvider } from "@eduai/ui";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
+import type { ChatTranscript } from "~/hooks/api/use-chat-history";
+
+const captureCourseViewProps = vi.hoisted(() => vi.fn());
 
 const {
   handleSubmitMock,
@@ -66,18 +69,22 @@ vi.mock("~/components/assistive/assistive-ui-provider", () => ({
 }));
 
 vi.mock("~/components/chat/chat-course-scoped-view", () => ({
-  ChatCourseScopedView: ({
-    onSelectPrompt,
-  }: {
-    onSelectPrompt: (prompt: string) => void;
-  }) => (
-    <button
-      type="button"
-      onClick={() => onSelectPrompt("Summarize this whole chat")}
-    >
-      Select suggested prompt
-    </button>
-  ),
+  ChatCourseScopedView: (props: {
+    onSelectPrompt?: (prompt: string) => void;
+    routedModelByMessageId?: Record<string, string>;
+  }) => {
+    captureCourseViewProps(props);
+
+    return (
+      <button
+        type="button"
+        aria-label="Select suggested prompt"
+        onClick={() => props.onSelectPrompt?.("Summarize this whole chat")}
+      >
+        Select suggested prompt
+      </button>
+    );
+  },
 }));
 
 const baseData: ChatBaseData = {
@@ -89,6 +96,8 @@ const baseData: ChatBaseData = {
       provider: "openai",
     },
   ],
+  routerAutoEnabled: false,
+  showRoutingModels: false,
   user: {
     id: "user-1",
     name: "Test User",
@@ -100,7 +109,7 @@ const baseData: ChatBaseData = {
     updatedAt: new Date(),
   },
   assistDefault: false,
-  lastCourseCode: null,
+  lastCourseCode: "COSC 101",
   motionReduced: false,
   density: "comfortable",
   theme: "system",
@@ -125,7 +134,7 @@ beforeEach(() => {
   });
 });
 
-function renderChatScreen() {
+function renderChatScreen(initialTranscript: ChatTranscript | null = null) {
   const router = createMemoryRouter(
     [
       {
@@ -133,7 +142,7 @@ function renderChatScreen() {
         element: (
           <PolicyProvider policies={{}}>
             <SidebarProvider>
-              <ChatScreen data={baseData} initialTranscript={null} />
+              <ChatScreen data={baseData} initialTranscript={initialTranscript} />
             </SidebarProvider>
           </PolicyProvider>
         ),
@@ -178,4 +187,38 @@ describe("ChatScreen — header", () => {
     expect(handleSubmitMock).toHaveBeenCalledTimes(1);
   });
 });
+
+  it("hydrates routed model ids from the stored transcript", () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored answer",
+          metadata: { resolvedModelId: "openai:gpt-4" },
+        },
+      ],
+      canEdit: true,
+    };
+
+    renderChatScreen(transcript);
+
+    expect(captureCourseViewProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        routedModelByMessageId: { "assistant-1": "openai:gpt-4" },
+      }),
+    );
+  });
 });

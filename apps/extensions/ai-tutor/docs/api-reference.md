@@ -98,26 +98,6 @@ The creating professor is automatically assigned as `LEAD` instructor. If `sourc
 
 ---
 
-### `PATCH /api/courses/:courseId`
-
-Update course metadata.
-
-**Auth:** PROFESSOR (course instructor).
-
-**Body:**
-```json
-{
-  "title": "string",
-  "description": "string",
-  "startDate": "ISO 8601",
-  "endDate": "ISO 8601"
-}
-```
-
-**Response:** `Course`
-
----
-
 ### `PATCH /api/courses/:courseId/publish`
 
 Publish a course, making it visible to enrolled students.
@@ -166,9 +146,9 @@ List importable courses from the EduAI platform.
 
 **Auth:** PROFESSOR.
 
-**Behavior:** Returns courses from EduAI that have not yet been imported by this instructor.
+**Behavior:** Returns the caller's Core-scoped course descriptors (raw Core `GET /api/courses` shape) minus any course already anchored in AI Tutor.
 
-**Response:** `EduAiCourse[]`
+**Response:** array of Core course objects (`{ id, name, code, term, year, department, isPublished, ... }`) — the local `EduAiCourse` type was removed with the anchor refactor (#1072); Core's course payload is passed through as-is.
 
 ---
 
@@ -185,7 +165,7 @@ Import a course from the EduAI platform.
 }
 ```
 
-Creates a `CourseOffering` with `externalSource: 'EDUAI'`, then syncs topics and student enrollments from EduAI concurrently.
+Creates a `CourseOffering` anchor row (`coreOfferingId` set to the EduAI course id), then syncs topics and student enrollments from EduAI concurrently.
 
 **Response:** `201 Created` with `Course`
 
@@ -521,6 +501,8 @@ Create a new topic. Blocked for imported EduAI courses (those are managed via sy
 
 ### `POST /api/courses/:courseId/topics/sync`
 
+**Deprecated (#1031):** `GET /api/courses/:courseId/topics` now auto-syncs imported courses on every read; no UI surface calls this endpoint anymore. Kept for API compatibility.
+
 Sync topics from EduAI for an imported course. Creates local topics for any upstream topics not yet present. Returns information about local topics missing from upstream for remapping.
 
 **Auth:** PROFESSOR (course instructor).
@@ -536,6 +518,8 @@ Sync topics from EduAI for an imported course. Creates local topics for any upst
 ---
 
 ### `POST /api/courses/:courseId/topics/remap`
+
+**Deprecated (#1031):** the only UI caller (`TopicSyncMappingDialog`) was removed along with the "Sync now" button. Kept for API compatibility — an admin can still call this directly to consolidate local topics that have drifted from upstream, since nothing in the UI surfaces `missingTopics` anymore.
 
 Remap activities from one topic to another, then delete the source topic. Handles both `mainTopic` and `secondaryTopics` reassignment in a transaction.
 
@@ -611,7 +595,7 @@ List available AI models.
 
 **Behavior:** Students see only models allowed by the admin AI model policy. Instructors and admins see all models.
 
-**Response:** `AiModel[]` with fields: `id`, `name`, `provider`, `description`, cost tier metadata.
+**Response:** `AiModel[]` with fields: `id`, `modelId`, `modelName`, `provider`, `summary`, `costTier`, `roleHint`, `studentSelectable` (whether the AI model policy allows this model for students), `availability` (`allowed` | `admin-only`), `isDefaultTutor` (true on the one model the admin AI model policy designates as the tutor default — clients should read this instead of hardcoding a model id).
 
 ---
 

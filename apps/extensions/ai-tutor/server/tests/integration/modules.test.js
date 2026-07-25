@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { makeProfessor, makeAdmin, makeStudent, makeTA, makeUnitAdmin, truncateAll, seedMinimalCourse, prisma } from '../helpers.js';
+
+// `department` is Core-owned (#1072 step 4) — UNIT_ADMIN scoping resolves it
+// live via `fetchCoreCourseSafe`, so the UNIT_ADMIN describe block below
+// stubs it per-course keyed on `coreOfferingId`.
+vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, fetchCoreCourseSafe: vi.fn() };
+});
+
+import { fetchCoreCourseSafe } from '../../src/services/eduaiClient.js';
 
 describe('Modules routes', () => {
   let prof;
@@ -13,6 +23,13 @@ describe('Modules routes', () => {
     prof = makeProfessor();
     seed = await seedMinimalCourse(prof.id);
     profApp = await createApp({ mockUser: prof });
+    // Default every seeded course to published (Core-owned, #1072 step 4) so
+    // existing "parent course is published" expectations hold; individual
+    // tests override this.
+    vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+      id: coreOfferingId,
+      isPublished: true,
+    }));
   });
 
   // ── Helper to create and enroll a student ─────────────────────────
@@ -40,6 +57,107 @@ describe('Modules routes', () => {
     });
     return ta;
   }
+
+  // ── POST /api/courses/:courseId/modules ─────────
+
+  describe('POST /api/courses/:courseId/modules append order', () => {
+    it('appends a new module to the end when no position is supplied', async () => {
+      // seedMinimalCourse creates one module at position 0.
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Second Module' });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(1);
+
+      const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(list.body.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
+    });
+
+    it('does not shift existing modules to a lower position', async () => {
+      const before = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(before.body[0].position).toBe(0);
+
+      await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Appended' });
+
+      const after = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      const original = after.body.find((m) => m.id === seed.module.id);
+      expect(original.position).toBe(0);
+    });
+
+    it('honors an explicit position when supplied', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/modules`)
+        .send({ title: 'Pinned', position: 5 });
+      expect(res.status).toBe(201);
+      expect(res.body.position).toBe(5);
+    });
+  });
+
+  // ── PUT /api/courses/:courseId/modules/order (reorder, #1047) ──────
+
+  describe('PUT /api/courses/:courseId/modules/order', () => {
+    async function seedThreeModules() {
+      // seed.module is already at position 0; add two more.
+      const b = await prisma.module.create({
+        data: { title: 'B', position: 1, courseOfferingId: seed.course.id },
+      });
+      const c = await prisma.module.create({
+        data: { title: 'C', position: 2, courseOfferingId: seed.course.id },
+      });
+      return { a: seed.module, b, c };
+    }
+
+    it('reassigns positions 0..n-1 from the ordered id list', async () => {
+      const { a, b, c } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [c.id, a.id, b.id] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
+      expect(res.body.map((m) => m.position)).toEqual([0, 1, 2]);
+
+      // Persisted order matches on a fresh read.
+      const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
+      expect(list.body.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
+    });
+
+    it('rejects an id set that does not match the course modules', async () => {
+      const { a, b } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [a.id, b.id] }); // missing c
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects duplicate ids', async () => {
+      const { a } = await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [a.id, a.id, a.id] });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a non-array orderedIds', async () => {
+      await seedThreeModules();
+      const res = await request(profApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: 'nope' });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 403 for a TA', async () => {
+      const { a, b, c } = await seedThreeModules();
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp)
+        .put(`/api/courses/${seed.course.id}/modules/order`)
+        .send({ orderedIds: [c.id, b.id, a.id] });
+      expect(res.status).toBe(403);
+    });
+  });
 
   // ── GET /api/courses/:courseId/modules ─────────────────────────────
 
@@ -256,10 +374,10 @@ describe('Modules routes', () => {
     });
 
     it('returns 400 when parent course is not published', async () => {
-      // Unpublish the parent course and the module
-      await prisma.courseOffering.update({
-        where: { id: seed.course.id },
-        data: { isPublished: false },
+      // Unpublish the parent course (Core-owned, #1072 step 4) and the module
+      vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+        id: seed.course.coreOfferingId,
+        isPublished: false,
       });
       await prisma.module.update({
         where: { id: seed.module.id },
@@ -401,12 +519,16 @@ describe('Modules routes', () => {
     let unitAdmin;
     let unitAdminApp;
 
+    // `department` is Core-owned (#1072 step 4) — stub `fetchCoreCourseSafe`
+    // to resolve it per `coreOfferingId`, keyed on a fixed lookup table.
+    const departmentByCoreOfferingId = { 'core-cosc': 'COSC', 'core-math': 'MATH' };
+
     beforeEach(async () => {
       coscCourse = await prisma.courseOffering.create({
-        data: { title: 'COSC Course', isPublished: true, department: 'COSC' },
+        data: { coreOfferingId: 'core-cosc' },
       });
       mathCourse = await prisma.courseOffering.create({
-        data: { title: 'MATH Course', isPublished: true, department: 'MATH' },
+        data: { coreOfferingId: 'core-math' },
       });
       await prisma.module.create({
         data: { title: 'COSC Module', position: 0, isPublished: true, courseOfferingId: coscCourse.id },
@@ -414,6 +536,10 @@ describe('Modules routes', () => {
       await prisma.module.create({
         data: { title: 'MATH Module', position: 0, isPublished: true, courseOfferingId: mathCourse.id },
       });
+      vi.mocked(fetchCoreCourseSafe).mockImplementation(async (coreOfferingId) => ({
+        id: coreOfferingId,
+        department: departmentByCoreOfferingId[coreOfferingId] ?? null,
+      }));
       unitAdmin = makeUnitAdmin(['COSC']);
       unitAdminApp = await createApp({ mockUser: unitAdmin });
     });
@@ -453,8 +579,10 @@ describe('Modules routes', () => {
     });
 
     it('UNIT_ADMIN cannot POST to a course with no department set', async () => {
+      // 'core-no-dept' isn't in departmentByCoreOfferingId, so the mock
+      // resolves it with `department: null` — never a match.
       const noDeptCourse = await prisma.courseOffering.create({
-        data: { title: 'No Dept Course', isPublished: true },
+        data: { coreOfferingId: 'core-no-dept' },
       });
       const res = await request(unitAdminApp)
         .post(`/api/courses/${noDeptCourse.id}/modules`)

@@ -16,6 +16,11 @@ import eduaiService from './eduaiService.js';
 import { Op } from 'sequelize';
 import { loadOrderedVariantsForAssessment, aggregateStructure } from './assessmentVariantUtils.js';
 import { scoreMetadataMatch } from './assessmentVariantMetadataScoring.js';
+import {
+  enrichCourseDetail,
+  formatSemesterDisplay,
+  deriveSemesterDisplayForCourseId
+} from './courseListService.js';
 
 const VALID_STUDY_ROLES = ['reference_baseline', 'generated_variant'];
 
@@ -131,7 +136,9 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
         model: Course,
         as: 'course',
         where: { userId },
-        attributes: ['id', 'name', 'code'],
+        // `coreCourseId` feeds `enrichCourseDetail` below — `Course` has no
+        // local name/code to select anymore (#1072 §4 step 10).
+        attributes: ['id', 'coreCourseId'],
         required: true
       }
     ]
@@ -153,12 +160,15 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
   }));
 
   const structure = aggregateStructure(variants);
+  // Derived from the course's Core term (#1072 §4 step 8 / #1077) — never the
+  // stored `semester` column.
+  const courseDetail = await enrichCourseDetail(assessment.course);
 
   return {
     assessmentId: assessment.id,
     courseId: assessment.courseId,
     name: assessment.name,
-    semester: assessment.semester,
+    semester: formatSemesterDisplay(courseDetail.term, courseDetail.year),
     type: assessment.type,
     studyRole: assessment.blueprintConfig?.studyRole ?? null,
     slotCount: slots.length,
@@ -276,7 +286,6 @@ export async function assembleEquivalentExamVariants(userId, params) {
     examLabels = ['Variant exam'],
     namePrefix = null,
     includeDrafts = false,
-    semesterOverride = null,
     assessmentTypeOverride = null
   } = params;
 
@@ -315,6 +324,14 @@ export async function assembleEquivalentExamVariants(userId, params) {
     throw new Error('Every reference variant must have question metadata');
   }
 
+  // Derived once from the course's Core term — every exam created in this
+  // batch shares the same course, so one lookup covers all of them (#1072
+  // §4 step 8/step 10 / #1077). `semesterOverride` is gone: it only ever
+  // relabelled the same course, and `examLabels` already handle per-exam
+  // naming. `semester` is display-only now (never persisted, the column is
+  // gone) — kept just to populate the summary returned below.
+  const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId);
+
   const started = Date.now();
   const warnings = [];
   const createdAssessments = [];
@@ -332,7 +349,6 @@ export async function assembleEquivalentExamVariants(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterOverride || ref.semester,
           description: `Assessment variant workflow exam (${label}) from reference assessment #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
@@ -413,7 +429,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
       id: a.id,
       name: a.name,
       type: a.type,
-      semester: a.semester
+      semester: semesterDisplay
     })),
     assemblyTimeMs,
     warnings,
@@ -476,7 +492,6 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
     examLabels = ['Variant exam'],
     namePrefix = null,
     includeDrafts = true,
-    semesterOverride = null,
     assessmentTypeOverride = null
   } = params;
 
@@ -506,6 +521,10 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
     throw new Error('Reference assessment has no questions in sections');
   }
 
+  // Derived once from the course's Core term — see the comment in
+  // `assembleEquivalentExamVariants` (#1072 §4 step 8 / #1077).
+  const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId);
+
   const started = Date.now();
   const warnings = [];
   const createdAssessments = [];
@@ -523,7 +542,6 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
-          semester: semesterOverride || ref.semester,
           description: `Assessment variant workflow exam (${label}) assembled by metadata similarity from reference #${referenceAssessmentId}`,
           blueprintConfig: {
             studyRole: 'generated_variant',
@@ -617,7 +635,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
       id: a.id,
       name: a.name,
       type: a.type,
-      semester: a.semester
+      semester: semesterDisplay
     })),
     assemblyTimeMs,
     warnings,
@@ -644,7 +662,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const {
     questionIds,
     courseId,
-    model = 'ollama:gpt-oss:120b',
+    model = 'vllm:qwen2.5-32b-instruct',
     apiKeys = {},
     variantsToAdd = 1,
     variantPromptInstructions = null,
@@ -663,7 +681,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
 
   const course = await Course.findOne({
     where: { id: Number(courseId), userId },
-    attributes: ['id', 'code', 'name']
+    attributes: ['id', 'coreCourseId']
   });
 
   if (!course) {
@@ -674,8 +692,15 @@ export async function generateBankVariantsForQuestions(userId, params) {
     throw new Error('EduAI is not configured; cannot generate variants.');
   }
 
-  const rawCode = (course.code && course.code.trim()) || `COURSE-${course.id}`;
-  const courseCode = rawCode.replace(/\s+/g, '').toUpperCase();
+  // `code` is Core-owned (#1072 §4 step 10) — read through Core. Preserve
+  // spacing so Core can resolve by code; prefer coreCourseId when linked.
+  const courseDetail = await enrichCourseDetail(course, { cookie });
+  const courseCode =
+    (courseDetail.code && courseDetail.code.trim()) || `COURSE-${course.id}`;
+  const coreCourseId =
+    typeof course.coreCourseId === 'string' && course.coreCourseId.trim()
+      ? course.coreCourseId.trim()
+      : undefined;
 
   const topics = await Topics.findAll({
     where: { courseId: course.id },
@@ -753,6 +778,7 @@ Return exactly one question in the required JSON format.`;
           eduaiService.generateQuestions({
             prompt: promptText,
             courseCode,
+            courseId: coreCourseId,
             model,
             apiKeys,
             numQuestions: 1,
@@ -970,7 +996,7 @@ export async function reviewVariantExamWithAi(userId, params) {
     baselineAssessmentId,
     variantAssessmentId,
     courseId,
-    model = 'ollama:gpt-oss:120b',
+    model = 'vllm:qwen2.5-32b-instruct',
     apiKeys = {},
     rubricText = '',
     // If true, penalize low-usability slots when computing the overall score.
@@ -989,7 +1015,8 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const baselineAssessment = await Assessments.findOne({
     where: { id: Number(baselineAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id'], required: true }]
+    // `code` is Core-owned (#1072) — select only local columns, then enrich.
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
   });
   if (!baselineAssessment) {
     throw new Error('Baseline assessment not found or course mismatch');
@@ -997,11 +1024,20 @@ export async function reviewVariantExamWithAi(userId, params) {
 
   const variantAssessment = await Assessments.findOne({
     where: { id: Number(variantAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id'], required: true }]
+    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
   });
   if (!variantAssessment) {
     throw new Error('Variant assessment not found or course mismatch');
   }
+
+  const reviewCourse = baselineAssessment.course;
+  const courseDetail = await enrichCourseDetail(reviewCourse, { cookie });
+  const reviewCourseCode =
+    (courseDetail?.code && String(courseDetail.code).trim()) || `COURSE-${courseId}`;
+  const reviewCoreCourseId =
+    typeof reviewCourse?.coreCourseId === 'string' && reviewCourse.coreCourseId.trim()
+      ? reviewCourse.coreCourseId.trim()
+      : undefined;
 
   const baselineVariants = await loadOrderedVariantsForAssessment(baselineAssessment.id);
   const variantVariants = await loadOrderedVariantsForAssessment(variantAssessment.id);
@@ -1080,7 +1116,8 @@ Output ONLY valid JSON with this exact schema (use straight double quotes, no tr
     const response = await eduaiService.chat({
       model,
       apiKeys,
-      courseCode: `COURSE-${courseId}`,
+      courseId: reviewCoreCourseId,
+      courseCode: reviewCourseCode,
       messages: [
         { role: 'system', content: systemInstruction },
         { role: 'user', content: userPrompt }
@@ -1105,7 +1142,8 @@ Rules: no markdown, no code fences, no text before { or after }. Use double quot
       const retryResponse = await eduaiService.chat({
         model,
         apiKeys,
-        courseCode: `COURSE-${courseId}`,
+        courseId: reviewCoreCourseId,
+        courseCode: reviewCourseCode,
         messages: [
           { role: 'system', content: systemInstruction },
           { role: 'user', content: repairUser }

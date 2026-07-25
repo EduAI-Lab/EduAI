@@ -26,7 +26,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    course: { findFirst: vi.fn() },
+    course: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -34,6 +34,8 @@ import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
+import prisma from "~/lib/prisma.server";
+import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const COURSE = { id: "c1", isPublished: true, department: null };
 
@@ -60,6 +62,7 @@ function makeArgs(body: object) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimitsForTests();
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
@@ -127,6 +130,67 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(res.status).toBe(200);
     expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
+
+  it("resolves compact courseCode via spaced candidate (COSC121 → COSC 121)", async () => {
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "COSC121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["COSC121", "COSC 121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
+    });
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "c1",
+    );
+  });
+
+  it("resolves an already-spaced courseCode on the first candidate", async () => {
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "COSC 121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["COSC 121", "COSC121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
+    });
+  });
+
+  it("resolves courseCode case-insensitively (cosc121 → COSC 121)", async () => {
+    vi.mocked(prisma.course.findMany).mockResolvedValueOnce([
+      { id: "c1", code: "COSC 121" },
+    ] as never);
+    mockAccess({ level: "student", rank: 0 });
+
+    const res = await action(makeArgs({ messages: [], courseCode: "cosc121" }));
+    expect(res.status).toBe(200);
+    expect(prisma.course.findMany).toHaveBeenCalledWith({
+      where: {
+        code: { in: ["cosc121", "cosc 121"], mode: "insensitive" },
+        deletedAt: null,
+      },
+      select: { id: true, code: true },
+    });
+    expect(resolveCourseAccessWithCourse).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "u1" }),
+      "c1",
+    );
+  });
 });
 
 describe("POST /api/chat — admin chatMode gate", () => {
@@ -141,6 +205,24 @@ describe("POST /api/chat — admin chatMode gate", () => {
     } as never);
     const res = await action(makeArgs({ messages: [], chatMode: "admin" }));
     expect(res.status).toBe(200);
+  });
+
+  it("rejects a valid service key for admin chatMode", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue(null);
+    vi.mocked(requireServiceKey).mockResolvedValue(null);
+    const args = makeArgs({ messages: [], chatMode: "admin" });
+    args.request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer valid-service-key",
+      },
+      body: JSON.stringify({ messages: [], chatMode: "admin" }),
+    });
+
+    const res = await action(args);
+
+    expect(res.status).toBe(403);
   });
 
   it("admits a verified ADMIN API key for admin chatMode without course context", async () => {

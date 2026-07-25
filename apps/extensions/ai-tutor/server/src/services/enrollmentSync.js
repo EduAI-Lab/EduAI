@@ -24,11 +24,11 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
     options.course ??
     (await prisma.courseOffering.findUnique({ where: { id: courseOfferingId } }));
 
-  if (!course || !course.externalId || course.externalSource !== 'EDUAI') {
+  if (!course || !course.coreOfferingId) {
     return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
   }
 
-  const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.externalId);
+  const allEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
   // AI Tutor local enrollments represent student access only (#578).
   const activeEnrollments = allEnrollments.filter(
     (e) => e.isActive && (e.role ?? 'STUDENT') === 'STUDENT',

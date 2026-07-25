@@ -33,7 +33,9 @@ const sortTopics = (items: Topic[]) =>
 
 export function useCourseTopics(courseOfferingId: number | null): CourseTopicsState {
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start loading when an offering is selected so empty-topics UI does not
+  // flash "Sync topics…" for one frame before the fetch effect runs (#1021).
+  const [loading, setLoading] = useState(() => courseOfferingId != null);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
@@ -41,6 +43,7 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
     if (!courseOfferingId) {
       setTopics([]);
       setError(null);
+      setLoading(false);
       return;
     }
 
@@ -64,6 +67,18 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
       if (requestId === requestIdRef.current) {
         setLoading(false);
       }
+    }
+  }, [courseOfferingId]);
+
+  // When the offering id changes, mark loading immediately (before paint of
+  // the empty list) so Add Activity does not flash the sync hint.
+  useEffect(() => {
+    if (courseOfferingId != null) {
+      setLoading(true);
+    } else {
+      setLoading(false);
+      setTopics([]);
+      setError(null);
     }
   }, [courseOfferingId]);
 

@@ -41,6 +41,7 @@ import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../../utils/aiModels';
 import {
     DIFFICULTY_META,
     difficultyChipClass,
@@ -174,7 +175,7 @@ const defaultForm: FormState = {
     primaryTopicId: '',
     questionOrder: '',
     generationPrompt: '',
-    generationModel: 'ollama:gpt-oss:120b'
+    generationModel: FALLBACK_GENERATION_MODEL
 };
 
 const difficultyOptions: QuestionDifficulty[] = ['easy', 'medium', 'hard'];
@@ -579,10 +580,9 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                 setAvailableModels(models);
                 setAvailableEduCourses(eduCourses);
                 if (models.length > 0) {
-                    const defaultModel = models.find((model) => model.isDefault) ?? models[0];
                     setForm((prev) => {
                         if (models.some((model) => model.id === prev.generationModel)) return prev;
-                        return { ...prev, generationModel: defaultModel.id };
+                        return { ...prev, generationModel: pickPreferredGenerationModel(models) };
                     });
                 }
             } catch (optionsError) {
@@ -1167,7 +1167,6 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                             <div className="space-y-2">
                                                 <Label htmlFor="detail-question-text">Question text</Label>
                                                 <Textarea id="detail-question-text" value={editQuestionText} onChange={(e) => setEditQuestionText(e.target.value)} placeholder="The question students see" rows={3} className="resize-none" disabled={isApproved} />
-                                                {isApproved && <p className="text-xs text-muted-foreground">Revert to draft to edit question text or difficulty.</p>}
                                             </div>
                                             <div className="space-y-2">
                                                 <Label htmlFor="detail-description">Description</Label>
@@ -1175,7 +1174,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Primary topic</Label>
-                                                <Select value={editPrimaryTopicId || undefined} onValueChange={setEditPrimaryTopicId} disabled={viewTopicsLoading || viewTopics.length === 0}>
+                                                <Select value={editPrimaryTopicId || undefined} onValueChange={setEditPrimaryTopicId} disabled={isApproved || viewTopicsLoading || viewTopics.length === 0}>
                                                     <SelectTrigger>
                                                         <SelectValue placeholder={viewTopicsLoading ? 'Loading…' : viewTopics.length === 0 ? 'No topics' : 'Select topic'} />
                                                     </SelectTrigger>
@@ -1195,13 +1194,18 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                     placeholder={viewTopicsLoading ? 'Loading…' : viewTopics.length === 0 ? 'No topics' : 'Select secondary topics'}
                                                     searchPlaceholder="Search topics…"
                                                     emptyText="No topics"
-                                                    disabled={viewTopicsLoading || viewTopics.length === 0}
+                                                    disabled={isApproved || viewTopicsLoading || viewTopics.length === 0}
                                                 />
                                             </div>
+                                            {isApproved && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Revert to draft to edit question text, difficulty, type, or topics.
+                                                </p>
+                                            )}
                                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                                 <div className="space-y-2">
                                                     <Label>Question type</Label>
-                                                    <Select value={editType} onValueChange={(v) => setEditType(v as QuestionType)}>
+                                                    <Select value={editType} onValueChange={(v) => setEditType(v as QuestionType)} disabled={isApproved}>
                                                         <SelectTrigger><SelectValue /></SelectTrigger>
                                                         <SelectContent>
                                                             {QUESTION_TYPES.map((t) => (<SelectItem key={t} value={t}>{QUESTION_TYPE_LABELS[t]}</SelectItem>))}
@@ -1226,12 +1230,27 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                                         if (!editPrimaryTopicId) return;
                                                         setSavingMetadata(true);
                                                         try {
-                                                            await questionService.updateQuestion(viewEntry.questionId, { description: editDescription || undefined, primaryTopicId: editPrimaryTopicId, type: editType, courseId: viewEntry.courseId });
+                                                            // #1080: type + primary topic feed the Core push payload just like
+                                                            // questionText/difficulty, so they're locked post-review — at the
+                                                            // QUESTION level, meaning an approved SIBLING variant locks them even
+                                                            // when the viewed variant is a draft. Send them only when actually
+                                                            // changed (mirrors QuestionComposerPage) so an untouched value never
+                                                            // trips a 409 VARIANT_LOCKED on e.g. a description-only edit.
+                                                            const typeChanged = editType !== viewEntry.questionType;
+                                                            const primaryTopicChanged =
+                                                                editPrimaryTopicId !== (viewEntry.primaryTopicId != null ? String(viewEntry.primaryTopicId) : '');
+                                                            await questionService.updateQuestion(viewEntry.questionId, {
+                                                                description: editDescription || undefined,
+                                                                courseId: viewEntry.courseId,
+                                                                ...(primaryTopicChanged && { primaryTopicId: editPrimaryTopicId }),
+                                                                ...(typeChanged && { type: editType }),
+                                                            });
                                                             const variantUpdates = buildVariantMetadataUpdates({ isDraft: !isApproved, currentQuestionText: viewVariant.questionText ?? '', editQuestionText, currentDifficulty: (viewVariant.difficulty as QuestionDifficulty) ?? 'medium', editDifficulty });
-                                                            // Secondary topics are categorisation, not answer content — editable regardless of review state (like the primary topic).
+                                                            // Secondary topics diverge Core once pushed, same as the primary topic —
+                                                            // locked together post-review (#1080). Locked in the UI above; guard here too.
                                                             const currentSecondary = [...(viewVariant.secondaryTopicsId ?? []).map(String)].sort();
                                                             const nextSecondary = [...editSecondaryTopics].sort();
-                                                            const secondaryChanged = currentSecondary.join('|') !== nextSecondary.join('|');
+                                                            const secondaryChanged = !isApproved && currentSecondary.join('|') !== nextSecondary.join('|');
                                                             const variantPayload = { ...variantUpdates, ...(secondaryChanged ? { secondaryTopicsId: editSecondaryTopics } : {}) };
                                                             if (Object.keys(variantPayload).length > 0) await questionService.updateVariant(viewEntry.variant.id, variantPayload);
                                                             const primaryTopicName = viewTopics.find((t) => t.id === editPrimaryTopicId)?.name;

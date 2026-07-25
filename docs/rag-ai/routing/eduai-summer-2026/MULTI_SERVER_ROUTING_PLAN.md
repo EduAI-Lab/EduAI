@@ -1,7 +1,7 @@
 # EduAI — Spreading AI requests across multiple servers
 
 > **For:** EduAI dev team  
-> **Status:** Slice 1 implemented on `feat/fleet-routing` (pick-time routing + health cache); Slice 2 (inference retry) planned  
+> **Status:** Slice 1 implemented (pick-time routing + health cache); Slice 2 implemented (one inference retry on alternate host after failure)  
 > **Owner:** Saad (AI / infra)  
 > **See also:** [TEAM_ROUTING_LAYER_PLAN.md](./TEAM_ROUTING_LAYER_PLAN.md) (single-server Auto routing — research)
 
@@ -65,18 +65,16 @@ Fleet routing uses two **job types**. They describe how long the user can wait, 
 | **`interactive`** | User is waiting on screen (seconds) | `VLLM_FLEET_CHAT_URLS` |
 | **`background`** | Minutes are OK (generation, extraction) | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool if unset) |
 
-Extensions still send a **feature** tag for telemetry and debugging. EduAI maps it to a job type:
-
-| `routingContext.feature` | Maps to `JobType` | Apps |
-|--------------------------|-------------------|------|
-| `chat` (default) | `interactive` | EduAI chat |
-| `tutor` | `interactive` | AI Tutor |
-| `question-maker` | `background` | Question Maker |
+Apps select the pool with **`routingContext.jobType`** only (no per-app feature tags):
 
 ```typescript
 type JobType = "interactive" | "background";
-type WorkloadFeature = "chat" | "tutor" | "question-maker";
 ```
+
+| `routingContext.jobType` | Apps | Pool |
+|--------------------------|------|------|
+| `interactive` (default) | EduAI chat, AI Tutor | `VLLM_FLEET_CHAT_URLS` |
+| `background` | Question Maker | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool) |
 
 Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs 32B) is chosen by Auto routing before the fleet step.
 
@@ -85,7 +83,7 @@ Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs
 | Job type | Who uses it | How fast should it feel? | Send to |
 |----------|-------------|--------------------------|---------|
 | **`interactive`** | EduAI chat, AI Tutor, tool-heavy chat | Seconds | cmps01 + cmps02 (chat pool) |
-| **`background`** | Question Maker | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
+| **`background`** | Question Maker (`jobType: "background"`) | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
 | *(not fleet)* | Embeddings / RAG index | Not user-visible | Ollama on cmps01 |
 
 **Why this matters:** Background jobs must not block interactive traffic on the same GPU host.
@@ -100,7 +98,7 @@ All three are expected to have **two NVIDIA RTX 6000 Ada GPUs**. Each host runs 
 |--------|--------|--------|----------|
 | **cmps01** | Running | 7B + 32B | Dev, research, interactive |
 | **cmps02** | Infra in repo | 7B + 32B | Extra **interactive** capacity |
-| **cmps03** | Planned | TBD (likely 32B) | **Background** (Question Maker) |
+| **cmps03** | Planned | TBD (likely 32B) | **Background** (explicit job type) |
 
 When `VLLM_FLEET_CHAT_URLS` is set, fleet routing is **on**; otherwise the app uses single-host `VLLM_BASE_URL` only.
 
@@ -112,7 +110,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, fleet routing is **on**; otherwise the app u
 
 ```text
 POST /api/chat
-  → parse routingContext.feature → JobType
+  → parse routingContext.jobType → JobType (default interactive)
   → RAG prefetch (unchanged — EduAI + Postgres)
   → resolve model id (Auto or explicit)
   → resolveFleetHost()          ← pick server from job-type pool
@@ -129,7 +127,7 @@ Server pick happens **after** the model id is known. Hosts that do not serve tha
 
 | File | Purpose |
 |------|---------|
-| `types.ts` | `JobType`, `WorkloadFeature`, feature → job type, telemetry helpers |
+| `types.ts` | `JobType`, `parseJobType` |
 | `registry.ts` | Load chat / heavy pools from env |
 | `health.ts` | Ping `/v1/models`, 30 s cache |
 | `resolve-fleet.ts` | Pick healthy host (round-robin) |
@@ -149,11 +147,11 @@ VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 {
   "messages": [ ... ],
   "model": "vllm:qwen2.5-32b-instruct",
-  "routingContext": { "feature": "question-maker" }
+  "routingContext": { "jobType": "interactive" }
 }
 ```
 
-Omit `routingContext` → `feature: chat` → `JobType: interactive`.
+Omit `routingContext` → `JobType: interactive`.
 
 ---
 
@@ -169,17 +167,26 @@ Health results are cached for **~30 seconds** per host so we do not ping `/v1/mo
 4. Round-robin among the rest.  
 5. If **no** host qualifies → **503** immediately with `"No healthy vLLM fleet server available"` (not silent).
 
-### During the stale cache window (Slice 2 — **planned**)
+### During the stale cache window (Slice 2 — **implemented**)
 
-If a host was marked healthy within the last ~30 s but **dies before the cache expires**, pick-time routing may still send traffic there. Planned behavior:
+If a host was marked healthy within the last ~30 s but **dies before the cache expires**, pick-time routing may still send traffic there. Behavior:
 
 1. **On inference failure** to that host (connection refused, reset, or timeout to vLLM) → **invalidate** that host’s cache entry immediately (do not wait for TTL).  
 2. **Retry the same request once** on the next eligible host in the same job-type pool.  
 3. If the retry succeeds → normal response (logged with `fleetRetry: true`).  
-4. If no host remains or the retry fails → **503** with a clear error.  
+4. If no host remains or the retry fails → existing chat error / **503** with a clear error.  
 5. Log `fleetServerId`, failure reason, and retry status — operators debugging a mid-class outage can see retries, not silent drops.
 
-Until Slice 2 ships, requests sent to a stale-healthy dead host will **fail at inference time** with the usual chat error; they are **not** automatically retried on another server.
+**Startup probe (Slice 2 scope):** For every fleet `vllm:*` turn (streaming, non-streaming / `consumeStream`, and ADHD oversight), Core waits briefly for the first stream chunk/step (or an `onError`) before treating the host as usable, so connection/startup failures still throw inside the retry `try/catch`. Soft timeout: `FLEET_STREAM_PROBE_MS` (default `10000`).
+
+**Deliberate tradeoffs (not retried):**
+
+- Soft-timeout marks a silent/slow host as **ready** so TTFT is not blocked forever. After that, a late `onError` cannot trigger another host retry — the client sees the bad/hung stream. Operators who prefer fail-closed on dead hosts can lower `FLEET_STREAM_PROBE_MS`.
+- Failures **after** the probe has settled (mid-stream disconnect, oversight rewrite errors, etc.) do **not** get a second host. Slice 2 is **startup-failure retry**, not full mid-stream failover.
+
+`fleetRetry: true` is logged only after the alternate host attempt **succeeds**. A failed second attempt logs `[fleet] retry attempt` then surfaces the error with `fleetRetry: false` (no success marker).
+
+`X-Fleet-Server` reflects the **final** host after a successful retry.
 
 ---
 
@@ -191,9 +198,66 @@ Logged in `routerFeatures` (no schema migration required):
 - `jobType` — `"interactive"` or `"background"`
 - `fleetServerId` — e.g. `"cmps02"`
 - `fleetReason` — e.g. `"interactive-round-robin"`
-- `fleetRetry` — *(planned Slice 2)* whether inference was retried on another host
+- `fleetRetry` — whether inference was retried on another host (Slice 2)
 
 Optional response header: `X-Fleet-Server: cmps02`.
+
+---
+
+## Testing fleet routing
+
+Run from **`apps/core`**. Host checks must run on a machine that can reach cmps (e.g. **s378 dev server**), not a typical off-campus laptop.
+
+### 1. Unit tests (no GPUs)
+
+```bash
+npx vitest run app/tests/unit/fleet-routing.test.ts
+```
+
+Covers `routingContext.jobType` parsing, round-robin, 503 when no healthy host, and provider URL override.
+
+### 2. Pre-flight — health-check every fleet host
+
+```bash
+# After setting VLLM_FLEET_CHAT_URLS in .env:
+npm run fleet:smoke
+
+# Or inline (no .env edit):
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001" npm run fleet:smoke
+```
+
+Pings `GET /v1/models` on each URL in `VLLM_FLEET_CHAT_URLS` (and `VLLM_FLEET_HEAVY_URL` if set). Warns when expected models from `VLLM_FLEET_DEFAULT_MODELS` are missing.
+
+Single-host check (legacy): `npm run vllm:smoke` with `VLLM_BASE_URL` set.
+
+### 3. Enable fleet in `.env` and restart
+
+```env
+VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
+VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+VLLM_API_KEY="vllm-local"
+```
+
+Restart the app after env changes — the fleet registry is cached at process start.
+
+Fleet is **on** when `VLLM_FLEET_CHAT_URLS` is non-empty. Routing applies only to **`vllm:*`** models.
+
+### 4. End-to-end — chat and verify pick
+
+Send several chat messages with a vLLM model. Confirm `X-Fleet-Server: cmps01` (or `cmps02`) in the Network tab on `/api/chat` response headers. With two healthy hosts, the header should alternate across requests.
+
+**Background / heavy pool:** call `resolveFleetHost` with `jobType: "background"` when `VLLM_FLEET_HEAVY_URL` is set (not via a feature tag).
+
+### 5. Negative checks (optional)
+
+| Scenario | Expected |
+|----------|----------|
+| `VLLM_FLEET_CHAT_URLS` unset | No `X-Fleet-Server`; uses `VLLM_BASE_URL` only |
+| All fleet hosts unreachable | **503** `"No healthy vLLM fleet server available"` |
+| Model not on any host | **503** with model name in `details` |
+| Briefly stop one healthy vLLM (manual failover) | Chat logs `[fleet] retry attempt` then `fleetRetry: true` and succeeds on the other host; `X-Fleet-Server` is the survivor |
+
+**Implemented:** Slice 2 inference retry after a stale health cache — dead mid-window hosts invalidate and retry once on another healthy host.
 
 ---
 
@@ -201,8 +265,8 @@ Optional response header: `X-Fleet-Server: cmps02`.
 
 | Slice | Status | What |
 |-------|--------|------|
-| **1** | **Done** (`feat/fleet-routing`) | Env pools, health cache, round-robin, 503 at pick time, `JobType` mapping |
-| **2** | Planned | Inference failure → cache invalidate + one retry; extension feature tags |
+| **1** | **Done** (`feat/fleet-slice1`) | Env pools, health cache, per-pool round-robin, 503 at pick time, `routingContext.jobType` pool selection |
+| **2** | **Done** (`feat/fleet-slice2-retry`) | Inference startup failure → cache invalidate + one alternate-host retry; stream probe + process-local admission |
 | **3** | Planned | Per-host energy sidecar URL; classroom load test |
 | **4** | Planned | Bedrock overflow (PIA) |
 
@@ -218,4 +282,4 @@ Optional response header: `X-Fleet-Server: cmps02`.
 
 ---
 
-*Last updated: 2026-06-26 — JobType (`interactive` / `background`), stale-cache fallback, aligned with `feat/fleet-routing` Slice 1*
+*Last updated: 2026-07-08 — Slice 1 fleet-only PR, testing section, `npm run fleet:smoke`*

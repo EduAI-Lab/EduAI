@@ -58,6 +58,8 @@ export interface ModuleCardProps {
   updatedLabel?: string;
   /** Eyebrow-right action slot (e.g. the publish `PublishMenu`). Clicks inside are kept from bubbling to the card's navigation handler. */
   actions?: ReactNode;
+  /** Eyebrow-left lead slot rendered before the order chip (e.g. a drag handle). */
+  leading?: ReactNode;
   onClick: () => void;
   className?: string;
   dataTour?: string;
@@ -75,6 +77,7 @@ export function ModuleCard({
   isPublished,
   updatedLabel,
   actions,
+  leading,
   onClick,
   className,
   dataTour,
@@ -129,6 +132,7 @@ export function ModuleCard({
       <CardHeader className="relative gap-2">
         <div className="flex items-start justify-between gap-2">
           <span className="inline-flex items-center gap-2.5">
+            {leading}
             <span
               className="flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold tabular-nums"
               style={{

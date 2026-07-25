@@ -28,7 +28,7 @@ import { linkCanvasRoster } from "~/lib/canvas/link-roster.server";
 import { prepareStudentIdStorage } from "~/lib/canvas/student-id.server";
 
 describe("LinkRosterSchema", () => {
-  it("accepts a student number", () => {
+  it("accepts a trimmed 8-digit student number", () => {
     const result = LinkRosterSchema.safeParse({ studentNumber: " 12345678 " });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -38,6 +38,16 @@ describe("LinkRosterSchema", () => {
 
   it("rejects empty student number", () => {
     expect(LinkRosterSchema.safeParse({ studentNumber: "" }).success).toBe(false);
+  });
+
+  it("rejects non-8-digit values (#818)", () => {
+    for (const studentNumber of ["9", "1234567", "123456789", "abc12345", "1234567a"]) {
+      const result = LinkRosterSchema.safeParse({ studentNumber });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.message).toMatch(/8 digits/i);
+      }
+    }
   });
 });
 

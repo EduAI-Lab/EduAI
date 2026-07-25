@@ -101,9 +101,20 @@ GOOGLE_GENERATIVE_AI_API_KEY="" # Direct Gemini embeddings (legacy 3072 path onl
 EMBEDDING_PROVIDER="local" # local | cloud — dev server uses Ollama mxbai-embed-large
 EMBEDDING_DIMENSION="1024" # Must match pgvector column (LOCAL-EMBEDDINGS)
 OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
-OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:11434
+OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:8001/ollama (requires CMPS01_INTERNAL_KEY)
 # VLLM_PORT=8001
-# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # after IT firewall; see docs/rag-ai/VLLM.md
+# VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # LiteLLM edge on cmps01; see infra/cmps01/README.md
+# CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
+# ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
+# ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
+# ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
+# Multi-server fleet (optional) — see docs/DEPLOYMENT.md:
+# VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
+# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# AI_MAX_INFLIGHT=8              # process-local chat admission (0 = off)
+# AI_ADMISSION_WAIT_MS=15000     # wait before 503 AI_ADMISSION_TIMEOUT
+# FLEET_STREAM_PROBE_MS=10000    # soft-timeout waiting for first stream chunk before treating host as ready
+# npm run fleet:smoke  # from apps/core — pre-flight health check (Slice 2 retries once on alternate healthy host)
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
@@ -362,6 +373,26 @@ curl -X DELETE "https://eduai.ok.ubc.ca/api/courses/COURSE_ID/topics" \
   }'
 ```
 
+### Course Response Style Endpoint
+
+Update per-course AI response style tags and optional additional instructions. Instructors and admins may always PATCH; TAs may PATCH only when the `tas.canSetAiInstructions` policy grant is on. There is no GET handler — the course detail page loader supplies initial values to the settings UI, and omitting GET prevents leaking private instructor prompts to students.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `PATCH` | `/api/courses/:id/response-style` | Update `responseStyleTags` and/or `aiInstructions` |
+
+**Body** (`PATCH /api/courses/:id/response-style`):
+
+```json
+{
+  "responseStyleTags": ["socratic", "concise"],
+  "aiInstructions": "Use course notation for proofs."
+}
+```
+
+Either field may be omitted for a partial update; at least one must be present (422 otherwise).
+Tag ids must be from the predefined catalog (`socratic`, `concise`, `step-by-step`, `encouraging`, `formal`, `example-driven`, `scaffolded`). At runtime, selected tags and instructions are injected into the chat system prompt; students see tag labels on the course overview only.
+
 ### User Preferences Endpoints
 
 Read and update the authenticated user's UI preferences (`UserPreference` row). Requires a Better Auth **session cookie**. Used by `AssistiveUiProvider` in the app shell and the `/chat` assist toggle.
@@ -485,11 +516,39 @@ app/tests/
 
 See [`TESTS.md`](../../TESTS.md) at the monorepo root for the full test inventory.
 
+### Routing (Auto model)
+
+Sustainability-aware tier routing lives under `app/lib/ai/routing/`. When `ROUTER_AUTO_DEFAULT=true` or `VLLM_BASE_URL` is set, the chat model picker shows **Auto** (rules) and **Auto (LLM)** entries. Configure modes via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and offline evaluation via:
+
+```bash
+npm run research:embed-knn-exemplars
+npm run research:eval-knn    # needs RESEARCH_LABEL_IN or docs/research labels
+npm run research:eval-llm    # needs vLLM + ROUTING_LLM_CLASSIFIER_MODEL
+npm run vllm:smoke           # LiteLLM health check against VLLM_BASE_URL
+```
+
+See `docs/rag-ai/routing/eduai-summer-2026/` and `infra/cmps01/README.md` for cmps01 edge proxy setup.
+
 ### Notes
 
 - The Vitest config (`vitest.config.ts`) uses `pool: vmThreads` and environment `jsdom`.
 - If `npm run test` fails with `ERR_REQUIRE_ESM` from `html-encoding-sniffer`, that is a known jsdom 29 dependency issue in the monorepo — track fix separately; component test files themselves are valid.
 - Tests must live under `app/tests/` and be named `*.test.ts` or `*.test.tsx`.
+
+### Mutation testing
+
+`npm run test:mutation` runs [Stryker](https://stryker-mutator.io/) against the RBAC, auth,
+and Canvas-credential-encryption modules (`stryker.config.mjs`) to verify the unit suite
+actually catches regressions in that code, not just covers it. It reuses `vitest.shared.ts`
+(the same plugins/aliases as the main `vitest.config.ts`) with a narrowed `include` list
+(`vitest.mutation.config.ts`) scoped to the ~40 test files that exercise the mutated modules —
+running the full 199-file suite would exceed Stryker's dry-run timeout and pull in an
+unrelated, pre-existing Ollama-dependent test failure. Results are written to
+`reports/mutation/mutation.html` (gitignored, not committed). This is a local/on-demand
+command — it is not run in CI. `stryker.config.mjs` sets a local `thresholds.break` of 70
+(tied to the ~73.65% overall baseline) so score regressions fail the command locally.
+
+To re-check a single file after adding tests: `npx stryker run --mutate <path/to/file.ts>`.
 
 ## Contributing
 

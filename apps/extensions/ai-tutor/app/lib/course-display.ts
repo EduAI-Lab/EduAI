@@ -15,20 +15,27 @@ import { titleName } from './course-title';
  * colour + code) everywhere it appears — matching how Core/QM colour courses.
  */
 
-/** Stable accent colour for a course, keyed off its id. */
-export function accentForCourse(course: Pick<Course, 'id'>): CourseAccentColor {
-  return paletteColorAtIndex(defaultColorIndexForCourse(String(course.id)));
+/**
+ * Stable accent colour for a course, keyed off its CORE course id — the one
+ * identity shared by Core, AI Tutor, and QM — so the same course renders the
+ * same color on every platform. Local id only as a fallback for rows with no
+ * Core link (unreachable post-#1072, kept for safety).
+ */
+export function accentForCourse(course: Pick<Course, 'id' | 'coreOfferingId'>): CourseAccentColor {
+  return paletteColorAtIndex(
+    defaultColorIndexForCourse(course.coreOfferingId ?? String(course.id)),
+  );
 }
 
 /**
  * Short course code for the card colour band / hero eyebrow. Prefers the
- * EduAI-synced `code`; when a course has none, derives a short token from the
- * title so the eyebrow never renders empty.
+ * Core-owned, read-through `code` (#1072 step 2); when a course has none,
+ * derives a short token from the title so the eyebrow never renders empty.
  */
-export function courseCode(course: Pick<Course, 'title' | 'externalMetadata'>): string {
-  const code = course.externalMetadata?.code?.trim();
+export function courseCode(course: Pick<Course, 'title' | 'code'>): string {
+  const code = course.code?.trim();
   if (code) return code;
-  const firstWord = course.title.trim().split(/\s+/)[0] ?? '';
+  const firstWord = course.title?.trim().split(/\s+/)[0] ?? '';
   return firstWord ? firstWord.slice(0, 10).toUpperCase() : 'COURSE';
 }
 
@@ -37,24 +44,26 @@ export function courseCode(course: Pick<Course, 'title' | 'externalMetadata'>): 
  * code stripped ("COSC 101 - Computer Studies" → "Computer Studies"). The code
  * is shown separately (card colour band, hero eyebrow), so the headline needn't
  * repeat it behind a colon/dash. Falls back to the whole title when it carries
- * no code prefix.
+ * no code prefix, and to `''` when `title` is `null` (#1072 step 4 — Core
+ * unresolved, no local fallback exists) so callers can render an empty/
+ * placeholder state instead of crashing.
  */
 export function courseName(course: Pick<Course, 'title'>): string {
-  return titleName(course.title);
+  return course.title ? titleName(course.title) : '';
 }
 
-/** Raw term value from EduAI metadata (empty string when unknown). */
-export function courseTerm(course: Pick<Course, 'externalMetadata'>): string {
-  return course.externalMetadata?.term?.trim() ?? '';
+/** Raw term value, read-through from Core (#1072 step 2; empty string when unknown). */
+export function courseTerm(course: Pick<Course, 'term'>): string {
+  return course.term?.trim() ?? '';
 }
 
-/** Year from EduAI metadata (null when unknown). */
-export function courseYear(course: Pick<Course, 'externalMetadata'>): number | null {
-  return course.externalMetadata?.year ?? null;
+/** Year, read-through from Core (#1072 step 2; null when unknown). */
+export function courseYear(course: Pick<Course, 'year'>): number | null {
+  return course.year ?? null;
 }
 
 /** Adapt a Course to the shared `TermInfo` shape; startDate is authoritative for ordering. */
-function courseTermInfo(course: Pick<Course, 'externalMetadata' | 'startDate'>): TermInfo {
+function courseTermInfo(course: Pick<Course, 'term' | 'year' | 'startDate'>): TermInfo {
   return {
     term: courseTerm(course),
     year: courseYear(course),
@@ -71,7 +80,7 @@ export type { CourseTermGroup };
  * single group, or a `<section>` per term (heading = `group.labelLong`) when
  * there's more than one — see `student.tsx` / `instructor.tsx`.
  */
-export function groupCoursesByTerm<T extends Pick<Course, 'externalMetadata' | 'startDate'>>(
+export function groupCoursesByTerm<T extends Pick<Course, 'term' | 'year' | 'startDate'>>(
   courses: T[],
 ): CourseTermGroup<T>[] {
   return groupByTerm(courses, courseTermInfo);

@@ -118,7 +118,6 @@ router.post('/assemble-variants', authenticateToken, requireRole(QM_AUTHORIZED),
       examLabels,
       namePrefix,
       includeDrafts,
-      semesterOverride,
       assessmentTypeOverride
     } = req.body;
 
@@ -135,7 +134,6 @@ router.post('/assemble-variants', authenticateToken, requireRole(QM_AUTHORIZED),
       examLabels: Array.isArray(examLabels) ? examLabels : undefined,
       namePrefix: typeof namePrefix === 'string' ? namePrefix : null,
       includeDrafts: Boolean(includeDrafts),
-      semesterOverride: typeof semesterOverride === 'string' ? semesterOverride : null,
       assessmentTypeOverride: assessmentTypeOverride || null
     });
 
@@ -153,7 +151,6 @@ router.post('/assemble-by-metadata', authenticateToken, requireRole(QM_AUTHORIZE
       examLabels,
       namePrefix,
       includeDrafts,
-      semesterOverride,
       assessmentTypeOverride
     } = req.body;
 
@@ -170,7 +167,6 @@ router.post('/assemble-by-metadata', authenticateToken, requireRole(QM_AUTHORIZE
       examLabels: Array.isArray(examLabels) ? examLabels : undefined,
       namePrefix: typeof namePrefix === 'string' ? namePrefix : null,
       includeDrafts: includeDrafts !== false,
-      semesterOverride: typeof semesterOverride === 'string' ? semesterOverride : null,
       assessmentTypeOverride: assessmentTypeOverride || null
     });
 

@@ -170,7 +170,6 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    semesterOverride?: string;
     assessmentTypeOverride?: string;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-variants`, payload);
@@ -184,7 +183,6 @@ export const assessmentVariantService = {
     examLabels?: string[];
     namePrefix?: string;
     includeDrafts?: boolean;
-    semesterOverride?: string;
     assessmentTypeOverride?: string;
   }): Promise<AssembleVariantsResult> {
     const response = await api.post(`${apiBase}/assemble-by-metadata`, payload);
@@ -199,7 +197,7 @@ export const assessmentVariantService = {
     variantsToAdd?: number;
     variantPromptInstructions?: string | null;
   }): Promise<GenerateBankVariantsResult> {
-    const model = payload.model ?? 'ollama:gpt-oss:120b';
+    const model = payload.model ?? 'vllm:qwen2.5-32b-instruct';
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/generate-bank-variants`, {
       ...payload,
@@ -216,7 +214,7 @@ export const assessmentVariantService = {
     model?: string;
     rubricText?: string;
   }): Promise<VariantAiReviewResult> {
-    const model = payload.model ?? 'ollama:gpt-oss:120b';
+    const model = payload.model ?? 'vllm:qwen2.5-32b-instruct';
     const apiKeys = await apiKeyStorage.buildApiKeysForModel(model);
     const response = await api.post(`${apiBase}/review-variant-ai`, {
       ...payload,

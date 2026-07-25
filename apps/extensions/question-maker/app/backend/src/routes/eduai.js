@@ -6,35 +6,25 @@ import express from 'express';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import eduaiService from '../services/eduaiService.js';
-import { Op } from 'sequelize';
-import { Course } from '../schema/Course.js';
 import { resolveAccessForCourse, LEVELS } from '../middleware/courseAccess.js';
-import { normalizeCourseCode } from '../services/courseCodeUtils.js';
+import { findCoursesByProjectedCode } from '../services/courseListService.js';
 import { config } from '../config/settings.js';
 
 const router = express.Router();
 
 /**
  * Confirm the caller has at least TA access to a QM course matching `courseCode`
- * before proxying to EduAI (#4). Resolves the local QM Course row by normalized
- * code and reuses the same access helper as the per-course middleware. Returns
- * the resolved access on success, or null when no accessible match exists.
+ * before proxying to EduAI (#4). `code` is Core-owned and no longer stored
+ * locally (#1072 §4 step 10), so the match reads through Core via
+ * `findCoursesByProjectedCode` rather than querying a local `code` column.
+ * Reuses the same access helper as the per-course middleware. Returns
+ * `{ course, access }` on success, or null when no accessible match exists.
  */
 async function resolveCourseCodeAccess(reqUser, courseCode, cookie) {
-  const target = normalizeCourseCode(courseCode);
-  if (!target) return null;
-
-  // Narrow with case-insensitive matches (raw + space-stripped forms) so common
-  // code variations hit the index, then normalize-compare in JS to collapse any
-  // remaining whitespace differences (mirrors findScopedCoreCourseByCode).
-  const compact = courseCode.replace(/\s+/g, '');
-  const candidates = await Course.findAll({
-    where: { code: { [Op.or]: [{ [Op.iLike]: courseCode }, { [Op.iLike]: compact }] } },
-  }).catch(() => []);
-  const matches = candidates.filter((c) => normalizeCourseCode(c.code) === target);
+  const matches = await findCoursesByProjectedCode(courseCode);
   for (const course of matches) {
     const access = await resolveAccessForCourse(reqUser, course, { cookie });
-    if (access && access.rank >= LEVELS.ta.rank) return access;
+    if (access && access.rank >= LEVELS.ta.rank) return { course, access };
   }
   return null;
 }
@@ -57,8 +47,8 @@ router.post('/chat', async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
-    if (!access) {
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!resolved) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this course',
@@ -66,18 +56,20 @@ router.post('/chat', async (req, res) => {
       });
     }
 
-    const course = {
-      id: 0,
-      name: `EduAI Course: ${courseCode}`,
-      code: courseCode
-    };
+    const { course: qmCourse } = resolved;
+    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
+    const coreCourseId =
+      typeof qmCourse.coreCourseId === 'string' && qmCourse.coreCourseId.trim()
+        ? qmCourse.coreCourseId.trim()
+        : undefined;
 
-    // Call EduAI service
+    // Call EduAI service — prefer Core courseId when the QM course is linked.
     const response = await eduaiService.chat({
       messages,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
-      courseCode,
+      courseId: coreCourseId,
+      courseCode: resolvedCourseCode,
       streaming: streaming || false,
       cookie: req.headers.cookie ?? '',
     });
@@ -86,9 +78,10 @@ router.post('/chat', async (req, res) => {
       success: true,
       data: response,
       course: {
-        id: course.id,
-        name: course.name,
-        code: course.code
+        id: qmCourse.id,
+        name: qmCourse.name,
+        code: resolvedCourseCode,
+        coreCourseId: coreCourseId ?? null,
       }
     });
   } catch (error) {
@@ -130,8 +123,8 @@ router.post('/generate-questions', async (req, res) => {
 
     // Confirm the caller actually has access to this course in QM before
     // proxying (#4) — the client-supplied courseCode is otherwise unverified.
-    const access = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
-    if (!access) {
+    const resolved = await resolveCourseCodeAccess(req.user, courseCode, req.headers.cookie);
+    if (!resolved) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this course',
@@ -139,11 +132,12 @@ router.post('/generate-questions', async (req, res) => {
       });
     }
 
-    const course = {
-      id: 0,
-      name: `EduAI Course: ${courseCode}`,
-      code: courseCode
-    };
+    const { course: qmCourse } = resolved;
+    const resolvedCourseCode = (qmCourse.code && qmCourse.code.trim()) || courseCode;
+    const coreCourseId =
+      typeof qmCourse.coreCourseId === 'string' && qmCourse.coreCourseId.trim()
+        ? qmCourse.coreCourseId.trim()
+        : undefined;
 
     // Call EduAI service to generate questions
     const mcqN =
@@ -153,7 +147,8 @@ router.post('/generate-questions', async (req, res) => {
 
     const questions = await eduaiService.generateQuestions({
       prompt,
-      courseCode,
+      courseCode: resolvedCourseCode,
+      courseId: coreCourseId,
       model: model || 'google:gemini-2.5-flash',
       apiKeys: apiKeys || {},
       numQuestions: resolvedNumQuestions,
@@ -169,9 +164,10 @@ router.post('/generate-questions', async (req, res) => {
         questions,
         count: questions.length,
         course: {
-          id: course.id,
-          name: course.name,
-          code: course.code
+          id: qmCourse.id,
+          name: qmCourse.name,
+          code: resolvedCourseCode,
+          coreCourseId: coreCourseId ?? null,
         }
       }
     });
@@ -286,10 +282,17 @@ const FALLBACK_AI_MODELS = [
     isActive: true,
   },
   {
-    provider: 'ollama',
-    modelId: 'gpt-oss:120b',
-    name: 'GPT-OSS 120B (UBC hosted)',
-    description: 'UBC-hosted model. Requires UBC network/VPN.',
+    provider: 'vllm',
+    modelId: 'qwen2.5-7b-instruct',
+    name: 'Qwen2.5 7B Instruct (UBC hosted)',
+    description: 'UBC-hosted vLLM. Requires UBC network/VPN. Fast connectivity probe.',
+    isActive: true,
+  },
+  {
+    provider: 'vllm',
+    modelId: 'qwen2.5-32b-instruct',
+    name: 'Qwen2.5 32B Instruct (UBC hosted)',
+    description: 'UBC-hosted vLLM. Requires UBC network/VPN. Preferred for extraction.',
     isActive: true,
   },
 ];

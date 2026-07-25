@@ -3,6 +3,7 @@ import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapLesson, mapProgressData } from '../utils/mappers.js';
 import { calculateLessonProgress } from '../services/progressCalculation.js';
+import { isCoursePublishedLive } from '../services/courseResolver.js';
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
     const enrollment = module.courseOffering.enrollments.find((e) => e.userId === authUser.id);
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
     const isAdmin = authUser.role === 'ADMIN';
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
@@ -94,16 +95,31 @@ router.post('/modules/:moduleId/lessons', requireRole(['INSTRUCTOR', 'UNIT_ADMIN
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
-    const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
     if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+
+    // Append to the end of the module's lesson list when the client sends no
+    // explicit position, rather than defaulting to 0 and pushing the new
+    // lesson to the top (issue #1046 / #1047).
+    let resolvedPosition;
+    if (typeof position === 'number') {
+      resolvedPosition = position;
+    } else {
+      const last = await prisma.lesson.findFirst({
+        where: { moduleId },
+        orderBy: { position: 'desc' },
+        select: { position: true },
+      });
+      resolvedPosition = last ? last.position + 1 : 0;
     }
 
     const lesson = await prisma.lesson.create({
       data: {
         title,
         contentMd: contentMd ?? '',
-        position: typeof position === 'number' ? position : 0,
+        position: resolvedPosition,
         moduleId,
       },
     });
@@ -150,7 +166,7 @@ router.get('/lessons/:lessonId', async (req, res) => {
     );
     const isTa = enrollment?.role === 'TA';
     const isStudent = enrollment?.role === 'STUDENT';
-    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
     const isAdmin = authUser.role === 'ADMIN';
     const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
     const isMember = hasElevatedAccess || isStudent;
@@ -197,13 +213,14 @@ router.patch('/lessons/:lessonId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === instructor.id,
     );
-    const unitAdmin = isUnitAdminForCourse(instructor, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(instructor, lesson.module.courseOffering);
     if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
 
-    // Validate parent course is published
-    if (!lesson.module.courseOffering.isPublished) {
+    // Validate parent course is published — `isPublished` is Core-owned
+    // (#1072 step 4), resolved live rather than read off the local row.
+    if (!(await isCoursePublishedLive(lesson.module.courseOffering.coreOfferingId))) {
       return res.status(400).json({
         error: 'Cannot publish lesson: parent course is not published',
       });
@@ -256,7 +273,7 @@ router.patch('/lessons/:lessonId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === instructor.id,
     );
-    const unitAdmin = isUnitAdminForCourse(instructor, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(instructor, lesson.module.courseOffering);
     if (!isInstructor && !unitAdmin && instructor.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
     }
@@ -300,7 +317,7 @@ router.delete('/lessons/:lessonId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'AD
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === authUser.id,
     );
-    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
     const isAdmin = authUser.role === 'ADMIN';
     if (!isInstructor && !unitAdmin && !isAdmin) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
@@ -353,7 +370,7 @@ router.patch('/lessons/:lessonId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
     const isInstructor = lesson.module.courseOffering.instructors.some(
       (i) => i.userId === authUser.id,
     );
-    const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+    const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
     const isAdmin = authUser.role === 'ADMIN';
     if (!isInstructor && !unitAdmin && !isAdmin) {
       return res.status(403).json({ error: 'Not authorized for this lesson' });
@@ -373,5 +390,73 @@ router.patch('/lessons/:lessonId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
     res.status(500).json({ error: String(e) });
   }
 });
+
+// Reorder every lesson within a module in one atomic write. Positions are
+// reassigned 0..n-1 from the client-supplied ordered id list (issue #1047).
+router.put(
+  '/modules/:moduleId/lessons/order',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const moduleId = Number(req.params.moduleId);
+    if (!Number.isFinite(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module id' });
+    }
+
+    const { orderedIds } = req.body || {};
+    if (
+      !Array.isArray(orderedIds) ||
+      orderedIds.length === 0 ||
+      !orderedIds.every((id) => Number.isInteger(id))
+    ) {
+      return res.status(400).json({ error: 'orderedIds must be a non-empty array of integers' });
+    }
+    if (new Set(orderedIds).size !== orderedIds.length) {
+      return res.status(400).json({ error: 'orderedIds must not contain duplicates' });
+    }
+
+    try {
+      const module = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: { courseOffering: { include: { instructors: { select: { userId: true } } } } },
+      });
+      if (!module) return res.status(404).json({ error: 'Module not found' });
+
+      const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
+      const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this module' });
+      }
+
+      const existing = await prisma.lesson.findMany({
+        where: { moduleId },
+        select: { id: true },
+      });
+      const existingIds = new Set(existing.map((l) => l.id));
+      if (
+        orderedIds.length !== existingIds.size ||
+        !orderedIds.every((id) => existingIds.has(id))
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'orderedIds must match the full set of lesson ids for this module' });
+      }
+
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.lesson.update({ where: { id }, data: { position: index } }),
+        ),
+      );
+
+      const lessons = await prisma.lesson.findMany({
+        where: { moduleId },
+        orderBy: { position: 'asc' },
+      });
+      res.json(lessons.map(mapLesson));
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 export default router;
