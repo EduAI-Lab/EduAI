@@ -66,6 +66,16 @@ type ServerApiKey = {
 const FIXED_PREFIX = "eduai";
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
+/**
+ * Cloud providers that take a user-supplied key. Ollama is deliberately absent —
+ * it is local inference with no key, so it keeps its own enable/disable block
+ * below rather than being forced through this shape.
+ */
+const KEY_PROVIDERS = [
+  { id: "openai", label: "OpenAI", placeholder: "sk-..." },
+  { id: "google", label: "Google AI (Gemini)", placeholder: "AIza-..." },
+] as const;
+
 interface SettingsViewProps {
   role?: string;
   studentNumber?: string | null;
@@ -436,113 +446,61 @@ export function SettingsView({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="mb-1">OpenAI</Label>
-                  {isProviderConfigured("openai") ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">Configured</Badge>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRemoveProvider("openai")}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm text-muted-foreground shrink-0 w-16">
-                          Expires
-                        </Label>
-                        <Input
-                          type="date"
-                          className="w-44"
-                          min={today}
-                          value={localExpiries["openai"] ?? ""}
-                          onChange={(e) => handleExpiryChange("openai", e.target.value)}
-                          aria-label="OpenAI key expiry date"
-                        />
-                        {localExpiries["openai"] && (
+                {KEY_PROVIDERS.map((provider) => (
+                  <div key={provider.id} className="space-y-2">
+                    <Label className="mb-1">{provider.label}</Label>
+                    {isProviderConfigured(provider.id) ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">Configured</Badge>
                           <Button
                             size="sm"
-                            variant="ghost"
-                            onClick={() => handleExpiryChange("openai", "")}
-                            className="text-muted-foreground"
+                            variant="outline"
+                            onClick={() => handleRemoveProvider(provider.id)}
+                            className="text-red-600 hover:text-red-700"
                           >
-                            Clear
+                            Remove
                           </Button>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-sm text-muted-foreground shrink-0 w-16">
+                            Expires
+                          </Label>
+                          <Input
+                            type="date"
+                            className="w-44"
+                            min={today}
+                            value={localExpiries[provider.id] ?? ""}
+                            onChange={(e) => handleExpiryChange(provider.id, e.target.value)}
+                            aria-label={`${provider.label} key expiry date`}
+                          />
+                          {localExpiries[provider.id] && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleExpiryChange(provider.id, "")}
+                              className="text-muted-foreground"
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      aria-label="OpenAI API key"
-                      placeholder="sk-..."
-                      value={keyDrafts["openai"] ?? ""}
-                      onChange={(e) =>
-                        setKeyDrafts((prev) => ({ ...prev, openai: e.target.value }))
-                      }
-                      onBlur={() => commitProviderKey("openai")}
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="mb-1">Google AI (Gemini)</Label>
-                  {isProviderConfigured("google") ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">Configured</Badge>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRemoveProvider("google")}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm text-muted-foreground shrink-0 w-16">
-                          Expires
-                        </Label>
-                        <Input
-                          type="date"
-                          className="w-44"
-                          min={today}
-                          value={localExpiries["google"] ?? ""}
-                          onChange={(e) => handleExpiryChange("google", e.target.value)}
-                          aria-label="Google AI key expiry date"
-                        />
-                        {localExpiries["google"] && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleExpiryChange("google", "")}
-                            className="text-muted-foreground"
-                          >
-                            Clear
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      aria-label="Google AI API key"
-                      placeholder="AIza-..."
-                      value={keyDrafts["google"] ?? ""}
-                      onChange={(e) =>
-                        setKeyDrafts((prev) => ({ ...prev, google: e.target.value }))
-                      }
-                      onBlur={() => commitProviderKey("google")}
-                    />
-                  )}
-                </div>
+                    ) : (
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        placeholder={provider.placeholder}
+                        value={keyDrafts[provider.id] ?? ""}
+                        onChange={(e) =>
+                          setKeyDrafts((prev) => ({ ...prev, [provider.id]: e.target.value }))
+                        }
+                        onBlur={() => commitProviderKey(provider.id)}
+                        aria-label={`${provider.label} API key`}
+                      />
+                    )}
+                  </div>
+                ))}
 
                 <div className="space-y-2">
                   <Label className="mb-1">Ollama (Local)</Label>
