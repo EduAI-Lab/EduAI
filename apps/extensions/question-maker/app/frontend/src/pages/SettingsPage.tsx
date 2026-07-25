@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
     IconAccessible,
     IconCheck,
@@ -469,7 +470,7 @@ export default function SettingsPage() {
                                                     className="shrink-0 text-destructive hover:text-destructive/80"
                                                 >
                                                     {canvasDisconnecting ? (
-                                                        <IconLoader2 className="size-4 animate-spin" />
+                                                        <Spinner />
                                                     ) : (
                                                         <IconTrash className="size-4" />
                                                     )}
@@ -525,7 +526,7 @@ export default function SettingsPage() {
                                         >
                                             {canvasConnecting ? (
                                                 <>
-                                                    <IconLoader2 className="size-4 animate-spin" />
+                                                    <Spinner />
                                                     Connecting…
                                                 </>
                                             ) : canvasIntegration?.isConnected ? (
