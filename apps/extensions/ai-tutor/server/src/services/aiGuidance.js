@@ -230,8 +230,6 @@ async function callEduAI({
       console.error('[aiGuidance] Unexpected response format:', data);
       throw new Error('Invalid response format from AI API');
     }
-
-    throw new Error('EduAI retry loop exhausted unexpectedly');
   } catch (error) {
     if (signal?.aborted) {
       // The caller's own signal (not our timeout) fired — a genuine
