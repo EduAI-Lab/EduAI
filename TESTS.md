@@ -41,7 +41,7 @@ It serves two purposes:
 Each app exposes a `test:coverage` script (Vitest V8 coverage), and the monorepo root aggregates them:
 
 ```bash
-npm run test:coverage   # root — runs coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+npm run test:coverage   # root — runs coverage for all six suites (backends + frontends) via Turborepo
 ```
 
 Per app, from the app directory:
@@ -50,8 +50,10 @@ Per app, from the app directory:
 |-----|---------|
 | EduAI (core) | `npm run test:coverage` |
 | AI Tutor server | `npm run test:coverage` |
+| AI Tutor client | `npm run test:coverage` |
 | Question Maker backend | `npm run test:coverage` |
 | Question Maker frontend | `npm run test:coverage` |
+| @eduai/ui | `npm run test:coverage` |
 
 Generated coverage report directories are gitignored.
 
@@ -60,10 +62,13 @@ All three backends measure the unit **and** integration suites together in a sin
 - **Question Maker backend** — `src/**` (excluding the `src/index.js` bootstrap and operational `scripts/`). The integration suite needs a PostgreSQL test database via `TEST_DATABASE_URL`; without it the integration tests self-skip and only unit coverage is reported. A `globalSetup` syncs the schema once up front so the shared-worker run is deterministic.
 - **AI Tutor server** — `src/**` (excluding `src/index.js`); `globalSetup` runs `prisma migrate deploy` against the `DATABASE_URL` test database.
 - **EduAI (core)** — `app/**`; the unit (happy-dom) and integration (node) suites run as two Vitest `projects` so coverage spans both environments.
+- **Question Maker frontend** — `src/**` (excluding tests, `*.d.ts`, and the `src/main.tsx` bootstrap); the unit (jsdom) and integration (node) suites run as two Vitest `projects`, mirroring core.
+
+The frontend/UI suites (`@eduai/ui`, AI Tutor client) run coverage through their regular vitest config with the same `json-summary` + `reportOnFailure` settings — no separate coverage config needed since each has a single suite.
 
 ### CI coverage report
 
-The **Backend Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs on every push to `development` (and manual dispatch). It runs the three backend `test:coverage` scripts against Postgres service containers, aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `eduai-summer-2026` branch. Only the report is committed — coverage build artifacts stay gitignored. Scope is backend packages only; frontend suites are excluded.
+The **Test Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs weekly (Mondays 09:00 UTC) and on manual dispatch. It runs `test:coverage` for all six suites — the three backends against Postgres service containers plus `@eduai/ui`, the AI Tutor client, and the Question Maker frontend — aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `docs/coverage` branch. Only the report is committed — coverage build artifacts stay gitignored.
 
 ## Structure
 
@@ -160,6 +165,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| [`pr-patch-coverage.test.js`](eduai-summer-2026/tests/pr-patch-coverage.test.js) | Guards the per-PR patch-coverage reporter (#1192): `SF:` path resolution across vitest's workspace-root-relative, coverage-dir-relative, and absolute conventions; lcov parsing and hit counts; the total-mapping-failure guard; and range/percentage formatting. |
 | [`team-time-report.test.js`](eduai-summer-2026/tests/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
 
 ---
