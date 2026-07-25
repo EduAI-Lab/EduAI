@@ -14,7 +14,7 @@ import {
     cn,
 } from '@eduai/ui';
 import { PermissionGate } from '@eduai/ui';
-import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
+import { ConfirmDialog } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -971,14 +971,15 @@ const AssessmentBuilderPage = () => {
                 />
             )}
 
-            <DeleteConfirmationModal
+            <ConfirmDialog
                 open={deleteModalOpen}
                 onOpenChange={setDeleteModalOpen}
                 onConfirm={confirmDeleteAssessment}
                 title={assessment ? `Delete assessment "${assessment.name}"?` : 'Delete assessment?'}
-                message="This action cannot be undone. All sections and questions in this assessment will be removed."
+                description="This action cannot be undone. All sections and questions in this assessment will be removed."
                 confirmLabel="Delete"
                 isLoading={isDeletingAssessment}
+                closeOnConfirm={false}
             />
         </>
     );
