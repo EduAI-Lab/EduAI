@@ -137,12 +137,12 @@ ai-tutor routes/services/frontend rbac; `packages/ui`.
 - Dim counts are estimates from static reading. Some will move by ±1 once the oracle is actually
   written, which can shift a candidate's tier. Re-tier when that happens rather than forcing the
   original verdict.
-- **Every `file:line` and every "no guard here" claim below must be re-verified against
-  `development` before a model is built on it.** The sweep ran against a feature branch, and at least
-  one entry (§ S5, Canvas URL validation) described a guard as absent that had already landed on
-  `development` — so treat every such claim as a hypothesis to confirm, not a finding. Two habits close
-  the gap: sweep from `development`, and grep the modules a file *imports*, not only the file itself.
-  A candidate whose guard already exists gets re-tiered here — never modelled around.
+- **Every `file:line` and every "no guard here" claim below is a hypothesis to confirm against
+  `development`, not a finding.** The sweep ran against a feature branch, and at least one entry
+  described a guard as absent that had already landed on `development`. Two habits close the gap:
+  sweep from `development`, and grep the modules a file *imports*, not only the file itself — a guard
+  is often defined one module away from the code that calls it. A candidate whose guard already exists
+  gets re-tiered here, never modelled around.
 
 ### Density note
 
@@ -294,28 +294,15 @@ and restore only) and `unpublishedAt` (automatic — `syncUnpublishedState` only
 | Canvas frontend | — | pure rendering, server-enforced | DROP |
 
 `parse-validate-canvas-url` is 3-dim and would fail the dim floor. It is BUILD purely on the drift
-override: the same rule is implemented twice and the two implementations are not equivalent.
+override: one rule, two independent implementations (Core and QM), maintained separately.
 
-**Current state of both implementations — the oracle must be written against this, not against an
-assumption that either side is unguarded.**
+Both sides also apply request-time host checks beyond the URL parse — Core's live in a module that
+`client.server.ts` imports rather than defines. **Establish what each implementation currently does
+before writing the oracle**, and write it against the union of both, not against one side's parse
+function. Behavioral differences between the two are a separate concern, tracked outside this census.
 
-| | Core | QM |
-|---|---|---|
-| Save-time URL parse | `client.server.ts:165` | `canvasUrlGuard.js:109` |
-| Request-time host check | **yes** — `lib/net/ssrf-guard.server.ts` `assertPublicHostname()` via `assertSafeCanvasRequestHost()` (`client.server.ts:211`), on every request, pagination hop, and download redirect | **yes** — `validateCanvasUrl` + `maxRedirects: 0` |
-| DNS pinning | **no** — TOCTOU rebind window remains | **yes** — `createPinnedLookup()` |
-| Scheme policy | `https:` plus an `HTTP_ALLOWED_HOSTNAMES` loopback allowlist with no port limit and no `NODE_ENV` gate | https-only |
-
-**Both sides block private and loopback addresses at request time.** Core's guard landed in PR #1139
-(2026-07-22). An oracle asserting that Core reaches a private host will fail against real code, and an
-issue filed on that premise is wrong — the divergence is narrower than "one side is unprotected."
-
-What this model is for: the two remaining asymmetries (DNS pinning, scheme/allowlist policy) and the
-fact that one rule is maintained in two places at all. A single shared guard, tested once, closes both.
-
-**Method note for anyone extending this census: grep the modules a file imports, not just the file
-under suspicion.** Core's guard is imported into `client.server.ts` rather than defined there, and a
-grep scoped to that one file is exactly how this entry was first written up wrongly.
+The model's job is the drift itself: one rule in two places. A single shared guard, tested once, removes
+the surface entirely — the better outcome, if it lands first.
 
 ### S6 — Core auth/identity + access/invite/enroll
 
