@@ -25,12 +25,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  PageHeading,
-  PageTabs,
-  PageTabsContent,
-  PageTabsList,
-  PageTabsTrigger,
   RoleBadge,
+  SettingsPageScaffold,
   SignOutCard,
   useTheme,
   type AccessibilityUiDensity,
@@ -55,7 +51,6 @@ function readInitialMotionReduced(): boolean {
 }
 
 export function SettingsView() {
-  const [activeTab, setActiveTab] = useState('account');
   const { user, logout } = useLocalUser();
   const navigate = useNavigate();
   const { theme: nextTheme, setTheme } = useTheme();
@@ -89,26 +84,24 @@ export function SettingsView() {
   };
 
   return (
-    <div className="@container/main flex flex-1 flex-col gap-8 px-4 pt-6 pb-8 lg:px-6">
-      <PageHeading
-        heading="Settings"
-        subheading="Manage your account, accessibility preferences, and AI provider keys."
-      />
-
-      <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <PageTabsList>
-          <PageTabsTrigger value="account">
-            <IconUser className="h-4 w-4" /> Account
-          </PageTabsTrigger>
-          <PageTabsTrigger value="accessibility">
-            <IconAccessible className="h-4 w-4" /> Accessibility
-          </PageTabsTrigger>
-          <PageTabsTrigger value="providers">
-            <IconWorld className="h-4 w-4" /> Providers
-          </PageTabsTrigger>
-        </PageTabsList>
-
-        <PageTabsContent value="account" className="space-y-6">
+    <SettingsPageScaffold
+      padding="app"
+      subheading="Manage your account, accessibility preferences, and AI provider keys."
+      footer={
+        <SignOutCard
+          action={
+            <Button type="button" variant="outline" onClick={() => void handleLogout()}>
+              <IconLogout className="h-4 w-4" /> Log out
+            </Button>
+          }
+        />
+      }
+      tabs={[
+        {
+          value: 'account',
+          label: 'Account',
+          icon: <IconUser className="h-4 w-4" />,
+          content: (
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
@@ -127,34 +120,33 @@ export function SettingsView() {
               </div>
             </CardContent>
           </Card>
-        </PageTabsContent>
-
-        <PageTabsContent value="accessibility" className="space-y-6">
-          <AccessibilitySettings
-            theme={theme}
-            density={density}
-            motionReduced={motionReduced}
-            assistive={assistive}
-            onThemeChange={(value) => setTheme(value)}
-            onDensityChange={handleDensityChange}
-            onMotionReducedChange={handleMotionReducedChange}
-            onAssistiveChange={setAssistive}
-            description="Personalize how AI Tutor looks and feels. These settings are optional for everyone."
-          />
-        </PageTabsContent>
-
-        <PageTabsContent value="providers" className="space-y-6">
-          <ProvidersSettings />
-        </PageTabsContent>
-      </PageTabs>
-
-      <SignOutCard
-        action={
-          <Button type="button" variant="outline" onClick={() => void handleLogout()}>
-            <IconLogout className="h-4 w-4" /> Log out
-          </Button>
-        }
-      />
-    </div>
+          ),
+        },
+        {
+          value: 'accessibility',
+          label: 'Accessibility',
+          icon: <IconAccessible className="h-4 w-4" />,
+          content: (
+            <AccessibilitySettings
+              theme={theme}
+              density={density}
+              motionReduced={motionReduced}
+              assistive={assistive}
+              onThemeChange={(value) => setTheme(value)}
+              onDensityChange={handleDensityChange}
+              onMotionReducedChange={handleMotionReducedChange}
+              onAssistiveChange={setAssistive}
+              description="Personalize how AI Tutor looks and feels. These settings are optional for everyone."
+            />
+          ),
+        },
+        {
+          value: 'providers',
+          label: 'Providers',
+          icon: <IconWorld className="h-4 w-4" />,
+          content: <ProvidersSettings />,
+        },
+      ]}
+    />
   );
 }
