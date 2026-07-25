@@ -6,6 +6,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 12 — July 20–26, 2026]
 
+### Changed
+
+- [ci] chore: Coverage-report workflow reworked per #1153 — now runs every 3 days (09:00 UTC + manual dispatch) instead of on every push to `development`, commits the report to a clearer `docs/coverage` branch (was `eduai-summer-2026`), and covers all six test suites instead of backends only: added `test:coverage` (V8, `json-summary`) to `@eduai/ui`, the AI Tutor client, and the Question Maker frontend (whose script previously ran vitest in watch mode with no config — it hung and produced nothing; now a `vitest.coverage.config.ts` aggregates its unit + integration projects like core). Root `npm run test:coverage` aggregates all six. Also adds a non-blocking per-PR **patch-coverage** warning (`pr-coverage.yml`): for the workspaces a PR touches (turbo `--affected`), it measures the share of the PR's *added/changed* lines that a test executes — isolating new code rather than the noisy whole-file %-delta — and posts a single sticky PR comment flagging files below 80% (a changed source file never imported by a test shows as 0%). All six coverage configs now also emit an `lcov` reporter for the per-line hit data this needs. Advisory only: the check always passes. (#1153, @yta3216, 2026-07-22) — [#1155](https://github.com/EduAI-Lab/EduAI/pull/1155)
+
 ### Added
 
 - [ui] feat: New shared primitives in `@eduai/ui` — `EmptyState` (replaces 7+ per-app copies), `MaterialStatusIcon`/`MaterialStatusChip`, `MaterialList` (unifies 3 drifted Core inline lists), `HeroShell` + `HERO_GLASS_STYLE` (single source for the hero surface `CourseHeroCard` and ai-tutor's `ModuleHero` previously hand-copied), presentational `CourseTopicsHeroAction` (collapses the name-identical QM/ai-tutor forks into data-wiring adapters), and `DetailPageScaffold` (the hero→content page skeleton previously hand-assembled on 8 surfaces); `QuickActionsPanel` gains optional `onClick`/`disabled` so action cards can be buttons, not just links. (#1145, @yta3216, 2026-07-21) — [#1148](https://github.com/EduAI-Lab/EduAI/pull/1148)
