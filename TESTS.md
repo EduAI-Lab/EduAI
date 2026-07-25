@@ -165,7 +165,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
-| [`pr-patch-coverage.test.js`](eduai-summer-2026/tests/pr-patch-coverage.test.js) | Guards the per-PR patch-coverage reporter (#1192): `resolveLcovPath` maps vitest's workspace-root-relative `SF:` paths (and never resolves into the coverage directory), plus coverage-dir-relative and absolute forms, falling back to the workspace root when a file no longer exists; `parseLcov` keys records repo-relative with hit counts and returns null for a workspace that did not run; `lcovMappingBroken` flags a total path-mapping failure but not an empty lcov; mapping stats stay off the file keys; `compressRanges` and `fmtPct` formatting. |
+| [`pr-patch-coverage.test.js`](eduai-summer-2026/tests/pr-patch-coverage.test.js) | Guards the per-PR patch-coverage reporter (#1192): `SF:` path resolution across vitest's workspace-root-relative, coverage-dir-relative, and absolute conventions; lcov parsing and hit counts; the total-mapping-failure guard; and range/percentage formatting. |
 | [`team-time-report.test.js`](eduai-summer-2026/tests/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
 
 ---
