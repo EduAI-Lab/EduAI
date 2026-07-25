@@ -19,6 +19,7 @@ import { StudentNumberSettings } from "~/components/settings/student-number-sett
 
 import { Badge } from "@eduai/ui";
 import { Button } from "@eduai/ui";
+import { SignOutCard } from "@eduai/ui";
 import {
   Card,
   CardContent,
@@ -599,19 +600,15 @@ export function SettingsView({
 
           <div className="px-4 lg:px-6">
             <ScrollReveal index={1} parallax={false}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Account</CardTitle>
-                <CardDescription>Sign out of EduAI on this browser.</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <SignOutCard
+              action={
                 <Form method="post" action="/auth/logout" replace>
                   <Button type="submit" variant="outline">
                     Log out
                   </Button>
                 </Form>
-              </CardContent>
-            </Card>
+              }
+            />
             </ScrollReveal>
           </div>
         </div>
