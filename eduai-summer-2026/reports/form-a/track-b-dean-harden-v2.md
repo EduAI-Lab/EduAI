@@ -5,21 +5,23 @@
 
 ## Headline findings (read this first)
 
+**Current / fixed state = policy v2.1.** Prompt-only is restored (~86% profile). The 9% figure below is a **temporary v2.0 regression that is fixed** — do not cite it as the branch outcome.
+
 Matched protocol vs Paper 1 freeze: Gemini 2.5 Flash, `seed_course_cosc101`, scenarios **S1/S2/S3/S5/S2L** (14 turns/arm).
 
-| Arm | Metric | Freeze (v1.1) | Track B v2.0 (broken Teacher) | Track B v2.1 (restored) |
-|-----|--------|--------------:|------------------------------:|------------------------:|
-| Baseline | strict | 0% | 0% | *(not re-run; unchanged)* |
-| Prompt-only | strict | **67%** | **0%** | **~81%** (n=3) |
-| Prompt-only | profile | **76%** | **9%** | **~86%** (n=3) |
-| Oversight | strict | **71%** | **77%** | *(Dean unchanged from v2.0; expect ≥ freeze)* |
-| Oversight | profile | **80%** | **87%** (late **97%**) | *(Dean unchanged from v2.0)* |
+| Arm | Metric | Freeze (v1.1) | Broken intermediate (v2.0) | **Fixed now (v2.1)** |
+|-----|--------|--------------:|---------------------------:|---------------------:|
+| Baseline | strict | 0% | 0% | *(unchanged)* |
+| Prompt-only | strict | **67%** | ~~0%~~ | **~81%** (n=3) |
+| Prompt-only | profile | **76%** | ~~9%~~ | **~86%** (n=3) |
+| Oversight | strict | **71%** | **77%** | *(Dean unchanged; keep Track B)* |
+| Oversight | profile | **80%** | **87%** (late **97%**) | *(Dean unchanged; keep Track B)* |
 
 **Bottom line**
 
-1. **Dean / oversight arm** — Track B fail-closed works. On the matched 5× suite under v2.0, oversight **improved** vs freeze (profile 80% → 87%, late-turn 89% → 97%). Keep it.
-2. **Prompt-only arm** — briefly collapsed to ~9% because the Teacher prompt absorbed UI-only `TLDR`/`Continue` labels. **v2.1 restores** prompt-only to ~81% strict / ~86% profile (at or above freeze). Keep the Dean; fix was Teacher-only.
-3. **Baseline** — still ~0% structural pass (unchanged story).
+1. **Dean / oversight** — Track B fail-closed works (profile 80% → 87% on the v2.0 5×). Keep it.
+2. **Prompt-only** — briefly hit ~~9%~~ when Teacher absorbed UI-only TLDR/Continue; **v2.1 restores ~86%**. Fixed.
+3. **Baseline** — still ~0% structural pass.
 4. Paper 1 freeze numbers stay authoritative until a full three-arm **v2.1** 5× re-freeze. Do not pool v1.x / v2.0 / v2.1.
 
 ---
