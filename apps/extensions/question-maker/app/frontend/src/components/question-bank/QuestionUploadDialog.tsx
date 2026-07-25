@@ -3,10 +3,11 @@
  * Manages draft review, topic selection, optional assessment creation, and save flows.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import Tesseract from 'tesseract.js';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
-import { IconUpload, IconFileText, IconLoader2, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
+import { IconUpload, IconFileText, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
 
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@eduai/ui';
@@ -1477,7 +1478,7 @@ export const QuestionUploadDialog = ({
                             {(processingStage === 'ocr' || processingStage === 'extracting' || processingStage === 'saving') && (
                                 <div className="space-y-3">
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <IconLoader2 className="h-4 w-4 animate-spin" />
+                                        <Spinner />
                                         <span>
                                             {processingStage === 'ocr' && 'Running OCR...'}
                                             {processingStage === 'extracting' && 'Extracting questions with AI...'}
@@ -1526,7 +1527,7 @@ export const QuestionUploadDialog = ({
                             <Tooltip content={disabledReason} multiline>
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        {processingStage === 'saving' && <Spinner className="mr-2" />}
                                         {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>
@@ -1543,7 +1544,7 @@ export const QuestionUploadDialog = ({
                             >
                                 <span className="inline-block">
                                     <Button type="button" variant="default" onClick={() => void handleSave()} disabled={!canSave} data-tour-id="upload-create">
-                                        {processingStage === 'saving' && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                        {processingStage === 'saving' && <Spinner className="mr-2" />}
                                         {processingStage === 'saving' ? 'Saving…' : 'Save questions'}
                                     </Button>
                                 </span>

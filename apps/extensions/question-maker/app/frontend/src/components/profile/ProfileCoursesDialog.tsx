@@ -3,6 +3,7 @@
  * Lets users select courses from the AI service, skip ones already added, and persist them via courseService.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Badge } from '@eduai/ui';
@@ -332,7 +333,7 @@ export const ProfileCoursesDialog = ({
                                                 >
                                                     {isResyncing ? (
                                                         <>
-                                                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            <Spinner className="mr-2" />
                                                             Syncing…
                                                         </>
                                                     ) : (

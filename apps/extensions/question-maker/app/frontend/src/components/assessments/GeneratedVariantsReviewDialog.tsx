@@ -7,8 +7,9 @@
  * Only approved variants count toward assembly readiness.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
-  IconCircleCheck, IconCircleCheckFilled, IconLoader2, IconSparkles, IconTrash, IconCircleX,
+  IconCircleCheck, IconCircleCheckFilled, IconSparkles, IconTrash, IconCircleX,
 } from '@tabler/icons-react';
 import {
   Button, Badge, Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -297,7 +298,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   onClick={() => void approve(v.id)}
                                 >
                                   {status === 'approving' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                    <Spinner />
                                   ) : (
                                     <IconCircleCheck className="size-4" />
                                   )}
@@ -312,7 +313,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   onClick={() => void discard(v.id)}
                                 >
                                   {status === 'discarding' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                    <Spinner />
                                   ) : (
                                     <IconTrash className="size-4" />
                                   )}
@@ -358,7 +359,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         <DialogFooter className="flex-row items-center justify-between gap-2 border-t border-border px-6 py-4 sm:justify-between">
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             {hydrating ? (
-              <><IconLoader2 className="size-4 animate-spin" /> Checking current status…</>
+              <><Spinner /> Checking current status…</>
             ) : (
               <>
                 <span className="font-medium text-success-700">{approvedCount}</span> approved
@@ -372,7 +373,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
               Done
             </Button>
             <Button type="button" disabled={busy || hydrating || pendingVariants.length === 0} onClick={() => void approveAll()}>
-              {busy ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : <IconCircleCheck className="mr-2 size-4" />}
+              {busy ? <Spinner className="mr-2" /> : <IconCircleCheck className="mr-2 size-4" />}
               Approve all ({pendingVariants.length})
             </Button>
           </div>

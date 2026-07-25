@@ -7,10 +7,11 @@
  * Only the active step renders, so the flow reads top-to-bottom one decision at a time.
  */
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import { useNavigate, useSearchParams, useParams } from 'react-router';
 import {
   IconArrowLeft, IconArrowRight, IconBook, IconCircleCheck, IconClipboardList, IconHistory,
-  IconLoader2, IconSparkles, IconTrash, IconUpload, IconCircleX, IconFileText, IconScale,
+  IconSparkles, IconTrash, IconUpload, IconCircleX, IconFileText, IconScale,
 } from '@tabler/icons-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
@@ -914,7 +915,7 @@ export function AssessmentVariantPage() {
                       <>
                         {variantReadinessLoading && (
                           <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <IconLoader2 className="h-4 w-4 animate-spin" />
+                            <Spinner />
                             Checking variant counts…
                           </p>
                         )}
@@ -1056,7 +1057,7 @@ export function AssessmentVariantPage() {
                         >
                           {generatingVariants && variantGenMode === 'all' ? (
                             <>
-                              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                              <Spinner className="mr-2" />
                               Generating…
                             </>
                           ) : (
@@ -1076,7 +1077,7 @@ export function AssessmentVariantPage() {
                           >
                             {generatingVariants && variantGenMode === 'missing' ? (
                               <>
-                                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                                <Spinner className="mr-2" />
                                 Generating…
                               </>
                             ) : (
@@ -1126,7 +1127,7 @@ export function AssessmentVariantPage() {
                       >
                         {assembling ? (
                           <>
-                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <Spinner className="mr-2" />
                             Assembling…
                           </>
                         ) : (
@@ -1256,7 +1257,7 @@ export function AssessmentVariantPage() {
                         <Button type="button" onClick={runAiReview} disabled={aiReviewDisabled}>
                           {aiReviewLoading ? (
                             <>
-                              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                              <Spinner className="mr-2" />
                               Reviewing…
                             </>
                           ) : (
