@@ -31,37 +31,48 @@ test("resolveLcovPath maps vitest's workspace-root-relative SF path", () => {
   // The regression from #1192: vitest writes `SF:src/spinner.tsx` into
   // packages/ui/coverage/lcov.info, meaning packages/ui/src/spinner.tsx.
   write("packages/ui/src/spinner.tsx");
-  assert.equal(
-    resolveLcovPath("src/spinner.tsx", "packages/ui/coverage"),
-    "packages/ui/src/spinner.tsx",
-  );
+  assert.deepEqual(resolveLcovPath("src/spinner.tsx", "packages/ui/coverage"), {
+    rel: "packages/ui/src/spinner.tsx",
+    resolved: true,
+  });
 });
 
 test("resolveLcovPath does not resolve into the coverage directory", () => {
   write("packages/ui/src/permission-gate.tsx");
-  const resolved = resolveLcovPath("src/permission-gate.tsx", "packages/ui/coverage");
-  assert.ok(!resolved.includes("/coverage/"), `resolved into coverage dir: ${resolved}`);
+  const { rel } = resolveLcovPath("src/permission-gate.tsx", "packages/ui/coverage");
+  assert.ok(!rel.includes("/coverage/"), `resolved into coverage dir: ${rel}`);
 });
 
 test("resolveLcovPath accepts a coverage-dir-relative SF path", () => {
   write("packages/ui/coverage/generated/thing.ts");
-  assert.equal(
-    resolveLcovPath("generated/thing.ts", "packages/ui/coverage"),
-    "packages/ui/coverage/generated/thing.ts",
-  );
+  assert.deepEqual(resolveLcovPath("generated/thing.ts", "packages/ui/coverage"), {
+    rel: "packages/ui/coverage/generated/thing.ts",
+    resolved: true,
+  });
 });
 
 test("resolveLcovPath accepts an absolute SF path", () => {
   const abs = write("apps/core/app/root.tsx");
-  assert.equal(resolveLcovPath(abs, "apps/core/coverage"), "apps/core/app/root.tsx");
+  assert.deepEqual(resolveLcovPath(abs, "apps/core/coverage"), {
+    rel: "apps/core/app/root.tsx",
+    resolved: true,
+  });
 });
 
 test("resolveLcovPath falls back to the workspace root when nothing exists on disk", () => {
-  // e.g. a file deleted later in the branch — still keyed the way vitest meant it.
-  assert.equal(
-    resolveLcovPath("src/gone.tsx", "packages/ui/coverage"),
-    "packages/ui/src/gone.tsx",
-  );
+  // e.g. an lcov record naming a file deleted after coverage was generated.
+  // `resolved: false` is what the mapping-failure guard counts.
+  assert.deepEqual(resolveLcovPath("src/gone.tsx", "packages/ui/coverage"), {
+    rel: "packages/ui/src/gone.tsx",
+    resolved: false,
+  });
+});
+
+test("resolveLcovPath reports an absolute path outside the repo as unresolved", () => {
+  const outside = path.join(os.tmpdir(), "definitely-not-here-1192.ts");
+  const { rel, resolved } = resolveLcovPath(outside, "packages/ui/coverage");
+  assert.equal(resolved, false);
+  assert.ok(rel.startsWith("../"), `expected an escaping relative path, got ${rel}`);
 });
 
 test("parseLcov keys records by repo-relative source path with hit counts", () => {

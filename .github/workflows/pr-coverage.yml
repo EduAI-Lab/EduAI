@@ -3,8 +3,12 @@ name: PR Patch Coverage (advisory)
 # Non-blocking coverage WARNING for pull requests. For the workspaces a PR actually touches
 # (selected via Turborepo `--affected`), it runs `test:coverage`, then reports patch coverage —
 # the share of the PR's *added/changed* lines that a test executes — as a single sticky PR
-# comment. It never fails the check and is not a required status, so it can only warn, never
-# block: authors see when new code shipped without a test, without gating the merge.
+# comment. Authors see when new code shipped without a test, without gating the merge.
+#
+# The report itself never fails the check — coverage runs and comment generation are all
+# best-effort. The reporter's OWN tests do fail it: a broken reporter should be visible rather
+# than quietly post a wrong comment (#1192 made every file read 0% for weeks). This job is not
+# a required status either way, so even a red run cannot block a merge.
 #
 # Why patch coverage and not a whole-file % delta: file-% swings for reasons unrelated to the
 # PR (denominator shifts, deletions, moves), so it is a noisy signal. Patch coverage isolates
@@ -109,6 +113,14 @@ jobs:
           npm run db:generate -w edu-ai
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
 
+      # Guard the reporter itself. #1192 shipped a path-resolution bug that made every
+      # file report 0% on every PR for weeks, because nothing exercised this script.
+      # Runs BEFORE the coverage job (which takes minutes and that this does not depend
+      # on) so a broken reporter fails in seconds. Deliberately NOT continue-on-error:
+      # a broken reporter should be visible rather than quietly post a wrong comment.
+      - name: Test the patch-coverage script
+        run: npm run test:patch-coverage
+
       # Coverage for touched workspaces only. `--affected` diffs against the PR base; --continue
       # keeps other workspaces going if one suite fails, and continue-on-error means a red suite
       # still lets us post whatever coverage did get produced. Never fails the job.
@@ -127,13 +139,6 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}" || true
           npx turbo run test:coverage --affected --continue --env-mode=loose
-
-      # Guard the reporter itself. #1192 shipped a path-resolution bug that made every
-      # file report 0% on every PR for weeks, because nothing exercised this script.
-      # Deliberately NOT continue-on-error: a broken reporter should be visible here
-      # rather than quietly producing a wrong comment.
-      - name: Test the patch-coverage script
-        run: npm run test:patch-coverage
 
       - name: Compute patch coverage
         continue-on-error: true

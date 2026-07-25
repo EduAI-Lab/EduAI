@@ -152,14 +152,23 @@ const MAPPING_STATS = Symbol("lcovMappingStats");
  * whole report read "0% — no test imports this file".
  *
  * So try each convention and prefer whichever actually names a file on disk.
- * `exists` is injectable for tests.
+ *
+ * Returns `{ rel, resolved }`. `resolved` is false when no candidate existed,
+ * which is the single source of truth for "this record did not map" — callers
+ * must not re-derive it, or the rules end up encoded in two places.
  */
-function resolveLcovPath(sf, covDir, exists = fs.existsSync) {
+function resolveLcovPath(sf, covDir) {
   const toRel = (abs) => path.relative(REPO_ROOT, abs).split(path.sep).join("/");
 
-  if (path.isAbsolute(sf)) return toRel(sf);
+  if (path.isAbsolute(sf)) {
+    return { rel: toRel(sf), resolved: fs.existsSync(sf) };
+  }
 
   const wsRoot = path.resolve(REPO_ROOT, covDir, "..");
+  // ORDER IS LOAD-BEARING: first existing candidate wins, so workspace-root beats
+  // coverage-dir. Every covDir in WORKSPACES ends in `coverage/`, so `covDir/..`
+  // is always the workspace root and no real source file exists at both readings.
+  // Do not reshuffle without rechecking that.
   const candidates = [
     path.resolve(wsRoot, sf), // vitest: relative to the workspace root
     path.resolve(REPO_ROOT, covDir, sf), // relative to the coverage dir
@@ -167,18 +176,20 @@ function resolveLcovPath(sf, covDir, exists = fs.existsSync) {
   ];
 
   for (const abs of candidates) {
-    if (exists(abs)) return toRel(abs);
+    if (fs.existsSync(abs)) return { rel: toRel(abs), resolved: true };
   }
-  // Nothing resolved (file deleted in this PR, or an unknown layout) — fall back
-  // to the workspace-root reading, which is correct for every generator we use.
-  return toRel(candidates[0]);
+  // Nothing resolved — e.g. an lcov record naming a file deleted after coverage
+  // was generated. (Files deleted in the PR itself never reach here: the diff is
+  // read with --diff-filter=d.) Fall back to the workspace-root reading, which is
+  // correct for every generator we use.
+  return { rel: toRel(candidates[0]), resolved: false };
 }
 
 // path -> Map(lineNumber -> hits) for one lcov.info, keyed repo-relative so the
 // keys match the diff's paths. Returns null when the workspace did not run.
-function parseLcov(covDir, exists = fs.existsSync) {
+function parseLcov(covDir) {
   const file = path.join(REPO_ROOT, covDir, "lcov.info");
-  if (!exists(file)) return null; // workspace did not run this PR
+  if (!fs.existsSync(file)) return null; // workspace did not run this PR
   const byFile = {};
   let current = null;
   let records = 0;
@@ -186,10 +197,10 @@ function parseLcov(covDir, exists = fs.existsSync) {
   for (const raw of fs.readFileSync(file, "utf8").split("\n")) {
     const lineStr = raw.trim();
     if (lineStr.startsWith("SF:")) {
-      const sf = resolveLcovPath(lineStr.slice(3), covDir, exists);
+      const mapped = resolveLcovPath(lineStr.slice(3), covDir);
       records += 1;
-      if (exists(path.resolve(REPO_ROOT, sf))) resolved += 1;
-      current = byFile[sf] || (byFile[sf] = new Map());
+      if (mapped.resolved) resolved += 1;
+      current = byFile[mapped.rel] || (byFile[mapped.rel] = new Map());
     } else if (lineStr.startsWith("DA:") && current) {
       const [ln, hits] = lineStr.slice(3).split(",");
       current.set(parseInt(ln, 10), parseInt(hits, 10));
@@ -207,6 +218,20 @@ function parseLcov(covDir, exists = fs.existsSync) {
   return byFile;
 }
 
+/**
+ * True when a workspace's lcov parsed but not one record named a file on disk.
+ *
+ * Worth keeping deliberately: if coverage were ever produced under a different
+ * filesystem root (a container path, a different checkout dir), every absolute
+ * `SF:` would resolve to nothing, and this turns the workspace into "no data +
+ * a loud warning" instead of a wall of false 0%s. That is the right failure
+ * direction for a signal humans read at a glance.
+ *
+ * It is deliberately a heuristic aimed at that degenerate case: one
+ * accidentally-resolving record disarms it, and a PARTIAL mapping failure still
+ * reports its unmapped files as 0%. A ratio test (resolved / records < 0.5)
+ * would catch partials too — left until something motivates it.
+ */
 function lcovMappingBroken(lcov) {
   const stats = lcov && lcov[MAPPING_STATS];
   return Boolean(stats && stats.records > 0 && stats.resolved === 0);
