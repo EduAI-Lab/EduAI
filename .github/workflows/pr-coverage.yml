@@ -128,6 +128,13 @@ jobs:
           git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}" || true
           npx turbo run test:coverage --affected --continue --env-mode=loose
 
+      # Guard the reporter itself. #1192 shipped a path-resolution bug that made every
+      # file report 0% on every PR for weeks, because nothing exercised this script.
+      # Deliberately NOT continue-on-error: a broken reporter should be visible here
+      # rather than quietly producing a wrong comment.
+      - name: Test the patch-coverage script
+        run: npm run test:patch-coverage
+
       - name: Compute patch coverage
         continue-on-error: true
         env:
