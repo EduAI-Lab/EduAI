@@ -165,6 +165,7 @@ Each section should use this format:
 
 | Test file | What it tests |
 |-----------|---------------|
+| [`pr-patch-coverage.test.js`](eduai-summer-2026/tests/pr-patch-coverage.test.js) | Guards the per-PR patch-coverage reporter (#1192): `SF:` path resolution across vitest's workspace-root-relative, coverage-dir-relative, and absolute conventions; lcov parsing and hit counts; the total-mapping-failure guard; and range/percentage formatting. |
 | [`team-time-report.test.js`](eduai-summer-2026/tests/team-time-report.test.js) | Verifies weekly time-report parsing rules, base-time duplicate handling, issue/PR reference extraction, PR analytics metric extraction, and the rule that PR process time is reported separately from total tracked hours. |
 
 ---
