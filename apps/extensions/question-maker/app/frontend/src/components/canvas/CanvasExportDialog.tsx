@@ -6,8 +6,8 @@ import { useState, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { Button, Label, Input } from '@eduai/ui';
+import { PermissionGate } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration } from '../../services/canvasService';
 

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, MultiSelect } from '@eduai/ui';
 import { Popover, PopoverContent, PopoverTrigger } from '@eduai/ui';
 import { Badge, Switch, cn, QuestionStatusBadge, VariantBadge, ConfirmDialog } from '@eduai/ui';
+import { PermissionGate } from '@eduai/ui';
 import { useToast, ToastAction } from '@/components/ui/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
@@ -36,7 +37,6 @@ import { apiKeyStorage } from '../../services/apiKeyStorage';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { IconHelpCircle, IconRobot, IconTrash, IconSparkles, IconFilePencil, IconPencil, IconExternalLink, IconListDetails, IconCircleCheckFilled, IconGitBranch, IconStar } from '@tabler/icons-react';
 import { normalizeCourseCode } from '../../utils/courseDisplay';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
