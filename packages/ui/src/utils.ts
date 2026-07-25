@@ -39,3 +39,15 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2)
 }
+
+// TEMPORARY probe for #1192 — verifies the patch-coverage reporter end-to-end.
+// The empty-input branch is deliberately left unexercised so the report should
+// show partial coverage and name that exact line. Reverted immediately after.
+export function probeTitleCase(value: string): string {
+  if (!value) {
+    return "(empty)"
+  }
+  const head = value.charAt(0).toUpperCase()
+  const tail = value.slice(1).toLowerCase()
+  return `${head}${tail}`
+}
