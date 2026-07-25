@@ -2,6 +2,8 @@
  * Bug report submission and admin listing API.
  */
 import api from './api';
+import { toUiStatus, UI_STATUS_TO_CORE } from '@eduai/ui';
+import type { BugReportStatus } from '@eduai/ui';
 
 export type BugReportType =
   | 'UI_DISPLAY'
@@ -38,25 +40,13 @@ export interface SubmitBugReportPayload {
   isAnonymous: boolean;
 }
 
-const CORE_TO_UI_STATUS: Record<string, string> = {
-  UNHANDLED: 'unhandled',
-  IN_PROGRESS: 'in progress',
-  RESOLVED: 'resolved',
-};
-
-const UI_TO_CORE_STATUS: Record<string, string> = {
-  unhandled: 'UNHANDLED',
-  'in progress': 'IN_PROGRESS',
-  resolved: 'RESOLVED',
-};
-
 function mapCoreReport(report: Record<string, unknown>): BugReportRow {
   const status = String(report.status ?? 'UNHANDLED');
   return {
     id: String(report.id),
     description: String(report.description ?? ''),
     bugType: (report.bugType as BugReportType | null) ?? null,
-    status: CORE_TO_UI_STATUS[status] ?? status.toLowerCase(),
+    status: toUiStatus(status),
     source: report.source != null ? String(report.source) : undefined,
     consoleLogs: (report.consoleLogs as string | null) ?? null,
     networkLogs: (report.networkLogs as string | null) ?? null,
@@ -90,7 +80,7 @@ export const bugReportApi = {
   },
 
   async updateStatus(bugId: string, status: string): Promise<void> {
-    const coreStatus = UI_TO_CORE_STATUS[status] ?? status.toUpperCase().replace(' ', '_');
+    const coreStatus = UI_STATUS_TO_CORE[status as BugReportStatus] ?? status;
     await api.patch(`/api/admin/bug-reports/${bugId}`, { status: coreStatus });
   },
 };
