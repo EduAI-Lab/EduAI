@@ -126,6 +126,24 @@ export { useAiServiceStatus } from "./hooks/use-ai-service-status"
 export type { AiServiceStatusPair, UseAiServiceStatusOptions, UseAiServiceStatusResult } from "./hooks/use-ai-service-status"
 export { AccessibilitySettings } from "./settings/accessibility-settings"
 export type { AccessibilitySettingsProps, UiDensity as AccessibilityUiDensity, UiTheme as AccessibilityUiTheme } from "./settings/accessibility-settings"
+export { BugReportsAdminView } from "./bug-reports/bug-reports-admin-view"
+export type { BugReportsAdminViewProps } from "./bug-reports/bug-reports-admin-view"
+export type {
+  AdminBugReportRow,
+  BugReportStatus,
+  BugReportContext,
+} from "./bug-reports/types"
+export {
+  BUG_TYPE_LABELS,
+  STATUS_LABELS,
+  STATUS_OPTIONS,
+  buildBugReportCopyText,
+  getReporterLabel,
+  sortReports,
+  CORE_STATUS_TO_UI,
+  UI_STATUS_TO_CORE,
+  toUiStatus,
+} from "./bug-reports/bug-reports-utils"
 export { SettingsPageScaffold } from "./settings/settings-page-scaffold"
 export type { SettingsPageScaffoldProps, SettingsTab } from "./settings/settings-page-scaffold"
 export { ProvidersTable } from "./settings/providers-table"
