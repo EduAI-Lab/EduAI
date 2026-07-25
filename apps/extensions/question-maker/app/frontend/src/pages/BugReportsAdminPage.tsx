@@ -23,10 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
 import { bugReportApi, BugReportRow, BugReportType } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 import { canTriageBugReports } from '@/lib/rbac';
+import { toast } from 'sonner';
 
 const STATUS_OPTIONS = ['unhandled', 'in progress', 'resolved'] as const;
 type BugReportStatus = (typeof STATUS_OPTIONS)[number] | 'all';
@@ -165,7 +165,6 @@ function DetailDialog({
 export function BugReportsAdminPage() {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
-  const { toast } = useToast();
   const [rows, setRows] = useState<BugReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<{
@@ -187,11 +186,7 @@ export function BugReportsAdminPage() {
       const data = await bugReportApi.list({ source: QM_SOURCE });
       setRows(data);
     } catch {
-      toast({
-        title: 'Could not load bug reports',
-        description: 'You may not have admin access.',
-        variant: 'destructive'
-      });
+      toast.error('Could not load bug reports', { description: 'You may not have admin access.' });
       navigate('/home');
     } finally {
       setLoading(false);
@@ -244,11 +239,7 @@ export function BugReportsAdminPage() {
       await bugReportApi.updateStatus(bugId, newStatus);
       setRows((prev) => prev.map((b) => (b.id === bugId ? { ...b, status: newStatus } : b)));
     } catch {
-      toast({
-        title: 'Failed to update status',
-        description: 'Please try again.',
-        variant: 'destructive'
-      });
+      toast.error('Failed to update status', { description: 'Please try again.' });
     }
   }
 
