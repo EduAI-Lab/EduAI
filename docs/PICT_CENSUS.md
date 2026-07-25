@@ -63,8 +63,8 @@ extra build steps.
 
 The second BUILD clause is the **drift override**. Dim count measures table savings; implementation
 count measures drift exposure, and only the first collapses at 3 dims. Applying the dim floor alone
-would have dropped the Canvas URL-validation drift — a 3-dim surface that turned out to be the one
-confirmed defect the census found (#1166).
+would have dropped Canvas base-URL validation — a 3-dim surface where the same rule is implemented
+twice, in Core and in QM, with materially different defenses on each side (see § S5).
 
 ---
 
@@ -137,6 +137,11 @@ ai-tutor routes/services/frontend rbac; `packages/ui`.
 - Dim counts are estimates from static reading. Some will move by ±1 once the oracle is actually
   written, which can shift a candidate's tier. Re-tier when that happens rather than forcing the
   original verdict.
+- **The sweep ran against a feature branch, not `development`.** That branch predated PR #1139
+  (merged 2026-07-22), which is how the census came to claim Core lacked a Canvas SSRF guard when it
+  has one — see § S5. **Re-verify every file:line against `development` before building a model**, and
+  grep the modules a file imports rather than only the file itself. Any candidate whose guard turns
+  out to already exist should be re-tiered here rather than modelled around.
 
 ### Density note
 
@@ -287,10 +292,23 @@ and restore only) and `unpublishedAt` (automatic — `syncUnpublishedState` only
 | `verify-canvas-credentials` | 3 | `client.server.ts:197` | DROP |
 | Canvas frontend | — | pure rendering, server-enforced | DROP |
 
-`parse-validate-canvas-url` is the drift instance behind **#1166** — Core validates more weakly than
-QM for the same role tier. It is 3-dim and would fail the dim floor; it is BUILD purely on the drift
-override, and it is the clearest evidence that the override is correct. Ideally the fix lands first
-(one shared guard), and this model then tests the shared function once.
+`parse-validate-canvas-url` is 3-dim and would fail the dim floor. It is BUILD purely on the drift
+override: the same rule is implemented twice and the two implementations defend differently.
+
+**Correction — read this before citing #1166.** An earlier draft of this census asserted that Core had
+*no* private-IP protection on Canvas requests. That was wrong. Core has a request-time guard —
+`lib/net/ssrf-guard.server.ts` `assertPublicHostname()`, invoked via `assertSafeCanvasRequestHost()`
+(`canvas/client.server.ts:211`) before every Canvas request, every pagination hop, and every download
+redirect — added by PR #1139 on 2026-07-22. Two compounding causes for the bad claim: the sweep ran
+against a branch that predated #1139, and the grep searched only `client.server.ts` rather than the
+modules it imports. **Lesson for anyone extending this census: grep the imported modules, not just the
+file under suspicion.**
+
+The surface is still a legitimate drift contract, because the two implementations are not equivalent:
+Core has no DNS pinning (leaving a TOCTOU rebind window) and its `HTTP_ALLOWED_HOSTNAMES` loopback
+allowlist has neither a port limit nor a `NODE_ENV` gate; QM's `canvasUrlGuard.js` adds
+`createPinnedLookup()` and is https-only. A single shared guard tested once would close the divergence.
+That is what this model is for — not a vulnerability report.
 
 ### S6 — Core auth/identity + access/invite/enroll
 
