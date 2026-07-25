@@ -1,4 +1,5 @@
 import { request as undiciRequest } from "undici";
+import { assertPublicHostname } from "~/lib/net/ssrf-guard.server";
 
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
@@ -193,6 +194,32 @@ function buildCanvasProfileUrl(canvasUrl: string): string {
   return `${parsed.origin}/api/v1/users/self/profile`;
 }
 
+/**
+ * SSRF guard for the actual outbound request: local-dev hosts are only
+ * trusted as-is when the *configured* canvasUrl for this integration is
+ * itself a local-dev host (already restricted to plain HTTP by
+ * parseAndValidateCanvasUrl) — e.g. same-origin pagination or the
+ * canvas.docker download-transport rewrite. Otherwise every request URL,
+ * including ones derived from Canvas-controlled pagination Link headers or
+ * redirect Location headers, is resolved and rejected if it lands on a
+ * private/loopback/link-local range (RFC1918, CGNAT, ULA — incl. cloud
+ * metadata endpoints). This keeps a public canvasUrl from being used to pivot
+ * inward via a malicious Link/Location header pointing at loopback.
+ * Re-checked on every call, not just once at connect time, to narrow the
+ * DNS-rebinding window.
+ */
+async function assertSafeCanvasRequestHost(url: string, canvasUrl: string): Promise<void> {
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (isLocalCanvasDev(canvasUrl) && HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
+
+  try {
+    await assertPublicHostname(hostname);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "disallowed network address";
+    throw new CanvasApiError(detail, 400);
+  }
+}
+
 /** Probes Canvas with the personal access token before persisting credentials. */
 export async function verifyCanvasCredentials(
   canvasUrl: string,
@@ -202,6 +229,8 @@ export async function verifyCanvasCredentials(
   const url = buildCanvasProfileUrl(canvasUrl);
 
   try {
+    await assertSafeCanvasRequestHost(url, canvasUrl);
+
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_VERIFY_TIMEOUT_MS),
@@ -217,6 +246,9 @@ export async function verifyCanvasCredentials(
   } catch (error) {
     if (error instanceof CanvasVerificationError) {
       throw error;
+    }
+    if (error instanceof CanvasApiError) {
+      throw new CanvasVerificationError(error.message, 400);
     }
     throw new CanvasVerificationError("Could not reach Canvas", 502);
   }
@@ -245,10 +277,13 @@ function parseLinkHeaderNextUrl(linkHeader: string | null): string | null {
 
 async function canvasFetchJson<T>(
   url: string,
+  canvasUrl: string,
   apiKey: string,
   fetchImpl: typeof fetch,
 ): Promise<{ data: T; linkHeader: string | null }> {
   try {
+    await assertSafeCanvasRequestHost(url, canvasUrl);
+
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
@@ -290,7 +325,12 @@ export async function canvasGetPaginated<T>(
   const results: T[] = [];
 
   while (nextUrl) {
-    const { data, linkHeader } = await canvasFetchJson<T[]>(nextUrl, credentials.apiKey, fetchImpl);
+    const { data, linkHeader } = await canvasFetchJson<T[]>(
+      nextUrl,
+      credentials.canvasUrl,
+      credentials.apiKey,
+      fetchImpl,
+    );
     if (Array.isArray(data) && data.length > 0) {
       results.push(...data);
     }
@@ -360,7 +400,12 @@ export async function getCanvasCourseWithTerm(
   );
 
   try {
-    const { data } = await canvasFetchJson<CanvasCourseApi>(url, credentials.apiKey, fetchImpl);
+    const { data } = await canvasFetchJson<CanvasCourseApi>(
+      url,
+      credentials.canvasUrl,
+      credentials.apiKey,
+      fetchImpl,
+    );
     return data;
   } catch (error) {
     if (error instanceof CanvasApiError && error.statusCode === 404) {
@@ -454,6 +499,8 @@ async function performCanvasFileDownloadRequest(
   credentials: CanvasIntegrationCredentials,
   fetchImpl: typeof fetch,
 ): Promise<CanvasFileDownloadResponse> {
+  await assertSafeCanvasRequestHost(url, credentials.canvasUrl);
+
   const useUndici =
     fetchImpl === fetch &&
     process.env.VITEST !== "true" &&
