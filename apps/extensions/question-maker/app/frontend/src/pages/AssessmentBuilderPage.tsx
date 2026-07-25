@@ -439,9 +439,12 @@ const AssessmentBuilderPage = () => {
                 description: `Variant is now ${nextDraft ? 'marked as draft' : 'marked as reviewed'}.`
             });
         } catch (toggleError: any) {
+            // Mirror the question dialog: prefer the server error, fall back to the
+            // client-side message before the generic string.
             toast({
                 title: 'Failed to update review status',
-                description: toggleError?.response?.data?.error || 'Please try again.',
+                description:
+                    toggleError?.response?.data?.error || toggleError?.message || 'Please try again.',
                 variant: 'destructive'
             });
         }
