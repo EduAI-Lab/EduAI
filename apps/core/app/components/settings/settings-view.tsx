@@ -431,7 +431,8 @@ export function SettingsView({
               <CardHeader>
                 <CardTitle>Model Providers</CardTitle>
                 <CardDescription>
-                  Local, browser-stored settings used when calling models.
+                  Keys are saved to your EduAI account and used server-side when
+                  calling models, so they follow you across devices.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
