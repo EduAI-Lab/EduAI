@@ -31,6 +31,7 @@ import {
   PageTabsList,
   PageTabsTrigger,
   RoleBadge,
+  SignOutCard,
   useTheme,
   type AccessibilityUiDensity,
   type AccessibilityUiTheme,
@@ -147,17 +148,13 @@ export function SettingsView() {
         </PageTabsContent>
       </PageTabs>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Sign out</CardTitle>
-          <CardDescription>End your session on this browser.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SignOutCard
+        action={
           <Button type="button" variant="outline" onClick={() => void handleLogout()}>
             <IconLogout className="h-4 w-4" /> Log out
           </Button>
-        </CardContent>
-      </Card>
+        }
+      />
     </div>
   );
 }
