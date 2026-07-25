@@ -476,6 +476,9 @@ export function SettingsView({
                     </div>
                   ) : (
                     <Input
+                      type="password"
+                      autoComplete="off"
+                      aria-label="OpenAI API key"
                       placeholder="sk-..."
                       value={keyDrafts["openai"] ?? ""}
                       onChange={(e) =>
@@ -527,6 +530,9 @@ export function SettingsView({
                     </div>
                   ) : (
                     <Input
+                      type="password"
+                      autoComplete="off"
+                      aria-label="Google AI API key"
                       placeholder="AIza-..."
                       value={keyDrafts["google"] ?? ""}
                       onChange={(e) =>
