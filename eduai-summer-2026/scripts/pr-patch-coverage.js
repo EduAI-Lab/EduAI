@@ -138,20 +138,69 @@ function addedLinesByFile(baseRef) {
   return added;
 }
 
-// path -> Map(lineNumber -> hits) for one lcov.info. SF paths may be absolute or relative;
-// normalize to repo-relative so they match the diff's paths.
+/** Non-enumerable key so mapping stats never collide with a real file path. */
+const MAPPING_STATS = Symbol("lcovMappingStats");
+
+/**
+ * Normalize one lcov `SF:` path to a repo-relative POSIX path.
+ *
+ * There is no single convention here, which is what previously broke this
+ * script: vitest's lcov reporter writes paths relative to the WORKSPACE root
+ * (`SF:src/spinner.tsx` inside `packages/ui/coverage/lcov.info`), while other
+ * tools emit absolute paths or paths relative to the coverage directory.
+ * Resolving against one fixed base silently mismatched every file and made the
+ * whole report read "0% — no test imports this file".
+ *
+ * So try each convention and prefer whichever actually names a file on disk.
+ *
+ * Returns `{ rel, resolved }`. `resolved` is false when no candidate existed,
+ * which is the single source of truth for "this record did not map" — callers
+ * must not re-derive it, or the rules end up encoded in two places.
+ */
+function resolveLcovPath(sf, covDir) {
+  const toRel = (abs) => path.relative(REPO_ROOT, abs).split(path.sep).join("/");
+
+  if (path.isAbsolute(sf)) {
+    return { rel: toRel(sf), resolved: fs.existsSync(sf) };
+  }
+
+  const wsRoot = path.resolve(REPO_ROOT, covDir, "..");
+  // ORDER IS LOAD-BEARING: first existing candidate wins, so workspace-root beats
+  // coverage-dir. Every covDir in WORKSPACES ends in `coverage/`, so `covDir/..`
+  // is always the workspace root and no real source file exists at both readings.
+  // Do not reshuffle without rechecking that.
+  const candidates = [
+    path.resolve(wsRoot, sf), // vitest: relative to the workspace root
+    path.resolve(REPO_ROOT, covDir, sf), // relative to the coverage dir
+    path.resolve(REPO_ROOT, sf), // already repo-relative
+  ];
+
+  for (const abs of candidates) {
+    if (fs.existsSync(abs)) return { rel: toRel(abs), resolved: true };
+  }
+  // Nothing resolved — e.g. an lcov record naming a file deleted after coverage
+  // was generated. (Files deleted in the PR itself never reach here: the diff is
+  // read with --diff-filter=d.) Fall back to the workspace-root reading, which is
+  // correct for every generator we use.
+  return { rel: toRel(candidates[0]), resolved: false };
+}
+
+// path -> Map(lineNumber -> hits) for one lcov.info, keyed repo-relative so the
+// keys match the diff's paths. Returns null when the workspace did not run.
 function parseLcov(covDir) {
   const file = path.join(REPO_ROOT, covDir, "lcov.info");
   if (!fs.existsSync(file)) return null; // workspace did not run this PR
   const byFile = {};
   let current = null;
+  let records = 0;
+  let resolved = 0;
   for (const raw of fs.readFileSync(file, "utf8").split("\n")) {
     const lineStr = raw.trim();
     if (lineStr.startsWith("SF:")) {
-      let sf = lineStr.slice(3);
-      sf = path.isAbsolute(sf) ? path.relative(REPO_ROOT, sf) : path.relative(REPO_ROOT, path.resolve(REPO_ROOT, covDir, sf));
-      sf = sf.split(path.sep).join("/");
-      current = byFile[sf] || (byFile[sf] = new Map());
+      const mapped = resolveLcovPath(lineStr.slice(3), covDir);
+      records += 1;
+      if (mapped.resolved) resolved += 1;
+      current = byFile[mapped.rel] || (byFile[mapped.rel] = new Map());
     } else if (lineStr.startsWith("DA:") && current) {
       const [ln, hits] = lineStr.slice(3).split(",");
       current.set(parseInt(ln, 10), parseInt(hits, 10));
@@ -159,7 +208,33 @@ function parseLcov(covDir) {
       current = null;
     }
   }
+  // A total mapping failure is a bug in this script, not a coverage result. Say
+  // so rather than emitting a wall of "0% — no test imports this file" rows that
+  // are indistinguishable from genuinely untested code.
+  Object.defineProperty(byFile, MAPPING_STATS, {
+    value: { records, resolved },
+    enumerable: false,
+  });
   return byFile;
+}
+
+/**
+ * True when a workspace's lcov parsed but not one record named a file on disk.
+ *
+ * Worth keeping deliberately: if coverage were ever produced under a different
+ * filesystem root (a container path, a different checkout dir), every absolute
+ * `SF:` would resolve to nothing, and this turns the workspace into "no data +
+ * a loud warning" instead of a wall of false 0%s. That is the right failure
+ * direction for a signal humans read at a glance.
+ *
+ * It is deliberately a heuristic aimed at that degenerate case: one
+ * accidentally-resolving record disarms it, and a PARTIAL mapping failure still
+ * reports its unmapped files as 0%. A ratio test (resolved / records < 0.5)
+ * would catch partials too — left until something motivates it.
+ */
+function lcovMappingBroken(lcov) {
+  const stats = lcov && lcov[MAPPING_STATS];
+  return Boolean(stats && stats.records > 0 && stats.resolved === 0);
 }
 
 function fmtPct(covered, executable) {
@@ -174,6 +249,7 @@ function main() {
   const results = []; // { label, file, executable, covered, uncovered:[lines], inScopeButUnrun }
   const ranWorkspaces = [];
   const skippedWorkspaces = [];
+  const brokenWorkspaces = [];
 
   for (const ws of WORKSPACES) {
     const lcov = parseLcov(ws.covDir);
@@ -183,6 +259,13 @@ function main() {
     if (lcov === null) {
       if (wsFiles.length) skippedWorkspaces.push({ label: ws.label, count: wsFiles.length });
       continue; // no coverage data — turbo --affected didn't select it (or it failed)
+    }
+    if (lcovMappingBroken(lcov)) {
+      // Every SF: record failed to name a file on disk. Reporting these as 0%
+      // would be indistinguishable from genuinely untested code, so report the
+      // mapping failure itself and leave the files out of the numbers.
+      brokenWorkspaces.push({ label: ws.label, covDir: ws.covDir, count: wsFiles.length });
+      continue;
     }
     ranWorkspaces.push(ws.label);
     for (const file of wsFiles) {
@@ -289,6 +372,19 @@ function main() {
     );
   }
 
+  // Loud, because this is a defect in this script rather than a coverage result,
+  // and it previously masqueraded as "every file is 0%".
+  if (brokenWorkspaces.length) {
+    out.push("");
+    out.push(
+      "> 🛠️ **Coverage data could not be mapped to files** for " +
+        brokenWorkspaces
+          .map((b) => `**${b.label}** (\`${b.covDir}/lcov.info\`, ${b.count} changed file${b.count === 1 ? "" : "s"})`)
+          .join(", ") +
+        ". Every `SF:` record failed to resolve to a path on disk, so those files are excluded from the numbers above rather than reported as 0%. This is a bug in `pr-patch-coverage.js`, not a coverage finding — see #1192."
+    );
+  }
+
   out.push("");
   out.push(
     `<sub>base \`${BASE_REF}\` · threshold ${WARN_THRESHOLD}% · ran ${ranWorkspaces.join(", ") || "none"} · advisory, never blocks merge</sub>`
@@ -323,4 +419,16 @@ function compressRanges(nums) {
   return parts.join(", ");
 }
 
-main();
+module.exports = {
+  resolveLcovPath,
+  parseLcov,
+  lcovMappingBroken,
+  addedLinesByFile,
+  compressRanges,
+  fmtPct,
+  MAPPING_STATS,
+};
+
+if (require.main === module) {
+  main();
+}
