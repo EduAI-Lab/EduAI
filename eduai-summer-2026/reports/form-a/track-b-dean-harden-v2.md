@@ -1,148 +1,182 @@
-# Track B — Dean harden (policy v2.0)
+# Track B — Dean harden + Teacher anchor restore
 
-**Branch:** `feat/adhd-dean-track-b-harden` (off `origin/development`)  
-**Code:** `apps/core` ADHD oversight stack  
-**Policy stamp:** `ADHD_ASSIST_POLICY_VERSION = "2.0"` (do **not** pool with v1.x freeze cohorts)
+**Code PR:** [EduAI #1174](https://github.com/EduAI-Lab/EduAI/pull/1174) · branch `feat/adhd-dean-track-b-harden`  
+**Policy stamp:** `ADHD_ASSIST_POLICY_VERSION = "2.1"` (do **not** pool with v1.x freeze or broken v2.0 cohorts)
 
-## What changed
+## Headline findings (read this first)
 
-1. **No fail-open:** rejected/failed LLM rewrites → one retry with reject reasons → `forced_deterministic` wrap (anchors, urgency strip, cap trim, optional Sources).
-2. **Dean context:** rewrite prompt always includes learner message + profile Teacher policy slice.
-3. **Anchor normalization:** `* Top summary` / similar → `**Top summary**`; forward-offer `Next?` → `**Next?**` (comprehension-check Next? not promoted).
-4. **Sources when tools/RAG ran:** `toolsUsed` from chat → require Sources footer; generic line if pages unknown.
-5. **Telemetry methods:** `llm_retry`, `forced_deterministic` (plus existing `none` / `deterministic` / `llm`).
+Matched protocol vs Paper 1 freeze: Gemini 2.5 Flash, `seed_course_cosc101`, scenarios **S1/S2/S3/S5/S2L** (14 turns/arm).
 
-## How to test locally
+| Arm | Metric | Freeze (v1.1) | Track B v2.0 (broken Teacher) | Track B v2.1 (restored) |
+|-----|--------|--------------:|------------------------------:|------------------------:|
+| Baseline | strict | 0% | 0% | *(not re-run; unchanged)* |
+| Prompt-only | strict | **67%** | **0%** | **~81%** (n=3) |
+| Prompt-only | profile | **76%** | **9%** | **~86%** (n=3) |
+| Oversight | strict | **71%** | **77%** | *(Dean unchanged from v2.0; expect ≥ freeze)* |
+| Oversight | profile | **80%** | **87%** (late **97%**) | *(Dean unchanged from v2.0)* |
 
-### Unit (required)
+**Bottom line**
+
+1. **Dean / oversight arm** — Track B fail-closed works. On the matched 5× suite under v2.0, oversight **improved** vs freeze (profile 80% → 87%, late-turn 89% → 97%). Keep it.
+2. **Prompt-only arm** — briefly collapsed to ~9% because the Teacher prompt absorbed UI-only `TLDR`/`Continue` labels. **v2.1 restores** prompt-only to ~81% strict / ~86% profile (at or above freeze). Keep the Dean; fix was Teacher-only.
+3. **Baseline** — still ~0% structural pass (unchanged story).
+4. Paper 1 freeze numbers stay authoritative until a full three-arm **v2.1** 5× re-freeze. Do not pool v1.x / v2.0 / v2.1.
+
+---
+
+## What shipped in code (#1174)
+
+### Dean (Track B, policy 2.0)
+
+1. **No fail-open:** rejected/failed LLM rewrites → one retry with reject reasons → `forced_deterministic` wrap.
+2. **Dean context:** rewrite prompt includes learner message + profile Teacher policy slice.
+3. **Anchor normalization:** `* Top summary` → `**Top summary**`; forward-offer `Next?` → `**Next?**`.
+4. **Sources when tools/RAG ran:** `toolsUsed` → require Sources footer.
+5. **Telemetry:** `llm_retry`, `forced_deterministic`.
+
+### Teacher (policy 2.1 — prompt-only recovery)
+
+- Require exact first line `**Top summary**` and last structural line starting `**Next?**`.
+- Ship a copyable output skeleton.
+- Ban renaming to TLDR/Continue in the **model-facing** policy (UI remapping stays client-only in `assistive-display-transform.ts`).
+- Dean Track B logic unchanged.
+
+### Eval / telemetry plumbing
+
+- Eval requires `EDUAI_COURSE_ID` / `EDUAI_COURSE_CODE` (course-scoped chats since #657).
+- Restored **S2L** + `profileStructuralPass` in `eval-adhd-assist.mjs`.
+- Non-streaming turns now log `response_compliance` (baseline + prompt-only were invisible before).
+- `report-adhd-metrics.ts` breaks Assist turns down by `oversightMethod`.
+
+---
+
+## Arm-by-arm evaluation results
+
+### A. Smoke three-arm (n=8 turns each) — 2026-07-24
+
+`eval-runs/2026-07-24-trackb/`, course `MATH 320`, S1/S2/S3/S5 only (no S2L). Policy **2.0**.
+
+| Arm | Strict | Profile |
+|-----|-------:|--------:|
+| Baseline | 0/8 | 0/8 |
+| Prompt-only | 0/8 | 1/8 |
+| Oversight | 7/8 | 8/8 |
+
+Useful only as a smoke that fail-closed Dean works. Prompt-only already looked wrong here (Teacher issue).
+
+### B. Matched 5× three-arm under v2.0 — 2026-07-25
+
+`eval-runs/trackb-repeat-v2/gemini-2.5-flash/`, git `a8397474`, course `COSC 101`, S1/S2/S3/S5/S2L, **5 repeats × 14 turns = 70 turns/arm**.
+
+| Arm | Metric | Overall | Late-turn | Freeze |
+|-----|--------|--------:|----------:|-------:|
+| Baseline | strict | 0% | 0% | 0% |
+| Prompt-only | strict | **0%** | 0% | 67% |
+| Prompt-only | profile | **9%** (0–14%) | 9% | 76% |
+| Oversight | strict | **77%** (64–86%) | 83% | 71% |
+| Oversight | profile | **87%** (71–100%) | **97%** (86–100%) | 80% |
+
+**Oversight path histogram** (70 Assist+Dean turns, policy 2.0):
+
+| Method | Turns | Share | Profile pass |
+|--------|------:|------:|-------------:|
+| `none` | 24 | 34% | 100% |
+| `llm` | 19 | 27% | **53%** |
+| `forced_deterministic` | 13 | 19% | 100% |
+| `deterministic` | 13 | 19% | 100% |
+| `llm_retry` | 1 | 1% | 100% |
+
+Reading:
+
+- Prompt-only: across 70 turns, literal `**Top summary**` appeared **0** times; bold `**Next?**` only **4** times (plain `Next?` 55, `Step ladder` 30). Spirit of the policy, wrong tokens.
+- Oversight: Track B new paths (`forced_deterministic` + `llm_retry`) carried ~20% of the arm; under old fail-open those would have shipped non-compliant.
+- Remaining Dean gap: `acceptLlm` accepts score *improvement*, so 47% of accepted `llm` rewrites still miss full profile pass.
+
+**Note on an earlier “model drift” A/B:** a plain-systemPrompt A/B (Assist off) also failed to emit anchors under freeze-era v1.1 text. That suggested provider drift, but **v2.1 Teacher hardening restored prompt-only without changing the model id**, so the actionable bug was the model-facing TLDR/Continue language + weak literal-token requirements. Treat the A/B as inconclusive; treat the before/after prompt-only rates as decisive.
+
+### C. Prompt-only recovery under v2.1 — 2026-07-25
+
+`eval-runs/trackb-v21-prompt-restore/gemini-2.5-flash/prompt-only/`, Dean off on :3010. Three complete repeats before a provider 429 cut runs 04–05.
+
+| Run | Strict | Profile |
+|-----|-------:|--------:|
+| r01 | 11/14 (79%) | 12/14 (86%) |
+| r02 | 11/14 (79%) | 12/14 (86%) |
+| r03 | 12/14 (86%) | 12/14 (86%) |
+| **mean (n=3)** | **81%** | **86%** |
+
+Prompt-only is back at or above freeze. Full three-arm 5× under **v2.1** still recommended before replacing paper numbers.
+
+---
+
+## How to re-run locally
+
+### Unit
 
 ```bash
-cd /Users/ahabmasudsiddiqui/Code/EduAICoreLearning/apps/core
-nvm use 20.19.0
+cd apps/core && nvm use 20.19.0
 npx vitest run \
   app/tests/unit/adhd-oversight.test.ts \
   app/tests/unit/adhd-metrics.test.ts \
+  app/tests/unit/adhd-assist.test.ts \
   app/tests/unit/assistive-events.server.test.ts \
-  app/tests/unit/chat-oversight.route.test.ts
+  app/tests/unit/chat-oversight.route.test.ts \
+  app/tests/unit/eval-adhd-assist.test.ts
 ```
 
-### Manual chat smoke (Assist ON, oversight on)
-
-1. Start Core per local-dev rule (db + `edu-ai` on :3000).
-2. Login, pick **Gemini 2.5 Flash**, Assist **ON**.
-3. Probes:
-   - S1 gradient-descent → expect `**Top summary**` + `**Next?**`.
-   - Long wall-of-text ask → still under ~250 words with anchors (may show `forced_deterministic` in telemetry).
-   - "Do this quickly…" style content in a draft path → no urgency words in final reply.
-   - Turn that hits RAG/tools → trailing `Sources: Retrieved materials used this turn.` (or a real Sources line).
-
-### Synthetic Form A three-arm (research)
-
-**Do not overwrite Paper 1 freeze dirs.** Use a fresh `--out` per arm and a label.
-
-Two prerequisites that are easy to miss:
-
-- **Course scope.** Interactive chats are course-scoped since #657, so a run
-  without `EDUAI_COURSE_ID` fails every turn with `COURSE_REQUIRED`. The eval
-  script now requires it (`EDUAI_COURSE_CODE` also works).
-- **Session cookie.** `EDUAI_COOKIE` must be a live `better-auth.session_token`
-  for an account that has a provider API key saved in EduAI (locally that is
-  `admin@eduai.local`). The keys come from the DB, so `EDUAI_API_KEYS_JSON` only
-  has to be valid JSON (`{}`).
-
-The oversight flag is read by the server process, not the eval script, so the
-prompt-only arm needs its own Core instance with the Dean off. Running it on a
-spare port avoids restarting your main dev server:
+### Three-arm synthetic (matched freeze set)
 
 ```bash
-cd /Users/ahabmasudsiddiqui/Code/EduAICoreLearning/apps/core
-ADHD_ASSIST_OVERSIGHT=false npx react-router dev --port 3010   # prompt-only arm only
-```
+# Prompt-only needs a second Core with Dean off:
+ADHD_ASSIST_OVERSIGHT=false npx react-router dev --port 3010
 
-Then, per arm (baseline and oversight against :3000, prompt-only against :3010):
-
-```bash
-cd /Users/ahabmasudsiddiqui/Code/EduAICoreLearning/apps/core
-export EDUAI_BASE_URL=http://localhost:3000
-export EDUAI_COOKIE='better-auth.session_token=<token>'
+cd apps/core
+export EDUAI_COOKIE='better-auth.session_token=<token>'   # admin@eduai.local
 export EDUAI_MODEL=google:gemini-2.5-flash
 export EDUAI_API_KEYS_JSON='{}'
-export EDUAI_COURSE_ID=seed_course_math320
+export EDUAI_COURSE_ID=seed_course_cosc101
 
-npm run eval:adhd -- --only S1,S2,S3,S5 --mode baseline \
-  --label trackb-baseline --out ../../eval-runs/<stamp>/baseline
-npm run eval:adhd -- --only S1,S2,S3,S5 --mode assist-oversight \
-  --label trackb-oversight-v2.0 --out ../../eval-runs/<stamp>/assist-oversight
-EDUAI_BASE_URL=http://localhost:3010 npm run eval:adhd -- --only S1,S2,S3,S5 \
-  --mode assist-prompt-only --label trackb-prompt-only \
-  --out ../../eval-runs/<stamp>/assist-prompt-only
+# baseline + oversight on :3000; prompt-only on :3010
+node ../../eduai-summer-2026/reports/scripts/run-paper1-frozen-eval-repeat.mjs \
+  --arm baseline --repeats 5 --model google:gemini-2.5-flash \
+  --out-root eval-runs/trackb-v21-repeat/gemini-2.5-flash
+# …repeat for prompt-only (EDUAI_BASE_URL=http://localhost:3010) and oversight
 ```
 
-Then read the telemetry side (oversight path histogram, policy stamp):
+Aggregate:
 
 ```bash
-cd /Users/ahabmasudsiddiqui/Code/EduAICoreLearning/apps/core
+node ../../eduai-summer-2026/reports/scripts/aggregate-paper1-frozen-eval.mjs \
+  --baseline eval-runs/trackb-v21-repeat/gemini-2.5-flash/baseline \
+  --prompt-only eval-runs/trackb-v21-repeat/gemini-2.5-flash/prompt-only \
+  --oversight eval-runs/trackb-v21-repeat/gemini-2.5-flash/oversight \
+  --repeated --out eduai-summer-2026/reports/form-a/trackb-v21-eval-numbers.md
+```
+
+Telemetry histogram:
+
+```bash
 npx tsx ../../eduai-summer-2026/reports/scripts/report-adhd-metrics.ts \
   --since <ISO> --event response_compliance
 ```
 
-## First three-arm result under v2.0
+---
 
-Run: 2026-07-24, `eval-runs/2026-07-24-trackb/`, Gemini 2.5 Flash writer and
-Dean, course `MATH 320`, S1/S2/S3/S5 = 8 turns per arm.
+## Measurement caveats
 
-| Arm | Strict structural | Contextual / profile shape |
-|-----|------------------:|---------------------------:|
-| Baseline (Assist off) | 0/8 | 0/8 |
-| Assist, prompt-only (Dean off) | 0/8 | 1/8 |
-| Assist + Dean (policy 2.0) | 7/8 | 8/8 |
+1. **`preStructuralPass` is post-normalization** — do not use it as a prompt-only proxy.
+2. **Within-scenario Dean contamination** — later drafts in the oversight arm imitate prior rewritten turns (`none` can look high even when prompt-only is low).
+3. **Policy stamps are not poolable** — v1.x freeze ≠ v2.0 broken Teacher ≠ v2.1 restored.
 
-The one strict miss in the Dean arm is `S2.t2`, the topic-switch redirect turn,
-which is *supposed* to be a short redirect without the full anchor set; it passes
-on the profile-aware criterion. So the Dean arm is 8/8 on the criterion the
-policy actually holds it to.
-
-Oversight path histogram for that arm (`response_compliance`, policy 2.0):
-
-| Method | Turns | Profile pass |
-|--------|------:|-------------:|
-| `forced_deterministic` | 3 | 100% |
-| `deterministic` | 2 | 100% |
-| `none` (draft already compliant) | 2 | 100% |
-| `llm` | 1 | 100% |
-| `llm_retry` | 1 | 100% |
-
-Reading: with this writer the prompt alone produced **zero** compliant turns —
-Gemini 2.5 Flash writes its own shape ("TLDR", "Continue") instead of the policy
-anchors — and every compliant turn in the Dean arm came from oversight. Track B's
-new paths carried a third of the arm (3 forced wraps, 1 retry): under the old
-fail-open behaviour those four turns would have shipped non-compliant.
-
-Caveat: n=8 turns, single writer model, single run. This is a smoke-level signal
-that fail-closed works, not a replacement for the frozen Paper 1 numbers
-(`paper1-frozen-eval-numbers.md`, prompt-only ~76% / oversight ~80% on the
-profile criterion), which were measured on a different policy version and a
-different writer configuration. Do not pool v1.x and v2.0 cohorts.
-
-## Telemetry gap found and fixed during this run
-
-The baseline and prompt-only arms were writing **no** `response_compliance` rows.
-The streaming `onFinish` hook returns early on non-streaming turns, and the
-non-streaming branch never logged compliance itself — so any turn that skipped
-the Dean (baseline, or Assist with oversight off) was invisible in telemetry
-whenever the caller posted `streaming: false`, which is exactly what the eval
-harness does. Fixed in `apps/core/app/routes/api/chat.ts` with two regression
-tests in `chat-oversight.route.test.ts`. Before this fix, DB-side arm comparison
-was impossible and only the eval CSVs had the baseline numbers.
+---
 
 ## Research use
 
-| Question | How this helps |
-|----------|----------------|
-| Does fail-closed Dean close the modest RQ3 gap? | Re-run three-arm under v2.0; report delta vs freeze without pooling |
-| How often is LLM rewrite vs forced wrap? | `oversightMethod` in `response_compliance` events, summarised by `report-adhd-metrics.ts` |
-| How much of compliance is prompt vs oversight? | Prompt-only vs Dean arms are now both logged, so the split is measurable per turn |
-| Is structure now enforced even when the model truncates? | Forced wrap cases in long-draft probes |
-| Separate Dean model later (#716)? | Cleaner auditor contract; model-sizing experiment measures models against a complete Dean, not fail-open |
+| Question | Answer from these runs |
+|----------|------------------------|
+| Does fail-closed Dean help RQ3? | Yes — oversight profile 80% → 87% (v2.0 5×), with forced wraps closing fail-open misses |
+| Did Track B break prompt-only? | Indirectly via Teacher TLDR language already in the policy; **v2.1 restores ~86% profile** |
+| How often is forced wrap? | ~19% of oversight turns under v2.0 5× |
+| Ready to replace freeze numbers? | Not yet — run full three-arm 5× under **v2.1** first |
 
-Paper 1 freeze numbers stay authoritative until PI re-freezes. This branch is **post-freeze** follow-on evidence.
+Paper 1 freeze (`paper1-frozen-eval-numbers.md`) stays the cited Study 1 numbers until PI re-freezes.
