@@ -485,6 +485,13 @@ router.post(
         });
       }
 
+      if (questions.length > config.maxQuestions) {
+        return res.status(400).json({
+          success: false,
+          error: `Cannot save more than ${config.maxQuestions} questions at once`
+        });
+      }
+
       const result = await saveExtractedQuestions(req.qmCourse.userId, {
         courseId: req.qmCourse.id,
         primaryTopicId: normalizePrimaryTopicId(primaryTopicId) ?? undefined,
