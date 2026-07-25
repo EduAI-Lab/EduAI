@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Input, Textarea, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, MultiSelect } from '@eduai/ui';
 import { Popover, PopoverContent, PopoverTrigger } from '@eduai/ui';
-import { Badge, Switch, cn, QuestionStatusBadge, VariantBadge } from '@eduai/ui';
+import { Badge, Switch, cn, QuestionStatusBadge, VariantBadge, ConfirmDialog } from '@eduai/ui';
 import { useToast, ToastAction } from '@/components/ui/use-toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import {
@@ -41,6 +41,7 @@ import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { getAiTutorInstructorUrl } from '@/lib/coreUrl';
 import { MCQChoicesField } from './MCQChoicesField';
 import { buildVariantMetadataUpdates } from '../../utils/questionMetadataEdit';
+import { reviewStatusConfirm } from '../../lib/review-status';
 import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../../utils/aiModels';
 import {
     DIFFICULTY_META,
@@ -199,6 +200,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
 
     const [isToggling, setIsToggling] = useState(false);
     const [isTogglingDraft, setIsTogglingDraft] = useState(false);
+    const [isDraftConfirmOpen, setIsDraftConfirmOpen] = useState(false);
     const [isTestable, setIsTestable] = useState(viewEntry?.variant?.testable ?? false);
     const [isTogglingTestable, setIsTogglingTestable] = useState(false);
     const [editingChoices, setEditingChoices] = useState(false);
@@ -358,7 +360,13 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
             viewProps.onUpdateVariant?.(viewEntry.variant.id, { isDraft: newIsDraft });
             toast({ title: 'Review status updated', description: `Variant is now ${newIsDraft ? 'marked as draft' : 'marked as reviewed'}.` });
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Failed to toggle draft status', description: error?.message || 'An error occurred' });
+            // Server-side failures surface under response.data.error; fall back to the
+            // client-side message so neither shape renders "undefined".
+            toast({
+                variant: 'destructive',
+                title: 'Failed to toggle draft status',
+                description: error?.response?.data?.error || error?.message || 'An error occurred',
+            });
         } finally {
             setIsTogglingDraft(false);
         }
@@ -1336,7 +1344,7 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                                 </Button>
                             </PermissionGate>
                             <PermissionGate allow={canApproveVariant}>
-                                <Button type="button" variant="outline" size="sm" onClick={handleToggleDraft} disabled={isTogglingDraft} className="flex items-center gap-2 text-xs" title="Toggle review status">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setIsDraftConfirmOpen(true)} disabled={isTogglingDraft} className="flex items-center gap-2 text-xs" title="Toggle review status">
                                     <IconFilePencil className="h-3 w-3" />
                                     <span>{viewEntry.isDraft ? 'Mark as Reviewed' : 'Mark as Draft'}</span>
                                 </Button>
@@ -1358,6 +1366,20 @@ export const AddQuestionDialog = (props: AddQuestionDialogProps) => {
                         </div>
                     </DialogFooter>
                 </DialogContent>
+                {/*
+                  * Review-status changes gate export, so both directions confirm first (#1120).
+                  * Copy comes from the shared helper so this surface and the assessment section
+                  * kebab cannot drift apart.
+                  */}
+                <ConfirmDialog
+                    open={isDraftConfirmOpen}
+                    onOpenChange={setIsDraftConfirmOpen}
+                    {...reviewStatusConfirm(viewEntry.isDraft ?? false)}
+                    onConfirm={() => {
+                        setIsDraftConfirmOpen(false);
+                        void handleToggleDraft();
+                    }}
+                />
             </Dialog>
         );
     }
