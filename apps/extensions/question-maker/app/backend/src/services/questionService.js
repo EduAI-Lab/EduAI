@@ -4,11 +4,24 @@
  */
 import { createId } from '@paralleldrive/cuid2';
 import { prisma } from '../config/database.js';
+import { config } from '../config/settings.js';
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
   formatSemesterDisplay
 } from './courseListService.js';
+
+/**
+ * `saveExtractedQuestions` writes each question's metadata/variant/section-link
+ * rows sequentially inside one interactive transaction (per-item topic
+ * fallback lookups and FK chaining rule out a bulk `createMany`). Prisma's
+ * interactive-transaction timeout defaults to 5s, which a large extraction
+ * payload blows through (P2028), rolling back the whole upload. Reusing
+ * `config.maxQuestions` bounds the batch to the same ceiling already enforced
+ * for AI-generated batches, and `EXTRACT_SAVE_TX_TIMEOUT_MS` gives that
+ * capped batch comfortable headroom.
+ */
+const EXTRACT_SAVE_TX_TIMEOUT_MS = 30_000;
 
 /**
  * Overwrites each question row's nested `variant.assessment.semester` with the
@@ -444,6 +457,10 @@ export const saveExtractedQuestions = async (userId, payload) => {
     throw new Error('Questions array is required');
   }
 
+  if (questions.length > config.maxQuestions) {
+    throw new Error(`Cannot save more than ${config.maxQuestions} questions at once`);
+  }
+
   const parsedCourseId = Number(courseId);
 
   const course = await prisma.course.findFirst({
@@ -650,7 +667,7 @@ export const saveExtractedQuestions = async (userId, payload) => {
     }
 
     return { createdIds, createdAssessmentId: createdAssessment ? createdAssessment.id : null };
-  });
+  }, { timeout: EXTRACT_SAVE_TX_TIMEOUT_MS });
 
   const savedQuestions = await prisma.questionMetadata.findMany({
     where: { id: { in: createdIds }, course: { userId } },

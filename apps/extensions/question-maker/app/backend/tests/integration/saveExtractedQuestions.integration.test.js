@@ -13,6 +13,7 @@
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { createId } from '@paralleldrive/cuid2';
+import { config } from '../../src/config/settings.js';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -150,6 +151,37 @@ describeDb('saveExtractedQuestions (integration)', () => {
       saveExtractedQuestions(USER.id, { courseId, questions: [] })
     ).rejects.toThrow(/questions/i);
   });
+
+  it('throws without writing anything when the batch exceeds config.maxQuestions', async () => {
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
+    const tooMany = Array.from({ length: config.maxQuestions + 1 }, (_, i) =>
+      validQuestion({ question: `Overflow question ${i}?` })
+    );
+
+    await expect(
+      saveExtractedQuestions(USER.id, { courseId, questions: tooMany })
+    ).rejects.toThrow(/cannot save more than/i);
+
+    expect(await prisma.questionMetadata.count({ where: { courseId } })).toBe(before);
+  });
+
+  it('persists a full config.maxQuestions batch (with an assessment) inside the transaction timeout', async () => {
+    const batch = Array.from({ length: config.maxQuestions }, (_, i) =>
+      validQuestion({ question: `Large upload question ${i}?` })
+    );
+
+    const { questions, assessmentId } = await saveExtractedQuestions(USER.id, {
+      courseId,
+      questions: batch,
+      assessment: { type: 'Quiz', name: 'Large Upload Regression' }
+    });
+
+    expect(questions).toHaveLength(config.maxQuestions);
+
+    const section = await prisma.assessmentSections.findFirst({ where: { assessmentId } });
+    const links = await prisma.sectionVariants.findMany({ where: { sectionId: section.id } });
+    expect(links).toHaveLength(config.maxQuestions);
+  }, 40_000);
 
   describe('topic fallback resolution', () => {
     it('uses the provided primaryTopicId when it exists in the course', async () => {
