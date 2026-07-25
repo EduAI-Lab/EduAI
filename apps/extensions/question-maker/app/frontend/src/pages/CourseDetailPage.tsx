@@ -42,6 +42,7 @@ import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
 import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
 import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
 import type { QuestionAnalyticsProps } from '@eduai/ui';
+import { ConfirmDialog } from '@eduai/ui';
 import {
   Question,
   Assessment,
@@ -54,7 +55,6 @@ import { Topic } from '../types/topic';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
 import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
 import { ToastAction } from '../components/ui/use-toast';
 import { useToast } from '../components/ui/use-toast';
@@ -886,7 +886,7 @@ export const CourseDetailPage = () => {
         </>
       )}
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteVariantModalOpen}
         onOpenChange={setDeleteVariantModalOpen}
         onConfirm={confirmDeleteVariant}
@@ -896,7 +896,7 @@ export const CourseDetailPage = () => {
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
           return isLastVariant ? 'Delete question?' : 'Delete question variant?';
         })()}
-        message={(() => {
+        description={(() => {
           if (!variantToDelete) return 'This action cannot be undone.';
           const question = questions.find((item) => item.id === variantToDelete.questionId);
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
@@ -906,16 +906,18 @@ export const CourseDetailPage = () => {
         })()}
         confirmLabel="Delete"
         isLoading={isDeletingVariant}
+        closeOnConfirm={false}
       />
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteAssessmentModalOpen}
         onOpenChange={setDeleteAssessmentModalOpen}
         onConfirm={confirmDeleteAssessment}
         title={assessmentToDelete ? `Delete assessment "${assessmentToDelete.name}"?` : 'Delete assessment?'}
-        message="This action cannot be undone. All sections and questions in this assessment will be removed."
+        description="This action cannot be undone. All sections and questions in this assessment will be removed."
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
+        closeOnConfirm={false}
       />
     </DetailPageScaffold>
   );
