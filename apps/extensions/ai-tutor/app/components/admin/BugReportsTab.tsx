@@ -1,212 +1,27 @@
 /**
- * @file Admin triage table for incoming bug reports.
+ * @file AI Tutor's bug-report triage tab.
  *
- * Responsibility: Sortable table view of all reports plus modal viewers for
- *   the description, captured console logs, captured network logs, and
- *   screenshot. Lets admins move each report through status (unhandled →
- *   in progress → resolved) and copy a self-contained text dossier.
- * Used by: `app/routes/admin.tsx` as one tab of the admin dashboard.
- * Composition: this file owns state + data fetching and composes three sibling
- *   pieces from `./bug-reports/` — the filter `BugReportsToolbar`, the
- *   presentation `BugReportsTable`, and the modal `ReportViewerDialog`. Shared
- *   types, constants, and pure helpers live in `./bug-reports/bug-reports-utils`.
- * Gotchas:
- *   - **Anonymous reports**: when a reporter checks "submit anonymously",
- *     the server in `server/src/utils/bugReportMappers.js` strips identifying
- *     fields. This component only RENDERS; the masking is server-side. The
- *     `getReporterLabel` helper still falls through to the userId so admins
- *     can correlate without seeing the name/email.
- *   - **Sort**: `createdAt` sorts as Date timestamps; everything else uses
- *     `String(...).localeCompare` (case-insensitive via locale). Null/undefined
- *     fields fall through to `''` to keep them at the start of asc / end of desc.
- *   - **Console filter**: levels are normalized to lowercase before comparison
- *     so a stored "WARN" matches the "warn" filter chip.
- *   - **Network viewer**: the entries dropdown switches the inner tab back to
- *     "meta" on change so a heavy response body from the previous request
- *     doesn't flash before the user can navigate.
- *   - The clipboard helper falls back to a hidden textarea + execCommand for
- *     contexts where `navigator.clipboard` is unavailable (older Safari,
- *     non-secure contexts).
- *   - The copy dossier respects anonymity: identifying fields are omitted
- *     from the raw appendix when `report.isAnonymous` is true.
- * Related: `server/src/routes/admin.js` (PATCH bug-report endpoint),
- *   `server/src/utils/bugReportMappers.js` (anonymity masking),
- *   `@eduai/ui BugReportDialog` (capture-side counterpart)
+ * The table, filter bar, viewers, and sorting now live in `@eduai/ui`
+ * (`BugReportsAdminView`) — this file is only the AI Tutor data wiring for it.
+ * All three apps read the same `bug_reports` table through the same Core
+ * endpoint; this app's server is a proxy that pins `source=AI_TUTOR`.
+ *
+ * Anonymity masking stays server-side in `server/src/utils/bugReportMappers.js`.
  */
+import { BugReportsAdminView } from '@eduai/ui';
+import type { AdminBugReportRow, BugReportStatus } from '@eduai/ui';
 
-import { useMemo, useState } from 'react';
-import { Alert, AlertDescription } from '@eduai/ui';
-import { IconAlertCircle } from '@tabler/icons-react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@eduai/ui';
 import api from '~/lib/api';
-import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
-import { BugReportsTable } from '~/components/admin/bug-reports/bug-reports-table';
-import { BugReportsToolbar } from '~/components/admin/bug-reports/bug-reports-toolbar';
-import { ReportViewerDialog } from '~/components/admin/bug-reports/report-viewers';
-import {
-  buildBugReportCopyText,
-  copyTextToClipboard,
-  sortReports,
-  COPY_FEEDBACK_DURATION_MS,
-  type ReporterFilter,
-  type SortDirection,
-  type SortKey,
-  type StatusFilter,
-  type TypeFilter,
-  type ViewerType,
-} from '~/components/admin/bug-reports/bug-reports-utils';
 
-/**
- * Top-level table component. `initialReports` is provided by the admin route
- * loader; subsequent mutations (status PATCH) update the local list optimistically.
- */
 export default function BugReportsTab({ initialReports }: { initialReports: AdminBugReportRow[] }) {
-  const [reports, setReports] = useState<AdminBugReportRow[]>(initialReports);
-  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [updatingReportId, setUpdatingReportId] = useState<string | null>(null);
-  const [copiedReportId, setCopiedReportId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [viewerType, setViewerType] = useState<ViewerType>(null);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [reporterFilter, setReporterFilter] = useState<ReporterFilter>('all');
-  const [searchText, setSearchText] = useState('');
-
-  const filteredSortedReports = useMemo(() => {
-    const filtered = reports.filter((report) => {
-      if (statusFilter !== 'all' && report.status !== statusFilter) return false;
-      if (typeFilter !== 'all' && report.bugType !== typeFilter) return false;
-      if (reporterFilter === 'named' && report.isAnonymous) return false;
-      if (reporterFilter === 'anonymous' && !report.isAnonymous) return false;
-      if (searchText && !report.description.toLowerCase().includes(searchText.toLowerCase())) return false;
-      return true;
-    });
-    return sortReports(filtered, sortKey, sortDirection);
-  }, [reports, statusFilter, typeFilter, reporterFilter, searchText, sortKey, sortDirection]);
-
-  const hasActiveFilters =
-    statusFilter !== 'all' || typeFilter !== 'all' || reporterFilter !== 'all' || searchText.length > 0;
-
-  const resetFilters = () => {
-    setStatusFilter('all');
-    setTypeFilter('all');
-    setReporterFilter('all');
-    setSearchText('');
-  };
-
-  const selectedReport =
-    selectedReportId === null
-      ? null
-      : (reports.find((report) => report.id === selectedReportId) ?? null);
-
-  const toggleSort = (nextSortKey: SortKey) => {
-    if (sortKey === nextSortKey) {
-      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
-      return;
-    }
-    // Date defaults to descending (newest first); everything else to ascending (A-Z).
-    setSortKey(nextSortKey);
-    setSortDirection(nextSortKey === 'createdAt' ? 'desc' : 'asc');
-  };
-
-  const openViewer = (type: Exclude<ViewerType, null>, reportId: string) => {
-    setSelectedReportId(reportId);
-    setViewerType(type);
-  };
-
-  const closeViewer = () => {
-    setViewerType(null);
-    setSelectedReportId(null);
-  };
-
-  const onStatusChange = async (reportId: string, status: BugReportStatus) => {
-    setError(null);
-    setUpdatingReportId(reportId);
-    try {
-      const updated = await api.updateAdminBugReportStatus(reportId, { status });
-      setReports((current) =>
-        current.map((report) => (report.id === reportId ? { ...report, ...updated } : report)),
-      );
-    } catch {
-      setError('Could not update bug report status. Please try again.');
-    } finally {
-      setUpdatingReportId(null);
-    }
-  };
-
-  const onCopyReport = async (report: AdminBugReportRow) => {
-    setError(null);
-    try {
-      await copyTextToClipboard(buildBugReportCopyText(report));
-      setCopiedReportId(report.id);
-      window.setTimeout(() => {
-        setCopiedReportId((current) => (current === report.id ? null : current));
-      }, COPY_FEEDBACK_DURATION_MS);
-    } catch {
-      setError('Could not copy bug report details. Please try again.');
-      setCopiedReportId((current) => (current === report.id ? null : current));
-    }
-  };
-
   return (
-    <Card className="animate-fade-up delay-150">
-      <CardHeader>
-        <CardTitle>Bug reports</CardTitle>
-        <CardDescription>
-          Review AI Tutor bug reports.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {error ? (
-          <Alert variant="destructive">
-            <IconAlertCircle />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {/* Filter bar */}
-        <BugReportsToolbar
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          typeFilter={typeFilter}
-          onTypeFilterChange={setTypeFilter}
-          reporterFilter={reporterFilter}
-          onReporterFilterChange={setReporterFilter}
-          searchText={searchText}
-          onSearchTextChange={setSearchText}
-          hasActiveFilters={hasActiveFilters}
-          shownCount={filteredSortedReports.length}
-          totalCount={reports.length}
-          onResetFilters={resetFilters}
-        />
-
-        <BugReportsTable
-          reports={filteredSortedReports}
-          sortKey={sortKey}
-          sortDirection={sortDirection}
-          onToggleSort={toggleSort}
-          updatingReportId={updatingReportId}
-          copiedReportId={copiedReportId}
-          hasActiveFilters={hasActiveFilters}
-          onStatusChange={onStatusChange}
-          onCopyReport={onCopyReport}
-          onOpenViewer={openViewer}
-        />
-      </CardContent>
-
-      <ReportViewerDialog
-        viewerType={viewerType}
-        report={selectedReport}
-        onClose={closeViewer}
-      />
-    </Card>
+    <BugReportsAdminView
+      className="animate-fade-up delay-150"
+      reports={initialReports}
+      description="Review AI Tutor bug reports."
+      onUpdateStatus={(reportId: string, status: BugReportStatus) =>
+        api.updateAdminBugReportStatus(reportId, { status })
+      }
+    />
   );
 }
