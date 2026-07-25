@@ -181,4 +181,59 @@ describe('callEduAI transient failure retry (#1001)', () => {
     await rejection;
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  describe('Retry-After header integration through the retry loop', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('uses Retry-After delay-seconds header value for the retry backoff', async () => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(failedResponse(503, { 'Retry-After': '0.5' }))
+        .mockResolvedValueOnce(successfulResponse());
+
+      const responsePromise = generateResponse();
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(500);
+      const result = await responsePromise;
+
+      expect(result).toMatchObject({
+        message: 'Start by identifying the base case.',
+        chatId: null,
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses Retry-After HTTP-date header value for the retry backoff', async () => {
+      const futureDate = new Date(Date.now() + 2000).toUTCString();
+
+      global.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(failedResponse(503, { 'Retry-After': futureDate }))
+        .mockResolvedValueOnce(successfulResponse());
+
+      const responsePromise = generateResponse();
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(2000);
+      const result = await responsePromise;
+
+      expect(result).toMatchObject({
+        message: 'Start by identifying the base case.',
+        chatId: null,
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+  });
 });
