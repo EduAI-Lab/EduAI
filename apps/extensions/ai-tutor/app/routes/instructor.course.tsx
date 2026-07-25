@@ -65,7 +65,7 @@ import { CourseAnalyticsPanel } from '../components/courses/CourseAnalyticsPanel
 import { CourseTopicsHeroAction } from '../components/courses/CourseTopicsHeroAction';
 import { CourseFeedbackPanel } from '../components/courses/CourseFeedbackPanel';
 import { CourseSubmissionsPanel } from '../components/courses/CourseSubmissionsPanel';
-import { PermissionGate } from '../components/rbac/PermissionGate';
+import { PermissionGate } from '@eduai/ui';
 import { getCourseDetailTabs } from '~/lib/rbac/nav';
 import { useCourseTopics } from '../hooks/useCourseTopics';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
