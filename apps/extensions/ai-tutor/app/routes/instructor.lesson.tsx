@@ -36,6 +36,7 @@
  *          the course hero (components/courses/CourseTopicsHeroAction).
  */
 import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -50,7 +51,6 @@ import {
   IconSchool,
   IconRoute,
   IconWand,
-  IconLoader2,
 } from '@tabler/icons-react';
 import AddActivityPanel from '../components/AddActivityPanel';
 import ActivityDetailsCard from '../components/ActivityDetailsCard';
@@ -837,7 +837,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               )}
                               {(isSaving || isDeleting || isDuplicating) && (
                                 <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  <Spinner size="xs" />
                                   {isSaving
                                     ? 'Saving…'
                                     : isDeleting
@@ -999,7 +999,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               )}
                               {showTopicSaving && isUpdatingTopics && (
                                 <span className="inline-flex items-center gap-1 text-[0.7rem] text-muted-foreground">
-                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  <Spinner size="xs" />
                                   Saving…
                                 </span>
                               )}
@@ -1048,7 +1048,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                               </div>
                               {showModeSaving && isUpdatingModes && (
                                 <span className="inline-flex items-center gap-1 text-[0.7rem] text-primary-text">
-                                  <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
+                                  <Spinner size="xs" />
                                   Saving…
                                 </span>
                               )}
