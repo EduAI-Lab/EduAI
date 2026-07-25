@@ -1,0 +1,153 @@
+\section{Design Rationale: ADHD Assist Pillars}
+\label{sec:design}
+
+\begin{table*}[t!]
+\caption{Technique $\times$ symptom mesh for ADHD Assist. Cells are design
+ratings from prior evidence and our synthesis, not Study~1 clinical outcomes.
+Columns: Sust.\ = sustained attention; WM = working memory; Init.\ = task
+initiation; Imp.\ = impulsivity; Infl.\ = inflexibility; Rew.\ =
+reward~/~motivation; Emot.\ = emotional dysregulation; Meta.\ = metacognition.}
+\label{tab:mesh}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{l*{9}{c}}
+\toprule
+Technique & Sust. & WM & Init. & Imp. & Time & Infl. & Rew. & Emot. & Meta. \\
+\midrule
+P1 Concise & \textbf{S} & \textbf{S} & \textbf{S} & I & P & I & P & I & n \\
+P2 Structured & \textbf{S} & \textbf{S} & \textbf{S} & P & P & P & I & I & P \\
+P3 Progressive & \textbf{S} & \textbf{S} & \textbf{S} & P & P & I & P & I & P \\
+P4 Single-focus & \textbf{S} & P & P & \textbf{S} & I & \textbf{S} & I & I & P \\
+P5 Gentle redirect & \textbf{S} & I & n & \textbf{S} & P & \textbf{S} & I & \textbf{S} & P \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+If default LLM tutoring fails students with ADHD, what should a reply look
+like instead?
+
+ADHD Assist uses five \textbf{response-shape} pillars. They draw on cognitive
+load and accessibility research~\cite{sweller2011cognitive,cowan2010magical,w3c2021coga},
+ADHD executive-function accounts~\cite{barkley1997behavioral}, and ADHD
+co-design evidence from Zhu, Yu, and Luo~\cite{zhu2026scaffolding}. We mapped
+each technique to the ADHD difficulties it is meant to help. The pillars
+become the Teacher policy and the Dean's written constitution
+(\S\ref{sec:system}).
+
+Study~1 tests whether the structural signature of these pillars holds under
+multi-turn use when a Dean is present; it does not re-test every symptom
+claim as a clinical outcome. The mesh ratings in this section
+(Strong~/~Partial~/~Indirect) are likewise design ratings from the literature
+and our synthesis.
+
+\subsection{The five pillars}
+\label{sec:pillars}
+
+\paragraph{P1. Concise.}
+Working memory only holds a few chunks at once~\cite{cowan2010magical}. Long
+undifferentiated text raises extraneous load~\cite{sweller2011cognitive} and
+is hard to re-enter after an interruption~\cite{zhu2026scaffolding}.
+
+\emph{In practice:} tutoring aims about 150 words (hard cap 250); clarifications
+shorter. No filler praise. If the topic exceeds the cap, summarize and invite
+continuation (P3).
+
+\emph{When it fails:} lectures, repeated reassurance, answer buried under
+throat-clearing.
+
+\paragraph{P2. Structured.}
+Headings, bullets, and a fixed order externalize ``where am I?'' so the
+learner does not rebuild context from prose after
+interruption~\cite{w3c2021coga,barkley1997behavioral}. SocraticLM scores tutor
+readability for the same reason~\cite{liu2024socraticlm}.
+
+\emph{In practice:} scaffolded turns open with a short summary block and close
+with one continuation invite; optional step ladder (at most five) and at most
+one quick check. Scoring anchors are Top summary and Next?. The interface may
+label those blocks TLDR and Continue; the underlying checks are unchanged.
+
+\emph{When it fails:} free-form essay; missing summary or Next?; nested
+sprawl.
+
+\paragraph{P3. Progressively disclosed.}
+One decision surface at a time beats dumping everything up
+front~\cite{saha2023can,zhu2026scaffolding}.
+
+\emph{In practice:} answer the immediate ask tightly first. Add depth only
+after an explicit Next? invite. If the user asks two questions, answer the
+first and defer the second.
+
+\emph{When it fails:} full plan or lecture in one shot; multiple open threads.
+
+\paragraph{P4. Single-focus.}
+Multiple agendas leave attention residue and invite topic-merge when
+inhibition is weak~\cite{sweller2011cognitive,zhu2026scaffolding,shani2024multiturn}.
+
+\emph{In practice:} one main topic per turn. Steps serve that topic only.
+
+\emph{When it fails:} two unrelated headings; silently answering a second
+injected topic.
+
+\emph{Limit:} policy and redirect handling encode this intent. Automatic
+topic-count detection is weak, so Study~1 uses scripted interrupt probes
+rather than relying on an automatic one-topic detector.
+
+\paragraph{P5. On-task continuity (gentle redirect).}
+Off-topic jumps are common for many students with ADHD. Harsh refusal raises
+frustration~\cite{beheshti2020emotion,zhu2026scaffolding}. SocraticLM scores
+productive handling of irrelevant moves~\cite{liu2024socraticlm}.
+
+\emph{In practice:} acknowledge the jump, name the prior topic briefly, offer
+return or switch, without scolding.
+
+\emph{When it fails:} silent tangent-follow, or a blunt ``I can't help with
+that.''
+
+\subsection{Supporting constraints (not separate IVs)}
+
+Still enforced, but not the main style attributes under test:
+\begin{itemize}
+  \item \textbf{Validate and move:} confirm a correct grasp, then advance
+    (SocraticLM validate-and-move analogue~\cite{liu2024socraticlm}).
+  \item \textbf{Honest unknowns:} do not invent course facts.
+  \item \textbf{No clinical inference} from chat.
+  \item \textbf{Learner-owned reflection:} optional; off in Study~1 so style
+    remains the only planned difference.
+\end{itemize}
+
+The Dean (\S\ref{sec:system}) audits the pillars through a written
+constitution. It is not a sixth pillar.
+
+
+\subsection{Technique $\times$ symptom mesh}
+\label{sec:mesh}
+
+Prior ADHD, load, and co-design work already links reply techniques to
+specific difficulties: short chunked answers to working-memory
+limits~\cite{cowan2010magical,sweller2011cognitive}; external structure to
+re-entry and attention~\cite{barkley1997behavioral,w3c2021coga}; progressive
+disclosure to initiation and overload~\cite{saha2023can,zhu2026scaffolding};
+single-focus to impulsivity and topic-merge~\cite{shani2024multiturn}; gentle
+redirect to disruption and emotional
+dysregulation~\cite{zhu2026scaffolding,beheshti2020emotion,liu2024socraticlm}.
+
+We assemble those links into one technique $\times$ deficit mesh for ADHD
+Assist and rate each cell from that evidence. Table~\ref{tab:mesh} is the
+design map (\textbf{S}~=~strong intended help; \textbf{P}~=~partial;
+\textbf{I}~=~indirect; \textbf{n}~=~not claimed). Systems that ship structure
+or a second-pass checker usually motivate the technique; they less often
+publish this matrix as an explicit product constitution.
+
+P1--P3 carry the working-memory, attention, and initiation core. P4--P5 carry
+impulsivity and set-shifting when the session derails. Emotional dysregulation
+is addressed mainly by redirect tone (P5), not a separate affect model.
+Reward~/~motivation and deep metacognition are weakly covered here; richer
+engagement pedagogy sits outside this paper's independent variable.
+
+\subsection{Hand-off to system and Study~1}
+
+Pillars become Teacher policy. The constitution becomes the Dean checklist.
+Turn profiles decide when the full scaffold applies versus a redirect.
+Study~1 tests whether that structural signature sticks better with a Dean
+than with prompting alone.

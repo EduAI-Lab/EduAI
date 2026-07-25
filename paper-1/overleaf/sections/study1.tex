@@ -1,0 +1,125 @@
+\section{Study 1: Methods and Results}
+\label{sec:study1}
+
+\subsection{What we manipulate}
+
+We ask one primary question. When a tutoring scaffold starts to fall apart
+over multiple turns, does a second-pass oversight step hold the structure
+better than putting the same rules in the prompt alone?
+
+To answer that, we only change how ADHD-supportive structure is enforced.
+Everything else stays fixed: the same chat model
+(\texttt{google:gemini-2.5-flash} for the reported runs), the same retrieval,
+tools, and temperature, and the same synthetic user turns.
+
+That gives three arms (Figure~\ref{fig:threearms}):
+\begin{enumerate}
+  \item \textbf{Baseline:} ordinary tutoring; Assist off.
+  \item \textbf{Assist, prompt-only:} ADHD Assist policy in the teacher system
+    prompt; no second pass.
+  \item \textbf{Assist + oversight:} same policy, plus a Dean that reads the
+    full draft and revises when the constitution fails.
+\end{enumerate}
+
+The independent variable is not a smarter model or better retrieval. It is
+whether structure is requested in the prompt, or checked after generation.
+
+\subsection{What we measure}
+
+We score each assistant turn for structural adherence with an automatic
+checker.
+
+\paragraph{Strict checklist.}
+The reply must include a summary-first marker, end with a continue invite, and
+stay under the word cap. Harsh on short redirects that correctly refuse a full
+teaching template.
+
+\paragraph{Turn-aware checklist (primary for Assist comparisons).}
+Same idea, but a redirect may use the short boundary template instead of the
+full tutoring scaffold. That is the fairer primary score when comparing
+prompt-only to oversight.
+
+\paragraph{Interface labels.}
+The live UI may show TLDR and Continue where the system stores and scores Top
+summary and Next?. Study~1 scores the internal anchors.
+
+We also keep a late-turn aggregate (second-and-later turns in a scenario, and
+the late tranche of the long probe), because that is where prompt drift shows
+up if it is going to. The headline result is the automated pass rates on the
+three-arm freeze.
+
+\subsection{Probes}
+
+All Study~1 inputs are synthetic multi-turn tutoring scenarios. No learner
+accounts. No personal data. We average five independent repeats per arm. The
+freeze includes a multi-turn topic interruption (core drift), continue-a-plan
+after a break (re-orientation), and shorter and longer variants in the same
+suite so we do not overfit to two scripts.
+
+\subsection{How we ran the freeze}
+
+Each arm ran as its own server configuration (oversight is a process-level
+flag). We stored run metadata (git SHA, model id, arm label) with turn-level
+results. For each arm we report the mean pass rate across five repeats, with
+the observed range. These are measured compliance rates under a fixed harness,
+not population estimates with confidence intervals.
+
+\subsection{What Study 1 deliberately is not}
+
+Study~1 does not measure cognitive load, learning gain, or preference; those
+belong to the human protocol (\S\ref{sec:feasibility}). Study~1 asks whether
+the scaffold stays on the page when we ask the system to keep it there.
+
+\subsection{Results}
+\label{sec:study1results}
+
+Table~\ref{tab:freeze} reports mean structural pass rates over five repeats on
+the frozen multi-turn suite (\texttt{google:gemini-2.5-flash}).
+
+\begin{table}[t]
+\caption{Structural adherence on the multi-turn probe suite (mean; ranges in
+parentheses). Turn-aware scoring allows correct redirects to use a short
+boundary template; strict scoring demands full tutoring markers on every
+turn.}
+\label{tab:freeze}
+\footnotesize
+\centering
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
+\toprule
+Metric & Baseline & Prompt-only & Oversight \\
+\midrule
+Overall (turn-aware)
+  & 0\% (0--0\%)
+  & \textbf{76\%} (50--93\%)
+  & \textbf{80\%} (71--86\%) \\
+Late-turn (turn-aware)
+  & 0\% (0--0\%)
+  & \textbf{86\%} (71--100\%)
+  & \textbf{89\%} (86--100\%) \\
+Overall (strict)
+  & 0\% (0--0\%)
+  & 67\% (50--79\%)
+  & 71\% (64--79\%) \\
+Late-turn (strict)
+  & 0\% (0--0\%)
+  & 77\% (71--86\%)
+  & 80\% (71--86\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Baseline is \textbf{0\% (0--0\%)} on both checklists across five repeats:
+unconstrained replies still answer the probes, but they never emit the
+required ADHD-supportive shape. That zero is not a straw man: it is what the
+deployed default tutor produces under the same probes, so the informative
+contrast for this paper is prompt-only vs oversight. Prompt-only Assist
+produces the large jump
+(turn-aware \textbf{76\%} overall~/~\textbf{86\%} late; strict \textbf{67\%}~/
+\textbf{77\%}). Oversight adds a further lift (turn-aware \textbf{80\%}~/
+\textbf{89\%} late; strict \textbf{71\%}~/~\textbf{80\%}), about four points
+in aggregate, with larger gains on residual hard turns (plan resume and
+post-interrupt failures that the prompt arm still misses). Strict
+rates run lower than turn-aware because intentional redirects fail a
+full-marker checklist by design; we claim scaffold adherence here, not content
+invariance under Dean rewrite.

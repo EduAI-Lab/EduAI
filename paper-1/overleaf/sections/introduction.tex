@@ -1,0 +1,119 @@
+\section{Introduction}
+\label{sec:intro}
+
+Students already treat LLM chat as an ordinary study tool. The product shows
+up as a blank box and a stream of answers, which would pose no problem if
+every answer were easy to scan and easy to re-enter after an interruption.
+
+In practice it is not. Default replies look like essays: long continuous prose, several
+threads in one answer, almost no help if you leave and come back. The design
+assumes the reader can hold attention, keep the answer in working memory, and
+pick up after a distraction. For many students with ADHD, those assumptions
+are where accessibility breaks. Walls of text raise extraneous load. Missing
+signposts make tab-switching expensive. Compound answers invite more drift on
+the next turn.
+
+So people try prompts. Students with ADHD (and instructors trying to help) ask
+the model to ``summarize first,'' ``use three bullets,'' ``take one step at a
+time,'' or ``don't digress.'' That can work for a turn. It rarely sticks for a
+session. The model is trained to sound helpful and fluent; multi-turn context
+pulls it back toward verbosity, topic-merge, and essay form. If ADHD support
+only works when the user re-pleads for structure on every message,
+accessibility depends on perfect prompting. That is not a reliable interactive
+system.
+
+The interface question, then, is larger than one better system prompt. What
+should the tutoring product do when dialogue context drifts? We argue it has
+to \emph{steer and check} generative replies, not just ask politely.
+
+\paragraph{What this work does.}
+Instead of accepting long, unstructured answers that can overwhelm students
+with ADHD, we apply research-backed structure rules so tutoring replies stay
+focused and clearly shaped. Then we verify each draft with a second AI before
+the student sees it. Asking the model once to ``stay short'' is prompting.
+Writing those rules into the system and checking every reply against them
+before emit is \textbf{enforcement}. Making ADHD-supportive LLM tutoring
+reliable is an enforcement problem, not a prompting problem.
+
+That claim has consequences we can measure. Unconstrained models almost never
+hold the scaffold we need. Putting the rules in the prompt recovers most of
+it. A second-pass checker can add a further adherence gain without changing
+the underlying model, retrieval, or tools. We also ran a small ADHD human
+pilot (overload, comprehension, usability) as an early step toward inclusive
+AI tutoring; we report it as a feasibility check rather than as confirmatory
+proof that Assist reduces cognitive load.
+
+We implement this approach inside \textbf{EduAI} as \textbf{ADHD Assist}.
+Assist is a response-shape policy grounded in the literature (five pillars),
+not a second chat product.
+
+The enforcement piece is a Router$\to$Teacher$\to$Student$\to$\textbf{Dean}
+pipeline adapted from Liu et~al.'s oversight
+pattern~\cite{liu2024socraticlm}. The Dean's job is narrow. It judges a full
+draft against a written constitution for structure (length, summary~/~Next?,
+turn profile). When Assist+oversight is on, it may revise that draft
+\emph{before} the learner sees it. Figure~\ref{fig:pipeline} shows the path
+from learner message to stream-out.
+
+One boundary matters up front. Guided Socratic discovery in a separate AiTutor
+extension is related platform work. This paper's contribution is the
+structural Assist layer in core chat. We do not claim that pedagogy here.
+
+\subsection{Research questions}
+\label{sec:rqs}
+
+We keep four programme questions. They are not equal empirical claims in this
+paper.
+
+\begin{description}
+  \item[RQ1] Which response attributes support ADHD learners?
+    \emph{Role here:} design rationale (pillars + technique$\times$symptom
+    mesh; mesh cells argued, not measured). Home: \S\ref{sec:design}.
+  \item[RQ2] Can an LLM keep those patterns across multi-turn use?
+    \emph{Role here:} supporting result (baseline drift vs assist arms).
+    Home: \S\ref{sec:study1}.
+  \item[RQ3] Does a second oversight layer improve adherence over prompting
+    alone? \emph{Role here:} \textbf{primary research question.}
+    Home: \S\ref{sec:system}--\ref{sec:study1}.
+  \item[RQ4] Does Assist improve load~/~learning for ADHD students vs
+    baseline? \emph{Role here:} protocol feasibility + descriptive human
+    metrics only; \textbf{not} confirmatory. Home: \S\ref{sec:feasibility}.
+\end{description}
+
+\paragraph{Primary RQ (this paper).}
+Does a second-pass oversight layer improve structural scaffold adherence over
+prompting alone when multi-turn interaction causes drift?
+
+\subsection{Contributions}
+
+\begin{enumerate}
+  \item \textbf{Design (\S\ref{sec:design}).}
+    Five ADHD Assist pillars (concise, structured, progressively disclosed,
+    single-focus, gentle redirect) and a theoretical technique $\times$
+    symptom mesh that states which deficits each pillar is meant to repair,
+    including honest under-coverage (reward~/~deep metacognition).
+  \item \textbf{System (\S\ref{sec:system}).}
+    An interactive control path in EduAI: same model, retrieval, tools, and
+    temperature across arms; Assist = policy prepend $\pm$ Dean audit on a
+    full draft before stream-out to the learner (style-only IV).
+  \item \textbf{Measured ablation (\S\ref{sec:study1}).}
+    On multi-turn probes (5$\times$ repeats, Gemini~2.5 Flash), baseline
+    structural pass is \textbf{0\%}; assist-prompt-only reaches
+    \textbf{67\%} strict~/~\textbf{76\%} turn-aware; assist+oversight reaches
+    \textbf{71\%} strict~/~\textbf{80\%} turn-aware (late-turn turn-aware
+    \textbf{86\%~$\rightarrow$~89\%}). The oversight lift is real but modest.
+    Turn-aware pass is the primary metric for assist comparisons because
+    strict scoring under-credits correct redirects.
+\end{enumerate}
+
+Alongside these contributions, a short within-person ADHD pilot (H26-00906;
+$n{=}6$ analyzed) validated that the protocol and Assist toggle are operable
+as a study task (\S\ref{sec:feasibility}). We report it as feasibility
+validation only; powered human outcomes are left to a follow-on study.
+
+The remainder of the paper reviews related work and the gap it leaves
+(\S\ref{sec:related}), presents the design rationale (\S\ref{sec:design}) and
+system (\S\ref{sec:system}), reports the synthetic evaluation
+(\S\ref{sec:study1}) and the human feasibility pilot
+(\S\ref{sec:feasibility}), and closes with discussion
+(\S\ref{sec:discussion}) and limitations (\S\ref{sec:limitations}).

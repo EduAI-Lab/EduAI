@@ -1,0 +1,147 @@
+%% ============================================================================
+%% ADHD Assist — Paper 1 (ACM IUI 2027)
+%% Overleaf: Compiler = pdfLaTeX · Main = main.tex
+%% Layout: two-column ACM conference (sigconf).
+%% For double-blind PCS submission, switch to:
+%%   \documentclass[sigconf,anonymous,review]{acmart}
+%% (the `anonymous` option is what printed "Anonymous Author(s)" / "Anon.")
+%% ============================================================================
+\documentclass[sigconf]{acmart}
+
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{balance}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
+
+%% Quiet / clean ACM chrome for drafting
+\setcopyright{none}
+\settopmatter{printacmref=false}
+
+\acmConference[IUI '27]{29th International Conference on
+  Intelligent User Interfaces}{February 2027}{Helsinki, Finland}
+\acmBooktitle{IUI '27: 29th International Conference on Intelligent User Interfaces,
+  February 2027, Helsinki, Finland}
+\acmYear{2027}
+\copyrightyear{2027}
+\acmDOI{XX.XXXX/XXXXXXX.XXXXXXX}
+\acmISBN{978-1-4503-XXXX-X/27/02}
+
+\author{Ahab Masud Siddiqui}
+\affiliation{%
+  \institution{University of British Columbia, Okanagan Campus}
+  \city{Kelowna}
+  \country{Canada}
+}
+\email{ahabmasudsiddiqui@gmail.com}
+
+\author{Abdallah Mohamed}
+\affiliation{%
+  \institution{University of British Columbia, Okanagan Campus}
+  \city{Kelowna}
+  \country{Canada}
+}
+%% TODO: confirm supervisor's preferred contact email before submission
+%% \email{...}
+
+\renewcommand{\shortauthors}{Siddiqui and Mohamed}
+
+\title[Enforcing ADHD-Supportive Structure in LLM Tutors]{%
+  Beyond Prompting: Enforcing ADHD-Supportive Structure in LLM Tutors
+  with a Second-Pass Oversight Layer}
+
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+
+\keywords{ADHD, accessibility, large language models, intelligent tutoring
+systems, cognitive load, AI oversight, neurodivergence, user control}
+
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10003120.10003121.10003129</concept_id>
+  <concept_desc>Human-centered computing~Interactive systems and tools</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10003120.10003121.10003124.10010392</concept_id>
+  <concept_desc>Human-centered computing~Accessibility systems and tools</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010147.10010178.10010179</concept_id>
+  <concept_desc>Computing methodologies~Natural language processing</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Human-centered computing~Interactive systems and tools}
+\ccsdesc[500]{Human-centered computing~Accessibility systems and tools}
+\ccsdesc[300]{Computing methodologies~Natural language processing}
+
+%% General system diagram on page 1, directly under the title block.
+\begin{teaserfigure}
+\centering
+\input{figures/fig1-pipeline}
+\caption{ADHD Assist runtime path in EduAI. Router selects turn profile and
+caps; Teacher applies structure policy; the model writes a full draft. If
+Dean is on, the draft is audited against the constitution and may be fixed
+before stream-out; if off, the draft emits unchecked. Adapted from Liu
+et~al.'s Dean oversight cadence~\cite{liu2024socraticlm}.}
+\Description{Flowchart from learner message through Router, Teacher policy,
+model draft, optional Dean audit and rewrite, then stream to learner.}
+\label{fig:pipeline}
+\end{teaserfigure}
+
+\begin{document}
+\maketitle
+
+\input{sections/introduction}
+\input{sections/related}
+\input{sections/design}
+\input{sections/system}
+\input{sections/study1}
+\input{sections/feasibility}
+\input{sections/discussion}
+\input{sections/limitations}
+\input{sections/conclusion}
+
+\begin{acks}
+This work is part of the EduAI research programme at UBC Okanagan.
+The human feasibility pilot operates under UBC BREB approval H26-00906.
+\end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{refs}
+\balance
+
+%% <!--
+%% FORMAT AUDIT COMPLETE — A* CONFERENCE CHECKLIST
+%% ================================================
+%% [x] Section order: Abstract -> Intro -> Related Work -> Design/System
+%%     (methodology) -> Study 1 Methods+Results -> Human Feasibility ->
+%%     Discussion -> Limitations -> Conclusion -> Acks -> References
+%% [x] Abstract covers: Problem, Approach, Eval design, Key results
+%%     (0% / 76% / 80%; late 86->89%), Contribution
+%% [x] All figures placed at top of page / teaser — none mid-paragraph
+%% [x] All figures cited in body text before they appear
+%%     (fig:pipeline cited in Intro; fig:threearms cited in System 4.1)
+%% [x] Tables: tab:mesh cited (3.3), tab:freeze cited (5.6),
+%%     tab:arms cited (4.1), tab:profiles cited (4.3)
+%% [x] Figure captions below figures (acmart default)
+%% [x] Table captions above tables (acmart forces this)
+%% [x] Heading hierarchy: max 3 levels, auto-numbered by acmart
+%% [x] References: ACM-Reference-Format, all \cite keys resolve in refs.bib
+%% [x] Limitations is its own numbered section
+%% [x] Ethics/IRB: H26-00906 stated in Sec. 6 (Human Protocol) and Acks
+%%
+%% FORMAT-NOTES REQUIRING AUTHOR ATTENTION:
+%% 1. Supervisor email TODO in author block.
+%% (Resolved 2026-07-14: abstract numbers added; tab:arms and tab:profiles
+%%  now cited in text.)
+%% -->
+
+\end{document}

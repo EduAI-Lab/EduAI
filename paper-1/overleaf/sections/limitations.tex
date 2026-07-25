@@ -1,0 +1,41 @@
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Synthetic structure $\neq$ lived load.}
+Passing a structural checklist is not the same as reducing cognitive load for
+a student with ADHD. Study~1 measures scaffold presence, not subjective
+effort.
+
+\paragraph{Modest oversight lift.}
+On the frozen Gemini~2.5 Flash runs, oversight beats prompt-only by a few
+points on aggregate rates. Some leftover misses are rewrite truncation and
+detector brittleness.
+
+\paragraph{Metric choice.}
+Strict scoring under-credits correct redirects, which is why turn-aware rates
+serve as the primary comparison; both are reported throughout.
+
+\paragraph{Single model, single platform.}
+Table~\ref{tab:freeze} freezes one model family on EduAI
+(\texttt{gemini-2.5-flash}), with Student and Dean on the same model.
+Exploratory Assist-on runs on local Qwen~7B and~32B (outside the freeze;
+partial matrix, not a second 5$\times$ suite) suggest stronger models follow
+the full ADHD policy more reliably during first-pass generation. That points
+to model capacity mattering most at the pedagogical generation stage. Future
+work should test whether narrower oversight can be delegated to smaller models
+without sacrificing compliance, establishing a quality--latency--cost
+frontier. The architecture allows a separately sized Dean; that split is not
+evaluated in Study~1.
+
+\paragraph{Pilot scope.}
+The $n{=}6$ preview pilot cannot confirm efficacy. It is protocol evidence,
+not an outcome trial.
+
+\paragraph{Mesh is design synthesis.}
+Strong~/~Partial~/~Indirect cells are literature-argued, not Study~1 clinical
+outcomes.
+
+\paragraph{Latency.}
+Oversight adds a second model call on audited turns. We have not
+systematically measured latency distributions and did not treat latency as an
+outcome.

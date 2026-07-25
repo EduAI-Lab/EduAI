@@ -1,0 +1,58 @@
+%% Figure 2 — three Study 1 arms (compact; fits figure* width)
+\begin{tikzpicture}[
+  font=\sffamily\scriptsize,
+  >=Stealth,
+  node distance=1.6mm and 1.8mm,
+  box/.style={
+    draw=black!65, rounded corners=1pt, align=center,
+    inner sep=2.4pt, minimum height=7.2mm, text width=17.2mm,
+    fill=black!3, line width=0.4pt
+  },
+  policy/.style={box, fill=black!8},
+  dean/.style={box, fill=black!14},
+  arr/.style={-{Stealth[length=1.3mm]}, thick, draw=black!70},
+  arm/.style={
+    draw=black!40, rounded corners=1.5pt, inner sep=2.8pt,
+    line width=0.5pt
+  },
+  title/.style={font=\sffamily\tiny\bfseries, anchor=west}
+]
+  %% Arm 1
+  \node[box] (b1) {Learner\\message};
+  \node[box, right=of b1] (b2) {Drafting model\\(no ADHD policy)};
+  \node[box, right=of b2] (b3) {Learner sees\\reply};
+  \draw[arr] (b1) -- (b2);
+  \draw[arr] (b2) -- (b3);
+  \node[arm, fit=(b1)(b2)(b3), inner ysep=4.2mm, inner xsep=2.2mm] (B) {};
+  \node[title] at ([xshift=1mm,yshift=-0.15mm]B.north west) {Arm 1 · Baseline};
+
+  %% Arm 2
+  \node[box, below=9mm of b1] (p1) {Learner\\message};
+  \node[policy, right=of p1] (p2) {Teacher policy ON\\ADHD structure};
+  \node[box, right=of p2] (p3) {Drafting\\model};
+  \node[box, right=of p3] (p4) {Learner sees\\reply (Dean off)};
+  \draw[arr] (p1) -- (p2);
+  \draw[arr] (p2) -- (p3);
+  \draw[arr] (p3) -- (p4);
+  \node[arm, fit=(p1)(p2)(p3)(p4), inner ysep=4.2mm, inner xsep=2.2mm] (P) {};
+  \node[title] at ([xshift=1mm,yshift=-0.15mm]P.north west) {Arm 2 · Assist (prompt-only)};
+
+  %% Arm 3
+  \node[box, below=9mm of p1] (o1) {Learner\\message};
+  \node[policy, right=of o1] (o2) {Teacher policy ON\\ADHD structure};
+  \node[box, right=of o2] (o3) {Drafting\\model};
+  \node[dean, right=of o3] (o4) {Dean ON\\judge \& revise};
+  \node[box, right=of o4] (o5) {Learner sees\\checked reply};
+  \draw[arr] (o1) -- (o2);
+  \draw[arr] (o2) -- (o3);
+  \draw[arr] (o3) -- (o4);
+  \draw[arr] (o4) -- (o5);
+  \node[arm, fit=(o1)(o2)(o3)(o4)(o5), inner ysep=4.2mm, inner xsep=2.2mm] (O) {};
+  \node[title] at ([xshift=1mm,yshift=-0.15mm]O.north west) {Arm 3 · Assist + oversight};
+
+  %% legend
+  \node[box, minimum height=4.5mm, text width=11mm, below=3.2mm of O.south west, anchor=north west, xshift=1mm] (lg1) {path};
+  \node[policy, minimum height=4.5mm, text width=15mm, right=2mm of lg1] (lg2) {Teacher};
+  \node[dean, minimum height=4.5mm, text width=12mm, right=2mm of lg2] (lg3) {Dean};
+  \node[font=\sffamily\tiny, text=black!55, right=2mm of lg3] {Same drafting model in all arms.};
+\end{tikzpicture}

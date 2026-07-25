@@ -1,0 +1,30 @@
+%% Figure 1 — runtime control path (teaser width; uncrowded linear flow)
+\begin{tikzpicture}[
+  font=\sffamily\footnotesize,
+  >=Stealth,
+  node distance=5mm,
+  stage/.style={
+    draw=black!70, rounded corners=1.5pt, align=center,
+    inner sep=4pt, minimum height=11mm, text width=20.5mm,
+    fill=black!4, line width=0.5pt
+  },
+  dean/.style={stage, fill=black!10, text width=25mm},
+  emit/.style={stage, fill=black!14},
+  arr/.style={-{Stealth[length=2mm]}, thick, draw=black!75},
+  lab/.style={font=\sffamily\scriptsize, text=black!65}
+]
+  \node[stage] (L) {Learner\\message};
+  \node[stage, right=of L] (R) {Router\\turn profile\\+ length caps};
+  \node[stage, right=of R] (T) {Teacher\\ADHD structure\\policy};
+  \node[stage, right=of T] (M) {Model\\full draft\\(held server-side)};
+  \node[dean, right=of M] (D) {Dean\\judge vs constitution;\\fix or rewrite};
+  \node[emit, right=of D] (O) {Reply streams\\to learner};
+
+  \draw[arr] (L) -- (R);
+  \draw[arr] (R) -- (T);
+  \draw[arr] (T) -- (M);
+  \draw[arr] (M) -- node[lab, below, yshift=-1pt] {Dean on} (D);
+  \draw[arr] (D) -- (O);
+  \draw[arr] (M.north) to[out=30, in=150]
+    node[lab, above, pos=0.5] {Dean off: skip audit} (O.north);
+\end{tikzpicture}

@@ -1,0 +1,153 @@
+\section{System: Instantiation in EduAI}
+\label{sec:system}
+
+\begin{figure*}[t]
+\centering
+\input{figures/fig2-three-arms}
+\caption{Three Study~1 arms on the Teacher--Dean control stack.
+Baseline uses the drafting model alone. Prompt-only Assist adds the ADHD
+structure policy but skips Dean. Oversight adds Dean judge-and-revise before
+the learner sees the reply. Same drafting model in all arms.}
+\Description{Three horizontal pipelines comparing baseline, prompt-only
+Assist, and Assist with Dean oversight.}
+\label{fig:threearms}
+\end{figure*}
+
+ADHD Assist is not a second chat product. It is a mode inside EduAI chat: a
+toggle, a structure policy, and an optional second-pass check before the
+learner sees the reply.
+
+When the mode is off, EduAI tutors as usual. When it is on, the model,
+retrieval, tools, and temperature stay the same. What changes is whether
+replies are asked to follow an ADHD-supportive shape, and whether that shape
+is checked before emit.
+
+\subsection{The Dean-guided pipeline}
+\label{sec:pipeline}
+
+Liu et~al.\ use a \textbf{Dean--Teacher--Student} pipeline for tutoring
+dialogues~\cite{liu2024socraticlm}. Three LLM agents interact. The Dean judges
+whether the Teacher's turn meets stated teaching requirements and may revise
+that turn before the Student sees it. That judge-and-revise step is the piece
+we keep.
+
+We adapt the pattern for ADHD Assist in EduAI. Two differences matter:
+\begin{enumerate}
+  \item Our final audience is a \textbf{human learner}, not a simulated
+    Student agent.
+  \item We add a \textbf{Router} that decides turn type before generation.
+    SocraticLM does not have that gate.
+\end{enumerate}
+
+Study~1 then turns the adapted stack into three enforcement depths.
+Figure~\ref{fig:threearms} is that comparison (Figure~\ref{fig:pipeline} in
+\S\ref{sec:intro} is the single runtime flowchart with Router detail).
+
+
+\paragraph{Router.}
+The Router runs first on Assist-on turns. It assigns a turn profile (full
+tutoring, brief clarification, redirect, greeting, confirmation, meta). That
+profile decides whether the full scaffold is required and whether the Dean may
+intervene. Without it, Assist would hang a tutoring template on everyday
+``thanks'' messages. Baseline skips Assist, so it also skips this
+Assist-scoped routing.
+
+\paragraph{Teacher.}
+When Assist is on, the ADHD Assist policy is prepended to the system prompt
+(scoped by profile). Those rules are the requirements the Dean later checks.
+In Study~1, the \textbf{prompt-only} arm stops here: Teacher on, Dean off.
+
+\paragraph{Drafting model.}
+EduAI's ordinary generation path writes the first-pass reply in every arm.
+When oversight is on, the draft is held server-side so the Dean sees a
+complete answer, not a half-streamed fragment. The learner does not read the
+raw first pass when the Dean is scheduled to run.
+
+\paragraph{Dean.}
+The Dean is the oversight role. It judges whether the draft meets the ADHD
+Assist constitution for this profile. If not, it revises before presentation:
+deterministic structural fixes when possible, otherwise a second model
+rewrite. Greeting, confirmation, and meta turns skip the Dean. We supervise
+\textbf{structure}, not Socratic questioning style. In the runs reported
+here, the Dean is served by the same model as the drafting model
+(\texttt{google:gemini-2.5-flash}). Running the Dean on a separately sized
+model is possible in the architecture but is not evaluated in this paper;
+exploratory capacity notes and a quality--latency--cost follow-on appear in
+Section~\ref{sec:limitations}. The Dean appears only in the oversight arm of
+Figure~\ref{fig:threearms}.
+Table~\ref{tab:arms} summarizes what is on in each arm.
+
+\begin{table}[t]
+\caption{Study~1 arms: what is on for each enforcement depth.}
+\label{tab:arms}
+\small
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Arm & Teacher policy & Dean \\
+\midrule
+Baseline & off & off \\
+Prompt-only & on & off \\
+Oversight & on & on \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Style is the only planned difference}
+\label{sec:iv}
+
+Across Study~1 arms we freeze the chat model, retrieval, tools, temperature,
+and streaming contract. We only change whether the Teacher policy is prepended
+and whether the Dean runs. Second-pass latency is an engineering cost of
+oversight, not a second research factor; we have not systematically measured
+latency distributions and report no latency outcomes here.
+
+This paper claims the ADHD Assist structural layer in EduAI core chat. Guided
+discovery on a separate tutoring surface is related platform work, not this
+contribution.
+
+\subsection{Turn profiles}
+\label{sec:profiles}
+
+Table~\ref{tab:profiles} lists when the full scaffold and the Dean apply.
+
+\begin{table}[b]
+\caption{Turn profiles: when full scaffold and Dean apply.}
+\label{tab:profiles}
+\small
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Profile & Full scaffold? & Dean? \\
+\midrule
+Full tutoring, brief clarification & yes & yes, if draft fails \\
+Redirect & no (boundary template) & yes, if template fails \\
+Greeting, confirmation, meta & no & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Study~1 therefore reports \textbf{turn-aware (profile) pass} as the primary
+comparison between assist arms: a correct redirect should not be forced into
+a Top summary block. The interface may show TLDR~/~Continue; metrics still
+use Top summary~/~Next?.
+
+\subsection{What the Dean may change}
+
+The constitution asks three questions:
+\begin{enumerate}
+  \item Does the draft match the shape required for this profile?
+  \item Is it under the word cap and single-focus rules when those apply?
+  \item Can we restore compliance without inventing course facts?
+\end{enumerate}
+
+The Dean may restore markers, trim over-cap text, and push redirects onto the
+boundary template. It is not a second tutor rewriting pedagogy. Until a
+sampled content-parity audit is published, Results claim scaffold adherence
+only, not that structure changes never touch facts.
+
+\subsection{Hand-off to Study~1}
+
+Study~1 runs the same synthetic turns through the same system and model at
+three enforcement depths (baseline, prompt-only, oversight), which is exactly
+the contrast the primary research question requires.

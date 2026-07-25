@@ -1,0 +1,19 @@
+%% Figure 1 (intro overview): ADHD Assist control path in EduAI
+%% Adapted from Liu et al. (2024) Dean oversight cadence.
+%% Labels: short but self-explanatory (what happens, not role jargon alone).
+
+flowchart LR
+  L[Learner sends<br/>a tutoring message] --> R[Router picks<br/>turn type and length caps]
+  R --> P[Teacher policy applies<br/>ADHD structure rules]
+  P --> D[Model writes a<br/>full draft reply]
+  D --> C{Second-pass<br/>Dean check on?}
+  C -->|no: skip check| Out[Reply streams<br/>to the learner]
+  C -->|yes: audit draft| J[Dean judges draft<br/>vs structure rules]
+  J -->|rules met| Out
+  J -->|rules broken| F[Dean fixes or<br/>rewrites the draft]
+  F --> Out
+
+  style L fill:#f5f5f5,stroke:#333
+  style Out fill:#e8f5e9,stroke:#2e7d32
+  style J fill:#fff3e0,stroke:#ef6c00
+  style F fill:#fff3e0,stroke:#ef6c00

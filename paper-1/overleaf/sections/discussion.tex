@@ -1,0 +1,44 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The primary question is narrow: when multi-turn tutoring causes
+ADHD-supportive scaffolds to slip, does second-pass oversight improve
+structural adherence over a structure policy in the prompt alone?
+
+Study~1 gives a three-part answer. Unconstrained tutoring almost never produces
+the required scaffolds (\textbf{0\%}). The ADHD Assist policy recovers most of
+the structure ($\sim$\textbf{76\%} turn-aware overall; $\sim$\textbf{86\%}
+late). Oversight adds a further, measured but modest lift
+($\sim$\textbf{80\%}~/~$\sim$\textbf{89\%} late), with larger gains on residual
+hard turns. The aggregate gain from oversight is modest; the more important
+contribution is architectural.
+
+The takeaway is not that oversight replaces prompting. Reliable
+ADHD-supportive structure is a \textbf{control stack}: written policy,
+turn-aware routing, and an optional auditor that can revise a draft before the
+learner sees it. Prompting does most of the work. Oversight is residual
+insurance for multi-turn failure modes the prompt does not fully close. For a
+tutor that must keep ADHD-supportive structure on by default, that stack is
+the contribution: steering generative replies at the interface, with model,
+retrieval, tools, and decoding held fixed.
+
+We measured scaffold presence under automated checks. Hallucination motivated
+the desire for control but was not a primary dependent variable. The human
+pilot ($n{=}6$; Table~\ref{tab:pilot}) shows the protocol is operable and
+paired descriptives lean Assist-ward; that is feasibility evidence, not a
+population claim. Whether Assist helps students with ADHD \emph{more} than
+their peers is a question for the powered follow-on study.
+
+The modest oversight lift still supports the enforcement thesis, provided the
+claim is kept at its actual size. We do not claim near-perfect overall rates,
+confirmatory load reduction, or ADHD exclusivity.
+
+Model capacity is a separate follow-on question. Study~1 freezes one drafting
+model and uses that same model for Dean rewrites. Exploratory Assist-on runs
+outside the freeze (local Qwen~7B vs.~32B, alongside the Flash baseline;
+partial matrix, not a second frozen suite) suggest stronger models follow the
+full ADHD policy more reliably during first-pass generation. Capacity
+therefore looks most consequential at the pedagogical generation stage.
+Future work should test whether narrower oversight can be delegated to smaller
+models without sacrificing compliance, establishing a quality--latency--cost
+frontier, rather than assuming every role needs the largest available model.

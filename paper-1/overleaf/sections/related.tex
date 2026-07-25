@@ -1,0 +1,136 @@
+%% Renamed from "Background and Related Work" to the canonical A* section name.
+\section{Related Work}
+\label{sec:related}
+
+Default LLM tutors reward fluent paragraphs. That design assumes the learner
+can hold the whole turn in working memory, stay on one topic, and re-enter
+after a tab switch. For many students with ADHD, those assumptions fail in
+ordinary use. Prior work in three areas makes that failure predictable, yet
+none of it closes the gap that ADHD Assist addresses.
+
+\subsection{ADHD as a dimensional, multi-deficit condition}
+
+Start with the condition itself: ADHD is not one ``attention off'' switch.
+DSM-5 presentations (inattentive, hyperactive-impulsive, combined) sit on
+severity ranges, and executive-function accounts go
+deeper~\cite{apa2022dsm}. Barkley treats behavioral inhibition as core, with
+secondary damage to working memory, internalized speech, affect and motivation
+regulation, and reconstitution~\cite{barkley1997behavioral}. Brown clusters
+activation, focus, effort, emotion, memory, and action~\cite{brown2013new}.
+Adult evidence treats emotional dysregulation as more than a side
+effect~\cite{beheshti2020emotion}. Sonuga-Barke's dual pathway adds delay
+aversion and reward-motivation alongside executive
+dysfunction~\cite{sonuga2003dual}, so interest and near-term payoff can mask
+or amplify the same deficits.
+
+\paragraph{What we take.}
+Tutoring has to name \emph{which} deficit a reply shape is meant to repair
+(working memory, initiation, impulsivity, set-shifting, affect), not only
+``make chat nicer.''
+\paragraph{What we cannot claim from taxonomy alone.}
+That any particular UI or prompt \emph{works} until it is measured under use.
+
+The closest GenAI bridge is Zhu, Yu, and Luo~\cite{zhu2026scaffolding}. ADHD
+university students and experts co-design scaffolding that limits the visible
+agenda, prefers progressive tasks, and warns against cognition outsourcing and
+clinical overclaim. We take their interaction directions as primary
+human-grounded inspiration for the pillars. We do not treat their study as a
+measured evaluation of EduAI.
+
+\subsection{Cognitive load and accessibility foundations}
+
+Even if the diagnosis is clear, packaging still matters. Cognitive load theory
+separates intrinsic task demand from extraneous packaging and germane
+work~\cite{sweller2011cognitive}. Extraneous load rises when answers dump
+undifferentiated text. Working memory typically holds only a few chunks at
+once~\cite{cowan2010magical}. Accessibility guidance makes that concrete:
+W3C~COGA pushes clear purpose, hierarchy, plain language, and predictable
+structure, and names AD(H)D among populations that
+benefit~\cite{w3c2021coga}. Mayer's segmenting, signaling, and coherence
+principles~\cite{mayer2021multimedia}, and UDL's multiple means of
+representation~\cite{cast2018udl}, point the same way: signpost, chunk, and do
+not overwhelm the first surface.
+
+\paragraph{What we take.}
+Length caps, summary-first layout, and one-decision-at-a-time disclosure are
+load-management techniques with established warrants. They are not decorative
+``AI style.''
+\paragraph{What we cannot claim.}
+That CLT or COGA alone prove ADHD-specific superiority over neurotypical
+learners. Those frameworks are general. Whether Assist helps students with
+ADHD \emph{more} than peers is powered human follow-on work, not this paper's
+primary result.
+
+\subsection{LLM tutoring architecture and enforcement}
+
+A third literature designs LLM tutors as \emph{pipelines}, not single prompts.
+
+Liu et~al., SocraticLM, introduce a Dean--Teacher--Student pattern: a Dean
+judges whether a generated turn meets stated requirements and may revise it
+before presentation to the learner~\cite{liu2024socraticlm}. They also score
+tutor readability, productive refusal of irrelevant moves, and
+validate-and-move. We take the oversight \emph{cadence} and the
+readability~/~redirect vocabulary. We do \textbf{not} claim their Socratic
+fine-tuning gains or those score numbers as ours. Those metrics stay parked
+for later EduAI instrumentation.
+
+Saha, Hase, and Bansal show selective explanation can beat always-explain,
+that style exemplars beat long rule lists for compliance, and that a
+\emph{misaligned} teacher harms the trajectory~\cite{saha2023can}. This is
+perhaps the strongest evidence that prompting alone is fragile. Shani et~al.\ treat a
+written \emph{constitution} of tutoring quality over full dialogues and treat
+multi-topic teacher turns as violations~\cite{shani2024multiturn}; our
+single-focus pillar and Dean constitution borrow that framing. Chevalier
+et~al.\ warn that dialogue or style tuning without content checks can break
+subject accuracy~\cite{chevalier2024lmscience}, so oversight here must aim at
+\textbf{structure}, not inventing facts (key-point style grading motivates our
+content-parity discipline). Choudhury and Sodhi (\emph{Better than your
+teacher}~/~LEAP) argue for privileged teachers that see full drafts before a
+weak agent acts~\cite{choudhury2025better}; we take the
+full-draft-before-stream idea only as architectural analogy. Their benchmarks
+are not tutoring.
+
+Ma et~al.\ support simulated-learner QA infrastructure~\cite{ma2025students}.
+Big Five is not ADHD, so that line is useful for harnesses, not clinical
+claims. Heterogeneous-learner teaching theory (e.g., Zhang et~al.\
+MINT~\cite{zhang2023nonparametric}) motivates personalisation only at a high
+level. It does not justify a user-facing ADHD rule by itself.
+
+\subsection{Gap}
+\label{sec:gap}
+
+The components needed for a solution already exist in prior work. Zhu et~al.\
+show what ADHD-friendly scaffolding looks like in design workshops. Sweller,
+Cowan, and the W3C~COGA guidance explain why short, hierarchical, predictable
+replies reduce extraneous load. Saha et~al.\ and Shani et~al.\ show that
+teaching style needs selective policy and a written constitution, because
+open prompting is fragile. Liu et~al.\ (and LEAP-style full-draft review)
+show that a second agent can judge a turn and revise it before the learner
+sees it.
+
+What is missing is a single working tutoring control path that combines them.
+Two connections are required, and no prior system provides both. The first is
+design clarity: assembling the already-known technique-to-deficit warrants
+(from ADHD research, load theory, and co-design) into one explicit technique
+$\times$ deficit mesh for a tutoring product, and treating that mesh as the
+design constitution (\S\ref{sec:design}). The mapping is literature-grounded;
+Study~1 does not re-prove every cell as a clinical outcome. The second is
+system evaluation: writing that mesh as a runtime policy, adding a verifying
+second agent, and measuring structural adherence under multi-turn drift in
+three arms (baseline, prompt-only, oversight) while holding model, retrieval,
+and tools fixed. That is the appropriate test of whether enforcement beats
+prompting when dialogue context pulls the tutor off-scaffold.
+
+The closest prior systems stop one step short. Zhu et~al.\ motivate the
+patterns, but they do not run an enforceable Dean on a live tutor under drift
+probes. SocraticLM does include a Dean, yet its constitution is Socratic
+pedagogy, not ADHD load~/~structure rules, and it does not report our
+prompt-vs-oversight ablation. Selective-teaching and RLHF-education papers
+motivate policy and audit in general; they do not target ADHD scaffolds or
+late-turn structural pass under interruptions.
+
+This paper addresses that gap. We design the mesh, instantiate a
+Router / Teacher / Student / Dean control path in EduAI as
+control over reply shape, and measure whether oversight beats prompting under
+multi-turn drift. Human load and learning stay feasibility-only until we have
+powered evidence.
