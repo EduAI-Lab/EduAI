@@ -7,6 +7,7 @@ import {
   computeTimedChatProgress,
   estimateExpectedResponseMs,
   estimateFollowupRemainingMs,
+  resolveAwaitingFollowup,
   resolveChatProgressStage,
   type ChatProgressStage,
   type TimedChatProgress,
@@ -23,6 +24,12 @@ type MessageLike = {
     toolName?: string;
     state?: string;
   } | null> | null;
+};
+
+type ProgressEdgeRef = {
+  hasActiveTool: boolean;
+  fingerprint: string;
+  awaitingFollowup: boolean;
 };
 
 /**
@@ -60,12 +67,15 @@ export function useChatProgress(args: {
   } = args;
 
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [awaitingFollowup, setAwaitingFollowup] = useState(false);
   /** Monotonic wall-clock target for fill + “About Xs left”. */
   const [deadlineMs, setDeadlineMs] = useState(0);
   const [peakPercent, setPeakPercent] = useState(0);
-  const prevHadActiveToolRef = useRef(false);
-  const lastFingerprintRef = useRef("");
+  const edgeRef = useRef<ProgressEdgeRef>({
+    hasActiveTool: false,
+    fingerprint: "",
+    awaitingFollowup: false,
+  });
+  const wasAwaitingFollowupRef = useRef(false);
   const elapsedMsRef = useRef(0);
   elapsedMsRef.current = elapsedMs;
 
@@ -87,14 +97,34 @@ export function useChatProgress(args: {
     hasActiveTool,
   });
 
+  // Derive during render so tool → follow-up does not hide status for a frame.
+  const prev = edgeRef.current;
+  const awaitingFollowup = resolveAwaitingFollowup({
+    isLoading,
+    hasActiveTool,
+    hasAssistantText,
+    fingerprint,
+    prevHasActiveTool: prev.hasActiveTool,
+    prevFingerprint: prev.fingerprint,
+    prevAwaitingFollowup: prev.awaitingFollowup,
+  });
+  edgeRef.current = {
+    hasActiveTool: isLoading ? hasActiveTool : false,
+    fingerprint: isLoading ? fingerprint : "",
+    awaitingFollowup,
+  };
+
   useEffect(() => {
     if (!isLoading) {
       setElapsedMs(0);
-      setAwaitingFollowup(false);
       setDeadlineMs(0);
       setPeakPercent(0);
-      prevHadActiveToolRef.current = false;
-      lastFingerprintRef.current = "";
+      wasAwaitingFollowupRef.current = false;
+      edgeRef.current = {
+        hasActiveTool: false,
+        fingerprint: "",
+        awaitingFollowup: false,
+      };
       return;
     }
 
@@ -112,64 +142,21 @@ export function useChatProgress(args: {
   // Skip while follow-up owns a rebased short deadline.
   useEffect(() => {
     if (!isLoading || awaitingFollowup) return;
-    setDeadlineMs((prev) => Math.max(prev, typicalExpectedMs));
+    setDeadlineMs((prevDeadline) => Math.max(prevDeadline, typicalExpectedMs));
   }, [isLoading, awaitingFollowup, typicalExpectedMs]);
 
-  // Enter/leave tool activity. Only the active→inactive edge starts follow-up wait.
+  // Rebase deadline once when entering the post-tool follow-up window.
   useEffect(() => {
-    if (!isLoading) return;
-
-    const wasActive = prevHadActiveToolRef.current;
-    prevHadActiveToolRef.current = hasActiveTool;
-
-    if (hasActiveTool) {
-      setAwaitingFollowup(false);
+    if (!isLoading) {
+      wasAwaitingFollowupRef.current = false;
       return;
     }
-
-    if (wasActive && hasAssistantText) {
-      // If tokens already advanced in this same turn, skip the follow-up gap.
-      const textAlreadyAdvanced =
-        lastFingerprintRef.current.trim().length > 0 &&
-        fingerprint.trim().length > 0 &&
-        fingerprint !== lastFingerprintRef.current;
-
-      if (!textAlreadyAdvanced) {
-        setAwaitingFollowup(true);
-        const followupMs = estimateFollowupRemainingMs({
-          modelId,
-          adhdAssist,
-        });
-        // Rebase from *now* — do not rewrite the full-turn estimate against
-        // total elapsed (that falsely trips “longer than usual”).
-        setDeadlineMs(elapsedMsRef.current + followupMs);
-      }
+    if (awaitingFollowup && !wasAwaitingFollowupRef.current) {
+      const followupMs = estimateFollowupRemainingMs({ modelId, adhdAssist });
+      setDeadlineMs(elapsedMsRef.current + followupMs);
     }
-  }, [
-    isLoading,
-    hasActiveTool,
-    hasAssistantText,
-    fingerprint,
-    modelId,
-    adhdAssist,
-  ]);
-
-  // New assistant text clears the post-tool wait (follow-up generation started).
-  useEffect(() => {
-    if (!isLoading) return;
-    if (fingerprint === lastFingerprintRef.current) return;
-
-    const previous = lastFingerprintRef.current;
-    lastFingerprintRef.current = fingerprint;
-
-    if (
-      previous.trim().length > 0 &&
-      fingerprint.trim().length > 0 &&
-      fingerprint !== previous
-    ) {
-      setAwaitingFollowup(false);
-    }
-  }, [isLoading, fingerprint]);
+    wasAwaitingFollowupRef.current = awaitingFollowup;
+  }, [isLoading, awaitingFollowup, modelId, adhdAssist]);
 
   const stage = resolveChatProgressStage({
     elapsedMs,
@@ -190,7 +177,7 @@ export function useChatProgress(args: {
 
   useEffect(() => {
     if (!isLoading) return;
-    setPeakPercent((prev) => Math.max(prev, timed.percent));
+    setPeakPercent((prevPeak) => Math.max(prevPeak, timed.percent));
   }, [isLoading, timed.percent]);
 
   // Prefer streaming tokens while text is arriving. Re-show only for tools or

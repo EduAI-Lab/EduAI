@@ -359,10 +359,23 @@ export function assistantMessageHasText(
   return assistantTextFingerprint(message).trim().length > 0;
 }
 
+/** Terminal AI SDK v4 tool-invocation states (done — not in progress). */
+const TOOL_INVOCATION_DONE = new Set(["result"]);
+
+/** Terminal AI SDK tool-* part states (done — not in progress). */
+const TOOL_PART_DONE = new Set([
+  "output-available",
+  "output-error",
+  "result",
+]);
+
 /**
  * Best-effort *in-progress* tool name on the in-flight assistant message.
  * Completed tool cards must not keep the status row stuck on “Searching…”
  * (and must not block Assist’s later work stage).
+ *
+ * Missing `state` is treated as in-progress (optimistic): some stream shapes
+ * omit state while the tool is running. Only known terminal states clear it.
  */
 export function activeToolNameFromMessage(
   message: MessageLike | null | undefined,
@@ -378,8 +391,8 @@ export function activeToolNameFromMessage(
       const name = part.toolInvocation.toolName?.trim();
       if (!name) continue;
       const state = part.toolInvocation.state;
-      // AI SDK v4: call / partial-call while running; result when done.
-      if (!state || state === "result") continue;
+      // AI SDK v4: call / partial-call / missing while running; result when done.
+      if (state && TOOL_INVOCATION_DONE.has(state)) continue;
       return name;
     }
 
@@ -387,19 +400,47 @@ export function activeToolNameFromMessage(
       const name = (part.toolName || part.type.replace(/^tool-/, "")).trim();
       if (!name) continue;
       const state = part.state;
-      if (
-        !state ||
-        state === "output-available" ||
-        state === "output-error" ||
-        state === "result"
-      ) {
-        continue;
-      }
+      if (state && TOOL_PART_DONE.has(state)) continue;
       return name;
     }
   }
 
   return null;
+}
+
+/**
+ * Pure follow-up latch for multi-step tool → next-tokens gaps.
+ * Computed during render (not in an effect) so the compact status row does not
+ * disappear for a frame when a tool finishes.
+ */
+export function resolveAwaitingFollowup(input: {
+  isLoading: boolean;
+  hasActiveTool: boolean;
+  hasAssistantText: boolean;
+  fingerprint: string;
+  prevHasActiveTool: boolean;
+  prevFingerprint: string;
+  prevAwaitingFollowup: boolean;
+}): boolean {
+  if (!input.isLoading || input.hasActiveTool) return false;
+
+  const textAdvanced =
+    input.prevFingerprint.trim().length > 0 &&
+    input.fingerprint.trim().length > 0 &&
+    input.fingerprint !== input.prevFingerprint;
+
+  // Active → inactive edge after earlier tokens: enter follow-up unless tokens
+  // already advanced in the same turn.
+  if (input.prevHasActiveTool && input.hasAssistantText) {
+    return !textAdvanced;
+  }
+
+  // Stay latched until follow-up text arrives.
+  if (input.prevAwaitingFollowup) {
+    return !textAdvanced;
+  }
+
+  return false;
 }
 
 /**

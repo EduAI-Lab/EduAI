@@ -11,6 +11,7 @@ import {
   formatChatProgressElapsed,
   formatChatProgressRemaining,
   hasIncompleteEduaiDiagramFence,
+  resolveAwaitingFollowup,
   resolveChatProgressStage,
   resolveChatProgressStageId,
   shouldApplyAssistiveDisplayTransform,
@@ -340,6 +341,27 @@ describe("assistantMessageHasText / activeToolNameFromMessage", () => {
     ).toBeNull();
   });
 
+  it("treats missing tool state as in-progress (optimistic stream shapes)", () => {
+    expect(
+      activeToolNameFromMessage({
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-invocation",
+            toolInvocation: { toolName: "getInformation" },
+          },
+        ],
+      }),
+    ).toBe("getInformation");
+
+    expect(
+      activeToolNameFromMessage({
+        role: "assistant",
+        parts: [{ type: "tool-webSearch", toolName: "webSearch" }],
+      }),
+    ).toBe("webSearch");
+  });
+
   it("lets Assist prep win after RAG tools finish (#1171 review)", () => {
     expect(
       resolveChatProgressStageId({
@@ -403,6 +425,62 @@ console.log("still open`;
     expect(shouldApplyAssistiveDisplayTransform(withTrailingCode, true)).toBe(
       true,
     );
+  });
+});
+
+describe("resolveAwaitingFollowup", () => {
+  it("enters follow-up on the tool active→inactive edge without waiting an effect", () => {
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: true,
+        fingerprint: "Earlier",
+        prevHasActiveTool: true,
+        prevFingerprint: "Earlier",
+        prevAwaitingFollowup: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("skips follow-up when tokens already advanced with tool completion", () => {
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: true,
+        fingerprint: "Earlier\n\nFollow-up",
+        prevHasActiveTool: true,
+        prevFingerprint: "Earlier",
+        prevAwaitingFollowup: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("stays latched until fingerprint advances, then clears", () => {
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: true,
+        fingerprint: "Earlier",
+        prevHasActiveTool: false,
+        prevFingerprint: "Earlier",
+        prevAwaitingFollowup: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      resolveAwaitingFollowup({
+        isLoading: true,
+        hasActiveTool: false,
+        hasAssistantText: true,
+        fingerprint: "Earlier\n\nMore",
+        prevHasActiveTool: false,
+        prevFingerprint: "Earlier",
+        prevAwaitingFollowup: true,
+      }),
+    ).toBe(false);
   });
 });
 

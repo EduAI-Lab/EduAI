@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
@@ -64,6 +64,13 @@ export default function AdminChatPage() {
   const [adhdAssist, setAdhdAssist] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [webToolsEnabled] = useState(false);
+  const [routedModelByMessageId, setRoutedModelByMessageId] = useState<
+    Record<string, string>
+  >({});
+  const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
+    string | null
+  >(null);
+  const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const { assistive, setAssistive } = useAssistiveUi();
 
   useEffect(() => {
@@ -122,11 +129,27 @@ export default function AdminChatPage() {
       messages: chatMessages.slice(-1),
     }),
     onResponse: async (response) => {
+      // Same X-Routed-Model wiring as learning ChatScreen so timed progress
+      // estimates use the actual routed model (#1171).
+      const routedHeader = response.headers.get("X-Routed-Model")?.trim();
+      const routed =
+        routedHeader && routedHeader.length > 0 ? routedHeader : null;
+      pendingRoutedRegistryIdRef.current = routed;
+      setStreamingRoutedRegistryId(routed);
+
       await logChatApiResponse(response, "admin-chat");
       const chatIdHeader = response.headers.get("X-Chat-Id");
       if (chatIdHeader && !chatId) {
         setChatId(chatIdHeader);
       }
+    },
+    onFinish: (message) => {
+      const routed = pendingRoutedRegistryIdRef.current;
+      if (message.role === "assistant" && routed) {
+        setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+      }
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
     },
     onError: (error) => logChatUseChatError(error, "admin-chat"),
   });
@@ -219,6 +242,8 @@ export default function AdminChatPage() {
         onSubmit={handleSubmit}
         onStop={stop}
         onSelectPrompt={handlePromptSelect}
+        routedModelByMessageId={routedModelByMessageId}
+        streamingRoutedRegistryId={streamingRoutedRegistryId}
       />
     </CoreAppShell>
   );

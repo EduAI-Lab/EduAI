@@ -130,6 +130,7 @@ describe("useChatProgress — #1171", () => {
 
     expect(result.current.stage.id).toBe("searching_materials");
 
+    // Immediate first paint after tool completion — no effect-flush gap/flicker.
     rerender({ toolState: "result", content: "Earlier" });
     expect(result.current.showProgressIndicator).toBe(true);
     expect(result.current.compactProgress).toBe(true);
@@ -137,6 +138,33 @@ describe("useChatProgress — #1171", () => {
 
     rerender({ toolState: "result", content: "Earlier\n\nFollow-up" });
     expect(result.current.showProgressIndicator).toBe(false);
+  });
+
+  it("shows Searching… when tool-invocation state is omitted", () => {
+    const { result } = renderHook(() =>
+      useChatProgress({
+        isLoading: true,
+        messages: [
+          { id: "u1", role: "user", content: "hi" },
+          {
+            id: "a1",
+            role: "assistant",
+            content: "",
+            parts: [
+              {
+                type: "tool-invocation",
+                toolInvocation: { toolName: "getInformation" },
+              },
+            ],
+          },
+        ],
+        adhdAssist: false,
+        streamingRoutedRegistryId: "vllm:qwen",
+      }),
+    );
+
+    expect(result.current.stage.id).toBe("searching_materials");
+    expect(result.current.showProgressIndicator).toBe(true);
   });
 
   it("maps unknown in-progress tools to Working…", () => {
