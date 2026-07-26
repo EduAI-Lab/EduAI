@@ -1,24 +1,28 @@
-name: Backend Coverage Report
+name: Test Coverage Report
 
-# Tracks backend test coverage (unit + integration) for the three backend packages and
-# commits a Markdown summary to eduai-summer-2026/reports/ on a dedicated branch. No coverage
-# build artifacts (HTML/lcov) are committed — coverage/ stays gitignored; only the .md is pushed.
+# Tracks test coverage (unit + integration) across all workspaces with a test suite — the
+# three backend packages plus the frontend/UI suites — and commits a Markdown summary to
+# eduai-summer-2026/reports/ on a dedicated branch. No coverage build artifacts (HTML/lcov)
+# are committed — coverage/ stays gitignored; only the .md is pushed.
 
 on:
-  push:
-    branches: [development]
+  schedule:
+    # Every 3 days: on days 1,4,7,…,28,31 of the month at 09:00 UTC. (Cron has no true
+    # "every N days" operator; `*/3` on day-of-month resets each month, so the 31→1
+    # boundary is a 1-day gap — close enough for a full-suite coverage snapshot.)
+    - cron: '0 9 */3 * *'
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 concurrency:
-  group: backend-coverage-${{ github.ref }}
+  group: test-coverage-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   coverage:
-    name: Generate backend coverage report
+    name: Generate test coverage report
     runs-on: ubuntu-latest
 
     services:
@@ -125,20 +129,35 @@ jobs:
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
         run: npm run test:coverage -w question-maker-backend
 
+      - name: Coverage — @eduai/ui
+        continue-on-error: true
+        run: npm run test:coverage -w @eduai/ui
+
+      - name: Coverage — ai-tutor client
+        continue-on-error: true
+        run: npm run test:coverage -w ai-tutor
+
+      - name: Coverage — question-maker-frontend
+        continue-on-error: true
+        run: npm run test:coverage -w question-maker-frontend
+
       - name: Generate coverage report
         env:
           COMMIT_SHA: ${{ github.sha }}
-          REPORT_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.run_started_at }}
+          REPORT_TIMESTAMP: ${{ github.run_started_at }}
         run: node eduai-summer-2026/scripts/generate-coverage-report.js
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: backend-coverage-html
+          name: test-coverage-html
           path: |
             apps/core/coverage/
             apps/extensions/ai-tutor/server/coverage/
             apps/extensions/question-maker/app/backend/coverage/
+            packages/ui/coverage/
+            apps/extensions/ai-tutor/coverage/
+            apps/extensions/question-maker/app/frontend/coverage/
           if-no-files-found: warn
           retention-days: 14
 
@@ -148,7 +167,7 @@ jobs:
           REPORT_COMMIT_BRANCH: ${{ vars.REPORT_COMMIT_BRANCH }}
         run: |
           set -euo pipefail
-          REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-eduai-summer-2026}"
+          REPORT_BRANCH="${REPORT_COMMIT_BRANCH:-docs/coverage}"
           REPORT_FILE="eduai-summer-2026/reports/coverage/coverage-report.md"
 
           if [ ! -f "$REPORT_FILE" ]; then
@@ -188,5 +207,5 @@ jobs:
             exit 0
           fi
           
-          git commit -m "chore: update backend coverage report"
+          git commit -m "chore: update test coverage report"
           git push -u origin "$REPORT_BRANCH"
