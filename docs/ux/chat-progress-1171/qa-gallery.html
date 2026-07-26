@@ -134,6 +134,9 @@
       justify-content: space-between;
       gap: 12px;
     }
+    .status-left {
+      min-width: 0;
+    }
     .shimmer {
       font-size: 0.75rem;
       font-weight: 500;
@@ -150,11 +153,26 @@
       color: transparent;
       animation: shimmer 4s infinite linear;
     }
-    .elapsed {
+    .expected {
+      margin: 4px 0 0;
+      font-size: 11px;
+      color: color-mix(in oklab, var(--muted-foreground) 90%, transparent);
+    }
+    .timing {
       flex-shrink: 0;
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
       color: var(--muted-foreground);
+      text-align: right;
+    }
+    .timing-primary {
+      display: block;
+      font-weight: 500;
+      color: color-mix(in oklab, var(--foreground) 80%, transparent);
+    }
+    .timing-elapsed {
+      display: block;
+      opacity: 0.8;
     }
     .progress {
       position: relative;
@@ -166,12 +184,10 @@
       background: color-mix(in oklab, var(--primary) 20%, transparent);
     }
     .progress-bar {
-      position: absolute;
-      inset-block: 0;
-      width: 40%;
+      height: 100%;
       border-radius: 999px;
       background: var(--primary);
-      animation: pulse 1.4s ease-in-out infinite;
+      transition: width 0.35s ease-out;
     }
 
     /* Compact under streaming bubble */
@@ -207,10 +223,6 @@
     @keyframes shimmer {
       to { background-position: -200% center; }
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 0.55; }
-      50% { opacity: 1; }
-    }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -227,7 +239,9 @@
   <h1>#1171 — Course chat loading / progress UI</h1>
   <p class="subtitle">
     Visual QA gallery matching Core’s <code>ChatTypingIndicator</code> +
-    <code>useChatProgress</code> stages. Full bubble before tokens; compact row
+    <code>useChatProgress</code>. The bar fills against an <em>expected</em>
+    wait for the model/Assist path (“About Xs left”, “Usually ~Ys”) so ADHD
+    users can see how close they are. Full bubble before tokens; compact row
     only for tools / post-tool follow-up; streaming tokens stay primary.
   </p>
 
@@ -235,18 +249,26 @@
     <!-- Individual capture roots used by Playwright -->
     <section class="panel">
       <p class="panel-title">01 · Pre-token — Routing</p>
-      <p class="panel-desc">First ~450ms before <code>X-Routed-Model</code> arrives.</p>
+      <p class="panel-desc">First ~450ms before <code>X-Routed-Model</code> arrives. Bar starts low with remaining estimate.</p>
       <div class="capture" id="cap-routing">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
-          <div class="msg" data-chat-progress-stage="routing">
+          <div class="msg" data-chat-progress-stage="routing" data-chat-progress-percent="8">
             <div class="avatar">AI</div>
             <div class="status-card">
               <div class="status-row">
-                <div class="shimmer">Routing…</div>
-                <span class="elapsed">0s</span>
+                <div class="status-left">
+                  <div class="shimmer">Routing…</div>
+                  <p class="expected">Usually ~40s</p>
+                </div>
+                <span class="timing">
+                  <span class="timing-primary">About 40s left</span>
+                  <span class="timing-elapsed">0s elapsed</span>
+                </span>
               </div>
-              <div class="progress" role="progressbar" aria-valuetext="Routing…"><div class="progress-bar"></div></div>
+              <div class="progress" role="progressbar" aria-valuenow="8" aria-valuetext="Routing…. About 40s left. 0s elapsed.">
+                <div class="progress-bar" style="width: 8%"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -255,18 +277,26 @@
 
     <section class="panel">
       <p class="panel-title">02 · Pre-token — Waiting for model</p>
-      <p class="panel-desc">Slow local / large model TTFT (e.g. Qwen 32B) before first tokens.</p>
+      <p class="panel-desc">Slow local / large model TTFT (e.g. Qwen 32B). Fill tracks elapsed vs expected (~40s).</p>
       <div class="capture" id="cap-waiting">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
-          <div class="msg" data-chat-progress-stage="waiting_for_model">
+          <div class="msg" data-chat-progress-stage="waiting_for_model" data-chat-progress-percent="48">
             <div class="avatar">AI</div>
             <div class="status-card">
               <div class="status-row">
-                <div class="shimmer">Waiting for model…</div>
-                <span class="elapsed">12s</span>
+                <div class="status-left">
+                  <div class="shimmer">Waiting for model…</div>
+                  <p class="expected">Usually ~40s</p>
+                </div>
+                <span class="timing">
+                  <span class="timing-primary">About 28s left</span>
+                  <span class="timing-elapsed">12s elapsed</span>
+                </span>
               </div>
-              <div class="progress" role="progressbar" aria-valuetext="Waiting for model…"><div class="progress-bar"></div></div>
+              <div class="progress" role="progressbar" aria-valuenow="48" aria-valuetext="Waiting for model…. About 28s left. 12s elapsed.">
+                <div class="progress-bar" style="width: 48%"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -275,19 +305,27 @@
 
     <section class="panel">
       <p class="panel-title">03 · Pre-token — Searching course materials</p>
-      <p class="panel-desc">RAG tool in progress (<code>getInformation</code>) before any assistant text.</p>
+      <p class="panel-desc">RAG tool in progress (<code>getInformation</code>). Expected wait includes tool overhead.</p>
       <div class="capture" id="cap-searching">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
           <div class="tool-card"><div class="spinner"></div> Searching course materials…</div>
-          <div class="msg" data-chat-progress-stage="searching_materials">
+          <div class="msg" data-chat-progress-stage="searching_materials" data-chat-progress-percent="38">
             <div class="avatar">AI</div>
             <div class="status-card">
               <div class="status-row">
-                <div class="shimmer">Searching course materials…</div>
-                <span class="elapsed">4s</span>
+                <div class="status-left">
+                  <div class="shimmer">Searching course materials…</div>
+                  <p class="expected">Usually ~28s</p>
+                </div>
+                <span class="timing">
+                  <span class="timing-primary">About 24s left</span>
+                  <span class="timing-elapsed">4s elapsed</span>
+                </span>
               </div>
-              <div class="progress" role="progressbar" aria-valuetext="Searching course materials…"><div class="progress-bar"></div></div>
+              <div class="progress" role="progressbar" aria-valuenow="38" aria-valuetext="Searching course materials…. About 24s left. 4s elapsed.">
+                <div class="progress-bar" style="width: 38%"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -296,18 +334,26 @@
 
     <section class="panel">
       <p class="panel-title">04 · Pre-token — Working on Assist reply</p>
-      <p class="panel-desc">Assist ON after 6s of silence (slow TTFT and/or oversight buffering).</p>
+      <p class="panel-desc">Assist ON (longer expected wait). Mid-fill with remaining time for ADHD predictability.</p>
       <div class="capture" id="cap-assist">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">Walk me through gradient descent step by step.</div></div>
-          <div class="msg" data-chat-progress-stage="preparing_assist">
+          <div class="msg" data-chat-progress-stage="preparing_assist" data-chat-progress-percent="52">
             <div class="avatar">AI</div>
             <div class="status-card">
               <div class="status-row">
-                <div class="shimmer">Working on Assist reply…</div>
-                <span class="elapsed">18s</span>
+                <div class="status-left">
+                  <div class="shimmer">Working on Assist reply…</div>
+                  <p class="expected">Usually ~1m 4s</p>
+                </div>
+                <span class="timing">
+                  <span class="timing-primary">About 46s left</span>
+                  <span class="timing-elapsed">18s elapsed</span>
+                </span>
               </div>
-              <div class="progress" role="progressbar" aria-valuetext="Working on Assist reply…"><div class="progress-bar"></div></div>
+              <div class="progress" role="progressbar" aria-valuenow="52" aria-valuetext="Working on Assist reply…. About 46s left. 18s elapsed.">
+                <div class="progress-bar" style="width: 52%"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -330,7 +376,7 @@
 
     <section class="panel">
       <p class="panel-title">06 · Compact — Searching after text</p>
-      <p class="panel-desc">Multi-step: earlier tokens exist + in-progress RAG tool → compact Searching… under the bubble.</p>
+      <p class="panel-desc">Multi-step: earlier tokens + in-progress RAG → compact Searching… with remaining estimate.</p>
       <div class="capture" id="cap-compact-search">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
@@ -339,12 +385,17 @@
             <div class="assistant-text">Looking that up in your course materials…</div>
           </div>
           <div class="tool-card"><div class="spinner"></div> Searching course materials…</div>
-          <div class="compact" data-chat-progress-stage="searching_materials" data-chat-progress-compact="true">
+          <div class="compact" data-chat-progress-stage="searching_materials" data-chat-progress-compact="true" data-chat-progress-percent="55">
             <div class="status-row">
               <div class="shimmer">Searching course materials…</div>
-              <span class="elapsed">9s</span>
+              <span class="timing">
+                <span class="timing-primary">About 19s left</span>
+                <span class="timing-elapsed">9s elapsed</span>
+              </span>
             </div>
-            <div class="progress" role="progressbar" aria-valuetext="Searching course materials…"><div class="progress-bar"></div></div>
+            <div class="progress" role="progressbar" aria-valuenow="55" aria-valuetext="Searching course materials…. About 19s left. 9s elapsed.">
+              <div class="progress-bar" style="width: 55%"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -352,7 +403,7 @@
 
     <section class="panel">
       <p class="panel-title">07 · Compact — Generating (post-tool follow-up)</p>
-      <p class="panel-desc">Tool finished; waiting for the next model tokens before status hides again.</p>
+      <p class="panel-desc">Tool finished; shorter remaining estimate while waiting for the next tokens.</p>
       <div class="capture" id="cap-compact-generating">
         <div class="chat-frame">
           <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
@@ -360,12 +411,45 @@
             <div class="avatar">AI</div>
             <div class="assistant-text">Looking that up in your course materials…</div>
           </div>
-          <div class="compact" data-chat-progress-stage="generating" data-chat-progress-compact="true">
+          <div class="compact" data-chat-progress-stage="generating" data-chat-progress-compact="true" data-chat-progress-percent="72">
             <div class="status-row">
               <div class="shimmer">Generating…</div>
-              <span class="elapsed">11s</span>
+              <span class="timing">
+                <span class="timing-primary">About 4s left</span>
+                <span class="timing-elapsed">11s elapsed</span>
+              </span>
             </div>
-            <div class="progress" role="progressbar" aria-valuetext="Generating…"><div class="progress-bar"></div></div>
+            <div class="progress" role="progressbar" aria-valuenow="72" aria-valuetext="Generating…. About 4s left. 11s elapsed.">
+              <div class="progress-bar" style="width: 72%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">08 · Over estimate — Taking longer than usual</p>
+      <p class="panel-desc">Past the expected wait: bar crawls toward a soft cap (~96%) and copy switches so users know it’s still working.</p>
+      <div class="capture" id="cap-longer">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
+          <div class="msg" data-chat-progress-stage="waiting_for_model" data-chat-progress-percent="91">
+            <div class="avatar">AI</div>
+            <div class="status-card">
+              <div class="status-row">
+                <div class="status-left">
+                  <div class="shimmer">Waiting for model…</div>
+                  <p class="expected">Usually ~40s</p>
+                </div>
+                <span class="timing">
+                  <span class="timing-primary">Taking longer than usual</span>
+                  <span class="timing-elapsed">48s elapsed</span>
+                </span>
+              </div>
+              <div class="progress" role="progressbar" aria-valuenow="91" aria-valuetext="Waiting for model…. Taking longer than usual. 48s elapsed.">
+                <div class="progress-bar" style="width: 91%"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
