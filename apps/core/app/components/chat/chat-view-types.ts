@@ -14,6 +14,20 @@ export type ChatCourseOption = {
   code: string;
 };
 
+/** Minimal message shape for live chat + in-flight tool/progress detection. */
+export type ChatViewMessage = {
+  id: string;
+  role: string;
+  content: string | { text?: string } | unknown;
+  parts?: Array<{
+    type?: string;
+    text?: string;
+    toolInvocation?: { toolName?: string; state?: string; toolCallId?: string; args?: unknown };
+    toolName?: string;
+    state?: string;
+  } | null>;
+};
+
 export type ChatViewSharedProps = {
   chatModels: ChatModelOption[];
   selectedModel: string;
@@ -22,7 +36,7 @@ export type ChatViewSharedProps = {
   selectedCourseCode: string | null;
   setSelectedCourseCode: (value: string | null) => void;
   availableCourses: ChatCourseOption[];
-  messages: Array<{ id: string; role: string; content: string }>;
+  messages: ChatViewMessage[];
   input: string;
   isLoading: boolean;
   adhdAssist: boolean;

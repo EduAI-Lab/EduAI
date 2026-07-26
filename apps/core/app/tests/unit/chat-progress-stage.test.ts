@@ -68,13 +68,25 @@ describe("resolveChatProgressStage — #1171", () => {
     ).toBe("searching_web");
   });
 
-  it("prefers generating once assistant text is visible", () => {
+  it("prefers in-progress tools over generating when text already exists", () => {
     expect(
       resolveChatProgressStageId({
         elapsedMs: 30_000,
         hasAssistantText: true,
         hasRoutedModel: true,
         activeToolName: "getInformation",
+        adhdAssist: true,
+      }),
+    ).toBe("searching_materials");
+  });
+
+  it("uses generating when text exists and no tool is active", () => {
+    expect(
+      resolveChatProgressStageId({
+        elapsedMs: 30_000,
+        hasAssistantText: true,
+        hasRoutedModel: true,
+        activeToolName: null,
         adhdAssist: true,
       }),
     ).toBe("generating");
@@ -237,6 +249,22 @@ describe("shouldApplyAssistiveDisplayTransform", () => {
     const closedFence = `${complete}\n\n\`\`\`eduai-diagram\nprocess-flow\nA — done\n\`\`\``;
     expect(hasIncompleteEduaiDiagramFence(closedFence)).toBe(false);
     expect(shouldApplyAssistiveDisplayTransform(closedFence, true)).toBe(true);
+  });
+
+  it("ignores unrelated open code fences after a closed eduai-diagram", () => {
+    const withTrailingCode = `${complete}
+
+\`\`\`eduai-diagram
+process-flow
+A — done
+\`\`\`
+
+\`\`\`js
+console.log("still open`;
+    expect(hasIncompleteEduaiDiagramFence(withTrailingCode)).toBe(false);
+    expect(shouldApplyAssistiveDisplayTransform(withTrailingCode, true)).toBe(
+      true,
+    );
   });
 });
 
