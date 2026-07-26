@@ -415,7 +415,8 @@ function buildMutations(m, disc) {
     const base = `${CORE_URL}`;
     // courses
     ops.push(opCreate({ app: "core", path: "POST /api/courses", role: "instructor", url: `${base}/api/courses`, idPath: "id", cleanupUrl: (id) => `${base}/api/courses/${id}`,
-      body: (i) => ({ name: "Perf C", code: uniq("PERF-NEW", i), section: "001", term: "Fall", year: 2026, startDate: "2026-01-01", department: C.department, isPublished: false, aiInstructions: "" }) }));
+      // `term` is the canonical UBC code enum (`@eduai/ui/term` TERM_CODES) — W2 matches the Jan startDate.
+      body: (i) => ({ name: "Perf C", code: uniq("PERF-NEW", i), section: "001", term: "W2", year: 2026, startDate: "2026-01-01", department: C.department, isPublished: false, aiInstructions: "" }) }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}`, body: (i) => ({ name: `Perf C v${i}` }) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id", role: "instructor", pool: C.deleteCoursePool, urlFn: (id) => `${base}/api/courses/${id}` }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/publish", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}/publish`, body: () => ({}) }));

@@ -89,9 +89,27 @@ Canvas LMS, not our code (#961 explicitly excludes AI-chat latency; concurrency 
 in-scope vs skip classification per app is in `core-measurement-spec.md`,
 `aitutor-measurement-spec.md`, and `qm-measurement-spec.md` (SKIP lists with reasons).
 
-In-scope surface: **~157 endpoints** — Core 68 · ai-tutor 43 · QM 46. Concurrency=1, warmup 3 +
+In-scope surface: **159 endpoints** — Core 66 · ai-tutor 48 · QM 45. Concurrency=1, warmup 3 +
 30 samples per read; mutations run `PERF_MUT_SAMPLES` (default 15) iterations each. Percentiles
 computed over 2xx/3xx samples only; errors surfaced via `error_sample`, excluded from latency.
+
+> **Reconciling 159 in-scope vs 163 measured.** The earlier "~157 — Core 68 · ai-tutor 43 · QM 46"
+> figure came from the spec docs' own header lines, which don't match the endpoint lists underneath
+> them (Core's header says 68 over a 66-row IN-SCOPE table; ai-tutor's says "25 read + 18 mutation"
+> over a 26-item read list and a 22-row mutation table; QM's says "18 reads + 28 mutations" over a
+> 19-item read list and 26 mutations). Counting the lists themselves gives 66 · 48 · 45 = **159**.
+> Against that, the run measured **163**: Core +5 and ai-tutor −1.
+> - **Core +5** — `GET /api/disciplines`, `GET /api/chats`, `GET /api/chats/:id`,
+>   `GET /api/chats/:id/messages`, `POST /api/assistive-events`. All five are in-scope by the spec's
+>   own rules (they appear in its seed/pool prose and none is in the SKIP list) — they were just never
+>   added to the numbered IN-SCOPE table.
+> - **ai-tutor −1** — `PUT /api/admin/settings/ai-model-policy` is specced (`aitutor-measurement-spec.md`
+>   mutation table) but never registered in `scripts/perf-baseline.mjs`; only the `GET` of that path is
+>   (`perf-baseline.mjs:300`). A harness gap, not a removed route — see the follow-up issue.
+>
+> Net: no route disappeared between spec and capture; the delta is spec-table bookkeeping plus one
+> unregistered harness op. The before/after diff is unaffected — `perf-compare.mjs` keys on the
+> per-endpoint records in `response-times.json`, not on these totals.
 
 **Seed-once-per-run, refill between runs.** Mutations need disposable rows to create/update/delete.
 `npm run db:seed:perf` (root) seeds all three DBs *and* writes a per-app manifest to
@@ -112,9 +130,13 @@ and warns when a pool is below `PERF_MUT_SAMPLES`). Design notes:
 > Headline outlier: `qm GET /api/course` **2714 ms p50 / 3152 ms p95** (~40× the app median);
 > next tier: `ai-tutor GET /api/admin/courses/:id/enrollments` 392 ms p50, `core GET /api/users`
 > 384 ms p50, `core GET /api/units/:dept/chats` 284 ms p50. Sole failure:
-> `core POST /api/courses` 422×15 — the harness still sends `term: "Fall"` while dev now requires
-> `'W1' | 'W2' | 'S1' | 'S2'` (schema drift; update the payload in `scripts/perf-baseline.mjs`
-> before the next full run). `errors.json` is committed alongside; `errors.log` is gitignored (`*.log`).
+> `core POST /api/courses` 422×15 — the harness sent `term: "Fall"` while Core validates against the
+> canonical UBC code enum `'W1' | 'W2' | 'S1' | 'S2'` (`CreateCourseSchema` → `TERM_CODES`).
+> **The payload is now fixed** (`term: "W2"`, matching the Jan `startDate`), but this artifact predates
+> the fix, so `core POST /api/courses` still carries `p50/p95/p99: null` and `ok_count: 0` here — it is
+> the one endpoint of the 163 without a baseline. Re-capturing it needs the UBC dev host, so it is
+> tracked as a follow-up rather than blocking this snapshot; every other endpoint is unaffected.
+> `errors.json` is committed alongside; `errors.log` is gitignored (`*.log`).
 
 **Two real app bugs surfaced by an earlier run (both fixed this session):**
 - `core GET /api/courses/:id/materials` → 500 `Headers is required` — loader passed a raw `Request` to
