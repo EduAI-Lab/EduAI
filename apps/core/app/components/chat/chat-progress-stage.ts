@@ -49,6 +49,12 @@ export const CHAT_PROGRESS_ROUTING_MS = 450;
  */
 export const CHAT_PROGRESS_ASSIST_PREP_MS = 6_000;
 
+/**
+ * After assistant text stops changing for this long, treat the turn as an idle
+ * multi-step gap and show a compact status row again.
+ */
+export const CHAT_PROGRESS_TEXT_IDLE_MS = 900;
+
 export type ResolveChatProgressStageInput = {
   elapsedMs: number;
   hasAssistantText: boolean;
@@ -80,16 +86,17 @@ export function resolveChatProgressStageId(
     adhdAssist,
   } = input;
 
-  if (hasAssistantText) {
-    return "generating";
-  }
-
+  // In-progress tools win even when earlier tokens already exist (multi-step).
   const tool = activeToolName?.trim() ?? "";
   if (tool === "getInformation") {
     return "searching_materials";
   }
   if (tool === "webSearch" || tool === "fetchPage") {
     return "searching_web";
+  }
+
+  if (hasAssistantText) {
+    return "generating";
   }
 
   if (adhdAssist && elapsedMs >= CHAT_PROGRESS_ASSIST_PREP_MS) {
@@ -137,6 +144,31 @@ function contentAsDisplayText(content: unknown): string {
   return "";
 }
 
+/** Stable fingerprint of visible assistant text for idle-gap detection. */
+export function assistantTextFingerprint(
+  message: MessageLike | null | undefined,
+): string {
+  if (!message || message.role !== "assistant") return "";
+
+  const parts = message.parts;
+  if (Array.isArray(parts)) {
+    const texts: string[] = [];
+    for (const part of parts) {
+      if (
+        part &&
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.length > 0
+      ) {
+        texts.push(part.text);
+      }
+    }
+    if (texts.length > 0) return texts.join("\n");
+  }
+
+  return contentAsDisplayText(message.content);
+}
+
 /**
  * True when the last assistant turn already has visible text (streaming tokens
  * or a buffered dump).
@@ -144,23 +176,7 @@ function contentAsDisplayText(content: unknown): string {
 export function assistantMessageHasText(
   message: MessageLike | null | undefined,
 ): boolean {
-  if (!message || message.role !== "assistant") return false;
-
-  const parts = message.parts;
-  if (Array.isArray(parts)) {
-    for (const part of parts) {
-      if (
-        part &&
-        part.type === "text" &&
-        typeof part.text === "string" &&
-        part.text.trim().length > 0
-      ) {
-        return true;
-      }
-    }
-  }
-
-  return contentAsDisplayText(message.content).trim().length > 0;
+  return assistantTextFingerprint(message).trim().length > 0;
 }
 
 /**
@@ -206,11 +222,21 @@ export function activeToolNameFromMessage(
   return null;
 }
 
-/** True when an eduai-diagram fence was opened but not closed yet. */
+/**
+ * True when any eduai-diagram fence was opened but not closed yet.
+ * Checks each diagram open for a following closer (ignores other code fences).
+ */
 export function hasIncompleteEduaiDiagramFence(content: string): boolean {
-  if (!/```eduai-diagram\b/i.test(content)) return false;
-  const fenceMarkers = content.match(/```/g);
-  return (fenceMarkers?.length ?? 0) % 2 !== 0;
+  const openRe = /```eduai-diagram\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = openRe.exec(content)) !== null) {
+    const bodyStart = match.index + match[0].length;
+    const closer = content.indexOf("```", bodyStart);
+    if (closer === -1) return true;
+    // Continue scanning after this fence's closer so multiple diagrams work.
+    openRe.lastIndex = closer + 3;
+  }
+  return false;
 }
 
 /**

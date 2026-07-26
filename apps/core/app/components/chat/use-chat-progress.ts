@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
+  CHAT_PROGRESS_TEXT_IDLE_MS,
   activeToolNameFromMessage,
   assistantMessageHasText,
+  assistantTextFingerprint,
   resolveChatProgressStage,
   type ChatProgressStage,
 } from "~/components/chat/chat-progress-stage";
@@ -34,7 +36,7 @@ export function useChatProgress(args: {
   stage: ChatProgressStage;
   hasAssistantText: boolean;
   showProgressIndicator: boolean;
-  /** Slimmer row under an already-streaming bubble (multi-step / late tools). */
+  /** Slimmer row under an already-streaming assistant bubble (multi-step). */
   compactProgress: boolean;
 } {
   const {
@@ -45,10 +47,26 @@ export function useChatProgress(args: {
   } = args;
 
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [textIdle, setTextIdle] = useState(false);
+  const lastFingerprintRef = useRef("");
+  const lastTextChangeAtRef = useRef<number | null>(null);
+
+  const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
+  const inFlightAssistant =
+    isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
+  const hasAssistantText = assistantMessageHasText(inFlightAssistant);
+  const activeToolName = activeToolNameFromMessage(inFlightAssistant);
+  const fingerprint = assistantTextFingerprint(inFlightAssistant);
+  const hasRoutedModel = Boolean(
+    streamingRoutedRegistryId && streamingRoutedRegistryId.trim().length > 0,
+  );
 
   useEffect(() => {
     if (!isLoading) {
       setElapsedMs(0);
+      setTextIdle(false);
+      lastFingerprintRef.current = "";
+      lastTextChangeAtRef.current = null;
       return;
     }
 
@@ -56,18 +74,26 @@ export function useChatProgress(args: {
     setElapsedMs(0);
     const id = window.setInterval(() => {
       setElapsedMs(Date.now() - startedAt);
+      const changedAt = lastTextChangeAtRef.current;
+      if (changedAt != null) {
+        setTextIdle(Date.now() - changedAt >= CHAT_PROGRESS_TEXT_IDLE_MS);
+      }
     }, 250);
     return () => window.clearInterval(id);
   }, [isLoading]);
 
-  const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
-  const inFlightAssistant =
-    isLoading && lastMessage?.role === "assistant" ? lastMessage : null;
-  const hasAssistantText = assistantMessageHasText(inFlightAssistant);
-  const activeToolName = activeToolNameFromMessage(inFlightAssistant);
-  const hasRoutedModel = Boolean(
-    streamingRoutedRegistryId && streamingRoutedRegistryId.trim().length > 0,
-  );
+  useEffect(() => {
+    if (!isLoading) return;
+    if (fingerprint === lastFingerprintRef.current) return;
+
+    lastFingerprintRef.current = fingerprint;
+    if (fingerprint.trim().length > 0) {
+      lastTextChangeAtRef.current = Date.now();
+    } else {
+      lastTextChangeAtRef.current = null;
+    }
+    setTextIdle(false);
+  }, [isLoading, fingerprint]);
 
   const stage = resolveChatProgressStage({
     elapsedMs,
@@ -77,10 +103,12 @@ export function useChatProgress(args: {
     adhdAssist,
   });
 
-  // Keep feedback for the whole in-flight turn — including multi-step gaps
-  // after the first tokens — so slow second generations are never silent.
-  const showProgressIndicator = isLoading;
-  const compactProgress = hasAssistantText;
+  const hasActiveTool = Boolean(activeToolName);
+  // Prefer streaming tokens while text is still arriving. Re-show for tools or
+  // after a short idle gap (second generation / post-tool wait).
+  const showProgressIndicator =
+    isLoading && (!hasAssistantText || hasActiveTool || textIdle);
+  const compactProgress = hasAssistantText && showProgressIndicator;
 
   return {
     elapsedMs,
