@@ -13,9 +13,12 @@
  *     20260723215902_init as already applied (`prisma migrate resolve --applied`)
  *     WITHOUT running its DDL, since Sequelize already created those tables. Every
  *     migration after init (the Practice Exam unique index, the canvas-mapping/
- *     question_order adoption migration) still runs for real via the normal
- *     `migrate deploy` that follows this script — that's what reconciles the
- *     baselined data with what a fresh init.sql would have produced.
+ *     question_order/enum/FK-action adoption migration) still runs for real via the
+ *     normal `migrate deploy` that follows this script — that's what reconciles the
+ *     baselined schema and data (enum type names, FK ON DELETE actions, etc.) with
+ *     what a fresh init.sql would have produced. Any schema difference between what
+ *     Sequelize's `sync` produced and what init.sql declares must be reconciled by a
+ *     migration after init — nothing here runs init's own DDL on a baselined database.
  *
  * Idempotent: once `_prisma_migrations` exists (baselined or fresh), this is a
  * no-op on every subsequent deploy.

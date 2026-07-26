@@ -92,3 +92,38 @@ BEGIN
     ALTER TYPE "enum_variants_reasoning_level" RENAME TO "VariantReasoningLevel";
   END IF;
 END $$;
+
+-- variants.assessment_id was declared via a bare `references: { model: 'assessments', key: 'id' }`
+-- under Sequelize (src/schema/Variants.js, pre-migration) with no `onDelete` action, so
+-- `sequelize.sync` created the FK with Postgres's implicit default, NO ACTION. schema.prisma
+-- declares `onDelete: SetNull`, and 20260723215902_init's `ADD CONSTRAINT ... ON DELETE SET
+-- NULL` only runs on a fresh database — baselineExistingDatabase.js resolves init as applied
+-- without running its DDL, so a baselined database keeps whatever action sequelize.sync
+-- produced. `deleteAssessment` relies on this FK to detach linked variants automatically;
+-- left as NO ACTION, deleting an assessment with linked variants fails with a foreign key
+-- violation on every upgraded deployment. Looked up by column rather than hardcoded constraint
+-- name since Sequelize and Prisma happen to agree on the auto-generated name here, but nothing
+-- guarantees that stays true. Guarded on the current delete_rule so this is a no-op once
+-- already SET NULL (fresh databases, or a second run of this migration).
+DO $$
+DECLARE
+  fk_name text;
+BEGIN
+  SELECT tc.constraint_name INTO fk_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.referential_constraints rc
+      ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema
+    JOIN information_schema.key_column_usage kcu
+      ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
+   WHERE tc.table_schema = 'public'
+     AND tc.table_name = 'variants'
+     AND tc.constraint_type = 'FOREIGN KEY'
+     AND kcu.column_name = 'assessment_id'
+     AND rc.delete_rule <> 'SET NULL';
+
+  IF fk_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE "variants" DROP CONSTRAINT %I', fk_name);
+    ALTER TABLE "variants" ADD CONSTRAINT "variants_assessment_id_fkey"
+      FOREIGN KEY ("assessment_id") REFERENCES "assessments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
