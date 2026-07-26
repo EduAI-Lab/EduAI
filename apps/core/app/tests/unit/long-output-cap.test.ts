@@ -42,6 +42,15 @@ describe("resolveLongOutputMaxTokens", () => {
     vi.unstubAllEnvs();
   });
 
+  it("falls back when the normal cap exceeds the safe integer range", () => {
+    vi.stubEnv(
+      "CHAT_LONG_OUTPUT_MAX_TOKENS",
+      "999999999999999999999",
+    );
+
+    expect(resolveLongOutputMaxTokens(false)).toBe(1200);
+  });
+
   it("uses the default normal cap", () => {
     expect(resolveLongOutputMaxTokens(false)).toBe(1200);
   });
