@@ -49,16 +49,7 @@ if (process.env.DATABASE_URL.includes('@postgres:')) {
 }
 
 const { prisma } = await import('../src/config/database.js');
-
-/** Truncates every table in the `public` schema (dev/seed only). */
-async function truncateAll() {
-  const tables = await prisma.$queryRaw`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-  `;
-  if (tables.length === 0) return;
-  const list = tables.map((r) => `"${r.tablename}"`).join(', ');
-  await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
-}
+const { truncateAllTables } = await import('../src/utils/truncateAllTables.js');
 
 /**
  * Mirror of `SEED_IDS` from `apps/core/prisma/seed.ts`. Keep in sync with
@@ -401,7 +392,7 @@ async function seed() {
   console.log('Database connection established.');
 
   console.log('Truncating tables...');
-  await truncateAll();
+  await truncateAllTables(prisma);
   console.log('Tables truncated.');
 
   console.log('Seeding users...');

@@ -16,12 +16,18 @@
 -- while freeing the name for the unique index below (ported from
 -- scripts/migrate1072AnchorCleanup.js's ensurePracticeExamUniqueness).
 -- Idempotent: re-running renames nothing once no duplicates remain.
+--
+-- Only rows with a non-null course_id are deduplicated: the partial unique
+-- index below (like a standard SQL unique index) already permits any number
+-- of NULL course_id rows, so course-less 'Practice Exam' assessments are
+-- left untouched rather than treated as duplicates of one another.
 UPDATE assessments a
    SET name = a.name || ' (duplicate #' || a.id || ')'
  WHERE a.name = 'Practice Exam'
+   AND a.course_id IS NOT NULL
    AND a.id <> (
      SELECT min(b.id) FROM assessments b
-      WHERE b.course_id IS NOT DISTINCT FROM a.course_id
+      WHERE b.course_id = a.course_id
         AND b.name = 'Practice Exam'
    );
 
