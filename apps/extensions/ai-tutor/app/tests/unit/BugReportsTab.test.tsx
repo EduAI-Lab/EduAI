@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BugReportsTab from '~/components/admin/BugReportsTab';
 import type { AdminBugReportRow } from '~/lib/types';
 
-const { mockUpdateAdminBugReportStatus, mockClipboardWriteText } = vi.hoisted(() => ({
+const { mockUpdateAdminBugReportStatus, mockGetAdminBugReport, mockClipboardWriteText } = vi.hoisted(() => ({
   mockUpdateAdminBugReportStatus: vi.fn(),
+  mockGetAdminBugReport: vi.fn(),
   mockClipboardWriteText: vi.fn(),
 }));
 
 vi.mock('~/lib/api', () => ({
   default: {
     updateAdminBugReportStatus: mockUpdateAdminBugReportStatus,
+    getAdminBugReport: mockGetAdminBugReport,
   },
 }));
 
@@ -41,6 +43,9 @@ const baseReport: AdminBugReportRow = {
     },
   ]),
   screenshot: 'data:image/png;base64,ZmFrZQ==',
+  hasConsoleLogs: true,
+  hasNetworkLogs: true,
+  hasScreenshot: true,
   pageUrl: 'http://localhost:5173/student/list/42?step=1',
   userAgent: 'Mozilla/5.0',
   isAnonymous: false,
@@ -101,7 +106,15 @@ const anonymousReportWithPopulatedIdentityFields: AdminBugReportRow = {
 describe('BugReportsTab', () => {
   beforeEach(() => {
     mockUpdateAdminBugReportStatus.mockReset();
+    mockGetAdminBugReport.mockReset();
     mockClipboardWriteText.mockReset();
+    mockGetAdminBugReport.mockImplementation(async (id: string) => {
+      if (id === anonymousReport.id) return anonymousReport;
+      if (id === anonymousReportWithPopulatedIdentityFields.id) {
+        return anonymousReportWithPopulatedIdentityFields;
+      }
+      return baseReport;
+    });
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -150,6 +163,7 @@ describe('BugReportsTab', () => {
     fireEvent.click(screen.getByText(baseReport.description));
     expect(await screen.findByText('Report Description')).toBeInTheDocument();
     expect(screen.getByText(/Reported by/)).toBeInTheDocument();
+    expect(mockGetAdminBugReport).toHaveBeenCalledWith(baseReport.id);
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
