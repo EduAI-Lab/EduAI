@@ -1,0 +1,141 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const test = require("node:test");
+
+// The script reads REPO_ROOT at require time, so point it at a scratch repo
+// before loading it. Each test builds the real on-disk layout it needs, since
+// path resolution is exactly what we are testing.
+const REPO_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "patch-cov-"));
+process.env.REPO_ROOT = REPO_ROOT;
+
+const {
+  resolveLcovPath,
+  parseLcov,
+  lcovMappingBroken,
+  compressRanges,
+  fmtPct,
+} = require("../scripts/pr-patch-coverage");
+
+function write(relPath, contents = "") {
+  const abs = path.join(REPO_ROOT, relPath);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, contents);
+  return abs;
+}
+
+test.after(() => fs.rmSync(REPO_ROOT, { recursive: true, force: true }));
+
+test("resolveLcovPath maps vitest's workspace-root-relative SF path", () => {
+  // The regression from #1192: vitest writes `SF:src/spinner.tsx` into
+  // packages/ui/coverage/lcov.info, meaning packages/ui/src/spinner.tsx.
+  write("packages/ui/src/spinner.tsx");
+  assert.deepEqual(resolveLcovPath("src/spinner.tsx", "packages/ui/coverage"), {
+    rel: "packages/ui/src/spinner.tsx",
+    resolved: true,
+  });
+});
+
+test("resolveLcovPath does not resolve into the coverage directory", () => {
+  write("packages/ui/src/permission-gate.tsx");
+  const { rel } = resolveLcovPath("src/permission-gate.tsx", "packages/ui/coverage");
+  assert.ok(!rel.includes("/coverage/"), `resolved into coverage dir: ${rel}`);
+});
+
+test("resolveLcovPath accepts a coverage-dir-relative SF path", () => {
+  write("packages/ui/coverage/generated/thing.ts");
+  assert.deepEqual(resolveLcovPath("generated/thing.ts", "packages/ui/coverage"), {
+    rel: "packages/ui/coverage/generated/thing.ts",
+    resolved: true,
+  });
+});
+
+test("resolveLcovPath accepts an absolute SF path", () => {
+  const abs = write("apps/core/app/root.tsx");
+  assert.deepEqual(resolveLcovPath(abs, "apps/core/coverage"), {
+    rel: "apps/core/app/root.tsx",
+    resolved: true,
+  });
+});
+
+test("resolveLcovPath falls back to the workspace root when nothing exists on disk", () => {
+  // e.g. an lcov record naming a file deleted after coverage was generated.
+  // `resolved: false` is what the mapping-failure guard counts.
+  assert.deepEqual(resolveLcovPath("src/gone.tsx", "packages/ui/coverage"), {
+    rel: "packages/ui/src/gone.tsx",
+    resolved: false,
+  });
+});
+
+test("resolveLcovPath reports an absolute path outside the repo as unresolved", () => {
+  const outside = path.join(os.tmpdir(), "definitely-not-here-1192.ts");
+  const { rel, resolved } = resolveLcovPath(outside, "packages/ui/coverage");
+  assert.equal(resolved, false);
+  assert.ok(rel.startsWith("../"), `expected an escaping relative path, got ${rel}`);
+});
+
+test("parseLcov keys records by repo-relative source path with hit counts", () => {
+  write("packages/ui/src/spinner.tsx");
+  write(
+    "packages/ui/coverage/lcov.info",
+    ["SF:src/spinner.tsx", "DA:1,3", "DA:2,0", "end_of_record", ""].join("\n"),
+  );
+
+  const parsed = parseLcov("packages/ui/coverage");
+  const lines = parsed["packages/ui/src/spinner.tsx"];
+  assert.ok(lines, "expected the source file to be keyed repo-relative");
+  assert.equal(lines.get(1), 3);
+  assert.equal(lines.get(2), 0);
+});
+
+test("parseLcov returns null when the workspace did not run", () => {
+  assert.equal(parseLcov("apps/nope/coverage"), null);
+});
+
+test("lcovMappingBroken is false when records resolve", () => {
+  write("packages/ui/src/sign-out-card.tsx");
+  write(
+    "packages/ui/coverage/lcov.info",
+    ["SF:src/sign-out-card.tsx", "DA:1,1", "end_of_record", ""].join("\n"),
+  );
+  assert.equal(lcovMappingBroken(parseLcov("packages/ui/coverage")), false);
+});
+
+test("lcovMappingBroken flags a total mapping failure", () => {
+  // Every record names something that is not on disk. Reporting these as 0%
+  // is what made the broken script look like a catastrophic coverage finding.
+  write(
+    "apps/extensions/ai-tutor/coverage/lcov.info",
+    ["SF:src/does-not-exist.tsx", "DA:1,0", "end_of_record", ""].join("\n"),
+  );
+  assert.equal(lcovMappingBroken(parseLcov("apps/extensions/ai-tutor/coverage")), true);
+});
+
+test("lcovMappingBroken is false for an empty lcov", () => {
+  // No records is "nothing ran", not "mapping is broken".
+  write("apps/core/coverage/lcov.info", "");
+  assert.equal(lcovMappingBroken(parseLcov("apps/core/coverage")), false);
+});
+
+test("mapping stats do not leak into the file keys", () => {
+  write("packages/ui/src/spinner.tsx");
+  write(
+    "packages/ui/coverage/lcov.info",
+    ["SF:src/spinner.tsx", "DA:1,1", "end_of_record", ""].join("\n"),
+  );
+  const parsed = parseLcov("packages/ui/coverage");
+  assert.deepEqual(Object.keys(parsed), ["packages/ui/src/spinner.tsx"]);
+});
+
+test("compressRanges collapses consecutive lines", () => {
+  assert.equal(compressRanges([3, 4, 5, 9, 10]), "3-5, 9-10");
+  assert.equal(compressRanges([7]), "7");
+  assert.equal(compressRanges([2, 4, 6]), "2, 4, 6");
+});
+
+test("fmtPct renders a dash when there is nothing executable", () => {
+  assert.equal(fmtPct(0, 0), "—");
+  assert.equal(fmtPct(1, 2), "50.0%");
+  assert.equal(fmtPct(3, 3), "100.0%");
+});
