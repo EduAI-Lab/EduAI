@@ -154,8 +154,9 @@ export function assistantMessageHasText(message: MessageLike | null | undefined)
 }
 
 /**
- * Best-effort active tool name on the in-flight assistant message.
- * Prefers incomplete tool invocations so status can mirror Tool cards.
+ * Best-effort *in-progress* tool name on the in-flight assistant message.
+ * Completed tool cards must not keep the status row stuck on “Searching…”
+ * (and must not block Assist’s later “Preparing Assist reply…” stage).
  */
 export function activeToolNameFromMessage(
   message: MessageLike | null | undefined,
@@ -164,8 +165,6 @@ export function activeToolNameFromMessage(
     return null;
   }
 
-  let fallback: string | null = null;
-
   for (const part of message.parts) {
     if (!part || typeof part.type !== "string") continue;
 
@@ -173,9 +172,9 @@ export function activeToolNameFromMessage(
       const name = part.toolInvocation.toolName?.trim();
       if (!name) continue;
       const state = part.toolInvocation.state;
-      if (state && state !== "result") return name;
-      fallback = fallback ?? name;
-      continue;
+      // AI SDK v4: call / partial-call while running; result when done.
+      if (!state || state === "result") continue;
+      return name;
     }
 
     if (part.type.startsWith("tool-")) {
@@ -183,18 +182,18 @@ export function activeToolNameFromMessage(
       if (!name) continue;
       const state = part.state;
       if (
-        state &&
-        state !== "output-available" &&
-        state !== "output-error" &&
-        state !== "result"
+        !state ||
+        state === "output-available" ||
+        state === "output-error" ||
+        state === "result"
       ) {
-        return name;
+        continue;
       }
-      fallback = fallback ?? name;
+      return name;
     }
   }
 
-  return fallback;
+  return null;
 }
 
 /**
