@@ -44,6 +44,68 @@ describe('api methods', () => {
     expect(result).toEqual(mockResponse);
   });
 
+  // #1162: the server parses /api/courses in required mode, so a call that
+  // supplied only pageSize used to 400 with PAGINATION_REQUIRED on every
+  // non-pager surface (dashboards, course switcher, command palette, imports).
+  describe('course-list pagination query strings', () => {
+    const okEmptyPage = () =>
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 200 }),
+      });
+
+    it('listCourses() sends both page and pageSize by default', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses();
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('listAdminCourses() sends both page and pageSize by default', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listAdminCourses();
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/admin/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('an explicit page overrides the default without dropping pageSize', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ page: 3 });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=3&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('an explicit pageSize overrides the default without dropping page', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.listCourses({ page: 2, pageSize: 25 });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses?page=2&pageSize=25',
+      );
+    });
+
+    it('tree endpoints also send a complete pair', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.modulesForCourse(7);
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=200',
+      );
+    });
+  });
+
   it('successful response returns parsed JSON', async () => {
     const mockData = { courses: [{ id: 1, title: 'Math 101' }] };
     mockFetch.mockResolvedValue({
