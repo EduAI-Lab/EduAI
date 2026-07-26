@@ -1,0 +1,176 @@
+name: PR Patch Coverage (advisory)
+
+# Non-blocking coverage WARNING for pull requests. For the workspaces a PR actually touches
+# (selected via Turborepo `--affected`), it runs `test:coverage`, then reports patch coverage —
+# the share of the PR's *added/changed* lines that a test executes — as a single sticky PR
+# comment. Authors see when new code shipped without a test, without gating the merge.
+#
+# The report itself never fails the check — coverage runs and comment generation are all
+# best-effort. The reporter's OWN tests do fail it: a broken reporter should be visible rather
+# than quietly post a wrong comment (#1192 made every file read 0% for weeks). This job is not
+# a required status either way, so even a red run cannot block a merge.
+#
+# Why patch coverage and not a whole-file % delta: file-% swings for reasons unrelated to the
+# PR (denominator shifts, deletions, moves), so it is a noisy signal. Patch coverage isolates
+# the new code — see eduai-summer-2026/scripts/pr-patch-coverage.js.
+
+on:
+  pull_request:
+    branches:
+      - development
+      - main
+
+concurrency:
+  group: pr-coverage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  patch-coverage:
+    name: Patch coverage (advisory, non-blocking)
+    runs-on: ubuntu-latest
+
+    # Same DB layout as PR Tests / the coverage report: core integration globalSetup reaches
+    # psql on 5432, ai-tutor on 5433, question-maker on 5434.
+    services:
+      core-db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      ai-tutor-db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aitutor_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+      qm-db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: question_maker_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so `--affected` and the diff base (origin/<base>) resolve.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Each backend resolves its test database from committed env files / globalSetup.
+      # Write the CI-specific values so they point at the service containers above.
+      - name: Configure test environment
+        run: |
+          set -euo pipefail
+          rm -f apps/core/.env
+          cat > apps/core/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/eduai_test?schema=public"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:3000"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+          cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/aitutor_test"
+          BETTER_AUTH_SECRET="test-secret-not-for-production"
+          BETTER_AUTH_URL="http://localhost:4000/api/auth"
+          COOKIE_DOMAIN="localhost"
+          PORT=4001
+          EOF
+
+      - name: Generate Prisma clients
+        run: |
+          set -euo pipefail
+          npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+
+      # Guard the reporter itself. #1192 shipped a path-resolution bug that made every
+      # file report 0% on every PR for weeks, because nothing exercised this script.
+      # Runs BEFORE the coverage job (which takes minutes and that this does not depend
+      # on) so a broken reporter fails in seconds. Deliberately NOT continue-on-error:
+      # a broken reporter should be visible rather than quietly post a wrong comment.
+      - name: Test the patch-coverage script
+        run: npm run test:patch-coverage
+
+      # Coverage for touched workspaces only. `--affected` diffs against the PR base; --continue
+      # keeps other workspaces going if one suite fails, and continue-on-error means a red suite
+      # still lets us post whatever coverage did get produced. Never fails the job.
+      - name: Run affected coverage
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+          GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+          TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
+          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
+          JWT_SECRET: test-jwt-secret-for-ci
+          ENCRYPTION_KEY: test-encryption-key-32bytes!!
+          TURBO_SCM_BASE: origin/${{ github.event.pull_request.base.ref }}
+          TURBO_SCM_HEAD: HEAD
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}" || true
+          npx turbo run test:coverage --affected --continue --env-mode=loose
+
+      - name: Compute patch coverage
+        continue-on-error: true
+        env:
+          BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+          WARN_THRESHOLD: '80'
+        run: node eduai-summer-2026/scripts/pr-patch-coverage.js > patch-coverage-comment.md
+
+      # Sticky comment via gh CLI — no third-party action. Find our previous comment by the
+      # HTML marker and update it in place; otherwise create one. Best-effort, never fails.
+      - name: Post sticky PR comment
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ ! -s patch-coverage-comment.md ]; then
+            echo "No comment body produced; skipping."
+            exit 0
+          fi
+          MARKER='<!-- pr-patch-coverage -->'
+          COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+            --jq "map(select(.body | contains(\"${MARKER}\"))) | .[0].id // empty")
+          if [ -n "${COMMENT_ID}" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
+              -F body=@patch-coverage-comment.md >/dev/null
+            echo "Updated comment ${COMMENT_ID}."
+          else
+            gh api -X POST "repos/${REPO}/issues/${PR}/comments" \
+              -F body=@patch-coverage-comment.md >/dev/null
+            echo "Created new comment."
+          fi

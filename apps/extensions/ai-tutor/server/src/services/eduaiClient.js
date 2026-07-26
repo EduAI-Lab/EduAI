@@ -12,8 +12,15 @@ export function getEduAiBaseUrl() {
 }
 
 /**
- * AI completion endpoint. Used by `aiGuidance.js` rather than the
- * `requestEduAi` helper because chat needs custom headers and a non-trivial body shape.
+ * Stateless AI completion endpoint (#858). Used by `aiGuidance.js` for tutor/supervisor
+ * loops without course-chat persistence, RAG, or tool overhead.
+ */
+export function getEduAiCompletionUrl() {
+  return `${getEduAiBaseUrl()}/completion`;
+}
+
+/**
+ * @deprecated Use getEduAiCompletionUrl() for AI assist flows.
  */
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
@@ -132,6 +139,31 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
   if (!response.ok) {
     const errorText = await response.text();
     const error = new Error(errorText || `Core bug report list failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
+ * GET a single Core admin bug report (full diagnostic blobs) (#979).
+ */
+export async function getCoreAdminBugReport(cookie, bugReportId) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to load a Core bug report');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${encodeURIComponent(bugReportId)}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report GET failed with status ${response.status}`);
     error.status = response.status;
     throw error;
   }
