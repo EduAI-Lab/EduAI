@@ -376,8 +376,11 @@ export async function deleteCoreEnrollment(externalCourseId, enrollmentId, cooki
  * Fetches a single Core course by id using the service key.
  * Returns the course object on 200, null on 404 (soft-deleted or missing).
  * Throws on 5xx or network error so the caller can skip and retry next run.
+ *
+ * @param {number} coreOfferingId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)` to bound the call
  */
-export async function fetchCoreCourseSafe(coreOfferingId) {
+export async function fetchCoreCourseSafe(coreOfferingId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
@@ -385,6 +388,7 @@ export async function fetchCoreCourseSafe(coreOfferingId) {
   try {
     return await requestEduAi(`/courses/${coreOfferingId}`, {
       headers: { Authorization: `Bearer ${serviceKey}` },
+      signal: options.signal,
     });
   } catch (err) {
     if (err.status === 404) return null;
@@ -396,8 +400,12 @@ export async function fetchCoreCourseSafe(coreOfferingId) {
  * Fetches a single Core topic by id using the service key.
  * Returns the topic object on 200, null on 404 (soft-deleted or missing).
  * Throws on 5xx or network error so the caller can skip and retry next run.
+ *
+ * @param {number} coreOfferingId
+ * @param {number} coreTopicId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)` to bound the call
  */
-export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
+export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId, options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
@@ -405,6 +413,7 @@ export async function fetchCoreTopicSafe(coreOfferingId, coreTopicId) {
   try {
     return await requestEduAi(`/courses/${coreOfferingId}/topics/${coreTopicId}`, {
       headers: { Authorization: `Bearer ${serviceKey}` },
+      signal: options.signal,
     });
   } catch (err) {
     if (err.status === 404) return null;
