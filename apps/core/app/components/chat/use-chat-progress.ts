@@ -11,7 +11,13 @@ type MessageLike = {
   id?: string;
   role?: string;
   content?: unknown;
-  parts?: unknown;
+  parts?: Array<{
+    type?: string;
+    text?: string;
+    toolInvocation?: { toolName?: string; state?: string };
+    toolName?: string;
+    state?: string;
+  } | null> | null;
 };
 
 /**
@@ -28,6 +34,8 @@ export function useChatProgress(args: {
   stage: ChatProgressStage;
   hasAssistantText: boolean;
   showProgressIndicator: boolean;
+  /** Slimmer row under an already-streaming bubble (multi-step / late tools). */
+  compactProgress: boolean;
 } {
   const {
     isLoading,
@@ -69,13 +77,16 @@ export function useChatProgress(args: {
     adhdAssist,
   });
 
-  // Prefer streaming tokens once they arrive — status row would compete.
-  const showProgressIndicator = isLoading && !hasAssistantText;
+  // Keep feedback for the whole in-flight turn — including multi-step gaps
+  // after the first tokens — so slow second generations are never silent.
+  const showProgressIndicator = isLoading;
+  const compactProgress = hasAssistantText;
 
   return {
     elapsedMs,
     stage,
     hasAssistantText,
     showProgressIndicator,
+    compactProgress,
   };
 }

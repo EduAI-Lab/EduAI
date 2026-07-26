@@ -178,7 +178,7 @@ describe("ChatConversationLayout — routed model labels", () => {
 
 describe("ChatConversationLayout — in-flight progress (#1171)", () => {
   it("shows a status / progress row while loading with no assistant text yet", () => {
-    render(
+    const { container } = render(
       <ChatConversationLayout
         {...baseProps}
         messages={[{ id: "u1", role: "user", content: "Explain recursion" }]}
@@ -187,12 +187,16 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toBeInTheDocument();
-    expect(screen.getByText(/waiting for model|routing/i)).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-chat-progress-stage]"),
+    ).not.toBeNull();
+    expect(screen.getAllByText(/waiting for model|routing/i).length).toBeGreaterThan(
+      0,
+    );
   });
 
-  it("hides the status row once streaming tokens are visible", () => {
-    render(
+  it("keeps a compact status row after streaming tokens (multi-step waits)", () => {
+    const { container } = render(
       <ChatConversationLayout
         {...baseProps}
         messages={[
@@ -204,7 +208,48 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
       />,
     );
 
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByText(/recursion is/i)).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-chat-progress-compact="true"]'),
+    ).not.toBeNull();
+    expect(screen.getAllByText(/generating/i).length).toBeGreaterThan(0);
+  });
+
+  it("shows Searching… when an in-progress RAG tool part is present", () => {
+    const { container } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[
+          { id: "u1", role: "user", content: "What did chapter 3 say?" },
+          {
+            id: "a1",
+            role: "assistant",
+            content: "",
+            parts: [
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolName: "getInformation",
+                  state: "call",
+                  toolCallId: "t1",
+                  args: {},
+                },
+              },
+            ],
+          } as never,
+        ]}
+        isLoading
+        streamingRoutedRegistryId="vllm:qwen2.5-32b-instruct"
+      />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-chat-progress-stage="searching_materials"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      screen.getAllByText(/searching course materials/i).length,
+    ).toBeGreaterThan(0);
   });
 });
