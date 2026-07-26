@@ -121,6 +121,17 @@ export const CourseDetailPage = () => {
   const [questionsOffset, setQuestionsOffset] = useState(0);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  /** Course-scoped aggregates for Overview (not the current page slice — #1040). */
+  const [courseQuestionStats, setCourseQuestionStats] = useState<{
+    totalQuestions: number;
+    totalVariants: number;
+    typeStats: Array<{ type: string; count: number }>;
+    difficultyStats: Array<{ difficulty: string; count: number }>;
+    aiCount: number;
+    humanCount: number;
+    reviewedCount: number;
+    usedTopicIds: string[];
+  } | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
@@ -198,6 +209,42 @@ export const CourseDetailPage = () => {
     void fetchQuestions();
     return () => { cancelled = true; };
   }, [courseId, questionsOffset, questionsPageSize]);
+
+  // Course-wide aggregates for Overview meters (independent of the questions page).
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStats = async () => {
+      if (!courseId) {
+        setCourseQuestionStats(null);
+        return;
+      }
+      try {
+        const stats = await questionService.getQuestionStats({ courseId });
+        if (cancelled) return;
+        setCourseQuestionStats({
+          totalQuestions: Number(stats.totalQuestions) || 0,
+          totalVariants: Number(stats.totalVariants) || 0,
+          typeStats: (stats.typeStats ?? []).map((row) => ({
+            type: String(row.type),
+            count: Number(row.count) || 0,
+          })),
+          difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
+            difficulty: String(row.difficulty),
+            count: Number(row.count) || 0,
+          })),
+          aiCount: Number(stats.aiCount) || 0,
+          humanCount: Number(stats.humanCount) || 0,
+          reviewedCount: Number(stats.reviewedCount) || 0,
+          usedTopicIds: stats.usedTopicIds ?? [],
+        });
+      } catch (error) {
+        console.error('Failed to load course question stats', error);
+        if (!cancelled) setCourseQuestionStats(null);
+      }
+    };
+    void fetchStats();
+    return () => { cancelled = true; };
+  }, [courseId, questionsTotal]);
 
   // Reset paging when the course changes.
   useEffect(() => {
@@ -297,8 +344,46 @@ export const CourseDetailPage = () => {
     return variantEntries.filter((entry) => entry.questionId === selectedVariant.questionId);
   }, [variantEntries, selectedVariant]);
 
-  // Course-scoped analytics for the Overview tab (type/difficulty/authoring/coverage).
+  // Course-scoped analytics for the Overview tab — from server aggregates when
+  // available so meters match the full bank, not the current 50-row page (#1040).
   const courseAnalytics = useMemo<QuestionAnalyticsProps>(() => {
+    const courseTopics = courseId ? (topicsByCourse[courseId] ?? []) : [];
+
+    if (courseQuestionStats) {
+      const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+      for (const row of courseQuestionStats.typeStats) {
+        typeCounts[row.type] = row.count;
+      }
+      const diffMap = Object.fromEntries(
+        courseQuestionStats.difficultyStats.map((d) => [d.difficulty, d.count]),
+      );
+      const used = new Set(courseQuestionStats.usedTopicIds);
+      const topicsCovered = courseTopics.filter((t) => used.has(String(t.id))).length;
+      const typeComposition = (['MCQ', 'SA', 'LA'] as const)
+        .map((t) => ({
+          label: questionTypeLabels[t],
+          value: typeCounts[t] ?? 0,
+          color: TYPE_COLORS[t],
+        }))
+        .filter((s) => s.value > 0);
+
+      return {
+        typeComposition,
+        difficulty: [
+          { label: 'Easy', value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
+          { label: 'Medium', value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
+          { label: 'Hard', value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
+        ],
+        totalQuestions: courseQuestionStats.totalQuestions || questionsTotal,
+        totalVariants: courseQuestionStats.totalVariants,
+        aiCount: courseQuestionStats.aiCount,
+        humanCount: courseQuestionStats.humanCount,
+        reviewedCount: courseQuestionStats.reviewedCount,
+        topicCoverage: { covered: topicsCovered, total: courseTopics.length },
+      };
+    }
+
+    // Fallback while stats load: page slice only (same as pre-#1040 behavior).
     const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
     for (const q of questions) typeCounts[q.type] = (typeCounts[q.type] ?? 0) + 1;
 
@@ -327,9 +412,7 @@ export const CourseDetailPage = () => {
       if (Array.isArray(sec)) sec.forEach((id) => usedTopicIds.add(String(id)));
     }
 
-    const courseTopics = courseId ? (topicsByCourse[courseId] ?? []) : [];
     const topicsCovered = courseTopics.filter((t) => usedTopicIds.has(String(t.id))).length;
-
     const typeComposition = (['MCQ', 'SA', 'LA'] as const)
       .map((t) => ({ label: questionTypeLabels[t], value: typeCounts[t] ?? 0, color: TYPE_COLORS[t] }))
       .filter((s) => s.value > 0);
@@ -348,7 +431,7 @@ export const CourseDetailPage = () => {
       reviewedCount: reviewed,
       topicCoverage: { covered: topicsCovered, total: courseTopics.length },
     };
-  }, [questions, questionsTotal, variantEntries, topicsByCourse, courseId]);
+  }, [courseQuestionStats, questions, questionsTotal, variantEntries, topicsByCourse, courseId]);
 
   const emptyStateMessage =
     questionsError || 'No questions found for this course yet. Try adding or uploading questions.';

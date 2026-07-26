@@ -138,12 +138,30 @@ export const questionService = {
   async getQuestionsPage(options: {
     courseId?: number;
     search?: string;
+    types?: string[];
+    difficulties?: string[];
+    reasoningLevels?: string[];
+    aiGenerated?: 'all' | 'ai' | 'not-ai';
+    draftStatus?: 'all' | 'draft' | 'reviewed';
+    sortBy?: 'newest' | 'oldest' | 'type' | 'difficulty';
     limit?: number;
     offset?: number;
   } = {}): Promise<PaginatedList<Question>> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.search !== undefined) params.search = options.search;
+    if (options.types?.length) params.types = options.types.join(',');
+    if (options.difficulties?.length) params.difficulties = options.difficulties.join(',');
+    if (options.reasoningLevels?.length) {
+      params.reasoningLevels = options.reasoningLevels.join(',');
+    }
+    if (options.aiGenerated && options.aiGenerated !== 'all') {
+      params.aiGenerated = options.aiGenerated;
+    }
+    if (options.draftStatus && options.draftStatus !== 'all') {
+      params.draftStatus = options.draftStatus;
+    }
+    if (options.sortBy && options.sortBy !== 'newest') params.sortBy = options.sortBy;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;
 
@@ -160,6 +178,12 @@ export const questionService = {
   async getQuestions(options: {
     courseId?: number;
     search?: string;
+    types?: string[];
+    difficulties?: string[];
+    reasoningLevels?: string[];
+    aiGenerated?: 'all' | 'ai' | 'not-ai';
+    draftStatus?: 'all' | 'draft' | 'reviewed';
+    sortBy?: 'newest' | 'oldest' | 'type' | 'difficulty';
     limit?: number;
     offset?: number;
   } = {}): Promise<Question[]> {
@@ -172,16 +196,21 @@ export const questionService = {
       return page.items;
     }
 
+    const {
+      limit: _ignoredLimit,
+      offset: startOffset,
+      ...filterOptions
+    } = options;
+
     return fetchAllPages(
       (offset, limit) =>
         this.getQuestionsPage({
-          courseId: options.courseId,
-          search: options.search,
+          ...filterOptions,
           limit,
           offset,
         }),
       {
-        startOffset: options.offset ?? 0,
+        startOffset: startOffset ?? 0,
         maxItems: options.limit,
       },
     );
@@ -272,9 +301,18 @@ export const questionService = {
     return (response.data.data || []).map(mapQuestion);
   },
 
-  /** Returns aggregate question/variant stats for the current user. */
-  async getQuestionStats(): Promise<QuestionStats> {
-    const response = await api.get('/api/questions/stats');
+  /** Returns aggregate question/variant stats for the current user (optional course scope). */
+  async getQuestionStats(options: { courseId?: number } = {}): Promise<QuestionStats & {
+    totalVariants?: number;
+    typeStats?: Array<{ type: string; count: number | string }>;
+    aiCount?: number;
+    humanCount?: number;
+    reviewedCount?: number;
+    usedTopicIds?: string[];
+  }> {
+    const params: Record<string, unknown> = {};
+    if (options.courseId !== undefined) params.courseId = options.courseId;
+    const response = await api.get('/api/questions/stats', { params });
     return response.data.data;
   },
 

@@ -4,19 +4,27 @@
  *
  * Pass `limit`/`offset` to load one server page (UI pagination — #1040 review).
  * Omit them to page-loop fetch-all (dashboard / builders; throws above the safety cap).
+ * Filters/sort/search are sent to the server so pagination totals stay correct.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Question } from '../types/question';
 import { questionService } from '../services/questionService';
+import type { QuestionFilters, QuestionSort } from '@/components/question-bank/QuestionFilterToolbar';
 
-export function useAllQuestions(options?: {
+export type UseAllQuestionsOptions = {
   courseId?: number;
   search?: string;
+  filters?: QuestionFilters;
+  sortBy?: QuestionSort;
   limit?: number;
   offset?: number;
-}) {
+};
+
+export function useAllQuestions(options?: UseAllQuestionsOptions) {
   const courseId = options?.courseId;
   const search = options?.search;
+  const filters = options?.filters;
+  const sortBy = options?.sortBy;
   const limit = options?.limit;
   const offset = options?.offset ?? 0;
   const paginated = limit !== undefined && limit > 0;
@@ -26,21 +34,31 @@ export function useAllQuestions(options?: {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const listOptions = {
+    courseId,
+    search,
+    types: filters?.questionTypes,
+    difficulties: filters?.difficulties,
+    reasoningLevels: filters?.reasoningLevels,
+    aiGenerated: filters?.aiGenerated,
+    draftStatus: filters?.draftStatus,
+    sortBy,
+  };
+
   const fetchQuestions = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       if (paginated) {
         const page = await questionService.getQuestionsPage({
-          courseId,
-          search,
+          ...listOptions,
           limit,
           offset,
         });
         setQuestions(page.items);
         setTotal(page.total);
       } else {
-        const data = await questionService.getQuestions({ courseId, search });
+        const data = await questionService.getQuestions(listOptions);
         const items = Array.isArray(data) ? data : [];
         setQuestions(items);
         setTotal(items.length);
@@ -52,7 +70,21 @@ export function useAllQuestions(options?: {
     } finally {
       setIsLoading(false);
     }
-  }, [courseId, search, limit, offset, paginated]);
+    // Serialize filter objects so identity changes don't thrash fetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional keying via JSON
+  }, [
+    courseId,
+    search,
+    sortBy,
+    limit,
+    offset,
+    paginated,
+    JSON.stringify(filters?.questionTypes ?? []),
+    JSON.stringify(filters?.difficulties ?? []),
+    JSON.stringify(filters?.reasoningLevels ?? []),
+    filters?.aiGenerated,
+    filters?.draftStatus,
+  ]);
 
   useEffect(() => {
     fetchQuestions();
