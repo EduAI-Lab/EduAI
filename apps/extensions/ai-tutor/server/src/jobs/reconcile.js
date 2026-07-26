@@ -1,6 +1,10 @@
 import { prisma } from '../config/database.js';
 import { fetchCoreCourseSafe, fetchCoreTopicSafe } from '../services/eduaiClient.js';
-import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import {
+  syncCourseEnrollments,
+  clearEnrollmentSyncThrottle,
+  AUTO_SYNC_TIMEOUT_MS,
+} from '../services/enrollmentSync.js';
 
 /**
  * Daily reconciliation job: iterates all CourseOffering and Topic rows that
@@ -29,10 +33,13 @@ export async function runReconciliation() {
 
   for (const offering of offerings) {
     try {
-      const result = await fetchCoreCourseSafe(offering.coreOfferingId);
+      const result = await fetchCoreCourseSafe(offering.coreOfferingId, {
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
       if (result === null) {
         await prisma.courseOffering.delete({ where: { id: offering.id } });
         deletedOfferingIds.add(offering.id);
+        clearEnrollmentSyncThrottle(offering.id);
         console.log(`[reconcile] Deleted CourseOffering ${offering.id} (Core 404, cascades to modules/lessons/activities)`);
       }
     } catch (err) {
@@ -51,7 +58,9 @@ export async function runReconciliation() {
     if (!courseCorId) continue; // Course link already lost; topic will be caught when re-linked
 
     try {
-      const result = await fetchCoreTopicSafe(courseCorId, topic.coreTopicId);
+      const result = await fetchCoreTopicSafe(courseCorId, topic.coreTopicId, {
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
       if (result === null) {
         await prisma.topic.update({
           where: { id: topic.id },
@@ -75,7 +84,10 @@ export async function runReconciliation() {
   for (const offering of offerings) {
     if (deletedOfferingIds.has(offering.id)) continue;
     try {
-      const result = await syncCourseEnrollments(offering.id, { course: offering });
+      const result = await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
       if (result.created || result.updated || result.deleted) {
         console.log(
           `[reconcile] Enrollment sync for CourseOffering ${offering.id}: +${result.created} ~${result.updated} -${result.deleted}`,

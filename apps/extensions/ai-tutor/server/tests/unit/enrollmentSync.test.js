@@ -19,6 +19,7 @@ vi.mock('../../src/services/eduaiClient.js', () => ({
 import { prisma } from '../../src/config/database.js';
 import { listEduAiCourseEnrollmentsServiceKey } from '../../src/services/eduaiClient.js';
 import {
+  clearEnrollmentSyncThrottle,
   resetEnrollmentSyncThrottleForTests,
   syncCourseEnrollments,
 } from '../../src/services/enrollmentSync.js';
@@ -397,6 +398,19 @@ describe('syncCourseEnrollments', () => {
       listEduAiCourseEnrollmentsServiceKey.mockClear();
 
       await syncCourseEnrollments(1);
+
+      expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls Core again after clearEnrollmentSyncThrottle evicts the throttle entry, even within the TTL window', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([ACTIVE_ENROLLMENT]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([]);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
+      listEduAiCourseEnrollmentsServiceKey.mockClear();
+      clearEnrollmentSyncThrottle(1);
+
+      await syncCourseEnrollments(1, { ttlMs: 30_000 });
 
       expect(listEduAiCourseEnrollmentsServiceKey).toHaveBeenCalledTimes(1);
     });

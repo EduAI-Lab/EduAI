@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runReconciliation } from '../../src/jobs/reconcile.js';
-import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
+import {
+  syncCourseEnrollments,
+  clearEnrollmentSyncThrottle,
+} from '../../src/services/enrollmentSync.js';
 
 const CORE_URL = 'http://core.test/api';
 const SERVICE_KEY = 'test-service-key';
@@ -29,6 +32,8 @@ vi.mock('../../src/config/database.js', () => ({
 // `enrollmentSync.test.js` — here we only assert reconcile.js calls it correctly.
 vi.mock('../../src/services/enrollmentSync.js', () => ({
   syncCourseEnrollments: vi.fn(),
+  clearEnrollmentSyncThrottle: vi.fn(),
+  AUTO_SYNC_TIMEOUT_MS: 3_000,
 }));
 
 beforeEach(() => {
@@ -45,6 +50,7 @@ beforeEach(() => {
     deleted: 0,
     errors: [],
   });
+  vi.mocked(clearEnrollmentSyncThrottle).mockReset();
 });
 
 afterEach(() => {
@@ -117,6 +123,21 @@ describe('runReconciliation — CourseOffering', () => {
     expect(mockDeleteOffering).toHaveBeenCalledOnce();
     expect(mockDeleteOffering).toHaveBeenCalledWith({ where: { id: 2 } });
   });
+
+  it('evicts the enrollment sync throttle entry for a deleted CourseOffering', async () => {
+    mockFindManyOfferings.mockResolvedValue([
+      { id: 1, coreOfferingId: 'core-cuid-1' },
+    ]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve('COURSE_NOT_FOUND'),
+    }));
+
+    await runReconciliation();
+
+    expect(clearEnrollmentSyncThrottle).toHaveBeenCalledWith(1);
+  });
 });
 
 describe('runReconciliation — Topic', () => {
@@ -181,8 +202,8 @@ describe('runReconciliation — CourseEnrollment (Phase 3, #1065)', () => {
 
     await runReconciliation();
 
-    expect(syncCourseEnrollments).toHaveBeenCalledWith(1, { course: offeringA });
-    expect(syncCourseEnrollments).toHaveBeenCalledWith(2, { course: offeringB });
+    expect(syncCourseEnrollments).toHaveBeenCalledWith(1, expect.objectContaining({ course: offeringA }));
+    expect(syncCourseEnrollments).toHaveBeenCalledWith(2, expect.objectContaining({ course: offeringB }));
   });
 
   it('does not sync enrollments for a CourseOffering deleted in Phase 1 (Core 404)', async () => {

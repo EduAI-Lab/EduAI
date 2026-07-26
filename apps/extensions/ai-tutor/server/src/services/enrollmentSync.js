@@ -153,3 +153,13 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
 export function resetEnrollmentSyncThrottleForTests() {
   lastAutoSyncAt.clear();
 }
+
+/**
+ * Evicts a single course's auto-sync TTL throttle entry. `lastAutoSyncAt`
+ * lives for the process lifetime, so callers that delete a CourseOffering
+ * (e.g. reconcile.js's Phase 1) must call this alongside the delete or the
+ * throttle key leaks forever.
+ */
+export function clearEnrollmentSyncThrottle(courseOfferingId) {
+  lastAutoSyncAt.delete(courseOfferingId);
+}
