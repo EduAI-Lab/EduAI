@@ -243,9 +243,12 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
 };
 
 /**
- * Deletes an assessment. Linked variants are detached automatically —
- * `variants.assessment_id` has `onDelete: SetNull` — so no preliminary
- * update is needed.
+ * Deletes an assessment and detaches any linked variants first. schema.prisma declares
+ * `variants.assessmentId` as `onDelete: SetNull`, but that FK action only exists on databases
+ * that ran 20260723215902_init's DDL for real — a database baselined from the pre-Prisma
+ * Sequelize schema (see scripts/baselineExistingDatabase.js) may still have whatever FK action
+ * `sequelize.sync` produced (NO ACTION) until the adoption migration's reconciliation runs.
+ * Nulling explicitly keeps delete correct independent of which FK action is actually in place.
  */
 export const deleteAssessment = async (assessmentId, userId) => {
   try {
@@ -256,6 +259,11 @@ export const deleteAssessment = async (assessmentId, userId) => {
     if (!assessment) {
       throw new Error('Assessment not found');
     }
+
+    await prisma.variants.updateMany({
+      where: { assessmentId: assessment.id },
+      data: { assessmentId: null }
+    });
 
     await prisma.assessments.delete({ where: { id: assessment.id } });
     return true;

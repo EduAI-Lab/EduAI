@@ -107,6 +107,40 @@ describeDb('assessmentService — deleteAssessment and getQuestionsInAssessment 
       expect(reloaded.assessmentId).toBe(asmB.id);
     });
 
+    it('unlinks variants instead of failing on a Sequelize-shaped FK (upgrade path)', async () => {
+      // Simulates a database baselined from the pre-Prisma Sequelize schema
+      // (scripts/baselineExistingDatabase.js): `sequelize.sync` created
+      // variants_assessment_id_fkey with Postgres's implicit NO ACTION, and that
+      // action is only reconciled to SET NULL by the adoption migration —
+      // deleteAssessment must not depend on the FK already doing the detach.
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "variants" DROP CONSTRAINT "variants_assessment_id_fkey"'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "variants" ADD CONSTRAINT "variants_assessment_id_fkey" ' +
+          'FOREIGN KEY ("assessment_id") REFERENCES "assessments"("id") ON DELETE NO ACTION ON UPDATE CASCADE'
+      );
+
+      try {
+        const assessment = await makeAssessment();
+        const q = await makeQuestion();
+        const variant = await makeVariant(q.id, assessment.id);
+
+        await expect(deleteAssessment(assessment.id, USER.id)).resolves.toBe(true);
+
+        const reloaded = await prisma.variants.findUnique({ where: { id: variant.id } });
+        expect(reloaded.assessmentId).toBeNull();
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "variants" DROP CONSTRAINT "variants_assessment_id_fkey"'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "variants" ADD CONSTRAINT "variants_assessment_id_fkey" ' +
+            'FOREIGN KEY ("assessment_id") REFERENCES "assessments"("id") ON DELETE SET NULL ON UPDATE CASCADE'
+        );
+      }
+    });
+
     it('throws when the assessment does not belong to the requesting user', async () => {
       const assessment = await makeAssessment();
       await expect(deleteAssessment(assessment.id, 'cuid-wrong-user')).rejects.toThrow(
