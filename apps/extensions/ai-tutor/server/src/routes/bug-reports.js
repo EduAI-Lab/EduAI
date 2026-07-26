@@ -4,6 +4,7 @@ import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import {
   BugReportError,
   createBugReport,
+  getAdminBugReport,
   listAdminBugReports,
   updateBugReportStatus,
 } from '../services/bugReports.js';
@@ -30,6 +31,20 @@ router.get('/admin/bug-reports', requireRole('ADMIN'), async (req, res) => {
     const rows = await listAdminBugReports(cookie);
     res.json(rows);
   } catch (error) {
+    const status = typeof error?.status === 'number' ? error.status : 500;
+    res.status(status).json({ error: String(error.message ?? error) });
+  }
+});
+
+router.get('/admin/bug-reports/:bugReportId', requireRole('ADMIN'), async (req, res) => {
+  try {
+    const cookie = getEduAiCookieForRequest(req);
+    const row = await getAdminBugReport(cookie, req.params.bugReportId);
+    res.json(row);
+  } catch (error) {
+    if (error instanceof BugReportError) {
+      return res.status(error.status).json({ error: error.message });
+    }
     const status = typeof error?.status === 'number' ? error.status : 500;
     res.status(status).json({ error: String(error.message ?? error) });
   }
