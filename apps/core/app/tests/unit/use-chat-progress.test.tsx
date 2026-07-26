@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useChatProgress } from "~/components/chat/use-chat-progress";
 
+type ToolState = "call" | "result";
+
 describe("useChatProgress — #1171", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -118,7 +120,12 @@ describe("useChatProgress — #1171", () => {
           adhdAssist: true,
           streamingRoutedRegistryId: "vllm:qwen",
         }),
-      { initialProps: { toolState: "call" as const, content: "Earlier" } },
+      {
+        initialProps: {
+          toolState: "call" as ToolState,
+          content: "Earlier",
+        },
+      },
     );
 
     expect(result.current.stage.id).toBe("searching_materials");
@@ -220,7 +227,12 @@ describe("useChatProgress — #1171", () => {
           adhdAssist: true,
           streamingRoutedRegistryId: "vllm:qwen2.5-32b-instruct",
         }),
-      { initialProps: { toolState: "call" as const, content: "Earlier" } },
+      {
+        initialProps: {
+          toolState: "call" as ToolState,
+          content: "Earlier",
+        },
+      },
     );
 
     act(() => {
