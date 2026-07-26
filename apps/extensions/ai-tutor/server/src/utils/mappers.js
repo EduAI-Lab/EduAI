@@ -114,6 +114,30 @@ export function mapCourseOffering(offering, coreCourse) {
   };
 }
 
+/**
+ * `mapCourseOffering` variant for the publish/unpublish routes (#225 SEAM-04).
+ *
+ * Those routes write the publish state through to Core, then re-read it back
+ * for the response. `resolveCoreCourseById` already fails soft on that
+ * re-read (`{ course: null, coreUnavailable: true }`), but handing a `null`
+ * `coreCourse` straight to `mapCourseOffering` degrades `isPublished` to
+ * `false` — a write that just succeeded would come back looking like a
+ * failure (split-brain: Core is actually in the new state, the caller is
+ * told otherwise). Trust the just-completed write over a failed re-read:
+ * only fall back to `knownPublished` when `coreUnavailable` is true, and mark
+ * the DTO as stale so the client can distinguish it from a confirmed read.
+ * A successful re-read (`coreUnavailable: false`) always wins, in case Core's
+ * state has already moved again by the time the read happens.
+ */
+export function mapCourseOfferingAfterPublishWrite(offering, { course: coreCourse, coreUnavailable }, knownPublished) {
+  const dto = mapCourseOffering(offering, coreCourse);
+  if (coreUnavailable) {
+    dto.isPublished = knownPublished;
+    dto.corePublishStale = true;
+  }
+  return dto;
+}
+
 export function mapModule(module) {
   return {
     id: module.id,

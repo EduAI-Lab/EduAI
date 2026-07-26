@@ -79,7 +79,7 @@ import {
 } from "~/lib/ai/adhd-oversight";
 import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
@@ -89,6 +89,7 @@ import {
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -337,6 +338,15 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
+ *
+ * SECURITY (#225 AUTH-01 / AUTH-03): the `(provider, externalUserId)` mapping
+ * is the ONLY identity binding here. We never look up an *existing* EduAI
+ * account by `proxyUser.email` and inherit its role — that let any delegating
+ * caller impersonate an arbitrary instructor/admin merely by naming their
+ * email. A brand-new mapping only ever creates a brand-new, least-privilege
+ * STUDENT account, and only when the supplied email clears the same bar as
+ * self-registration (a real UBC address, with `auth.allowPublicRegistration`
+ * on); otherwise we fail closed instead of minting an unvetted account.
  */
 async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
@@ -346,10 +356,8 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     throw new Error("proxyUser.id is required");
   }
 
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
+  const rawEmail = proxyUser.email?.trim().toLowerCase();
+  const suppliedEmail = rawEmail && rawEmail.includes("@") ? rawEmail : null;
 
   const existingMapping = await prisma.externalUser.findUnique({
     where: {
@@ -364,26 +372,49 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   });
 
   if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
+    if (!existingMapping.email && suppliedEmail) {
       await prisma.externalUser.update({
         where: { id: existingMapping.id },
-        data: { email },
+        data: { email: suppliedEmail },
       });
     }
     return existingMapping.user;
   }
 
-  let user = await prisma.user.findUnique({ where: { email } });
+  if (!suppliedEmail || !isUbcEmail(suppliedEmail)) {
+    throw new Error(
+      "proxyUser.email must be a verifiable UBC email address to create a new proxy identity",
+    );
+  }
+  if (!(await getPolicy("auth.allowPublicRegistration"))) {
+    throw new Error(
+      "Cannot create a new proxy identity while public registration is disabled",
+    );
+  }
 
-  if (!user) {
+  let user: User;
+  try {
     user = await prisma.user.create({
       data: {
-        email,
-        name: email,
+        email: suppliedEmail,
+        name: suppliedEmail,
         role: UserRole.STUDENT,
         isActive: true,
       },
     });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      // The email already belongs to an existing EduAI account. Refuse to
+      // bind an external identity onto it — that is exactly the AUTH-01
+      // escalation path this fix closes.
+      throw new Error("An EduAI account with this email already exists");
+    }
+    throw error;
   }
 
   try {
@@ -391,7 +422,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       data: {
         provider,
         externalUserId,
-        email,
+        email: suppliedEmail,
         userId: user.id,
       },
     });
@@ -1421,11 +1452,30 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
           }
         } catch (error) {
           console.error("Error prefetching course RAG context:", error);
-          courseRagInject = shouldInjectCourseRag({
+          // #225 RAG-01/RAG-02: an exception here means retrieval itself
+          // failed (stale embedding dimension vs. the stored corpus, or the
+          // embedding provider is down) — never treat it like a legitimate
+          // zero-hit result. If this turn actually needed course grounding,
+          // silently falling through would answer ungrounded or wrongly tell
+          // the student "the materials do not contain an answer." Fail
+          // closed and surface the failure instead of guessing.
+          const neededGrounding = shouldInjectCourseRag({
             hasCourse,
             courseRagNeeded,
             hits: [],
           });
+          if (neededGrounding) {
+            return chatApiReject(
+              503,
+              {
+                error:
+                  "Course materials could not be searched right now. Please try again shortly.",
+                code: classifyRagRetrievalError(error),
+              },
+              { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
+            );
+          }
+          courseRagInject = false;
         }
       }
 

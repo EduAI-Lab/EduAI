@@ -212,7 +212,19 @@ router.put(
                 });
               }
             }
-            logger.warn({ err: coreErr }, 'Core question push failed; variant approved locally without Core link');
+            // #225 SEAM-03 / #1197: any other push failure (Core down, 5xx,
+            // network error) must not report success. The variant is already
+            // approved locally (isDraft:false persisted above) but NOT linked
+            // to Core — returning 200 here would let the UI show a question
+            // as published when it isn't (publish-state divergence). The
+            // state-based push gate above retries automatically on the next
+            // approval PUT since `coreQuestionId` stays null.
+            logger.warn({ err: coreErr }, 'Core question push failed; withholding success response');
+            return res.status(502).json({
+              success: false,
+              error: 'CORE_PUSH_FAILED',
+              message: 'Variant approved locally, but could not publish to Core. Please retry.'
+            });
           }
         }
       }

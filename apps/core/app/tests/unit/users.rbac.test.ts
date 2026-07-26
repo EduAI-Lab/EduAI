@@ -22,7 +22,14 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $transaction: vi.fn(),
-    user: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+    user: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
     course: { findMany: vi.fn() },
     enrollment: {
       count: vi.fn(),
@@ -103,6 +110,7 @@ beforeEach(() => {
     _count: { enrollments: 0, taughtCourses: 0, aiInteractions: 0 },
   } as never);
   vi.mocked(prisma.enrollment.count).mockResolvedValue(0);
+  vi.mocked(prisma.user.count).mockResolvedValue(5);
   vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
   vi.mocked(prisma.enrollment.groupBy).mockResolvedValue([] as never);
   vi.mocked(prisma.course.findMany).mockResolvedValue([]);
@@ -241,6 +249,115 @@ describe("PATCH /api/users/:id — self guards (#297)", () => {
         data: { role: "INSTRUCTOR", authorizedUnits: [] },
       }),
     );
+  });
+});
+
+describe("PATCH /api/users/:id — admin-floor invariant (AUTH-04)", () => {
+  it("blocks a peer ADMIN from deactivating the last other active ADMIN", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(0);
+
+    const res = await action(makePatch("admin-2", { isActive: false }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "ADMIN_FLOOR_VIOLATION" });
+    expect(prisma.user.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { role: "ADMIN", isActive: true, id: { not: "admin-2" } },
+      }),
+    );
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks a peer ADMIN from demoting the last other active ADMIN's role", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(0);
+
+    const res = await action(makePatch("admin-2", { role: "INSTRUCTOR" }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "ADMIN_FLOOR_VIOLATION" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks demoting the last ADMIN straight to STUDENT (non-TA-reconcile path)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(0);
+
+    const res = await action(makePatch("admin-2", { role: "STUDENT" }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "ADMIN_FLOOR_VIOLATION" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("allows deactivating an ADMIN when another active ADMIN remains", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(1);
+
+    const res = await action(makePatch("admin-2", { isActive: false }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "admin-2" },
+        data: expect.objectContaining({ isActive: false }),
+      }),
+    );
+  });
+
+  it("allows demoting an ADMIN's role when another active ADMIN remains", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(1);
+
+    const res = await action(makePatch("admin-2", { role: "INSTRUCTOR" }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "admin-2" },
+        data: expect.objectContaining({ role: "INSTRUCTOR" }),
+      }),
+    );
+  });
+
+  it("does not run the floor check for a non-ADMIN target's deactivation", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "STUDENT",
+      isActive: true,
+    } as never);
+
+    const res = await action(makePatch("student-1", { isActive: false }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.count).not.toHaveBeenCalled();
+  });
+
+  it("does not run the floor check for an already-inactive ADMIN target", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: false,
+    } as never);
+
+    const res = await action(makePatch("admin-3", { role: "STUDENT" }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.user.count).not.toHaveBeenCalled();
   });
 });
 

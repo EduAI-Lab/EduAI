@@ -29,6 +29,15 @@ export const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024;
 /** Maximum length of extracted text content, before chunking (defense-in-depth for all formats). */
 export const MAX_EXTRACTED_CONTENT_CHARS = 20_000_000;
 
+/** Rejects extracted text that exceeds {@link MAX_EXTRACTED_CONTENT_CHARS}. */
+export function assertExtractedContentWithinLimit(content: string): void {
+  if (content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+    throw new Error(
+      `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+    );
+  }
+}
+
 /**
  * Reject a loaded ZIP whose entry count or declared uncompressed size exceeds
  * the caps above, before any entry is inflated. `zip` is a JSZip instance.
@@ -572,6 +581,113 @@ export function validateFile(file: File | any): { isValid: boolean; error?: stri
   return { isValid: true };
 }
 
+// ---------------------------------------------------------------------------
+// Declared-MIME vs. actual-bytes sniffing (#225 RAG-05)
+// ---------------------------------------------------------------------------
+// `validateFile` only checks the caller-supplied `file.type` string, which a
+// client fully controls. A renamed/mislabeled binary (e.g. a PDF saved with a
+// `.txt` name) would otherwise sail through `readFileAsText` as raw noise in
+// the RAG corpus, or get routed to the wrong extractor entirely.
+
+/** Bytes sampled from the start of the file to identify its real format. */
+const MAGIC_BYTE_SNIFF_LENGTH = 8;
+
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // "%PDF"
+// DOCX/PPTX are ZIP containers; PK\x03\x04 is the common case, PK\x05\x06 and
+// PK\x07\x08 cover empty/spanned archives that a real Office file won't be,
+// but are still valid ZIP signatures worth recognizing as "not plain text".
+const ZIP_MAGICS = [
+  [0x50, 0x4b, 0x03, 0x04],
+  [0x50, 0x4b, 0x05, 0x06],
+  [0x50, 0x4b, 0x07, 0x08],
+];
+
+function bytesStartWith(bytes: Uint8Array, prefix: number[]): boolean {
+  if (bytes.length < prefix.length) return false;
+  return prefix.every((b, i) => bytes[i] === b);
+}
+
+function looksLikePdf(bytes: Uint8Array): boolean {
+  return bytesStartWith(bytes, PDF_MAGIC);
+}
+
+function looksLikeZipContainer(bytes: Uint8Array): boolean {
+  return ZIP_MAGICS.some((magic) => bytesStartWith(bytes, magic));
+}
+
+/**
+ * True when a byte sample looks like binary content rather than text: a raw
+ * NUL byte never appears in legitimate text uploads, and a high ratio of
+ * other control bytes (outside tab/newline/carriage-return) is characteristic
+ * of binary noise.
+ */
+function looksLikeBinaryNoise(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return false;
+  let suspicious = 0;
+  for (const byte of bytes) {
+    if (byte === 0x00) return true;
+    if (byte < 0x09 || (byte > 0x0d && byte < 0x20)) suspicious++;
+  }
+  return suspicious / bytes.length > 0.3;
+}
+
+const DOCX_MIME_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const PPTX_MIME_TYPE =
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+/**
+ * Sniffs the first bytes of an uploaded file against its declared
+ * `file.type` and rejects a mismatch for the binary formats we accept (#225
+ * RAG-05). Files whose bytes cannot be sampled (no `arrayBuffer`) pass
+ * through unchanged — this is defense-in-depth on top of `validateFile`, not
+ * the only check.
+ */
+export async function validateFileSignature(
+  file: File | any,
+): Promise<{ isValid: boolean; error?: string }> {
+  if (typeof file.arrayBuffer !== 'function') {
+    return { isValid: true };
+  }
+
+  const buffer = await file.arrayBuffer();
+  const head = new Uint8Array(buffer.slice(0, MAGIC_BYTE_SNIFF_LENGTH));
+
+  switch (file.type) {
+    case 'application/pdf':
+      if (!looksLikePdf(head)) {
+        return {
+          isValid: false,
+          error: 'File declared as application/pdf does not start with the PDF signature (%PDF)',
+        };
+      }
+      return { isValid: true };
+
+    case DOCX_MIME_TYPE:
+    case PPTX_MIME_TYPE:
+      if (!looksLikeZipContainer(head)) {
+        return {
+          isValid: false,
+          error: `File declared as ${file.type} is not a valid ZIP/Office container`,
+        };
+      }
+      return { isValid: true };
+
+    case 'text/plain':
+    case 'text/markdown':
+      if (looksLikePdf(head) || looksLikeZipContainer(head) || looksLikeBinaryNoise(head)) {
+        return {
+          isValid: false,
+          error: `File declared as ${file.type} looks like binary content, not plain text`,
+        };
+      }
+      return { isValid: true };
+
+    default:
+      return { isValid: true };
+  }
+}
+
 /**
  * Read file content as text
  */
@@ -885,6 +1001,13 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
     throw new Error(validation.error);
   }
 
+  // #225 RAG-05: declared MIME alone is caller-controlled; confirm the bytes
+  // actually match before extracting/embedding it.
+  const signatureCheck = await validateFileSignature(file);
+  if (!signatureCheck.isValid) {
+    throw new Error(signatureCheck.error);
+  }
+
   let content: string;
   let pageCount: number | undefined;
   let metadata: any = {};
@@ -936,11 +1059,7 @@ export async function processUploadedFile(file: File): Promise<FileInfo> {
     // Defense-in-depth: bound the extracted text length before chunking, so an
     // archive that slips past the per-entry ZIP caps still can't flood the
     // chunking/embedding path.
-    if (content.length > MAX_EXTRACTED_CONTENT_CHARS) {
-      throw new Error(
-        `Extracted content of ${content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
-      );
-    }
+    assertExtractedContentWithinLimit(content);
 
     content = enrichExtractedDocumentContent(content);
 

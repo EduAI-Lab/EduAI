@@ -283,7 +283,8 @@ export async function createAdminUser(
   input: {
     name: string;
     email: string;
-    role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
+    // #225 AUTH-12: platform UserRole has no TA (course TA is enrollment-scoped).
+    role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT";
     isActive?: boolean;
   },
 ): Promise<MutationResult> {

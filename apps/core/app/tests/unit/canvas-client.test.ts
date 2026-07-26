@@ -13,15 +13,23 @@ vi.mock("~/lib/net/ssrf-guard.server", () => ({
 import {
   CanvasApiError,
   CanvasVerificationError,
+  canvasGetPaginated,
   computeCanvasFilePublishState,
   downloadCanvasFile,
   getCanvasCourseWithTerm,
+  listCanvasCourseFiles,
   listCanvasCourseStudents,
   listTeacherCanvasCourses,
   parseAndValidateCanvasUrl,
   resolveCanvasFileDownloadUrl,
   verifyCanvasCredentials,
 } from "~/lib/canvas/client.server";
+
+const NON_TEST_CREDENTIALS = {
+  canvasUrl: "http://localhost:8080",
+  apiKey: "token",
+  isTestMode: false,
+} as const;
 
 describe("parseAndValidateCanvasUrl", () => {
   it("allows https URLs", () => {
@@ -403,5 +411,171 @@ describe("getCanvasCourseWithTerm", () => {
         "999",
       ),
     ).resolves.toBeNull();
+  });
+});
+
+// Edge-case audit #225 (CANVAS-07): multi-page list fetch and per_page=100 boundary.
+describe("canvasGetPaginated pagination (#225 CANVAS-07)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function rosterUser(id: number) {
+    return { id, name: `Student ${id}`, email: `s${id}@ubc.ca`, sis_user_id: String(id) };
+  }
+
+  it("aggregates items across multiple pages via Link rel=next", async () => {
+    const page1 = Array.from({ length: 100 }, (_, index) => rosterUser(index + 1));
+    const page2 = Array.from({ length: 37 }, (_, index) => rosterUser(index + 101));
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(page1), {
+            status: 200,
+            headers: {
+              link: '<http://localhost:8080/api/v1/courses/42/users?page=2&per_page=100>; rel="next"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify(page2), { status: 200 })),
+    );
+
+    const roster = await canvasGetPaginated(
+      NON_TEST_CREDENTIALS,
+      "/courses/42/users?enrollment_type[]=student",
+    );
+
+    expect(roster).toHaveLength(137);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8080/api/v1/courses/42/users?enrollment_type[]=student&per_page=100",
+      expect.any(Object),
+    );
+  });
+
+  it("stops after a full page of exactly 100 when there is no next link", async () => {
+    const page = Array.from({ length: 100 }, (_, index) => rosterUser(index + 1));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(page), { status: 200 })),
+    );
+
+    const roster = await canvasGetPaginated(
+      NON_TEST_CREDENTIALS,
+      "/courses/42/users?enrollment_type[]=student",
+    );
+
+    expect(roster).toHaveLength(100);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows a next link that returns an empty page without dropping the prior 100", async () => {
+    const page = Array.from({ length: 100 }, (_, index) => rosterUser(index + 1));
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(page), {
+            status: 200,
+            headers: {
+              link: '<http://localhost:8080/api/v1/courses/42/users?page=2>; rel="next"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const roster = await canvasGetPaginated(
+      NON_TEST_CREDENTIALS,
+      "/courses/42/users?enrollment_type[]=student",
+    );
+
+    expect(roster).toHaveLength(100);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("paginates course file listings the same way as roster endpoints", async () => {
+    const page1 = Array.from({ length: 100 }, (_, index) => ({
+      id: index + 1,
+      display_name: `file-${index + 1}.txt`,
+      filename: `file-${index + 1}.txt`,
+      "content-type": "text/plain",
+      size: 10,
+      updated_at: "2026-01-01T00:00:00.000Z",
+      url: `http://localhost:8080/files/${index + 1}`,
+    }));
+    const page2 = [
+      {
+        id: 101,
+        display_name: "file-101.txt",
+        filename: "file-101.txt",
+        "content-type": "text/plain",
+        size: 10,
+        updated_at: "2026-01-01T00:00:00.000Z",
+        url: "http://localhost:8080/files/101",
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(page1), {
+            status: 200,
+            headers: {
+              link: '<http://localhost:8080/api/v1/courses/7/files?page=2>; rel="next"',
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify(page2), { status: 200 })),
+    );
+
+    const files = await listCanvasCourseFiles(NON_TEST_CREDENTIALS, "7");
+
+    expect(files).toHaveLength(101);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Edge-case audit #225 (CANVAS-12): upstream 429 / timeout are generic CanvasApiError, not retried.
+describe("Canvas upstream failure handling (#225 CANVAS-12)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("surfaces Canvas 429 as a generic CanvasApiError with status 429", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 429 })),
+    );
+
+    await expect(
+      listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42"),
+    ).rejects.toMatchObject({
+      message: "Canvas API error: 429",
+      statusCode: 429,
+    });
+  });
+
+  it("surfaces request timeouts as a generic 502 Could not reach Canvas", async () => {
+    const timeoutError = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
+
+    await expect(
+      listCanvasCourseStudents(NON_TEST_CREDENTIALS, "42"),
+    ).rejects.toMatchObject({
+      message: "Could not reach Canvas",
+      statusCode: 502,
+    });
   });
 });
