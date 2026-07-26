@@ -16,6 +16,9 @@
  *     fields. This component only RENDERS; the masking is server-side. The
  *     `getReporterLabel` helper still falls through to the userId so admins
  *     can correlate without seeing the name/email.
+ *   - **List vs detail (#979)**: list rows omit console/network/screenshot
+ *     bodies and only carry `has*` flags. Opening a viewer or copying a dossier
+ *     fetches `GET /api/admin/bug-reports/:id` for the full payloads.
  *   - **Sort**: `createdAt` sorts as Date timestamps; everything else uses
  *     `String(...).localeCompare` (case-insensitive via locale). Null/undefined
  *     fields fall through to `''` to keep them at the start of asc / end of desc.
@@ -36,6 +39,7 @@
 
 import { useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@eduai/ui';
+import { hasAttachmentContent } from '@eduai/types';
 import { IconAlertCircle } from '@tabler/icons-react';
 import {
   Card,
@@ -107,6 +111,21 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       ? null
       : (reports.find((report) => report.id === selectedReportId) ?? null);
 
+  /** List rows omit diagnostic blobs (#979); load full detail on demand. */
+  const loadReportDetail = async (reportId: string): Promise<AdminBugReportRow> => {
+    const detailed = await api.getAdminBugReport(reportId);
+    const merged: AdminBugReportRow = {
+      ...detailed,
+      hasConsoleLogs: hasAttachmentContent(detailed.consoleLogs, detailed.hasConsoleLogs),
+      hasNetworkLogs: hasAttachmentContent(detailed.networkLogs, detailed.hasNetworkLogs),
+      hasScreenshot: hasAttachmentContent(detailed.screenshot, detailed.hasScreenshot),
+    };
+    setReports((current) =>
+      current.map((report) => (report.id === reportId ? { ...report, ...merged } : report)),
+    );
+    return merged;
+  };
+
   const toggleSort = (nextSortKey: SortKey) => {
     if (sortKey === nextSortKey) {
       setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
@@ -117,9 +136,18 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
     setSortDirection(nextSortKey === 'createdAt' ? 'desc' : 'asc');
   };
 
-  const openViewer = (type: Exclude<ViewerType, null>, reportId: string) => {
-    setSelectedReportId(reportId);
-    setViewerType(type);
+  const openViewer = async (type: Exclude<ViewerType, null>, reportId: string) => {
+    setError(null);
+    try {
+      // Open only after detail resolves so list-row null blobs don't flash empty viewers.
+      await loadReportDetail(reportId);
+      setSelectedReportId(reportId);
+      setViewerType(type);
+    } catch {
+      setError('Could not load bug report details. Please try again.');
+      setViewerType(null);
+      setSelectedReportId(null);
+    }
   };
 
   const closeViewer = () => {
@@ -145,7 +173,16 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
   const onCopyReport = async (report: AdminBugReportRow) => {
     setError(null);
     try {
-      await copyTextToClipboard(buildBugReportCopyText(report));
+      const alreadyHasBlobs =
+        report.consoleLogs != null || report.networkLogs != null || report.screenshot != null;
+      const hasAnyAttachment =
+        hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
+        hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
+        hasAttachmentContent(report.screenshot, report.hasScreenshot);
+      // Skip the detail fetch when the report has no diagnostics at all.
+      const detailed =
+        alreadyHasBlobs || !hasAnyAttachment ? report : await loadReportDetail(report.id);
+      await copyTextToClipboard(buildBugReportCopyText(detailed));
       setCopiedReportId(report.id);
       window.setTimeout(() => {
         setCopiedReportId((current) => (current === report.id ? null : current));

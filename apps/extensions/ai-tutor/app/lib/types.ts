@@ -125,6 +125,10 @@ export type AdminBugReportRow = {
   consoleLogs?: string | null;
   networkLogs?: string | null;
   screenshot?: string | null;
+  /** Present on list rows when bodies are omitted (#979). */
+  hasConsoleLogs?: boolean;
+  hasNetworkLogs?: boolean;
+  hasScreenshot?: boolean;
   pageUrl?: string | null;
   userAgent?: string | null;
   isAnonymous: boolean;
