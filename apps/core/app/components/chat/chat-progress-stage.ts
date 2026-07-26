@@ -1,10 +1,9 @@
 /**
  * Honest in-flight progress for course chat (#1171).
  *
- * Stages are discrete (routing → waiting → tools → generating / Assist prep).
- * Progress values are stage bookmarks — not a fake wall-clock percentage —
- * so slow local models (Qwen 32B) and Assist oversight buffering still feel
- * alive without implying a precise ETA.
+ * Stages are discrete (routing → waiting → tools → generating / Assist work).
+ * Progress bookmarks are ordinal stage ranks for tests/UI data attrs — never
+ * shown as a fake completion percentage.
  */
 
 export type ChatProgressStageId =
@@ -18,7 +17,7 @@ export type ChatProgressStageId =
 export type ChatProgressStage = {
   id: ChatProgressStageId;
   label: string;
-  /** Stage bookmark in 0–100; not an estimated completion %. */
+  /** Ordinal stage rank (0–100 scale); not a completion estimate. */
   progress: number;
 };
 
@@ -37,15 +36,16 @@ const STAGE_LABEL: Record<ChatProgressStageId, string> = {
   searching_materials: "Searching course materials…",
   searching_web: "Searching the web…",
   generating: "Generating…",
-  preparing_assist: "Preparing Assist reply…",
+  // Covers both slow TTFT and oversight buffering — not oversight-only.
+  preparing_assist: "Working on Assist reply…",
 };
 
 /** Brief window before we assume the request has left the client. */
 export const CHAT_PROGRESS_ROUTING_MS = 450;
 
 /**
- * After this with Assist ON and no tokens yet, the UI acknowledges the
- * buffered oversight path (draft + audit) instead of a silent wait.
+ * After this with Assist ON and no tokens yet, acknowledge the longer Assist
+ * path (slow local TTFT and/or oversight buffering) instead of a silent wait.
  */
 export const CHAT_PROGRESS_ASSIST_PREP_MS = 6_000;
 
@@ -57,10 +57,6 @@ export type ResolveChatProgressStageInput = {
   activeToolName: string | null;
   adhdAssist: boolean;
 };
-
-export function labelForChatProgressStage(id: ChatProgressStageId): string {
-  return STAGE_LABEL[id];
-}
 
 export function resolveChatProgressStage(
   input: ResolveChatProgressStageInput,
@@ -96,10 +92,7 @@ export function resolveChatProgressStageId(
     return "searching_web";
   }
 
-  if (
-    adhdAssist &&
-    elapsedMs >= CHAT_PROGRESS_ASSIST_PREP_MS
-  ) {
+  if (adhdAssist && elapsedMs >= CHAT_PROGRESS_ASSIST_PREP_MS) {
     return "preparing_assist";
   }
 
@@ -122,14 +115,35 @@ export function formatChatProgressElapsed(elapsedMs: number): string {
 type MessageLike = {
   role?: string;
   content?: unknown;
-  parts?: Array<{ type?: string; text?: string; toolInvocation?: { toolName?: string; state?: string }; toolName?: string; state?: string } | null> | null;
+  parts?: Array<{
+    type?: string;
+    text?: string;
+    toolInvocation?: { toolName?: string; state?: string };
+    toolName?: string;
+    state?: string;
+  } | null> | null;
 };
+
+function contentAsDisplayText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (
+    content &&
+    typeof content === "object" &&
+    !Array.isArray(content) &&
+    typeof (content as { text?: unknown }).text === "string"
+  ) {
+    return (content as { text: string }).text;
+  }
+  return "";
+}
 
 /**
  * True when the last assistant turn already has visible text (streaming tokens
- * or a buffered dump). Used to hide the status row once tokens speak for themselves.
+ * or a buffered dump).
  */
-export function assistantMessageHasText(message: MessageLike | null | undefined): boolean {
+export function assistantMessageHasText(
+  message: MessageLike | null | undefined,
+): boolean {
   if (!message || message.role !== "assistant") return false;
 
   const parts = message.parts;
@@ -146,17 +160,13 @@ export function assistantMessageHasText(message: MessageLike | null | undefined)
     }
   }
 
-  if (typeof message.content === "string") {
-    return message.content.trim().length > 0;
-  }
-
-  return false;
+  return contentAsDisplayText(message.content).trim().length > 0;
 }
 
 /**
  * Best-effort *in-progress* tool name on the in-flight assistant message.
  * Completed tool cards must not keep the status row stuck on “Searching…”
- * (and must not block Assist’s later “Preparing Assist reply…” stage).
+ * (and must not block Assist’s later work stage).
  */
 export function activeToolNameFromMessage(
   message: MessageLike | null | undefined,
@@ -196,16 +206,24 @@ export function activeToolNameFromMessage(
   return null;
 }
 
+/** True when an eduai-diagram fence was opened but not closed yet. */
+export function hasIncompleteEduaiDiagramFence(content: string): boolean {
+  if (!/```eduai-diagram\b/i.test(content)) return false;
+  const fenceMarkers = content.match(/```/g);
+  return (fenceMarkers?.length ?? 0) % 2 !== 0;
+}
+
 /**
  * Assist display transform is safe once the stream is idle, or when a full
- * Top summary + Next? pair is already present (oversight dumps arrive whole).
- * Avoids flashing a half-reordered layout on true mid-stream Assist text.
+ * Top summary + Next? pair is present without a half-open diagram fence.
+ * Oversight dumps arrive whole; true mid-stream Assist should not reorder yet.
  */
 export function shouldApplyAssistiveDisplayTransform(
   content: string,
   isStreaming: boolean,
 ): boolean {
   if (!isStreaming) return true;
+  if (hasIncompleteEduaiDiagramFence(content)) return false;
   const hasTop = /\*\*Top summary\*\*/i.test(content);
   const hasNext = /\*\*Next\?\*\*/i.test(content);
   return hasTop && hasNext;

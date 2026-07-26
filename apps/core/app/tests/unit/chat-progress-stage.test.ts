@@ -5,6 +5,7 @@ import {
   activeToolNameFromMessage,
   assistantMessageHasText,
   formatChatProgressElapsed,
+  hasIncompleteEduaiDiagramFence,
   resolveChatProgressStage,
   resolveChatProgressStageId,
   shouldApplyAssistiveDisplayTransform,
@@ -121,6 +122,18 @@ describe("resolveChatProgressStage — #1171", () => {
     expect(waiting.progress).toBe(later.progress);
     expect(waiting.label).toMatch(/Waiting for model/i);
   });
+
+  it("uses an Assist label that covers TTFT and oversight, not oversight-only", () => {
+    const stage = resolveChatProgressStage({
+      elapsedMs: CHAT_PROGRESS_ASSIST_PREP_MS,
+      hasAssistantText: false,
+      hasRoutedModel: true,
+      activeToolName: null,
+      adhdAssist: true,
+    });
+    expect(stage.id).toBe("preparing_assist");
+    expect(stage.label).toMatch(/Working on Assist reply/i);
+  });
 });
 
 describe("formatChatProgressElapsed", () => {
@@ -214,5 +227,32 @@ describe("shouldApplyAssistiveDisplayTransform", () => {
       shouldApplyAssistiveDisplayTransform("**Top summary**\n- Point", true),
     ).toBe(false);
     expect(shouldApplyAssistiveDisplayTransform("hello", true)).toBe(false);
+  });
+
+  it("defers while an eduai-diagram fence is still open", () => {
+    const openFence = `${complete}\n\n\`\`\`eduai-diagram\nprocess-flow\nA — incomplete`;
+    expect(hasIncompleteEduaiDiagramFence(openFence)).toBe(true);
+    expect(shouldApplyAssistiveDisplayTransform(openFence, true)).toBe(false);
+
+    const closedFence = `${complete}\n\n\`\`\`eduai-diagram\nprocess-flow\nA — done\n\`\`\``;
+    expect(hasIncompleteEduaiDiagramFence(closedFence)).toBe(false);
+    expect(shouldApplyAssistiveDisplayTransform(closedFence, true)).toBe(true);
+  });
+});
+
+describe("assistantMessageHasText — object content", () => {
+  it("reads .text from object content when parts lack text", () => {
+    expect(
+      assistantMessageHasText({
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-invocation",
+            toolInvocation: { toolName: "getInformation", state: "result" },
+          },
+        ],
+        content: { text: "From content object" },
+      }),
+    ).toBe(true);
   });
 });
