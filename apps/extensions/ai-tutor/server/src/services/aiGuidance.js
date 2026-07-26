@@ -34,8 +34,9 @@
  */
 
 import { randomUUID } from 'crypto';
+import { setTimeout as wait } from 'node:timers/promises';
 import { prisma } from '../config/database.js';
-import { getEduAiChatUrl } from './eduaiClient.js';
+import { getEduAiCompletionUrl } from './eduaiClient.js';
 import { trimNonEmpty } from '../utils/coreCourseId.js';
 import { DEFAULT_TUTOR_MODEL } from './aiModelPolicy.js';
 
@@ -44,14 +45,56 @@ const SUPERVISOR_ERROR_MESSAGE =
 const FALLBACK_MESSAGE =
   "I'm having trouble formulating a helpful response right now. Please try rephrasing your question, or ask your instructor for guidance.";
 
-// #999: bound how long a single EduAI round-trip can hang — without this, a
-// slow/stuck upstream call leaves the student staring at an unbounded
-// "Thinking..." spinner with no way out.
+// #999/#1001: bound the complete EduAI call, including the one permitted
+// retry, so a transient failure cannot turn into an unbounded wait.
 const EDUAI_CALL_TIMEOUT_MS = Number(process.env.EDUAI_CALL_TIMEOUT_MS) || 45_000;
+const EDUAI_RETRY_DELAY_MS = 250;
+const EDUAI_MAX_ATTEMPTS = 2;
 const TIMEOUT_MESSAGE = 'The AI study buddy took too long to respond. Please try again.';
 
+function resolveRetryDelayMs(retryAfter, remainingMs, nowMs = Date.now()) {
+  const safeRemainingMs = Math.max(remainingMs, 0);
+  let requestedDelayMs = EDUAI_RETRY_DELAY_MS;
+
+  if (typeof retryAfter === 'string') {
+    const value = retryAfter.trim();
+
+    if (/^-?\d+(?:\.\d+)?$/.test(value)) {
+      requestedDelayMs = Number(value) * 1_000;
+    } else {
+      const retryAt = Date.parse(value);
+      if (Number.isFinite(retryAt)) {
+        requestedDelayMs = retryAt - nowMs;
+      }
+    }
+  }
+
+  return Math.min(Math.max(requestedDelayMs, 0), safeRemainingMs);
+}
+
+function isRetryableEduAiResponse(status, errorText) {
+  if (status === 503) {
+    return true;
+  }
+
+  if (status !== 429) {
+    return false;
+  }
+
+  // /api/completion currently normalizes provider failures to 502, so a 429
+  // here is normally proxy-level. Preserve one retry unless this is the known
+  // Core application rate-limit payload, whose window is much longer than the
+  // bounded backoff.
+  try {
+    return JSON.parse(errorText)?.error !== 'Too Many Requests';
+  } catch {
+    return true;
+  }
+}
+
 /**
- * Single round-trip to the EduAI chat completion endpoint.
+ * Single logical call to the EduAI chat completion endpoint. Transient 429 or
+ * 503 responses receive one bounded retry within the existing timeout.
  *
  * Why both a cookie AND an apiKey: EduAI authenticates the *caller*
  * (this server, on behalf of a logged-in user) via the session cookie, but
@@ -76,7 +119,7 @@ async function callEduAI({
   courseId = null,
   signal,
 }) {
-  const endpoint = getEduAiChatUrl();
+  const endpoint = getEduAiCompletionUrl();
   const model = modelId || process.env.EDUAI_MODEL || DEFAULT_TUTOR_MODEL;
 
   if (!cookie) {
@@ -126,40 +169,67 @@ async function callEduAI({
   };
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        cookie,
-      },
-      body: JSON.stringify(requestBody),
-      // #999 review: forward the caller's cancellation (client disconnect /
-      // Stop button, propagated from the Express route) alongside our own
-      // timeout, so either one actually stops the upstream request instead
-      // of it running to completion in the background.
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
-        : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS),
-    });
+    const deadline = Date.now() + EDUAI_CALL_TIMEOUT_MS;
+    // The same signal covers both attempts and the backoff, preserving the
+    // existing 45-second upper bound for the complete logical call.
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS)])
+      : AbortSignal.timeout(EDUAI_CALL_TIMEOUT_MS);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[aiGuidance] API error:', response.status, errorText);
-      const error = new Error(`AI API returned status ${response.status}`);
-      error.status = response.status;
-      throw error;
+    for (let attempt = 1; attempt <= EDUAI_MAX_ATTEMPTS; attempt += 1) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie,
+        },
+        body: JSON.stringify(requestBody),
+        signal: requestSignal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const shouldRetry =
+          isRetryableEduAiResponse(response.status, errorText) && attempt < EDUAI_MAX_ATTEMPTS;
+
+        if (shouldRetry) {
+          console.warn(
+            '[aiGuidance] Transient API error; retrying once:',
+            response.status,
+            errorText,
+          );
+          const nowMs = Date.now();
+          const remainingMs = Math.max(deadline - nowMs, 0);
+          const retryDelayMs = resolveRetryDelayMs(
+            response.headers.get('Retry-After'),
+            remainingMs,
+            nowMs,
+          );
+          await wait(retryDelayMs, undefined, { signal: requestSignal });
+          requestSignal.throwIfAborted();
+          if (Date.now() >= deadline) {
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+          }
+          continue;
+        }
+
+        console.error('[aiGuidance] API error:', response.status, errorText);
+        const error = new Error(`AI API returned status ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      const data = await response.json();
+      if (data.content && typeof data.content === 'string') {
+        return {
+          message: data.content,
+          chatId: data.chatId || chatId || null,
+        };
+      }
+
+      console.error('[aiGuidance] Unexpected response format:', data);
+      throw new Error('Invalid response format from AI API');
     }
-
-    const data = await response.json();
-    if (data.content && typeof data.content === 'string') {
-      return {
-        message: data.content,
-        chatId: data.chatId || chatId || null,
-      };
-    }
-
-    console.error('[aiGuidance] Unexpected response format:', data);
-    throw new Error('Invalid response format from AI API');
   } catch (error) {
     if (signal?.aborted) {
       // The caller's own signal (not our timeout) fired — a genuine
@@ -884,6 +954,7 @@ export async function generateCustomResponse({
 
 // Exposed for unit testing only — not part of the public API.
 export const _testExports = {
+  resolveRetryDelayMs,
   stripMarkdownFence,
   normalizeSupervisorVerdict,
   buildSystemPrompt,

@@ -17,7 +17,7 @@ export const POLICY_FLAGS = {
   "instructors.canCreateCourses": {
     label: "Instructors can create courses",
     description:
-      "Allow users with the INSTRUCTOR role to create courses. Applies to Core and AI Tutor.",
+      "Allow users with the INSTRUCTOR role to create courses.",
     default: true,
   },
   "instructors.canPublishCourses": {

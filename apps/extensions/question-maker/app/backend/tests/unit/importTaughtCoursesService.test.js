@@ -9,6 +9,7 @@ const courseCreate = vi.fn();
 const courseUpdate = vi.fn();
 const topicsFindAll = vi.fn();
 const topicsCreate = vi.fn();
+const topicsFindOne = vi.fn();
 const assessmentsFindOne = vi.fn();
 const createAssessment = vi.fn();
 
@@ -30,6 +31,7 @@ vi.mock('../../src/schema/index.js', () => ({
   Topics: {
     findAll: topicsFindAll,
     create: topicsCreate,
+    findOne: topicsFindOne,
   },
   Assessments: {
     findOne: assessmentsFindOne,
@@ -70,6 +72,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     courseCreate.mockImplementation(async (data) => ({ id: 99, ...data, update: courseUpdate }));
     topicsFindAll.mockResolvedValue([{ id: 1, name: 'Topic A' }]);
     topicsCreate.mockResolvedValue({});
+    topicsFindOne.mockResolvedValue(null);
     assessmentsFindOne.mockResolvedValue(null);
     createAssessment.mockResolvedValue({});
     syncTopicsFromCoreForCourse.mockResolvedValue(1);
@@ -222,6 +225,44 @@ describe('importTaughtCoursesFromCore (QM)', () => {
 
     await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 
+    expect(createAssessment).not.toHaveBeenCalled();
+  });
+
+  // Two co-instructors can provision the same anchor at once: both read an empty
+  // topic list, and the loser trips the unique (course_id, name) index. Losing
+  // that race must not abort the rest of the import.
+  it('swallows a duplicate General topic when the racing writer already created it', async () => {
+    listCoursesFromCore.mockResolvedValue([{ id: 'core-8', callerEnrollmentRole: 'INSTRUCTOR' }]);
+    courseFindAll.mockResolvedValue([
+      { id: 12, userId: 'u1', coreCourseId: 'core-8', update: courseUpdate },
+    ]);
+    topicsFindAll.mockResolvedValue([]);
+    topicsCreate.mockRejectedValue(new Error('duplicate key value violates unique constraint'));
+    topicsFindOne.mockResolvedValue({ id: 5, name: 'General' });
+
+    await expect(
+      importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc'),
+    ).resolves.toMatchObject({ synced: 1 });
+
+    // Provisioning continued past the duplicate.
+    expect(createAssessment).toHaveBeenCalled();
+  });
+
+  it('does not swallow a topic create failure that is not a lost race', async () => {
+    listCoursesFromCore.mockResolvedValue([{ id: 'core-9', callerEnrollmentRole: 'INSTRUCTOR' }]);
+    courseFindAll.mockResolvedValue([
+      { id: 13, userId: 'u1', coreCourseId: 'core-9', update: courseUpdate },
+    ]);
+    topicsFindAll.mockResolvedValue([]);
+    topicsCreate.mockRejectedValue(new Error('connection terminated'));
+    // No row appeared, so the failure was real: provisioning must abort for this
+    // course rather than continuing as if the topic existed. The per-course
+    // handler contains the throw, so the run still returns a tally.
+    topicsFindOne.mockResolvedValue(null);
+
+    const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
+
+    expect(result).toMatchObject({ imported: 0, synced: 0 });
     expect(createAssessment).not.toHaveBeenCalled();
   });
 });
