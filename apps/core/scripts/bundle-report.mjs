@@ -62,11 +62,19 @@ const isModule = (key, file) =>
   path.posix.basename(key.replace(/\?.*$/, "")) === file;
 const findKey = (file) =>
   entries.find(([k]) => isModule(k, file))?.[0] ?? null;
-const baseKeys = [findKey("entry.client.tsx"), findKey("root.tsx")].filter(
-  Boolean,
-);
+const entryClientKey = findKey("entry.client.tsx");
+const baseKeys = [entryClientKey, findKey("root.tsx")].filter(Boolean);
 
-const rows = entries
+// `entries` also holds the client bootstrap, which is not a route — reporting
+// it would overstate the route count. React Router tags client route modules
+// with a build query suffix; fall back to "everything but the bootstrap" if
+// that marker ever changes.
+const ROUTE_MARKER = "?__react-router-build-client-route";
+const routeEntries = entries.some(([k]) => k.includes(ROUTE_MARKER))
+  ? entries.filter(([k]) => k.includes(ROUTE_MARKER))
+  : entries.filter(([k]) => k !== entryClientKey);
+
+const rows = routeEntries
   .map(([key, v]) => {
     const seen = new Set();
     for (const base of baseKeys) initialChunks(base, seen);
@@ -79,6 +87,8 @@ const rows = entries
 
 if (asJson) {
   console.log(JSON.stringify(rows, null, 2));
+} else if (rows.length === 0) {
+  console.log("no route entries found in manifest");
 } else {
   const pad = Math.max(...rows.map((r) => r.route.length), 5);
   console.log(`${"route".padEnd(pad)}  chunks  initial JS`);

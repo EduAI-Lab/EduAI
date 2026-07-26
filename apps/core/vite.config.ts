@@ -28,8 +28,15 @@ const monorepoRoot = path.resolve(coreDir, "../..");
 //   everything else (Radix, lucide, recharts, domain code) — Rollup's
 //           route-level splitting handles these; a catch-all vendor chunk
 //           would inflate initial JS for every route.
+//
+// Module ids reach plugins posix-normalized, but the separator class keeps the
+// match correct even if a raw Windows path (`\node_modules\react\`) slips in.
 function manualChunks(id: string): string | undefined {
-  if (/node_modules\/(react|react-dom|scheduler|react-router)\//.test(id)) {
+  if (
+    /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(
+      id,
+    )
+  ) {
     return "vendor-react";
   }
   return undefined;
