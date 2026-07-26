@@ -126,11 +126,17 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * courses they are enrolled in. Optionally includes per-course question/topic stats.
  *
  * Paginated (#1044, required `page`/`pageSize`). Role visibility is resolved in
- * JS after the full local `Course.findAll()` (per-row Core roundtrip for
- * `callerEnrollmentRole`), so honest SQL `limit`/`offset` isn't possible without
- * a larger refactor — the visible set is sliced in memory here and `total`
- * reflects the caller's true visible count. Same bounded-interim call #1041 made
- * for Core's pickers; a server-side role filter is a follow-up.
+ * JS after the full local `Course.findAll()`, so honest SQL `limit`/`offset`
+ * isn't possible without a larger refactor — the visible set is sliced in memory
+ * here and `total` reflects the caller's true visible count. Same bounded-interim
+ * call #1041 made for Core's pickers.
+ *
+ * The per-request cost is not an N+1: `listCoursesForUser` resolves
+ * `callerEnrollmentRole` for every row from one cookie-scoped Core list call
+ * (#1072 replaced the per-row roster fetch). What remains is that each page
+ * redoes the whole filter — one unfiltered `findAll` plus ~2 uncached Core
+ * catalog reads — so a client walking P pages pays that P times. Pushing the
+ * role filter into the query (or caching the catalog reads) is #1206.
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
