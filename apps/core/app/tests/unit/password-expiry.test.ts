@@ -79,6 +79,15 @@ describe("getPasswordChangedAt", () => {
     } as never);
     expect(await getPasswordChangedAt("user-1")).toEqual(date);
   });
+
+  it("queries only the caller's credential account, selecting just passwordChangedAt", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue(null as never);
+    await getPasswordChangedAt("user-1");
+    expect(prisma.account.findFirst).toHaveBeenCalledWith({
+      where: { userId: "user-1", providerId: "credential" },
+      select: { passwordChangedAt: true },
+    });
+  });
 });
 
 // AUTH-06: this cached boolean is the shared primitive behind both the
@@ -158,5 +167,53 @@ describe("getExpiredPasswordRedirect", () => {
     await getExpiredPasswordRedirect("user-1");
 
     expect(prisma.account.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves a cached expired result (same redirect) without a second DB lookup", async () => {
+    const old = new Date();
+    old.setFullYear(old.getFullYear() - 2);
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: old,
+    } as never);
+
+    const first = await getExpiredPasswordRedirect("user-1");
+    const second = await getExpiredPasswordRedirect("user-1");
+
+    expect(first?.status).toBe(302);
+    expect(second?.status).toBe(302);
+    expect(second?.headers.get("Location")).toBe("/settings?expired=1");
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-queries once the cache TTL has fully elapsed", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+    vi.useFakeTimers();
+    try {
+      await getExpiredPasswordRedirect("user-1");
+      // CACHE_TTL_MS is 60_000ms; at exactly that elapsed time the entry must count as stale.
+      vi.advanceTimersByTime(60_000);
+      await getExpiredPasswordRedirect("user-1");
+      expect(prisma.account.findFirst).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("invalidating one user's cache does not evict another user's still-valid entry", async () => {
+    vi.mocked(prisma.account.findFirst).mockResolvedValue({
+      passwordChangedAt: new Date(),
+    } as never);
+
+    await getExpiredPasswordRedirect("user-1");
+    await getExpiredPasswordRedirect("user-2");
+    invalidatePasswordExpiryCache("user-1");
+
+    await getExpiredPasswordRedirect("user-1");
+    await getExpiredPasswordRedirect("user-2");
+
+    // user-1: 2 lookups (evicted + re-queried); user-2: 1 lookup (still cached).
+    expect(prisma.account.findFirst).toHaveBeenCalledTimes(3);
   });
 });

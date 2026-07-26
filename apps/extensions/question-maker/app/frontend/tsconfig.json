@@ -20,7 +20,8 @@
     "baseUrl": ".",
     "paths": {
         "@/*": ["./src/*"],
-        "@eduai/ui": ["../../../../../packages/ui/src/index.ts"]
+        "@eduai/ui": ["../../../../../packages/ui/src/index.ts"],
+        "@eduai/types": ["../../../../../packages/types/src/index.ts"]
       }
   },
   "include": ["src"],
