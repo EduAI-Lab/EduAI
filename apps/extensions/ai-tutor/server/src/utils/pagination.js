@@ -7,11 +7,13 @@
  *
  * Contract (#1043) — mirrors EduAI Core's `pagination.server.ts` (#1041):
  *   Response envelope: `{ data: [...], total, page, pageSize }`.
- *   `page` clamps to `>= 1`. `pageSize` clamps to `1..MAX_PAGE_SIZE`.
+ *   `page` clamps to `1..MAX_PAGE`. `pageSize` clamps to `1..MAX_PAGE_SIZE`.
  *
- * Two parsing modes:
- *   - required (default): the caller MUST send `page`/`pageSize`; absent or
- *     unparseable values throw a 400-shaped `PaginationError`. Used by the
+ * Two parsing modes. They differ ONLY on absent params — a param that is
+ * present but unparseable is a 400 in both, so the same malformed input never
+ * gets two different answers depending on the endpoint:
+ *   - required (default): the caller MUST send `page`/`pageSize`; absent
+ *     values throw a 400-shaped `PaginationError`. Used by the
  *     unbounded list endpoints (courses, admin lists, importable activities).
  *   - optional (`required: false`): missing params fall back to page 1 at
  *     `defaultPageSize`. Used by the structure-bounded tree endpoints
@@ -24,6 +26,15 @@
 
 export const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * Upper clamp for `page`. `skip` is derived as `(page - 1) * pageSize`, so an
+ * unbounded finite `page` (e.g. `?page=1e18`) would produce an offset past
+ * `Number.MAX_SAFE_INTEGER` and hand Prisma a nonsense/overflowing value. This
+ * ceiling keeps the worst-case offset at `MAX_PAGE * MAX_PAGE_SIZE` = 2e8,
+ * comfortably safe, while sitting far above any reachable real page.
+ */
+export const MAX_PAGE = 1_000_000;
 
 /**
  * A 400-shaped error thrown when required pagination params are missing or
@@ -48,13 +59,18 @@ function clampInt(value, min, max) {
 /**
  * Parse `page`/`pageSize` from an Express request's query string.
  *
+ * Malformed values (`?page=abc`) are rejected with 400 in BOTH modes — only
+ * *absent* params differ between modes, since silently coercing garbage to a
+ * default hides caller bugs and made the two modes disagree on the same input.
+ *
  * @param {import('express').Request} req
  * @param {object} [opts]
- * @param {boolean} [opts.required=true] Throw when params are absent/invalid.
+ * @param {boolean} [opts.required=true] Throw when params are absent.
  * @param {number} [opts.defaultPageSize=25] Fallback size when not required.
  * @param {number} [opts.maxPageSize=200] Upper clamp for `pageSize`.
  * @returns {{ page: number, pageSize: number, skip: number, take: number }}
- * @throws {PaginationError} when `required` and params are missing/invalid.
+ * @throws {PaginationError} when params are absent (required mode) or malformed
+ *   (either mode).
  */
 export function parsePaginationParams(req, opts = {}) {
   const {
@@ -78,17 +94,21 @@ export function parsePaginationParams(req, opts = {}) {
   const pageNum = hasPage ? Number(rawPage) : 1;
   const pageSizeNum = hasPageSize ? Number(rawPageSize) : defaultPageSize;
 
-  if (required && (!Number.isFinite(pageNum) || !Number.isFinite(pageSizeNum))) {
+  // Validate only what the caller actually sent. A param that is present but
+  // unparseable is a 400 in both modes; an absent one already either threw
+  // above (required) or fell back to its default (optional).
+  if (
+    (hasPage && !Number.isFinite(pageNum)) ||
+    (hasPageSize && !Number.isFinite(pageSizeNum))
+  ) {
     throw new PaginationError(
       'page and pageSize must be numbers',
       'PAGINATION_INVALID',
     );
   }
 
-  const page = Number.isFinite(pageNum) ? clampInt(pageNum, 1) : 1;
-  const pageSize = Number.isFinite(pageSizeNum)
-    ? clampInt(pageSizeNum, 1, maxPageSize)
-    : defaultPageSize;
+  const page = clampInt(pageNum, 1, MAX_PAGE);
+  const pageSize = clampInt(pageSizeNum, 1, maxPageSize);
 
   return { page, pageSize, skip: (page - 1) * pageSize, take: pageSize };
 }

@@ -61,7 +61,7 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
       prisma.lesson.count({ where: whereClause }),
       prisma.lesson.findMany({
         where: whereClause,
-        orderBy: { position: 'asc' },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),

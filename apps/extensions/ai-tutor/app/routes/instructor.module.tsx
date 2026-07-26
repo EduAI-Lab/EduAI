@@ -106,12 +106,23 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
   const perms = useAtPermissions();
-  const { course, module, lessons: initialLessons, lessonsTotal, moduleOrder } = loaderData;
+  const {
+    course,
+    module,
+    lessons: initialLessons,
+    lessonsTotal: initialLessonsTotal,
+    moduleOrder,
+  } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
-  // #1043: more lessons than the bounded page we loaded — reorder disabled so a
-  // partial-order persist can't orphan the unseen tail.
-  const lessonsTruncated = lessonsTotal > initialLessons.length;
+  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
+  // replace `lessons`, so the truncation flag has to move with them or it goes
+  // stale and re-enables reorder once the list crosses the page bound.
+  const [lessonsTotal, setLessonsTotal] = useState(initialLessonsTotal);
+  // More lessons than the bounded page we loaded — reorder disabled all the way
+  // down (provider, item, drag handle) so a partial-order persist can't orphan
+  // the unseen tail, and the UI never advertises a drag it will reject.
+  const lessonsTruncated = lessonsTotal > lessons.length;
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
@@ -155,6 +166,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   if (initialLessons !== prevInitialLessons) {
     setPrevInitialLessons(initialLessons);
     setLessons(initialLessons);
+    setLessonsTotal(initialLessonsTotal);
   }
 
   const refreshLessons = async () => {
@@ -162,6 +174,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       const lessonData = await api.lessonsForModule(numericModuleId);
       setLessons(lessonData.data);
+      setLessonsTotal(lessonData.total);
     } catch (error) {
       console.error('Failed to refresh lessons', error);
     }
@@ -737,6 +750,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Dialog>
       </PermissionGate>
 
+      {lessonsTruncated && perms.canManageContent ? (
+        <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          Showing {lessons.length} of {lessonsTotal} lessons. Reordering is unavailable until the
+          full list fits on one page, so a partial order can&apos;t be saved over the rest.
+        </p>
+      ) : null}
+
       {oLessons.length === 0 ? (
         <Card>
           <EmptyState
@@ -750,7 +770,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           ids={oLessons.map((l) => l.id)}
           onReorder={reorderLessonsList}
           strategy="grid"
-          disabled={!perms.canManageContent || oLessons.length < 2 || reorderingLessons}
+          disabled={
+            !perms.canManageContent ||
+            oLessons.length < 2 ||
+            reorderingLessons ||
+            lessonsTruncated
+          }
         >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {oLessons.map((lesson, idx) => {
@@ -766,7 +791,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
                 : null;
             const busy = publishingId === lesson.id;
-            const canReorder = perms.canManageContent && oLessons.length > 1;
+            const canReorder =
+              perms.canManageContent && oLessons.length > 1 && !lessonsTruncated;
             return (
               <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
                 {({ handleProps }) => (

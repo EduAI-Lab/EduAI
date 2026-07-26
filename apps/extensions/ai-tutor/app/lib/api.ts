@@ -102,13 +102,16 @@ export const COURSE_LIST_PAGE_SIZE = 200;
 /**
  * Serialize pagination params into a query string. Returns '' when empty so
  * callers can append unconditionally.
+ *
+ * Callers must pass BOTH `page` and `pageSize` for endpoints that parse in
+ * required mode — the server 400s (`PAGINATION_REQUIRED`) on a half-supplied
+ * pair, so every call site below defaults `page: 1` alongside its page size.
  */
-function pageQuery(params?: { page?: number; pageSize?: number; search?: string }): string {
+function pageQuery(params?: { page?: number; pageSize?: number }): string {
   if (!params) return '';
   const qs = new URLSearchParams();
   if (params.page !== undefined) qs.set('page', String(params.page));
   if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
-  if (params.search) qs.set('search', params.search);
   const s = qs.toString();
   return s ? `?${s}` : '';
 }
@@ -323,9 +326,9 @@ export const api = {
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
       ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
     }>,
-  listCourses: (params?: { page?: number; pageSize?: number; search?: string }) =>
+  listCourses: (params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/courses${pageQuery({ pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+      `/api/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Course>>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
@@ -351,7 +354,7 @@ export const api = {
     }),
   modulesForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/courses/${courseId}/modules${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+      `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Module>>,
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (
@@ -391,7 +394,7 @@ export const api = {
     }),
   lessonsForModule: (moduleId: number, params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/modules/${moduleId}/lessons${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+      `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Lesson>>,
   createLesson: (
     moduleId: number,
@@ -430,7 +433,7 @@ export const api = {
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
   activitiesForLesson: (lessonId: number, params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/lessons/${lessonId}/activities${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+      `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Activity>>,
   createActivity: (
     lessonId: number,
@@ -504,7 +507,7 @@ export const api = {
     }),
   topicsForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/courses/${courseId}/topics${pageQuery({ pageSize: TREE_PAGE_SIZE, ...params })}`,
+      `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Topic>>,
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
@@ -621,7 +624,7 @@ export const api = {
     ) as Promise<AdminUserPage>,
   listAdminCourses: (params?: { page?: number; pageSize?: number }) =>
     http(
-      `/api/admin/courses${pageQuery({ pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+      `/api/admin/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
     ) as Promise<Paginated<Course>>,
   /**
    * `availableStudents` is one page of Core's STUDENT list (#1041) — pass

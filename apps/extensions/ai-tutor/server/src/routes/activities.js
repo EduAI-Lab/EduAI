@@ -415,7 +415,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       prisma.activity.count({ where: { lessonId } }),
       prisma.activity.findMany({
         where: { lessonId },
-        orderBy: { position: 'asc' },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
         include: {
@@ -1150,7 +1150,7 @@ router.get(
         prisma.activity.count({ where: importableWhere }),
         prisma.activity.findMany({
           where: importableWhere,
-          orderBy: [{ lessonId: 'asc' }, { position: 'asc' }],
+          orderBy: [{ lessonId: 'asc' }, { position: 'asc' }, { id: 'asc' }],
           skip: pageParams.skip,
           take: pageParams.take,
           include: {

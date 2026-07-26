@@ -123,7 +123,7 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       prisma.topic.count({ where: { courseOfferingId: courseId } }),
       prisma.topic.findMany({
         where: { courseOfferingId: courseId },
-        orderBy: { name: 'asc' },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),

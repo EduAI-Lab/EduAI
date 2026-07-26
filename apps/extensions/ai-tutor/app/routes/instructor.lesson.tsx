@@ -165,13 +165,24 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
-  const { course, module, lesson, activities: initialActivities, activitiesTotal, orderText } = loaderData;
-  // #1043: true if the lesson has more activities than the bounded page we
-  // loaded. Reorder is disabled in that case — dragging a partial page would
-  // persist positions that orphan the unseen tail.
-  const activitiesTruncated = activitiesTotal > initialActivities.length;
+  const {
+    course,
+    module,
+    lesson,
+    activities: initialActivities,
+    activitiesTotal: initialActivitiesTotal,
+    orderText,
+  } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  // #1043/#1162: `total` is state, not a loader constant — refresh, delete, and
+  // duplicate all change the list, so the truncation flag has to move with them
+  // or it goes stale and re-enables reorder once the list crosses the bound.
+  const [activitiesTotal, setActivitiesTotal] = useState(initialActivitiesTotal);
+  // True when the lesson has more activities than the bounded page we loaded.
+  // Reorder is disabled all the way down (provider, item, drag handle) — a
+  // partial page would persist positions that orphan the unseen tail.
+  const activitiesTruncated = activitiesTotal > activities.length;
   const [oActivities, addActivityOpt] = useOptimistic(
     activities,
     (state, patch: (items: Activity[]) => Activity[]) => patch(state),
@@ -275,6 +286,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   if (initialActivities !== prevInitialActivities) {
     setPrevInitialActivities(initialActivities);
     setActivities(initialActivities);
+    setActivitiesTotal(initialActivitiesTotal);
   }
 
   const beginEditingActivity = (activity: Activity) => {
@@ -320,6 +332,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       const activityData = await api.activitiesForLesson(numericLessonId);
       setActivities(activityData.data);
+      setActivitiesTotal(activityData.total);
     } catch (error) {
       console.error('Failed to refresh activities', error);
     }
@@ -379,6 +392,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       await api.deleteActivity(activityId);
       setActivities((prev) => prev.filter((activity) => activity.id !== activityId));
+      // Keep `total` in step with the local removal so `activitiesTruncated`
+      // stays accurate without a refetch.
+      setActivitiesTotal((prev) => Math.max(0, prev - 1));
       if (editingActivityId === activityId) {
         cancelEditingActivity();
       }
@@ -395,6 +411,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       const duplicated = await api.duplicateActivity(activityId);
       setActivities((prev) => [...prev, duplicated]);
+      setActivitiesTotal((prev) => prev + 1);
     } catch (error) {
       console.error('Failed to duplicate activity', error);
       alert('Failed to duplicate activity. Please try again.');
@@ -763,6 +780,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </Dialog>
             </PermissionGate>
 
+            {activitiesTruncated && perms.canManageContent ? (
+              <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+                Showing {activities.length} of {activitiesTotal} activities. Reordering is
+                unavailable until the full list fits on one page, so a partial order can&apos;t be
+                saved over the rest.
+              </p>
+            ) : null}
+
             {oActivities.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -778,7 +803,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 onReorder={reorderActivitiesList}
                 strategy="list"
                 disabled={
-                  !perms.canManageContent || oActivities.length < 2 || reorderingActivities
+                  !perms.canManageContent ||
+                  oActivities.length < 2 ||
+                  reorderingActivities ||
+                  activitiesTruncated
                 }
               >
               <div className="space-y-4">
@@ -797,7 +825,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
-                  const canReorderActivity = perms.canManageContent && oActivities.length > 1;
+                  const canReorderActivity =
+                    perms.canManageContent && oActivities.length > 1 && !activitiesTruncated;
                   return (
                     <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
                       {({ handleProps }) => (

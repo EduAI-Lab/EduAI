@@ -234,7 +234,7 @@ router.get('/courses', async (req, res) => {
       const [total, courses] = await prisma.$transaction([
         prisma.courseOffering.count(),
         prisma.courseOffering.findMany({
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: pageParams.skip,
           take: pageParams.take,
         }),
@@ -251,7 +251,7 @@ router.get('/courses', async (req, res) => {
         prisma.courseOffering.count({ where: instructorWhere }),
         prisma.courseOffering.findMany({
           where: instructorWhere,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: pageParams.skip,
           take: pageParams.take,
         }),
@@ -281,7 +281,7 @@ router.get('/courses', async (req, res) => {
         prisma.courseOffering.count({ where: unitAdminWhere }),
         prisma.courseOffering.findMany({
           where: unitAdminWhere,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: pageParams.skip,
           take: pageParams.take,
         }),
@@ -327,7 +327,7 @@ router.get('/courses', async (req, res) => {
         prisma.courseOffering.count({ where: taUnionWhere }),
         prisma.courseOffering.findMany({
           where: taUnionWhere,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: pageParams.skip,
           take: pageParams.take,
         }),
@@ -363,7 +363,7 @@ router.get('/courses', async (req, res) => {
         prisma.courseOffering.count({ where: studentWhere }),
         prisma.courseOffering.findMany({
           where: studentWhere,
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip: pageParams.skip,
           take: pageParams.take,
         }),
@@ -936,7 +936,14 @@ router.get('/courses/:courseId/submissions', async (req, res) => {
 
     const submissions = await prisma.submission.findMany({
       where,
-      orderBy: [{ activityId: 'asc' }, { userId: 'asc' }, { attemptNumber: 'asc' }],
+      // `id` last: Submission has no unique constraint covering the leading
+      // keys, so without it tied rows could shift between offset pages.
+      orderBy: [
+        { activityId: 'asc' },
+        { userId: 'asc' },
+        { attemptNumber: 'asc' },
+        { id: 'asc' },
+      ],
       take,
       skip,
       include: {

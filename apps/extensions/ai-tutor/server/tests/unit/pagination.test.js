@@ -4,6 +4,7 @@ import {
   paginated,
   PaginationError,
   MAX_PAGE_SIZE,
+  MAX_PAGE,
 } from '../../src/utils/pagination.js';
 
 /** Minimal Express-request stub — only `query` is read by the helper. */
@@ -60,6 +61,33 @@ describe('parsePaginationParams', () => {
       });
       expect(p).toEqual({ page: 2, pageSize: 50, skip: 50, take: 50 });
     });
+
+    // Modes must agree on malformed input — previously `page=abc` was a 400 in
+    // required mode but silently became page 1 here.
+    it('throws PAGINATION_INVALID for a malformed page, same as required mode', () => {
+      try {
+        parsePaginationParams(reqWith({ page: 'abc' }), { required: false });
+        throw new Error('expected throw');
+      } catch (e) {
+        expect(e).toBeInstanceOf(PaginationError);
+        expect(e.status).toBe(400);
+        expect(e.code).toBe('PAGINATION_INVALID');
+      }
+    });
+
+    it('throws PAGINATION_INVALID for a malformed pageSize', () => {
+      expect(() =>
+        parsePaginationParams(reqWith({ pageSize: 'lots' }), { required: false }),
+      ).toThrow(PaginationError);
+    });
+
+    it('treats an empty-string param as absent, not malformed', () => {
+      const p = parsePaginationParams(reqWith({ page: '', pageSize: '' }), {
+        required: false,
+        defaultPageSize: 200,
+      });
+      expect(p).toEqual({ page: 1, pageSize: 200, skip: 0, take: 200 });
+    });
   });
 
   describe('clamping', () => {
@@ -96,6 +124,25 @@ describe('parsePaginationParams', () => {
       const p = parsePaginationParams(reqWith({ page: '2.9', pageSize: '10.7' }));
       expect(p.page).toBe(2);
       expect(p.pageSize).toBe(10);
+    });
+
+    it('clamps page above MAX_PAGE down to the ceiling', () => {
+      const p = parsePaginationParams(reqWith({ page: '99999999', pageSize: '10' }));
+      expect(p.page).toBe(MAX_PAGE);
+    });
+
+    // A huge finite page previously produced an offset past MAX_SAFE_INTEGER.
+    it('keeps skip a safe integer for an absurdly large page', () => {
+      const p = parsePaginationParams(reqWith({ page: '1e18', pageSize: '200' }));
+      expect(p.page).toBe(MAX_PAGE);
+      expect(p.skip).toBe((MAX_PAGE - 1) * 200);
+      expect(Number.isSafeInteger(p.skip)).toBe(true);
+    });
+
+    it('rejects Infinity rather than clamping it', () => {
+      expect(() => parsePaginationParams(reqWith({ page: 'Infinity', pageSize: '10' }))).toThrow(
+        PaginationError,
+      );
     });
   });
 });

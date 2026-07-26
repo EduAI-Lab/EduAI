@@ -75,7 +75,7 @@ router.get('/courses/:courseId/modules', async (req, res) => {
       prisma.module.count({ where: whereClause }),
       prisma.module.findMany({
         where: whereClause,
-        orderBy: { position: 'asc' },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
       }),
