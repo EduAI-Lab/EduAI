@@ -254,6 +254,39 @@ describe("ChatMessage — streaming", () => {
     render(<ChatMessage message={streamingMessage} isStreaming={true} />);
     expect(screen.getByText("Partial response...")).toBeInTheDocument();
   });
+
+  it("defers Assist display transform for incomplete mid-stream structure (#1171)", () => {
+    const partialAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Only half so far",
+    };
+    render(
+      <ChatMessage
+        message={partialAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    // Incomplete Assist drafts keep policy headings until Top summary + Next? arrive.
+    expect(screen.getByText(/Top summary/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^TLDR$/i)).not.toBeInTheDocument();
+  });
+
+  it("applies Assist display transform when a complete dump arrives while streaming", () => {
+    const completeAssist: Message = {
+      ...aiMessage,
+      content: "**Top summary**\n- Point\n\n**Next?** Want to continue?",
+    };
+    render(
+      <ChatMessage
+        message={completeAssist}
+        isStreaming
+        assistiveDisplay
+      />,
+    );
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

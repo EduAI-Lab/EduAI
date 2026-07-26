@@ -8,6 +8,7 @@ import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 import { ChatWelcome } from "~/components/chat/chat-welcome";
 import type { ChatWelcomeProps } from "~/components/chat/chat-welcome";
 import type { ChatViewSharedProps } from "~/components/chat/chat-view-types";
+import { useChatProgress } from "~/components/chat/use-chat-progress";
 import { displayNameForRegistryId } from "~/lib/chat-auto-model";
 import {
   ASSISTIVE_CHAT_SURFACE_CLASS,
@@ -60,6 +61,13 @@ export function ChatConversationLayout({
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
+  const { elapsedMs, stage, showProgressIndicator } = useChatProgress({
+    isLoading,
+    messages,
+    adhdAssist,
+    streamingRoutedRegistryId,
+  });
+
   return (
     <div
       className={cn(
@@ -160,7 +168,9 @@ export function ChatConversationLayout({
                     );
                   })}
 
-                  {isLoading && <ChatTypingIndicator />}
+                  {showProgressIndicator && (
+                    <ChatTypingIndicator stage={stage} elapsedMs={elapsedMs} />
+                  )}
                 </>
               )}
             </div>

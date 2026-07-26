@@ -175,3 +175,36 @@ describe("ChatConversationLayout — routed model labels", () => {
     expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
   });
 });
+
+describe("ChatConversationLayout — in-flight progress (#1171)", () => {
+  it("shows a status / progress row while loading with no assistant text yet", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[{ id: "u1", role: "user", content: "Explain recursion" }]}
+        isLoading
+        streamingRoutedRegistryId="vllm:qwen2.5-32b-instruct"
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.getByText(/waiting for model|routing/i)).toBeInTheDocument();
+  });
+
+  it("hides the status row once streaming tokens are visible", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[
+          { id: "u1", role: "user", content: "Explain recursion" },
+          { id: "a1", role: "assistant", content: "Recursion is" },
+        ]}
+        isLoading
+        streamingRoutedRegistryId="google:gemini-2.5-flash"
+      />,
+    );
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText(/recursion is/i)).toBeInTheDocument();
+  });
+});
