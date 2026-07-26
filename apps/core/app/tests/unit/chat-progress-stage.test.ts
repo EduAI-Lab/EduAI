@@ -151,7 +151,7 @@ describe("assistantMessageHasText / activeToolNameFromMessage", () => {
     expect(assistantMessageHasText({ role: "user", content: "hi" })).toBe(false);
   });
 
-  it("prefers incomplete tool invocations", () => {
+  it("returns only in-progress tool invocations (not completed ones)", () => {
     expect(
       activeToolNameFromMessage({
         role: "assistant",
@@ -174,7 +174,27 @@ describe("assistantMessageHasText / activeToolNameFromMessage", () => {
           },
         ],
       }),
-    ).toBe("webSearch");
+    ).toBeNull();
+  });
+
+  it("lets Assist prep win after RAG tools finish (#1171 review)", () => {
+    expect(
+      resolveChatProgressStageId({
+        elapsedMs: CHAT_PROGRESS_ASSIST_PREP_MS,
+        hasAssistantText: false,
+        hasRoutedModel: true,
+        activeToolName: activeToolNameFromMessage({
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-invocation",
+              toolInvocation: { toolName: "getInformation", state: "result" },
+            },
+          ],
+        }),
+        adhdAssist: true,
+      }),
+    ).toBe("preparing_assist");
   });
 });
 
