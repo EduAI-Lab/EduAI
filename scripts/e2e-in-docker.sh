@@ -73,7 +73,14 @@ docker compose -f "$COMPOSE_FILE" up -d \
   e2e-ai-tutor-server \
   e2e-ai-tutor-app \
   e2e-qm-server \
-  e2e-qm-app
+  e2e-qm-app || {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Service startup failed — container logs:"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  docker compose -f "$COMPOSE_FILE" logs --no-color 2>&1 || true
+  exit 1
+}
 
 echo "  Waiting for all services to become healthy..."
 WAIT_EXIT=0

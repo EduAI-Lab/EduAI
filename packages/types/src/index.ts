@@ -22,6 +22,17 @@ export const ENROLLMENT_ROLE_VALUES = [
   'STUDENT',
 ] as const satisfies readonly EnrollmentRole[]
 
+/**
+ * Prefer an explicit has* flag from the list API; otherwise treat a non-empty
+ * string body as present. Shared so AI Tutor / QM enablement stays in lockstep.
+ */
+export function hasAttachmentContent(
+  value: string | null | undefined,
+  flag?: boolean | null,
+): boolean {
+  return Boolean(flag ?? (value != null && value !== ''))
+}
+
 // Canvas material sync
 export type CanvasMaterialImportStatus = 'not_imported' | 'imported' | 'updated_on_canvas'
 
