@@ -12,8 +12,15 @@ export function getEduAiBaseUrl() {
 }
 
 /**
- * AI completion endpoint. Used by `aiGuidance.js` rather than the
- * `requestEduAi` helper because chat needs custom headers and a non-trivial body shape.
+ * Stateless AI completion endpoint (#858). Used by `aiGuidance.js` for tutor/supervisor
+ * loops without course-chat persistence, RAG, or tool overhead.
+ */
+export function getEduAiCompletionUrl() {
+  return `${getEduAiBaseUrl()}/completion`;
+}
+
+/**
+ * @deprecated Use getEduAiCompletionUrl() for AI assist flows.
  */
 /**
  * Core's list endpoints require paging (#1041) and cap `pageSize` at 200.
@@ -228,6 +235,31 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
 }
 
 /**
+ * GET a single Core admin bug report (full diagnostic blobs) (#979).
+ */
+export async function getCoreAdminBugReport(cookie, bugReportId) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to load a Core bug report');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${encodeURIComponent(bugReportId)}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report GET failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
  * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
  *
  * Core requires `page`/`pageSize` and answers with
@@ -245,19 +277,36 @@ export async function listCoreAdminUsers(cookie, options = {}) {
     throw error;
   }
 
-  const params = new URLSearchParams();
+  // Resolve a known id set (#1125). Core caps `ids` at CORE_PAGE_SIZE per
+  // request, so dedupe and chunk — a course with more than CORE_PAGE_SIZE
+  // enrolled users would otherwise exceed the cap and 400 with IDS_TOO_MANY,
+  // losing the whole id->name map. Combine each chunk's envelope back into one.
   if (Array.isArray(options.ids)) {
-    if (options.ids.length === 0) {
+    const unique = [...new Set(options.ids.filter(Boolean))];
+    if (unique.length === 0) {
       return { data: [], total: 0, page: 1, pageSize: 0 };
     }
-    params.set('ids', options.ids.join(','));
-  } else {
-    params.set('page', String(options.page ?? 1));
-    params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
-    if (options.role) params.set('role', options.role);
-    if (options.search) params.set('search', options.search);
+    const data = [];
+    for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
+      const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
+      const params = new URLSearchParams();
+      params.set('ids', chunk.join(','));
+      const envelope = await fetchCoreUsers(cookie, params);
+      data.push(...(envelope?.data ?? []));
+    }
+    return { data, total: data.length, page: 1, pageSize: data.length };
   }
 
+  const params = new URLSearchParams();
+  params.set('page', String(options.page ?? 1));
+  params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
+  if (options.role) params.set('role', options.role);
+  if (options.search) params.set('search', options.search);
+  return fetchCoreUsers(cookie, params);
+}
+
+/** Single `GET /api/users` request with the ADMIN session cookie. */
+async function fetchCoreUsers(cookie, params) {
   const url = `${getCoreBaseUrl()}/api/users?${params}`;
   const response = await fetch(url, {
     headers: { cookie },
