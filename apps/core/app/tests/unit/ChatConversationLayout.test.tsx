@@ -1,11 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
 import {
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
-import { CHAT_PROGRESS_TEXT_IDLE_MS } from "~/components/chat/chat-progress-stage";
 
 const baseProps = {
   bannerTitle: "Chat",
@@ -178,6 +177,14 @@ describe("ChatConversationLayout — routed model labels", () => {
 });
 
 describe("ChatConversationLayout — in-flight progress (#1171)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows a status / progress row while loading with no assistant text yet", () => {
     const { container } = render(
       <ChatConversationLayout
@@ -211,31 +218,6 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
 
     expect(screen.getByText(/recursion is/i)).toBeInTheDocument();
     expect(container.querySelector("[data-chat-progress-stage]")).toBeNull();
-  });
-
-  it("re-shows a compact status row after streamed text goes idle", () => {
-    vi.useFakeTimers();
-    const { container } = render(
-      <ChatConversationLayout
-        {...baseProps}
-        messages={[
-          { id: "u1", role: "user", content: "Explain recursion" },
-          { id: "a1", role: "assistant", content: "Recursion is" },
-        ]}
-        isLoading
-        streamingRoutedRegistryId="google:gemini-2.5-flash"
-      />,
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(CHAT_PROGRESS_TEXT_IDLE_MS + 250);
-    });
-
-    expect(
-      container.querySelector('[data-chat-progress-compact="true"]'),
-    ).not.toBeNull();
-    expect(screen.getAllByText(/generating/i).length).toBeGreaterThan(0);
-    vi.useRealTimers();
   });
 
   it("shows Searching… when an in-progress RAG tool part is present", () => {
@@ -308,6 +290,70 @@ describe("ChatConversationLayout — in-flight progress (#1171)", () => {
     expect(
       container.querySelector(
         '[data-chat-progress-stage="searching_materials"][data-chat-progress-compact="true"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("keeps compact status after a tool finishes until follow-up text arrives", () => {
+    const { container, rerender } = render(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[
+          { id: "u1", role: "user", content: "What did chapter 3 say?" },
+          {
+            id: "a1",
+            role: "assistant",
+            content: "Looking that up",
+            parts: [
+              { type: "text", text: "Looking that up" },
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolName: "getInformation",
+                  state: "call",
+                  toolCallId: "t1",
+                  args: {},
+                },
+              },
+            ],
+          },
+        ]}
+        isLoading
+        streamingRoutedRegistryId="vllm:qwen2.5-32b-instruct"
+      />,
+    );
+
+    rerender(
+      <ChatConversationLayout
+        {...baseProps}
+        messages={[
+          { id: "u1", role: "user", content: "What did chapter 3 say?" },
+          {
+            id: "a1",
+            role: "assistant",
+            content: "Looking that up",
+            parts: [
+              { type: "text", text: "Looking that up" },
+              {
+                type: "tool-invocation",
+                toolInvocation: {
+                  toolName: "getInformation",
+                  state: "result",
+                  toolCallId: "t1",
+                  args: {},
+                },
+              },
+            ],
+          },
+        ]}
+        isLoading
+        streamingRoutedRegistryId="vllm:qwen2.5-32b-instruct"
+      />,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-chat-progress-stage="generating"][data-chat-progress-compact="true"]',
       ),
     ).not.toBeNull();
   });

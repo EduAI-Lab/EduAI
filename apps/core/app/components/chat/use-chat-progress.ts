@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
-  CHAT_PROGRESS_TEXT_IDLE_MS,
   activeToolNameFromMessage,
   assistantMessageHasText,
   assistantTextFingerprint,
@@ -24,7 +23,10 @@ type MessageLike = {
 
 /**
  * Tracks elapsed wait + resolved status stage while a chat turn is in flight.
- * Tick interval stays light so fast cloud models are not delayed.
+ *
+ * Multi-step gaps are gated on tool activity (active tool, or waiting for the
+ * next tokens after a tool completes) — not on inter-token silence — so slow
+ * local models do not flicker a compact status between streamed tokens.
  */
 export function useChatProgress(args: {
   isLoading: boolean;
@@ -47,9 +49,9 @@ export function useChatProgress(args: {
   } = args;
 
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [textIdle, setTextIdle] = useState(false);
+  const [awaitingFollowup, setAwaitingFollowup] = useState(false);
+  const prevHadActiveToolRef = useRef(false);
   const lastFingerprintRef = useRef("");
-  const lastTextChangeAtRef = useRef<number | null>(null);
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
   const inFlightAssistant =
@@ -60,13 +62,14 @@ export function useChatProgress(args: {
   const hasRoutedModel = Boolean(
     streamingRoutedRegistryId && streamingRoutedRegistryId.trim().length > 0,
   );
+  const hasActiveTool = Boolean(activeToolName);
 
   useEffect(() => {
     if (!isLoading) {
       setElapsedMs(0);
-      setTextIdle(false);
+      setAwaitingFollowup(false);
+      prevHadActiveToolRef.current = false;
       lastFingerprintRef.current = "";
-      lastTextChangeAtRef.current = null;
       return;
     }
 
@@ -74,26 +77,44 @@ export function useChatProgress(args: {
     setElapsedMs(0);
     const id = window.setInterval(() => {
       setElapsedMs(Date.now() - startedAt);
-      const changedAt = lastTextChangeAtRef.current;
-      if (changedAt != null) {
-        setTextIdle(Date.now() - changedAt >= CHAT_PROGRESS_TEXT_IDLE_MS);
-      }
     }, 250);
     return () => window.clearInterval(id);
   }, [isLoading]);
 
+  // Enter/leave tool activity. Only the active→inactive edge starts follow-up wait.
+  useEffect(() => {
+    if (!isLoading) return;
+
+    const wasActive = prevHadActiveToolRef.current;
+    prevHadActiveToolRef.current = hasActiveTool;
+
+    if (hasActiveTool) {
+      setAwaitingFollowup(false);
+      return;
+    }
+
+    if (wasActive && hasAssistantText) {
+      setAwaitingFollowup(true);
+    }
+  }, [isLoading, hasActiveTool, hasAssistantText]);
+
+  // New assistant text clears the post-tool wait (follow-up generation started).
   useEffect(() => {
     if (!isLoading) return;
     if (fingerprint === lastFingerprintRef.current) return;
 
+    const previous = lastFingerprintRef.current;
     lastFingerprintRef.current = fingerprint;
-    if (fingerprint.trim().length > 0) {
-      lastTextChangeAtRef.current = Date.now();
-    } else {
-      lastTextChangeAtRef.current = null;
+
+    if (
+      awaitingFollowup &&
+      previous.trim().length > 0 &&
+      fingerprint.trim().length > 0 &&
+      fingerprint !== previous
+    ) {
+      setAwaitingFollowup(false);
     }
-    setTextIdle(false);
-  }, [isLoading, fingerprint]);
+  }, [isLoading, fingerprint, awaitingFollowup]);
 
   const stage = resolveChatProgressStage({
     elapsedMs,
@@ -101,13 +122,13 @@ export function useChatProgress(args: {
     hasRoutedModel,
     activeToolName,
     adhdAssist,
+    awaitingFollowup,
   });
 
-  const hasActiveTool = Boolean(activeToolName);
-  // Prefer streaming tokens while text is still arriving. Re-show for tools or
-  // after a short idle gap (second generation / post-tool wait).
+  // Prefer streaming tokens while text is arriving. Re-show only for tools or
+  // the post-tool follow-up gap — never for inter-token silence alone.
   const showProgressIndicator =
-    isLoading && (!hasAssistantText || hasActiveTool || textIdle);
+    isLoading && (!hasAssistantText || hasActiveTool || awaitingFollowup);
   const compactProgress = hasAssistantText && showProgressIndicator;
 
   return {
