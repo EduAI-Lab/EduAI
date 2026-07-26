@@ -33,6 +33,7 @@ import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { Assessments } from '../schema/index.js';
 import { config } from '../config/settings.js';
 import { parseLimitOffset } from '../utils/listPagination.js';
+import { parseQuestionListFilters } from '../utils/questionListQuery.js';
 
 const router = express.Router();
 
@@ -127,7 +128,7 @@ router.post(
  */
 router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const { courseId, classId, search } = req.query;
+    const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
     const normalizedCourseId = requestedCourseId === undefined || requestedCourseId === '' ? undefined : requestedCourseId;
 
@@ -150,9 +151,10 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     }
 
     const { limit, offset } = parseLimitOffset(req.query);
+    const listFilters = parseQuestionListFilters(req.query);
     const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
-      search,
+      ...listFilters,
       limit,
       offset
     });
@@ -169,7 +171,26 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
 router.get('/stats', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const stats = await getQuestionStats(req.user.id);
+    const { courseId, classId } = req.query;
+    const requestedCourseId = courseId ?? classId;
+    let scopeUserId = req.user.id;
+    let scopeCourseId;
+
+    if (requestedCourseId !== undefined && requestedCourseId !== '') {
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, requestedCourseId, {
+        cookie: req.headers.cookie
+      });
+      if (!course) {
+        return res.status(404).json({ success: false, error: 'Course not found' });
+      }
+      if (!access || access.rank < LEVELS.ta.rank) {
+        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+      }
+      scopeUserId = course.userId;
+      scopeCourseId = course.id;
+    }
+
+    const stats = await getQuestionStats(scopeUserId, { courseId: scopeCourseId });
 
     res.json({
       success: true,

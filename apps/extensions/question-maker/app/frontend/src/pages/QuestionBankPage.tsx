@@ -3,6 +3,9 @@
  * question across every course you can access. Presented as a dense, scannable index
  * (a row list) rather than a card wall, since this is a discovery/reuse surface;
  * authoring always happens inside a course. Clicking a row opens a read-only preview.
+ *
+ * Search / type / difficulty / AI / draft filters and sort are applied server-side
+ * with limit/offset so pagination totals stay correct (#1040 review).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { PageHeading, Badge, QuestionStatusBadge, EmptyState, Button } from '@eduai/ui';
@@ -28,6 +31,7 @@ import {
 import {
   QuestionFilterToolbar,
   EMPTY_QUESTION_FILTERS,
+  countActiveFilters,
   type QuestionFilters,
   type QuestionSort,
 } from '@/components/question-bank/QuestionFilterToolbar';
@@ -35,7 +39,6 @@ import { QuestionPreviewSheet } from '@/components/question-bank/QuestionPreview
 
 const COURSE_ALL = '__all__';
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const DIFFICULTY_RANK: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
 const TYPE_ICON: Record<string, typeof IconListCheck> = {
   MCQ: IconListCheck,
   SA: IconAbc,
@@ -52,10 +55,6 @@ const topicLabel = (q: Question) => q.primaryTopic?.name ?? '';
 const questionTextOf = (q: Question) => repVariant(q)?.questionText ?? q.description ?? '';
 const difficultyOf = (q: Question) => repVariant(q)?.difficulty;
 const courseLabel = (q: Question) => q.course?.code ?? q.course?.name ?? `Course ${q.courseId}`;
-const timeOf = (q: Question) => {
-  const v = repVariant(q);
-  return new Date(v?.createdAt || v?.updatedAt || q.createdAt || 0).getTime();
-};
 
 export default function QuestionBankPage() {
   const [search, setSearch] = useState('');
@@ -72,10 +71,10 @@ export default function QuestionBankPage() {
     return () => window.clearTimeout(handle);
   }, [search]);
 
-  // Reset to the first page when server-side search or course scope changes.
+  // Reset to the first page when any server-side list criterion changes.
   useEffect(() => {
     setOffset(0);
-  }, [debouncedSearch, courseFilter]);
+  }, [debouncedSearch, courseFilter, filters, sortBy]);
 
   const courseId =
     courseFilter !== COURSE_ALL && Number.isFinite(Number(courseFilter))
@@ -85,6 +84,8 @@ export default function QuestionBankPage() {
   const { questions, total, isLoading, error } = useAllQuestions({
     courseId,
     search: debouncedSearch || undefined,
+    filters,
+    sortBy,
     limit: pageSize,
     offset,
   });
@@ -101,74 +102,24 @@ export default function QuestionBankPage() {
     [displayCourses],
   );
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const result = questions.filter((q) => {
-      const v = repVariant(q);
-      if (filters.questionTypes.length > 0 && !filters.questionTypes.includes(q.type)) return false;
-      if (courseFilter !== COURSE_ALL && String(q.courseId) !== courseFilter) return false;
-      if (filters.difficulties.length > 0 && !(v && filters.difficulties.includes(v.difficulty)))
-        return false;
-      if (
-        filters.reasoningLevels.length > 0 &&
-        !(v?.reasoningLevel && filters.reasoningLevels.includes(v.reasoningLevel))
-      )
-        return false;
-      if (filters.aiGenerated !== 'all') {
-        const wantAi = filters.aiGenerated === 'ai';
-        if ((v?.isAiGenerated === true) !== wantAi) return false;
-      }
-      if (filters.draftStatus !== 'all') {
-        const wantDraft = filters.draftStatus === 'draft';
-        if ((v?.isDraft === true) !== wantDraft) return false;
-      }
-      if (
-        term &&
-        !questionTextOf(q).toLowerCase().includes(term) &&
-        !topicLabel(q).toLowerCase().includes(term)
-      )
-        return false;
-      return true;
-    });
-
-    switch (sortBy) {
-      case 'newest':
-        result.sort((a, b) => timeOf(b) - timeOf(a));
-        break;
-      case 'oldest':
-        result.sort((a, b) => timeOf(a) - timeOf(b));
-        break;
-      case 'type':
-        result.sort((a, b) => a.type.localeCompare(b.type));
-        break;
-      case 'difficulty':
-        result.sort(
-          (a, b) =>
-            (DIFFICULTY_RANK[difficultyOf(a) ?? 'medium'] ?? 1) -
-            (DIFFICULTY_RANK[difficultyOf(b) ?? 'medium'] ?? 1),
-        );
-        break;
-    }
-    return result;
-  }, [questions, search, filters, courseFilter, sortBy]);
-
   const hasFilters =
     search.trim() !== '' ||
     courseFilter !== COURSE_ALL ||
-    filters.questionTypes.length > 0 ||
-    filters.difficulties.length > 0 ||
-    filters.reasoningLevels.length > 0 ||
-    filters.aiGenerated !== 'all' ||
-    filters.draftStatus !== 'all';
+    countActiveFilters(filters) > 0 ||
+    sortBy !== 'newest';
 
   const clearFilters = () => {
     setSearch('');
     setFilters(EMPTY_QUESTION_FILTERS);
     setCourseFilter(COURSE_ALL);
+    setSortBy('newest');
   };
 
-  const courseCount = useMemo(() => new Set(filtered.map((q) => q.courseId)).size, [filtered]);
-  const aiCount = useMemo(() => filtered.filter((q) => repVariant(q)?.isAiGenerated).length, [filtered]);
+  const courseCount = useMemo(() => new Set(questions.map((q) => q.courseId)).size, [questions]);
+  const aiCount = useMemo(
+    () => questions.filter((q) => repVariant(q)?.isAiGenerated).length,
+    [questions],
+  );
 
   return (
     <div className="flex flex-1 flex-col gap-6 px-4 py-4 md:py-6 lg:px-6">
@@ -189,16 +140,20 @@ export default function QuestionBankPage() {
         onCourseChange={setCourseFilter}
       />
 
-      {!isLoading && !error && total > 0 && (
+      {!isLoading && !error && (total > 0 || hasFilters) && (
         <div className="-mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-medium text-foreground">
-              {filtered.length} on this page
+              {questions.length} on this page
             </span>
             <span>
-              · {total} total question{total === 1 ? '' : 's'}
+              · {total} matching question{total === 1 ? '' : 's'}
             </span>
-            {courseCount > 0 && <span>across {courseCount} course{courseCount === 1 ? '' : 's'}</span>}
+            {courseCount > 0 && (
+              <span>
+                across {courseCount} course{courseCount === 1 ? '' : 's'}
+              </span>
+            )}
             {aiCount > 0 && (
               <span className="inline-flex items-center gap-1">
                 <IconSparkles className="size-3.5" /> {aiCount} AI-generated
@@ -226,7 +181,7 @@ export default function QuestionBankPage() {
           description={error}
           bare={false}
         />
-      ) : total === 0 ? (
+      ) : total === 0 && !hasFilters ? (
         <EmptyState
           icon={<IconStack2 className="size-6" />}
           title="Your library is empty"
@@ -238,7 +193,7 @@ export default function QuestionBankPage() {
             </Button>
           }
         />
-      ) : filtered.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState
           size="sm"
           icon={<IconFilterX className="size-6" />}
@@ -254,7 +209,7 @@ export default function QuestionBankPage() {
       ) : (
         <>
           <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card shadow-[var(--shadow-2xs)]">
-            {filtered.map((q) => {
+            {questions.map((q) => {
               const variant = repVariant(q);
               const difficulty = difficultyOf(q);
               const TypeIcon = TYPE_ICON[q.type] ?? IconListCheck;
@@ -301,7 +256,9 @@ export default function QuestionBankPage() {
                         </Badge>
                       )}
                       {difficulty && (
-                        <Badge variant={difficultyBadge[difficulty] ?? 'warning'}>{capitalize(difficulty)}</Badge>
+                        <Badge variant={difficultyBadge[difficulty] ?? 'warning'}>
+                          {capitalize(difficulty)}
+                        </Badge>
                       )}
                       <QuestionStatusBadge isDraft={!!variant?.isDraft} />
                     </div>
@@ -321,7 +278,11 @@ export default function QuestionBankPage() {
         </>
       )}
 
-      <QuestionPreviewSheet question={preview} open={preview != null} onOpenChange={(o) => !o && setPreview(null)} />
+      <QuestionPreviewSheet
+        question={preview}
+        open={preview != null}
+        onOpenChange={(o) => !o && setPreview(null)}
+      />
     </div>
   );
 }

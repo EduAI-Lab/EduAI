@@ -2,7 +2,6 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
-import { Op } from 'sequelize';
 import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
 import { Course } from '../schema/Course.js';
 import {
@@ -10,7 +9,7 @@ import {
   enrichRowWithCourse,
   formatSemesterDisplay
 } from './courseListService.js';
-import { escapeLikeLiteral } from '../utils/listPagination.js';
+import { buildQuestionListQuery } from '../utils/questionListQuery.js';
 
 /**
  * Overwrites each question row's nested `variant.assessment.semester` with the
@@ -210,28 +209,44 @@ export const createQuestion = async (userId, questionData) => {
 /**
  * Returns a paginated question list (with course + variant associations)
  * scoped to the requesting user. Shape: `{ items, total, limit, offset }` (#1040).
+ *
+ * Search matches description OR any variant's questionText. Type / difficulty /
+ * reasoning / AI / draft filters and sortBy are applied in SQL before paging
+ * so bank UI pagination stays correct (#1040 review).
  */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
-    const { courseId, search, limit = 50, offset = 0 } = options;
+    const {
+      courseId,
+      search,
+      types,
+      difficulties,
+      reasoningLevels,
+      aiGenerated,
+      draftStatus,
+      sortBy,
+      limit = 50,
+      offset = 0,
+    } = options;
     const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
     const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
 
-    // Build where clause for Question_Metadata
-    const whereClause = {};
+    const { where: filterWhere, order } = buildQuestionListQuery({
+      search,
+      types,
+      difficulties,
+      reasoningLevels,
+      aiGenerated,
+      draftStatus,
+      sortBy,
+    });
+
+    const whereClause = { ...filterWhere };
 
     if (courseId) {
       const parsedCourseId = Number(courseId);
       if (Number.isInteger(parsedCourseId)) {
         whereClause.courseId = parsedCourseId;
-      }
-    }
-
-    // Apply search in SQL before limit/offset so pagination stays correct (#1040).
-    if (search && String(search).trim()) {
-      const needle = escapeLikeLiteral(String(search).trim());
-      if (needle) {
-        whereClause.description = { [Op.iLike]: `%${needle}%` };
       }
     }
 
@@ -265,9 +280,8 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       include,
       distinct: true,
       col: 'id',
-      // `id DESC` tie-breaker: createdAt alone isn't unique, so offset pagination
-      // over ties could duplicate or skip rows across page requests (#1040 review).
-      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      // Default / filter sort; always includes an `id` tie-breaker (#1040 review).
+      order,
       limit: appliedLimit,
       offset: appliedOffset
     });
@@ -725,42 +739,113 @@ export const saveExtractedQuestions = async (userId, payload) => {
 };
 
 /** Aggregates counts of questions/variants/drafts for dashboard stats. */
-export const getQuestionStats = async (userId) => {
+/**
+ * Aggregate question/variant stats for a user, optionally scoped to one course.
+ * Used by the dashboard and Course Detail overview so meters aren't computed
+ * from a single paginated page (#1040 review).
+ */
+export const getQuestionStats = async (userId, options = {}) => {
   try {
+    const { courseId } = options;
+    const metadataWhere = {};
+    if (courseId != null && courseId !== '') {
+      const parsedCourseId = Number(courseId);
+      if (Number.isInteger(parsedCourseId)) {
+        metadataWhere.courseId = parsedCourseId;
+      }
+    }
+
+    const courseInclude = {
+      model: Course,
+      as: 'course',
+      where: { userId: userId },
+      attributes: [],
+    };
+
     // Count questions for this user through course relationship
     const totalQuestions = await Question_Metadata.count({
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+      where: metadataWhere,
+      include: [courseInclude],
+      distinct: true,
+      col: 'id',
     });
-    
+
     const typeStats = await Question_Metadata.findAll({
       attributes: [
         'type',
         [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('Question_Metadata.id')), 'count']
       ],
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId },
-          // Filter-only join: selecting no course columns keeps `course.id` out of
-          // the SELECT so it need not appear in GROUP BY (Postgres rejects otherwise).
-          attributes: []
-        }
-      ],
+      where: metadataWhere,
+      include: [courseInclude],
       group: ['type'],
       subQuery: false,
       raw: true
     });
 
+    // Variant-level aggregates (difficulty / AI / reviewed) over the same scope.
+    const variantRows = await Variants.findAll({
+      attributes: [
+        'difficulty',
+        'isAiGenerated',
+        'isDraft',
+        'secondaryTopicsId',
+      ],
+      include: [
+        {
+          model: Question_Metadata,
+          as: 'questionMetadata',
+          attributes: ['id', 'type', 'primaryTopicId'],
+          where: metadataWhere,
+          required: true,
+          include: [
+            {
+              model: Course,
+              as: 'course',
+              where: { userId },
+              attributes: [],
+              required: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
+    let aiCount = 0;
+    let humanCount = 0;
+    let reviewedCount = 0;
+    const usedTopicIds = new Set();
+
+    for (const row of variantRows) {
+      const d = String(row.difficulty ?? 'medium').toLowerCase();
+      if (d === 'easy') difficultyCounts.easy += 1;
+      else if (d === 'hard') difficultyCounts.hard += 1;
+      else difficultyCounts.medium += 1;
+      if (row.isAiGenerated) aiCount += 1;
+      else humanCount += 1;
+      if (!row.isDraft) reviewedCount += 1;
+
+      const meta = row.questionMetadata;
+      if (meta?.primaryTopicId) usedTopicIds.add(String(meta.primaryTopicId));
+      const sec = row.secondaryTopicsId;
+      if (Array.isArray(sec)) {
+        for (const id of sec) usedTopicIds.add(String(id));
+      }
+    }
+
     return {
       totalQuestions,
-      typeStats
+      totalVariants: variantRows.length,
+      typeStats,
+      difficultyStats: [
+        { difficulty: 'easy', count: difficultyCounts.easy },
+        { difficulty: 'medium', count: difficultyCounts.medium },
+        { difficulty: 'hard', count: difficultyCounts.hard },
+      ],
+      aiCount,
+      humanCount,
+      reviewedCount,
+      usedTopicIds: [...usedTopicIds],
     };
   } catch (error) {
     throw error;

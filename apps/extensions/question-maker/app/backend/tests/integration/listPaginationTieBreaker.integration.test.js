@@ -78,6 +78,91 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
     expect(new Set(seenIds).size).toBe(allIds.length);
   });
 
+  it('search matches variant questionText even when description is null/short', async () => {
+    const { Variants } = await import('../../src/schema/index.js');
+    const visible = await Question_Metadata.create({
+      courseId,
+      primaryTopicId: topicId,
+      type: 'SA',
+      description: null,
+    });
+    await Variants.create({
+      questionMetadataId: visible.id,
+      questionText: 'Explain how a binary search tree rotates on insert',
+      difficulty: 'hard',
+      reasoningLevel: 'analytical',
+      isAiGenerated: false,
+      isDraft: true,
+    });
+    const hidden = await Question_Metadata.create({
+      courseId,
+      primaryTopicId: topicId,
+      type: 'SA',
+      description: 'unrelated summary',
+    });
+    await Variants.create({
+      questionMetadataId: hidden.id,
+      questionText: 'What is a linked list?',
+      difficulty: 'easy',
+      reasoningLevel: 'factual',
+      isAiGenerated: false,
+      isDraft: true,
+    });
+
+    const page = await getQuestionsByUser(USER.id, {
+      courseId,
+      search: 'binary search tree',
+      limit: 50,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.items.map((q) => q.id)).toEqual([visible.id]);
+  });
+
+  it('filters by type/difficulty in SQL before paging', async () => {
+    const { Variants } = await import('../../src/schema/index.js');
+    const hardMcq = await Question_Metadata.create({
+      courseId,
+      primaryTopicId: topicId,
+      type: 'MCQ',
+      description: 'hard mcq',
+    });
+    await Variants.create({
+      questionMetadataId: hardMcq.id,
+      questionText: 'Hard MCQ stem',
+      difficulty: 'hard',
+      reasoningLevel: 'factual',
+      isAiGenerated: true,
+      isDraft: false,
+    });
+    const easySa = await Question_Metadata.create({
+      courseId,
+      primaryTopicId: topicId,
+      type: 'SA',
+      description: 'easy sa',
+    });
+    await Variants.create({
+      questionMetadataId: easySa.id,
+      questionText: 'Easy SA stem',
+      difficulty: 'easy',
+      reasoningLevel: 'factual',
+      isAiGenerated: false,
+      isDraft: true,
+    });
+
+    const page = await getQuestionsByUser(USER.id, {
+      courseId,
+      types: ['MCQ'],
+      difficulties: ['hard'],
+      aiGenerated: 'ai',
+      draftStatus: 'reviewed',
+      limit: 50,
+      offset: 0,
+    });
+    expect(page.total).toBe(1);
+    expect(page.items.map((q) => q.id)).toEqual([hardMcq.id]);
+  });
+
   it('assessments: does not duplicate or skip rows across pages when every row shares the same createdAt', async () => {
     const tiedTimestamp = new Date('2026-01-01T00:00:00.000Z');
     const rows = [];
