@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>#1171 Chat progress UI — QA gallery</title>
+  <style>
+    :root {
+      --background: oklch(0.99 0.005 250);
+      --foreground: oklch(0.22 0.02 250);
+      --muted: oklch(0.95 0.01 250);
+      --muted-foreground: oklch(0.45 0.02 250);
+      --primary: oklch(0.45 0.14 255);
+      --primary-foreground: oklch(0.99 0 0);
+      --border: oklch(0.9 0.01 250);
+      --card: oklch(1 0 0);
+      --radius: 0.75rem;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--foreground);
+      padding: 32px;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 650;
+      margin: 0 0 6px;
+    }
+    .subtitle {
+      color: var(--muted-foreground);
+      font-size: 0.9rem;
+      margin: 0 0 28px;
+      max-width: 48rem;
+      line-height: 1.45;
+    }
+
+    .gallery {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      max-width: 48rem;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 4px);
+      padding: 18px 18px 14px;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    }
+
+    .panel-title {
+      font-size: 0.78rem;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+      margin: 0 0 4px;
+    }
+    .panel-desc {
+      font-size: 0.85rem;
+      color: var(--muted-foreground);
+      margin: 0 0 14px;
+      line-height: 1.4;
+    }
+
+    .chat-frame {
+      background: var(--background);
+      border: 1px dashed color-mix(in oklab, var(--border), var(--muted-foreground) 20%);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    /* User bubble */
+    .user-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 16px;
+    }
+    .user-bubble {
+      max-width: 80%;
+      border-radius: 1rem;
+      background: color-mix(in oklab, var(--muted) 60%, transparent);
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    /* Assistant message */
+    .assistant-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .assistant-text {
+      font-size: 0.95rem;
+      line-height: 1.5;
+      padding: 2px 0;
+    }
+
+    /* Full typing indicator (matches ChatTypingIndicator) */
+    .msg {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--primary) 18%, var(--muted));
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      font-size: 0.7rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .status-card {
+      flex: 1;
+      min-width: 0;
+      background: color-mix(in oklab, var(--muted) 50%, transparent);
+      border-radius: 0.5rem;
+      padding: 12px 16px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .shimmer {
+      font-size: 0.75rem;
+      font-weight: 500;
+      min-width: 0;
+      background: linear-gradient(
+        to right,
+        var(--muted-foreground) 40%,
+        var(--foreground) 60%,
+        var(--muted-foreground) 80%
+      );
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      animation: shimmer 4s infinite linear;
+    }
+    .elapsed {
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted-foreground);
+    }
+    .progress {
+      position: relative;
+      margin-top: 10px;
+      height: 6px;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--primary) 20%, transparent);
+    }
+    .progress-bar {
+      position: absolute;
+      inset-block: 0;
+      width: 40%;
+      border-radius: 999px;
+      background: var(--primary);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    /* Compact under streaming bubble */
+    .compact {
+      margin: 0 0 4px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 0 4px;
+    }
+    .compact .progress { margin-top: 0; }
+
+    .tool-card {
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 0.8rem;
+      color: var(--muted-foreground);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid color-mix(in oklab, var(--primary) 25%, transparent);
+      border-top-color: var(--primary);
+      border-radius: 999px;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes shimmer {
+      to { background-position: -200% center; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Capture targets: one state per screenshot */
+    .capture {
+      width: 720px;
+      background: var(--background);
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>#1171 — Course chat loading / progress UI</h1>
+  <p class="subtitle">
+    Visual QA gallery matching Core’s <code>ChatTypingIndicator</code> +
+    <code>useChatProgress</code> stages. Full bubble before tokens; compact row
+    only for tools / post-tool follow-up; streaming tokens stay primary.
+  </p>
+
+  <div class="gallery">
+    <!-- Individual capture roots used by Playwright -->
+    <section class="panel">
+      <p class="panel-title">01 · Pre-token — Routing</p>
+      <p class="panel-desc">First ~450ms before <code>X-Routed-Model</code> arrives.</p>
+      <div class="capture" id="cap-routing">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
+          <div class="msg" data-chat-progress-stage="routing">
+            <div class="avatar">AI</div>
+            <div class="status-card">
+              <div class="status-row">
+                <div class="shimmer">Routing…</div>
+                <span class="elapsed">0s</span>
+              </div>
+              <div class="progress" role="progressbar" aria-valuetext="Routing…"><div class="progress-bar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">02 · Pre-token — Waiting for model</p>
+      <p class="panel-desc">Slow local / large model TTFT (e.g. Qwen 32B) before first tokens.</p>
+      <div class="capture" id="cap-waiting">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
+          <div class="msg" data-chat-progress-stage="waiting_for_model">
+            <div class="avatar">AI</div>
+            <div class="status-card">
+              <div class="status-row">
+                <div class="shimmer">Waiting for model…</div>
+                <span class="elapsed">12s</span>
+              </div>
+              <div class="progress" role="progressbar" aria-valuetext="Waiting for model…"><div class="progress-bar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">03 · Pre-token — Searching course materials</p>
+      <p class="panel-desc">RAG tool in progress (<code>getInformation</code>) before any assistant text.</p>
+      <div class="capture" id="cap-searching">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
+          <div class="tool-card"><div class="spinner"></div> Searching course materials…</div>
+          <div class="msg" data-chat-progress-stage="searching_materials">
+            <div class="avatar">AI</div>
+            <div class="status-card">
+              <div class="status-row">
+                <div class="shimmer">Searching course materials…</div>
+                <span class="elapsed">4s</span>
+              </div>
+              <div class="progress" role="progressbar" aria-valuetext="Searching course materials…"><div class="progress-bar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">04 · Pre-token — Working on Assist reply</p>
+      <p class="panel-desc">Assist ON after 6s of silence (slow TTFT and/or oversight buffering).</p>
+      <div class="capture" id="cap-assist">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">Walk me through gradient descent step by step.</div></div>
+          <div class="msg" data-chat-progress-stage="preparing_assist">
+            <div class="avatar">AI</div>
+            <div class="status-card">
+              <div class="status-row">
+                <div class="shimmer">Working on Assist reply…</div>
+                <span class="elapsed">18s</span>
+              </div>
+              <div class="progress" role="progressbar" aria-valuetext="Working on Assist reply…"><div class="progress-bar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">05 · Streaming tokens — status hidden</p>
+      <p class="panel-desc">Once tokens arrive, the status row hides so streaming text stays primary (no inter-token flicker).</p>
+      <div class="capture" id="cap-streaming">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">Explain recursion with a small example.</div></div>
+          <div class="assistant-row">
+            <div class="avatar">AI</div>
+            <div class="assistant-text">Recursion is when a function calls itself. For example, factorial…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">06 · Compact — Searching after text</p>
+      <p class="panel-desc">Multi-step: earlier tokens exist + in-progress RAG tool → compact Searching… under the bubble.</p>
+      <div class="capture" id="cap-compact-search">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
+          <div class="assistant-row">
+            <div class="avatar">AI</div>
+            <div class="assistant-text">Looking that up in your course materials…</div>
+          </div>
+          <div class="tool-card"><div class="spinner"></div> Searching course materials…</div>
+          <div class="compact" data-chat-progress-stage="searching_materials" data-chat-progress-compact="true">
+            <div class="status-row">
+              <div class="shimmer">Searching course materials…</div>
+              <span class="elapsed">9s</span>
+            </div>
+            <div class="progress" role="progressbar" aria-valuetext="Searching course materials…"><div class="progress-bar"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">07 · Compact — Generating (post-tool follow-up)</p>
+      <p class="panel-desc">Tool finished; waiting for the next model tokens before status hides again.</p>
+      <div class="capture" id="cap-compact-generating">
+        <div class="chat-frame">
+          <div class="user-row"><div class="user-bubble">What did chapter 3 say about stacks?</div></div>
+          <div class="assistant-row">
+            <div class="avatar">AI</div>
+            <div class="assistant-text">Looking that up in your course materials…</div>
+          </div>
+          <div class="compact" data-chat-progress-stage="generating" data-chat-progress-compact="true">
+            <div class="status-row">
+              <div class="shimmer">Generating…</div>
+              <span class="elapsed">11s</span>
+            </div>
+            <div class="progress" role="progressbar" aria-valuetext="Generating…"><div class="progress-bar"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
