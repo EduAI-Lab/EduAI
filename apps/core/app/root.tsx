@@ -18,12 +18,13 @@ import { getExpiredPasswordRedirect } from "~/lib/auth/password-expiry.server";
 import { ensureCronSchedulerRunning } from "~/lib/cron-scheduler.server";
 import { AssistiveUiProvider } from "~/components/assistive/assistive-ui-provider";
 import { ThemeProvider } from "~/components/theme-provider";
-import { Toaster, PageLoader } from "@eduai/ui";
+import { Toaster } from "@eduai/ui/sonner";
+import { PageLoader } from "@eduai/ui/page-loader";
 import { UiPreferencesProvider } from "~/components/assistive/ui-preferences-provider";
 import { PolicyProvider } from "~/components/policy/policy-gate";
 import { DEFAULT_ACCOUNT_PREFERENCES } from "~/lib/user-preferences";
 import { isUiDensity, isUiTheme } from "~/lib/ui-preferences";
-import { ThemeSyncInitializer } from "@eduai/ui";
+import { ThemeSyncInitializer } from "@eduai/ui/theme-sync-initializer";
 import { useNonce } from "~/lib/nonce";
 import { applySecurityHeaders } from "~/lib/security-headers.server";
 
