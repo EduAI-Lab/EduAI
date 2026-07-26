@@ -218,7 +218,9 @@ export function useBugReportCapture() {
         useCORS: true,
         scale: 0.75,
       });
-      screenshotRef.current = canvas.toDataURL('image/png');
+      // JPEG, not PNG: a full-page PNG data URL easily exceeds Core's 512k
+      // screenshot cap, and the server drops oversized screenshots (#979).
+      screenshotRef.current = canvas.toDataURL('image/jpeg', 0.7);
       lastScreenshotAtRef.current = Date.now();
       return screenshotRef.current;
     } catch {
