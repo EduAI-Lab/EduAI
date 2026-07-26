@@ -3,14 +3,14 @@
  * Simplifies requests/responses for use in hooks and pages.
  */
 import api, { type Paginated } from './api';
+import { fetchAllPages, MAX_PAGE_SIZE } from './pagination';
 import { Course, CourseCreate } from '../types/question';
 import { Topic } from '../types/topic';
 import type { QmCourseAccess } from '@/lib/rbac';
 
-/** Server page size for course reads. Matches `MAX_PAGE_SIZE` in the backend's
- * `utils/pagination.js` — asking for more is clamped there, so this is the
- * fewest roundtrips the whole-set read can make. */
-const COURSE_LIST_PAGE_SIZE = 200;
+/** Server page size for course reads — the backend's clamp, so the whole-set
+ * read makes the fewest roundtrips possible. */
+const COURSE_LIST_PAGE_SIZE = MAX_PAGE_SIZE;
 
 /** Fetches one server page of courses with pagination metadata (#1044). */
 async function fetchCoursesPage(
@@ -32,14 +32,7 @@ export const courseService = {
      * which routinely exceeds one page. Use `getCoursesPage` for a paged view.
      */
     async getCourses(): Promise<Course[]> {
-        const courses: Course[] = [];
-        for (let page = 1; ; page++) {
-            const { data, total } = await fetchCoursesPage(page, COURSE_LIST_PAGE_SIZE);
-            courses.push(...data);
-            // Stop on a short page too, so a shrinking list mid-walk can't loop.
-            if (courses.length >= total || data.length < COURSE_LIST_PAGE_SIZE) break;
-        }
-        return courses;
+        return fetchAllPages<Course>('/api/course', {}, COURSE_LIST_PAGE_SIZE);
     },
 
     /** Fetches one server page of courses with pagination metadata (#1044). */
@@ -78,10 +71,15 @@ export const courseService = {
         await api.delete(`/api/course/${id}`);
     },
 
-    /** Retrieves topics for a course. */
+    /**
+     * Retrieves every topic for a course.
+     *
+     * The endpoint is paginated and bounded (#1044), so this walks pages. It has
+     * to return the whole set: callers use topics as picker options and compute
+     * coverage ratios over `length`, both of which are wrong on a partial list.
+     */
     async getCourseTopics(courseId: number): Promise<Topic[]> {
-        const response = await api.get(`/api/course/${courseId}/topics`);
-        return response.data.data;
+        return fetchAllPages<Topic>(`/api/course/${courseId}/topics`);
     },
 
     /** Creates a topic under a course. */
@@ -106,7 +104,11 @@ export const courseService = {
     async linkAndSyncFromCore(courseId: number, coreCourseId: string): Promise<void> {
         await api.patch(`/api/course/${courseId}/link-core`, { coreCourseId });
         await api.post(`/api/course/${courseId}/sync-topics`);
-        const topicsResponse = await api.get(`/api/course/${courseId}/topics`);
+        // Only "did the sync produce anything?" matters here, so one bounded
+        // page is enough — no need to walk the whole set to test emptiness.
+        const topicsResponse = await api.get(`/api/course/${courseId}/topics`, {
+            params: { page: 1, pageSize: 1 }
+        });
         const topics = topicsResponse.data.data ?? [];
         if (!Array.isArray(topics) || topics.length === 0) {
             await api.post(`/api/course/${courseId}/topics`, { name: 'General' });

@@ -1038,7 +1038,11 @@ export const getVariantsByQuestion = async (questionId, userId) => {
 
     const variants = await Variants.findAll({
       where: { questionMetadataId: questionId },
-      order: [['createdAt', 'ASC']]
+      // `id` breaks ties so the ordering is total (#1044). `createdAt` is not
+      // unique — bank generation inserts a question's variants in one statement,
+      // so they share a timestamp — and paging a non-total order can repeat and
+      // drop rows across requests.
+      order: [['createdAt', 'ASC'], ['id', 'ASC']]
     });
 
     return variants;

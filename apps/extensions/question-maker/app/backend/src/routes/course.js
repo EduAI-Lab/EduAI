@@ -322,10 +322,10 @@ router.get(
   requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
   try {
-    // Structure-bounded list (#1044): optional paging. Flat query, so an
-    // explicit page maps to a true DB-level limit/offset; a caller that sends
-    // no page params still gets the whole topic list rather than a silently
-    // truncated first page.
+    // Structure-bounded list (#1044): always a bounded page. Flat query, so the
+    // window is a true DB-level limit/offset. Params are optional — a caller
+    // that sends none gets the first page at `defaultPageSize` instead of a 400
+    // — but the response is never unbounded; `getCourseTopics` walks pages.
     const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
 
     const course = req.qmCourse;
@@ -341,18 +341,11 @@ router.get(
       // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
       // pages can repeat and drop rows across requests.
       order: [['createdAt', 'ASC'], ['id', 'ASC']],
-      ...(pagination.explicit
-        ? { limit: pagination.limit, offset: pagination.offset }
-        : {})
+      limit: pagination.limit,
+      offset: pagination.offset
     });
 
-    res.json(
-      paginated(
-        rows,
-        count,
-        pagination.explicit ? pagination : { page: 1, pageSize: Math.max(count, 1) }
-      )
-    );
+    res.json(paginated(rows, count, pagination));
   } catch (error) {
     next(error);
   }
