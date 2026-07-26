@@ -516,8 +516,13 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
           attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices']
         }
       ],
+      // `id` breaks ties so the ordering is total (#1044). The display order in
+      // `question_order` is not guaranteed unique — a bulk add writes the same
+      // index to several rows — and without a tiebreak tied rows can shuffle
+      // between requests, so a LIMIT/OFFSET page can repeat and drop them.
       order: [
-        [sequelize.literal(`CAST(question_order->>'${assessmentId}' AS INTEGER)`), 'ASC']
+        [sequelize.literal(`CAST(question_order->>'${assessmentId}' AS INTEGER)`), 'ASC'],
+        ['id', 'ASC']
       ]
     });
 

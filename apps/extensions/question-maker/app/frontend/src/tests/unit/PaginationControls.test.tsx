@@ -67,6 +67,51 @@ describe('PaginationControls', () => {
     expect(onPageChange).toHaveBeenNthCalledWith(2, 1);
   });
 
+  it('notifies the parent when the requested page is past the end', () => {
+    // Otherwise the pager renders "page 3 of 3" while the parent still holds
+    // page 9 and the rows it loaded for it — usually empty, with no way back.
+    const onPageChange = vi.fn();
+    render(
+      <PaginationControls page={9} pageSize={25} total={57} onPageChange={onPageChange} />,
+    );
+    expect(onPageChange).toHaveBeenCalledWith(3);
+  });
+
+  it('notifies the parent when the requested page is below 1', () => {
+    const onPageChange = vi.fn();
+    render(
+      <PaginationControls page={0} pageSize={25} total={57} onPageChange={onPageChange} />,
+    );
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it('notifies the parent even when the list collapses to a single page', () => {
+    // The pager renders nothing at one page, so without the notification a
+    // parent left on page 3 would be stranded with no control to recover from.
+    const onPageChange = vi.fn();
+    const { container } = render(
+      <PaginationControls page={3} pageSize={25} total={10} onPageChange={onPageChange} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it('notifies the parent when the list empties out', () => {
+    const onPageChange = vi.fn();
+    render(
+      <PaginationControls page={4} pageSize={25} total={0} onPageChange={onPageChange} />,
+    );
+    expect(onPageChange).toHaveBeenCalledWith(1);
+  });
+
+  it('does not notify when the page is already in range', () => {
+    const onPageChange = vi.fn();
+    render(
+      <PaginationControls page={2} pageSize={25} total={57} onPageChange={onPageChange} />,
+    );
+    expect(onPageChange).not.toHaveBeenCalled();
+  });
+
   it('disables both controls when disabled', () => {
     render(
       <PaginationControls

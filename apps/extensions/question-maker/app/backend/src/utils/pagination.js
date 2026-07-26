@@ -13,14 +13,22 @@
  *     so callers pass the result straight into `findAndCountAll`.
  *   `page` clamps to `>= 1`. `pageSize` clamps to `1..maxPageSize`.
  *
- * Two parsing modes:
+ * Two parsing modes — both always yield a bounded window, so no endpoint can
+ * return an unbounded row set:
  *   - required (default): the caller MUST send `page`/`pageSize`; absent or
  *     unparseable values throw a 400-shaped `PaginationError`. Used by the
- *     unbounded lists (course list, questions-in-assessment).
- *   - optional (`required: false`): missing params fall back to page 1 at
- *     `defaultPageSize`, and `explicit` is false so `pageOf`/route callers
- *     return the whole set instead of truncating a caller that never asked to
- *     page. Used by structure-bounded lists (topics, sections, variants).
+ *     unbounded lists (course list).
+ *   - default (`required: false`): missing params fall back to page 1 at
+ *     `defaultPageSize`. Used by structure-bounded lists (topics, sections,
+ *     assessment questions, variants) so a legacy caller still gets a valid
+ *     first page rather than a 400 — but it gets a *page*, not the whole set.
+ *     Clients that need every row walk pages (`fetchAllPages` in
+ *     `app/frontend/src/services/pagination.ts`).
+ *
+ * Partial params (only `page` or only `pageSize`) are handled per mode:
+ *   - required mode: rejected with `PAGINATION_REQUIRED` — both or neither.
+ *   - default mode: the supplied param is honoured and the missing one takes
+ *     its default (`page` → 1, `pageSize` → `defaultPageSize`).
  *
  * Related: `src/utils/` siblings, `app/frontend/src/services/api.ts`
  * (`Paginated<T>`).
@@ -60,6 +68,10 @@ function clampInt(value, min, max) {
 
 /**
  * Parse `page`/`pageSize` from an Express request's query string.
+ *
+ * In required mode both params must be present — supplying only one is a
+ * `PAGINATION_REQUIRED` 400, so a caller can't half-page by accident. In
+ * default mode either param may stand alone and the other takes its default.
  *
  * @param {import('express').Request} req
  * @param {object} [opts]
@@ -108,32 +120,23 @@ export function parsePaginationParams(req, opts = {}) {
     pageSize,
     limit: pageSize,
     offset: (page - 1) * pageSize,
-    // Did the caller actually ask to page? Optional-mode routes use this to
-    // tell "wants page N" from "wants the whole set" — without it they'd
-    // silently truncate every legacy caller at `defaultPageSize`.
-    explicit: hasPage || hasPageSize,
   };
 }
 
 /**
- * Envelope a full in-memory result set as one page.
+ * Slice one page out of a fully-materialised, ordered result set.
  *
- * When the caller passed no pagination params (optional mode), the whole set is
- * returned rather than the first `defaultPageSize` rows — a reader that never
- * asked to page must not have rows silently dropped. When they did ask, the
- * requested window is sliced out and `total` still reports the full count.
+ * Used by the routes whose underlying query can't take an honest SQL
+ * `limit`/`offset` (nested eager-loaded includes, or a JS-side visibility
+ * filter). The window is always bounded — an offset past the end yields an
+ * empty `data` with `total` still reporting the real count, which is what lets
+ * a client walk pages and stop on a short page.
  *
  * @template T
  * @param {T[]} rows Full ordered result set.
  * @param {ReturnType<typeof parsePaginationParams>} pagination
  */
 export function pageOf(rows, pagination) {
-  if (!pagination.explicit) {
-    return paginated(rows, rows.length, {
-      page: 1,
-      pageSize: Math.max(rows.length, 1),
-    });
-  }
   const window = rows.slice(pagination.offset, pagination.offset + pagination.limit);
   return paginated(window, rows.length, pagination);
 }

@@ -1,9 +1,9 @@
 /**
  * Unit tests for the QM server-side pagination helper (#1044).
  *
- * Covers both parsing modes (required / optional), clamping, Sequelize-shaped
- * `limit`/`offset`, error codes, and the `{ success, data, total, page,
- * pageSize }` envelope.
+ * Covers both parsing modes (required / default), partial params, clamping,
+ * Sequelize-shaped `limit`/`offset`, error codes, and the
+ * `{ success, data, total, page, pageSize }` envelope.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -25,7 +25,6 @@ describe('parsePaginationParams — required mode (default)', () => {
       pageSize: 20,
       limit: 20,
       offset: 40,
-      explicit: true,
     });
   });
 
@@ -95,7 +94,7 @@ describe('parsePaginationParams — clamping', () => {
   });
 });
 
-describe('parsePaginationParams — optional mode', () => {
+describe('parsePaginationParams — default mode', () => {
   it('defaults to page 1 at defaultPageSize when params absent', () => {
     const r = parsePaginationParams(req({}), { required: false });
     expect(r).toEqual({
@@ -103,7 +102,6 @@ describe('parsePaginationParams — optional mode', () => {
       pageSize: 25,
       limit: 25,
       offset: 0,
-      explicit: false,
     });
   });
 
@@ -124,7 +122,6 @@ describe('parsePaginationParams — optional mode', () => {
       pageSize: 30,
       limit: 30,
       offset: 30,
-      explicit: true,
     });
   });
 
@@ -134,6 +131,65 @@ describe('parsePaginationParams — optional mode', () => {
     });
     expect(r.page).toBe(1);
     expect(r.pageSize).toBe(25);
+  });
+
+  it('never returns an unbounded window, even with no params', () => {
+    // The whole point of dropping the old whole-set escape hatch: every parse
+    // yields a finite limit, so no endpoint can answer with every row.
+    const r = parsePaginationParams(req({}), { required: false, defaultPageSize: 200 });
+    expect(Number.isFinite(r.limit)).toBe(true);
+    expect(r.limit).toBeLessThanOrEqual(MAX_PAGE_SIZE);
+  });
+});
+
+describe('parsePaginationParams — partial params (only one of page/pageSize)', () => {
+  it('rejects page-only in required mode', () => {
+    try {
+      parsePaginationParams(req({ page: '2' }));
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(PaginationError);
+      expect(err.code).toBe('PAGINATION_REQUIRED');
+    }
+  });
+
+  it('rejects pageSize-only in required mode', () => {
+    try {
+      parsePaginationParams(req({ pageSize: '10' }));
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err.code).toBe('PAGINATION_REQUIRED');
+    }
+  });
+
+  it('honours page-only in default mode, defaulting pageSize', () => {
+    const r = parsePaginationParams(req({ page: '3' }), {
+      required: false,
+      defaultPageSize: 10,
+    });
+    expect(r).toEqual({ page: 3, pageSize: 10, limit: 10, offset: 20 });
+  });
+
+  it('honours pageSize-only in default mode, defaulting page to 1', () => {
+    const r = parsePaginationParams(req({ pageSize: '5' }), { required: false });
+    expect(r).toEqual({ page: 1, pageSize: 5, limit: 5, offset: 0 });
+  });
+
+  it('treats an empty-string param as absent in default mode', () => {
+    const r = parsePaginationParams(req({ page: '', pageSize: '5' }), {
+      required: false,
+    });
+    expect(r.page).toBe(1);
+    expect(r.pageSize).toBe(5);
+  });
+
+  it('clamps a page-only value in default mode', () => {
+    const r = parsePaginationParams(req({ page: '0' }), {
+      required: false,
+      defaultPageSize: 10,
+    });
+    expect(r.page).toBe(1);
+    expect(r.offset).toBe(0);
   });
 });
 
@@ -150,15 +206,26 @@ describe('parsePaginationParams — page upper bound', () => {
 describe('pageOf', () => {
   const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
 
-  it('returns the whole set when the caller sent no page params', () => {
+  it('bounds an unpaged caller to the default page instead of the whole set', () => {
     const p = parsePaginationParams(req({}), { required: false, defaultPageSize: 2 });
     expect(pageOf(rows, p)).toEqual({
       success: true,
-      data: rows,
+      data: [{ id: 1 }, { id: 2 }],
       total: 5,
       page: 1,
-      pageSize: 5,
+      pageSize: 2,
     });
+  });
+
+  it('returns the last partial page without padding', () => {
+    const p = parsePaginationParams(req({ page: '3', pageSize: '2' }));
+    expect(pageOf(rows, p)).toMatchObject({ data: [{ id: 5 }], total: 5, page: 3 });
+  });
+
+  it('returns an empty page past the end, keeping the true total', () => {
+    // This is what lets a client walking pages stop cleanly rather than 404.
+    const p = parsePaginationParams(req({ page: '9', pageSize: '2' }));
+    expect(pageOf(rows, p)).toMatchObject({ data: [], total: 5, page: 9, pageSize: 2 });
   });
 
   it('slices the requested window and still reports the full total', () => {
@@ -174,9 +241,9 @@ describe('pageOf', () => {
     });
   });
 
-  it('reports pageSize 1 for an empty unpaged set rather than 0', () => {
+  it('reports an empty set as total 0 at the requested pageSize', () => {
     const p = parsePaginationParams(req({}), { required: false });
-    expect(pageOf([], p)).toMatchObject({ data: [], total: 0, pageSize: 1 });
+    expect(pageOf([], p)).toMatchObject({ data: [], total: 0, page: 1, pageSize: 25 });
   });
 });
 
