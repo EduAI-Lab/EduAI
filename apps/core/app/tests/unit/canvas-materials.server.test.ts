@@ -167,6 +167,44 @@ describe("discoverCanvasMaterialsForCourse", () => {
     expect(files[0]).toMatchObject({ isExcluded: true });
   });
 
+  // #225 CANVAS-11: unsupported mime/extension filtered; extension map rescues mismatched type.
+  it("omits files with no extension and no supported content-type", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      {
+        ...CANVAS_FILE,
+        id: 2001,
+        display_name: "binary_blob",
+        filename: "binary_blob",
+        "content-type": "application/octet-stream",
+      },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files).toHaveLength(0);
+  });
+
+  it("accepts a file whose content-type mismatches but extension maps to an allowed mime", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      {
+        ...CANVAS_FILE,
+        id: 2002,
+        display_name: "slides.pdf",
+        filename: "slides.pdf",
+        "content-type": "application/octet-stream",
+      },
+    ]);
+
+    const files = await discoverCanvasMaterialsForCourse("user-1", "core-course-1");
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      canvasFileId: "2002",
+      displayName: "slides.pdf",
+      importStatus: "not_imported",
+    });
+  });
+
   it("does NOT recheck or write unpublishedAt by default (GET must stay safe/idempotent)", async () => {
     vi.mocked(listCanvasCourseFiles).mockResolvedValue([
       { ...CANVAS_FILE, hidden: true },
@@ -239,6 +277,28 @@ describe("discoverCanvasMaterialsForCourse", () => {
       data: { unpublishedAt: expect.any(Date) },
     });
   });
+
+  // CANVAS-05 (#225 / #1195): files deleted from Canvas are unpublished on recheck.
+  it("sets unpublishedAt when a previously-imported file is missing from Canvas", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([]);
+    vi.mocked(prisma.courseMaterial.findMany).mockResolvedValue([
+      {
+        id: "mat-deleted-on-canvas",
+        externalId: "1001",
+        canvasUpdatedAt: new Date("2025-01-11T00:00:00.000Z"),
+        unpublishedAt: null,
+      },
+    ] as never);
+
+    await discoverCanvasMaterialsForCourse("user-1", "core-course-1", undefined, {
+      recheckPublishState: true,
+    });
+
+    expect(prisma.courseMaterial.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["mat-deleted-on-canvas"] } },
+      data: { unpublishedAt: expect.any(Date) },
+    });
+  });
 });
 
 describe("syncSelectedCanvasMaterials", () => {
@@ -300,6 +360,45 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.imported).toBe(0);
     expect(result.skipped).toBe(1);
     expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "excluded" }]);
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  // #225 CANVAS-08: oversized files fail before download; checksum collision skips import.
+  it("rejects a file over 50 MB before calling downloadCanvasFile", async () => {
+    vi.mocked(listCanvasCourseFiles).mockResolvedValue([
+      { ...CANVAS_FILE, size: 50 * 1024 * 1024 + 1 },
+    ]);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.imported).toBe(0);
+    expect(result.failed).toEqual([
+      expect.objectContaining({
+        canvasFileId: "1001",
+        message: expect.stringMatching(/File too large.*max 50 MB/i),
+      }),
+    ]);
+    expect(downloadCanvasFile).not.toHaveBeenCalled();
+    expect(processUploadedFile).not.toHaveBeenCalled();
+  });
+
+  it("skips import when another material already owns the same checksum", async () => {
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      title: "Lecture 1.txt",
+      mimeType: "text/plain",
+      fileSize: 5,
+      checksum: "shared-checksum",
+      content: "hello",
+    });
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "mat-other", checksum: "shared-checksum" } as never);
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
+    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 });

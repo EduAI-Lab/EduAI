@@ -51,23 +51,34 @@ async function syncSingleCanvasCourse(
   const coreCourse = await upsertCoreCourseFromCanvas(canvasCourse);
   await ensureInstructorEnrollment(coreCourse.id, userId);
 
-  const rosterMembersSynced = await syncCourseRoster({
-    credentials,
-    coreCourseId: coreCourse.id,
-    canvasCourseId,
-    syncedByUserId: userId,
-    syncStartedAt,
-    fetchImpl,
-  });
+  // CANVAS-04 (#225 / #1195): serialize concurrent instructor syncs for the same
+  // Core course with a Postgres transaction-scoped advisory lock so lastSeenAt /
+  // deactivation sweeps cannot race.
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`canvas-sync:${coreCourse.id}`}))`;
 
-  const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id);
-  await deactivateDroppedCanvasEnrollments(coreCourse.id);
+      const rosterMembersSynced = await syncCourseRoster({
+        credentials,
+        coreCourseId: coreCourse.id,
+        canvasCourseId,
+        syncedByUserId: userId,
+        syncStartedAt,
+        fetchImpl,
+        db: tx,
+      });
 
-  return {
-    coreCourseId: coreCourse.id,
-    rosterMembersSynced,
-    enrollmentsLinked,
-  };
+      const enrollmentsLinked = await linkEnrollmentsFromStagingForCourse(coreCourse.id, tx);
+      await deactivateDroppedCanvasEnrollments(coreCourse.id, tx);
+
+      return {
+        coreCourseId: coreCourse.id,
+        rosterMembersSynced,
+        enrollmentsLinked,
+      };
+    },
+    { maxWait: 15_000, timeout: 120_000 },
+  );
 }
 
 async function unsyncSingleCanvasCourse(

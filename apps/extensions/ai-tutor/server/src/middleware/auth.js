@@ -16,7 +16,11 @@ function normalizeRole(role) {
 
 /**
  * Validate the request's session cookie against Core and populate `req.user`.
- * Returns 401 if the cookie is absent, expired, or invalid.
+ * Returns 401 if the cookie is absent, expired, or invalid. A Core 429 (IP
+ * rate limit) is passed through as 429 with `Retry-After` forwarded when
+ * present, instead of being collapsed into a generic 401 — otherwise every
+ * extension API call looks like "logged out" during a rate-limit window
+ * (#225 edge-case audit SEAM-01 / #1197).
  * `req.user` is set to `{ id, email, name, image, role }` on success.
  */
 export async function requireAuth(req, res, next) {
@@ -25,6 +29,12 @@ export async function requireAuth(req, res, next) {
       method: 'POST',
       headers: { cookie: req.headers.cookie ?? '' },
     });
+
+    if (response.status === 429) {
+      const retryAfter = response.headers?.get?.('retry-after') ?? null;
+      if (retryAfter != null) res.set('Retry-After', retryAfter);
+      return res.status(429).json({ error: 'Rate limited', retryAfter });
+    }
 
     if (!response.ok) {
       return res.status(401).json({ error: 'Authentication required' });

@@ -174,6 +174,7 @@ Source of truth: `server/.env.example`.
 | `EDUAI_API_KEY` | Recommended | - | Default EduAI API key |
 | `EDUAI_MODEL` | No | `google:gemini-2.5-flash` | Default tutor model |
 | `POLICY_CACHE_TTL_MS` | No | `30000` | TTL for the cached Core RBAC policy flags (`policyService`) |
+| `EDUAI_ENFORCE_URL_CONSISTENCY` | No | - | Set to `1` to fail startup (instead of only warning) when `CORE_URL` and `EDUAI_BASE_URL` resolve to different origins — see `services/urlConsistency.js` (#225 SEAM-05) |
 
 ### EduAI API Key Precedence
 

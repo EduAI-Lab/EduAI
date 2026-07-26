@@ -110,6 +110,45 @@ describe('resolveCourseAccess', () => {
     });
   });
 
+  // Edge-case audit #225 (SEAM-02) / #1197 product decision: fail-CLOSED for
+  // linked courses when Core enrollments are unreachable — including for the
+  // QM course owner. Once a course is linked, Core enrollments are the sole
+  // source of truth for access; an owner is not automatically an instructor
+  // just because they linked the course. Owner-fail-open is preserved only
+  // for unlinked courses (`coreCourseId === null`, tested above).
+  describe('owner fail-closed when Core enrollments unavailable (SEAM-02 / #1197)', () => {
+    it('denies the QM course owner (null access) when getCourseEnrollmentsFromCore throws', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+
+    it('denies a non-owner when getCourseEnrollmentsFromCore throws', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'someone-else', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+
+    // Distinguishable from the throw case above: Core answered successfully
+    // (empty roster is a real, known state — e.g. a fresh link/sync race),
+    // so the owner fallback still applies here. Only an unreachable/erroring
+    // Core fails closed.
+    it('grants the owner instructor when Core returns enrollments but the owner is not yet on the roster', async () => {
+      mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toEqual(LEVELS.instructor);
+    });
+  });
+
   describe('UNIT_ADMIN unit lock', () => {
     const unitAdmin = { id: 'ua', role: 'UNIT_ADMIN' };
 

@@ -28,6 +28,22 @@ function json(status: number, body: unknown) {
 }
 
 /**
+ * True for a Prisma unique-constraint violation on `CourseMaterial`'s
+ * `(courseId, checksum)` index. `uploadMaterial`'s findFirst dedupe check and
+ * its create() are not atomic, so two concurrent uploads of the same file can
+ * both pass the findFirst check and race into create() — the DB constraint
+ * (not the findFirst) is the real guard (#225 RAG-04).
+ */
+function isChecksumConflict(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
+/**
  * Staff (INSTRUCTOR/TA/ADMIN/UNIT_ADMIN) see every material so they can stage
  * and schedule content; only students are subject to the per-material
  * visibility gate. `access.level === 'student'` is the single student marker.
@@ -405,18 +421,39 @@ async function uploadMaterial(
       });
     }
 
-    const material = await prisma.courseMaterial.create({
-      data: {
-        courseId,
-        title: fileInfo.title,
-        mimeType: fileInfo.mimeType,
-        fileSize: fileInfo.fileSize,
-        checksum: fileInfo.checksum,
-        rawText: fileInfo.content,
-        status: 'PROCESSING',
-        uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
-      },
-    });
+    let material;
+    try {
+      material = await prisma.courseMaterial.create({
+        data: {
+          courseId,
+          title: fileInfo.title,
+          mimeType: fileInfo.mimeType,
+          fileSize: fileInfo.fileSize,
+          checksum: fileInfo.checksum,
+          rawText: fileInfo.content,
+          status: 'PROCESSING',
+          uploadedBy: user.id, // #294: owner FK for TA own-only delete (§7)
+        },
+      });
+    } catch (createError) {
+      // #225 RAG-04: a concurrent upload with the same (courseId, checksum)
+      // won the findFirst-to-create race above — the unique index rejected
+      // this insert, so no duplicate corpus was created. Respond the same
+      // way the findFirst dedupe path would, instead of leaking a raw Prisma
+      // conflict as a 500.
+      if (isChecksumConflict(createError)) {
+        const winner = await prisma.courseMaterial.findFirst({
+          where: { courseId, checksum: fileInfo.checksum, deletedAt: null },
+        });
+        if (winner) {
+          return json(409, {
+            error: 'A file with identical content already exists in this course',
+            materialId: winner.id,
+          });
+        }
+      }
+      throw createError;
+    }
 
     // Audit the upload as soon as the material row is persisted, independent of embedding.
     // A material that uploads successfully but later fails to embed is still a real upload

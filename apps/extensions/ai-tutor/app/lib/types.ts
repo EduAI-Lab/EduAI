@@ -1,5 +1,15 @@
 import type { UserRole } from '@eduai/types';
-export type Role = UserRole;
+
+/**
+ * Effective role for AI Tutor's UI/routing: the platform `UserRole` plus the
+ * enrollment-derived TA overlay. `@eduai/types`' `UserRole` has no TA (a
+ * course TA is a STUDENT-platform user with a TA course enrollment) — the
+ * server (`server/src/routes/authentication.js`) rewrites `role` to `'TA'`
+ * when the enrollment sync finds a TA-taught course, mirroring Core's own
+ * `EffectiveRole` pattern (#225 AUTH-12). Never compare this to the raw Core
+ * `User.role` — that's `UserRole` and never `'TA'`.
+ */
+export type Role = UserRole | 'TA';
 
 export type EnrollmentRole = 'STUDENT' | 'TA' | 'INSTRUCTOR';
 
@@ -203,6 +213,10 @@ export type Course = {
   year?: number | null;
   /** Core-owned instructor guidance for the AI tutor — available but not yet consumed (#1072). */
   aiInstructions?: string | null;
+  /** #225 SEAM-04: set only on the publish/unpublish response when the write
+   *  to Core succeeded but the immediate re-read failed — `isPublished`
+   *  reflects the write, not a confirmed Core read. Absent otherwise. */
+  corePublishStale?: boolean;
   progress?: Progress;
 };
 

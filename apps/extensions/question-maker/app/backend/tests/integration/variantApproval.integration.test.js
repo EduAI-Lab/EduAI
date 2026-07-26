@@ -242,7 +242,11 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
     expect(mockVariantUpdate).not.toHaveBeenCalled();
   });
 
-  it('approves locally (200) when Core is unreachable, logs warning', async () => {
+  // #225 SEAM-03 / #1197 fix: a Core push failure (Core down, 5xx, network
+  // error) must surface as an error, not a false 200 success — the variant
+  // is approved locally but not linked to Core, so a 200 here would let the
+  // UI believe the question was published when it wasn't.
+  it('returns 502 CORE_PUSH_FAILED when Core is unreachable, does not store a Core link', async () => {
     setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
     mockPushVariantToCore.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
@@ -251,8 +255,30 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
       .set('Cookie', 'session=valid')
       .send({ isDraft: false });
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.status).toBe(502);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('CORE_PUSH_FAILED');
     expect(mockVariantUpdate).not.toHaveBeenCalled();
+  });
+
+  it('re-approval after a transient Core push failure retries the push (state-based gating)', async () => {
+    setup({ updated: makeVariant({ isDraft: false, coreQuestionId: null }) });
+
+    mockPushVariantToCore.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const firstRes = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=valid')
+      .send({ isDraft: false });
+    expect(firstRes.status).toBe(502);
+
+    mockPushVariantToCore.mockResolvedValueOnce({ coreQuestionId: 'cuid-core-q-retry' });
+    const secondRes = await request(app)
+      .put('/api/questions/variants/42')
+      .set('Cookie', 'session=valid')
+      .send({ isDraft: false });
+
+    expect(secondRes.status).toBe(200);
+    expect(mockPushVariantToCore).toHaveBeenCalledTimes(2);
+    expect(mockVariantUpdate).toHaveBeenCalledWith({ coreQuestionId: 'cuid-core-q-retry' });
   });
 });

@@ -31,6 +31,26 @@ const activeStudentEnrollmentWhere = {
   isActive: true,
 } satisfies Prisma.EnrollmentWhereInput;
 
+/**
+ * AUTH-04 admin-floor invariant: mirrors the instructor-floor guard in
+ * `enrollments.server.ts:44` — the platform must always retain >= 1 active
+ * ADMIN. Applies to every caller, including another ADMIN demoting or
+ * deactivating a peer, with no override. Caller must run this inside the
+ * same transaction as the write so the check-then-write is atomic.
+ */
+async function adminFloorViolation(
+  tx: Pick<Prisma.TransactionClient, "user">,
+  userId: string,
+) {
+  const remainingAdmins = await tx.user.count({
+    where: { role: "ADMIN", isActive: true, id: { not: userId } },
+  });
+  if (remainingAdmins === 0) {
+    return { status: "409", error: "ADMIN_FLOOR_VIOLATION" } as const;
+  }
+  return null;
+}
+
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
   const requestContext = getRequestContext(request);
@@ -164,26 +184,36 @@ export async function handleUsersApiRequest(request: Request) {
 
       let effectiveRole = result.data.role;
       let previousRole: typeof effectiveRole;
+      let targetWasActiveAdmin = false;
       if (
         result.data.role !== undefined ||
         result.data.authorizedUnits !== undefined ||
-        result.data.taCourseIds !== undefined
+        result.data.taCourseIds !== undefined ||
+        result.data.isActive !== undefined
       ) {
         const target = await prisma.user.findUnique({
           where: { id: userId },
-          select: { role: true },
+          select: { role: true, isActive: true },
         });
         if (!target) {
           return apiError(404, "USER_NOT_FOUND");
         }
         previousRole = target.role;
         effectiveRole = result.data.role ?? target.role;
+        targetWasActiveAdmin = target.role === "ADMIN" && target.isActive === true;
         if (effectiveRole !== "UNIT_ADMIN" && (result.data.authorizedUnits?.length ?? 0) > 0) {
           return apiError(422, "ROLE_MISMATCH");
         }
       }
       const platformRoleChanged =
         result.data.role !== undefined && previousRole !== effectiveRole;
+
+      // AUTH-04: this update would take the target out of the active-ADMIN
+      // pool — either a role change away from ADMIN, or a deactivation.
+      const removesAdminStatus =
+        targetWasActiveAdmin &&
+        ((result.data.role !== undefined && result.data.role !== "ADMIN") ||
+          result.data.isActive === false);
 
       try {
         const {
@@ -250,6 +280,10 @@ export async function handleUsersApiRequest(request: Request) {
         let updatedWithCount;
         if (shouldReconcileTACourses) {
           const transactionResult = await prisma.$transaction(async (tx) => {
+            if (removesAdminStatus) {
+              const violation = await adminFloorViolation(tx, userId);
+              if (violation) return violation;
+            }
             const previousTAEnrollments = await tx.enrollment.findMany({
               where: { userId, role: "TA", isActive: true },
               select: { courseId: true },
@@ -278,12 +312,31 @@ export async function handleUsersApiRequest(request: Request) {
                 ? 409
                 : transactionResult.error === "TA_COURSE_NOT_FOUND"
                   ? 404
-                  : 422;
+                  : transactionResult.error === "ADMIN_FLOOR_VIOLATION"
+                    ? 409
+                    : 422;
             return apiError(status, transactionResult.error);
           }
           updatedWithCount = transactionResult.updated!;
           activeTACourseIds = transactionResult.activeTACourseIds!;
           previousTACourseIds = transactionResult.previousTACourseIds!;
+        } else if (removesAdminStatus) {
+          const transactionResult = await prisma.$transaction(async (tx) => {
+            const violation = await adminFloorViolation(tx, userId);
+            if (violation) return violation;
+            return { updated: await updateUser(tx) } as const;
+          });
+          if ("error" in transactionResult) {
+            return apiError(409, transactionResult.error);
+          }
+          updatedWithCount = transactionResult.updated;
+          const activeTAEnrollments = await prisma.enrollment.findMany({
+            where: { userId, role: "TA", isActive: true },
+            select: { courseId: true },
+          });
+          activeTACourseIds = activeTAEnrollments.map(
+            (enrollment) => enrollment.courseId,
+          );
         } else {
           updatedWithCount = await updateUser(prisma);
           const activeTAEnrollments = await prisma.enrollment.findMany({

@@ -89,6 +89,18 @@ describe("resolveCourseAccess", () => {
     expect(access).toEqual({ level: "student", rank: 0 });
   });
 
+  // Edge-case audit #225 (AUTH-13): UNIT_ADMIN in their unit who is also an active
+  // STUDENT enrollment resolves to `unit` (rank 3) — higher platform scope wins.
+  it("resolves UNIT_ADMIN in their unit to unit even with an active STUDENT enrollment", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
+    const access = await resolveCourseAccess(
+      { id: "u1", role: "UNIT_ADMIN", authorizedUnits: ["COSC", "MATH"] },
+      "c1",
+    );
+    expect(access).toEqual({ level: "unit", rank: 3 });
+    expect(prismaMock.enrollment.findUnique).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["INSTRUCTOR", { level: "instructor", rank: 2 }],
     ["TA", { level: "ta", rank: 1 }],
@@ -108,6 +120,17 @@ describe("resolveCourseAccess", () => {
   it("returns null for an inactive enrollment", async () => {
     prismaMock.enrollment.findUnique.mockResolvedValue({ role: "INSTRUCTOR", isActive: false });
     const access = await resolveCourseAccess({ id: "u1", role: "INSTRUCTOR" }, "c1");
+    expect(access).toBeNull();
+  });
+
+  // Edge-case audit #225 (AUTH-14): unknown Enrollment.role denies access
+  // (fail-closed). Earlier TESTS.md text claiming "other returns student" was wrong.
+  it("returns null for an unrecognized enrollment role", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({
+      role: "OBSERVER",
+      isActive: true,
+    });
+    const access = await resolveCourseAccess({ id: "u1", role: "STUDENT" }, "c1");
     expect(access).toBeNull();
   });
 
