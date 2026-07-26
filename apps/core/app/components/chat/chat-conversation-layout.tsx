@@ -61,11 +61,12 @@ export function ChatConversationLayout({
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
-  const { elapsedMs, stage, showProgressIndicator, compactProgress } =
+  const { elapsedMs, stage, timed, showProgressIndicator, compactProgress } =
     useChatProgress({
       isLoading,
       messages,
       adhdAssist,
+      selectedModel,
       streamingRoutedRegistryId,
     });
 
@@ -173,6 +174,7 @@ export function ChatConversationLayout({
                     <ChatTypingIndicator
                       stage={stage}
                       elapsedMs={elapsedMs}
+                      timed={timed}
                       compact={compactProgress}
                     />
                   )}

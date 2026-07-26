@@ -4,8 +4,11 @@ import {
   activeToolNameFromMessage,
   assistantMessageHasText,
   assistantTextFingerprint,
+  computeTimedChatProgress,
+  estimateExpectedResponseMs,
   resolveChatProgressStage,
   type ChatProgressStage,
+  type TimedChatProgress,
 } from "~/components/chat/chat-progress-stage";
 
 type MessageLike = {
@@ -27,15 +30,20 @@ type MessageLike = {
  * Multi-step gaps are gated on tool activity (active tool, or waiting for the
  * next tokens after a tool completes) — not on inter-token silence — so slow
  * local models do not flicker a compact status between streamed tokens.
+ *
+ * The progress bar fills against an expected duration for the model / Assist
+ * path so users (esp. ADHD) can see how close they are to an answer.
  */
 export function useChatProgress(args: {
   isLoading: boolean;
   messages: MessageLike[];
   adhdAssist: boolean;
+  selectedModel?: string | null;
   streamingRoutedRegistryId?: string | null;
 }): {
   elapsedMs: number;
   stage: ChatProgressStage;
+  timed: TimedChatProgress;
   hasAssistantText: boolean;
   showProgressIndicator: boolean;
   /** Slimmer row under an already-streaming assistant bubble (multi-step). */
@@ -45,6 +53,7 @@ export function useChatProgress(args: {
     isLoading,
     messages,
     adhdAssist,
+    selectedModel = null,
     streamingRoutedRegistryId = null,
   } = args;
 
@@ -63,6 +72,7 @@ export function useChatProgress(args: {
     streamingRoutedRegistryId && streamingRoutedRegistryId.trim().length > 0,
   );
   const hasActiveTool = Boolean(activeToolName);
+  const modelId = streamingRoutedRegistryId || selectedModel || null;
 
   useEffect(() => {
     if (!isLoading) {
@@ -125,6 +135,19 @@ export function useChatProgress(args: {
     awaitingFollowup,
   });
 
+  const expectedMs = estimateExpectedResponseMs({
+    modelId,
+    adhdAssist,
+    hasActiveTool,
+    awaitingFollowup,
+  });
+
+  const timed = computeTimedChatProgress({
+    elapsedMs,
+    expectedMs,
+    stageFloor: stage.progress,
+  });
+
   // Prefer streaming tokens while text is arriving. Re-show only for tools or
   // the post-tool follow-up gap — never for inter-token silence alone.
   const showProgressIndicator =
@@ -134,6 +157,7 @@ export function useChatProgress(args: {
   return {
     elapsedMs,
     stage,
+    timed,
     hasAssistantText,
     showProgressIndicator,
     compactProgress,
