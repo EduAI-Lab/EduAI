@@ -5,6 +5,9 @@ const rateLimitStore = new Map<string, number[]>();
 
 function recordRateLimitHit(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
+  // The `?? []` fallback for an unseen key is unkillable by mutation testing: any non-numeric
+  // placeholder value substituted here makes `now - timestamp` evaluate to NaN, and `NaN < windowMs`
+  // is always false, so the substituted value is filtered out identically to a real empty array.
   const hits = (rateLimitStore.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
   if (hits.length >= limit) {
     return true;
