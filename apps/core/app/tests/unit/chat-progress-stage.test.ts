@@ -7,7 +7,9 @@ import {
   assistantMessageHasText,
   computeTimedChatProgress,
   estimateExpectedResponseMs,
+  estimateFollowupRemainingMs,
   formatChatProgressElapsed,
+  formatChatProgressRemaining,
   hasIncompleteEduaiDiagramFence,
   resolveChatProgressStage,
   resolveChatProgressStageId,
@@ -168,11 +170,18 @@ describe("resolveChatProgressStage — #1171", () => {
   });
 });
 
-describe("formatChatProgressElapsed", () => {
+describe("formatChatProgressElapsed / formatChatProgressRemaining", () => {
   it("formats seconds and minutes", () => {
     expect(formatChatProgressElapsed(0)).toBe("0s");
     expect(formatChatProgressElapsed(12_400)).toBe("12s");
     expect(formatChatProgressElapsed(65_000)).toBe("1m 5s");
+  });
+
+  it("ceils remaining so sub-second leftovers are not “About 0s left”", () => {
+    expect(formatChatProgressRemaining(0)).toBe("0s");
+    expect(formatChatProgressRemaining(400)).toBe("1s");
+    expect(formatChatProgressRemaining(12_400)).toBe("13s");
+    expect(formatChatProgressRemaining(60_000)).toBe("1m");
   });
 });
 
@@ -194,27 +203,45 @@ describe("estimateExpectedResponseMs / computeTimedChatProgress", () => {
     expect(local32).toBeLessThan(assist32);
   });
 
-  it("fills the bar as elapsed approaches the expected duration", () => {
-    const expectedMs = 20_000;
+  it("keeps follow-up remaining short without rewriting the full-turn estimate", () => {
+    const full = estimateExpectedResponseMs({
+      modelId: "vllm:qwen2.5-32b-instruct",
+      adhdAssist: true,
+      hasActiveTool: true,
+    });
+    const followup = estimateFollowupRemainingMs({
+      modelId: "vllm:qwen2.5-32b-instruct",
+      adhdAssist: true,
+    });
+    expect(followup).toBeLessThan(full);
+    expect(followup).toBeGreaterThanOrEqual(8_000);
+    expect(followup).toBeLessThanOrEqual(16_000);
+  });
+
+  it("fills the bar as elapsed approaches the deadline", () => {
+    const deadlineMs = 20_000;
     const early = computeTimedChatProgress({
       elapsedMs: 2_000,
-      expectedMs,
+      deadlineMs,
+      typicalExpectedMs: deadlineMs,
       stageFloor: 18,
     });
     const mid = computeTimedChatProgress({
       elapsedMs: 10_000,
-      expectedMs,
+      deadlineMs,
+      typicalExpectedMs: deadlineMs,
       stageFloor: 18,
     });
-    const atExpected = computeTimedChatProgress({
-      elapsedMs: expectedMs,
-      expectedMs,
+    const atDeadline = computeTimedChatProgress({
+      elapsedMs: deadlineMs,
+      deadlineMs,
+      typicalExpectedMs: deadlineMs,
       stageFloor: 18,
     });
 
     expect(early.percent).toBeLessThan(mid.percent);
-    expect(mid.percent).toBeLessThan(atExpected.percent);
-    expect(atExpected.percent).toBeLessThanOrEqual(90);
+    expect(mid.percent).toBeLessThan(atDeadline.percent);
+    expect(atDeadline.percent).toBeLessThanOrEqual(90);
     expect(early.timingLabel).toMatch(/About .* left/i);
     expect(early.isOverExpected).toBe(false);
   });
@@ -222,22 +249,48 @@ describe("estimateExpectedResponseMs / computeTimedChatProgress", () => {
   it("never hits 100% while in flight and labels overruns honestly", () => {
     const over = computeTimedChatProgress({
       elapsedMs: 60_000,
-      expectedMs: 20_000,
+      deadlineMs: 20_000,
+      typicalExpectedMs: 40_000,
       stageFloor: 18,
     });
     expect(over.percent).toBeLessThanOrEqual(CHAT_PROGRESS_IN_FLIGHT_CAP);
     expect(over.percent).toBeLessThan(100);
     expect(over.isOverExpected).toBe(true);
     expect(over.timingLabel).toMatch(/longer than usual/i);
+    // “Usually ~” stays on the typical turn, not the missed deadline.
+    expect(over.expectedMs).toBe(40_000);
   });
 
   it("respects the stage floor so tool stages still nudge the bar", () => {
     const timed = computeTimedChatProgress({
       elapsedMs: 500,
-      expectedMs: 40_000,
+      deadlineMs: 40_000,
       stageFloor: 38,
     });
     expect(timed.percent).toBeGreaterThanOrEqual(38);
+  });
+
+  it("does not slide backwards when peakPercent is higher than the raw fill", () => {
+    const timed = computeTimedChatProgress({
+      elapsedMs: 2_000,
+      deadlineMs: 48_000, // estimate grew (e.g. tool started)
+      peakPercent: 55,
+      stageFloor: 18,
+    });
+    expect(timed.percent).toBeGreaterThanOrEqual(55);
+  });
+
+  it("treats a rebased follow-up deadline against current elapsed, not full-turn age", () => {
+    // 30s into the request, tool just finished → deadline = now + 10s.
+    const timed = computeTimedChatProgress({
+      elapsedMs: 30_000,
+      deadlineMs: 40_000,
+      typicalExpectedMs: 64_000,
+      stageFloor: 58,
+    });
+    expect(timed.isOverExpected).toBe(false);
+    expect(timed.remainingMs).toBe(10_000);
+    expect(timed.timingLabel).toMatch(/About 10s left/i);
   });
 });
 
