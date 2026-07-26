@@ -14,28 +14,13 @@
  * — CI's `qm-db` service container and `docker-compose.test.yml` already
  * provision `question_maker_test` before tests run.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve, dirname, parse } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
+import { runPrismaMigrateDeploy } from './helpers/prismaCli.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(__dirname, '..');
-
-const isWindows = process.platform === 'win32';
-
-function findPrismaBin() {
-  const binName = isWindows ? 'prisma.cmd' : 'prisma';
-  let dir = backendRoot;
-  const { root } = parse(dir);
-  while (dir !== root) {
-    const bin = resolve(dir, 'node_modules', '.bin', binName);
-    if (existsSync(bin)) return bin;
-    dir = resolve(dir, '..');
-  }
-  throw new Error('Could not find prisma binary. Make sure it is installed.');
-}
 
 export async function setup() {
   // globalSetup runs in the main process before setupFiles (tests/setup.js) load the root .env,
@@ -46,14 +31,5 @@ export async function setup() {
     return;
   }
 
-  const prismaBin = findPrismaBin();
-  const execArgs = isWindows
-    ? ['cmd.exe', ['/c', prismaBin, 'migrate', 'deploy']]
-    : [prismaBin, ['migrate', 'deploy']];
-
-  execFileSync(...execArgs, {
-    cwd: backendRoot,
-    env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
-    stdio: 'pipe',
-  });
+  runPrismaMigrateDeploy({ cwd: backendRoot, databaseUrl: process.env.TEST_DATABASE_URL });
 }
