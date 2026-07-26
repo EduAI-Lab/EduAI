@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   CHAT_PROGRESS_ASSIST_PREP_MS,
+  CHAT_PROGRESS_IN_FLIGHT_CAP,
   CHAT_PROGRESS_ROUTING_MS,
   activeToolNameFromMessage,
   assistantMessageHasText,
+  computeTimedChatProgress,
+  estimateExpectedResponseMs,
   formatChatProgressElapsed,
   hasIncompleteEduaiDiagramFence,
   resolveChatProgressStage,
@@ -139,7 +142,7 @@ describe("resolveChatProgressStage — #1171", () => {
     ).toBe("waiting_for_model");
   });
 
-  it("returns stage bookmarks rather than a fake wall-clock percent", () => {
+  it("returns a stable stage floor for waiting_for_model", () => {
     const waiting = resolveChatProgressStage({
       elapsedMs: 1_000,
       hasAssistantText: false,
@@ -147,16 +150,8 @@ describe("resolveChatProgressStage — #1171", () => {
       activeToolName: null,
       adhdAssist: false,
     });
-    const later = resolveChatProgressStage({
-      elapsedMs: 20_000,
-      hasAssistantText: false,
-      hasRoutedModel: true,
-      activeToolName: null,
-      adhdAssist: false,
-    });
     expect(waiting.id).toBe("waiting_for_model");
-    expect(later.id).toBe("waiting_for_model");
-    expect(waiting.progress).toBe(later.progress);
+    expect(waiting.progress).toBeGreaterThan(0);
     expect(waiting.label).toMatch(/Waiting for model/i);
   });
 
@@ -178,6 +173,71 @@ describe("formatChatProgressElapsed", () => {
     expect(formatChatProgressElapsed(0)).toBe("0s");
     expect(formatChatProgressElapsed(12_400)).toBe("12s");
     expect(formatChatProgressElapsed(65_000)).toBe("1m 5s");
+  });
+});
+
+describe("estimateExpectedResponseMs / computeTimedChatProgress", () => {
+  it("expects cloud models to be faster than local 32B", () => {
+    const cloud = estimateExpectedResponseMs({
+      modelId: "google:gemini-2.5-flash",
+      adhdAssist: false,
+    });
+    const local32 = estimateExpectedResponseMs({
+      modelId: "vllm:qwen2.5-32b-instruct",
+      adhdAssist: false,
+    });
+    const assist32 = estimateExpectedResponseMs({
+      modelId: "vllm:qwen2.5-32b-instruct",
+      adhdAssist: true,
+    });
+    expect(cloud).toBeLessThan(local32);
+    expect(local32).toBeLessThan(assist32);
+  });
+
+  it("fills the bar as elapsed approaches the expected duration", () => {
+    const expectedMs = 20_000;
+    const early = computeTimedChatProgress({
+      elapsedMs: 2_000,
+      expectedMs,
+      stageFloor: 18,
+    });
+    const mid = computeTimedChatProgress({
+      elapsedMs: 10_000,
+      expectedMs,
+      stageFloor: 18,
+    });
+    const atExpected = computeTimedChatProgress({
+      elapsedMs: expectedMs,
+      expectedMs,
+      stageFloor: 18,
+    });
+
+    expect(early.percent).toBeLessThan(mid.percent);
+    expect(mid.percent).toBeLessThan(atExpected.percent);
+    expect(atExpected.percent).toBeLessThanOrEqual(90);
+    expect(early.timingLabel).toMatch(/About .* left/i);
+    expect(early.isOverExpected).toBe(false);
+  });
+
+  it("never hits 100% while in flight and labels overruns honestly", () => {
+    const over = computeTimedChatProgress({
+      elapsedMs: 60_000,
+      expectedMs: 20_000,
+      stageFloor: 18,
+    });
+    expect(over.percent).toBeLessThanOrEqual(CHAT_PROGRESS_IN_FLIGHT_CAP);
+    expect(over.percent).toBeLessThan(100);
+    expect(over.isOverExpected).toBe(true);
+    expect(over.timingLabel).toMatch(/longer than usual/i);
+  });
+
+  it("respects the stage floor so tool stages still nudge the bar", () => {
+    const timed = computeTimedChatProgress({
+      elapsedMs: 500,
+      expectedMs: 40_000,
+      stageFloor: 38,
+    });
+    expect(timed.percent).toBeGreaterThanOrEqual(38);
   });
 });
 

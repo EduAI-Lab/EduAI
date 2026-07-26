@@ -15,30 +15,39 @@ describe("ChatTypingIndicator — rendering", () => {
 
   it("defaults to the thinking label when no stage is provided", () => {
     render(<ChatTypingIndicator />);
-    // Visible shimmer + sr-only live region both carry the label.
     expect(screen.getAllByText(/eduai is thinking/i).length).toBeGreaterThan(0);
   });
 
-  it("shows the stage label, elapsed time, and indeterminate progress (#1171)", () => {
+  it("shows timed remaining copy and a determinate progress value (#1171)", () => {
     const { container } = render(
       <ChatTypingIndicator
         stage={{
           id: "waiting_for_model",
           label: "Waiting for model…",
-          progress: 32,
+          progress: 18,
         }}
-        elapsedMs={12_400}
+        elapsedMs={12_000}
+        timed={{
+          percent: 55,
+          expectedMs: 40_000,
+          remainingMs: 28_000,
+          isOverExpected: false,
+          timingLabel: "About 28s left",
+        }}
       />,
     );
 
     expect(screen.getAllByText(/waiting for model/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("12s")).toBeInTheDocument();
+    expect(screen.getAllByText(/About 28s left/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Usually ~40s/i)).toBeInTheDocument();
     expect(
-      container.querySelector('[data-chat-progress-stage="waiting_for_model"]'),
+      container.querySelector('[data-chat-progress-percent="55"]'),
     ).not.toBeNull();
-    expect(
-      screen.getByRole("progressbar", { name: /in progress: waiting for model/i }),
-    ).toHaveAttribute("aria-valuetext", "Waiting for model…");
+    const bar = screen.getByRole("progressbar", {
+      name: /response progress: waiting for model/i,
+    });
+    expect(bar).toHaveAttribute("aria-valuenow", "55");
+    expect(bar.getAttribute("aria-valuetext") ?? "").toMatch(/About 28s left/i);
   });
 
   it("keeps elapsed outside the live region so AT is not spammed", () => {
@@ -47,16 +56,24 @@ describe("ChatTypingIndicator — rendering", () => {
         stage={{
           id: "waiting_for_model",
           label: "Waiting for model…",
-          progress: 32,
+          progress: 18,
         }}
         elapsedMs={5_000}
+        timed={{
+          percent: 30,
+          expectedMs: 20_000,
+          remainingMs: 15_000,
+          isOverExpected: false,
+          timingLabel: "About 15s left",
+        }}
       />,
     );
 
     const live = container.querySelector("[aria-live='polite']");
     expect(live).not.toBeNull();
     expect(live?.textContent).toMatch(/Waiting for model/i);
-    expect(live?.textContent).not.toMatch(/5s/);
+    expect(live?.textContent).toMatch(/About 15s left/i);
+    expect(live?.textContent).not.toMatch(/5s elapsed/);
   });
 
   it("renders a compact multi-step row without a second avatar bubble", () => {
@@ -66,14 +83,21 @@ describe("ChatTypingIndicator — rendering", () => {
         stage={{
           id: "generating",
           label: "Generating…",
-          progress: 72,
+          progress: 58,
         }}
         elapsedMs={8_000}
+        timed={{
+          percent: 70,
+          expectedMs: 12_000,
+          remainingMs: 4_000,
+          isOverExpected: false,
+          timingLabel: "About 4s left",
+        }}
       />,
     );
 
     expect(screen.queryByText("AI")).not.toBeInTheDocument();
-    expect(screen.getByText("8s")).toBeInTheDocument();
+    expect(screen.getAllByText(/About 4s left/i).length).toBeGreaterThan(0);
     expect(
       document.querySelector('[data-chat-progress-compact="true"]'),
     ).not.toBeNull();
