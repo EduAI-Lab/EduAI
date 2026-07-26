@@ -23,6 +23,7 @@
 import { prisma } from '../config/database.js';
 import {
   listCoreAdminBugReports,
+  getCoreAdminBugReport,
   patchCoreAdminBugReportStatus,
   postCoreBugReport,
 } from './eduaiClient.js';
@@ -332,6 +333,31 @@ export async function listAdminBugReports(cookie) {
   });
   const reports = Array.isArray(payload?.reports) ? payload.reports : [];
   return reports.map(mapCoreAdminBugReportRow);
+}
+
+/**
+ * Load one AI Tutor bug report from Core including diagnostic blobs (#979).
+ */
+export async function getAdminBugReport(cookie, bugReportId) {
+  if (typeof bugReportId !== 'string' || bugReportId.trim().length === 0) {
+    throw new BugReportError(400, 'Invalid bug report id');
+  }
+
+  try {
+    const report = await getCoreAdminBugReport(cookie, bugReportId.trim());
+    if (report?.source !== 'AI_TUTOR') {
+      throw new BugReportError(404, 'Bug report not found');
+    }
+    return mapCoreAdminBugReportRow(report);
+  } catch (error) {
+    if (error instanceof BugReportError) {
+      throw error;
+    }
+    if (error?.status === 404) {
+      throw new BugReportError(404, 'Bug report not found');
+    }
+    throw error;
+  }
 }
 
 /**
