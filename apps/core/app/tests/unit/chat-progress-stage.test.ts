@@ -80,6 +80,18 @@ describe("resolveChatProgressStage — #1171", () => {
     ).toBe("searching_materials");
   });
 
+  it("maps unknown in-progress tools to working", () => {
+    expect(
+      resolveChatProgressStageId({
+        elapsedMs: 2_000,
+        hasAssistantText: false,
+        hasRoutedModel: true,
+        activeToolName: "listUsers",
+        adhdAssist: false,
+      }),
+    ).toBe("working");
+  });
+
   it("uses generating when text exists and no tool is active", () => {
     expect(
       resolveChatProgressStageId({
@@ -88,6 +100,19 @@ describe("resolveChatProgressStage — #1171", () => {
         hasRoutedModel: true,
         activeToolName: null,
         adhdAssist: true,
+      }),
+    ).toBe("generating");
+  });
+
+  it("uses generating while awaiting post-tool follow-up tokens", () => {
+    expect(
+      resolveChatProgressStageId({
+        elapsedMs: 8_000,
+        hasAssistantText: true,
+        hasRoutedModel: true,
+        activeToolName: null,
+        adhdAssist: false,
+        awaitingFollowup: true,
       }),
     ).toBe("generating");
   });

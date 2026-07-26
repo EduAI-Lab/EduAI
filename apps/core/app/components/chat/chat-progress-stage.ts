@@ -11,6 +11,7 @@ export type ChatProgressStageId =
   | "waiting_for_model"
   | "searching_materials"
   | "searching_web"
+  | "working"
   | "generating"
   | "preparing_assist";
 
@@ -26,6 +27,7 @@ const STAGE_BOOKMARK: Record<ChatProgressStageId, number> = {
   waiting_for_model: 32,
   searching_materials: 48,
   searching_web: 48,
+  working: 55,
   generating: 72,
   preparing_assist: 88,
 };
@@ -35,6 +37,7 @@ const STAGE_LABEL: Record<ChatProgressStageId, string> = {
   waiting_for_model: "Waiting for model…",
   searching_materials: "Searching course materials…",
   searching_web: "Searching the web…",
+  working: "Working…",
   generating: "Generating…",
   // Covers both slow TTFT and oversight buffering — not oversight-only.
   preparing_assist: "Working on Assist reply…",
@@ -49,12 +52,6 @@ export const CHAT_PROGRESS_ROUTING_MS = 450;
  */
 export const CHAT_PROGRESS_ASSIST_PREP_MS = 6_000;
 
-/**
- * After assistant text stops changing for this long, treat the turn as an idle
- * multi-step gap and show a compact status row again.
- */
-export const CHAT_PROGRESS_TEXT_IDLE_MS = 900;
-
 export type ResolveChatProgressStageInput = {
   elapsedMs: number;
   hasAssistantText: boolean;
@@ -62,6 +59,11 @@ export type ResolveChatProgressStageInput = {
   /** Active tool name from the in-flight assistant message, if any. */
   activeToolName: string | null;
   adhdAssist: boolean;
+  /**
+   * True while we are waiting for the next model tokens after a tool finished
+   * (multi-step gap). Keeps compact status without using inter-token idle.
+   */
+  awaitingFollowup?: boolean;
 };
 
 export function resolveChatProgressStage(
@@ -84,6 +86,7 @@ export function resolveChatProgressStageId(
     hasRoutedModel,
     activeToolName,
     adhdAssist,
+    awaitingFollowup = false,
   } = input;
 
   // In-progress tools win even when earlier tokens already exist (multi-step).
@@ -93,6 +96,14 @@ export function resolveChatProgressStageId(
   }
   if (tool === "webSearch" || tool === "fetchPage") {
     return "searching_web";
+  }
+  if (tool) {
+    return "working";
+  }
+
+  // Post-tool gap before the next tokens — keep an honest generating label.
+  if (awaitingFollowup) {
+    return "generating";
   }
 
   if (hasAssistantText) {
@@ -144,7 +155,7 @@ function contentAsDisplayText(content: unknown): string {
   return "";
 }
 
-/** Stable fingerprint of visible assistant text for idle-gap detection. */
+/** Stable fingerprint of visible assistant text for follow-up detection. */
 export function assistantTextFingerprint(
   message: MessageLike | null | undefined,
 ): string {
