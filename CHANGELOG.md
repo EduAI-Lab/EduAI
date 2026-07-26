@@ -38,25 +38,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Block SSRF via client-supplied provider `baseUrl` in chat — `createAIProviderRegistry` no longer trusts the client-supplied Ollama/vLLM `baseUrl` from `/api/chat`; a new `resolveAllowedVllmBaseUrl` (mirroring the existing Ollama guard from #849) restricts it to loopback or a deployment-configured host (`VLLM_BASE_URL`/`VLLM_FLEET_*`), silently falling back to the server default otherwise. Previously any authenticated user — including students — could point `baseUrl` at an internal host or the cloud-metadata endpoint and have Core relay the response back. (#972, @evanbones, 2026-07-21) — [#1139](https://github.com/EduAI-Lab/EduAI/pull/1139)
 - [core] fix: Block SSRF via Canvas base URL — `parseAndValidateCanvasUrl` previously allowed any HTTPS host with no private-network check. A new shared `assertPublicHostname` guard (`app/lib/net/ssrf-guard.server.ts`) DNS-resolves the host and rejects RFC1918/loopback/link-local/CGNAT/IPv6-ULA ranges (including cloud metadata endpoints), re-checked on every real Canvas request (credential verification, course/roster/file listing, file downloads) rather than once at connect time. (#977, @evanbones, 2026-07-21) — [#1139](https://github.com/EduAI-Lab/EduAI/pull/1139)
 
-## [Week 11 — July 13–19, 2026]
-
-### Added
-
-### Fixed
-
-- [core, question-maker] fix: Clean up user-facing text — fix outdated "Applies to Core and AI Tutor" policy flag description (course creation is Core-only), replace RAG/embedding/Top-K jargon with plain language across course management UI, remove raw "metadata" field-name leaks and a raw server-error fallback from Question Maker, and replace raw JS error messages in Core toasts with plain, action-oriented fallbacks. (#1030, #1061, #1062, #1063, @evanbones, 2026-07-20) — [#1126](https://github.com/EduAI-Lab/EduAI/pull/1126)
-### Changed
-
-- [monorepo] perf!: Core's `/api/users`, `/api/courses`, `/api/ai-models`, and `/api/ai-providers` are now server-paginated with required `page`/`pageSize` and a unified `{ data, total, page, pageSize }` envelope (plus `?ids=`/`?search=` lookups), and every reader in Core, AI Tutor, Question Maker, and the example extension is migrated — the course switcher, command palette, and AI Tutor's add-student picker search Core server-side so they stay reachable past the first page. (#1041, #1125, #1143, @mochi_21, 2026-07-20) — [#1129](https://github.com/EduAI-Lab/EduAI/pull/1129)
-
-### Fixed
-
-- [core] refactor: Wire `useCourseMaterials.deleteMaterial` to the live `DELETE /api/courses/:courseId/materials/:materialId` endpoint and route the course-detail manager/TA delete flows through the hook instead of inline `fetch`. (#559, @mochi_21, 2026-07-20) — [#1138](https://github.com/EduAI-Lab/EduAI/pull/1138)
 
 ## [Week 11 — July 13–19, 2026]
 
 ### Added
 
+- [core] test: Close remaining mutation testing gaps from #224's epic follow-ups — `password-history.server.ts` 46.00% → 100% (27 gaps), `password-policy.ts` 69.57% → 100% (14 gaps, including two previously timeout-prone mutants on `PASSWORD_POLICY_MESSAGE`), `password-expiry.server.ts` 76.19% → 100% (10 gaps), and `canvas/guards.server.ts` 76.32% → 97.37% (8 of 9 gaps; the remaining mutant is a documented equivalent). (#1094, #1095, #1097, #1098, @GlowyBlack, 2026-07-22) — [#1150](https://github.com/EduAI-Lab/EduAI/pull/1150)
 - [core] feat: Add stateless `POST /api/completion` for extension AI-assist flows — prompt-faithful LLM calls without chat persistence, RAG, tools, or ADHD-assist overhead; QM and AI Tutor cut over from `/api/chat`. (#858, @superbolt08, 2026-07-08) — [#958](https://github.com/EduAI-Lab/EduAI/pull/958)
 - [core] test: Mutation testing (Stryker + `@stryker-mutator/vitest-runner`, `npm run test:mutation` in `apps/core`) scoped to the RBAC, auth, and Canvas-credential-encryption modules. Fixed all findable gaps in the two highest-severity files: `auth/guards.server.ts` 54.96% → 99.65% (127 gaps → 1 confirmed-equivalent) and `canvas/encryption.ts` 68.09% → 88.30% (30 gaps → 11, all confirmed equivalent/unreachable). Remaining lower-priority files' gaps tracked as follow-up issues (#1094–#1101). (#224, @GlowyBlack, 2026-07-19) — [#1102](https://github.com/EduAI-Lab/EduAI/pull/1102)
 - [ai-tutor] feat: Drag-and-drop reordering for course content — instructors can drag modules (course page), lessons (module page), and activities (lesson page) into a new order via a six-dot grip handle, backed by new atomic bulk-reorder endpoints (`PUT /courses/:id/modules/order`, `PUT /modules/:id/lessons/order`, `PUT /lessons/:id/activities/order`) that reassign positions 0..n-1 in a single transaction. Drag primitives (`SortableProvider`/`SortableItem`/`DragHandle`, on @dnd-kit) live in shared `@eduai/ui` for reuse across apps. (#1047, @yta3216, 2026-07-14) — [#1048](https://github.com/EduAI-Lab/EduAI/pull/1048)
@@ -66,9 +53,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] refactor: Wire `useCourseMaterials.deleteMaterial` to the live `DELETE /api/courses/:courseId/materials/:materialId` endpoint and route the course-detail manager/TA delete flows through the hook instead of inline `fetch`. (#559, @mochi_21, 2026-07-20) — [#1138](https://github.com/EduAI-Lab/EduAI/pull/1138)
 - [core] ux: Rename the admin "Permissions" page to "Settings" in the sidebar, breadcrumb, and page heading (URL `/admin/settings` unchanged). (#808, @abdullahmoh21, 2026-07-08) — [#962](https://github.com/EduAI-Lab/EduAI/pull/962)
 - [ai-tutor] test: Add component-level regression coverage for `StudentAiChat` and `StudentChatHistoryPanel` — tab switching maintains independent message history per mode; the API key dialog opens with the correct initial `tempApiKey`, validates via `validateKey`, and saves on success; send/receive round trip confirms user and assistant messages appear in order and input clears; chatId threading verifies the second request carries the `chatId` from the first response; history restoration calls `loadSessionMessages` and renders loaded messages; the history panel covers loading, empty state, session rows with mode badge and relative timestamp, active-session highlighting, and session/new-chat interactions. (#1003, @evanbones, 2026-07-13)
 - [ai-tutor] fix: Auto-sync topics from Core on every read instead of a manual "Sync now" button — `GET /courses/:courseId/topics` now pulls the latest topics for EduAI-imported courses before responding (falling back to the local mirror if Core is unreachable), and the now-redundant frontend sync button/dialog was removed. (#1031, @evanbones, 2026-07-15)
+
+### Fixed
+
+- [core, question-maker] fix: Clean up user-facing text — fix outdated "Applies to Core and AI Tutor" policy flag description (course creation is Core-only), replace RAG/embedding/Top-K jargon with plain language across course management UI, remove raw "metadata" field-name leaks and a raw server-error fallback from Question Maker, and replace raw JS error messages in Core toasts with plain, action-oriented fallbacks. (#1030, #1061, #1062, #1063, @evanbones, 2026-07-20) — [#1126](https://github.com/EduAI-Lab/EduAI/pull/1126)
 
 ## [Week 10 — July 6–12, 2026]
 
