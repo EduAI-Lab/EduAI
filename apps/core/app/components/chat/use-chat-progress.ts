@@ -6,6 +6,7 @@ import {
   assistantTextFingerprint,
   computeTimedChatProgress,
   estimateExpectedResponseMs,
+  estimateFollowupRemainingMs,
   resolveChatProgressStage,
   type ChatProgressStage,
   type TimedChatProgress,
@@ -31,8 +32,9 @@ type MessageLike = {
  * next tokens after a tool completes) — not on inter-token silence — so slow
  * local models do not flicker a compact status between streamed tokens.
  *
- * The progress bar fills against an expected duration for the model / Assist
- * path so users (esp. ADHD) can see how close they are to an answer.
+ * The progress bar fills against a deadline derived from the typical model /
+ * Assist wait (extended when tools run; rebased to a short remaining window
+ * after a tool finishes) so ADHD users can see how close they are.
  */
 export function useChatProgress(args: {
   isLoading: boolean;
@@ -59,8 +61,13 @@ export function useChatProgress(args: {
 
   const [elapsedMs, setElapsedMs] = useState(0);
   const [awaitingFollowup, setAwaitingFollowup] = useState(false);
+  /** Monotonic wall-clock target for fill + “About Xs left”. */
+  const [deadlineMs, setDeadlineMs] = useState(0);
+  const [peakPercent, setPeakPercent] = useState(0);
   const prevHadActiveToolRef = useRef(false);
   const lastFingerprintRef = useRef("");
+  const elapsedMsRef = useRef(0);
+  elapsedMsRef.current = elapsedMs;
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
   const inFlightAssistant =
@@ -74,10 +81,18 @@ export function useChatProgress(args: {
   const hasActiveTool = Boolean(activeToolName);
   const modelId = streamingRoutedRegistryId || selectedModel || null;
 
+  const typicalExpectedMs = estimateExpectedResponseMs({
+    modelId,
+    adhdAssist,
+    hasActiveTool,
+  });
+
   useEffect(() => {
     if (!isLoading) {
       setElapsedMs(0);
       setAwaitingFollowup(false);
+      setDeadlineMs(0);
+      setPeakPercent(0);
       prevHadActiveToolRef.current = false;
       lastFingerprintRef.current = "";
       return;
@@ -85,11 +100,20 @@ export function useChatProgress(args: {
 
     const startedAt = Date.now();
     setElapsedMs(0);
+    setDeadlineMs(0);
+    setPeakPercent(0);
     const id = window.setInterval(() => {
       setElapsedMs(Date.now() - startedAt);
     }, 250);
     return () => window.clearInterval(id);
   }, [isLoading]);
+
+  // Grow the deadline when the typical estimate grows (routed model / tools).
+  // Skip while follow-up owns a rebased short deadline.
+  useEffect(() => {
+    if (!isLoading || awaitingFollowup) return;
+    setDeadlineMs((prev) => Math.max(prev, typicalExpectedMs));
+  }, [isLoading, awaitingFollowup, typicalExpectedMs]);
 
   // Enter/leave tool activity. Only the active→inactive edge starts follow-up wait.
   useEffect(() => {
@@ -104,9 +128,31 @@ export function useChatProgress(args: {
     }
 
     if (wasActive && hasAssistantText) {
-      setAwaitingFollowup(true);
+      // If tokens already advanced in this same turn, skip the follow-up gap.
+      const textAlreadyAdvanced =
+        lastFingerprintRef.current.trim().length > 0 &&
+        fingerprint.trim().length > 0 &&
+        fingerprint !== lastFingerprintRef.current;
+
+      if (!textAlreadyAdvanced) {
+        setAwaitingFollowup(true);
+        const followupMs = estimateFollowupRemainingMs({
+          modelId,
+          adhdAssist,
+        });
+        // Rebase from *now* — do not rewrite the full-turn estimate against
+        // total elapsed (that falsely trips “longer than usual”).
+        setDeadlineMs(elapsedMsRef.current + followupMs);
+      }
     }
-  }, [isLoading, hasActiveTool, hasAssistantText]);
+  }, [
+    isLoading,
+    hasActiveTool,
+    hasAssistantText,
+    fingerprint,
+    modelId,
+    adhdAssist,
+  ]);
 
   // New assistant text clears the post-tool wait (follow-up generation started).
   useEffect(() => {
@@ -117,14 +163,13 @@ export function useChatProgress(args: {
     lastFingerprintRef.current = fingerprint;
 
     if (
-      awaitingFollowup &&
       previous.trim().length > 0 &&
       fingerprint.trim().length > 0 &&
       fingerprint !== previous
     ) {
       setAwaitingFollowup(false);
     }
-  }, [isLoading, fingerprint, awaitingFollowup]);
+  }, [isLoading, fingerprint]);
 
   const stage = resolveChatProgressStage({
     elapsedMs,
@@ -135,18 +180,18 @@ export function useChatProgress(args: {
     awaitingFollowup,
   });
 
-  const expectedMs = estimateExpectedResponseMs({
-    modelId,
-    adhdAssist,
-    hasActiveTool,
-    awaitingFollowup,
-  });
-
   const timed = computeTimedChatProgress({
     elapsedMs,
-    expectedMs,
+    deadlineMs: deadlineMs > 0 ? deadlineMs : typicalExpectedMs,
+    typicalExpectedMs,
     stageFloor: stage.progress,
+    peakPercent,
   });
+
+  useEffect(() => {
+    if (!isLoading) return;
+    setPeakPercent((prev) => Math.max(prev, timed.percent));
+  }, [isLoading, timed.percent]);
 
   // Prefer streaming tokens while text is arriving. Re-show only for tools or
   // the post-tool follow-up gap — never for inter-token silence alone.

@@ -94,13 +94,17 @@ export type EstimateExpectedResponseMsInput = {
   modelId?: string | null;
   adhdAssist: boolean;
   hasActiveTool?: boolean;
-  awaitingFollowup?: boolean;
 };
 
 /**
- * Expected wall-clock wait for a typical turn. Tuned for ADHD predictability
- * from Week 12 latency notes (cloud fast; local 32B + Assist oversight slow).
- * Not a guarantee — the UI labels it as “about”.
+ * Typical wall-clock wait for a full turn. Tuned for ADHD predictability from
+ * Week 12 latency notes (cloud fast; local 32B + Assist oversight slow).
+ * Not a guarantee — the UI labels it as “about” / “usually”.
+ *
+ * Do not shrink this for post-tool follow-up: elapsed is measured from the
+ * start of the request, so a shorter “total expected” would falsely trip
+ * “Taking longer than usual”. Use {@link estimateFollowupRemainingMs} + a
+ * deadline rebase in the hook instead.
  */
 export function estimateExpectedResponseMs(
   input: EstimateExpectedResponseMsInput,
@@ -119,9 +123,7 @@ export function estimateExpectedResponseMs(
   } else if (
     model.includes("32b") ||
     model.includes("70b") ||
-    model.includes("72b") ||
-    model.includes("qwen2.5-32") ||
-    model.includes("qwen2.5-72")
+    model.includes("72b")
   ) {
     baseMs = 40_000;
   } else if (
@@ -141,17 +143,31 @@ export function estimateExpectedResponseMs(
   if (input.hasActiveTool) {
     baseMs += 8_000;
   }
-  if (input.awaitingFollowup) {
-    // Remaining stretch after a tool — shorter than a full cold turn.
-    baseMs = Math.max(10_000, Math.round(baseMs * 0.45));
-  }
 
   return baseMs;
+}
+
+/**
+ * Remaining stretch after a tool finishes and we wait for the next tokens.
+ * Applied as `elapsed + remaining` deadline — never as a full-turn rewrite.
+ */
+export function estimateFollowupRemainingMs(input: {
+  modelId?: string | null;
+  adhdAssist: boolean;
+}): number {
+  const full = estimateExpectedResponseMs({
+    modelId: input.modelId,
+    adhdAssist: input.adhdAssist,
+    hasActiveTool: false,
+  });
+  // Short post-tool gap; floor so the bar still has room to move.
+  return Math.max(8_000, Math.min(16_000, Math.round(full * 0.28)));
 }
 
 export type TimedChatProgress = {
   /** 0–96 while in flight. */
   percent: number;
+  /** Typical full-turn estimate for “Usually ~Ys” (not the follow-up deadline). */
   expectedMs: number;
   remainingMs: number;
   isOverExpected: boolean;
@@ -160,19 +176,35 @@ export type TimedChatProgress = {
 };
 
 /**
- * Map elapsed time onto a calming ease-out fill toward the expected duration.
- * Past the estimate, crawl slowly toward the in-flight cap.
+ * Map elapsed time onto a calming ease-out fill toward a deadline.
+ *
+ * `deadlineMs` is the wall-clock target for this wait (full-turn estimate, or
+ * rebased `elapsed + followupRemaining` after a tool). `typicalExpectedMs` is
+ * only for the “Usually ~” label.
+ *
+ * `peakPercent` keeps the bar from sliding backwards when the estimate grows
+ * (tool starts, slower routed model).
  */
 export function computeTimedChatProgress(input: {
   elapsedMs: number;
-  expectedMs: number;
+  /** Absolute elapsed target used for fill + remaining. */
+  deadlineMs: number;
+  /** Shown as “Usually ~Ys”; defaults to deadlineMs. */
+  typicalExpectedMs?: number;
   stageFloor?: number;
+  /** Prior fill — bar is monotonic within a turn. */
+  peakPercent?: number;
 }): TimedChatProgress {
   const elapsedMs = Math.max(0, input.elapsedMs);
-  const expectedMs = Math.max(1_000, input.expectedMs);
+  const deadlineMs = Math.max(1_000, input.deadlineMs);
+  const typicalExpectedMs = Math.max(
+    1_000,
+    input.typicalExpectedMs ?? deadlineMs,
+  );
   const stageFloor = Math.max(0, Math.min(90, input.stageFloor ?? 0));
+  const peakPercent = Math.max(0, input.peakPercent ?? 0);
 
-  const ratio = elapsedMs / expectedMs;
+  const ratio = elapsedMs / deadlineMs;
   let timed: number;
   if (ratio <= 1) {
     // Ease-out: early movement (engagement) then slower approach to ~88%.
@@ -185,19 +217,19 @@ export function computeTimedChatProgress(input: {
 
   const percent = Math.min(
     CHAT_PROGRESS_IN_FLIGHT_CAP,
-    Math.max(stageFloor, Math.round(timed)),
+    Math.max(stageFloor, peakPercent, Math.round(timed)),
   );
-  const remainingMs = Math.max(0, expectedMs - elapsedMs);
-  const isOverExpected = elapsedMs > expectedMs;
+  const remainingMs = Math.max(0, deadlineMs - elapsedMs);
+  const isOverExpected = elapsedMs > deadlineMs;
 
   return {
     percent,
-    expectedMs,
+    expectedMs: typicalExpectedMs,
     remainingMs,
     isOverExpected,
     timingLabel: isOverExpected
       ? "Taking longer than usual"
-      : `About ${formatChatProgressElapsed(remainingMs)} left`,
+      : `About ${formatChatProgressRemaining(remainingMs)} left`,
   };
 }
 
@@ -252,6 +284,19 @@ export function formatChatProgressElapsed(elapsedMs: number): string {
   const minutes = Math.floor(seconds / 60);
   const rem = seconds % 60;
   return `${minutes}m ${rem}s`;
+}
+
+/**
+ * Format remaining wait. Ceils so sub-second leftovers never show “About 0s left”
+ * while the request is still in flight under the deadline.
+ */
+export function formatChatProgressRemaining(remainingMs: number): string {
+  if (remainingMs <= 0) return "0s";
+  const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  return rem === 0 ? `${minutes}m` : `${minutes}m ${rem}s`;
 }
 
 type MessageLike = {

@@ -50,7 +50,7 @@ describe("ChatTypingIndicator — rendering", () => {
     expect(bar.getAttribute("aria-valuetext") ?? "").toMatch(/About 28s left/i);
   });
 
-  it("keeps elapsed outside the live region so AT is not spammed", () => {
+  it("keeps countdown and elapsed outside the live region so AT is not spammed", () => {
     const { container } = render(
       <ChatTypingIndicator
         stage={{
@@ -72,8 +72,33 @@ describe("ChatTypingIndicator — rendering", () => {
     const live = container.querySelector("[aria-live='polite']");
     expect(live).not.toBeNull();
     expect(live?.textContent).toMatch(/Waiting for model/i);
-    expect(live?.textContent).toMatch(/About 15s left/i);
+    // Per-second remaining copy is visual-only (would spam AT every tick).
+    expect(live?.textContent).not.toMatch(/About 15s left/i);
     expect(live?.textContent).not.toMatch(/5s elapsed/);
+  });
+
+  it("announces the discrete longer-than-usual state in the live region", () => {
+    const { container } = render(
+      <ChatTypingIndicator
+        stage={{
+          id: "waiting_for_model",
+          label: "Waiting for model…",
+          progress: 18,
+        }}
+        elapsedMs={48_000}
+        timed={{
+          percent: 91,
+          expectedMs: 40_000,
+          remainingMs: 0,
+          isOverExpected: true,
+          timingLabel: "Taking longer than usual",
+        }}
+      />,
+    );
+
+    const live = container.querySelector("[aria-live='polite']");
+    expect(live?.textContent).toMatch(/Waiting for model/i);
+    expect(live?.textContent).toMatch(/Taking longer than usual/i);
   });
 
   it("renders a compact multi-step row without a second avatar bubble", () => {

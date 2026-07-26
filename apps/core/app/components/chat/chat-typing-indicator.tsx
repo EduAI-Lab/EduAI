@@ -43,6 +43,11 @@ export function ChatTypingIndicator({
     ? `${label}. ${timingLabel}. ${elapsedLabel} elapsed.`
     : `${label}. ${elapsedLabel} elapsed.`;
 
+  // Announce stage (and discrete overrun) only — not the per-second countdown.
+  const liveAnnouncement = timed?.isOverExpected
+    ? `${label}. Taking longer than usual.`
+    : label;
+
   if (compact) {
     return (
       <div
@@ -52,7 +57,7 @@ export function ChatTypingIndicator({
         data-chat-progress-percent={percent}
       >
         <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {label}. {timingLabel}
+          {liveAnnouncement}
         </div>
         <div className="flex items-center justify-between gap-3" aria-hidden="true">
           <Loader
@@ -97,7 +102,7 @@ export function ChatTypingIndicator({
           data-chat-progress-percent={percent}
         >
           <div className="sr-only" aria-live="polite" aria-atomic="true">
-            {label}. {timingLabel}
+            {liveAnnouncement}
           </div>
           <div className="flex items-center justify-between gap-3" aria-hidden="true">
             <div className="min-w-0">

@@ -193,4 +193,73 @@ describe("useChatProgress — #1171", () => {
     expect(result.current.compactProgress).toBe(false);
     expect(result.current.showProgressIndicator).toBe(true);
   });
+
+  it("fills timed progress from elapsed vs expected without falsely overrunning on follow-up", () => {
+    const { result, rerender } = renderHook(
+      ({ toolState, content }) =>
+        useChatProgress({
+          isLoading: true,
+          messages: [
+            { id: "u1", role: "user", content: "hi" },
+            {
+              id: "a1",
+              role: "assistant",
+              content,
+              parts: [
+                { type: "text", text: content },
+                {
+                  type: "tool-invocation",
+                  toolInvocation: {
+                    toolName: "getInformation",
+                    state: toolState,
+                  },
+                },
+              ],
+            },
+          ],
+          adhdAssist: true,
+          streamingRoutedRegistryId: "vllm:qwen2.5-32b-instruct",
+        }),
+      { initialProps: { toolState: "call" as const, content: "Earlier" } },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+
+    expect(result.current.timed.percent).toBeGreaterThan(20);
+    expect(result.current.timed.isOverExpected).toBe(false);
+    expect(result.current.timed.timingLabel).toMatch(/About .* left/i);
+
+    // Tool finishes late in the turn — remaining should rebase, not flip to
+    // “Taking longer than usual” just because total elapsed is already large.
+    rerender({ toolState: "result", content: "Earlier" });
+    expect(result.current.showProgressIndicator).toBe(true);
+    expect(result.current.timed.isOverExpected).toBe(false);
+    expect(result.current.timed.timingLabel).toMatch(/About .* left/i);
+    expect(result.current.timed.remainingMs).toBeGreaterThan(0);
+  });
+
+  it("keeps the bar from sliding backwards when the estimate grows", () => {
+    const { result, rerender } = renderHook(
+      ({ routed }) =>
+        useChatProgress({
+          isLoading: true,
+          messages: [{ id: "u1", role: "user", content: "hi" }],
+          adhdAssist: false,
+          selectedModel: "auto",
+          streamingRoutedRegistryId: routed,
+        }),
+      { initialProps: { routed: null as string | null } },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    const before = result.current.timed.percent;
+
+    // Routed large local model raises the typical wait — fill must not drop.
+    rerender({ routed: "vllm:qwen2.5-32b-instruct" });
+    expect(result.current.timed.percent).toBeGreaterThanOrEqual(before);
+  });
 });
