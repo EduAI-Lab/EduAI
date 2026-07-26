@@ -1,7 +1,8 @@
 # #1041 — Server-side pagination for Core admin list APIs
 
 Branch: `feat/1041-server-side-admin-pagination` off `origin/development` (f5c866bb)
-Related: #1125 (batch-by-id + search, prerequisite), #1045 (parent), #944, #1043, #1044
+Related: #1125 (batch-by-id + search, prerequisite), #1143 (searchable course
+pickers, also closed here), #1045 (parent), #944, #1043, #1044
 
 ## Decisions
 
@@ -105,10 +106,22 @@ plus `?role=`/`?isActive=`/`?sortBy=`/`?sortDir=` on users and
   `enrichRowsWithCourse` and non-ADMIN `listCoursesForUser`,
   `isCoreCourseInScopedList` — uses `?ids=`, and
   `findCoursesByProjectedCode` uses `?search=`.
-- **Course pickers take one bounded page** (`pageSize=200`) rather than gaining a
-  server-search UI: the Core course switcher, the command palette, the chat
-  course picker, and the user form's course selector. The unbounded read is
-  gone; a searchable picker is a UX change worth its own issue.
+- **Course pickers take one bounded page** (`pageSize=200`) instead of the
+  unbounded read. Two of them then gained server-side search on top of that page
+  (#1143, closed by this PR): the breadcrumb **course switcher** and the **⌘K
+  command palette** both debounce the typed query 300ms and re-query
+  `/api/courses?...&search=` rather than filtering the page in memory — without
+  it neither could ever reach a course past the first 200. The palette drives
+  this through `@eduai/ui`'s `CommandPalette`, which gained an `onQueryChange`
+  callback and `shouldFilter={false}` so cmdk's client-side filter doesn't
+  re-filter server-matched rows out of the DOM. A failed search request keeps the
+  current list rather than blanking it.
+
+  The remaining two pickers — the chat course picker
+  (`chat-screen.tsx:69`) and the user form's course selector
+  (`users-admin-view.tsx:52`) — still take one bounded page with no search. Both
+  are dialog-scoped selects rather than jump-to-anything surfaces, so the same
+  UX argument doesn't apply; adding search there is a separate change.
 - **`users-table.tsx` keeps its filter state locally** and reports a single
   `UsersQuery` upward (debounced 300ms). TanStack still owns the control state,
   so the existing filter/sort/pager UI is untouched; only the row models changed.
