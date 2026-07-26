@@ -235,6 +235,31 @@ export async function listCoreAdminBugReports(cookie, { source = 'AI_TUTOR', lim
 }
 
 /**
+ * GET a single Core admin bug report (full diagnostic blobs) (#979).
+ */
+export async function getCoreAdminBugReport(cookie, bugReportId) {
+  if (!cookie) {
+    const error = new Error('Session cookie is required to load a Core bug report');
+    error.status = 401;
+    throw error;
+  }
+
+  const url = `${getCoreBaseUrl()}/api/admin/bug-reports/${encodeURIComponent(bugReportId)}`;
+  const response = await fetch(url, {
+    headers: { cookie },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(errorText || `Core bug report GET failed with status ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+/**
  * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
  *
  * Core requires `page`/`pageSize` and answers with
