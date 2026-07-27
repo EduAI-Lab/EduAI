@@ -1,9 +1,11 @@
 // @vitest-environment node
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const actualFsPromises = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+const actualChildProcess = await vi.importActual<typeof import("node:child_process")>("node:child_process");
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -13,7 +15,16 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: vi.fn(actual.spawn.bind(actual)),
+  };
+});
+
 const fsPromises = await import("node:fs/promises");
+const childProcess = await import("node:child_process");
 const {
   PdfExtractionBusyError,
   extractPdfTextIsolated,
@@ -60,6 +71,7 @@ describe("extractPdfTextIsolated", () => {
     delete process.env.PDF_EXTRACTION_MAX_CONCURRENT;
     delete process.env.PDF_EXTRACTION_MAX_QUEUED;
     vi.mocked(fsPromises.mkdtemp).mockImplementation(actualFsPromises.mkdtemp);
+    vi.mocked(childProcess.spawn).mockImplementation(actualChildProcess.spawn);
   });
 
   afterEach(() => {
@@ -67,6 +79,7 @@ describe("extractPdfTextIsolated", () => {
     delete process.env.PDF_EXTRACTION_MAX_CONCURRENT;
     delete process.env.PDF_EXTRACTION_MAX_QUEUED;
     vi.mocked(fsPromises.mkdtemp).mockReset();
+    vi.mocked(childProcess.spawn).mockReset();
   });
 
   it("extracts a well-formed PDF in the isolated worker without throwing", async () => {
@@ -128,5 +141,83 @@ describe("extractPdfTextIsolated", () => {
     await expect(extractPdfTextIsolated(buildEmptyPdf(), { maxOutputBytes: 1 })).rejects.toThrow(
       /exceeds the maximum of 1/i,
     );
+  });
+
+  it("hands off concurrency permits without overbooking on interleaved acquire", async () => {
+    process.env.PDF_EXTRACTION_MAX_CONCURRENT = "1";
+    process.env.PDF_EXTRACTION_MAX_QUEUED = "8";
+
+    const releaseHeld = await holdPdfExtractionSlotForTests();
+
+    let releaseWaiter: (() => void) | undefined;
+    const waiterPromise = holdPdfExtractionSlotForTests().then((release) => {
+      releaseWaiter = release;
+    });
+
+    // Waiter is queued behind the held slot.
+    await new Promise((r) => setImmediate(r));
+    expect(releaseWaiter).toBeUndefined();
+
+    // Release + immediately try a concurrent fast-path acquire in the same turn.
+    // Buggy decrement-then-wake lets this steal a second live slot; permit handoff
+    // keeps active at 1 so this interleaved acquire must queue instead.
+    releaseHeld();
+    let releaseInterleaved: (() => void) | undefined;
+    const interleavedPromise = holdPdfExtractionSlotForTests().then((release) => {
+      releaseInterleaved = release;
+    });
+
+    await waiterPromise;
+    expect(releaseWaiter).toBeDefined();
+    expect(releaseInterleaved).toBeUndefined();
+
+    releaseWaiter!();
+    await interleavedPromise;
+    expect(releaseInterleaved).toBeDefined();
+    releaseInterleaved!();
+  });
+
+  it("kills the worker and waits for exit before rejecting on stdin failure", async () => {
+    type FakeChild = EventEmitter & {
+      stdin: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+      stderr: EventEmitter;
+      exitCode: number | null;
+      signalCode: NodeJS.Signals | null;
+      kill: ReturnType<typeof vi.fn>;
+    };
+
+    const fakeStdin = new EventEmitter() as FakeChild["stdin"];
+    fakeStdin.write = vi.fn(() => {
+      queueMicrotask(() => {
+        fakeStdin.emit("error", Object.assign(new Error("stdin broke"), { code: "EIO" }));
+      });
+      return true;
+    });
+    fakeStdin.end = vi.fn();
+
+    const fakeChild = new EventEmitter() as FakeChild;
+    fakeChild.stdin = fakeStdin;
+    fakeChild.stderr = new EventEmitter();
+    fakeChild.exitCode = null;
+    fakeChild.signalCode = null;
+    fakeChild.kill = vi.fn(() => {
+      // Orphan path: process only exits after we SIGKILL it.
+      queueMicrotask(() => {
+        fakeChild.exitCode = 1;
+        fakeChild.signalCode = "SIGKILL";
+        fakeChild.emit("exit", 1, "SIGKILL");
+      });
+      return true;
+    });
+
+    vi.mocked(childProcess.spawn).mockReturnValue(fakeChild as unknown as ReturnType<typeof childProcess.spawn>);
+
+    await expect(extractPdfTextIsolated(buildEmptyPdf())).rejects.toThrow(/stdin broke/i);
+    expect(fakeChild.kill).toHaveBeenCalledWith("SIGKILL");
+
+    // Slot must be released only after exit — a follow-up extraction can proceed.
+    vi.mocked(childProcess.spawn).mockImplementation(actualChildProcess.spawn);
+    const result = await extractPdfTextIsolated(buildEmptyPdf());
+    expect(typeof result.content).toBe("string");
   });
 });

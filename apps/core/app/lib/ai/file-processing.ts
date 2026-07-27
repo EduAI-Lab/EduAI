@@ -711,15 +711,22 @@ async function acquirePdfExtractionSlot(): Promise<() => void> {
       `PDF extraction busy: ${activePdfExtractions} active and ${pdfExtractionQueue.length} queued (capacity exceeded)`,
     );
   } else {
+    // Waiter receives a handed-off permit on wake — do NOT increment again after resume.
     await new Promise<void>((resolve) => {
       pdfExtractionQueue.push(resolve);
     });
-    activePdfExtractions += 1;
   }
 
   return () => {
+    // Permit handoff: if someone is waiting, wake them without decrementing.
+    // Decrementing first and letting the waiter re-increment races with a
+    // concurrent fast-path acquire() in the same window and overbooks.
+    const next = pdfExtractionQueue.shift();
+    if (next) {
+      next();
+      return;
+    }
     activePdfExtractions -= 1;
-    pdfExtractionQueue.shift()?.();
   };
 }
 
@@ -804,9 +811,14 @@ export async function extractPdfTextIsolated(
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let timedOut = false;
+      let earlyFailure: Error | null = null;
+      let childExited = false;
+
       const settle = (fn: () => void) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         fn();
       };
 
@@ -822,7 +834,23 @@ export async function extractPdfTextIsolated(
 
       const stderrChunks: Buffer[] = [];
       let stderrBytes = 0;
-      let timedOut = false;
+
+      const forceKillChild = () => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      };
+
+      // Reject only after the child has exited (or spawn failed), so `finally`
+      // never releases the concurrency slot while a worker is still running.
+      const killAndReject = (error: Error) => {
+        earlyFailure = earlyFailure ?? error;
+        forceKillChild();
+        if (childExited || child.exitCode !== null || child.signalCode !== null) {
+          settle(() => reject(earlyFailure!));
+        }
+        // else: wait for `exit` to settle with earlyFailure
+      };
 
       const timer = setTimeout(() => {
         // Only mark timedOut when we actually issue a kill against a still-running child.
@@ -842,20 +870,25 @@ export async function extractPdfTextIsolated(
 
       child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
         // Child often closes stdin early on crash/OOM; EPIPE is expected and the exit
-        // handler owns the outcome. Other stdin errors reject once.
+        // handler owns the outcome. Other stdin errors kill + wait for exit.
         if (error.code === 'EPIPE') return;
-        clearTimeout(timer);
-        settle(() => reject(error));
+        killAndReject(error);
       });
 
       child.on('error', (error) => {
-        clearTimeout(timer);
-        settle(() => reject(error));
+        // Spawn/startup failure — there may be no process to wait on.
+        earlyFailure = earlyFailure ?? error;
+        forceKillChild();
+        settle(() => reject(earlyFailure!));
       });
 
       child.on('exit', (code, signal) => {
-        clearTimeout(timer);
+        childExited = true;
         settle(() => {
+          if (earlyFailure) {
+            reject(earlyFailure);
+            return;
+          }
           if (timedOut) {
             reject(
               new Error(
@@ -893,10 +926,9 @@ export async function extractPdfTextIsolated(
         child.stdin?.write(buildPdfExtractionWorkerSource(maxOutputBytes));
         child.stdin?.end();
       } catch (error) {
-        // Synchronous write failures (rare); exit/error handlers still settle.
+        // Synchronous write failures: kill and wait for exit before rejecting.
         if ((error as NodeJS.ErrnoException)?.code !== 'EPIPE') {
-          clearTimeout(timer);
-          settle(() => reject(error as Error));
+          killAndReject(error as Error);
         }
       }
     });
