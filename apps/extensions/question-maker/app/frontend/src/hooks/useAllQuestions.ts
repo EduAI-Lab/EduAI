@@ -5,8 +5,10 @@
  * Pass `limit`/`offset` to load one server page (UI pagination — #1040 review).
  * Omit them to page-loop fetch-all (dashboard / builders; throws above the safety cap).
  * Filters/sort/search are sent to the server so pagination totals stay correct.
+ *
+ * In-flight responses are ignored when a newer request has started (page/filter race).
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Question } from '../types/question';
 import { questionService } from '../services/questionService';
 import type { QuestionFilters, QuestionSort } from '@/components/question-bank/QuestionFilterToolbar';
@@ -33,6 +35,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const listOptions = {
     courseId,
@@ -46,6 +49,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
   };
 
   const fetchQuestions = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
       setIsLoading(true);
       setError(null);
@@ -55,20 +59,25 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
           limit,
           offset,
         });
+        if (requestId !== requestIdRef.current) return;
         setQuestions(page.items);
         setTotal(page.total);
       } else {
         const data = await questionService.getQuestions(listOptions);
+        if (requestId !== requestIdRef.current) return;
         const items = Array.isArray(data) ? data : [];
         setQuestions(items);
         setTotal(items.length);
       }
     } catch (err: any) {
+      if (requestId !== requestIdRef.current) return;
       setQuestions([]);
       setTotal(0);
       setError(err.response?.data?.error || err.message || 'Failed to fetch questions');
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
     // Serialize filter objects so identity changes don't thrash fetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional keying via JSON
@@ -87,7 +96,7 @@ export function useAllQuestions(options?: UseAllQuestionsOptions) {
   ]);
 
   useEffect(() => {
-    fetchQuestions();
+    void fetchQuestions();
   }, [fetchQuestions]);
 
   return {
