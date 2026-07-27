@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [monorepo] feat: PICT combinatorial-testing infra — `tests/models/` directory, `scripts/pict-gen.mjs` generator (shells out to `pict`, writes deterministic `<name>.cases.json`; supports `/o:N` order and `/e:<seed>` seed rows via a per-model sidecar config), `npm run test:pict:gen`, and a CI drift check (`pict-drift` job, builds `pict` from source since no Linux bottle exists) that fails the PR if a committed case table goes stale relative to its model. TESTS.md documents install/add-a-model/regen and the model→oracle→world-builder split. Ships with one pilot model (`material-visibility`, census § S1) to prove the path end to end — oracle and world-builder tests land in a separate issue. (#1179, @evanbones, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [monorepo] feat: PICT combinatorial-testing infra — `tests/models/` directory, `scripts/pict-gen.mjs` generator (shells out to `pict`, writes deterministic `<name>.cases.json`; supports `/o:N` order and `/e:<seed>` seed rows via a per-model sidecar config), `npm run test:pict:gen`, and a CI drift check (`pict-drift` job, builds `pict` from source since no Linux bottle exists) that fails the PR if a committed case table goes stale relative to its model. TESTS.md documents install/add-a-model/regen and the model→oracle→world-builder split. Ships with one pilot model (`material-visibility`, census § S1) to prove the path end to end — oracle and world-builder tests land in a separate issue. (#1179, @evanbones, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/1210)
 
 ## [Week 12 — July 20–26, 2026]
 
