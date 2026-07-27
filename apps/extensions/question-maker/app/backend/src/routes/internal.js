@@ -3,7 +3,7 @@
  * clients — every route here is gated by requireServiceKey instead of a user session.
  */
 import express from 'express';
-import { Course } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { requireServiceKey } from '../middleware/serviceAuth.js';
 import { logger } from '../utils/logger.js';
 
@@ -17,13 +17,13 @@ const router = express.Router();
  */
 router.delete('/courses/:coreCourseId', requireServiceKey, async (req, res, next) => {
   try {
-    const course = await Course.findOne({ where: { coreCourseId: req.params.coreCourseId } });
+    const course = await prisma.course.findUnique({ where: { coreCourseId: req.params.coreCourseId } });
 
     if (!course) {
       return res.json({ success: true, deleted: false });
     }
 
-    await course.destroy();
+    await prisma.course.delete({ where: { id: course.id } });
     logger.info(`[internal] Deleted QM Course ${course.id} (Core course ${req.params.coreCourseId} deleted)`);
 
     res.json({ success: true, deleted: true });
