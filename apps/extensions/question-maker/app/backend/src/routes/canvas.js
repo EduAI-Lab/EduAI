@@ -25,7 +25,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { CANVAS_ROLES } from '../middleware/roles.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { requireAssessmentAccess } from '../middleware/resourceAccess.js';
-import { Topics } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { validateCanvasUrl, CanvasUrlValidationError } from '../utils/canvasUrlGuard.js';
 
 const router = express.Router();
@@ -118,7 +118,7 @@ router.delete('/disconnect', authenticateToken, requireRole(CANVAS_ROLES), async
     const integration = await getCanvasIntegration(req.user.id);
 
     if (integration) {
-      await integration.destroy();
+      await prisma.canvasIntegration.delete({ where: { userId: req.user.id } });
     }
 
     res.json({
@@ -251,7 +251,7 @@ router.post(
       // Eagerly confirm the topic exists and belongs to this course before
       // creating questions — otherwise the FK insert crashes mid-import (#7). A
       // supplied-but-nonexistent topic is a missing resource, so 404 (#3).
-      const topic = await Topics.findOne({
+      const topic = await prisma.topics.findFirst({
         where: { id: primaryTopicId, courseId: req.qmCourse.id }
       });
       if (!topic) {

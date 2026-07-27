@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react"
 import type * as React from "react"
 
+import { hasAttachmentContent } from "@eduai/types"
 import { IconAlertCircle } from "@tabler/icons-react"
 
 import { Alert, AlertDescription } from "../ui/alert"
@@ -45,6 +46,13 @@ export interface BugReportsAdminViewProps {
     reportId: string,
     status: BugReportStatus,
   ) => Promise<Partial<AdminBugReportRow> | void>
+  /**
+   * Fetches one report's full payload. The list endpoint omits the console /
+   * network / screenshot bodies (#979) and sends only `has*` flags, so the
+   * viewers and the copy dossier pull the blobs on demand. Omit it when the
+   * owner's list already carries the bodies — the view then renders what it has.
+   */
+  onLoadDetail?: (reportId: string) => Promise<Partial<AdminBugReportRow>>
   title?: string
   description?: string
   /** Only the platform-wide (Core) view shows which app a report came from. */
@@ -62,6 +70,7 @@ export interface BugReportsAdminViewProps {
 export function BugReportsAdminView({
   reports: initialReports,
   onUpdateStatus,
+  onLoadDetail,
   title = "Bug reports",
   description = "Filter and update status for incoming reports.",
   showSourceColumn = false,
@@ -130,9 +139,60 @@ export function BugReportsAdminView({
     setSortDirection(nextSortKey === "createdAt" ? "desc" : "asc")
   }
 
-  const openViewer = (type: Exclude<ViewerType, null>, reportId: string) => {
-    setSelectedReportId(reportId)
-    setViewerType(type)
+  /**
+   * Pulls the blobs the list omitted and folds them into the row, so the
+   * viewer and any later copy read from state instead of refetching.
+   */
+  const loadReportDetail = async (reportId: string): Promise<AdminBugReportRow | null> => {
+    if (!onLoadDetail) return null
+    const detailed = await onLoadDetail(reportId)
+    let merged: AdminBugReportRow | null = null
+    setReports((current) =>
+      current.map((report) => {
+        if (report.id !== reportId) return report
+        merged = {
+          ...report,
+          ...detailed,
+          hasConsoleLogs: hasAttachmentContent(detailed.consoleLogs, detailed.hasConsoleLogs),
+          hasNetworkLogs: hasAttachmentContent(detailed.networkLogs, detailed.hasNetworkLogs),
+          hasScreenshot: hasAttachmentContent(detailed.screenshot, detailed.hasScreenshot),
+        }
+        return merged
+      }),
+    )
+    return merged
+  }
+
+  const openViewer = async (type: Exclude<ViewerType, null>, reportId: string) => {
+    setError(null)
+    const report = reports.find((candidate) => candidate.id === reportId)
+    // Fetch once per report, and only when it actually has diagnostics to fetch.
+    const needsDetail =
+      onLoadDetail != null &&
+      report != null &&
+      report.consoleLogs == null &&
+      report.networkLogs == null &&
+      report.screenshot == null &&
+      (hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
+        hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
+        hasAttachmentContent(report.screenshot, report.hasScreenshot))
+
+    if (!needsDetail) {
+      setSelectedReportId(reportId)
+      setViewerType(type)
+      return
+    }
+
+    try {
+      // Open only after detail resolves so list-row null blobs don't flash empty viewers.
+      await loadReportDetail(reportId)
+      setSelectedReportId(reportId)
+      setViewerType(type)
+    } catch {
+      setError("Could not load bug report details. Please try again.")
+      setViewerType(null)
+      setSelectedReportId(null)
+    }
   }
 
   const closeViewer = () => {
@@ -160,7 +220,18 @@ export function BugReportsAdminView({
   const onCopyReport = async (report: AdminBugReportRow) => {
     setError(null)
     try {
-      await copyTextToClipboard(buildBugReportCopyText(report))
+      const alreadyHasBlobs =
+        report.consoleLogs != null || report.networkLogs != null || report.screenshot != null
+      const hasAnyAttachment =
+        hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs) ||
+        hasAttachmentContent(report.networkLogs, report.hasNetworkLogs) ||
+        hasAttachmentContent(report.screenshot, report.hasScreenshot)
+      // Skip the detail fetch when the report has no diagnostics at all.
+      const detailed =
+        alreadyHasBlobs || !hasAnyAttachment
+          ? report
+          : ((await loadReportDetail(report.id)) ?? report)
+      await copyTextToClipboard(buildBugReportCopyText(detailed))
       setCopiedReportId(report.id)
       window.setTimeout(() => {
         setCopiedReportId((current) => (current === report.id ? null : current))

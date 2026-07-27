@@ -7,6 +7,10 @@
  * endpoint; this app's server is a proxy that pins `source=AI_TUTOR`.
  *
  * Anonymity masking stays server-side in `server/src/utils/bugReportMappers.js`.
+ *
+ * List vs detail (#979): list rows omit the console/network/screenshot bodies
+ * and carry only `has*` flags, so `onLoadDetail` below hands the shared view a
+ * fetcher for `GET /api/admin/bug-reports/:id`.
  */
 import { BugReportsAdminView } from '@eduai/ui';
 import type { AdminBugReportRow, BugReportStatus } from '@eduai/ui';
@@ -22,6 +26,7 @@ export default function BugReportsTab({ initialReports }: { initialReports: Admi
       onUpdateStatus={(reportId: string, status: BugReportStatus) =>
         api.updateAdminBugReportStatus(reportId, { status })
       }
+      onLoadDetail={(reportId: string) => api.getAdminBugReport(reportId)}
     />
   );
 }

@@ -32,7 +32,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
-  const { reports, total, isLoading, updateReportStatus } = useBugReports();
+  const { reports, total, isLoading, updateReportStatus, loadReportDetail } = useBugReports();
   const truncated = total !== null && total > reports.length;
 
   return (
@@ -60,6 +60,7 @@ export default function BugReportsPage() {
         reports={reports}
         isLoading={isLoading}
         onUpdateStatus={updateReportStatus}
+        onLoadDetail={loadReportDetail}
         showSourceColumn
         description="Triage platform bug reports from every EduAI app."
         notice={

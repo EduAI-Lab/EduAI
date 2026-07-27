@@ -597,6 +597,8 @@ export const api = {
       body: JSON.stringify(payload),
     }) as Promise<{ id: string; status: BugReportStatus; createdAt: string }>,
   listAdminBugReports: () => http('/api/admin/bug-reports') as Promise<AdminBugReportRow[]>,
+  getAdminBugReport: (reportId: string) =>
+    http(`/api/admin/bug-reports/${reportId}`) as Promise<AdminBugReportRow>,
   updateAdminBugReportStatus: (reportId: string, payload: { status: BugReportStatus }) =>
     http(`/api/admin/bug-reports/${reportId}`, {
       method: 'PATCH',

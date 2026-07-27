@@ -1,19 +1,8 @@
 /**
  * Assessment variant workflow: mark reference exams, snapshot blueprints, and assemble equivalent variant exams.
  */
-import { sequelize } from '../config/database.js';
-import {
-  Assessments,
-  AssessmentSections,
-  SectionVariants,
-  Variants,
-  Question_Metadata,
-  Course,
-  Topics,
-  VariantSelectionCursor
-} from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import eduaiService from './eduaiService.js';
-import { Op } from 'sequelize';
 import { loadOrderedVariantsForAssessment, aggregateStructure } from './assessmentVariantUtils.js';
 import { scoreMetadataMatch } from './assessmentVariantMetadataScoring.js';
 import {
@@ -23,6 +12,18 @@ import {
 } from './courseListService.js';
 
 const VALID_STUDY_ROLES = ['reference_baseline', 'generated_variant'];
+
+/**
+ * Prisma's interactive-transaction default timeout is 5s. Assembly runs several
+ * sequential round-trips per slot (candidate lookup, cursor SELECT ... FOR UPDATE
+ * with a possible savepoint retry, section-variant insert, variant update) across
+ * every slot of every requested exam, so a modest multi-exam batch can comfortably
+ * exceed 5s even on a healthy connection — and a timeout here aborts and rolls back
+ * all work done so far in the batch. Sized generously above a realistic worst case
+ * (see the "large exam" cases in assessmentVariantService.integration.test.js)
+ * rather than tuned to the common case.
+ */
+const ASSEMBLY_TRANSACTION_TIMEOUT_MS = 60000;
 
 /** Non-draft variant count per base question required before parallel assembly can swap alternate wording. */
 export const MIN_NON_DRAFT_VARIANTS_FOR_WORKFLOW = 2;
@@ -35,17 +36,8 @@ export async function getBaselineVariantReadiness(userId, { assessmentId, course
     throw new Error('assessmentId and courseId are required');
   }
 
-  const assessment = await Assessments.findOne({
-    where: { id: Number(assessmentId), courseId: Number(courseId) },
-    include: [
-      {
-        model: Course,
-        as: 'course',
-        where: { userId },
-        attributes: ['id'],
-        required: true
-      }
-    ]
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: Number(assessmentId), courseId: Number(courseId), course: { userId } }
   });
 
   if (!assessment) {
@@ -61,13 +53,13 @@ export async function getBaselineVariantReadiness(userId, { assessmentId, course
     if (mid == null || seenMeta.has(mid)) continue;
     seenMeta.add(mid);
 
-    const metaRow = await Question_Metadata.findOne({
+    const metaRow = await prisma.questionMetadata.findFirst({
       where: { id: mid, courseId: Number(courseId) },
-      attributes: ['id']
+      select: { id: true }
     });
     if (!metaRow) continue;
 
-    const nonDraftVariantCount = await Variants.count({
+    const nonDraftVariantCount = await prisma.variants.count({
       where: { questionMetadataId: mid, isDraft: false }
     });
 
@@ -96,17 +88,8 @@ export async function setAssessmentStudyRole(assessmentId, userId, studyRole) {
     throw new Error('Invalid studyRole');
   }
 
-  const assessment = await Assessments.findOne({
-    where: { id: assessmentId },
-    include: [
-      {
-        model: Course,
-        as: 'course',
-        where: { userId },
-        attributes: ['id'],
-        required: true
-      }
-    ]
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: assessmentId, course: { userId } }
   });
 
   if (!assessment) {
@@ -121,27 +104,24 @@ export async function setAssessmentStudyRole(assessmentId, userId, studyRole) {
     next.studyRole = studyRole;
   }
 
-  await assessment.update({ blueprintConfig: Object.keys(next).length ? next : null });
-  return assessment;
+  const updated = await prisma.assessments.update({
+    where: { id: assessment.id },
+    data: { blueprintConfig: Object.keys(next).length ? next : null }
+  });
+  return updated;
 }
 
 /**
  * Ordered slots from a reference assessment: one entry per placed variant.
  */
 export async function getBlueprintSnapshot(assessmentId, userId) {
-  const assessment = await Assessments.findOne({
-    where: { id: assessmentId },
-    include: [
-      {
-        model: Course,
-        as: 'course',
-        where: { userId },
-        // `coreCourseId` feeds `enrichCourseDetail` below — `Course` has no
-        // local name/code to select anymore (#1072 §4 step 10).
-        attributes: ['id', 'coreCourseId'],
-        required: true
-      }
-    ]
+  const assessment = await prisma.assessments.findFirst({
+    where: { id: assessmentId, course: { userId } },
+    include: {
+      // `coreCourseId` feeds `enrichCourseDetail` below — `Course` has no
+      // local name/code to select anymore (#1072 §4 step 10).
+      course: { select: { id: true, coreCourseId: true } }
+    }
   });
 
   if (!assessment) {
@@ -185,36 +165,42 @@ export async function getBlueprintSnapshot(assessmentId, userId) {
 /**
  * Picks a variant id for `questionMetadataId`, avoiding ids in `excludeIds`, preferring not `avoidVariantId`.
  */
-async function getSelectionCursorForUpdate({ questionMetadataId, courseId, transaction }) {
-  let cursor = await VariantSelectionCursor.findOne({
-    where: { questionMetadataId, courseId },
-    transaction,
-    lock: transaction.LOCK.UPDATE
-  });
-  if (cursor) {
-    return cursor;
+async function getSelectionCursorForUpdate({ questionMetadataId, courseId, tx }) {
+  if (!Number.isInteger(questionMetadataId) || !Number.isInteger(courseId)) {
+    // Both values are interpolated into a SAVEPOINT identifier below, which
+    // Postgres has no parameter-binding syntax for — guard against anything
+    // that isn't a plain integer before it ever reaches that string.
+    throw new Error('questionMetadataId and courseId must be integers');
+  }
+
+  const locked = await tx.$queryRaw`
+    SELECT id FROM variant_selection_cursors
+    WHERE question_metadata_id = ${questionMetadataId} AND course_id = ${courseId}
+    FOR UPDATE
+  `;
+  if (locked.length > 0) {
+    return tx.variantSelectionCursor.findUniqueOrThrow({ where: { id: locked[0].id } });
   }
 
   // Use a savepoint so that a unique-key race with a concurrent transaction does not abort the
   // parent transaction. Without this, the failed INSERT leaves the transaction in PostgreSQL's
   // aborted state and every subsequent query in the same transaction fails.
   const sp = `sp_vsc_${questionMetadataId}_${courseId}`;
-  await sequelize.query(`SAVEPOINT "${sp}"`, { transaction });
+  await tx.$executeRawUnsafe(`SAVEPOINT "${sp}"`);
   try {
-    cursor = await VariantSelectionCursor.create(
-      { questionMetadataId, courseId, nextOffset: 0, lastVariantId: null },
-      { transaction }
-    );
+    const cursor = await tx.variantSelectionCursor.create({
+      data: { questionMetadataId, courseId, nextOffset: 0, lastVariantId: null }
+    });
     return cursor;
   } catch (error) {
-    await sequelize.query(`ROLLBACK TO SAVEPOINT "${sp}"`, { transaction });
-    cursor = await VariantSelectionCursor.findOne({
-      where: { questionMetadataId, courseId },
-      transaction,
-      lock: transaction.LOCK.UPDATE
-    });
-    if (cursor) {
-      return cursor;
+    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT "${sp}"`);
+    const lockedAfterRace = await tx.$queryRaw`
+      SELECT id FROM variant_selection_cursors
+      WHERE question_metadata_id = ${questionMetadataId} AND course_id = ${courseId}
+      FOR UPDATE
+    `;
+    if (lockedAfterRace.length > 0) {
+      return tx.variantSelectionCursor.findUniqueOrThrow({ where: { id: lockedAfterRace[0].id } });
     }
     throw error;
   }
@@ -226,32 +212,16 @@ async function pickVariantForSlot({
   excludeIds,
   avoidVariantId,
   includeDrafts,
-  transaction
+  tx
 }) {
-  const where = {
-    questionMetadataId
-  };
-  if (!includeDrafts) {
-    where.isDraft = false;
-  }
-
-  if (excludeIds.length > 0) {
-    where.id = { [Op.notIn]: excludeIds };
-  }
-
-  const candidates = await Variants.findAll({
-    where,
-    include: [
-      {
-        model: Question_Metadata,
-        as: 'questionMetadata',
-        where: { courseId },
-        attributes: ['id'],
-        required: true
-      }
-    ],
-    order: [['id', 'ASC']],
-    transaction
+  const candidates = await tx.variants.findMany({
+    where: {
+      questionMetadataId,
+      ...(includeDrafts ? {} : { isDraft: false }),
+      ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
+      questionMetadata: { courseId }
+    },
+    orderBy: { id: 'asc' }
   });
 
   if (candidates.length === 0) {
@@ -260,18 +230,18 @@ async function pickVariantForSlot({
 
   const preferred = candidates.filter((c) => c.id !== avoidVariantId);
   const pool = preferred.length > 0 ? preferred : candidates;
-  const cursor = await getSelectionCursorForUpdate({ questionMetadataId, courseId, transaction });
+  const cursor = await getSelectionCursorForUpdate({ questionMetadataId, courseId, tx });
   const offset = Number.isInteger(cursor.nextOffset) ? cursor.nextOffset : 0;
   const pickIndex = ((offset % pool.length) + pool.length) % pool.length;
   const picked = pool[pickIndex].id;
 
-  await cursor.update(
-    {
+  await tx.variantSelectionCursor.update({
+    where: { id: cursor.id },
+    data: {
       nextOffset: offset + 1,
       lastVariantId: picked
-    },
-    { transaction }
-  );
+    }
+  });
 
   return picked;
 }
@@ -293,17 +263,8 @@ export async function assembleEquivalentExamVariants(userId, params) {
     throw new Error('referenceAssessmentId and courseId are required');
   }
 
-  const ref = await Assessments.findOne({
-    where: { id: referenceAssessmentId, courseId },
-    include: [
-      {
-        model: Course,
-        as: 'course',
-        where: { userId },
-        attributes: ['id'],
-        required: true
-      }
-    ]
+  const ref = await prisma.assessments.findFirst({
+    where: { id: referenceAssessmentId, courseId, course: { userId } }
   });
 
   if (!ref) {
@@ -338,14 +299,14 @@ export async function assembleEquivalentExamVariants(userId, params) {
 
   const globalUsedVariantIds = new Set();
 
-  await sequelize.transaction(async (t) => {
+  await prisma.$transaction(async (tx) => {
     for (let examIndex = 0; examIndex < examLabels.length; examIndex++) {
       const label = examLabels[examIndex];
       const baseName = namePrefix?.trim() || ref.name;
       const assessmentName = `${baseName} — ${label}`;
 
-      const assessment = await Assessments.create(
-        {
+      const assessment = await tx.assessments.create({
+        data: {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
@@ -356,19 +317,17 @@ export async function assembleEquivalentExamVariants(userId, params) {
             variantLabel: label,
             assembledAt: new Date().toISOString()
           }
-        },
-        { transaction: t }
-      );
+        }
+      });
 
-      const section = await AssessmentSections.create(
-        {
+      const section = await tx.assessmentSections.create({
+        data: {
           assessmentId: assessment.id,
           name: 'Exam',
           description: null,
           position: 0
-        },
-        { transaction: t }
-      );
+        }
+      });
 
       const excludeForThisExam = new Set(globalUsedVariantIds);
 
@@ -381,7 +340,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
           excludeIds: [...excludeIds],
           avoidVariantId: referenceVariantId,
           includeDrafts,
-          transaction: t
+          tx
         });
 
         if (picked == null) {
@@ -398,19 +357,18 @@ export async function assembleEquivalentExamVariants(userId, params) {
           });
         }
 
-        await SectionVariants.create(
-          {
+        await tx.sectionVariants.create({
+          data: {
             sectionId: section.id,
             variantId: picked,
             displayOrder: i
-          },
-          { transaction: t }
-        );
+          }
+        });
 
-        await Variants.update(
-          { assessmentId: assessment.id },
-          { where: { id: picked }, transaction: t }
-        );
+        await tx.variants.update({
+          where: { id: picked },
+          data: { assessmentId: assessment.id }
+        });
 
         excludeForThisExam.add(picked);
         globalUsedVariantIds.add(picked);
@@ -418,7 +376,7 @@ export async function assembleEquivalentExamVariants(userId, params) {
 
       createdAssessments.push(assessment);
     }
-  });
+  }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
 
@@ -443,21 +401,13 @@ const MIN_METADATA_SCORE = 75;
 /**
  * Picks the best bank `question_metadata` row for a baseline slot (excluding already-used base ids).
  */
-export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds) {
+export async function findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, client = prisma) {
   const slotMeta = slotVariant.questionMetadata;
   if (!slotMeta) return null;
 
-  const bankRows = await Question_Metadata.findAll({
-    where: { courseId },
-    include: [
-      {
-        model: Variants,
-        as: 'variants',
-        required: true,
-        separate: true,
-        order: [['id', 'ASC']]
-      }
-    ]
+  const bankRows = await client.questionMetadata.findMany({
+    where: { courseId, variants: { some: {} } },
+    include: { variants: { orderBy: { id: 'asc' } } }
   });
 
   let best = null;
@@ -499,17 +449,8 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
     throw new Error('referenceAssessmentId and courseId are required');
   }
 
-  const ref = await Assessments.findOne({
-    where: { id: referenceAssessmentId, courseId },
-    include: [
-      {
-        model: Course,
-        as: 'course',
-        where: { userId },
-        attributes: ['id'],
-        required: true
-      }
-    ]
+  const ref = await prisma.assessments.findFirst({
+    where: { id: referenceAssessmentId, courseId, course: { userId } }
   });
 
   if (!ref) {
@@ -531,14 +472,14 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
   const globalUsedVariantIds = new Set();
   const usedBankMetadataIds = new Set();
 
-  await sequelize.transaction(async (t) => {
+  await prisma.$transaction(async (tx) => {
     for (let examIndex = 0; examIndex < examLabels.length; examIndex++) {
       const label = examLabels[examIndex];
       const baseName = namePrefix?.trim() || ref.name;
       const assessmentName = `${baseName} — ${label}`;
 
-      const assessment = await Assessments.create(
-        {
+      const assessment = await tx.assessments.create({
+        data: {
           courseId,
           type: assessmentTypeOverride || ref.type,
           name: assessmentName,
@@ -550,26 +491,24 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
             assemblyMode: 'metadata_similarity',
             assembledAt: new Date().toISOString()
           }
-        },
-        { transaction: t }
-      );
+        }
+      });
 
-      const section = await AssessmentSections.create(
-        {
+      const section = await tx.assessmentSections.create({
+        data: {
           assessmentId: assessment.id,
           name: 'Exam',
           description: null,
           position: 0
-        },
-        { transaction: t }
-      );
+        }
+      });
 
       const excludeForThisExam = new Set(globalUsedVariantIds);
       usedBankMetadataIds.clear();
 
       for (let i = 0; i < refVariants.length; i++) {
         const slotVariant = refVariants[i];
-        const match = await findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds);
+        const match = await findBestBankMetadataForSlot(slotVariant, courseId, usedBankMetadataIds, tx);
 
         if (!match) {
           throw new Error(
@@ -586,7 +525,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           excludeIds: [...excludeIds],
           avoidVariantId: slotVariant.id,
           includeDrafts,
-          transaction: t
+          tx
         });
 
         if (picked == null) {
@@ -603,19 +542,18 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
           });
         }
 
-        await SectionVariants.create(
-          {
+        await tx.sectionVariants.create({
+          data: {
             sectionId: section.id,
             variantId: picked,
             displayOrder: i
-          },
-          { transaction: t }
-        );
+          }
+        });
 
-        await Variants.update(
-          { assessmentId: assessment.id },
-          { where: { id: picked }, transaction: t }
-        );
+        await tx.variants.update({
+          where: { id: picked },
+          data: { assessmentId: assessment.id }
+        });
 
         excludeForThisExam.add(picked);
         globalUsedVariantIds.add(picked);
@@ -623,7 +561,7 @@ export async function assembleExamVariantsByMetadataSimilarity(userId, params) {
 
       createdAssessments.push(assessment);
     }
-  });
+  }, { timeout: ASSEMBLY_TRANSACTION_TIMEOUT_MS });
 
   const assemblyTimeMs = Date.now() - started;
 
@@ -679,9 +617,9 @@ export async function generateBankVariantsForQuestions(userId, params) {
     throw new Error('courseId and a non-empty questionIds array are required');
   }
 
-  const course = await Course.findOne({
+  const course = await prisma.course.findFirst({
     where: { id: Number(courseId), userId },
-    attributes: ['id', 'coreCourseId']
+    select: { id: true, coreCourseId: true }
   });
 
   if (!course) {
@@ -702,10 +640,10 @@ export async function generateBankVariantsForQuestions(userId, params) {
       ? course.coreCourseId.trim()
       : undefined;
 
-  const topics = await Topics.findAll({
+  const topics = await prisma.topics.findMany({
     where: { courseId: course.id },
-    order: [['name', 'ASC']],
-    attributes: ['id', 'name']
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true }
   });
   const topicLines =
     topics.length > 0 ? topics.map((tp) => `- [${tp.id}] ${tp.name}`).join('\n') : '';
@@ -714,16 +652,11 @@ export async function generateBankVariantsForQuestions(userId, params) {
   const errors = [];
 
   for (const qid of questionIds) {
-    const meta = await Question_Metadata.findOne({
+    const meta = await prisma.questionMetadata.findFirst({
       where: { id: qid, courseId: course.id },
-      include: [
-        {
-          model: Variants,
-          as: 'variants',
-          separate: true,
-          order: [['id', 'ASC']]
-        }
-      ]
+      include: {
+        variants: { orderBy: { id: 'asc' } }
+      }
     });
 
     if (!meta || !meta.variants?.length) {
@@ -732,7 +665,7 @@ export async function generateBankVariantsForQuestions(userId, params) {
     }
 
     const primaryVariant = meta.variants[0];
-    await primaryVariant.update({ isDraft: false });
+    await prisma.variants.update({ where: { id: primaryVariant.id }, data: { isDraft: false } });
 
     const createdVariantIds = [];
     const createdVariants = [];
@@ -821,23 +754,25 @@ Return exactly one question in the required JSON format.`;
           );
         }
 
-        const v = await Variants.create({
-          questionMetadataId: meta.id,
-          questionText: q.content.trim(),
-          difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : primaryVariant.difficulty,
-          reasoningLevel: normalizeReasoningLevel(q.reasoning_level),
-          answer,
-          choices: meta.type === 'MCQ' ? choices : null,
-          assessmentId: null,
-          secondaryTopicsId: Array.isArray(primaryVariant.secondaryTopicsId)
-            ? primaryVariant.secondaryTopicsId
-            : [],
-          referenceId: primaryVariant.id,
-          isAiGenerated: true,
-          // Generated variants land as drafts (NOT auto-approved). The instructor
-          // reviews them in the UI and explicitly approves (isDraft:false) the ones
-          // they want before the question counts toward assembly readiness.
-          isDraft: true
+        const v = await prisma.variants.create({
+          data: {
+            questionMetadataId: meta.id,
+            questionText: q.content.trim(),
+            difficulty: ['easy', 'medium', 'hard'].includes(q.difficulty) ? q.difficulty : primaryVariant.difficulty,
+            reasoningLevel: normalizeReasoningLevel(q.reasoning_level),
+            answer,
+            choices: meta.type === 'MCQ' ? choices : null,
+            assessmentId: null,
+            secondaryTopicsId: Array.isArray(primaryVariant.secondaryTopicsId)
+              ? primaryVariant.secondaryTopicsId
+              : [],
+            referenceId: primaryVariant.id,
+            isAiGenerated: true,
+            // Generated variants land as drafts (NOT auto-approved). The instructor
+            // reviews them in the UI and explicitly approves (isDraft:false) the ones
+            // they want before the question counts toward assembly readiness.
+            isDraft: true
+          }
         });
 
         createdVariantIds.push(v.id);
@@ -1013,18 +948,18 @@ export async function reviewVariantExamWithAi(userId, params) {
     throw new Error('baselineAssessmentId, variantAssessmentId, and courseId are required');
   }
 
-  const baselineAssessment = await Assessments.findOne({
-    where: { id: Number(baselineAssessmentId), courseId: Number(courseId) },
+  const baselineAssessment = await prisma.assessments.findFirst({
+    where: { id: Number(baselineAssessmentId), courseId: Number(courseId), course: { userId } },
     // `code` is Core-owned (#1072) — select only local columns, then enrich.
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
+    include: { course: { select: { id: true, coreCourseId: true } } }
   });
   if (!baselineAssessment) {
     throw new Error('Baseline assessment not found or course mismatch');
   }
 
-  const variantAssessment = await Assessments.findOne({
-    where: { id: Number(variantAssessmentId), courseId: Number(courseId) },
-    include: [{ model: Course, as: 'course', where: { userId }, attributes: ['id', 'coreCourseId'], required: true }]
+  const variantAssessment = await prisma.assessments.findFirst({
+    where: { id: Number(variantAssessmentId), courseId: Number(courseId), course: { userId } },
+    include: { course: { select: { id: true, coreCourseId: true } } }
   });
   if (!variantAssessment) {
     throw new Error('Variant assessment not found or course mismatch');
