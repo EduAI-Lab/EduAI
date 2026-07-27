@@ -27,14 +27,16 @@ vi.mock('../../src/services/assessmentSectionService.js', () => ({
   createAssessmentSection: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  CanvasIntegration: { findOne: integrationFindOne },
-  CanvasCourseMapping: { findOne: mappingFindOne, create: mappingCreate },
-  Question_Metadata: {},
-  Variants: {},
-  AssessmentSections: {},
-  SectionVariants: {},
-  Course: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    canvasIntegration: { findUnique: integrationFindOne },
+    canvasCourseMapping: { findUnique: mappingFindOne, create: mappingCreate },
+    questionMetadata: {},
+    variants: {},
+    assessmentSections: {},
+    sectionVariants: {},
+    course: {},
+  },
 }));
 
 const { exportAssessmentToCanvas } = await import('../../src/services/canvasService.js');
@@ -108,13 +110,15 @@ describe('exportAssessmentToCanvas (Canvas API mocked via axios)', () => {
       canvasUrl: 'https://canvas.example.edu/courses/999/quizzes/501',
     });
     expect(mappingFindOne).toHaveBeenCalledWith({
-      where: { userId: 42, localCourseId: 5 },
+      where: { localCourseId: 5 },
     });
     expect(mappingCreate).toHaveBeenCalledWith({
-      userId: 42,
-      localCourseId: 5,
-      canvasCourseId: 999,
-      canvasCourseName: undefined,
+      data: {
+        userId: 42,
+        localCourseId: 5,
+        canvasCourseId: 999,
+        canvasCourseName: undefined,
+      },
     });
   });
 

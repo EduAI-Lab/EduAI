@@ -61,12 +61,13 @@ vi.mock('../../src/config/settings.js', () => {
   return { config: cfg, default: cfg };
 });
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: mockCourseFindOne },
-  Topics: { findAll: mockTopicsFindAll },
-  Question_Metadata: { findOne: mockMetaFindOne },
-  Variants: { create: mockVariantCreate },
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findFirst: mockCourseFindOne },
+    topics: { findMany: mockTopicsFindAll },
+    questionMetadata: { findFirst: mockMetaFindOne },
+    variants: { create: mockVariantCreate, update: mockVariantUpdate },
+  },
 }));
 
 const { generateBankVariantsForQuestions } = await import(
@@ -91,7 +92,6 @@ function makePrimaryVariant(overrides = {}) {
     reasoningLevel: 'factual',
     choices: null,
     secondaryTopicsId: [],
-    update: mockVariantUpdate,
     ...overrides,
   };
 }
@@ -173,7 +173,7 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
-    expect(mockVariantUpdate).toHaveBeenCalledWith({ isDraft: false });
+    expect(mockVariantUpdate).toHaveBeenCalledWith({ where: { id: 100 }, data: { isDraft: false } });
   });
 
   it('calls generateQuestions once per variantsToAdd iteration', async () => {
@@ -195,9 +195,9 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
-    expect(mockVariantCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ isAiGenerated: true, isDraft: true })
-    );
+    expect(mockVariantCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ isAiGenerated: true, isDraft: true }),
+    });
   });
 
   it('returns full createdVariants payloads for in-place review', async () => {
@@ -219,9 +219,9 @@ describe('generateBankVariantsForQuestions — per-question orchestration', () =
 
     await generateBankVariantsForQuestions(USER_ID, BASE_PARAMS);
 
-    expect(mockVariantCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ referenceId: 777 })
-    );
+    expect(mockVariantCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ referenceId: 777 }),
+    });
   });
 
   it('continues processing remaining questions after one fails — does not abort the batch', async () => {
