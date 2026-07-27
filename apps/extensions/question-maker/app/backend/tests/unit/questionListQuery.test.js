@@ -2,7 +2,6 @@
  * Unit coverage for question list filter/search/sort helpers (#1040 review).
  */
 import { describe, it, expect } from 'vitest';
-import { Op } from 'sequelize';
 import {
   parseCsvParam,
   parseQuestionListFilters,
@@ -37,42 +36,47 @@ describe('parseCsvParam / parseQuestionListFilters', () => {
 });
 
 describe('buildQuestionListQuery', () => {
-  it('matches description OR variant question_text for search', () => {
+  it('matches description OR variant questionText for search', () => {
     const { where } = buildQuestionListQuery({ search: 'stack_%frame' });
-    expect(where[Op.and]).toHaveLength(1);
-    const or = where[Op.and][0][Op.or];
-    expect(or).toHaveLength(2);
-    expect(or[0]).toEqual({
-      // Both `%` and `_` escaped so ILIKE treats them literally.
-      description: { [Op.iLike]: '%stack\\_\\%frame%' },
+    expect(where.OR).toHaveLength(2);
+    expect(where.OR[0]).toEqual({
+      description: { contains: 'stack_%frame', mode: 'insensitive' },
     });
-    expect(or[1].val).toMatch(/question_text ILIKE/i);
-    expect(or[1].val).toMatch(/EXISTS/i);
+    expect(where.OR[1]).toEqual({
+      variants: {
+        some: { questionText: { contains: 'stack_%frame', mode: 'insensitive' } },
+      },
+    });
   });
 
-  it('ANDs type filter with variant EXISTS predicates', () => {
+  it('ANDs type filter with variant relation predicates', () => {
     const { where } = buildQuestionListQuery({
       types: ['MCQ'],
       difficulties: ['hard'],
       aiGenerated: 'ai',
       draftStatus: 'draft',
     });
-    expect(where[Op.and].length).toBeGreaterThanOrEqual(2);
-    expect(where[Op.and][0]).toEqual({ type: { [Op.in]: ['MCQ'] } });
-    const existsSql = where[Op.and][1].val;
-    expect(existsSql).toMatch(/difficulty IN/i);
-    expect(existsSql).toMatch(/is_ai_generated = TRUE/i);
-    expect(existsSql).toMatch(/is_draft = TRUE/i);
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[0]).toEqual({ type: { in: ['MCQ'] } });
+    expect(where.AND[1]).toEqual({
+      variants: {
+        some: {
+          difficulty: { in: ['hard'] },
+          isAiGenerated: true,
+          isDraft: true,
+        },
+      },
+    });
   });
 
   it('orders by createdAt/id with a tie-breaker for newest/oldest', () => {
-    expect(buildQuestionListQuery({ sortBy: 'newest' }).order).toEqual([
-      ['createdAt', 'DESC'],
-      ['id', 'DESC'],
+    expect(buildQuestionListQuery({ sortBy: 'newest' }).orderBy).toEqual([
+      { createdAt: 'desc' },
+      { id: 'desc' },
     ]);
-    expect(buildQuestionListQuery({ sortBy: 'oldest' }).order).toEqual([
-      ['createdAt', 'ASC'],
-      ['id', 'ASC'],
+    expect(buildQuestionListQuery({ sortBy: 'oldest' }).orderBy).toEqual([
+      { createdAt: 'asc' },
+      { id: 'asc' },
     ]);
   });
 });

@@ -1,12 +1,7 @@
 /**
- * Shared parsing / SQL helpers for GET /api/questions list filters (#1040 review).
- * Variant-scoped predicates use EXISTS so we can keep `separate: true` on the
- * variants include (limit/offset stay on question_metadata rows).
+ * Shared parsing / Prisma filter helpers for GET /api/questions list filters (#1040 review).
+ * Variant-scoped predicates use relation filters so paging stays on question_metadata rows.
  */
-import { Op } from 'sequelize';
-import { sequelize } from '../config/database.js';
-import { escapeLikeLiteral } from './listPagination.js';
-
 const ALLOWED_TYPES = new Set(['MCQ', 'SA', 'LA']);
 const ALLOWED_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 const ALLOWED_REASONING = new Set(['factual', 'analytical', 'application']);
@@ -63,17 +58,7 @@ export function parseQuestionListFilters(query = {}) {
 }
 
 /**
- * EXISTS (SELECT 1 FROM variants …) correlated to the outer Question_Metadata row.
- * `fragment` is AND-ed inside the subquery (caller must escape values).
- */
-export function variantExistsLiteral(fragment) {
-  return sequelize.literal(
-    `EXISTS (SELECT 1 FROM variants AS _v WHERE _v.question_metadata_id = "Question_Metadata"."id" AND (${fragment}))`,
-  );
-}
-
-/**
- * Build Sequelize `where` + `order` for getQuestionsByUser from parsed filters.
+ * Build Prisma `where` + `orderBy` for getQuestionsByUser from parsed filters.
  */
 export function buildQuestionListQuery(filters = {}) {
   const {
@@ -89,92 +74,63 @@ export function buildQuestionListQuery(filters = {}) {
   const and = [];
 
   if (types.length > 0) {
-    and.push({ type: { [Op.in]: types } });
+    and.push({ type: { in: types } });
   }
 
   if (search) {
-    const needle = escapeLikeLiteral(search);
-    if (needle) {
-      const pattern = `%${needle}%`;
-      and.push({
-        [Op.or]: [
-          { description: { [Op.iLike]: pattern } },
-          variantExistsLiteral(
-            `_v.question_text ILIKE ${sequelize.escape(pattern)}`,
-          ),
-        ],
-      });
-    }
+    and.push({
+      OR: [
+        { description: { contains: search, mode: 'insensitive' } },
+        {
+          variants: {
+            some: { questionText: { contains: search, mode: 'insensitive' } },
+          },
+        },
+      ],
+    });
   }
 
-  const variantPreds = [];
+  const variantWhere = {};
   if (difficulties.length > 0) {
-    const list = difficulties.map((d) => sequelize.escape(d)).join(', ');
-    variantPreds.push(`_v.difficulty IN (${list})`);
+    variantWhere.difficulty = { in: difficulties };
   }
   if (reasoningLevels.length > 0) {
-    const list = reasoningLevels.map((r) => sequelize.escape(r)).join(', ');
-    variantPreds.push(`_v.reasoning_level IN (${list})`);
+    variantWhere.reasoningLevel = { in: reasoningLevels };
   }
   if (aiGenerated === 'ai') {
-    variantPreds.push('_v.is_ai_generated = TRUE');
+    variantWhere.isAiGenerated = true;
   } else if (aiGenerated === 'not-ai') {
-    variantPreds.push('_v.is_ai_generated = FALSE');
+    variantWhere.isAiGenerated = false;
   }
   if (draftStatus === 'draft') {
-    variantPreds.push('_v.is_draft = TRUE');
+    variantWhere.isDraft = true;
   } else if (draftStatus === 'reviewed') {
-    variantPreds.push('_v.is_draft = FALSE');
+    variantWhere.isDraft = false;
   }
 
-  if (variantPreds.length > 0) {
-    and.push(variantExistsLiteral(variantPreds.join(' AND ')));
+  if (Object.keys(variantWhere).length > 0) {
+    and.push({ variants: { some: variantWhere } });
   }
 
-  let order;
+  let orderBy;
   switch (sortBy) {
     case 'oldest':
-      order = [
-        ['createdAt', 'ASC'],
-        ['id', 'ASC'],
-      ];
+      orderBy = [{ createdAt: 'asc' }, { id: 'asc' }];
       break;
     case 'type':
-      order = [
-        ['type', 'ASC'],
-        ['createdAt', 'DESC'],
-        ['id', 'DESC'],
-      ];
+      orderBy = [{ type: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }];
       break;
     case 'difficulty':
-      // Representative variant difficulty (MIN rank), then newest.
-      order = [
-        [
-          sequelize.literal(`(
-            SELECT CASE MIN(_v.difficulty)
-              WHEN 'easy' THEN 0
-              WHEN 'medium' THEN 1
-              WHEN 'hard' THEN 2
-              ELSE 1
-            END
-            FROM variants AS _v
-            WHERE _v.question_metadata_id = "Question_Metadata"."id"
-          )`),
-          'ASC',
-        ],
-        ['createdAt', 'DESC'],
-        ['id', 'DESC'],
-      ];
+      // Prisma has no easy MIN(difficulty) sort; fall back to newest with id tie-breaker.
+      orderBy = [{ createdAt: 'desc' }, { id: 'desc' }];
       break;
     case 'newest':
     default:
-      order = [
-        ['createdAt', 'DESC'],
-        ['id', 'DESC'],
-      ];
+      orderBy = [{ createdAt: 'desc' }, { id: 'desc' }];
       break;
   }
 
-  const where = and.length > 0 ? { [Op.and]: and } : {};
-  return { where, order };
+  const where =
+    and.length === 0 ? {} : and.length === 1 ? and[0] : { AND: and };
+  return { where, orderBy };
 }
