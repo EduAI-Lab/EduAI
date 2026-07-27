@@ -1,5 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  // Pinned app-local, as apps/core already does. With the default output every
+  // workspace generates into the single hoisted <repo>/node_modules/@prisma/
+  // client, so whichever app runs `prisma generate` last wins and the others
+  // are left with a client that has none of their models on it.
+  output   = "../node_modules/@prisma/client"
 }
 
 datasource db {
