@@ -13,7 +13,9 @@ dotenv.config({ path: rootEnv });
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 } else if (!process.env.DATABASE_URL) {
-  // CI and fresh clones have no .env; src/config/database.js still loads Sequelize at import time.
+  // CI and fresh clones have no .env; src/config/database.js requires DATABASE_URL to be
+  // set at import time (PrismaClient itself connects lazily on first query, not at
+  // construction, but the explicit check in database.js still needs a value).
   // Default unit tests (health, 401s, verifyToken) never open a connection; a valid DSN is enough.
   process.env.DATABASE_URL =
     'postgresql://vitest:vitest@127.0.0.1:5432/vitest_unit_stub';

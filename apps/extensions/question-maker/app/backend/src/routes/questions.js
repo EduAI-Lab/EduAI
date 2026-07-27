@@ -31,7 +31,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
-import { Assessments } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
 
 const router = express.Router();
@@ -55,7 +55,7 @@ function denyTaNotOwner(req, res) {
 async function assessmentInCourse(assessmentId, courseId) {
   const id = Number(assessmentId);
   if (!Number.isInteger(id)) return null;
-  const assessment = await Assessments.findOne({ where: { id } });
+  const assessment = await prisma.assessments.findUnique({ where: { id } });
   return assessment && assessment.courseId === courseId ? assessment : null;
 }
 
@@ -498,6 +498,13 @@ router.post(
         return res.status(400).json({
           success: false,
           error: 'At least one question is required'
+        });
+      }
+
+      if (questions.length > config.maxQuestions) {
+        return res.status(400).json({
+          success: false,
+          error: `Cannot save more than ${config.maxQuestions} questions at once`
         });
       }
 

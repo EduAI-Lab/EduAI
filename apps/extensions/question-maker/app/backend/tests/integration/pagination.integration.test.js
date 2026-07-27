@@ -12,11 +12,12 @@
  *   - large exports: a bank bigger than one export batch exports completely
  *
  * Auth is handled by stubbing global fetch for Core session validation; data is
- * seeded directly via Sequelize models. Requires TEST_DATABASE_URL — see
+ * seeded directly via Prisma. Requires TEST_DATABASE_URL — see
  * docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import request from 'supertest';
+import { createId } from '@paralleldrive/cuid2';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -53,31 +54,30 @@ function stubRejectedSession() {
 }
 
 describeDb('Pagination contract (integration)', () => {
-  let truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants, Assessments;
+  let truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let courseId, topicId;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     truncateTestDatabase = testDb.truncateTestDatabase;
     await testDb.connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants, Assessments } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
 
-    await User.create({ id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name });
+    await prisma.user.create({
+      data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name },
+    });
     await seedCoursesForNewUser(TEST_USER.id);
 
-    const course = await Course.findOne({ where: { userId: TEST_USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
     vi.stubGlobal('fetch', sessionFetch());
@@ -86,27 +86,31 @@ describeDb('Pagination contract (integration)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   /**
    * Creates `count` topics on the seeded course, all sharing one `createdAt` so
-   * the non-unique sort key is genuinely tied — a bulkCreate is how topic sync
+   * the non-unique sort key is genuinely tied — a bulk insert is how topic sync
    * writes a whole Core set, and it's the case the `id` tiebreak exists for.
    */
   async function seedTiedTopics(count) {
+    if (count <= 0) return [];
     const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    // `topics.id` is a caller-supplied CUID (no DB default), so seed it here.
     const rows = Array.from({ length: count }, (_, i) => ({
+      id: createId(),
       name: `Tied Topic ${String(i).padStart(3, '0')}`,
       courseId,
       createdAt,
       updatedAt: createdAt,
     }));
-    return Topics.bulkCreate(rows, { returning: true });
+    return prisma.topics.createManyAndReturn({ data: rows });
   }
 
   /** Creates `count` questions on the seeded course, all sharing one timestamp. */
   async function seedQuestions(count) {
+    if (count <= 0) return [];
     const createdAt = new Date('2026-02-01T00:00:00.000Z');
     const rows = Array.from({ length: count }, (_, i) => ({
       description: `Paged question ${String(i).padStart(4, '0')}`,
@@ -116,7 +120,7 @@ describeDb('Pagination contract (integration)', () => {
       createdAt,
       updatedAt: createdAt,
     }));
-    return Question_Metadata.bulkCreate(rows, { returning: true });
+    return prisma.questionMetadata.createManyAndReturn({ data: rows });
   }
 
   /** Walks every page of an endpoint the way the frontend's `fetchAllPages` does. */
@@ -140,8 +144,8 @@ describeDb('Pagination contract (integration)', () => {
   describe('GET /api/course/:id/topics — page boundaries', () => {
     it('walks first/middle/last pages with no overlap and no gaps', async () => {
       // 25 rows at pageSize 10 => pages of 10, 10, 5 (a partial last page).
-      await seedTiedTopics(25 - (await Topics.count({ where: { courseId } })));
-      const total = await Topics.count({ where: { courseId } });
+      await seedTiedTopics(25 - (await prisma.topics.count({ where: { courseId } })));
+      const total = await prisma.topics.count({ where: { courseId } });
       expect(total).toBe(25);
 
       const { rows, pages } = await walkPages(`/api/course/${courseId}/topics`, 10);
@@ -156,7 +160,7 @@ describeDb('Pagination contract (integration)', () => {
     });
 
     it('returns an empty page past the end, still reporting the true total', async () => {
-      const total = await Topics.count({ where: { courseId } });
+      const total = await prisma.topics.count({ where: { courseId } });
 
       const res = await request(app)
         .get(`/api/course/${courseId}/topics?page=500&pageSize=10`)
@@ -172,7 +176,7 @@ describeDb('Pagination contract (integration)', () => {
     it('bounds an unpaged caller to a page instead of the whole set', async () => {
       // The regression this PR's review asked for: no params must not mean
       // "every row". 12 rows at a forced pageSize of 5 proves the cap applies.
-      await seedTiedTopics(12 - (await Topics.count({ where: { courseId } })));
+      await seedTiedTopics(12 - (await prisma.topics.count({ where: { courseId } })));
 
       const capped = await request(app)
         .get(`/api/course/${courseId}/topics?pageSize=5`)
@@ -253,15 +257,15 @@ describeDb('Pagination contract (integration)', () => {
       // One timestamp for all 7 variants — bank generation inserts a question's
       // variants in a single statement, so `createdAt` alone is not a total order.
       const createdAt = new Date('2026-03-01T00:00:00.000Z');
-      await Variants.bulkCreate(
-        Array.from({ length: 7 }, (_, i) => ({
+      await prisma.variants.createMany({
+        data: Array.from({ length: 7 }, (_, i) => ({
           questionMetadataId: question.id,
           questionText: `Variant ${i}`,
           difficulty: 'easy',
           createdAt,
           updatedAt: createdAt,
         })),
-      );
+      });
 
       const { rows, pages } = await walkPages(`/api/questions/${question.id}/variants`, 2);
 
@@ -277,15 +281,15 @@ describeDb('Pagination contract (integration)', () => {
     it('bounds an unpaged variants read to a page', async () => {
       const [question] = await seedQuestions(1);
       const createdAt = new Date('2026-03-02T00:00:00.000Z');
-      await Variants.bulkCreate(
-        Array.from({ length: 4 }, (_, i) => ({
+      await prisma.variants.createMany({
+        data: Array.from({ length: 4 }, (_, i) => ({
           questionMetadataId: question.id,
           questionText: `V${i}`,
           difficulty: 'easy',
           createdAt,
           updatedAt: createdAt,
         })),
-      );
+      });
 
       const res = await request(app)
         .get(`/api/questions/${question.id}/variants?pageSize=2`)
@@ -308,11 +312,8 @@ describeDb('Pagination contract (integration)', () => {
 
   describe('GET /api/assessments/:id/questions — total ordering under ties', () => {
     it('pages questions tied on display order without repeats or drops', async () => {
-      const assessment = await Assessments.create({
-        type: 'Quiz',
-        name: 'Tie Ordering Exam',
-        semester: 'Fall 2026',
-        courseId,
+      const assessment = await prisma.assessments.create({
+        data: { type: 'Quiz', name: 'Tie Ordering Exam', courseId },
       });
 
       // Every question claims display order 1 in this assessment, so the JSON
@@ -322,13 +323,12 @@ describeDb('Pagination contract (integration)', () => {
       // question with no variant for this assessment wouldn't be returned.
       const questions = await seedQuestions(6);
       const createdAt = new Date('2026-04-01T00:00:00.000Z');
-      await Promise.all(
-        questions.map((q) =>
-          q.update({ questionOrder: { [String(assessment.id)]: 1 } }),
-        ),
-      );
-      await Variants.bulkCreate(
-        questions.map((q, i) => ({
+      await prisma.questionMetadata.updateMany({
+        where: { id: { in: questions.map((q) => q.id) } },
+        data: { questionOrder: { [String(assessment.id)]: 1 } },
+      });
+      await prisma.variants.createMany({
+        data: questions.map((q, i) => ({
           questionMetadataId: q.id,
           assessmentId: assessment.id,
           questionText: `Assessment variant ${i}`,
@@ -336,7 +336,7 @@ describeDb('Pagination contract (integration)', () => {
           createdAt,
           updatedAt: createdAt,
         })),
-      );
+      });
 
       const { rows, pages } = await walkPages(
         `/api/assessments/${assessment.id}/questions`,
@@ -351,11 +351,8 @@ describeDb('Pagination contract (integration)', () => {
     });
 
     it('rejects an unauthenticated assessment-questions read', async () => {
-      const assessment = await Assessments.create({
-        type: 'Quiz',
-        name: 'Auth Exam',
-        semester: 'Fall 2026',
-        courseId,
+      const assessment = await prisma.assessments.create({
+        data: { type: 'Quiz', name: 'Auth Exam', courseId },
       });
       stubRejectedSession();
       const res = await request(app)
@@ -367,11 +364,8 @@ describeDb('Pagination contract (integration)', () => {
 
   describe('GET /api/assessments/:id/sections — bounded', () => {
     it('returns a bounded envelope with a true total', async () => {
-      const assessment = await Assessments.create({
-        type: 'Quiz',
-        name: 'Sections Exam',
-        semester: 'Fall 2026',
-        courseId,
+      const assessment = await prisma.assessments.create({
+        data: { type: 'Quiz', name: 'Sections Exam', courseId },
       });
 
       const res = await request(app)
@@ -392,9 +386,9 @@ describeDb('Pagination contract (integration)', () => {
       // both an off-by-one in the stop condition and a premature break.
       // Top up to 501 over whatever the course fixture already seeded, so the
       // expected count is the DB's real count rather than a hardcoded guess.
-      const seeded = await Question_Metadata.count({ where: { courseId } });
+      const seeded = await prisma.questionMetadata.count({ where: { courseId } });
       await seedQuestions(501 - seeded);
-      const expected = await Question_Metadata.count({ where: { courseId } });
+      const expected = await prisma.questionMetadata.count({ where: { courseId } });
       expect(expected).toBe(501);
 
       const res = await request(app)

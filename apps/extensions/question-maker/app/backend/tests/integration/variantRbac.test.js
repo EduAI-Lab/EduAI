@@ -46,14 +46,15 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   patchQuestionTestableOnCore: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Variants: { findOne: mockVariantsFindOne, update: vi.fn() },
-  Question_Metadata: {},
-  Assessments: {},
-  AssessmentSections: {},
-  Course: {},
-  Topics: { update: vi.fn() },
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    variants: { findUnique: mockVariantsFindOne, update: vi.fn() },
+    questionMetadata: {},
+    assessments: {},
+    assessmentSections: {},
+    course: {},
+    topics: { updateMany: vi.fn() },
+  },
 }));
 
 const { default: app } = await import('../../src/app.js');
@@ -70,7 +71,6 @@ function loadVariant({ isDraft, createdBy }) {
     id: 42,
     isDraft,
     createdBy,
-    update: vi.fn(),
     questionMetadata: { type: 'SA', course: COURSE },
   });
 }
