@@ -315,7 +315,7 @@ Run a single app's coverage from its own directory with `npm run test:coverage`.
 npm run test:pict:gen   # Regenerate tests/models/*.cases.json from their .pict sources
 ```
 
-Requires the `pict` binary (`brew install pict`). See [TESTS.md](TESTS.md#pict-combinatorial-tests) for how to add a model and the model/oracle/world-builder split.
+Runs `pict` inside a pinned Docker image (built on first use) rather than a host install — a native `pict` build isn't reproducible across platforms. See [TESTS.md](TESTS.md#pict-combinatorial-tests) for why, how to add a model, and the model/oracle/world-builder split.
 
 ### Integration tests
 

@@ -157,20 +157,21 @@ handler's branch logic makes the test tautological (it asserts the code does wha
 This document only covers the first two files; the oracle/test pair is written per-model as each
 census candidate is picked up.
 
-### Installing PICT
+### Generation runs in Docker, not a host install
 
-```bash
-brew install pict        # macOS — installs 3.7.4
-```
+`npm run test:pict:gen` always runs `pict` inside the pinned `docker/pict` image (building it on
+first use) rather than a natively-installed `pict` binary. This isn't incidental: PICT's greedy
+solver breaks ties between equally-valid candidate rows via hash-container iteration order, which
+differs across C++ standard library implementations. A macOS/Homebrew build (clang + libc++) and a
+Linux build (g++ + libstdc++) produce a **different row count** for the identical model — 19 rows
+vs 18 for this repo's pilot model, not just a reordering. Since the generated JSON is committed and
+diffed, every environment producing it must agree byte-for-byte, so generation only ever happens
+through the one pinned image. Docker is already a required dependency for this repo (see the root
+README's "Getting started"), so this adds no new local prerequisite.
 
-There is no Linux bottle; CI builds it from source instead (see `.github/workflows/pr-tests.yml`,
-job `pict-drift`):
-
-```bash
-git clone --depth 1 --branch v3.7.4 https://github.com/microsoft/pict.git /tmp/pict-src
-make -C /tmp/pict-src
-sudo install -m 755 /tmp/pict-src/pict /usr/local/bin/pict
-```
+If you want a `pict` binary on your host to experiment interactively with a model's shape before
+running the real generator, `brew install pict` (macOS) works fine for that — just never treat its
+output as authoritative, and always run `npm run test:pict:gen` before committing.
 
 ### Adding a model
 
@@ -179,7 +180,8 @@ sudo install -m 755 /tmp/pict-src/pict /usr/local/bin/pict
 2. Run `npm run test:pict:gen`. This writes `tests/models/<name>.cases.json`: an array of
    `{ParamName: "value"}` objects, one per row, in column order.
 3. Commit both files. A model change then shows up in review as a plain row diff, not an invisible
-   behavior change, and CI needs no PICT binary to run the suite that consumes the JSON.
+   behavior change, and CI needs nothing beyond Docker (already preinstalled on GitHub-hosted
+   runners) to regenerate and verify it.
 
 Optional sidecar `tests/models/<name>.config.json` controls generation:
 
@@ -200,13 +202,14 @@ npm run test:pict:gen
 ```
 
 Regenerates every `tests/models/*.cases.json` from its `.pict` (and optional `.config.json`)
-source. PICT is deterministic by default — the script never passes a random seed — so re-running on
-an unchanged model produces byte-identical output. If the `pict` binary isn't on `PATH`, the script
-fails immediately with the install command above rather than silently skipping.
+source. Generation is deterministic — the script never passes a random seed, and always runs the
+same pinned image — so re-running on an unchanged model produces byte-identical output. If the
+`docker` CLI isn't on `PATH`, the script fails immediately with an install pointer rather than
+silently skipping.
 
 ### CI drift check
 
-The `pict-drift` job in `pr-tests.yml` builds `pict` from source, runs the generator, and fails the
+The `pict-drift` job in `pr-tests.yml` runs the generator (via the same Docker image) and fails the
 PR if that dirties `tests/models/` — covering both a stale `.cases.json` (source changed, output
 didn't) and a new `.pict` committed without its generated sibling. Without this check a stale case
 table silently tests the old row set, which is worse than no coverage because it still looks green.
