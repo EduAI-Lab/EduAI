@@ -16,10 +16,12 @@ vi.mock('../../src/services/eduaiService.js', () => ({
 const findByPk = vi.fn();
 const findAll = vi.fn();
 const enrichCourseDetail = vi.fn();
-vi.mock('../../src/schema/index.js', () => ({
-  Question_Metadata: {},
-  Course: { findByPk },
-  Topics: { findAll },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    questionMetadata: {},
+    course: { findUnique: findByPk },
+    topics: { findMany: findAll },
+  },
 }));
 
 vi.mock('../../src/services/courseListService.js', () => ({

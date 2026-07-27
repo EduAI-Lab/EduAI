@@ -2,7 +2,7 @@
  * Application entrypoint: starts the HTTP server and initializes the database connection in the background.
  */
 import app from './app.js';
-import { connectDatabase, sequelize } from './config/database.js';
+import { connectDatabase, prisma } from './config/database.js';
 import { config } from './config/settings.js';
 import { logger } from './utils/logger.js';
 import { initScheduler } from './jobs/scheduler.js';
@@ -20,10 +20,8 @@ const gracefulShutdown = async (signal) => {
       logger.info('HTTP server closed');
 
       try {
-        if (sequelize) {
-          await sequelize.close();
-          logger.info('Database connections closed');
-        }
+        await prisma.$disconnect();
+        logger.info('Database connections closed');
       } catch (error) {
         logger.error({ err: error }, 'Error closing database');
       }

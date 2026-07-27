@@ -2,30 +2,23 @@
  * Test database utilities for integration tests (PostgreSQL).
  * Requires TEST_DATABASE_URL in .env (or env) so the suite never truncates a dev database by mistake.
  */
-import { connectDatabase, sequelize } from '../../src/config/database.js';
+import { connectDatabase, prisma } from '../../src/config/database.js';
+import { truncateAllTables } from '../../src/utils/truncateAllTables.js';
 
 /**
  * Wipes all application tables in dependency order. Only call against a dedicated test database.
  */
 export async function truncateTestDatabase() {
-  const dialect = sequelize.getDialect();
-  if (dialect !== 'postgres') {
-    throw new Error(`truncateTestDatabase only supports postgres, got: ${dialect}`);
-  }
-  const [tables] = await sequelize.query(
-    `SELECT tablename FROM pg_tables
-     WHERE schemaname = 'public' AND tablename != 'SequelizeMeta'`
-  );
-  if (tables.length === 0) return;
-  const list = tables.map(r => `"${r.tablename}"`).join(', ');
-  await sequelize.query(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  await truncateAllTables(prisma);
 }
 
 /**
- * Connects and syncs schema (same as production app startup, without allowFailure).
+ * Connects (same as production app startup, without allowFailure). Migrations
+ * are applied out-of-band by `tests/globalSetup.js` (`prisma migrate deploy`),
+ * not here.
  */
 export async function connectTestDatabase() {
   await connectDatabase({ retryOnFailure: false, allowFailure: false });
 }
 
-export { sequelize };
+export { prisma };

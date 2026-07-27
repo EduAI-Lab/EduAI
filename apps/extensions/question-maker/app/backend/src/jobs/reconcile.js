@@ -1,5 +1,4 @@
-import { Op } from 'sequelize';
-import { Course, Topics, Variants } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { getCourseFromCore, getTopicByIdFromCore, getQuestionByIdFromCore } from '../services/coreApiService.js';
 import { logger } from '../utils/logger.js';
 
@@ -18,16 +17,16 @@ export async function runReconciliation() {
   // questions, assessments, variants) is cascade-deleted rather than just
   // unlinked. This is the safety net for §802's live push: if Core's cascade
   // call to QM was missed (QM down, network partition), this run catches it.
-  const courses = await Course.findAll({
-    where: { coreCourseId: { [Op.not]: null } },
-    attributes: ['id', 'coreCourseId'],
+  const courses = await prisma.course.findMany({
+    where: { coreCourseId: { not: null } },
+    select: { id: true, coreCourseId: true },
   });
 
   for (const course of courses) {
     try {
       const result = await getCourseFromCore(course.coreCourseId);
       if (result === null) {
-        await course.destroy();
+        await prisma.course.delete({ where: { id: course.id } });
         logger.info(`[reconcile] Deleted Course ${course.id} (Core 404, cascades to topics/questions/assessments)`);
       }
     } catch (err) {
@@ -36,9 +35,9 @@ export async function runReconciliation() {
   }
 
   // Phase 2 — topics.core_topic_id (needs course.coreCourseId for the endpoint path)
-  const topics = await Topics.findAll({
-    where: { coreTopicId: { [Op.not]: null } },
-    include: [{ model: Course, as: 'course', attributes: ['coreCourseId'] }],
+  const topics = await prisma.topics.findMany({
+    where: { coreTopicId: { not: null } },
+    include: { course: { select: { coreCourseId: true } } },
   });
 
   for (const topic of topics) {
@@ -48,7 +47,7 @@ export async function runReconciliation() {
     try {
       const result = await getTopicByIdFromCore(coreCourseId, topic.coreTopicId);
       if (result === null) {
-        await topic.update({ coreTopicId: null });
+        await prisma.topics.update({ where: { id: topic.id }, data: { coreTopicId: null } });
         logger.info(`[reconcile] Nullified coreTopicId on Topic ${topic.id} (Core 404)`);
       }
     } catch (err) {
@@ -57,16 +56,16 @@ export async function runReconciliation() {
   }
 
   // Phase 3 — variants.core_question_id
-  const variants = await Variants.findAll({
-    where: { coreQuestionId: { [Op.not]: null } },
-    attributes: ['id', 'coreQuestionId'],
+  const variants = await prisma.variants.findMany({
+    where: { coreQuestionId: { not: null } },
+    select: { id: true, coreQuestionId: true },
   });
 
   for (const variant of variants) {
     try {
       const result = await getQuestionByIdFromCore(variant.coreQuestionId);
       if (result === null) {
-        await variant.update({ coreQuestionId: null });
+        await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
         logger.info(`[reconcile] Nullified coreQuestionId on Variant ${variant.id} (Core 404)`);
       }
     } catch (err) {

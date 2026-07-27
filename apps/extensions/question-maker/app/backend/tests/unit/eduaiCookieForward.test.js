@@ -46,10 +46,6 @@ vi.mock('../../src/services/eduaiService.js', () => ({
 
 vi.mock('../../src/services/assessmentVariantService.js', () => variantSvc);
 
-vi.mock('../../src/schema/Course.js', () => ({
-  Course: { findAll: mockCourseFindAll, findOne: mockCourseFindOne },
-}));
-
 vi.mock('../../src/config/settings.js', () => {
   const cfg = {
     coreUrl: 'http://core.test',
@@ -76,14 +72,19 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: mockCourseFindOne, findAll: mockCourseFindAll },
-  Assessments: { findOne: vi.fn() },
-  Question_Metadata: {},
-  Variants: {},
-  AssessmentSections: {},
-  Topics: {},
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: {
+      findUnique: mockCourseFindOne,
+      findFirst: mockCourseFindOne,
+      findMany: mockCourseFindAll,
+    },
+    assessments: { findFirst: vi.fn(), findUnique: vi.fn() },
+    questionMetadata: {},
+    variants: {},
+    assessmentSections: {},
+    topics: {},
+  },
 }));
 
 const { default: app } = await import('../../src/app.js');
