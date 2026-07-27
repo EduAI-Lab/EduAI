@@ -10,6 +10,9 @@ import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
 const captureUseChatOptions = vi.hoisted(() => vi.fn());
+const stopChat = vi.hoisted(() => vi.fn());
+const setChatMessages = vi.hoisted(() => vi.fn());
+const setChatInput = vi.hoisted(() => vi.fn());
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: (options: { initialMessages?: unknown[] }) => {
@@ -20,7 +23,9 @@ vi.mock("@ai-sdk/react", () => ({
       handleInputChange: vi.fn(),
       handleSubmit: vi.fn(),
       isLoading: false,
-      stop: vi.fn(),
+      stop: stopChat,
+      setMessages: setChatMessages,
+      setInput: setChatInput,
     };
   },
 }));
@@ -114,6 +119,9 @@ const autoRoutingData: ChatBaseData = {
 beforeEach(() => {
   captureCourseViewProps.mockClear();
   captureUseChatOptions.mockClear();
+  stopChat.mockClear();
+  setChatMessages.mockClear();
+  setChatInput.mockClear();
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -154,6 +162,30 @@ function renderChatScreen(
     ],
     { initialEntries: [initialEntry] },
   );
+  return { router, ...render(<RouterProvider router={router} />) };
+}
+
+function renderBlankChat(initialEntry = "/chat") {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/chat",
+        element: (
+          <PolicyProvider policies={{}}>
+            <SidebarProvider>
+              <ChatScreen data={baseData} initialTranscript={null} />
+            </SidebarProvider>
+          </PolicyProvider>
+        ),
+      },
+      {
+        path: "/chat/:chatId",
+        element: <div data-testid="persisted-chat-route" />,
+      },
+    ],
+    { initialEntries: [initialEntry] },
+  );
+
   return { router, ...render(<RouterProvider router={router} />) };
 }
 
@@ -296,5 +328,54 @@ describe("ChatScreen — header", () => {
       );
     });
     expect(visited).toContain("/chat?courseCode=PHYS%20121");
+  });
+
+  it("keeps the requested course when the loader has no last course", async () => {
+    renderBlankChat("/chat?courseCode=PHYS%20121");
+
+    await waitFor(() => {
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "PHYS 121" }),
+      );
+    });
+  });
+
+  it("clears an in-flight chat id before switching courses on /chat", async () => {
+    const { router } = renderBlankChat();
+
+    await waitFor(() => {
+      expect(captureCourseViewProps.mock.lastCall?.[0]).toEqual(
+        expect.objectContaining({ selectedCourseCode: "COSC 101" }),
+      );
+    });
+
+    const responseOptions = captureUseChatOptions.mock.lastCall?.[0];
+    await act(async () => {
+      await responseOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-in-flight" } }),
+      );
+    });
+
+    const inFlightViewProps = captureCourseViewProps.mock.lastCall?.[0];
+    await act(async () => {
+      inFlightViewProps.setSelectedCourseCode("PHYS 121");
+    });
+
+    await waitFor(() => {
+      expect(captureUseChatOptions.mock.lastCall?.[0].body).toEqual(
+        expect.objectContaining({
+          courseCode: "PHYS 121",
+          chatId: undefined,
+        }),
+      );
+    });
+    expect(stopChat).toHaveBeenCalled();
+    expect(setChatMessages).toHaveBeenCalledWith([]);
+    expect(setChatInput).toHaveBeenCalledWith("");
+
+    await act(async () => {
+      responseOptions.onFinish({ id: "assistant-2", role: "assistant" });
+    });
+    expect(router.state.location.pathname).toBe("/chat");
   });
 });
