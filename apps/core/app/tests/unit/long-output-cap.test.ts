@@ -204,4 +204,12 @@ describe("capTokensForLongOutputIntent", () => {
     expect(result.maxTokens).toBe(450);
     expect(result.isLongOutputIntent).toBe(true);
   });
+
+  it("detects continuation of a capped long response", () => {
+    expect(
+      isLongOutputIntent(
+        "Continue the previous response from where it stopped. Do not repeat content already provided.",
+      ),
+    ).toBe(true);
+  });
 });

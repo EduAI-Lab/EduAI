@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {  fireEvent, render, screen, waitFor} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -14,10 +14,12 @@ const {
   handleSubmitMock,
   handleInputChangeMock,
   postAssistiveClientEventMock,
+  appendMock,
 } = vi.hoisted(() => ({
   handleSubmitMock: vi.fn(),
   handleInputChangeMock: vi.fn(),
   postAssistiveClientEventMock: vi.fn(),
+  appendMock: vi.fn(),
 }));
 
 vi.mock("@ai-sdk/react", () => ({
@@ -28,6 +30,7 @@ vi.mock("@ai-sdk/react", () => ({
     handleSubmit: handleSubmitMock,
     isLoading: false,
     stop: vi.fn(),
+    append: appendMock,
   }),
 }));
 
@@ -72,6 +75,8 @@ vi.mock("~/components/chat/chat-course-scoped-view", () => ({
   ChatCourseScopedView: (props: {
     onSelectPrompt?: (prompt: string) => void;
     routedModelByMessageId?: Record<string, string>;
+    cappedMessageIds?: Set<string>;
+    onContinue?: (messageId: string) => Promise<void>;
   }) => {
     captureCourseViewProps(props);
 
@@ -142,7 +147,10 @@ function renderChatScreen(initialTranscript: ChatTranscript | null = null) {
         element: (
           <PolicyProvider policies={{}}>
             <SidebarProvider>
-              <ChatScreen data={baseData} initialTranscript={initialTranscript} />
+              <ChatScreen
+                data={baseData}
+                initialTranscript={initialTranscript}
+              />
             </SidebarProvider>
           </PolicyProvider>
         ),
@@ -161,33 +169,32 @@ describe("ChatScreen — header", () => {
     ).toBeInTheDocument();
   });
   it("submits suggested prompts through the shared submit handler", async () => {
-  renderChatScreen();
+    renderChatScreen();
 
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Select suggested prompt",
-    }),
-  );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Select suggested prompt",
+      }),
+    );
 
-  await waitFor(() => {
-    expect(handleInputChangeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: expect.objectContaining({
-          value: "Summarize this whole chat",
+    await waitFor(() => {
+      expect(handleInputChangeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: expect.objectContaining({
+            value: "Summarize this whole chat",
+          }),
         }),
-      }),
-    );
+      );
 
-    expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: "task_initiation",
-      }),
-    );
+      expect(postAssistiveClientEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "task_initiation",
+        }),
+      );
 
-    expect(handleSubmitMock).toHaveBeenCalledTimes(1);
+      expect(handleSubmitMock).toHaveBeenCalledTimes(1);
+    });
   });
-});
-
   it("hydrates routed model ids from the stored transcript", () => {
     const transcript: ChatTranscript = {
       chat: {
@@ -207,7 +214,9 @@ describe("ChatScreen — header", () => {
           id: "assistant-1",
           role: "assistant",
           content: "Stored answer",
-          metadata: { resolvedModelId: "openai:gpt-4" },
+          metadata: {
+            resolvedModelId: "openai:gpt-4",
+          },
         },
       ],
       canEdit: true,
@@ -215,10 +224,88 @@ describe("ChatScreen — header", () => {
 
     renderChatScreen(transcript);
 
-    expect(captureCourseViewProps).toHaveBeenCalledWith(
-      expect.objectContaining({
-        routedModelByMessageId: { "assistant-1": "openai:gpt-4" },
-      }),
-    );
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.routedModelByMessageId).toEqual({
+      "assistant-1": "openai:gpt-4",
+    });
+  });
+
+  it("restores Continue from persisted capped-message metadata", () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored partial answer",
+          metadata: {
+            resolvedModelId: "openai:gpt-4",
+            finishReason: "length",
+            hitLongOutputCap: true,
+          },
+        },
+      ],
+      canEdit: true,
+    };
+
+    renderChatScreen(transcript);
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.cappedMessageIds).toEqual(new Set(["assistant-1"]));
+  });
+
+  it("submits a continuation for a persisted capped response", async () => {
+    const transcript: ChatTranscript = {
+      chat: {
+        id: "chat-1",
+        title: "Stored chat",
+        systemPrompt: null,
+        adhdAssist: false,
+        courseId: "c1",
+        courseCode: "COSC 101",
+        courseName: "Intro to CS",
+        ownerId: "user-1",
+        ownerName: "Test User",
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored partial answer",
+          metadata: {
+            hitLongOutputCap: true,
+          },
+        },
+      ],
+      canEdit: true,
+    };
+
+    renderChatScreen(transcript);
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+
+    expect(latestProps?.onContinue).toBeDefined();
+
+    await latestProps?.onContinue?.("assistant-1");
+
+    expect(appendMock).toHaveBeenCalledWith({
+      role: "user",
+      content:
+        "Continue the previous response from where it stopped. Do not repeat content already provided.",
+    });
   });
 });

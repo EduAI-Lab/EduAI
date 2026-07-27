@@ -46,6 +46,10 @@ import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
 import { isLongOutputIntent } from "~/lib/ai/long-output-intent";
 
+type LongOutputMessageMetadata = {
+  hitLongOutputCap?: boolean;
+};
+
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
   data: ChatBaseData;
@@ -140,9 +144,26 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
-  const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [cappedMessageIds, setCappedMessageIds] = useState<Set<string>>(() => {
+    const cappedIds = new Set<string>();
+
+    for (const message of editableTranscript?.messages ?? []) {
+      const metadata = message.metadata as
+        | LongOutputMessageMetadata
+        | undefined;
+
+      if (
+        typeof message.id === "string" &&
+        message.id.trim().length > 0 &&
+        message.role === "assistant" &&
+        metadata?.hitLongOutputCap === true
+      ) {
+        cappedIds.add(message.id);
+      }
+    }
+
+    return cappedIds;
+  });
 
   const persistPreference = useCallback(
     (updates: { assistDefault?: boolean; lastCourseCode?: string | null }) => {
@@ -301,6 +322,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         }
       },
       onFinish: (message, { finishReason }) => {
+        // Persisted metadata is authoritative after route hydration. During the current
+        // stream, that metadata is not returned to useChat, so combine the matching
+        // request intent with the finish reason to expose Continue before a reload.
         const hitLongOutputCap =
           message.role === "assistant" &&
           finishReason === "length" &&
@@ -372,13 +396,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         return next;
       });
 
-      pendingLongOutputIntentRef.current = false;
+      // A continuation remains part of the original long-output request.
+      // If this chunk also ends because of the cap, onFinish should expose
+      // Continue for the new assistant message.
+      pendingLongOutputIntentRef.current = true;
 
-      await append({
-        role: "user",
-        content:
-          "Continue the previous response from where it stopped. Do not repeat content already provided.",
-      });
+      try {
+        await append({
+          role: "user",
+          content:
+            "Continue the previous response from where it stopped. Do not repeat content already provided.",
+        });
+      } catch (error) {
+        pendingLongOutputIntentRef.current = false;
+        throw error;
+      }
     },
     [append],
   );

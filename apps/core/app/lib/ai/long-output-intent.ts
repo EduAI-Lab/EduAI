@@ -6,6 +6,11 @@ const LONG_OUTPUT_PATTERNS = [
   /\beverything we (?:covered|discussed|talked about)\b/i,
 ];
 
+const CONTINUATION_PATTERNS = [
+  /\bcontinue (?:the )?previous response\b/i,
+  /\bcontinue from where (?:you|it) stopped\b/i,
+];
+
 export function isLongOutputIntent(prompt: string): boolean {
   const normalizedPrompt = prompt.trim();
 
@@ -13,7 +18,12 @@ export function isLongOutputIntent(prompt: string): boolean {
     return false;
   }
 
-  return LONG_OUTPUT_PATTERNS.some((pattern) =>
-    pattern.test(normalizedPrompt),
+  return (
+    LONG_OUTPUT_PATTERNS.some((pattern) =>
+      pattern.test(normalizedPrompt),
+    ) ||
+    CONTINUATION_PATTERNS.some((pattern) =>
+      pattern.test(normalizedPrompt),
+    )
   );
 }
