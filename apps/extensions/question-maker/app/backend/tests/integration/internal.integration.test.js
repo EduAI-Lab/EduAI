@@ -1,10 +1,11 @@
 /**
  * DB-backed integration test for the internal cascade-delete endpoint (§802).
- * Requires TEST_DATABASE_URL. Verifies the full Sequelize cascade chain — not
- * just that Course.destroy() is called (covered by the mocked unit test).
+ * Requires TEST_DATABASE_URL. Verifies the full Prisma cascade chain — not
+ * just that prisma.course.delete() is called (covered by the mocked unit test).
  */
 import request from 'supertest';
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { createId } from '@paralleldrive/cuid2';
 
 process.env.EDUAI_API_KEY = process.env.EDUAI_API_KEY || 'test-service-key';
 
@@ -14,36 +15,32 @@ const describeDb = hasTestDb ? describe : describe.skip;
 const TEST_USER = { id: 'cuid-internal-user', email: 'internal@test.com', name: 'Internal Tester' };
 
 describeDb('DELETE /api/internal/courses/:coreCourseId (integration)', () => {
-  let app, connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Assessments;
+  let app, connectTestDatabase, truncateTestDatabase, prisma;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     await connectTestDatabase();
-
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Assessments } = schema);
 
     app = (await import('../../src/app.js')).default;
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name });
+    await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   it('cascade-deletes the course and everything hanging off it', async () => {
-    const course = await Course.create({ userId: TEST_USER.id, name: 'Test Course', coreCourseId: 'core-cuid-1' });
-    const topic = await Topics.create({ courseId: course.id, name: 'Chapter 1' });
-    await Question_Metadata.create({ courseId: course.id, primaryTopicId: topic.id, type: 'SA' });
-    await Assessments.create({ courseId: course.id, name: 'Midterm', type: 'Midterm', semester: '2026W1' });
+    const course = await prisma.course.create({ data: { userId: TEST_USER.id, coreCourseId: 'core-cuid-1' } });
+    const topic = await prisma.topics.create({ data: { id: createId(), courseId: course.id, name: 'Chapter 1' } });
+    await prisma.questionMetadata.create({ data: { courseId: course.id, primaryTopicId: topic.id, type: 'SA' } });
+    await prisma.assessments.create({ data: { courseId: course.id, name: 'Midterm', type: 'Midterm' } });
 
     const res = await request(app)
       .delete('/api/internal/courses/core-cuid-1')
@@ -52,10 +49,10 @@ describeDb('DELETE /api/internal/courses/:coreCourseId (integration)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, deleted: true });
 
-    expect(await Course.findByPk(course.id)).toBeNull();
-    expect(await Topics.count({ where: { courseId: course.id } })).toBe(0);
-    expect(await Question_Metadata.count({ where: { courseId: course.id } })).toBe(0);
-    expect(await Assessments.count({ where: { courseId: course.id } })).toBe(0);
+    expect(await prisma.course.findUnique({ where: { id: course.id } })).toBeNull();
+    expect(await prisma.topics.count({ where: { courseId: course.id } })).toBe(0);
+    expect(await prisma.questionMetadata.count({ where: { courseId: course.id } })).toBe(0);
+    expect(await prisma.assessments.count({ where: { courseId: course.id } })).toBe(0);
   });
 
   it('is idempotent when no QM course is linked to the Core course', async () => {

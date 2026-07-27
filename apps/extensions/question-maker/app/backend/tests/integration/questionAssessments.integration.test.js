@@ -1,7 +1,7 @@
 /**
  * DB-backed tests for /api/questions and /api/assessments (happy paths).
  * Auth is handled by stubbing global fetch for Core session validation.
- * User + course data is seeded directly via Sequelize models.
+ * User + course data is seeded directly via Prisma.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
@@ -28,8 +28,7 @@ function sessionFetch() {
 }
 
 describeDb('Questions & assessments (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let courseId, topicId;
 
@@ -37,23 +36,21 @@ describeDb('Questions & assessments (integration)', () => {
     const testDb = await import('../helpers/testDb.js');
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
 
-    await User.create({ id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name });
+    await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
     await seedCoursesForNewUser(TEST_USER.id);
 
-    const course = await Course.findOne({ where: { userId: TEST_USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: TEST_USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
     vi.stubGlobal('fetch', sessionFetch());
@@ -62,7 +59,7 @@ describeDb('Questions & assessments (integration)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   it('creates a question and lists it in GET /api/questions', async () => {

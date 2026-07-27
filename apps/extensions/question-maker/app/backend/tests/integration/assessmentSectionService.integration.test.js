@@ -12,8 +12,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('assessmentSectionService (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants, AssessmentSections, SectionVariants;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let createAssessment;
   let svc;
@@ -23,11 +22,9 @@ describeDb('assessmentSectionService (integration)', () => {
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants, AssessmentSections, SectionVariants } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment } = await import('../../src/services/assessmentService.js'));
     svc = await import('../../src/services/assessmentSectionService.js');
@@ -37,28 +34,28 @@ describeDb('assessmentSectionService (integration)', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
-    await User.create({ id: STRANGER.id, email: STRANGER.email, name: STRANGER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
+    await prisma.user.create({ data: { id: STRANGER.id, email: STRANGER.email, name: STRANGER.name } });
     await seedCoursesForNewUser(USER.id);
 
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
     const assessment = await createAssessment(USER.id, {
-      type: 'Quiz', name: 'Sect Exam', semester: 'Fall 2026', courseId,
+      type: 'Quiz', name: 'Sect Exam', courseId,
     });
     assessmentId = assessment.id;
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   async function makeVariant(text = 'Q?') {
-    const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
-    return Variants.create({ questionMetadataId: qm.id, questionText: text, difficulty: 'medium' });
+    const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} } });
+    return prisma.variants.create({ data: { questionMetadataId: qm.id, questionText: text, difficulty: 'medium' } });
   }
 
   describe('createAssessmentSection', () => {
@@ -118,8 +115,8 @@ describeDb('assessmentSectionService (integration)', () => {
       const link = await svc.addVariantToSection(s.id, USER.id, v.id);
       expect(link.displayOrder).toBe(0);
 
-      await v.reload();
-      expect(v.assessmentId).toBe(assessmentId);
+      const reloadedV = await prisma.variants.findUnique({ where: { id: v.id } });
+      expect(reloadedV.assessmentId).toBe(assessmentId);
 
       const reordered = await svc.updateVariantOrderInSection(s.id, USER.id, v.id, 7);
       expect(reordered.displayOrder).toBe(7);
@@ -137,8 +134,8 @@ describeDb('assessmentSectionService (integration)', () => {
 
       const ok = await svc.removeVariantFromSection(s.id, USER.id, v.id);
       expect(ok).toBe(true);
-      await v.reload();
-      expect(v.assessmentId).toBeNull();
+      const reloadedV = await prisma.variants.findUnique({ where: { id: v.id } });
+      expect(reloadedV.assessmentId).toBeNull();
     });
 
     it('throws when removing a variant absent from the section', async () => {
@@ -162,23 +159,23 @@ describeDb('assessmentSectionService (integration)', () => {
 
       const ok = await svc.deleteAssessmentSection(s.id, USER.id);
       expect(ok).toBe(true);
-      expect(await AssessmentSections.findByPk(s.id)).toBeNull();
-      await v.reload();
-      expect(v.assessmentId).toBeNull();
+      expect(await prisma.assessmentSections.findUnique({ where: { id: s.id } })).toBeNull();
+      const reloadedV = await prisma.variants.findUnique({ where: { id: v.id } });
+      expect(reloadedV.assessmentId).toBeNull();
     });
   });
 
   describe('checkQuestionInAssessments / removeQuestionFromAllSections', () => {
     it('reports a question that is not in any assessment', async () => {
-      const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
+      const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: "SA", questionOrder: {} } });
       const res = await svc.checkQuestionInAssessments(qm.id, USER.id);
       expect(res).toEqual({ isInAssessments: false, assessmentIds: [] });
     });
 
     it('reports the assessments a linked question belongs to, then removes all links', async () => {
       const s = await svc.createAssessmentSection(assessmentId, USER.id, { name: 'S' });
-      const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
-      const v = await Variants.create({ questionMetadataId: qm.id, questionText: 'Linked?', difficulty: 'easy' });
+      const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: "SA", questionOrder: {} } });
+      const v = await prisma.variants.create({ data: { questionMetadataId: qm.id, questionText: "Linked?", difficulty: "easy" } });
       await svc.addVariantToSection(s.id, USER.id, v.id);
 
       const check = await svc.checkQuestionInAssessments(qm.id, USER.id);
@@ -189,18 +186,18 @@ describeDb('assessmentSectionService (integration)', () => {
       expect(removed.removedLinks).toBe(1);
       expect(removed.affectedAssessments).toContain(assessmentId);
 
-      const after = await SectionVariants.count({ where: { variantId: v.id } });
+      const after = await prisma.sectionVariants.count({ where: { variantId: v.id } });
       expect(after).toBe(0);
     });
 
     it('returns empty results when a question has no variants', async () => {
-      const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
+      const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: "SA", questionOrder: {} } });
       const removed = await svc.removeQuestionFromAllSections(qm.id, USER.id);
       expect(removed).toEqual({ removedLinks: 0, affectedAssessments: [] });
     });
 
     it('throws when the question is not owned by the user', async () => {
-      const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
+      const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: "SA", questionOrder: {} } });
       await expect(svc.checkQuestionInAssessments(qm.id, STRANGER.id)).rejects.toThrow(/Question not found/);
       await expect(svc.removeQuestionFromAllSections(qm.id, STRANGER.id)).rejects.toThrow(/Question not found/);
     });

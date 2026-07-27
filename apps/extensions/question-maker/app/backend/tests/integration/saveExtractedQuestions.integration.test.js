@@ -12,6 +12,8 @@
  * - If all questions are skipped (all empty text) the transaction rolls back with an error.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { createId } from '@paralleldrive/cuid2';
+import { config } from '../../src/config/settings.js';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -21,19 +23,16 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('saveExtractedQuestions (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser, saveExtractedQuestions;
 
   const USER = { id: 'cuid-save-user', email: 'save@test.com', name: 'Save User' };
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants, Assessments, AssessmentSections, SectionVariants } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ saveExtractedQuestions } = await import('../../src/services/questionService.js'));
   });
@@ -42,17 +41,17 @@ describeDb('saveExtractedQuestions (integration)', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
 
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   function validQuestion(overrides = {}) {
@@ -68,14 +67,14 @@ describeDb('saveExtractedQuestions (integration)', () => {
   }
 
   it('persists one metadata row and one variant per valid question', async () => {
-    const before = await Question_Metadata.count({ where: { courseId } });
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
 
     await saveExtractedQuestions(USER.id, {
       courseId,
       questions: [validQuestion(), validQuestion({ question: 'What is mitosis?' })]
     });
 
-    const after = await Question_Metadata.count({ where: { courseId } });
+    const after = await prisma.questionMetadata.count({ where: { courseId } });
     expect(after - before).toBe(2);
   });
 
@@ -86,15 +85,15 @@ describeDb('saveExtractedQuestions (integration)', () => {
     });
 
     const metaIds = questions.map(q => q.id);
-    const variants = await Variants.findAll({
-      where: { questionMetadataId: metaIds }
+    const variants = await prisma.variants.findMany({
+      where: { questionMetadataId: { in: metaIds } }
     });
     expect(variants.length).toBeGreaterThan(0);
     expect(variants.every(v => v.isDraft === true)).toBe(true);
   });
 
   it('silently skips questions with empty questionText without erroring', async () => {
-    const before = await Question_Metadata.count({ where: { courseId } });
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
 
     await saveExtractedQuestions(USER.id, {
       courseId,
@@ -104,12 +103,12 @@ describeDb('saveExtractedQuestions (integration)', () => {
       ]
     });
 
-    const after = await Question_Metadata.count({ where: { courseId } });
+    const after = await prisma.questionMetadata.count({ where: { courseId } });
     expect(after - before).toBe(1);
   });
 
   it('throws and rolls back the entire transaction when any question is missing a summary', async () => {
-    const before = await Question_Metadata.count({ where: { courseId } });
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
 
     await expect(
       saveExtractedQuestions(USER.id, {
@@ -121,12 +120,12 @@ describeDb('saveExtractedQuestions (integration)', () => {
       })
     ).rejects.toThrow(/summary/i);
 
-    const after = await Question_Metadata.count({ where: { courseId } });
+    const after = await prisma.questionMetadata.count({ where: { courseId } });
     expect(after).toBe(before);
   });
 
   it('throws and rolls back when all questions have empty text — nothing is saved', async () => {
-    const before = await Question_Metadata.count({ where: { courseId } });
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
 
     await expect(
       saveExtractedQuestions(USER.id, {
@@ -135,7 +134,7 @@ describeDb('saveExtractedQuestions (integration)', () => {
       })
     ).rejects.toThrow();
 
-    expect(await Question_Metadata.count({ where: { courseId } })).toBe(before);
+    expect(await prisma.questionMetadata.count({ where: { courseId } })).toBe(before);
   });
 
   it('throws when the course does not belong to the requesting user', async () => {
@@ -153,18 +152,49 @@ describeDb('saveExtractedQuestions (integration)', () => {
     ).rejects.toThrow(/questions/i);
   });
 
+  it('throws without writing anything when the batch exceeds config.maxQuestions', async () => {
+    const before = await prisma.questionMetadata.count({ where: { courseId } });
+    const tooMany = Array.from({ length: config.maxQuestions + 1 }, (_, i) =>
+      validQuestion({ question: `Overflow question ${i}?` })
+    );
+
+    await expect(
+      saveExtractedQuestions(USER.id, { courseId, questions: tooMany })
+    ).rejects.toThrow(/cannot save more than/i);
+
+    expect(await prisma.questionMetadata.count({ where: { courseId } })).toBe(before);
+  });
+
+  it('persists a full config.maxQuestions batch (with an assessment) inside the transaction timeout', async () => {
+    const batch = Array.from({ length: config.maxQuestions }, (_, i) =>
+      validQuestion({ question: `Large upload question ${i}?` })
+    );
+
+    const { questions, assessmentId } = await saveExtractedQuestions(USER.id, {
+      courseId,
+      questions: batch,
+      assessment: { type: 'Quiz', name: 'Large Upload Regression' }
+    });
+
+    expect(questions).toHaveLength(config.maxQuestions);
+
+    const section = await prisma.assessmentSections.findFirst({ where: { assessmentId } });
+    const links = await prisma.sectionVariants.findMany({ where: { sectionId: section.id } });
+    expect(links).toHaveLength(config.maxQuestions);
+  }, 40_000);
+
   describe('topic fallback resolution', () => {
     it('uses the provided primaryTopicId when it exists in the course', async () => {
       const { questions } = await saveExtractedQuestions(USER.id, {
         courseId,
         questions: [validQuestion({ primaryTopicId: topicId })]
       });
-      const meta = await Question_Metadata.findByPk(questions[0].id);
+      const meta = await prisma.questionMetadata.findUnique({ where: { id: questions[0].id } });
       expect(meta.primaryTopicId).toBe(topicId);
     });
 
     it('falls back to topicName: creates the topic and assigns it when primaryTopicId is absent', async () => {
-      const topicsBefore = await Topics.count({ where: { courseId } });
+      const topicsBefore = await prisma.topics.count({ where: { courseId } });
 
       const { questions } = await saveExtractedQuestions(USER.id, {
         courseId,
@@ -172,19 +202,19 @@ describeDb('saveExtractedQuestions (integration)', () => {
         questions: [validQuestion({ primaryTopicId: undefined })]
       });
 
-      const topicsAfter = await Topics.count({ where: { courseId } });
+      const topicsAfter = await prisma.topics.count({ where: { courseId } });
       expect(topicsAfter).toBe(topicsBefore + 1);
 
-      const newTopic = await Topics.findOne({ where: { name: 'Brand New Topic', courseId } });
+      const newTopic = await prisma.topics.findFirst({ where: { name: 'Brand New Topic', courseId } });
       expect(newTopic).toBeTruthy();
 
-      const meta = await Question_Metadata.findByPk(questions[0].id);
+      const meta = await prisma.questionMetadata.findUnique({ where: { id: questions[0].id } });
       expect(meta.primaryTopicId).toBe(newTopic.id);
     });
 
     it('reuses an existing topic of the same name rather than creating a duplicate', async () => {
-      const existingTopic = await Topics.create({ name: 'Existing Topic', courseId });
-      const topicsBefore = await Topics.count({ where: { courseId } });
+      const existingTopic = await prisma.topics.create({ data: { id: createId(), name: 'Existing Topic', courseId } });
+      const topicsBefore = await prisma.topics.count({ where: { courseId } });
 
       await saveExtractedQuestions(USER.id, {
         courseId,
@@ -192,14 +222,14 @@ describeDb('saveExtractedQuestions (integration)', () => {
         questions: [validQuestion({ primaryTopicId: undefined })]
       });
 
-      expect(await Topics.count({ where: { courseId } })).toBe(topicsBefore);
-      const meta = await Question_Metadata.findOne({ order: [['createdAt', 'DESC']] });
+      expect(await prisma.topics.count({ where: { courseId } })).toBe(topicsBefore);
+      const meta = await prisma.questionMetadata.findFirst({ where: { courseId }, orderBy: { createdAt: 'desc' } });
       expect(meta.primaryTopicId).toBe(existingTopic.id);
     });
 
     it('auto-creates an "Uploaded Questions" topic when no primaryTopicId and no topicName given — but only if no topics exist', async () => {
-      const newCourse = await Course.create({ userId: USER.id, name: 'Empty Course', code: 'EMPTY-1' });
-      const topicsBefore = await Topics.count({ where: { courseId: newCourse.id } });
+      const newCourse = await prisma.course.create({ data: { userId: USER.id } });
+      const topicsBefore = await prisma.topics.count({ where: { courseId: newCourse.id } });
       expect(topicsBefore).toBe(0);
 
       await saveExtractedQuestions(USER.id, {
@@ -207,7 +237,7 @@ describeDb('saveExtractedQuestions (integration)', () => {
         questions: [validQuestion({ primaryTopicId: undefined })]
       });
 
-      const createdTopic = await Topics.findOne({ where: { courseId: newCourse.id } });
+      const createdTopic = await prisma.topics.findFirst({ where: { courseId: newCourse.id } });
       expect(createdTopic.name).toBe('Uploaded Questions');
     });
   });
@@ -227,8 +257,8 @@ describeDb('saveExtractedQuestions (integration)', () => {
         })]
       });
 
-      const variant = await Variants.findOne({
-        include: [{ association: 'questionMetadata', where: { id: questions[0].id } }]
+      const variant = await prisma.variants.findFirst({
+        where: { questionMetadataId: questions[0].id }
       });
       expect(variant.answer).toBe('B');
     });
@@ -240,8 +270,8 @@ describeDb('saveExtractedQuestions (integration)', () => {
         questions: [validQuestion({ type: 'MCQ', question: 'Pick one', choices })]
       });
 
-      const variant = await Variants.findOne({
-        include: [{ association: 'questionMetadata', where: { id: questions[0].id } }]
+      const variant = await prisma.variants.findFirst({
+        where: { questionMetadataId: questions[0].id }
       });
       expect(Array.isArray(variant.choices)).toBe(true);
       expect(variant.choices).toHaveLength(2);
@@ -257,24 +287,24 @@ describeDb('saveExtractedQuestions (integration)', () => {
         })]
       });
 
-      const variant = await Variants.findOne({
-        include: [{ association: 'questionMetadata', where: { id: questions[0].id } }]
+      const variant = await prisma.variants.findFirst({
+        where: { questionMetadataId: questions[0].id }
       });
       expect(variant.choices).toBeNull();
     });
   });
 
   describe('with assessment payload', () => {
-    const assessment = { type: 'Quiz', name: 'Extraction Exam', semester: 'Fall 2026' };
+    const assessment = { type: 'Quiz', name: 'Extraction Exam' };
 
     it('creates one assessment and one section when assessment payload is provided', async () => {
-      const assessmentsBefore = await Assessments.count({ where: { courseId } });
-      const sectionsBefore = await AssessmentSections.count();
+      const assessmentsBefore = await prisma.assessments.count({ where: { courseId } });
+      const sectionsBefore = await prisma.assessmentSections.count();
 
       await saveExtractedQuestions(USER.id, { courseId, questions: [validQuestion()], assessment });
 
-      expect(await Assessments.count({ where: { courseId } })).toBe(assessmentsBefore + 1);
-      expect(await AssessmentSections.count()).toBe(sectionsBefore + 1);
+      expect(await prisma.assessments.count({ where: { courseId } })).toBe(assessmentsBefore + 1);
+      expect(await prisma.assessmentSections.count()).toBe(sectionsBefore + 1);
     });
 
     it('links each created variant to the assessment section via SectionVariants', async () => {
@@ -284,8 +314,8 @@ describeDb('saveExtractedQuestions (integration)', () => {
         assessment
       });
 
-      const section = await AssessmentSections.findOne({ where: { assessmentId } });
-      const links = await SectionVariants.findAll({ where: { sectionId: section.id } });
+      const section = await prisma.assessmentSections.findFirst({ where: { assessmentId } });
+      const links = await prisma.sectionVariants.findMany({ where: { sectionId: section.id } });
       expect(links).toHaveLength(2);
     });
 
@@ -300,15 +330,15 @@ describeDb('saveExtractedQuestions (integration)', () => {
         assessment
       });
 
-      const section = await AssessmentSections.findOne({ where: { assessmentId } });
-      const links = await SectionVariants.findAll({
+      const section = await prisma.assessmentSections.findFirst({ where: { assessmentId } });
+      const links = await prisma.sectionVariants.findMany({
         where: { sectionId: section.id },
-        order: [['displayOrder', 'ASC']]
+        orderBy: { displayOrder: 'asc' }
       });
       expect(links.map(l => l.displayOrder)).toEqual([0, 1, 2]);
     });
 
-    it('throws when assessment is missing required fields (type, name, semester)', async () => {
+    it('throws when assessment is missing required fields (type, name)', async () => {
       await expect(
         saveExtractedQuestions(USER.id, {
           courseId,

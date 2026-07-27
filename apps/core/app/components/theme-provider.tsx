@@ -1,1 +1,1 @@
-export { ThemeProvider, useTheme } from "@eduai/ui"
+export { ThemeProvider, useTheme } from "@eduai/ui/theme-provider"
