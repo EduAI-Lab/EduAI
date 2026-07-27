@@ -3,6 +3,7 @@
  * Shapes payloads (e.g., blueprintConfig) and returns typed responses for UI consumers.
  */
 import api from './api';
+import { fetchAllPages } from './pagination';
 import {
   Assessment,
   AssessmentGenerationParams,
@@ -92,10 +93,15 @@ export const assessmentService = {
     return response.data.data;
   },
 
-  /** Lists sections for an assessment. */
+  /**
+   * Lists every section for an assessment.
+   *
+   * The endpoint is paginated and bounded (#1044), so this walks pages — the
+   * builder renders the whole section tree and reorders across it, so a partial
+   * list would drop sections and corrupt position maths.
+   */
   async getAssessmentSections(assessmentId: number): Promise<AssessmentSection[]> {
-    const response = await api.get(`/api/assessments/${assessmentId}/sections`);
-    return response.data.data || [];
+    return fetchAllPages<AssessmentSection>(`/api/assessments/${assessmentId}/sections`);
   },
 
   /** Creates a new section under an assessment. */

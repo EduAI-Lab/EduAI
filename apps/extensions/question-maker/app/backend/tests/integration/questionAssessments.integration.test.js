@@ -146,8 +146,16 @@ describeDb('Questions & assessments (integration)', () => {
     expect(created.body.data.name).toBe(name);
     expect(created.body.data.coreCourseId).toBe(coreCourseId);
 
-    const list = await request(app).get('/api/course').set(cookie());
+    const list = await request(app).get('/api/course?page=1&pageSize=100').set(cookie());
     expect(list.body.data.some((c) => c.id === created.body.data.id && c.name === name)).toBe(true);
+    // Pagination envelope (#1044): data stays a bare array, with metadata siblings.
+    expect(list.body).toMatchObject({ page: 1, pageSize: 100 });
+    expect(typeof list.body.total).toBe('number');
+
+    // The list endpoint requires page/pageSize (#1044) — missing params 400 with a code.
+    const missingParams = await request(app).get('/api/course').set(cookie());
+    expect(missingParams.status).toBe(400);
+    expect(missingParams.body.code).toBe('PAGINATION_REQUIRED');
 
     // Idempotent ensure (unified contract): re-POSTing the same coreCourseId
     // (racing the background mirror, or a plain retry) succeeds with the
