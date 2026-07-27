@@ -28,6 +28,7 @@ import {
 import { syncCourseRoster } from "~/lib/canvas/roster.server";
 
 const credentials = { canvasBaseUrl: "https://canvas.test", apiToken: "tok" } as never;
+const SYNC_STARTED_AT = new Date("2026-07-25T00:00:00.000Z");
 
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -35,7 +36,7 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     coreCourseId: "course-1",
     canvasCourseId: "555",
     syncedByUserId: "instructor-1",
-    syncStartedAt: new Date("2026-07-25T00:00:00.000Z"),
+    syncStartedAt: SYNC_STARTED_AT,
     ...overrides,
   } as never;
 }
@@ -67,7 +68,7 @@ describe("syncCourseRoster", () => {
       where: {
         courseId: "course-1",
         isActive: true,
-        lastSeenAt: { lt: baseInput().syncStartedAt },
+        lastSeenAt: { lt: SYNC_STARTED_AT },
       },
       data: { isActive: false },
     });
