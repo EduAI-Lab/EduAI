@@ -1,0 +1,154 @@
+[
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Path": "rest"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rag-sql"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Path": "rag-sql"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Path": "rag-sql"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "yes",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "INSTRUCTOR",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "null",
+    "Deleted": "no",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "TA",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "no",
+    "Path": "rag-sql"
+  },
+  {
+    "Role": "ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rag-sql"
+  },
+  {
+    "Role": "UNIT_ADMIN",
+    "Enrolled": "no",
+    "VisibleToStudents": "false",
+    "AvailableAt": "future",
+    "Deleted": "yes",
+    "Path": "rag-hybrid"
+  },
+  {
+    "Role": "STUDENT",
+    "Enrolled": "yes",
+    "VisibleToStudents": "false",
+    "AvailableAt": "past",
+    "Deleted": "no",
+    "Path": "rest"
+  },
+  {
+    "Role": "ANON",
+    "Enrolled": "no",
+    "VisibleToStudents": "true",
+    "AvailableAt": "null",
+    "Deleted": "yes",
+    "Path": "rest"
+  }
+]
