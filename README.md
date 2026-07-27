@@ -309,6 +309,14 @@ npm run test:coverage   # Aggregates coverage for all six suites (backends + fro
 
 Run a single app's coverage from its own directory with `npm run test:coverage`. Generated coverage report directories are gitignored.
 
+### PICT combinatorial models
+
+```bash
+npm run test:pict:gen   # Regenerate tests/models/*.cases.json from their .pict sources
+```
+
+Requires the `pict` binary (`brew install pict`). See [TESTS.md](TESTS.md#pict-combinatorial-tests) for how to add a model and the model/oracle/world-builder split.
+
 ### Integration tests
 
 #### Run by component
