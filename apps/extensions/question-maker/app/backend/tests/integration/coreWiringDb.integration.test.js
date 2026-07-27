@@ -380,7 +380,7 @@ describeDb('Core wiring DB integration', () => {
       );
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
-      const res = await request(app).get('/api/course').set(adminCookie());
+      const res = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
 
       expect(res.status).toBe(200);
       const names = res.body.data.map((c) => c.name).sort();
@@ -402,7 +402,7 @@ describeDb('Core wiring DB integration', () => {
         makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-only', name: 'Core Only Course' }]))),
       );
 
-      const first = await request(app).get('/api/course').set(adminCookie());
+      const first = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
       expect(first.status).toBe(200);
       const firstRow = first.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
       expect(firstRow).toBeTruthy();
@@ -412,7 +412,7 @@ describeDb('Core wiring DB integration', () => {
         makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-only', name: 'Core Only Course' }]))),
       );
 
-      const second = await request(app).get('/api/course').set(adminCookie());
+      const second = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
       expect(second.status).toBe(200);
       const secondRow = second.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
       expect(secondRow.id).toBe(firstRow.id);
@@ -428,7 +428,7 @@ describeDb('Core wiring DB integration', () => {
         makeAdminFetch(coreErr({ error: 'Service Unavailable' }, 503)),
       );
 
-      const res = await request(app).get('/api/course').set(adminCookie());
+      const res = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);

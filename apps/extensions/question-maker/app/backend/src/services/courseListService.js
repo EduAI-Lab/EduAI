@@ -202,7 +202,13 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
  * local rows only.
  */
 export async function listCoursesForUser(reqUser, { cookie } = {}) {
-  const allCourses = await prisma.course.findMany({ orderBy: { createdAt: 'desc' } });
+  // `id` breaks ties so the caller's offset slice is stable across requests:
+  // ADMIN anchor materialization below creates many rows in one statement,
+  // giving them an identical `createdAt` that would otherwise let a course show
+  // up on two pages while another never appears.
+  const allCourses = await prisma.course.findMany({
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+  });
 
   let coreById = new Map();
   try {
