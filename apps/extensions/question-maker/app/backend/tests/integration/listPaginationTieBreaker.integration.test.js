@@ -6,6 +6,7 @@
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { createId } from '@paralleldrive/cuid2';
 
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
@@ -43,7 +44,7 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
     });
     courseId = course.id;
     const topic = await prisma.topics.create({
-      data: { name: 'Tie Topic', courseId },
+      data: { id: createId(), name: 'Tie Topic', courseId },
     });
     topicId = topic.id;
   });
