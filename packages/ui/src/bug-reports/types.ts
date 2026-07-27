@@ -34,6 +34,15 @@ export type AdminBugReportRow = {
   consoleLogs?: string | null
   networkLogs?: string | null
   screenshot?: string | null
+  /**
+   * List rows omit the diagnostic blobs (#979) and carry only these flags —
+   * the bodies arrive from `GET /api/admin/bug-reports/:id` on demand. Read
+   * them through `hasAttachmentContent` so a row that *does* carry a body
+   * (Core's detail payload, older list responses) still enables the viewer.
+   */
+  hasConsoleLogs?: boolean
+  hasNetworkLogs?: boolean
+  hasScreenshot?: boolean
   pageUrl?: string | null
   userAgent?: string | null
   isAnonymous: boolean

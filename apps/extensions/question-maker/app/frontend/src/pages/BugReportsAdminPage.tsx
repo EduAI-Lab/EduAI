@@ -5,6 +5,10 @@
  * (`BugReportsAdminView`) — this file is only QM's data wiring and RBAC gate.
  * QM's backend is a pure proxy to Core's admin endpoint that pins
  * `source=QUESTION_MAKER`, so the rows are the same shape every app sees.
+ *
+ * List vs detail (#979): list rows omit the console/network/screenshot bodies
+ * and carry only `has*` flags, so `onLoadDetail` hands the shared view a
+ * fetcher for the per-report detail endpoint.
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
@@ -70,6 +74,11 @@ export function BugReportsAdminPage() {
         title="All reports"
         onUpdateStatus={async (reportId: string, status: BugReportStatus) => {
           await bugReportApi.updateStatus(reportId, status);
+        }}
+        onLoadDetail={async (reportId: string) => {
+          const detail = await bugReportApi.get(reportId);
+          // `bugReportApi` already maps Core's enum to the UI status vocabulary.
+          return detail as unknown as Partial<AdminBugReportRow>;
         }}
       />
     </div>

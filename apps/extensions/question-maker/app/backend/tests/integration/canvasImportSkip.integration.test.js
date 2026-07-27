@@ -7,9 +7,9 @@
  * so any skip threw `ReferenceError: canvasQuestion is not defined`, which escaped the loop
  * and aborted the ENTIRE import with a generic error instead of skipping one question.
  *
- * We force the failure by making Question_Metadata.create reject, which drives the same
- * catch. Before the fix the import rejects with the ReferenceError message; after the fix
- * the question is skipped and the loop ends with its intentional "No questions could be
+ * We force the failure by making prisma.questionMetadata.create reject, which drives the
+ * same catch. Before the fix the import rejects with the ReferenceError message; after the
+ * fix the question is skipped and the loop ends with its intentional "No questions could be
  * imported" guard (proving the catch ran without throwing on `canvasQuestion`).
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
@@ -22,8 +22,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, CanvasIntegration, Question_Metadata;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let canvas;
 
@@ -31,11 +30,9 @@ describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, CanvasIntegration, Question_Metadata } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     canvas = await import('../../src/services/canvasService.js');
 
@@ -48,28 +45,30 @@ describeDb('importQuizFromCanvas per-question skip (integration, #3)', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
-    await CanvasIntegration.create({
-      userId: USER.id,
-      canvasUrl: 'https://canvas.test',
-      apiKey: 'test-token',
-      isTestMode: true,
+    await prisma.canvasIntegration.create({
+      data: {
+        userId: USER.id,
+        canvasUrl: 'https://canvas.test',
+        apiKey: 'test-token',
+        isTestMode: true,
+      },
     });
   });
 
   afterAll(async () => {
     vi.restoreAllMocks();
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   it('skips a failing question without a ReferenceError in the catch', async () => {
-    const spy = vi.spyOn(Question_Metadata, 'create').mockRejectedValue(new Error('simulated insert failure'));
+    const spy = vi.spyOn(prisma.questionMetadata, 'create').mockRejectedValue(new Error('simulated insert failure'));
     try {
       const promise = canvas.importQuizFromCanvas(USER.id, 101, 1, courseId, { primaryTopicId: topicId });
       // After the fix the catch runs cleanly, the question is skipped, and the loop hits its

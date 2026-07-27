@@ -12,9 +12,15 @@ vi.mock('../../src/config/settings.js', () => {
 });
 
 const mockCourseFindOne = vi.fn();
+const mockCourseDelete = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: (...args) => mockCourseFindOne(...args) },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: {
+      findUnique: (...args) => mockCourseFindOne(...args),
+      delete: (...args) => mockCourseDelete(...args),
+    },
+  },
 }));
 
 const { default: internalRoutes } = await import('../../src/routes/internal.js');
@@ -31,6 +37,7 @@ const app = buildApp();
 
 beforeEach(() => {
   mockCourseFindOne.mockReset();
+  mockCourseDelete.mockReset().mockResolvedValue(undefined);
 });
 
 describe('DELETE /api/internal/courses/:coreCourseId', () => {
@@ -51,8 +58,7 @@ describe('DELETE /api/internal/courses/:coreCourseId', () => {
   });
 
   it('destroys the linked QM course and reports deleted: true', async () => {
-    const destroy = vi.fn().mockResolvedValue(undefined);
-    mockCourseFindOne.mockResolvedValue({ id: 7, coreCourseId: 'core-cuid-1', destroy });
+    mockCourseFindOne.mockResolvedValue({ id: 7, coreCourseId: 'core-cuid-1' });
 
     const res = await request(app)
       .delete('/api/internal/courses/core-cuid-1')
@@ -61,7 +67,7 @@ describe('DELETE /api/internal/courses/:coreCourseId', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, deleted: true });
     expect(mockCourseFindOne).toHaveBeenCalledWith({ where: { coreCourseId: 'core-cuid-1' } });
-    expect(destroy).toHaveBeenCalledOnce();
+    expect(mockCourseDelete).toHaveBeenCalledWith({ where: { id: 7 } });
   });
 
   it('is idempotent: reports deleted: false when no QM course is linked', async () => {

@@ -66,6 +66,21 @@ export function useBugReports() {
     void refresh();
   }, [refresh]);
 
+  /**
+   * The list endpoint omits the diagnostic blobs (#979) and sends only `has*`
+   * flags; the shared view calls this when a viewer or copy needs the bodies.
+   */
+  const loadReportDetail = useCallback(async (id: string) => {
+    const report = await apiFetch<AdminBugReportRow>(`/api/admin/bug-reports/${id}`);
+    return {
+      ...report,
+      bugType: report.bugType ?? null,
+      status: toUiStatus(report.status as unknown as string),
+      reporterName: report.reporterName ?? report.userName ?? null,
+      reporterEmail: report.reporterEmail ?? report.userEmail ?? null,
+    } satisfies Partial<AdminBugReportRow>;
+  }, []);
+
   const updateReportStatus = useCallback(async (id: string, status: BugReportStatus) => {
     await apiFetch<void>(`/api/admin/bug-reports/${id}`, {
       method: "PATCH",
@@ -81,5 +96,6 @@ export function useBugReports() {
     error,
     refresh,
     updateReportStatus,
+    loadReportDetail,
   };
 }

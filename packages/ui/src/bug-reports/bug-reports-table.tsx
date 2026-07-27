@@ -7,6 +7,8 @@
  *   callbacks arrive via props from `BugReportsTab`.
  */
 
+import { hasAttachmentContent } from '@eduai/types';
+
 import { RoleBadge } from '../role-badge';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -111,7 +113,7 @@ export function BugReportsTable({
   hasActiveFilters: boolean;
   onStatusChange: (reportId: string, status: BugReportStatus) => void;
   onCopyReport: (report: AdminBugReportRow) => void;
-  onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void;
+  onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void | Promise<void>;
   /** Platform-wide (Core) view only — the extensions pin source via their fetch. */
   showSourceColumn?: boolean;
 }) {
@@ -302,7 +304,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('console', report.id)}
-                      disabled={!report.consoleLogs}
+                      disabled={!hasAttachmentContent(report.consoleLogs, report.hasConsoleLogs)}
                     >
                       Console
                     </Button>
@@ -311,7 +313,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('network', report.id)}
-                      disabled={!report.networkLogs}
+                      disabled={!hasAttachmentContent(report.networkLogs, report.hasNetworkLogs)}
                     >
                       Network
                     </Button>
@@ -320,7 +322,7 @@ export function BugReportsTable({
                       size="sm"
                       variant="outline"
                       onClick={() => onOpenViewer('screenshot', report.id)}
-                      disabled={!report.screenshot}
+                      disabled={!hasAttachmentContent(report.screenshot, report.hasScreenshot)}
                     >
                       Screenshot
                     </Button>

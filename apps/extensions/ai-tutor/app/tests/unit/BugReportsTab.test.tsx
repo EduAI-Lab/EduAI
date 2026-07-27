@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BugReportsTab from '~/components/admin/BugReportsTab';
 import type { AdminBugReportRow } from '~/lib/types';
 
-const { mockUpdateAdminBugReportStatus, mockClipboardWriteText } = vi.hoisted(() => ({
+const { mockUpdateAdminBugReportStatus, mockGetAdminBugReport, mockClipboardWriteText } = vi.hoisted(() => ({
   mockUpdateAdminBugReportStatus: vi.fn(),
+  mockGetAdminBugReport: vi.fn(),
   mockClipboardWriteText: vi.fn(),
 }));
 
 vi.mock('~/lib/api', () => ({
   default: {
     updateAdminBugReportStatus: mockUpdateAdminBugReportStatus,
+    getAdminBugReport: mockGetAdminBugReport,
   },
 }));
 
@@ -41,6 +43,9 @@ const baseReport: AdminBugReportRow = {
     },
   ]),
   screenshot: 'data:image/png;base64,ZmFrZQ==',
+  hasConsoleLogs: true,
+  hasNetworkLogs: true,
+  hasScreenshot: true,
   pageUrl: 'http://localhost:5173/student/list/42?step=1',
   userAgent: 'Mozilla/5.0',
   isAnonymous: false,
@@ -101,7 +106,15 @@ const anonymousReportWithPopulatedIdentityFields: AdminBugReportRow = {
 describe('BugReportsTab', () => {
   beforeEach(() => {
     mockUpdateAdminBugReportStatus.mockReset();
+    mockGetAdminBugReport.mockReset();
     mockClipboardWriteText.mockReset();
+    mockGetAdminBugReport.mockImplementation(async (id: string) => {
+      if (id === anonymousReport.id) return anonymousReport;
+      if (id === anonymousReportWithPopulatedIdentityFields.id) {
+        return anonymousReportWithPopulatedIdentityFields;
+      }
+      return baseReport;
+    });
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -150,6 +163,9 @@ describe('BugReportsTab', () => {
     fireEvent.click(screen.getByText(baseReport.description));
     expect(await screen.findByText('Report Description')).toBeInTheDocument();
     expect(screen.getByText(/Reported by/)).toBeInTheDocument();
+    // This row already carries the blobs, so the shared view skips the detail
+    // fetch (#979) — see the flag-only case below for the fetching path.
+    expect(mockGetAdminBugReport).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
@@ -167,6 +183,28 @@ describe('BugReportsTab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Screenshot' }));
     expect(await screen.findByRole('link', { name: 'Open in new tab' })).toBeInTheDocument();
+  });
+
+  it('fetches the detail payload when the list row only carries has* flags', async () => {
+    // The list endpoint omits the diagnostic bodies (#979); the row advertises
+    // them through the flags and the viewer pulls them on open.
+    const listRow: AdminBugReportRow = {
+      ...baseReport,
+      consoleLogs: null,
+      networkLogs: null,
+      screenshot: null,
+    };
+    mockGetAdminBugReport.mockResolvedValue(baseReport);
+
+    render(<BugReportsTab initialReports={[listRow]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }));
+
+    await waitFor(() => {
+      expect(mockGetAdminBugReport).toHaveBeenCalledWith(baseReport.id);
+    });
+    expect(await screen.findByText('Console Logs')).toBeInTheDocument();
+    expect(screen.getByText('Show stack trace')).toBeInTheDocument();
   });
 
   it('copies a full bug report template and shows temporary copied feedback', async () => {

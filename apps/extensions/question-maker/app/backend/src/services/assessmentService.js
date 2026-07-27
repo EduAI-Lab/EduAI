@@ -2,8 +2,7 @@
  * Assessment service encapsulating CRUD operations plus question/section associations.
  * Ensures user ownership via course joins and keeps question ordering metadata consistent.
  */
-import { Assessments, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course, sequelize } from '../schema/index.js';
-import { Op } from 'sequelize';
+import { prisma } from '../config/database.js';
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
@@ -42,26 +41,30 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
       throw new Error('Course ID is required');
     }
 
-    const course = await Course.findOne({
-      where: { id: courseId, userId },
-      attributes: ['id']
+    const parsedCourseId = Number(courseId);
+
+    const course = await prisma.course.findFirst({
+      where: { id: parsedCourseId, userId },
+      select: { id: true }
     });
 
     if (!course) {
       throw new Error('Course not found');
     }
 
-    const semesterDisplay = await deriveSemesterDisplayForCourseId(courseId, { cookie });
+    const semesterDisplay = await deriveSemesterDisplayForCourseId(parsedCourseId, { cookie });
 
-    const assessment = await Assessments.create({
-      type,
-      name,
-      courseId,
-      description: description?.trim() || null,
-      blueprintConfig: blueprintConfig || null
+    const assessment = await prisma.assessments.create({
+      data: {
+        type,
+        name,
+        courseId: parsedCourseId,
+        description: description?.trim() || null,
+        blueprintConfig: blueprintConfig || null
+      }
     });
 
-    return { ...assessment.toJSON(), semester: semesterDisplay };
+    return { ...assessment, semester: semesterDisplay };
   } catch (error) {
     throw error;
   }
@@ -75,81 +78,53 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
     // If user is admin without a courseId constraint, allow all assessments; otherwise scope to owner
     const courseWhere = isAdmin ? {} : { userId };
 
-    const assessments = await Assessments.findAll({
+    const assessments = await prisma.assessments.findMany({
       where: {
-        ...(courseId && { courseId })
+        ...(courseId && { courseId }),
+        // `coreCourseId` is what `enrichRowsWithCourse` needs to project
+        // name/code from Core below — `Course` has no local name/code to
+        // select anymore (#1072 §4 step 10).
+        course: { ...courseWhere }
       },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` is what `enrichRowsWithCourse` needs to project
-          // name/code from Core below — `Course` has no local name/code to
-          // select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: courseWhere,
-          required: true
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              attributes: ['id', 'description', 'type', 'questionOrder'],
-              include: [
-                {
-                  model: Course,
-                  as: 'course',
-                  where: { userId: userId },
-                  // Ownership filter only — this nested course is never enriched/returned.
-                  attributes: ['id']
-                }
-              ]
+      include: {
+        course: { select: { id: true, coreCourseId: true } },
+        variants: {
+          select: {
+            id: true, questionText: true, difficulty: true, answer: true, choices: true,
+            questionMetadataId: true, isAiGenerated: true, isDraft: true,
+            questionMetadata: {
+              select: {
+                id: true, description: true, type: true, questionOrder: true,
+                course: { select: { id: true } }
+              }
             }
-          ]
+          }
         },
-        {
-          model: AssessmentSections,
-          as: 'sections',
-          include: [
-            {
-              model: SectionVariants,
-              as: 'sectionVariants',
-              include: [
-                {
-                  model: Variants,
-                  as: 'variant',
-                  attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-                  include: [
-                    {
-                      model: Question_Metadata,
-                      as: 'questionMetadata',
-                      attributes: ['id', 'description', 'type', 'questionOrder'],
-                      include: [
-                        {
-                          model: Course,
-                          as: 'course',
-                          // Ownership filter only — this nested course is never enriched/returned.
-                          attributes: ['id'],
-                          where: { userId },
-                          required: false
-                        }
-                      ]
+        sections: {
+          orderBy: { position: 'asc' },
+          include: {
+            sectionVariants: {
+              include: {
+                variant: {
+                  select: {
+                    id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
+                    questionMetadataId: true, isAiGenerated: true, isDraft: true,
+                    questionMetadata: {
+                      select: {
+                        id: true, description: true, type: true, questionOrder: true,
+                        course: { select: { id: true } }
+                      }
                     }
-                  ]
+                  }
                 }
-              ]
+              }
             }
-          ],
-          order: [['position', 'ASC']]
+          }
         }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit),
+      skip: parseInt(offset)
     });
 
     const enriched = await enrichRowsWithCourse(assessments);
@@ -162,73 +137,44 @@ export const getAssessmentsByUser = async (userId, options = {}) => {
 /** Fetches a single assessment with its sections/variants if the user owns it. */
 export const getAssessmentById = async (assessmentId, userId) => {
   try {
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` feeds `enrichRowWithCourse`'s Core projection below.
-          attributes: ['id', 'coreCourseId'],
-          where: { userId },
-          required: true
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              attributes: ['id', 'description', 'type', 'questionOrder'],
-              include: [
-                {
-                  model: Course,
-                  as: 'course',
-                  where: { userId: userId },
-                  // Ownership filter only — this nested course is never enriched/returned.
-                  attributes: ['id']
-                }
-              ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: Number(assessmentId), course: { userId } },
+      include: {
+        // `coreCourseId` feeds `enrichRowWithCourse`'s Core projection below.
+        course: { select: { id: true, coreCourseId: true } },
+        variants: {
+          select: {
+            id: true, questionText: true, difficulty: true, answer: true, choices: true,
+            questionMetadataId: true, isAiGenerated: true, isDraft: true,
+            questionMetadata: {
+              select: {
+                id: true, description: true, type: true, questionOrder: true,
+                course: { select: { id: true } }
+              }
             }
-          ]
+          }
         },
-        {
-          model: AssessmentSections,
-          as: 'sections',
-          include: [
-            {
-              model: SectionVariants,
-              as: 'sectionVariants',
-              include: [
-                {
-                  model: Variants,
-                  as: 'variant',
-                  attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'questionMetadataId', 'isAiGenerated', 'isDraft'],
-                  include: [
-                    {
-                      model: Question_Metadata,
-                      as: 'questionMetadata',
-                      attributes: ['id', 'description', 'type', 'questionOrder'],
-                      include: [
-                        {
-                          model: Course,
-                          as: 'course',
-                          where: { userId },
-                          // Ownership filter only — this nested course is never enriched/returned.
-                          attributes: ['id'],
-                          required: false
-                        }
-                      ]
+        sections: {
+          include: {
+            sectionVariants: {
+              include: {
+                variant: {
+                  select: {
+                    id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
+                    questionMetadataId: true, isAiGenerated: true, isDraft: true,
+                    questionMetadata: {
+                      select: {
+                        id: true, description: true, type: true, questionOrder: true,
+                        course: { select: { id: true } }
+                      }
                     }
-                  ]
+                  }
                 }
-              ]
+              }
             }
-          ]
+          }
         }
-      ]
+      }
     });
 
     if (!assessment) {
@@ -244,33 +190,8 @@ export const getAssessmentById = async (assessmentId, userId) => {
 /** Updates assessment metadata/blueprint while enforcing ownership and valid course references. */
 export const updateAssessment = async (assessmentId, updateData, userId) => {
   try {
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId },
-          required: true
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              include: [
-                {
-                  model: Course,
-                  as: 'course',
-                  where: { userId: userId }
-                }
-              ]
-            }
-          ]
-        }
-      ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: Number(assessmentId), course: { userId } }
     });
 
     if (!assessment) {
@@ -278,9 +199,9 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
     }
 
     if (updateData.courseId) {
-      const targetCourse = await Course.findOne({
-        where: { id: updateData.courseId, userId },
-        attributes: ['id']
+      const targetCourse = await prisma.course.findFirst({
+        where: { id: Number(updateData.courseId), userId },
+        select: { id: true }
       });
 
       if (!targetCourse) {
@@ -290,9 +211,13 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
 
     // `semester` is derived-only (#1072 §4 step 8 / #1077) — never write it,
     // even if a legacy caller still sends one.
+    const ALLOWED_ASSESSMENT_UPDATE_FIELDS = ['type', 'name', 'courseId', 'description', 'blueprintConfig'];
     const { semester: _ignoredSemester, ...updateFields } = updateData;
     const normalizedUpdates = {
-      ...updateFields,
+      ...Object.fromEntries(
+        Object.entries(updateFields).filter(([key]) => ALLOWED_ASSESSMENT_UPDATE_FIELDS.includes(key))
+      ),
+      ...(updateData.courseId !== undefined && { courseId: Number(updateData.courseId) }),
       description: updateData.description !== undefined
         ? (updateData.description?.trim() || null)
         : assessment.description,
@@ -301,65 +226,46 @@ export const updateAssessment = async (assessmentId, updateData, userId) => {
         : assessment.blueprintConfig
     };
 
-    await assessment.update(normalizedUpdates);
+    // `include: { course: true }` returns the POST-update course relation — if
+    // the update moved the assessment to another course, the response's
+    // course/semester projection describes the NEW course (no separate reload
+    // needed, unlike Sequelize's `.update()` + `.reload()` two-step).
+    const updated = await prisma.assessments.update({
+      where: { id: assessment.id },
+      data: normalizedUpdates,
+      include: { course: true }
+    });
 
-    // `.update()` doesn't refresh the eager-loaded `course` association — if
-    // the update moved the assessment to another course, reload with the
-    // course include so the response's course/semester projection describes
-    // the NEW course, not the one loaded at the top.
-    if (updateData.courseId) {
-      await assessment.reload({ include: [{ model: Course, as: 'course' }] });
-    }
-
-    return withDerivedSemester(await enrichRowWithCourse(assessment));
+    return withDerivedSemester(await enrichRowWithCourse(updated));
   } catch (error) {
     throw error;
   }
 };
 
-/** Deletes an assessment and detaches any variants tied to it to keep data consistent. */
+/**
+ * Deletes an assessment and detaches any linked variants first. schema.prisma declares
+ * `variants.assessmentId` as `onDelete: SetNull`, but that FK action only exists on databases
+ * that ran 20260723215902_init's DDL for real — a database baselined from the pre-Prisma
+ * Sequelize schema (see scripts/baselineExistingDatabase.js) may still have whatever FK action
+ * `sequelize.sync` produced (NO ACTION) until the adoption migration's reconciliation runs.
+ * Nulling explicitly keeps delete correct independent of which FK action is actually in place.
+ */
 export const deleteAssessment = async (assessmentId, userId) => {
   try {
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId },
-          required: true
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              include: [
-                {
-                  model: Course,
-                  as: 'course',
-                  where: { userId: userId }
-                }
-              ]
-            }
-          ]
-        }
-      ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: Number(assessmentId), course: { userId } }
     });
 
     if (!assessment) {
       throw new Error('Assessment not found');
     }
 
-    // Clear assessmentId from all variants linked to this assessment
-    await Variants.update(
-      { assessmentId: null },
-      { where: { assessmentId: assessmentId } }
-    );
+    await prisma.variants.updateMany({
+      where: { assessmentId: assessment.id },
+      data: { assessmentId: null }
+    });
 
-    await assessment.destroy();
+    await prisma.assessments.delete({ where: { id: assessment.id } });
     return true;
   } catch (error) {
     throw error;
@@ -369,16 +275,10 @@ export const deleteAssessment = async (assessmentId, userId) => {
 /** Adds a question to an assessment by updating its per-assessment `questionOrder`. */
 export const addQuestionToAssessment = async (assessmentId, questionId, orderNumber, userId) => {
   try {
+    assessmentId = Number(assessmentId);
     // Verify user owns the question
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
@@ -386,16 +286,8 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
     }
 
     // Verify assessment exists and belongs to user
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId },
-          attributes: ['id']
-        }
-      ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: assessmentId, course: { userId } }
     });
     if (!assessment) {
       throw new Error('Assessment not found');
@@ -410,10 +302,13 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
     // Update question order
     const currentOrder = question.questionOrder || {};
     currentOrder[assessmentId] = orderNumber;
-    
-    await question.update({ questionOrder: currentOrder });
 
-    return question;
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -422,16 +317,10 @@ export const addQuestionToAssessment = async (assessmentId, questionId, orderNum
 /** Removes a question from an assessment's ordering payload after verifying ownership. */
 export const removeQuestionFromAssessment = async (assessmentId, questionId, userId) => {
   try {
+    assessmentId = Number(assessmentId);
     // Verify user owns the question
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
@@ -439,16 +328,8 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
     }
 
     // Verify assessment belongs to the user
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId },
-          attributes: ['id']
-        }
-      ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: assessmentId, course: { userId } }
     });
 
     if (!assessment) {
@@ -463,10 +344,13 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
     // Remove from question order
     const currentOrder = question.questionOrder || {};
     delete currentOrder[assessmentId];
-    
-    await question.update({ questionOrder: currentOrder });
 
-    return question;
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -475,53 +359,53 @@ export const removeQuestionFromAssessment = async (assessmentId, questionId, use
 /** Returns questions scheduled for a given assessment ordered by their stored display order. */
 export const getQuestionsInAssessment = async (assessmentId, userId) => {
   try {
+    assessmentId = Number(assessmentId);
     // Verify assessment exists and belongs to user
-    const assessment = await Assessments.findOne({
-      where: { id: assessmentId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId },
-          attributes: ['id']
-        }
-      ]
+    const assessment = await prisma.assessments.findFirst({
+      where: { id: assessmentId, course: { userId } }
     });
     if (!assessment) {
       throw new Error('Assessment not found');
     }
 
+    // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
+    // operator is unavailable. Use `->>` key extraction, which works on `json`
+    // and mirrors the ORDER BY clause below. Both the key and the ownership
+    // filter are bound as query parameters (Prisma's tagged-template
+    // `$queryRaw`), not string-interpolated into the SQL.
+    const assessmentKey = String(assessmentId);
+    const orderedRows = await prisma.$queryRaw`
+      SELECT qm.id
+      FROM question_metadata qm
+      JOIN courses c ON c.id = qm.course_id
+      WHERE c.user_id = ${userId}
+        AND qm.question_order ->> ${assessmentKey} IS NOT NULL
+      ORDER BY CAST(qm.question_order ->> ${assessmentKey} AS INTEGER) ASC
+    `;
+    const orderedIds = orderedRows.map((row) => row.id);
+
+    if (orderedIds.length === 0) {
+      return [];
+    }
+
     // Get all questions that have this assessment in their questionOrder
-    const questions = await Question_Metadata.findAll({
-      // `question_order` is a `json` column (not `jsonb`), so the `@>` containment
-      // operator is unavailable. Use `->>` key extraction, which works on `json`
-      // and mirrors the ORDER BY clause below.
-      where: sequelize.where(
-        sequelize.literal(`question_order ->> '${assessmentId}'`),
-        { [Op.ne]: null }
-      ),
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId },
-          // Ownership filter only — this endpoint returns rows unenriched, and
-          // `Course` has no local name/code to select anymore (#1072 §4 step 10).
-          attributes: ['id']
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          where: { assessmentId: assessmentId },
-          attributes: ['id', 'questionText', 'difficulty', 'answer', 'choices']
+    const questions = await prisma.questionMetadata.findMany({
+      where: { id: { in: orderedIds } },
+      include: {
+        // Ownership filter only — this endpoint returns rows unenriched, and
+        // `Course` has no local name/code to select anymore (#1072 §4 step 10).
+        course: { select: { id: true } },
+        variants: {
+          where: { assessmentId: Number(assessmentId) },
+          select: { id: true, questionText: true, difficulty: true, answer: true, choices: true }
         }
-      ],
-      order: [
-        [sequelize.literal(`CAST(question_order->>'${assessmentId}' AS INTEGER)`), 'ASC']
-      ]
+      }
     });
 
-    return questions;
+    // `findMany({ where: { id: { in } } })` doesn't preserve `in`-list order —
+    // re-sort to match the CAST(question_order->>...) ordering computed above.
+    const byId = new Map(questions.map((q) => [q.id, q]));
+    return orderedIds.map((id) => byId.get(id)).filter(Boolean);
   } catch (error) {
     throw error;
   }
