@@ -51,6 +51,7 @@ function baseInvitation(overrides: Partial<Invitation> = {}): Invitation {
   return {
     id: "inv1",
     email: "invitee@ubc.ca",
+    name: null,
     role: "INSTRUCTOR",
     status: "PENDING",
     tokenHash: TOKEN_HASH,
