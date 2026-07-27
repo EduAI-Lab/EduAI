@@ -20,8 +20,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('cross-course write scoping (integration, #1)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let createAssessment, addQuestionToAssessment, removeQuestionFromAssessment;
   let sectionSvc;
@@ -30,11 +29,9 @@ describeDb('cross-course write scoping (integration, #1)', () => {
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     ({ createAssessment, addQuestionToAssessment, removeQuestionFromAssessment } = await import(
       '../../src/services/assessmentService.js'
@@ -48,27 +45,27 @@ describeDb('cross-course write scoping (integration, #1)', () => {
   let assessmentB, sectionB, variantB, questionB;
 
   async function makeVariant(courseId, topicId, text = 'Q?') {
-    const qm = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} });
-    const variant = await Variants.create({ questionMetadataId: qm.id, questionText: text, difficulty: 'medium' });
+    const qm = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: 'SA', questionOrder: {} } });
+    const variant = await prisma.variants.create({ data: { questionMetadataId: qm.id, questionText: text, difficulty: 'medium' } });
     return { qm, variant };
   }
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     await seedCoursesForNewUser(USER.id);
 
-    const courses = await Course.findAll({ where: { userId: USER.id }, order: [['id', 'ASC']] });
+    const courses = await prisma.course.findMany({ where: { userId: USER.id }, orderBy: { id: 'asc' } });
     courseA = courses[0];
     courseB = courses[1];
-    topicA = await Topics.findOne({ where: { courseId: courseA.id } });
-    topicB = await Topics.findOne({ where: { courseId: courseB.id } });
+    topicA = await prisma.topics.findFirst({ where: { courseId: courseA.id } });
+    topicB = await prisma.topics.findFirst({ where: { courseId: courseB.id } });
 
-    assessmentA = await createAssessment(USER.id, { type: 'Quiz', name: 'A Exam', semester: 'Fall 2026', courseId: courseA.id });
+    assessmentA = await createAssessment(USER.id, { type: 'Quiz', name: 'A Exam', courseId: courseA.id });
     sectionA = await sectionSvc.createAssessmentSection(assessmentA.id, USER.id, { name: 'A-Section' });
     ({ variant: variantA } = await makeVariant(courseA.id, topicA.id, 'A?'));
 
-    assessmentB = await createAssessment(USER.id, { type: 'Quiz', name: 'B Exam', semester: 'Fall 2026', courseId: courseB.id });
+    assessmentB = await createAssessment(USER.id, { type: 'Quiz', name: 'B Exam', courseId: courseB.id });
     sectionB = await sectionSvc.createAssessmentSection(assessmentB.id, USER.id, { name: 'B-Section' });
     const madeB = await makeVariant(courseB.id, topicB.id, 'B?');
     variantB = madeB.variant;
@@ -76,7 +73,7 @@ describeDb('cross-course write scoping (integration, #1)', () => {
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   describe('addVariantToSection', () => {
@@ -86,15 +83,15 @@ describeDb('cross-course write scoping (integration, #1)', () => {
       ).rejects.toThrow(/Variant not found/);
 
       // ...and the cross-course variant was NOT linked to assessment A.
-      await variantB.reload();
-      expect(variantB.assessmentId).not.toBe(assessmentA.id);
+      const reloaded = await prisma.variants.findUnique({ where: { id: variantB.id } });
+      expect(reloaded.assessmentId).not.toBe(assessmentA.id);
     });
 
     it('still links a variant that belongs to the authorized course', async () => {
       const link = await sectionSvc.addVariantToSection(sectionA.id, USER.id, variantA.id, {}, courseA.id);
       expect(link).toBeTruthy();
-      await variantA.reload();
-      expect(variantA.assessmentId).toBe(assessmentA.id);
+      const reloaded = await prisma.variants.findUnique({ where: { id: variantA.id } });
+      expect(reloaded.assessmentId).toBe(assessmentA.id);
     });
   });
 
