@@ -9,7 +9,7 @@
  * orchestration (detail view, variant CRUD, Canvas + upload dialogs, exports)
  * lives here, keyed off the route course instead of local state.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { IconLoader2 } from '@tabler/icons-react';
 import {
@@ -132,6 +132,11 @@ export const CourseDetailPage = () => {
     reviewedCount: number;
     usedTopicIds: string[];
   } | null>(null);
+  /** True only when stats failed and we have no last-good payload for this course. */
+  const [courseQuestionStatsUnavailable, setCourseQuestionStatsUnavailable] = useState(false);
+  const courseQuestionStatsRef = useRef(courseQuestionStats);
+  courseQuestionStatsRef.current = courseQuestionStats;
+  const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
@@ -216,6 +221,7 @@ export const CourseDetailPage = () => {
     const fetchStats = async () => {
       if (!courseId) {
         setCourseQuestionStats(null);
+        setCourseQuestionStatsUnavailable(false);
         return;
       }
       try {
@@ -237,23 +243,33 @@ export const CourseDetailPage = () => {
           reviewedCount: Number(stats.reviewedCount) || 0,
           usedTopicIds: stats.usedTopicIds ?? [],
         });
+        setCourseQuestionStatsUnavailable(false);
       } catch (error) {
         console.error('Failed to load course question stats', error);
-        if (!cancelled) setCourseQuestionStats(null);
+        if (!cancelled) {
+          // Keep last complete stats; only mark unavailable when we have none.
+          if (courseQuestionStatsRef.current == null) {
+            setCourseQuestionStatsUnavailable(true);
+          }
+        }
       }
     };
     void fetchStats();
     return () => { cancelled = true; };
   }, [courseId, questionsTotal]);
 
-  // Reset paging when the course changes.
+  // Reset paging / course-scoped stats when the course changes.
   useEffect(() => {
     setQuestionsOffset(0);
     setAssessmentsOffset(0);
+    setCourseQuestionStats(null);
+    setCourseQuestionStatsUnavailable(false);
   }, [courseId]);
 
-  // Load assessments for the route course.
+  // Load assessments for the route course. Ignore stale responses from rapid
+  // paging / course switches (same generation pattern as questions).
   const fetchAssessments = useCallback(async () => {
+    const requestId = ++assessmentsRequestIdRef.current;
     if (!courseId) {
       setAssessments([]);
       setAssessmentsTotal(0);
@@ -267,14 +283,18 @@ export const CourseDetailPage = () => {
         limit: assessmentsPageSize,
         offset: assessmentsOffset,
       });
+      if (requestId !== assessmentsRequestIdRef.current) return;
       setAssessments(page.items);
       setAssessmentsTotal(page.total);
     } catch (error: any) {
+      if (requestId !== assessmentsRequestIdRef.current) return;
       setAssessments([]);
       setAssessmentsTotal(0);
       setAssessmentsError(error?.response?.data?.error || 'Failed to load assessments');
     } finally {
-      setIsAssessmentsLoading(false);
+      if (requestId === assessmentsRequestIdRef.current) {
+        setIsAssessmentsLoading(false);
+      }
     }
   }, [courseId, assessmentsOffset, assessmentsPageSize]);
 
@@ -344,94 +364,65 @@ export const CourseDetailPage = () => {
     return variantEntries.filter((entry) => entry.questionId === selectedVariant.questionId);
   }, [variantEntries, selectedVariant]);
 
-  // Course-scoped analytics for the Overview tab — from server aggregates when
-  // available so meters match the full bank, not the current 50-row page (#1040).
+  // Course-scoped analytics for the Overview tab — server aggregates only.
+  // Never mix the full `questionsTotal` with page-slice pie/meter counts (#1040).
   const courseAnalytics = useMemo<QuestionAnalyticsProps>(() => {
     const courseTopics = courseId ? (topicsByCourse[courseId] ?? []) : [];
+    const empty: QuestionAnalyticsProps = {
+      typeComposition: [],
+      difficulty: [
+        { label: 'Easy', value: 0, color: DIFF_COLORS.easy },
+        { label: 'Medium', value: 0, color: DIFF_COLORS.medium },
+        { label: 'Hard', value: 0, color: DIFF_COLORS.hard },
+      ],
+      totalQuestions: questionsTotal,
+      totalVariants: 0,
+      aiCount: 0,
+      humanCount: 0,
+      reviewedCount: 0,
+      topicCoverage: { covered: 0, total: courseTopics.length },
+    };
 
-    if (courseQuestionStats) {
-      const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
-      for (const row of courseQuestionStats.typeStats) {
-        typeCounts[row.type] = row.count;
-      }
-      const diffMap = Object.fromEntries(
-        courseQuestionStats.difficultyStats.map((d) => [d.difficulty, d.count]),
-      );
-      const used = new Set(courseQuestionStats.usedTopicIds);
-      const topicsCovered = courseTopics.filter((t) => used.has(String(t.id))).length;
-      const typeComposition = (['MCQ', 'SA', 'LA'] as const)
-        .map((t) => ({
-          label: questionTypeLabels[t],
-          value: typeCounts[t] ?? 0,
-          color: TYPE_COLORS[t],
-        }))
-        .filter((s) => s.value > 0);
+    if (!courseQuestionStats) return empty;
 
-      return {
-        typeComposition,
-        difficulty: [
-          { label: 'Easy', value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
-          { label: 'Medium', value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
-          { label: 'Hard', value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
-        ],
-        totalQuestions: courseQuestionStats.totalQuestions || questionsTotal,
-        totalVariants: courseQuestionStats.totalVariants,
-        aiCount: courseQuestionStats.aiCount,
-        humanCount: courseQuestionStats.humanCount,
-        reviewedCount: courseQuestionStats.reviewedCount,
-        topicCoverage: { covered: topicsCovered, total: courseTopics.length },
-      };
-    }
-
-    // Fallback while stats load: page slice only (same as pre-#1040 behavior).
     const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
-    for (const q of questions) typeCounts[q.type] = (typeCounts[q.type] ?? 0) + 1;
-
-    let easy = 0;
-    let medium = 0;
-    let hard = 0;
-    let ai = 0;
-    let human = 0;
-    let reviewed = 0;
-    let totalVariants = 0;
-    const usedTopicIds = new Set<string>();
-
-    for (const q of questions) {
-      if (q.primaryTopicId) usedTopicIds.add(String(q.primaryTopicId));
+    for (const row of courseQuestionStats.typeStats) {
+      typeCounts[row.type] = row.count;
     }
-    for (const e of variantEntries) {
-      totalVariants += 1;
-      const d = String(e.variant.difficulty ?? 'medium').toLowerCase();
-      if (d === 'easy') easy += 1;
-      else if (d === 'hard') hard += 1;
-      else medium += 1;
-      if (e.isAiGenerated) ai += 1;
-      else human += 1;
-      if (!e.isDraft) reviewed += 1;
-      const sec = e.variant.secondaryTopicsId;
-      if (Array.isArray(sec)) sec.forEach((id) => usedTopicIds.add(String(id)));
-    }
-
-    const topicsCovered = courseTopics.filter((t) => usedTopicIds.has(String(t.id))).length;
+    const diffMap = Object.fromEntries(
+      courseQuestionStats.difficultyStats.map((d) => [d.difficulty, d.count]),
+    );
+    const used = new Set(courseQuestionStats.usedTopicIds);
+    const topicsCovered = courseTopics.filter((t) => used.has(String(t.id))).length;
     const typeComposition = (['MCQ', 'SA', 'LA'] as const)
-      .map((t) => ({ label: questionTypeLabels[t], value: typeCounts[t] ?? 0, color: TYPE_COLORS[t] }))
+      .map((t) => ({
+        label: questionTypeLabels[t],
+        value: typeCounts[t] ?? 0,
+        color: TYPE_COLORS[t],
+      }))
       .filter((s) => s.value > 0);
 
     return {
       typeComposition,
       difficulty: [
-        { label: 'Easy', value: easy, color: DIFF_COLORS.easy },
-        { label: 'Medium', value: medium, color: DIFF_COLORS.medium },
-        { label: 'Hard', value: hard, color: DIFF_COLORS.hard },
+        { label: 'Easy', value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
+        { label: 'Medium', value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
+        { label: 'Hard', value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
       ],
-      totalQuestions: questionsTotal,
-      totalVariants,
-      aiCount: ai,
-      humanCount: human,
-      reviewedCount: reviewed,
+      totalQuestions: courseQuestionStats.totalQuestions || questionsTotal,
+      totalVariants: courseQuestionStats.totalVariants,
+      aiCount: courseQuestionStats.aiCount,
+      humanCount: courseQuestionStats.humanCount,
+      reviewedCount: courseQuestionStats.reviewedCount,
       topicCoverage: { covered: topicsCovered, total: courseTopics.length },
     };
-  }, [courseQuestionStats, questions, questionsTotal, variantEntries, topicsByCourse, courseId]);
+  }, [courseQuestionStats, questionsTotal, topicsByCourse, courseId]);
+
+  const analyticsStatus: 'loading' | 'ready' | 'unavailable' = courseQuestionStats
+    ? 'ready'
+    : courseQuestionStatsUnavailable
+      ? 'unavailable'
+      : 'loading';
 
   const emptyStateMessage =
     questionsError || 'No questions found for this course yet. Try adding or uploading questions.';
@@ -889,6 +880,7 @@ export const CourseDetailPage = () => {
             assessmentsCount={assessmentsTotal}
             topicsCount={topicsByCourse[course.id]?.length ?? 0}
             analytics={courseAnalytics}
+            analyticsStatus={analyticsStatus}
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab('assessments')}
