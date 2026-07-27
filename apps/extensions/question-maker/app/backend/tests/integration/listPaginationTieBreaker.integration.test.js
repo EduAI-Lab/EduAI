@@ -15,19 +15,16 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt pagination (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Assessments;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let getQuestionsByUser, getAssessmentsByUser;
 
-  const USER = { id: 'cuid-tie-user', email: 'tie@test.com', name: 'Tie User' };
+  const USER = { id: 'cuid-tie-usercontent', email: 'tie@test.com', name: 'Tie User' };
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Assessments } = schema);
     ({ getQuestionsByUser } = await import('../../src/services/questionService.js'));
     ({ getAssessmentsByUser } = await import('../../src/services/assessmentService.js'));
   });
@@ -36,19 +33,23 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
 
     // Built directly (not via the seedCoursesForNewUser fixture) so the course
     // starts with zero pre-existing questions/assessments — the fixture seeds
     // sample content per course that would confound the exact row counts below.
-    const course = await Course.create({ userId: USER.id, coreCourseId: `core-tie-${USER.id}` });
+    const course = await prisma.course.create({
+      data: { userId: USER.id, coreCourseId: `core-tie-${USER.id}` },
+    });
     courseId = course.id;
-    const topic = await Topics.create({ name: 'Tie Topic', courseId });
+    const topic = await prisma.topics.create({
+      data: { name: 'Tie Topic', courseId },
+    });
     topicId = topic.id;
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   it('does not duplicate or skip rows across pages when every row shares the same createdAt', async () => {
@@ -56,12 +57,14 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
     const rows = [];
     for (let i = 0; i < 5; i += 1) {
       rows.push(
-        await Question_Metadata.create({
-          courseId,
-          primaryTopicId: topicId,
-          type: 'SA',
-          createdAt: tiedTimestamp,
-          updatedAt: tiedTimestamp,
+        await prisma.questionMetadata.create({
+          data: {
+            courseId,
+            primaryTopicId: topicId,
+            type: 'SA',
+            createdAt: tiedTimestamp,
+            updatedAt: tiedTimestamp,
+          },
         }),
       );
     }
@@ -79,34 +82,41 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
   });
 
   it('search matches variant questionText even when description is null/short', async () => {
-    const { Variants } = await import('../../src/schema/index.js');
-    const visible = await Question_Metadata.create({
-      courseId,
-      primaryTopicId: topicId,
-      type: 'SA',
-      description: null,
+    const visible = await prisma.questionMetadata.create({
+      data: {
+        courseId,
+        primaryTopicId: topicId,
+        type: 'SA',
+        description: null,
+      },
     });
-    await Variants.create({
-      questionMetadataId: visible.id,
-      questionText: 'Explain how a binary search tree rotates on insert',
-      difficulty: 'hard',
-      reasoningLevel: 'analytical',
-      isAiGenerated: false,
-      isDraft: true,
+    await prisma.variants.create({
+      data: {
+        questionMetadataId: visible.id,
+        questionText: 'Explain how a binary search tree rotates on insert',
+        difficulty: 'hard',
+        reasoningLevel: 'analytical',
+        isAiGenerated: false,
+        isDraft: true,
+      },
     });
-    const hidden = await Question_Metadata.create({
-      courseId,
-      primaryTopicId: topicId,
-      type: 'SA',
-      description: 'unrelated summary',
+    const hidden = await prisma.questionMetadata.create({
+      data: {
+        courseId,
+        primaryTopicId: topicId,
+        type: 'SA',
+        description: 'unrelated summary',
+      },
     });
-    await Variants.create({
-      questionMetadataId: hidden.id,
-      questionText: 'What is a linked list?',
-      difficulty: 'easy',
-      reasoningLevel: 'factual',
-      isAiGenerated: false,
-      isDraft: true,
+    await prisma.variants.create({
+      data: {
+        questionMetadataId: hidden.id,
+        questionText: 'What is a linked list?',
+        difficulty: 'easy',
+        reasoningLevel: 'factual',
+        isAiGenerated: false,
+        isDraft: true,
+      },
     });
 
     const page = await getQuestionsByUser(USER.id, {
@@ -120,34 +130,41 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
   });
 
   it('filters by type/difficulty in SQL before paging', async () => {
-    const { Variants } = await import('../../src/schema/index.js');
-    const hardMcq = await Question_Metadata.create({
-      courseId,
-      primaryTopicId: topicId,
-      type: 'MCQ',
-      description: 'hard mcq',
+    const hardMcq = await prisma.questionMetadata.create({
+      data: {
+        courseId,
+        primaryTopicId: topicId,
+        type: 'MCQ',
+        description: 'hard mcq',
+      },
     });
-    await Variants.create({
-      questionMetadataId: hardMcq.id,
-      questionText: 'Hard MCQ stem',
-      difficulty: 'hard',
-      reasoningLevel: 'factual',
-      isAiGenerated: true,
-      isDraft: false,
+    await prisma.variants.create({
+      data: {
+        questionMetadataId: hardMcq.id,
+        questionText: 'Hard MCQ stem',
+        difficulty: 'hard',
+        reasoningLevel: 'factual',
+        isAiGenerated: true,
+        isDraft: false,
+      },
     });
-    const easySa = await Question_Metadata.create({
-      courseId,
-      primaryTopicId: topicId,
-      type: 'SA',
-      description: 'easy sa',
+    const easySa = await prisma.questionMetadata.create({
+      data: {
+        courseId,
+        primaryTopicId: topicId,
+        type: 'SA',
+        description: 'easy sa',
+      },
     });
-    await Variants.create({
-      questionMetadataId: easySa.id,
-      questionText: 'Easy SA stem',
-      difficulty: 'easy',
-      reasoningLevel: 'factual',
-      isAiGenerated: false,
-      isDraft: true,
+    await prisma.variants.create({
+      data: {
+        questionMetadataId: easySa.id,
+        questionText: 'Easy SA stem',
+        difficulty: 'easy',
+        reasoningLevel: 'factual',
+        isAiGenerated: false,
+        isDraft: true,
+      },
     });
 
     const page = await getQuestionsByUser(USER.id, {
@@ -168,12 +185,14 @@ describeDb('getQuestionsByUser / getAssessmentsByUser — tied createdAt paginat
     const rows = [];
     for (let i = 0; i < 5; i += 1) {
       rows.push(
-        await Assessments.create({
-          courseId,
-          type: 'Quiz',
-          name: `Tied Quiz ${i}`,
-          createdAt: tiedTimestamp,
-          updatedAt: tiedTimestamp,
+        await prisma.assessments.create({
+          data: {
+            courseId,
+            type: 'Quiz',
+            name: `Tied Quiz ${i}`,
+            createdAt: tiedTimestamp,
+            updatedAt: tiedTimestamp,
+          },
         }),
       );
     }
