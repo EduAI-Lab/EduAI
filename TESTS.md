@@ -7,17 +7,18 @@
 3. [Structure](#structure)
 4. [How to Run Tests](#how-to-run-tests)
 5. [Populating TESTS.md](#populating-testsmd)
-6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
-7. [EduAI Unit Tests](#eduai-unit-tests)
-8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [@eduai/ui Component Tests](#eduaiui-component-tests)
-10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-14. [Question Maker Unit Tests](#question-maker-unit-tests)
-15. [Question Maker Integration Tests](#question-maker-integration-tests)
-16. [Extending This Document](#extending-this-document)
+6. [PICT Combinatorial Tests](#pict-combinatorial-tests)
+7. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
+8. [EduAI Unit Tests](#eduai-unit-tests)
+9. [EduAI Integration Tests](#eduai-integration-tests)
+10. [@eduai/ui Component Tests](#eduaiui-component-tests)
+11. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+12. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+13. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+14. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+15. [Question Maker Unit Tests](#question-maker-unit-tests)
+16. [Question Maker Integration Tests](#question-maker-integration-tests)
+17. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -130,6 +131,91 @@ Each section should use this format:
 |-----------|---------------|
 | `auth.test.ts` | JWT token validation and expiry handling |
 | `chat-retrieval.test.ts` | RAG pipeline returns course-relevant context for a given query |
+
+---
+
+## PICT Combinatorial Tests
+
+**Path:** `tests/models/`
+
+PICT (Microsoft's [Pairwise Independent Combinatorial Tool](https://github.com/microsoft/pict)) generates
+a minimal table of input combinations covering every pair of parameter values, for surfaces where 3+
+independent inputs decide a forked outcome. See [`docs/PICT_CENSUS.md`](docs/PICT_CENSUS.md) for which
+surfaces qualify and why.
+
+A model is four pieces, only the first two of which live in this repo today:
+
+| File | What it is | Who writes it |
+|---|---|---|
+| `<name>.pict` | Parameters, values, constraints (~20 lines) | Author, by hand |
+| `<name>.cases.json` | Generated rows — **committed**, never hand-edited | `npm run test:pict:gen` |
+| `<name>.oracle.ts` | Pure function `(row) => expected outcome`, derived from the spec | Author, by hand |
+| `<name>.test.ts` | World-builder `(row) => seeded state` + `describe.each` over the rows | Author, by hand |
+
+The oracle must be derived from the spec, never read off the handler under test — copying the
+handler's branch logic makes the test tautological (it asserts the code does what the code does).
+This document only covers the first two files; the oracle/test pair is written per-model as each
+census candidate is picked up.
+
+### Installing PICT
+
+```bash
+brew install pict        # macOS — installs 3.7.4
+```
+
+There is no Linux bottle; CI builds it from source instead (see `.github/workflows/pr-tests.yml`,
+job `pict-drift`):
+
+```bash
+git clone --depth 1 --branch v3.7.4 https://github.com/microsoft/pict.git /tmp/pict-src
+make -C /tmp/pict-src
+sudo install -m 755 /tmp/pict-src/pict /usr/local/bin/pict
+```
+
+### Adding a model
+
+1. Create `tests/models/<name>.pict` — parameter list, values, and any `IF ... THEN ...`
+   constraints. PICT's own model syntax; see existing models for examples.
+2. Run `npm run test:pict:gen`. This writes `tests/models/<name>.cases.json`: an array of
+   `{ParamName: "value"}` objects, one per row, in column order.
+3. Commit both files. A model change then shows up in review as a plain row diff, not an invisible
+   behavior change, and CI needs no PICT binary to run the suite that consumes the JSON.
+
+Optional sidecar `tests/models/<name>.config.json` controls generation:
+
+```json
+{ "order": 3, "seed": "<name>.seed.tsv" }
+```
+
+- `order` — PICT's `/o:N` (2 = pairwise, the default when omitted; 3 = triples; higher toward
+  exhaustive).
+- `seed` — PICT's `/e:<file>`, a path relative to `tests/models/` to a TSV of rows (header + data,
+  same column names as the model) that must appear in the output. Use this to pin a specific
+  regression combination into a model permanently.
+
+### Regenerating
+
+```bash
+npm run test:pict:gen
+```
+
+Regenerates every `tests/models/*.cases.json` from its `.pict` (and optional `.config.json`)
+source. PICT is deterministic by default — the script never passes a random seed — so re-running on
+an unchanged model produces byte-identical output. If the `pict` binary isn't on `PATH`, the script
+fails immediately with the install command above rather than silently skipping.
+
+### CI drift check
+
+The `pict-drift` job in `pr-tests.yml` builds `pict` from source, runs the generator, and fails the
+PR if that dirties `tests/models/` — covering both a stale `.cases.json` (source changed, output
+didn't) and a new `.pict` committed without its generated sibling. Without this check a stale case
+table silently tests the old row set, which is worse than no coverage because it still looks green.
+
+### Current models
+
+| Model | Dims | What it covers |
+|---|---|---|
+| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route and both RAG retrieval branches — census § S1 pilot. Oracle and world-builder not yet written; this model exists to prove the generator path end to end. |
 
 ---
 
