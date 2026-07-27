@@ -77,11 +77,21 @@ describe("shouldSkipCourseScopeCheck", () => {
     expect(shouldSkipCourseScopeCheck("good morning")).toBe(true);
   });
 
+  it("skips classification for messages with explicit course anchors", () => {
+    expect(
+      shouldSkipCourseScopeCheck("Can you translate the assignment instructions?"),
+    ).toBe(true);
+    expect(
+      shouldSkipCourseScopeCheck("Help me email my professor about an extension"),
+    ).toBe(true);
+    expect(shouldSkipCourseScopeCheck("When are your office hours?")).toBe(true);
+    expect(shouldSkipCourseScopeCheck("what is the deadline for a2")).toBe(true);
+  });
+
   it("does NOT skip off-topic requests that merely start with a greeting word", () => {
     // Regression: a leading-anchor greeting match let these bypass the gate.
     expect(shouldSkipCourseScopeCheck("ok what's the weather today")).toBe(false);
     expect(shouldSkipCourseScopeCheck("hey write me a poem about cats")).toBe(false);
-    expect(shouldSkipCourseScopeCheck("what is the deadline for a2")).toBe(false);
   });
 });
 

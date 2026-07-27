@@ -77,6 +77,9 @@ Instructor notes: ${context.aiInstructions?.trim() || "none"}.
 A message is ON-TOPIC if it relates to this course in any way, including:
 - course content, concepts, lectures, readings
 - assignments, exams, grading, deadlines, or other logistics
+- course-related support tasks, including translating course material, study
+  planning, accessibility or extension requests, academic-integrity questions,
+  and drafting messages to an instructor, TA, or classmate
 - questions about the course itself: what it covers, prerequisites, or asking
   what the course code means (e.g. "what is ${context.courseCode ?? "this course"}")
 - a natural follow-up, clarification, or greeting in an ongoing course conversation
@@ -122,15 +125,25 @@ const GREETING_WORDS =
   /\b(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/gi;
 
 /**
- * Never trips the gate: empty messages and messages that are *nothing but*
- * greetings/thanks don't need a classifier round-trip. Unlike a leading-anchor
- * match, this won't skip off-topic requests that merely open with a greeting
- * word ("ok what's the weather", "hey write me a poem") — those still get
- * classified.
+ * Strong course anchors are safer to pass through deterministically than to
+ * ask a small classifier to reinterpret. Real 7B E2E false positives included
+ * translating "assignment instructions" and drafting an extension email to a
+ * "professor", even though both are explicitly course-related.
+ */
+const EXPLICIT_COURSE_SCOPE_ANCHORS =
+  /\b(course|class|lecture|reading|assignment|homework|exam|midterm|quiz|grade|grading|deadline|due date|syllabus|prerequisite|professor|instructor|teacher|teaching assistant|TA|office hours?)\b/i;
+
+/**
+ * Never trips the gate: empty messages, messages that are *nothing but*
+ * greetings/thanks, and messages with an explicit course anchor don't need a
+ * classifier round-trip. Unlike a leading greeting match, this won't skip
+ * off-topic requests that merely open with a greeting word ("ok what's the
+ * weather", "hey write me a poem") — those still get classified.
  */
 export function shouldSkipCourseScopeCheck(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed) return true;
+  if (EXPLICIT_COURSE_SCOPE_ANCHORS.test(trimmed)) return true;
   // Strip greeting words, then anything non-alphanumeric. If nothing is left,
   // the message carried no real content beyond greetings.
   const residue = trimmed.replace(GREETING_WORDS, "").replace(/[^a-z0-9]/gi, "");
