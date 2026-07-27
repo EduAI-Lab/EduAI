@@ -258,15 +258,9 @@ jobs:
         with:
           node-version: '24'
 
-      # No Linux bottle is published for pict, so build it straight from the upstream
-      # Makefile (same recipe the Homebrew formula uses) rather than depending on brew.
-      - name: Build pict binary
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch v3.7.4 https://github.com/microsoft/pict.git /tmp/pict-src
-          make -C /tmp/pict-src
-          sudo install -m 755 /tmp/pict-src/pict /usr/local/bin/pict
-
+      # Generation runs pict inside the pinned docker/pict image (Docker is preinstalled on
+      # GitHub-hosted runners) rather than a natively-installed pict — see scripts/pict-gen.mjs
+      # for why a host install can't be trusted to reproduce the committed output.
       - name: Regenerate PICT case tables
         run: npm run test:pict:gen
 

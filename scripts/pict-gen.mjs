@@ -2,9 +2,16 @@
 /**
  * pict-gen.mjs — Issue #1179 PICT infra.
  *
- * For each tests/models/<name>.pict, shells out to the `pict` binary and writes
- * tests/models/<name>.cases.json: an array of `{ParamName: "value"}` objects, one per
+ * For each tests/models/<name>.pict, runs `pict` inside the pinned docker/pict image and
+ * writes tests/models/<name>.cases.json: an array of `{ParamName: "value"}` objects, one per
  * generated row, in the header's column order.
+ *
+ * Generation always goes through Docker rather than a host-installed `pict`: PICT's greedy
+ * solver breaks ties between equally-valid rows via hash-container iteration order, which
+ * differs across C++ standard library implementations (e.g. macOS/Homebrew's libc++ vs a Linux
+ * build's libstdc++) — same model, same row count, different row selection/order. Since the
+ * output is committed and diffed, every environment generating it must agree byte-for-byte, so
+ * everyone (local dev or CI) runs the same pinned Linux image. See docker/pict/Dockerfile.
  *
  * Optional per-model sidecar tests/models/<name>.config.json:
  *   { "order": 3, "seed": "<name>.seed.tsv" }
@@ -18,6 +25,8 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
 const MODELS_DIR = path.join(process.cwd(), "tests/models");
+const DOCKER_DIR = path.join(process.cwd(), "docker/pict");
+const IMAGE = "eduai-pict-gen:3.7.4";
 
 function parseTsv(tsv) {
   const lines = tsv.split("\n").filter((line) => line.length > 0);
@@ -41,23 +50,44 @@ function loadConfig(modelPath) {
   return JSON.parse(readFileSync(configPath, "utf8"));
 }
 
-function runPict(modelPath, config) {
-  const args = [modelPath];
-  if (config.order !== undefined) args.push(`/o:${config.order}`);
-  if (config.seed !== undefined) {
-    args.push(`/e:${path.join(MODELS_DIR, config.seed)}`);
+function dockerFail(err) {
+  if (err.code === "ENOENT") {
+    console.error(
+      "pict-gen: the `docker` CLI was not found on PATH.\n" +
+        "Docker is a required dependency for this repo (see README \"Getting started\") — install Docker Desktop:\n" +
+        "https://www.docker.com/products/docker-desktop/",
+    );
+  } else {
+    console.error("pict-gen: docker failed.");
+    console.error(err.stderr?.toString() ?? err.message);
+  }
+  process.exit(1);
+}
+
+function ensureImage() {
+  try {
+    execFileSync("docker", ["image", "inspect", IMAGE], { stdio: "ignore" });
+    return;
+  } catch {
+    // fall through to build
   }
   try {
-    return execFileSync("pict", args, { encoding: "utf8" });
+    execFileSync("docker", ["build", "-f", path.join(DOCKER_DIR, "Dockerfile"), "-t", IMAGE, DOCKER_DIR], {
+      stdio: ["ignore", "ignore", "inherit"],
+    });
   } catch (err) {
-    if (err.code === "ENOENT") {
-      console.error(
-        "pict-gen: the `pict` binary was not found on PATH.\n" +
-          "Install it with: brew install pict\n" +
-          "(https://github.com/microsoft/pict)",
-      );
-      process.exit(1);
-    }
+    dockerFail(err);
+  }
+}
+
+function runPict(modelPath, config) {
+  const args = ["run", "--rm", "-v", `${MODELS_DIR}:/models:ro`, IMAGE, `/models/${path.basename(modelPath)}`];
+  if (config.order !== undefined) args.push(`/o:${config.order}`);
+  if (config.seed !== undefined) args.push(`/e:/models/${config.seed}`);
+  try {
+    return execFileSync("docker", args, { encoding: "utf8" });
+  } catch (err) {
+    if (err.code === "ENOENT") dockerFail(err);
     console.error(`pict-gen: pict failed on ${path.relative(process.cwd(), modelPath)}`);
     console.error(err.stderr?.toString() ?? err.message);
     process.exit(1);
@@ -78,6 +108,8 @@ function main() {
     console.log("pict-gen: no *.pict models found under tests/models/ — nothing to do.");
     return;
   }
+
+  ensureImage();
 
   for (const file of modelFiles) {
     const modelPath = path.join(MODELS_DIR, file);
