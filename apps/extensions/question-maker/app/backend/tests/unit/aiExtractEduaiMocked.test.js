@@ -16,10 +16,12 @@ vi.mock('../../src/services/eduaiService.js', () => ({
   },
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Question_Metadata: {},
-  Course: { findByPk },
-  Topics: { findAll },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    questionMetadata: {},
+    course: { findUnique: findByPk },
+    topics: { findMany: findAll },
+  },
 }));
 
 vi.mock('../../src/services/courseListService.js', () => ({
@@ -68,7 +70,7 @@ describe('extractQuestionsFromText (EduAI mocked)', () => {
 
     const out = await extractQuestionsFromText('Exam paper snippet with a question.', 7, 'test:model', {});
 
-    expect(findByPk).toHaveBeenCalledWith(7, { attributes: ['id', 'coreCourseId'] });
+    expect(findByPk).toHaveBeenCalledWith({ where: { id: 7 }, select: { id: true, coreCourseId: true } });
     expect(findAll).toHaveBeenCalled();
     expect(generateQuestions).toHaveBeenCalled();
     const call = generateQuestions.mock.calls[0][0];

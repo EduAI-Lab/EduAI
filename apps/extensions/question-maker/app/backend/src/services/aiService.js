@@ -4,7 +4,7 @@
  */
 import axios from "axios";
 import { config } from "../config/settings.js";
-import { Question_Metadata, Topics, Course } from "../schema/index.js";
+import { prisma } from "../config/database.js";
 import eduaiService from "./eduaiService.js";
 import { enrichCourseDetail } from "./courseListService.js";
 import {
@@ -311,10 +311,10 @@ const extractQuestionsWithEduAI = async (text, course, model = "google:gemini-2.
   let topics = [];
   if (course?.id) {
     try {
-      topics = await Topics.findAll({
+      topics = await prisma.topics.findMany({
         where: { courseId: course.id },
-        attributes: ['id', 'name'],
-        order: [['name', 'ASC']]
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' }
       });
     } catch (error) {
       console.error("Failed to fetch topics for course", error.message);
@@ -654,9 +654,9 @@ const enrichQuestionsWithTopics = async (questions, courseId) => {
     return questions;
   }
 
-  const topics = await Topics.findAll({
+  const topics = await prisma.topics.findMany({
     where: { courseId },
-    order: [["id", "ASC"]],
+    orderBy: { id: "asc" },
   });
 
   if (topics.length === 0) {
@@ -719,7 +719,10 @@ export const extractQuestionsFromText = async (rawText, courseId, model, apiKeys
 
   // `code`/`name` are Core-owned and no longer stored locally (#1072 §4 step
   // 10) — read through Core for the display code used in the extraction prompt.
-  const course = await Course.findByPk(courseId, { attributes: ["id", "coreCourseId"] });
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, coreCourseId: true },
+  });
   const enrichedCourse = course ? await enrichCourseDetail(course, { cookie }) : null;
 
   const extracted = await extractQuestionsWithEduAI(normalized, enrichedCourse, model, apiKeys, { cookie });
