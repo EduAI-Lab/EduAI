@@ -3,6 +3,20 @@ import { getCoreLoginUrl } from '@/lib/coreUrl';
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || '/api';
 
+/**
+ * Server pagination envelope (#1044). QM's paginated list endpoints return
+ * `{ success, data, total, page, pageSize }`; `data` stays a bare array so
+ * existing readers that only touch `data` keep working. Mirrors ai-tutor's
+ * `Paginated<T>` (#1043) / Core's contract (#1041), plus QM's `success` flag.
+ */
+export type Paginated<T> = {
+  success: boolean;
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export const api = axios.create({
   baseURL: API_URL,
   headers: {

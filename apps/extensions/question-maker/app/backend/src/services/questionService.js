@@ -220,10 +220,28 @@ export const createQuestion = async (userId, questionData) => {
   }
 };
 
-/** Returns questions (with course + variant associations) scoped to the requesting user. */
+/**
+ * Enriches raw question rows with their Core-backed course projection and the
+ * derived variant semesters. Exported so a batched reader (the export scan) can
+ * pay the single Core catalog fetch inside `enrichRowsWithCourse` once for the
+ * whole set instead of once per batch.
+ */
+export const enrichQuestionRows = async (rows) => {
+  const enriched = await enrichRowsWithCourse(rows);
+  return enriched.map(withDerivedVariantSemesters);
+};
+
+/**
+ * Returns questions (with course + variant associations) scoped to the requesting user.
+ *
+ * `enrich: false` returns the raw rows and skips `enrichRowsWithCourse`, whose
+ * `getAllCoursesFromCore()` call is an uncached full-catalog fetch — callers
+ * that page through in batches should skip it and run `enrichQuestionRows` once
+ * over the assembled set.
+ */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
-    const { courseId, search, limit = 50, offset = 0 } = options;
+    const { courseId, search, limit = 50, offset = 0, enrich = true } = options;
     
     // Build where clause for Question_Metadata
     const whereClause = {};
@@ -250,7 +268,11 @@ export const getQuestionsByUser = async (userId, options = {}) => {
           }
         }
       },
-      orderBy: { createdAt: 'desc' },
+      // `id` breaks ties so LIMIT/OFFSET paging is stable: `createdAt` is not
+      // unique (OCR extract/save and bulk AI generation insert many rows in one
+      // statement), and without a tiebreak a row can land on two pages while
+      // another is skipped entirely.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: parseInt(limit),
       skip: parseInt(offset)
     });
@@ -263,8 +285,8 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       );
     }
 
-    const enriched = await enrichRowsWithCourse(filteredQuestions);
-    return enriched.map(withDerivedVariantSemesters);
+    if (!enrich) return filteredQuestions;
+    return enrichQuestionRows(filteredQuestions);
   } catch (error) {
     throw error;
   }
@@ -961,7 +983,11 @@ export const getVariantsByQuestion = async (questionId, userId) => {
 
     const variants = await prisma.variants.findMany({
       where: { questionMetadataId: questionId },
-      orderBy: { createdAt: 'asc' }
+      // `id` breaks ties so the ordering is total (#1044). `createdAt` is not
+      // unique — bank generation inserts a question's variants in one statement,
+      // so they share a timestamp — and paging a non-total order can repeat and
+      // drop rows across requests.
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
 
     return variants;
