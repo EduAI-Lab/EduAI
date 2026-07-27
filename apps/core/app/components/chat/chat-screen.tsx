@@ -74,6 +74,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as ChatNavigationState | null;
+  const [searchParams, setSearchParams] = useSearchParams();
   const { assistive, setAssistive } = useAssistiveUi();
   // Course picker, not a table — one bounded page instead of the whole list (#1041).
   const { courses } = useCourses({ pageSize: 200 });
@@ -97,7 +98,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       : defaultChatModelId(chatModels, routerAutoEnabled);
   });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
-    editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
+    editableTranscript?.chat.courseCode ??
+      searchParams.get("courseCode") ??
+      lastCourseCode ??
+      null,
   );
   const [chatId, setChatId] = useState<string | null>(
     editableTranscript?.chat.id ?? null,
@@ -170,7 +174,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
   const { chats, isLoading: historyLoading, error: historyError, refresh: refreshHistory } =
     useChatHistory({ scope: "own", limit: 50 });
-  const [searchParams, setSearchParams] = useSearchParams();
   // One-shot flag so ?courseCode= param is only applied on mount.
   const courseParamApplied = useRef(false);
 
@@ -188,27 +191,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       setAssistive(checked);
     },
     [setAssistive],
-  );
-
-  const handleCourseChange = useCallback(
-    (code: string | null) => {
-      const action = resolveCourseChangeAction({
-        currentCourseCode: selectedCourseCode,
-        nextCourseCode: code,
-        chatId,
-      });
-      if (action.kind === "noop") return;
-
-      persistPreference({ lastCourseCode: code });
-
-      if (action.kind === "new-chat") {
-        navigate(action.to, { state: { focusMode } });
-        return;
-      }
-
-      setSelectedCourseCode(action.courseCode);
-    },
-    [chatId, focusMode, navigate, persistPreference, selectedCourseCode],
   );
 
   // Students see a first-visit privacy notice explaining course-chat visibility.
@@ -266,13 +248,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     epoch: reorientationEpoch,
   });
 
-  // Apply ?courseCode= deep-link param once on mount, then strip it from URL.
+  // The state initializer applies ?courseCode= before the default-course effect
+  // can run. Strip the one-shot handoff parameter after mount.
   useEffect(() => {
     if (courseParamApplied.current) return;
     const code = searchParams.get("courseCode");
     if (!code) return;
     courseParamApplied.current = true;
-    setSelectedCourseCode(code);
     const next = new URLSearchParams(searchParams);
     next.delete("courseCode");
     setSearchParams(next, { replace: true });
@@ -297,8 +279,16 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
-    useChat({
+  const {
+    messages,
+    input,
+    handleInputChange,
+    handleSubmit,
+    isLoading,
+    stop,
+    setMessages,
+    setInput,
+  } = useChat({
       api: "/api/chat",
       // Seed the composer from the route loader's transcript (DB is the source of
       // truth). Blank on /chat; full history on /chat/:chatId for owned chats.
@@ -372,6 +362,50 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         setStreamingWasAutoRouted(false);
       },
     });
+
+  const handleCourseChange = useCallback(
+    (code: string | null) => {
+      const action = resolveCourseChangeAction({
+        currentCourseCode: selectedCourseCode,
+        nextCourseCode: code,
+        chatId,
+      });
+      if (action.kind === "noop") return;
+
+      persistPreference({ lastCourseCode: code });
+
+      if (action.kind === "new-chat") {
+        // A chat id can arrive in onResponse while the URL is still /chat. A
+        // same-route navigation does not remount this component, so clear all
+        // persisted/in-flight state before handing off the selected course.
+        stop();
+        pendingNavigateChatId.current = null;
+        pendingRoutedRegistryIdRef.current = null;
+        setChatId(null);
+        setSystemPrompt(null);
+        setMessages([]);
+        setInput("");
+        setSelectedCourseCode(action.courseCode);
+        setRoutedModelByMessageId({});
+        setStreamingRoutedRegistryId(null);
+        setWebToolsEnabled(false);
+        navigate(action.to, { state: { focusMode } });
+        return;
+      }
+
+      setSelectedCourseCode(action.courseCode);
+    },
+    [
+      chatId,
+      focusMode,
+      navigate,
+      persistPreference,
+      selectedCourseCode,
+      setInput,
+      setMessages,
+      stop,
+    ],
+  );
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
