@@ -3,36 +3,36 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const courseFindAll = vi.fn();
-const courseFindOne = vi.fn();
+const courseFindMany = vi.fn();
+const courseFindUnique = vi.fn();
 const courseCreate = vi.fn();
 const courseUpdate = vi.fn();
-const topicsFindAll = vi.fn();
+const topicsFindMany = vi.fn();
 const topicsCreate = vi.fn();
-const assessmentsFindOne = vi.fn();
+const assessmentsFindFirst = vi.fn();
 const createAssessment = vi.fn();
 
 // ensurePracticeExam serializes via a transaction-scoped advisory lock; in
 // unit tests the transaction is a passthrough and the lock query a no-op.
-vi.mock('../../src/config/database.js', () => ({
-  sequelize: {
-    transaction: vi.fn(async (fn) => fn({})),
-    query: vi.fn().mockResolvedValue([]),
-  },
-}));
+const tx = {
+  $queryRaw: vi.fn().mockResolvedValue([]),
+  $executeRaw: vi.fn().mockResolvedValue(undefined),
+  assessments: { findFirst: assessmentsFindFirst },
+};
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: {
-    findAll: courseFindAll,
-    findOne: courseFindOne,
-    create: courseCreate,
-  },
-  Topics: {
-    findAll: topicsFindAll,
-    create: topicsCreate,
-  },
-  Assessments: {
-    findOne: assessmentsFindOne,
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    $transaction: vi.fn(async (fn) => fn(tx)),
+    course: {
+      findMany: courseFindMany,
+      findUnique: courseFindUnique,
+      create: courseCreate,
+      update: courseUpdate,
+    },
+    topics: {
+      findMany: topicsFindMany,
+      create: topicsCreate,
+    },
   },
 }));
 
@@ -65,12 +65,12 @@ const { importTaughtCoursesFromCore } = await import('../../src/services/importT
 describe('importTaughtCoursesFromCore (QM)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    courseFindAll.mockResolvedValue([]);
-    courseFindOne.mockResolvedValue(null);
-    courseCreate.mockImplementation(async (data) => ({ id: 99, ...data, update: courseUpdate }));
-    topicsFindAll.mockResolvedValue([{ id: 1, name: 'Topic A' }]);
+    courseFindMany.mockResolvedValue([]);
+    courseFindUnique.mockResolvedValue(null);
+    courseCreate.mockImplementation(async ({ data }) => ({ id: 99, ...data }));
+    topicsFindMany.mockResolvedValue([{ id: 1, name: 'Topic A' }]);
     topicsCreate.mockResolvedValue({});
-    assessmentsFindOne.mockResolvedValue(null);
+    assessmentsFindFirst.mockResolvedValue(null);
     createAssessment.mockResolvedValue({});
     syncTopicsFromCoreForCourse.mockResolvedValue(1);
     getCourseEnrollmentsFromCore.mockResolvedValue({ enrollments: [] });
@@ -101,8 +101,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     // `name`/`code` are Core-owned and never written locally (#1072 §4 step 10)
     // — the anchor is just userId + coreCourseId.
     expect(courseCreate).toHaveBeenCalledWith({
-      userId: 'u1',
-      coreCourseId: 'core-1',
+      data: { userId: 'u1', coreCourseId: 'core-1' },
     });
     expect(createAssessment).toHaveBeenCalled();
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalled();
@@ -119,13 +118,8 @@ describe('importTaughtCoursesFromCore (QM)', () => {
         },
       ],
     });
-    const localCourse = {
-      id: 5,
-      userId: 'u1',
-      coreCourseId: 'core-2',
-      update: courseUpdate,
-    };
-    courseFindAll.mockResolvedValue([localCourse]);
+    const localCourse = { id: 5, userId: 'u1', coreCourseId: 'core-2' };
+    courseFindMany.mockResolvedValue([localCourse]);
 
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 
@@ -146,13 +140,8 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [{ id: 'core-3', callerEnrollmentRole: 'INSTRUCTOR' }],
     });
-    const adminAnchor = {
-      id: 7,
-      userId: 'admin-1',
-      coreCourseId: 'core-3',
-      update: courseUpdate,
-    };
-    courseFindAll.mockResolvedValue([adminAnchor]);
+    const adminAnchor = { id: 7, userId: 'admin-1', coreCourseId: 'core-3' };
+    courseFindMany.mockResolvedValue([adminAnchor]);
     getCourseEnrollmentsFromCore.mockResolvedValue({
       enrollments: [{ studentId: 'u1', role: 'INSTRUCTOR', isActive: true }],
     });
@@ -162,7 +151,7 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     expect(result.imported).toBe(0);
     expect(result.synced).toBe(1);
     expect(courseCreate).not.toHaveBeenCalled();
-    expect(courseUpdate).toHaveBeenCalledWith({ userId: 'u1' });
+    expect(courseUpdate).toHaveBeenCalledWith({ where: { id: adminAnchor.id }, data: { userId: 'u1' } });
     expect(syncTopicsFromCoreForCourse).toHaveBeenCalledWith(adminAnchor, 'session=abc');
     expect(createAssessment).toHaveBeenCalled();
   });
@@ -171,13 +160,8 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [{ id: 'core-4', callerEnrollmentRole: 'INSTRUCTOR' }],
     });
-    const coInstructorAnchor = {
-      id: 8,
-      userId: 'u2',
-      coreCourseId: 'core-4',
-      update: courseUpdate,
-    };
-    courseFindAll.mockResolvedValue([coInstructorAnchor]);
+    const coInstructorAnchor = { id: 8, userId: 'u2', coreCourseId: 'core-4' };
+    courseFindMany.mockResolvedValue([coInstructorAnchor]);
     getCourseEnrollmentsFromCore.mockResolvedValue({
       enrollments: [
         { studentId: 'u2', role: 'INSTRUCTOR', isActive: true },
@@ -197,8 +181,8 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [{ id: 'core-5', callerEnrollmentRole: 'INSTRUCTOR' }],
     });
-    const anchor = { id: 9, userId: 'admin-1', coreCourseId: 'core-5', update: courseUpdate };
-    courseFindAll.mockResolvedValue([anchor]);
+    const anchor = { id: 9, userId: 'admin-1', coreCourseId: 'core-5' };
+    courseFindMany.mockResolvedValue([anchor]);
     getCourseEnrollmentsFromCore.mockRejectedValue(new Error('Core unreachable'));
 
     const result = await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
@@ -211,10 +195,10 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [{ id: 'core-6', callerEnrollmentRole: 'INSTRUCTOR' }],
     });
-    courseFindAll.mockResolvedValue([]);
+    courseFindMany.mockResolvedValue([]);
     courseCreate.mockRejectedValue(new Error('duplicate key value violates unique constraint'));
-    const racedAnchor = { id: 10, userId: 'u1', coreCourseId: 'core-6', update: courseUpdate };
-    courseFindOne.mockImplementation(async ({ where }) =>
+    const racedAnchor = { id: 10, userId: 'u1', coreCourseId: 'core-6' };
+    courseFindUnique.mockImplementation(async ({ where }) =>
       where?.coreCourseId === 'core-6' ? racedAnchor : null,
     );
 
@@ -230,9 +214,9 @@ describe('importTaughtCoursesFromCore (QM)', () => {
     listCoursesFromCore.mockResolvedValue({
       courses: [{ id: 'core-7', callerEnrollmentRole: 'INSTRUCTOR' }],
     });
-    const anchor = { id: 11, userId: 'u1', coreCourseId: 'core-7', update: courseUpdate };
-    courseFindAll.mockResolvedValue([anchor]);
-    assessmentsFindOne.mockResolvedValue({ id: 42, name: 'Practice Exam' });
+    const anchor = { id: 11, userId: 'u1', coreCourseId: 'core-7' };
+    courseFindMany.mockResolvedValue([anchor]);
+    assessmentsFindFirst.mockResolvedValue({ id: 42, name: 'Practice Exam' });
 
     await importTaughtCoursesFromCore('u1', 'INSTRUCTOR', 'session=abc');
 

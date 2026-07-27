@@ -8,6 +8,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] perf: Pin a stable `vendor-react` manualChunks split for the Core client bundle and add per-route initial-JS report tooling (`scripts/bundle-report.mjs`, `ANALYZE=1` treemap). (#1039, @mochi_21, 2026-07-21) — [#1146](https://github.com/EduAI-Lab/EduAI/pull/1146)
+- [core] perf: Tree-shake the `@eduai/ui` barrel via `sideEffects` + subpath imports and lazy-load `marked`, cutting unauthenticated login initial JS from ~600KB to ~258KB. (#1038, @mochi_21, 2026-07-21) — [#1146](https://github.com/EduAI-Lab/EduAI/pull/1146)
 - [ci] chore: Coverage-report workflow reworked per #1153 — now runs every 3 days (09:00 UTC + manual dispatch) instead of on every push to `development`, commits the report to a clearer `docs/coverage` branch (was `eduai-summer-2026`), and covers all six test suites instead of backends only: added `test:coverage` (V8, `json-summary`) to `@eduai/ui`, the AI Tutor client, and the Question Maker frontend (whose script previously ran vitest in watch mode with no config — it hung and produced nothing; now a `vitest.coverage.config.ts` aggregates its unit + integration projects like core). Root `npm run test:coverage` aggregates all six. Also adds a non-blocking per-PR **patch-coverage** warning (`pr-coverage.yml`): for the workspaces a PR touches (turbo `--affected`), it measures the share of the PR's *added/changed* lines that a test executes — isolating new code rather than the noisy whole-file %-delta — and posts a single sticky PR comment flagging files below 80% (a changed source file never imported by a test shows as 0%). All six coverage configs now also emit an `lcov` reporter for the per-line hit data this needs. Advisory only: the check always passes. (#1153, @yta3216, 2026-07-22) — [#1155](https://github.com/EduAI-Lab/EduAI/pull/1155)
 
 ### Added
@@ -21,6 +23,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] feat: Fleet Slice 2 — retry once on an alternate healthy vLLM host after inference failure (streaming startup probe + health invalidate); process-local `AI_MAX_INFLIGHT` admission with stream-safe release. Closes #876. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
 - [core] tests: `admission.server` + `fleet-probe-stream` unit coverage; fleet-routing exclude/retry cases. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
+- [question-maker] refactor: Migrate the Question Maker backend from Sequelize to Prisma for platform-wide ORM consistency (Core and AI Tutor already use Prisma) — full schema/services/routes/jobs/seed-scripts/test-suite/Docker/CI port. `CanvasCourseMapping` is now a true 1:1 with `Course`; deleting an assessment un-links (not deletes) its variants. Surfaced and fixed three real bugs during the real-DB integration test pass: a Postgres advisory-lock type/void-deserialization issue, a latent race condition in default-topic creation, and Prisma's stricter typing rejecting string route params that Sequelize silently coerced. (#1122, @evanbones, 2026-07-23) — [#1168](https://github.com/EduAI-Lab/EduAI/pull/1168)
 
 ### Changed
 

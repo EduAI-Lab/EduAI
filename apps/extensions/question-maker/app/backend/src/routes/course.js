@@ -5,7 +5,9 @@
  * peers reach a course, not just its original owner.
  */
 import express from 'express';
-import { Course, Question_Metadata, Topics } from '../schema/index.js';
+import { createId } from '@paralleldrive/cuid2';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
   requireCourseAccess,
@@ -94,18 +96,18 @@ router.post('/', authenticateToken, async (req, res, next) => {
     // existing anchor is a success (200 with the row), not an error. The
     // create path race (mirror wins between our miss and the insert) is
     // absorbed by re-reading on a unique-constraint violation.
-    let courseData = await Course.findOne({ where: { coreCourseId } });
+    let courseData = await prisma.course.findUnique({ where: { coreCourseId } });
     let created = false;
     if (!courseData) {
       try {
-        courseData = await Course.create({
-          userId: req.user.id,
-          coreCourseId,
+        courseData = await prisma.course.create({
+          data: { userId: req.user.id, coreCourseId },
         });
         created = true;
       } catch (error) {
-        if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
-        courseData = await Course.findOne({ where: { coreCourseId } });
+        const isUniqueViolation = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+        if (!isUniqueViolation) throw error;
+        courseData = await prisma.course.findUnique({ where: { coreCourseId } });
         if (!courseData) throw error;
       }
     }
@@ -126,7 +128,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * courses they are enrolled in. Optionally includes per-course question/topic stats.
  *
  * Paginated (#1044, required `page`/`pageSize`). Role visibility is resolved in
- * JS after the full local `Course.findAll()`, so honest SQL `limit`/`offset`
+ * JS after the full local `course.findMany()`, so honest SQL `limit`/`offset`
  * isn't possible without a larger refactor — the visible set is sliced in memory
  * here and `total` reflects the caller's true visible count. Same bounded-interim
  * call #1041 made for Core's pickers.
@@ -134,7 +136,7 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * The per-request cost is not an N+1: `listCoursesForUser` resolves
  * `callerEnrollmentRole` for every row from one cookie-scoped Core list call
  * (#1072 replaced the per-row roster fetch). What remains is that each page
- * redoes the whole filter — one unfiltered `findAll` plus ~2 uncached Core
+ * redoes the whole filter — one unfiltered `findMany` plus ~2 uncached Core
  * catalog reads — so a client walking P pages pays that P times. Pushing the
  * role filter into the query (or caching the catalog reads) is #1206.
  */
@@ -157,22 +159,12 @@ router.get('/', authenticateToken, async (req, res, next) => {
     // Stats are scoped to the courses on the current page only.
     const visibleIds = courses.map((course) => course.id);
     const statRows = visibleIds.length
-      ? await Course.findAll({
-          where: { id: visibleIds },
-          include: [
-            {
-              model: Question_Metadata,
-              as: 'questionMetadata',
-              attributes: ['id', 'type', 'description'],
-              required: false
-            },
-            {
-              model: Topics,
-              as: 'topics',
-              attributes: ['id', 'name'],
-              required: false
-            }
-          ]
+      ? await prisma.course.findMany({
+          where: { id: { in: visibleIds } },
+          include: {
+            questionMetadata: { select: { id: true, type: true, description: true } },
+            topics: { select: { id: true, name: true } }
+          }
         })
       : [];
 
@@ -246,27 +238,17 @@ router.get(
         });
       }
 
-      const courseData = await Course.findOne({
+      const courseData = await prisma.course.findUnique({
         where: { id: req.qmCourse.id },
-        include: [
-          {
-            model: Question_Metadata,
-            as: 'questionMetadata',
-            attributes: ['id', 'type', 'description', 'questionOrder'],
-            include: [
-              {
-                model: Topics,
-                as: 'primaryTopic',
-                attributes: ['id', 'name']
-              }
-            ]
+        include: {
+          questionMetadata: {
+            select: {
+              id: true, type: true, description: true, questionOrder: true,
+              primaryTopic: { select: { id: true, name: true } }
+            }
           },
-          {
-            model: Topics,
-            as: 'topics',
-            attributes: ['id', 'name']
-          }
-        ]
+          topics: { select: { id: true, name: true } }
+        }
       });
 
       res.json({ success: true, data: await enrichCourseDetail(courseData, { cookie }) });
@@ -309,7 +291,7 @@ router.delete(
   requireCourseAccess({ min: 'instructor', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
     try {
-      await req.qmCourse.destroy();
+      await prisma.course.delete({ where: { id: req.qmCourse.id } });
 
       res.json({
         success: true,
@@ -341,15 +323,19 @@ router.get(
       await syncTopicsFromCoreForCourse(course, cookie);
     }
 
-    const { count, rows } = await Topics.findAndCountAll({
-      where: { courseId: req.params.id },
-      // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
-      // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
-      // pages can repeat and drop rows across requests.
-      order: [['createdAt', 'ASC'], ['id', 'ASC']],
-      limit: pagination.limit,
-      offset: pagination.offset
-    });
+    const where = { courseId: course.id };
+    const [count, rows] = await prisma.$transaction([
+      prisma.topics.count({ where }),
+      prisma.topics.findMany({
+        where,
+        // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
+        // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
+        // pages can repeat and drop rows across requests.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: pagination.limit,
+        skip: pagination.offset
+      })
+    ]);
 
     res.json(paginated(rows, count, pagination));
   } catch (error) {
@@ -412,16 +398,22 @@ router.post(
 
     const course = req.qmCourse;
 
-    const topic = await Topics.create({
-      courseId: req.params.id,
-      name: name.trim()
+    const topic = await prisma.topics.create({
+      data: {
+        id: createId(),
+        courseId: course.id,
+        name: name.trim()
+      }
     });
 
     if (course.coreCourseId) {
       try {
         const coreResult = await pushTopicToCore(course.coreCourseId, name.trim());
         if (coreResult?.id) {
-          await topic.update({ coreTopicId: coreResult.id });
+          await prisma.topics.update({ where: { id: topic.id }, data: { coreTopicId: coreResult.id } });
+          // Prisma's update() doesn't mutate `topic` in place (unlike Sequelize's
+          // `.update()`) — patch it locally so the response below reflects the link.
+          topic.coreTopicId = coreResult.id;
         }
       } catch (coreErr) {
         logger.warn({ err: coreErr }, 'Core topic push failed; local topic created without Core link');
@@ -469,11 +461,11 @@ router.patch(
       return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    await course.update({ coreCourseId });
+    const updatedCourse = await prisma.course.update({ where: { id: course.id }, data: { coreCourseId } });
 
     res.json({
       success: true,
-      data: await enrichCourseDetail(course, { cookie }),
+      data: await enrichCourseDetail(updatedCourse, { cookie }),
     });
   } catch (error) {
     next(error);

@@ -9,8 +9,8 @@
  * Core's `pagination.server.ts` (#1041), with two QM-specific deltas:
  *   - Envelope keeps QM's existing `success` flag:
  *       `{ success: true, data: [...], total, page, pageSize }`.
- *   - Returns Sequelize-shaped `{ limit, offset }` (not Prisma `take`/`skip`),
- *     so callers pass the result straight into `findAndCountAll`.
+ *   - Returns ORM-neutral `{ limit, offset }` alongside `{ page, pageSize }`;
+ *     Prisma callers map these onto `take`/`skip`.
  *   `page` clamps to `>= 1`. `pageSize` clamps to `1..maxPageSize`.
  *
  * Two parsing modes — both always yield a bounded window, so no endpoint can
@@ -39,7 +39,7 @@ const DEFAULT_PAGE_SIZE = 25;
 
 /**
  * Upper clamp for `page`. Without it an unbounded value (`?page=1e20`) reaches
- * Sequelize as `OFFSET 2e+22`, which Postgres rejects as out of bigint range —
+ * the DB as `OFFSET 2e+22`, which Postgres rejects as out of bigint range —
  * the client gets a 500 instead of an empty page. Optional mode deliberately
  * doesn't throw on junk params, so the guard has to be a clamp, not a check.
  */

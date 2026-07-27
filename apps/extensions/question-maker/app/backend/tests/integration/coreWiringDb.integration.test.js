@@ -4,10 +4,11 @@
  * Requires TEST_DATABASE_URL to be set (see .env). All auth is handled by
  * stubbing global fetch to return a fixed Core user for session validation.
  * Outbound Core API calls (topics, questions) are also stubbed via fetch.
- * Test data is seeded directly through Sequelize models — no register/login endpoint.
+ * Test data is seeded directly through Prisma — no register/login endpoint.
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import request from 'supertest';
+import { createId } from '@paralleldrive/cuid2';
 
 // findOrCreateUser is called by requireAuth after session validate succeeds.
 // Mock it so we don't need a running Core for user row upserts.
@@ -54,43 +55,41 @@ function enrollmentOk() {
 }
 
 describeDb('Core wiring DB integration', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, Question_Metadata, Variants;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let courseId, topicId, questionId, variantId;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     await connectTestDatabase();
-
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, Question_Metadata, Variants } = schema);
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
 
     // Seed user (mirrors what requireAuth puts in req.user)
-    await User.create({ id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name });
+    await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
 
     // Seed a course (not yet linked to Core)
-    const course = await Course.create({ userId: TEST_USER.id, name: 'Test Course' });
+    const course = await prisma.course.create({ data: { userId: TEST_USER.id } });
     courseId = course.id;
 
     // Seed a topic
-    const topic = await Topics.create({ courseId, name: 'Chapter 1' });
+    const topic = await prisma.topics.create({ data: { id: createId(), courseId, name: 'Chapter 1' } });
     topicId = topic.id;
 
     // Seed a question + draft variant
-    const q = await Question_Metadata.create({ courseId, primaryTopicId: topicId, type: 'SA' });
+    const q = await prisma.questionMetadata.create({ data: { courseId, primaryTopicId: topicId, type: 'SA' } });
     questionId = q.id;
 
-    const v = await Variants.create({
-      questionMetadataId: questionId,
-      questionText: 'What is sorting?',
-      isDraft: true,
+    const v = await prisma.variants.create({
+      data: {
+        questionMetadataId: questionId,
+        questionText: 'What is sorting?',
+        isDraft: true,
+      },
     });
     variantId = v.id;
   });
@@ -100,7 +99,7 @@ describeDb('Core wiring DB integration', () => {
   });
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   const cookie = () => ({ Cookie: 'session=valid' });
@@ -123,7 +122,7 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.coreCourseId).toBe('cuid-core-course');
 
-      const updated = await Course.findByPk(courseId);
+      const updated = await prisma.course.findUnique({ where: { id: courseId } });
       expect(updated.coreCourseId).toBe('cuid-core-course');
     });
 
@@ -141,7 +140,7 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('CORE_COURSE_NOT_AUTHORIZED');
 
-      const unchanged = await Course.findByPk(courseId);
+      const unchanged = await prisma.course.findUnique({ where: { id: courseId } });
       expect(unchanged.coreCourseId).toBeNull();
     });
 
@@ -176,7 +175,7 @@ describeDb('Core wiring DB integration', () => {
     });
 
     it('upserts new Core topics and links existing ones by name', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       const coreTopics = [
         { id: 'cuid-t1', name: 'Chapter 1' }, // matches existing local topic by name
@@ -191,15 +190,15 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.synced).toBe(2);
 
-      const ch1 = await Topics.findOne({ where: { courseId, name: 'Chapter 1' } });
+      const ch1 = await prisma.topics.findFirst({ where: { courseId, name: 'Chapter 1' } });
       expect(ch1.coreTopicId).toBe('cuid-t1');
 
-      const ch2 = await Topics.findOne({ where: { courseId, name: 'Chapter 2' } });
+      const ch2 = await prisma.topics.findFirst({ where: { courseId, name: 'Chapter 2' } });
       expect(ch2.coreTopicId).toBe('cuid-t2');
     });
 
     it('returns 502 when Core fetch fails', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreErr({ error: 'Service Unavailable' }, 503)));
 
@@ -216,7 +215,7 @@ describeDb('Core wiring DB integration', () => {
   // ---------------------------------------------------------------------------
   describe('POST /api/course/:id/topics — Core push', () => {
     it('pushes to Core and stores coreTopicId when course is linked', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       // fetch: session validate, enrollment access check, then Core POST /topics
       vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
@@ -229,12 +228,12 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(201);
       expect(res.body.data.coreTopicId).toBe('cuid-new-topic');
 
-      const stored = await Topics.findOne({ where: { courseId, name: 'Sorting' } });
+      const stored = await prisma.topics.findFirst({ where: { courseId, name: 'Sorting' } });
       expect(stored.coreTopicId).toBe('cuid-new-topic');
     });
 
     it('creates topic locally even when Core push fails', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       vi.stubGlobal('fetch', makeFetch(enrollmentOk(), { ok: false, status: 503, json: () => Promise.resolve({}) }));
 
@@ -246,13 +245,13 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(201);
       expect(res.body.data.coreTopicId).toBeNull();
 
-      const stored = await Topics.findOne({ where: { courseId, name: 'Fallback Topic' } });
+      const stored = await prisma.topics.findFirst({ where: { courseId, name: 'Fallback Topic' } });
       expect(stored).not.toBeNull();
       expect(stored.coreTopicId).toBeNull();
     });
 
     it('uses existingId when Core returns 409', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       vi.stubGlobal(
         'fetch',
@@ -302,7 +301,7 @@ describeDb('Core wiring DB integration', () => {
     });
 
     it('nulls coreQuestionId and returns 404 on Core QUESTION_NOT_FOUND', async () => {
-      await Variants.update({ coreQuestionId: 'cuid-core-q' }, { where: { id: variantId } });
+      await prisma.variants.update({ where: { id: variantId }, data: { coreQuestionId: 'cuid-core-q' } });
 
       vi.stubGlobal('fetch', makeFetch(coreErr({ error: 'QUESTION_NOT_FOUND' }, 404)));
 
@@ -314,12 +313,12 @@ describeDb('Core wiring DB integration', () => {
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('QUESTION_NOT_FOUND');
 
-      const updated = await Variants.findByPk(variantId);
+      const updated = await prisma.variants.findUnique({ where: { id: variantId } });
       expect(updated.coreQuestionId).toBeNull();
     });
 
     it('returns { id, testable } on Core success', async () => {
-      await Variants.update({ coreQuestionId: 'cuid-core-q' }, { where: { id: variantId } });
+      await prisma.variants.update({ where: { id: variantId }, data: { coreQuestionId: 'cuid-core-q' } });
 
       vi.stubGlobal('fetch', makeFetch(coreOk({ id: 'cuid-core-q', testable: true })));
 
@@ -341,10 +340,10 @@ describeDb('Core wiring DB integration', () => {
     const adminCookie = () => ({ Cookie: 'session=admin' });
 
     // ADMIN materialization inserts a Course row owned by the admin — `userId`
-    // has a real FK to `users` (sync({ alter: true }) creates it), so the
-    // admin row must exist locally even though findOrCreateUser is mocked.
+    // has a real FK to `users` — the admin row must exist locally even though
+    // findOrCreateUser is mocked.
     beforeEach(async () => {
-      await User.create({ id: ADMIN_USER.id, email: ADMIN_USER.email, name: ADMIN_USER.name });
+      await prisma.user.create({ data: { id: ADMIN_USER.id, email: ADMIN_USER.email, name: ADMIN_USER.name } });
     });
 
     function makeAdminFetch(...extraMocks) {
@@ -374,7 +373,7 @@ describeDb('Core wiring DB integration', () => {
           }),
         ),
       );
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       const res = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
 
@@ -384,7 +383,7 @@ describeDb('Core wiring DB integration', () => {
 
       // The materialized row is a real, queryable local anchor — not a
       // synthesized response-only object — owned by the requesting admin.
-      const materialized = await Course.findOne({ where: { coreCourseId: 'cuid-core-only' } });
+      const materialized = await prisma.course.findFirst({ where: { coreCourseId: 'cuid-core-only' } });
       expect(materialized).not.toBeNull();
       expect(materialized.userId).toBe(ADMIN_USER.id);
 
@@ -413,12 +412,12 @@ describeDb('Core wiring DB integration', () => {
       const secondRow = second.body.data.find((c) => c.coreCourseId === 'cuid-core-only');
       expect(secondRow.id).toBe(firstRow.id);
 
-      const all = await Course.findAll({ where: { coreCourseId: 'cuid-core-only' } });
+      const all = await prisma.course.findMany({ where: { coreCourseId: 'cuid-core-only' } });
       expect(all).toHaveLength(1);
     });
 
     it('does not materialize and does not error when Core is unreachable', async () => {
-      await Course.update({ coreCourseId: 'cuid-core-course' }, { where: { id: courseId } });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
       vi.stubGlobal(
         'fetch',
         makeAdminFetch(coreErr({ error: 'Service Unavailable' }, 503)),
@@ -430,7 +429,7 @@ describeDb('Core wiring DB integration', () => {
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].coreUnavailable).toBe(true);
 
-      const total = await Course.count();
+      const total = await prisma.course.count();
       expect(total).toBe(1); // no new anchor materialized
     });
   });

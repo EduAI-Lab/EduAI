@@ -1,5 +1,5 @@
-import { Op } from 'sequelize';
-import { Topics } from '../schema/index.js';
+import { createId } from '@paralleldrive/cuid2';
+import { prisma } from '../config/database.js';
 import { getCourseTopicsFromCore } from './coreApiService.js';
 import { logger } from '../utils/logger.js';
 
@@ -28,8 +28,8 @@ export async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreEr
 
   const coreTopicIds = validCoreTopics.map((ct) => ct.id);
   const [localTopics, topicsByCoreId] = await Promise.all([
-    Topics.findAll({ where: { courseId: course.id } }),
-    Topics.findAll({ where: { coreTopicId: { [Op.in]: coreTopicIds } } }),
+    prisma.topics.findMany({ where: { courseId: course.id } }),
+    prisma.topics.findMany({ where: { coreTopicId: { in: coreTopicIds } } }),
   ]);
 
   const localByName = new Map(localTopics.map((topic) => [topic.name, topic]));
@@ -42,20 +42,23 @@ export async function syncTopicsFromCoreForCourse(course, cookie, { failOnCoreEr
     const linkedElsewhere = globalByCoreId.get(ct.id);
     if (linkedElsewhere) {
       if (linkedElsewhere.courseId !== course.id) continue;
-      await linkedElsewhere.update({ name: ct.name });
+      await prisma.topics.update({ where: { id: linkedElsewhere.id }, data: { name: ct.name } });
       synced++;
       continue;
     }
 
     const byName = localByName.get(ct.name);
     if (byName) {
-      await byName.update({ coreTopicId: ct.id });
-      globalByCoreId.set(ct.id, byName);
+      await prisma.topics.update({ where: { id: byName.id }, data: { coreTopicId: ct.id } });
+      globalByCoreId.set(ct.id, { ...byName, coreTopicId: ct.id });
     } else {
-      const created = await Topics.create({
-        name: ct.name,
-        courseId: course.id,
-        coreTopicId: ct.id,
+      const created = await prisma.topics.create({
+        data: {
+          id: createId(),
+          name: ct.name,
+          courseId: course.id,
+          coreTopicId: ct.id,
+        },
       });
       localByName.set(ct.name, created);
       globalByCoreId.set(ct.id, created);

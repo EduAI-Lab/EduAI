@@ -24,7 +24,7 @@ import {
   deleteVariant,
   getVariantsByQuestion
 } from '../services/questionService.js';
-import { Topics } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
 import { pushVariantToCore, VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from '../services/coreWiringService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
@@ -195,12 +195,16 @@ router.put(
         if (course?.coreCourseId) {
           try {
             const pushResult = await pushVariantToCore(variant, course, req.headers.cookie);
-            await variant.update({ coreQuestionId: pushResult.coreQuestionId });
+            await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: pushResult.coreQuestionId } });
+            // Prisma's update() returns a new object rather than mutating `variant`
+            // in place (unlike Sequelize's `.update()`) — patch it locally so the
+            // response below reflects the freshly-linked Core id.
+            variant.coreQuestionId = pushResult.coreQuestionId;
           } catch (coreErr) {
             if (coreErr.status === 422) {
               const errBody = coreErr.body ?? {};
               if (errBody.error === 'INVALID_TOPIC_IDS' && Array.isArray(errBody.deletedTopicIds) && errBody.deletedTopicIds.length > 0) {
-                await Topics.update({ coreTopicId: null }, { where: { coreTopicId: errBody.deletedTopicIds } });
+                await prisma.topics.updateMany({ where: { coreTopicId: { in: errBody.deletedTopicIds } }, data: { coreTopicId: null } });
                 return res.status(422).json({
                   success: false,
                   error: 'INVALID_TOPIC_IDS',
@@ -255,7 +259,7 @@ router.patch(
       const result = await patchQuestionTestableOnCore(variant.coreQuestionId, testable);
 
       if (result === null) {
-        await variant.update({ coreQuestionId: null });
+        await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
         return res.status(404).json({ success: false, error: 'QUESTION_NOT_FOUND' });
       }
 

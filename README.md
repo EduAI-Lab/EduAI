@@ -15,7 +15,7 @@ EduAI/
 │       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
 │       ├── question-maker/          # Question Maker — question bank authoring, Canvas integration
 │       │   └── app/
-│       │       ├── backend/         # Question Maker Express/Sequelize API
+│       │       ├── backend/         # Question Maker Express/Prisma API
 │       │       └── frontend/        # Question Maker Vite/React frontend
 │       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
