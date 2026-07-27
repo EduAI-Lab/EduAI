@@ -17,10 +17,12 @@ vi.mock('../../src/middleware/courseAccess.js', () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findAll: vi.fn() },
-  Question_Metadata: {},
-  Topics: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+    questionMetadata: {},
+    topics: {},
+  },
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
