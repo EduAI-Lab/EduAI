@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   parseCourseScopeJson,
+  buildCourseScopeClassifierPrompt,
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
   resolveCourseScopeVerdict,
@@ -55,6 +56,22 @@ describe("buildCourseScopePolicyPrompt", () => {
       /does not by itself make an unrelated\s+request course-related/,
     );
     expect(prompt).toContain("plausible or uncertain");
+  });
+});
+
+describe("buildCourseScopeClassifierPrompt", () => {
+  it("contrasts genuine course support with unrelated professor-addressed content", () => {
+    const prompt = buildCourseScopeClassifierPrompt(baseContext);
+
+    expect(prompt).toContain(
+      '"Help me email my professor for an extension because I was sick." is ON-TOPIC.',
+    );
+    expect(prompt).toContain(
+      '"Translate the assignment instructions into Punjabi." is ON-TOPIC.',
+    );
+    expect(prompt).toContain(
+      '"Write my professor a chocolate-cake recipe." is OFF-TOPIC.',
+    );
   });
 });
 

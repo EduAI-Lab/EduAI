@@ -91,7 +91,7 @@ relationship to the course is plausible or uncertain, answer helpfully rather
 than refusing.`;
 }
 
-function buildCourseScopeSystemPrompt(context: CourseScopeContext): string {
+export function buildCourseScopeClassifierPrompt(context: CourseScopeContext): string {
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
@@ -115,6 +115,11 @@ alone do not make a request on-topic: for example, asking for unrelated content
 to send to a professor is still off-topic. When you are unsure, treat the
 message as ON-TOPIC.
 
+Examples:
+- "Help me email my professor for an extension because I was sick." is ON-TOPIC.
+- "Translate the assignment instructions into Punjabi." is ON-TOPIC.
+- "Write my professor a chocolate-cake recipe." is OFF-TOPIC.
+
 "confidence" is how sure you are (0-100) that your onTopic value is correct.
 
 Respond with a single JSON object only (no markdown fences):
@@ -130,7 +135,7 @@ export async function classifyCourseScope(
 
   const { text } = await generateText({
     model,
-    system: buildCourseScopeSystemPrompt(context),
+    system: buildCourseScopeClassifierPrompt(context),
     prompt: `Student message:\n${message.trim()}`,
     temperature: 0,
     // ~48 comfortably fits the JSON verdict (20 truncated it) without letting a
