@@ -132,10 +132,13 @@ describe("measureTurnEnergy", () => {
 
 describe("startSidecarMeasurement", () => {
   const originalSidecar = process.env.ENERGY_SIDECAR_URL;
+  const originalTimeout = process.env.ENERGY_SIDECAR_TIMEOUT_MS;
 
   afterEach(() => {
     if (originalSidecar === undefined) delete process.env.ENERGY_SIDECAR_URL;
     else process.env.ENERGY_SIDECAR_URL = originalSidecar;
+    if (originalTimeout === undefined) delete process.env.ENERGY_SIDECAR_TIMEOUT_MS;
+    else process.env.ENERGY_SIDECAR_TIMEOUT_MS = originalTimeout;
     vi.restoreAllMocks();
   });
 
@@ -144,6 +147,29 @@ describe("startSidecarMeasurement", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
 
     await expect(startSidecarMeasurement("turn-1")).resolves.toBeNull();
+  });
+
+  it("uses a short timeout so optional telemetry cannot stall chat startup", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    const timeoutSignal = new AbortController().signal;
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
+
+    await startSidecarMeasurement("turn-2");
+
+    expect(timeoutSpy).toHaveBeenCalledWith(250);
+  });
+
+  it("allows operators to configure the sidecar timeout budget", async () => {
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
+    process.env.ENERGY_SIDECAR_TIMEOUT_MS = "100";
+    const timeoutSignal = new AbortController().signal;
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutSignal);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
+
+    await startSidecarMeasurement("turn-3");
+
+    expect(timeoutSpy).toHaveBeenCalledWith(100);
   });
 });
 

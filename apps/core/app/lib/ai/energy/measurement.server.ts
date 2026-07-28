@@ -22,6 +22,7 @@ export type EnergyMeasurementResult = {
 };
 
 const SIDECAR_URL = () => process.env.ENERGY_SIDECAR_URL?.trim();
+const DEFAULT_SIDECAR_TIMEOUT_MS = 250;
 
 type SidecarStopPayload = {
   energyJoules?: number;
@@ -32,6 +33,15 @@ type SidecarStopPayload = {
 function sidecarBaseUrl(override?: string | null): string | null {
   const raw = override?.trim() || SIDECAR_URL()?.trim();
   return raw ? raw.replace(/\/$/, "") : null;
+}
+
+function sidecarTimeoutMs(): number {
+  const raw = process.env.ENERGY_SIDECAR_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_SIDECAR_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0
+    ? Math.floor(parsed)
+    : DEFAULT_SIDECAR_TIMEOUT_MS;
 }
 
 function sidecarFetchInit(
@@ -62,7 +72,9 @@ export async function startSidecarMeasurement(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tag }),
-        signal: AbortSignal.timeout(3000),
+        // Energy telemetry is optional and must not add seconds to chat TTFT
+        // when a fleet host has no reachable sidecar.
+        signal: AbortSignal.timeout(sidecarTimeoutMs()),
       }),
     );
     if (!res.ok) return null;
@@ -88,7 +100,7 @@ export async function stopSidecarMeasurement(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tag }),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(sidecarTimeoutMs()),
       }),
     );
     if (!res.ok) return null;
