@@ -82,7 +82,7 @@ describe('syncCourseEnrollments', () => {
       expect(listEduAiCourseEnrollmentsServiceKey).not.toHaveBeenCalled();
     });
 
-    it('returns zeros when Core returns no active enrollments (guards against data wipe)', async () => {
+    it('returns zeros when Core returns no active enrollments and there is nothing local to prune', async () => {
       listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
       const result = await syncCourseEnrollments(1);
       expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
@@ -249,6 +249,21 @@ describe('syncCourseEnrollments', () => {
       await syncCourseEnrollments(1);
 
       expect(prisma.courseEnrollment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('prunes all local rows, including the last TA, when Core reports a schema-validated empty roster', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+      prisma.courseEnrollment.findMany.mockResolvedValue([
+        { userId: 'user-cuid-1', role: 'STUDENT' },
+        { userId: 'user-cuid-ta', role: 'TA' },
+      ]);
+
+      const result = await syncCourseEnrollments(1);
+
+      expect(prisma.courseEnrollment.deleteMany).toHaveBeenCalledWith({
+        where: { courseOfferingId: 1, userId: { in: ['user-cuid-1', 'user-cuid-ta'] } },
+      });
+      expect(result).toEqual({ synced: 0, created: 0, updated: 0, deleted: 2, errors: [] });
     });
   });
 

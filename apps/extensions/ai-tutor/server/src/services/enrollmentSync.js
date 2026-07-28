@@ -36,9 +36,11 @@ const lastAutoSyncAt = new Map();
  * - Updates the `role` for rows whose Core role changed (including
  *   STUDENT<->TA transitions, #1065).
  * - Deletes rows for users no longer active in Core, or whose Core role is
- *   no longer STUDENT/TA.
- * - No-ops if Core returns an empty active list (guards against data loss
- *   from transient misconfiguration).
+ *   no longer STUDENT/TA. A schema-validated empty roster is trusted and
+ *   prunes all local STUDENT/TA rows (e.g. a revoked final TA) — Core's
+ *   response is Zod-validated before this function ever sees it, so an
+ *   empty list here means "really zero", not "malformed/misconfigured"
+ *   (#1173).
  * - Pass `options.ttlMs` to skip the Core call (and just report a no-op) if a
  *   sync for this course succeeded within the last `ttlMs` ms.
  * - Pass `options.signal` (e.g. `AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS)`)
@@ -82,12 +84,6 @@ export async function syncCourseEnrollments(courseOfferingId, options = {}) {
   const activeEnrollments = allEnrollments.filter(
     (e) => e.isActive && MIRRORED_ROLES.has(e.role ?? 'STUDENT'),
   );
-
-  // Guard: empty upstream means "no data yet" — don't wipe local rows
-  if (activeEnrollments.length === 0) {
-    lastAutoSyncAt.set(courseOfferingId, Date.now());
-    return { synced: 0, created: 0, updated: 0, deleted: 0, errors: [] };
-  }
 
   const activeUserIds = new Set(activeEnrollments.map((e) => e.studentId));
 
