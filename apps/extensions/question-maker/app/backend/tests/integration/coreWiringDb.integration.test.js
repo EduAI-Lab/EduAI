@@ -39,6 +39,11 @@ function makeFetch(...extraMocks) {
     });
 }
 
+/** #1041: Core's course list answers with `{ data, total, page, pageSize }`. */
+function coursePage(rows) {
+  return { data: rows, total: rows.length, page: 1, pageSize: 100 };
+}
+
 function coreOk(data, status = 200) {
   return { ok: true, status, json: () => Promise.resolve(data) };
 }
@@ -111,7 +116,7 @@ describeDb('Core wiring DB integration', () => {
     it('stores coreCourseId on the course', async () => {
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+        makeFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
       );
 
       const res = await request(app)
@@ -129,7 +134,7 @@ describeDb('Core wiring DB integration', () => {
     it('returns 403 when coreCourseId is outside the instructor scoped Core list (#578)', async () => {
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk({ courses: [{ id: 'cuid-other', code: 'MATH 101' }] })),
+        makeFetch(coreOk(coursePage([{ id: 'cuid-other', code: 'MATH 101' }]))),
       );
 
       const res = await request(app)
@@ -147,7 +152,7 @@ describeDb('Core wiring DB integration', () => {
     it('returns 404 for a course the user does not own', async () => {
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk({ courses: [{ id: 'cuid-core-course', code: 'COSC 111' }] })),
+        makeFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
       );
 
       const res = await request(app)
@@ -365,12 +370,12 @@ describeDb('Core wiring DB integration', () => {
       vi.stubGlobal(
         'fetch',
         makeAdminFetch(
-          coreOk({
-            courses: [
+          coreOk(
+            coursePage([
               { id: 'cuid-core-course', name: 'Existing Course', code: 'COSC 111' },
               { id: 'cuid-core-only', name: 'Core Only Course', code: 'MATH 200' },
-            ],
-          }),
+            ]),
+          ),
         ),
       );
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
@@ -394,7 +399,7 @@ describeDb('Core wiring DB integration', () => {
     it('is idempotent: a second request creates no duplicate anchor', async () => {
       vi.stubGlobal(
         'fetch',
-        makeAdminFetch(coreOk({ courses: [{ id: 'cuid-core-only', name: 'Core Only Course' }] })),
+        makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-only', name: 'Core Only Course' }]))),
       );
 
       const first = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
@@ -404,7 +409,7 @@ describeDb('Core wiring DB integration', () => {
 
       vi.stubGlobal(
         'fetch',
-        makeAdminFetch(coreOk({ courses: [{ id: 'cuid-core-only', name: 'Core Only Course' }] })),
+        makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-only', name: 'Core Only Course' }]))),
       );
 
       const second = await request(app).get('/api/course?page=1&pageSize=100').set(adminCookie());
