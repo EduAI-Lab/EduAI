@@ -17,8 +17,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
-    aIProvider: { findMany: vi.fn().mockResolvedValue([]) },
-    aIModel: { findMany: vi.fn().mockResolvedValue([]) },
+    aIProvider: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+    aIModel: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
+    // #1041: the list reads batch count+findMany as an array transaction.
+    $transaction: vi.fn(async (arg: any) => (Array.isArray(arg) ? Promise.all(arg) : arg())),
   },
 }));
 
@@ -30,7 +32,8 @@ import prisma from "~/lib/prisma.server";
 
 function makeArgs(path: string) {
   return {
-    request: new Request(`http://localhost${path}`, { method: "GET" }),
+    // #1041: `page`/`pageSize` are required on the AI config list endpoints.
+    request: new Request(`http://localhost${path}?page=1&pageSize=25`, { method: "GET" }),
     params: {},
     context: {} as never,
   } as any;

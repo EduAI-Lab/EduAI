@@ -74,6 +74,14 @@ export interface CommandPaletteProps {
   openEventName?: string
   /** Fires on every open/close — use to lazily load data (e.g. courses) on first open. */
   onOpenChange?: (open: boolean) => void
+  /**
+   * Fires on every keystroke in the search box (#1143). Providing it switches
+   * the palette to host-driven results: cmdk's own filtering is turned off, so
+   * the host must narrow `groups` by the query itself. Needed when a group is
+   * server-paginated — cmdk can only filter the rows already loaded, which for
+   * a paged list is just the first page.
+   */
+  onQueryChange?: (query: string) => void
 }
 
 export function CommandPalette({
@@ -82,8 +90,11 @@ export function CommandPalette({
   emptyText = "No results found.",
   openEventName,
   onOpenChange,
+  onQueryChange,
 }: CommandPaletteProps) {
   const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState("")
+  const hostFiltered = Boolean(onQueryChange)
 
   // Fire onOpenChange from an effect keyed on `open`, not from inside the state
   // updater — an impure updater double-fires under React 18 StrictMode. Skip the
@@ -121,6 +132,18 @@ export function CommandPalette({
     }
   }, [openEventName])
 
+  // Reset the query on close so the next open starts from the full list rather
+  // than the previous search's narrowed results.
+  React.useEffect(() => {
+    if (!open && hostFiltered && query !== "") {
+      setQuery("")
+      onQueryChange?.("")
+    }
+    // `onQueryChange` is intentionally omitted: this must fire on close, not
+    // when the host happens to pass a new callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hostFiltered])
+
   const run = (fn: () => void) => {
     setOpen(false)
     fn()
@@ -130,8 +153,23 @@ export function CommandPalette({
   const visible = groups.filter((g) => g.items.length > 0)
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder={placeholder} />
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      shouldFilter={hostFiltered ? false : undefined}
+    >
+      <CommandInput
+        placeholder={placeholder}
+        {...(hostFiltered
+          ? {
+              value: query,
+              onValueChange: (value: string) => {
+                setQuery(value)
+                onQueryChange?.(value)
+              },
+            }
+          : {})}
+      />
       <CommandList>
         <CommandEmpty>{emptyText}</CommandEmpty>
         {visible.map((group, gi) => (
