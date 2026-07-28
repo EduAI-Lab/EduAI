@@ -143,7 +143,7 @@ export const questionService = {
     reasoningLevels?: string[];
     aiGenerated?: 'all' | 'ai' | 'not-ai';
     draftStatus?: 'all' | 'draft' | 'reviewed';
-    sortBy?: 'newest' | 'oldest' | 'type' | 'difficulty';
+    sortBy?: 'newest' | 'oldest' | 'type';
     limit?: number;
     offset?: number;
   } = {}): Promise<PaginatedList<Question>> {
@@ -183,7 +183,7 @@ export const questionService = {
     reasoningLevels?: string[];
     aiGenerated?: 'all' | 'ai' | 'not-ai';
     draftStatus?: 'all' | 'draft' | 'reviewed';
-    sortBy?: 'newest' | 'oldest' | 'type' | 'difficulty';
+    sortBy?: 'newest' | 'oldest' | 'type';
     limit?: number;
     offset?: number;
   } = {}): Promise<Question[]> {
