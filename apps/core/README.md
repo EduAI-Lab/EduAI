@@ -104,7 +104,7 @@ OLLAMA_EMBEDDING_MODEL="mxbai-embed-large"
 OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca:8001/ollama (requires CMPS01_INTERNAL_KEY)
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"  # LiteLLM edge on cmps01; see infra/cmps01/README.md
-# CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
+# CMPS01_INTERNAL_KEY=""  # required for nginx /ollama on :8001 (s378 dev server)
 # ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
 # ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
 # ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
@@ -115,6 +115,7 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca
 # AI_ADMISSION_WAIT_MS=15000     # wait before 503 AI_ADMISSION_TIMEOUT
 # FLEET_STREAM_PROBE_MS=10000    # soft-timeout waiting for first stream chunk before treating host as ready
 # npm run fleet:smoke  # from apps/core — pre-flight health check (Slice 2 retries once on alternate healthy host)
+# Hardware energy measurement is research-only; see tools/energy-meter/README.md.
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
