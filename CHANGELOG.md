@@ -24,7 +24,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [core] fix: Bound five previously-unbounded Core list queries — course roster, chat transcript, course/unit chat lists, and course materials now page via a shared cursor `?cursor=`/`?limit=`/`nextCursor` "load more" envelope (`lib/cursor-list.server.ts`) instead of returning every row for a parent; the AI Tutor service-key roster sync stays unpaged (its documented full-sync contract). The all-STUDENT TA-candidate/enroll-student dropdown is replaced by a bounded, course-scoped search-select (`GET /api/courses/:id/student-candidates`), so the platform-wide STUDENT preload is gone. Closes #1042. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
+- [core] fix: Bound five previously-unbounded Core list queries — course roster, chat transcript, course/unit chat lists, and course materials now page via a shared cursor `?cursor=`/`?limit=`/`nextCursor` "load more" envelope (`lib/cursor-list.server.ts`) instead of returning every row for a parent; the AI Tutor service-key roster sync stays unpaged (its documented full-sync contract). The all-STUDENT TA-candidate/enroll-student dropdown is replaced by a bounded, course-scoped search-select (`GET /api/courses/:id/student-candidates`), so the platform-wide STUDENT preload is gone. Unit-chats' owner-role filter also no longer resolves the whole department's active-student roster up front — that lookup is now scoped per fetched batch. Closes #1042. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
 
 ### Added
 

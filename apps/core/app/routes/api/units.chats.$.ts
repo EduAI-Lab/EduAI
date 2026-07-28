@@ -56,22 +56,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // (instructor/TA/unit-admin) chats tagged to a department course would leak
   // into the unit aggregate, contradicting the "student chats" contract above.
   // Sibling relations (chat.user vs chat.course) can't be correlated in a single
-  // Prisma `where`, so we resolve the active-student set and filter in memory.
-  // Computed once per request: bounded by department roster size, not by the
-  // department's total chat volume.
-  const studentEnrollments = await prisma.enrollment.findMany({
-    where: { role: "STUDENT", isActive: true, course: { department, deletedAt: null } },
-    select: { courseId: true, userId: true },
-  });
-  const activeStudent = new Set(
-    studentEnrollments.map((e) => `${e.courseId}:${e.userId}`),
-  );
-
-  // The owner-role filter above can't be pushed into the `where`, so the base
-  // chat query is fetched in bounded batches (cursor-keyset on the raw,
-  // unfiltered rows) and filtered per batch — capped at MAX_BATCHES so a
-  // department with a low student-chat ratio still can't make one request scan
-  // every chat in the unit (#1042).
+  // Prisma `where`, so the base chat query is fetched in bounded batches
+  // (cursor-keyset on the raw, unfiltered rows) and each batch's owner-role
+  // check is resolved against ONLY that batch's (courseId, userId) pairs — not
+  // the whole department's roster, so this stays bounded by `limit`/batch
+  // regardless of department size (#1042 review: an earlier version of this
+  // fix resolved the active-student set for the whole department up front,
+  // which just moved the unbounded-scan problem from chat volume to
+  // enrollment volume). Capped at MAX_BATCHES so a department with a low
+  // student-chat ratio still can't make one request scan every chat in the unit.
   const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
   const MAX_BATCHES = 4;
 
@@ -108,6 +101,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
     rawCursor = rows[rows.length - 1]!.id;
     if (rows.length < limit) exhausted = true;
+
+    const pairs = rows
+      .filter((chat) => chat.course)
+      .map((chat) => ({ courseId: chat.course!.id, userId: chat.user.id }));
+    const activeStudentEnrollments = pairs.length
+      ? await prisma.enrollment.findMany({
+          where: { role: "STUDENT", isActive: true, OR: pairs },
+          select: { courseId: true, userId: true },
+        })
+      : [];
+    const activeStudent = new Set(
+      activeStudentEnrollments.map((e) => `${e.courseId}:${e.userId}`),
+    );
 
     for (const chat of rows) {
       if (chat.course && activeStudent.has(`${chat.course.id}:${chat.user.id}`)) {
