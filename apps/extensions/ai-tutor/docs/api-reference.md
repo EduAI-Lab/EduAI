@@ -370,7 +370,7 @@ Delete an activity.
 
 Submit an answer attempt for an activity.
 
-**Auth:** Course member.
+**Auth:** Enrolled student only — platform role must be STUDENT and course enrollment role must be STUDENT. The server uses the authenticated user for identity; any client-supplied `userId` in the request body is ignored.
 
 **Body:**
 ```json
