@@ -43,6 +43,8 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.

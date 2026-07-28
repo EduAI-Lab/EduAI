@@ -232,11 +232,12 @@ class EduAIService {
     async listCourses(): Promise<EduAICourseOption[]> {
         try {
             const response = await api.get('/api/eduai/courses');
+            // #1041: the backend now unwraps Core's paginated envelope and hands
+            // back a plain course array under `data`.
             const coursesData = response.data.data;
 
-            // Transform AI service API response to our format
-            if (coursesData && Array.isArray(coursesData.courses)) {
-                return coursesData.courses.map((course: any) => ({
+            if (Array.isArray(coursesData)) {
+                return coursesData.map((course: any) => ({
                     id: course.id,
                     code: course.code,
                     name: course.name,
