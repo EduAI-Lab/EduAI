@@ -4,7 +4,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@eduai/ui"
+} from "@eduai/ui/tooltip"
 
 import { policyDefault, type PolicyKey } from "~/lib/policy-flags"
 

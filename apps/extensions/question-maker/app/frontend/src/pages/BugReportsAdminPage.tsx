@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@eduai/ui';
 import { useToast } from '@/components/ui/use-toast';
+import { hasAttachmentContent } from '@eduai/types';
 import { bugReportApi, BugReportRow, BugReportType } from '../services/bugReportApi';
 import { useAuth } from '../contexts/AuthContext';
 import { canTriageBugReports } from '@/lib/rbac';
@@ -197,6 +198,72 @@ export function BugReportsAdminPage() {
       setLoading(false);
     }
   }, [navigate, toast]);
+
+  /** List rows omit diagnostic blobs (#979); load full detail before opening viewers. */
+  const openAttachment = useCallback(
+    async (
+      row: BugReportRow,
+      kind: 'console' | 'network' | 'screenshot',
+    ) => {
+      try {
+        const detailed =
+          row.consoleLogs != null || row.networkLogs != null || row.screenshot != null
+            ? row
+            : await bugReportApi.get(row.id);
+        setRows((current) =>
+          current.map((r) =>
+            r.id === row.id
+              ? {
+                  ...r,
+                  ...detailed,
+                  hasConsoleLogs: hasAttachmentContent(
+                    detailed.consoleLogs,
+                    detailed.hasConsoleLogs,
+                  ),
+                  hasNetworkLogs: hasAttachmentContent(
+                    detailed.networkLogs,
+                    detailed.hasNetworkLogs,
+                  ),
+                  hasScreenshot: hasAttachmentContent(
+                    detailed.screenshot,
+                    detailed.hasScreenshot,
+                  ),
+                }
+              : r,
+          ),
+        );
+        if (kind === 'console') {
+          setDetail({
+            open: true,
+            title: 'Console logs',
+            content: detailed.consoleLogs || '',
+            type: 'logs',
+          });
+        } else if (kind === 'network') {
+          setDetail({
+            open: true,
+            title: 'Network logs',
+            content: detailed.networkLogs || '',
+            type: 'logs',
+          });
+        } else {
+          setDetail({
+            open: true,
+            title: 'Screenshot',
+            content: detailed.screenshot || '',
+            type: 'screenshot',
+          });
+        }
+      } catch {
+        toast({
+          title: 'Could not load attachment',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     if (isLoading) return;
@@ -443,15 +510,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.consoleLogs}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Console logs',
-                                content: row.consoleLogs || '',
-                                type: 'logs'
-                              })
-                            }
+                            disabled={!hasAttachmentContent(row.consoleLogs, row.hasConsoleLogs)}
+                            onClick={() => void openAttachment(row, 'console')}
                           >
                             Console
                           </Button>
@@ -459,15 +519,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.networkLogs}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Network logs',
-                                content: row.networkLogs || '',
-                                type: 'logs'
-                              })
-                            }
+                            disabled={!hasAttachmentContent(row.networkLogs, row.hasNetworkLogs)}
+                            onClick={() => void openAttachment(row, 'network')}
                           >
                             Network
                           </Button>
@@ -475,15 +528,8 @@ export function BugReportsAdminPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            disabled={!row.screenshot}
-                            onClick={() =>
-                              setDetail({
-                                open: true,
-                                title: 'Screenshot',
-                                content: row.screenshot || '',
-                                type: 'screenshot'
-                              })
-                            }
+                            disabled={!hasAttachmentContent(row.screenshot, row.hasScreenshot)}
+                            onClick={() => void openAttachment(row, 'screenshot')}
                           >
                             Screenshot
                           </Button>

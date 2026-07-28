@@ -260,7 +260,9 @@ need_cmd python3
 need_cmd node
 
 curl -fsS "$BASE/api/health" >/dev/null
-curl -fsS "$EDUAI/api/ai-models" >/dev/null
+# #1041: Core's list endpoints answer 400 PAGINATION_REQUIRED without paging,
+# which `-f` would turn into a failed preflight.
+curl -fsS "$EDUAI/api/ai-models?page=1&pageSize=200" >/dev/null
 
 EDUAI_ADMIN_JAR="$TMPDIR/eduai-admin.cookies"
 curl -s -c "$EDUAI_ADMIN_JAR" -b "$EDUAI_ADMIN_JAR" -H "Origin: $EDUAI" -H 'Content-Type: application/json' \

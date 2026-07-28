@@ -1,50 +1,36 @@
 /**
  * Helpers for loading ordered variants and aggregating slot structure for the assessment variant workflow.
  */
-import {
-  AssessmentSections,
-  SectionVariants,
-  Variants,
-  Question_Metadata
-} from '../schema/index.js';
+import { prisma } from '../config/database.js';
 
 /** Loads ordered variant rows for an assessment (all sections, section position then display order). */
 export async function loadOrderedVariantsForAssessment(assessmentId) {
-  const sections = await AssessmentSections.findAll({
+  const sections = await prisma.assessmentSections.findMany({
     where: { assessmentId },
-    order: [['position', 'ASC'], ['id', 'ASC']],
-    include: [
-      {
-        model: SectionVariants,
-        as: 'sectionVariants',
-        separate: true,
-        order: [['displayOrder', 'ASC'], ['id', 'ASC']],
-        include: [
-          {
-            model: Variants,
-            as: 'variant',
-            attributes: [
-              'id',
-              'questionText',
-              'answer',
-              'choices',
-              'difficulty',
-              'reasoningLevel',
-              'questionMetadataId',
-              'isAiGenerated',
-              'isDraft'
-            ],
-            include: [
-              {
-                model: Question_Metadata,
-                as: 'questionMetadata',
-                attributes: ['id', 'type', 'primaryTopicId', 'description']
+    orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    include: {
+      sectionVariants: {
+        orderBy: [{ displayOrder: 'asc' }, { id: 'asc' }],
+        include: {
+          variant: {
+            select: {
+              id: true,
+              questionText: true,
+              answer: true,
+              choices: true,
+              difficulty: true,
+              reasoningLevel: true,
+              questionMetadataId: true,
+              isAiGenerated: true,
+              isDraft: true,
+              questionMetadata: {
+                select: { id: true, type: true, primaryTopicId: true, description: true }
               }
-            ]
+            }
           }
-        ]
+        }
       }
-    ]
+    }
   });
 
   const ordered = [];
