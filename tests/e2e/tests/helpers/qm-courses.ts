@@ -20,7 +20,9 @@ export async function importQmCourseForInstructor(
   coreCourseId: string,
 ): Promise<{ qmCourseId: number }> {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const listRes = await instrCtx.get(`${QM}/api/course`);
+    // `GET /api/course` requires explicit pagination params (#1044) — a bare
+    // call 400s with `PAGINATION_REQUIRED`.
+    const listRes = await instrCtx.get(`${QM}/api/course?page=1&pageSize=100`);
     expect(listRes.status()).toBe(200);
     const { data: courses } = await listRes.json();
     const match = (courses as Array<{ id: number; coreCourseId?: string | null }>).find(

@@ -93,7 +93,11 @@ app.get('/api/admin-only', requireAuth, requireRole(['ADMIN', 'UNIT_ADMIN']), (r
 // applies the correct role filtering for this specific user.
 app.get('/api/courses', requireAuth, async (req, res) => {
   try {
-    const upstream = await fetch(`${EDUAI_BASE_URL}/courses`, {
+    // Core's list endpoints require `page`/`pageSize` and answer with
+    // `{ data, total, page, pageSize }` (#1041) — there is no full-list mode.
+    const page = Number(req.query.page) || 1;
+    const pageSize = Number(req.query.pageSize) || 25;
+    const upstream = await fetch(`${EDUAI_BASE_URL}/courses?page=${page}&pageSize=${pageSize}`, {
       headers: { cookie: req.headers.cookie ?? '' },
     });
     if (!upstream.ok) {

@@ -40,6 +40,13 @@ import type { User } from "~/lib/auth/types";
 import type { NavItem, NavGroupItem, NavItemKey } from "~/lib/rbac/types";
 import { getNavForUser, getNavSecondaryForUser } from "~/lib/rbac/nav";
 
+/** One bounded page at the API's max `pageSize`, for course pickers (#1041). */
+const COURSE_PICKER_QUERY = "page=1&pageSize=200";
+
+/** Matches the debounce the admin table hooks use, so search feels consistent. */
+const SEARCH_DEBOUNCE_MS = 300;
+
+
 /** Window event that opens the palette — dispatched by the header search button. */
 export const CORE_COMMAND_EVENT = "eduai:open-command";
 
@@ -98,44 +105,108 @@ export async function loadPaletteCourses(
 ): Promise<void> {
   if (!open || loadedRef.current) return;
   loadedRef.current = true;
-  try {
-    const res = await fetch("/api/courses");
-    if (!res.ok) {
-      loadedRef.current = false; // allow a retry after an HTTP error
-      return;
-    }
-    const data = (await res.json()) as { courses?: PaletteCourse[] };
-    setCourses(data.courses ?? []);
-  } catch {
-    loadedRef.current = false; // allow a retry on a network/parse error
+  const courses = await fetchPaletteCourses("");
+  if (courses === null) {
+    loadedRef.current = false; // allow a retry after an HTTP/network/parse error
+    return;
   }
+  setCourses(courses);
+}
+
+/**
+ * Fetch one page of `/api/courses`, narrowed by `search` when the user types
+ * (#1143). The page is bounded, so without a server-side `search` the palette
+ * could only ever reach the first 200 courses — typing has to re-query Core
+ * rather than filter the page already in memory.
+ *
+ * Returns `null` on any failure so callers can distinguish "no matches" from
+ * "the request failed" (the latter must not blank an existing list). Exported
+ * for unit tests.
+ */
+export async function fetchPaletteCourses(search: string): Promise<PaletteCourse[] | null> {
+  const query = search ? `${COURSE_PICKER_QUERY}&search=${encodeURIComponent(search)}` : COURSE_PICKER_QUERY;
+  try {
+    const res = await fetch(`/api/courses?${query}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { data?: PaletteCourse[] };
+    return data.data ?? [];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * cmdk's own filtering is off once the palette is host-driven (it would filter
+ * the server's page a second time and drop rows Core already matched), so the
+ * static groups are narrowed here instead. Matches every whitespace-separated
+ * term, so "adm us" still finds "Admin · Users".
+ */
+export function matchesQuery(value: string, query: string): boolean {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = value.toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 export function CommandPalette({ user }: { user: User }) {
   const navigate = useNavigate();
   const [courses, setCourses] = React.useState<PaletteCourse[]>([]);
+  const [query, setQuery] = React.useState("");
   const coursesLoaded = React.useRef(false);
+  const hasSearched = React.useRef(false);
 
   const loadCoursesOnOpen = React.useCallback(
     (open: boolean) => void loadPaletteCourses(coursesLoaded, setCourses, open),
     [],
   );
 
+  // #1143: re-query Core as the user types instead of filtering the loaded page.
+  // Debounced, and stale responses are dropped so a slow early request can't
+  // overwrite the results of a later keystroke.
+  React.useEffect(() => {
+    // The empty query is skipped until the user has actually searched, so this
+    // never duplicates the lazy load on first open — but once they have, it must
+    // run to restore the unfiltered page instead of leaving the last search's
+    // results behind.
+    if (query === "" && !hasSearched.current) return;
+    hasSearched.current = query !== "";
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        const result = await fetchPaletteCourses(query);
+        // A failed request keeps the current list rather than blanking it.
+        if (!cancelled && result !== null) setCourses(result);
+      })();
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const navItems = paletteNavItems(user)
+    .map((item) => {
+      const ItemIcon = NAV_ICONS[item.key] ?? IconArrowRight;
+      return {
+        label: item.title,
+        value: `nav ${item.title}`,
+        icon: <ItemIcon className="size-4 text-muted-foreground" />,
+        onSelect: () => navigate(item.url),
+      };
+    })
+    .filter((item) => matchesQuery(item.value, query));
+
+  const appGroup = buildAppSwitcherGroup({
+    apps: getLauncherApps(),
+    currentAppId: CURRENT_APP_ID,
+    role: user.role,
+  });
+
   const groups: CommandPaletteGroup[] = [
-    {
-      heading: "Go to",
-      items: paletteNavItems(user).map((item) => {
-        const ItemIcon = NAV_ICONS[item.key] ?? IconArrowRight;
-        return {
-          label: item.title,
-          value: `nav ${item.title}`,
-          icon: <ItemIcon className="size-4 text-muted-foreground" />,
-          onSelect: () => navigate(item.url),
-        };
-      }),
-    },
+    { heading: "Go to", items: navItems },
     {
       heading: "Switch course",
+      // Already narrowed by Core's `?search=` — no second client-side filter.
       items: courses.map((course) => ({
         label: course.code,
         sublabel: course.name,
@@ -144,11 +215,10 @@ export function CommandPalette({ user }: { user: User }) {
         onSelect: () => navigate(`/courses/${course.id}`),
       })),
     },
-    buildAppSwitcherGroup({
-      apps: getLauncherApps(),
-      currentAppId: CURRENT_APP_ID,
-      role: user.role,
-    }),
+    {
+      ...appGroup,
+      items: appGroup.items.filter((item) => matchesQuery(item.value ?? item.label, query)),
+    },
   ];
 
   return (
@@ -156,6 +226,7 @@ export function CommandPalette({ user }: { user: User }) {
       groups={groups}
       openEventName={CORE_COMMAND_EVENT}
       onOpenChange={loadCoursesOnOpen}
+      onQueryChange={setQuery}
     />
   );
 }

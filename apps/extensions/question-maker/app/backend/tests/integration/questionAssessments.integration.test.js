@@ -7,6 +7,11 @@
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import request from 'supertest';
 
+/** #1041: Core's course list answers with `{ data, total, page, pageSize }`. */
+function coursePage(rows) {
+  return { data: rows, total: rows.length, page: 1, pageSize: 100 };
+}
+
 vi.mock('../../src/services/authService.js', () => ({
   findOrCreateUser: vi.fn().mockResolvedValue({}),
 }));
@@ -119,19 +124,22 @@ describeDb('Questions & assessments (integration)', () => {
       'fetch',
       vi.fn().mockImplementation((url) => {
         const target = String(url);
+        // #1041: the course list is always called with query params
+        // (`?page=&pageSize=` or `?ids=`), so match on the path, not the tail.
+        const path = target.split('?')[0];
         if (target.endsWith('/api/sessions/validate')) {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
         }
-        if (target.endsWith(`/api/courses/${coreCourseId}`)) {
+        if (path.endsWith(`/api/courses/${coreCourseId}`)) {
           return Promise.resolve({
             ok: true,
             json: () => Promise.resolve({ id: coreCourseId, name, code: 'INT-999' }),
           });
         }
-        if (target.endsWith('/api/courses')) {
+        if (path.endsWith('/api/courses')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ courses: [{ id: coreCourseId, code: 'INT-999', name }] }),
+            json: () => Promise.resolve(coursePage([{ id: coreCourseId, code: 'INT-999', name }])),
           });
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
@@ -146,8 +154,16 @@ describeDb('Questions & assessments (integration)', () => {
     expect(created.body.data.name).toBe(name);
     expect(created.body.data.coreCourseId).toBe(coreCourseId);
 
-    const list = await request(app).get('/api/course').set(cookie());
+    const list = await request(app).get('/api/course?page=1&pageSize=100').set(cookie());
     expect(list.body.data.some((c) => c.id === created.body.data.id && c.name === name)).toBe(true);
+    // Pagination envelope (#1044): data stays a bare array, with metadata siblings.
+    expect(list.body).toMatchObject({ page: 1, pageSize: 100 });
+    expect(typeof list.body.total).toBe('number');
+
+    // The list endpoint requires page/pageSize (#1044) — missing params 400 with a code.
+    const missingParams = await request(app).get('/api/course').set(cookie());
+    expect(missingParams.status).toBe(400);
+    expect(missingParams.body.code).toBe('PAGINATION_REQUIRED');
 
     // Idempotent ensure (unified contract): re-POSTing the same coreCourseId
     // (racing the background mirror, or a plain retry) succeeds with the
@@ -174,13 +190,16 @@ describeDb('Questions & assessments (integration)', () => {
       'fetch',
       vi.fn().mockImplementation((url) => {
         const target = String(url);
+        // #1041: the course list is always called with query params
+        // (`?page=&pageSize=` or `?ids=`), so match on the path, not the tail.
+        const path = target.split('?')[0];
         if (target.endsWith('/api/sessions/validate')) {
           return Promise.resolve({ ok: true, json: () => Promise.resolve({ user: TEST_USER }) });
         }
-        if (target.endsWith('/api/courses')) {
+        if (path.endsWith('/api/courses')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ courses: [{ id: 'some-other-course', code: 'OTH-1' }] }),
+            json: () => Promise.resolve(coursePage([{ id: 'some-other-course', code: 'OTH-1' }])),
           });
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
