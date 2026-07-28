@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [infra] feat: Provision `cmps03` as the heavy/background vLLM fleet host, serving `gpt-oss-120b` with tensor parallelism across two RTX 6000 Ada GPUs behind the standard LiteLLM/nginx `:8001` edge; add reproducible deployment, persistent model caches, authentication, restart policies, and operational verification instructions. Closes #883. (#883, @superbolt08, 2026-07-28) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [infra] feat: Provision `cmps03` as the heavy/background vLLM fleet host, serving `gpt-oss-120b` with tensor parallelism across two RTX 6000 Ada GPUs behind the standard LiteLLM/nginx `:8001` edge; add reproducible deployment, persistent model caches, authentication, restart policies, and operational verification instructions. Closes #883. (#883, @superbolt08, 2026-07-28) — [#1236](https://github.com/EduAI-Lab/EduAI/pull/1236)
 
 ## [Week 12 — July 20–26, 2026]
 
