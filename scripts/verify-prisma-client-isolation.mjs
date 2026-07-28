@@ -7,6 +7,8 @@ const repoRoot = resolve(__dirname, '..');
 
 const aiTutorPkgRoot = resolve(repoRoot, 'apps/extensions/ai-tutor/server');
 const qmBackendPkgRoot = resolve(repoRoot, 'apps/extensions/question-maker/app/backend');
+const aiTutorClientPackage = '@eduai/ai-tutor-prisma-client';
+const qmClientPackage = '@eduai/question-maker-prisma-client';
 
 const aiTutorRequire = createRequire(resolve(aiTutorPkgRoot, 'package.json'));
 const qmRequire = createRequire(resolve(qmBackendPkgRoot, 'package.json'));
@@ -15,18 +17,18 @@ let aiTutorClientPath;
 let qmClientPath;
 
 try {
-  aiTutorClientPath = aiTutorRequire.resolve('@prisma/client');
+  aiTutorClientPath = aiTutorRequire.resolve(aiTutorClientPackage);
 } catch (err) {
-  console.error('FAIL: Could not resolve @prisma/client from AI Tutor package root.');
+  console.error(`FAIL: Could not resolve ${aiTutorClientPackage} from AI Tutor package root.`);
   console.error(`  Package root: ${aiTutorPkgRoot}`);
   console.error(`  Error: ${err.message}`);
   process.exitCode = 1;
 }
 
 try {
-  qmClientPath = qmRequire.resolve('@prisma/client');
+  qmClientPath = qmRequire.resolve(qmClientPackage);
 } catch (err) {
-  console.error('FAIL: Could not resolve @prisma/client from Question Maker backend package root.');
+  console.error(`FAIL: Could not resolve ${qmClientPackage} from Question Maker backend package root.`);
   console.error(`  Package root: ${qmBackendPkgRoot}`);
   console.error(`  Error: ${err.message}`);
   process.exitCode = 1;
@@ -36,22 +38,22 @@ if (process.exitCode) {
   process.exit(process.exitCode);
 }
 
-console.log(`AI Tutor @prisma/client  -> ${aiTutorClientPath}`);
-console.log(`QM Backend @prisma/client -> ${qmClientPath}`);
+console.log(`AI Tutor ${aiTutorClientPackage}  -> ${aiTutorClientPath}`);
+console.log(`QM Backend ${qmClientPackage} -> ${qmClientPath}`);
 
 if (aiTutorClientPath === qmClientPath) {
   console.error('');
   console.error(
-    'FAIL: Both backends resolve the same @prisma/client. The generated clients are NOT isolated.',
+    'FAIL: Both backends resolve the same generated Prisma Client. The clients are NOT isolated.',
   );
   console.error(`  Shared path: ${aiTutorClientPath}`);
   console.error(
-    '  Add output = "../node_modules/@prisma/client" to each schema generator and regenerate.',
+    '  Configure distinct @eduai/* output packages in both schemas and regenerate.',
   );
   process.exit(1);
 }
 
-console.log('PASS: Backends resolve different @prisma/client paths.');
+console.log('PASS: Backends resolve different generated Prisma Client paths.');
 
 const { PrismaClient: AiTutorPrismaClient } = await import(pathToFileURL(aiTutorClientPath).href);
 const { PrismaClient: QmPrismaClient } = await import(pathToFileURL(qmClientPath).href);
