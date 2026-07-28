@@ -176,14 +176,14 @@ jobs contending for it:
 
 | Queue name       | Holds                                              | Worker concurrency |
 |------------------|----------------------------------------------------|--------------------|
-| `ai-jobs:chat`   | interactive (high prio) **+** background when the heavy pool is unset (low prio) | sized to chat pool (cmps01 + cmps02) |
-| `ai-jobs:heavy`  | background (low prio), once cmps03 / `VLLM_FLEET_HEAVY_URL` is configured | sized to heavy pool (cmps03) |
+| `ai-jobs-chat`   | interactive (high prio) **+** background when the heavy pool is unset (low prio) | sized to chat pool (cmps01 + cmps02) |
+| `ai-jobs-heavy`  | background (low prio), once cmps03 / `VLLM_FLEET_HEAVY_URL` is configured | sized to heavy pool (cmps03) |
 
 - **Queue = resolved pool, not nominal `JobType`.** The producer resolves
   `feature → JobType → pool` (reusing the fleet's `resolveFleetHost()` pool logic) and enqueues to
   *that* pool's queue. v1 (heavy pool unset): interactive **and** background both land on
-  `ai-jobs:chat`; background carries low priority so interactive always drains first. When cmps03
-  lands, background re-resolves to `ai-jobs:heavy` and stops contending — no schema or contract
+  `ai-jobs-chat`; background carries low priority so interactive always drains first. When cmps03
+  lands, background re-resolves to `ai-jobs-heavy` and stops contending — no schema or contract
   change.
 - **Priority** is BullMQ's per-job `priority` (lower number = drained first): `interactive` jobs
   enqueue at high priority, `background` at low. Priority only *matters* while a single pool serves
@@ -261,7 +261,7 @@ the instant a job ahead drains. It is **computed live at read time** (count of `
 in the same queue) and returned only by `serializeAiJob()`; nothing persists it. See [§8](#8-status--eta-read-model-917).
 
 **`bullJobId` is unique per queue, not globally.** BullMQ's auto-generated ids are per-queue
-counters, so `ai-jobs:chat` and `ai-jobs:heavy` both issue `"1"`. The row therefore stores the
+counters, so `ai-jobs-chat` and `ai-jobs-heavy` both issue `"1"`. The row therefore stores the
 `queueName` it was pushed onto and the uniqueness is the pair `(queueName, bullJobId)`. Every
 lookup by BullMQ id — producer dedupe (§6) and worker transition (§7) — MUST key on the pair.
 
@@ -280,8 +280,8 @@ async function enqueue(job: JobPayload): Promise<{ jobId: string }>;
 
 Steps (all-or-nothing on the DB row):
 1. **Validate** `job` with `JobPayloadSchema`; reject on failure (throws / 400 at the route).
-2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs:heavy` when the heavy
-   pool is configured for a `background` job, else `ai-jobs:chat`) and the **priority** from
+2. **Resolve the target queue** from the fleet pool for `job.type` (`ai-jobs-heavy` when the heavy
+   pool is configured for a `background` job, else `ai-jobs-chat`) and the **priority** from
    `job.type` (`interactive → high`, `background → low`).
 3. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queueName` = the queue resolved in
    step 2). Position is not stored (§5).
@@ -303,9 +303,12 @@ this contract only guarantees the signature and the row lifecycle above.
 
 ## 7. Dequeue / dispatch contract — worker (#168)
 
+Implemented by `apps/core/app/lib/queue/worker.server.ts`; the standalone process
+entrypoint is `apps/core/scripts/ai-job-worker.ts` (`npm run queue:worker`).
+
 The worker consumes each pool queue and is the **only** writer of terminal state. It MUST:
 
-1. **Consume** from each pool queue (`ai-jobs:chat`, `ai-jobs:heavy`) with a BullMQ `Worker` bound
+1. **Consume** from each pool queue (`ai-jobs-chat`, `ai-jobs-heavy`) with a BullMQ `Worker` bound
    to the shared ioredis connection, one worker per pool sized to that pool's capacity. BullMQ
    drains higher-priority jobs first, so interactive work is served ahead of background whenever a
    queue holds both.

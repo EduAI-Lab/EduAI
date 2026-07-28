@@ -114,7 +114,12 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca
 # AI_MAX_INFLIGHT=8              # process-local chat admission (0 = off)
 # AI_ADMISSION_WAIT_MS=15000     # wait before 503 AI_ADMISSION_TIMEOUT
 # FLEET_STREAM_PROBE_MS=10000    # soft-timeout waiting for first stream chunk before treating host as ready
+# ENERGY_SIDECAR_TIMEOUT_MS=250  # optional telemetry must not delay chat startup
 # npm run fleet:smoke  # from apps/core — pre-flight health check (Slice 2 retries once on alternate healthy host)
+# npm run queue:worker # drain durable BullMQ AI jobs in a separate process
+# AI_JOB_CHAT_CONCURRENCY=8
+# AI_JOB_HEAVY_CONCURRENCY=1
+# AI_JOB_ATTEMPTS=3
 FIRECRAWL_API_KEY="" # Required for Firecrawl web search tool. If not set, web search is unavailable.
 
 # Canvas instructor API tokens (AES-256-GCM; same format as Question Maker ENCRYPTION_KEY)
