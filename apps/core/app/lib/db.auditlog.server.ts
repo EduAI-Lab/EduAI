@@ -5,6 +5,7 @@
  * without duplicating pagination, filtering, and security-category conventions.
  */
 import prisma from "~/lib/prisma.server";
+import { normalizePagination } from "~/lib/pagination.server";
 
 // Keep this union in lockstep with the AuditLogCategory enum in prisma/schema.prisma.
 export type AuditLogCategory =
@@ -60,19 +61,6 @@ export type AuditLogListParams = {
 export type SecurityLogListParams = Omit<AuditLogListParams, "category" | "includeSecurity">;
 
 export type AuditLogRow = Awaited<ReturnType<typeof prisma.auditLog.findFirst>>;
-
-function normalizePagination(page = 1, pageSize = 25) {
-  // Clamping avoids pathological query sizes while preserving URL-driven paging behavior.
-  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
-  const safePageSize = Number.isFinite(pageSize)
-    ? Math.min(200, Math.max(1, Math.floor(pageSize)))
-    : 25;
-  return {
-    safePage,
-    safePageSize,
-    skip: (safePage - 1) * safePageSize,
-  };
-}
 
 function buildAuditLogWhere(
   params: AuditLogListParams,

@@ -25,6 +25,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
 import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
 import { importAtCourseForInstructor } from '../helpers/at-courses';
+import { canSeeCoreCourse } from '../helpers/core-courses';
 
 async function getMyId(request: APIRequestContext): Promise<string> {
   const res = await request.get(`${CORE_URL}/api/me`);
@@ -120,12 +121,7 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
       await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
 
       // Student sees the Core course
-      const coreList = await studentCtx.get(`${CORE_URL}/api/courses`);
-      const coreCourses = await coreList.json();
-      const coreCoursesArr: any[] = Array.isArray(coreCourses)
-        ? coreCourses
-        : (coreCourses.courses ?? []);
-      expect(coreCoursesArr.some((c) => c.id === coreCourseId)).toBe(true);
+      expect(await canSeeCoreCourse(studentCtx, coreCourseId)).toBe(true);
 
       // INSTRUCTOR imports a separate Core-linked AT course (not the Core-enrolled course)
       const { atCourseId } = await importAtCourseForInstructor(playwright, instrCtx, {

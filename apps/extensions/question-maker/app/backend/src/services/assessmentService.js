@@ -387,6 +387,11 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
     // and mirrors the ORDER BY clause below. Both the key and the ownership
     // filter are bound as query parameters (Prisma's tagged-template
     // `$queryRaw`), not string-interpolated into the SQL.
+    //
+    // `qm.id` breaks ties so the ordering is total (#1044). The display order in
+    // `question_order` is not guaranteed unique — a bulk add writes the same
+    // index to several rows — and without a tiebreak tied rows can shuffle
+    // between requests, so a LIMIT/OFFSET page can repeat and drop them.
     const assessmentKey = String(assessmentId);
     const orderedRows = await prisma.$queryRaw`
       SELECT qm.id
@@ -394,7 +399,7 @@ export const getQuestionsInAssessment = async (assessmentId, userId) => {
       JOIN courses c ON c.id = qm.course_id
       WHERE c.user_id = ${userId}
         AND qm.question_order ->> ${assessmentKey} IS NOT NULL
-      ORDER BY CAST(qm.question_order ->> ${assessmentKey} AS INTEGER) ASC
+      ORDER BY CAST(qm.question_order ->> ${assessmentKey} AS INTEGER) ASC, qm.id ASC
     `;
     const orderedIds = orderedRows.map((row) => row.id);
 

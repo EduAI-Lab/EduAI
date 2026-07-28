@@ -188,7 +188,8 @@ export const ApiTestPage = () => {
                 variant="outline"
                 onClick={() =>
                   handleApiCall(
-                    () => api.get('/api/course', { params: { includeStats: true } }),
+                    // page/pageSize are required on this list (#1044).
+                    () => api.get('/api/course', { params: { page: 1, pageSize: 200, includeStats: true } }),
                     (data) => setCourseListResult({ status: 'success', payload: data }),
                     (message) => setCourseListResult({ status: 'error', message })
                   )
