@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Changed
+
+- [core] refactor: Remove hardware energy-sidecar session management from live `/api/chat` and fleet host selection while retaining passive token-based `AIInteraction` energy/carbon estimates; hardware measurement is now explicitly research-script-owned. Closes #1241. (@superbolt08, 2026-07-28) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Changed
