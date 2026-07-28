@@ -45,7 +45,6 @@ function buildServer(url: string, jobTypes: JobType[], models: string[]): FleetS
     baseUrl,
     jobTypes,
     models,
-    energySidecarUrl: `${baseUrl}/energy`,
   };
 }
 
