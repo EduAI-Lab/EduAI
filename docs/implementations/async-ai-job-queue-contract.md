@@ -167,6 +167,11 @@ export type JobPayload = z.infer<typeof JobPayloadSchema>;
 - Payload is JSON-serializable — it round-trips through Redis and the `AiJob.result` column.
 - `idempotencyKey`, when present, is passed to BullMQ as the job id so a re-enqueue is a no-op.
 
+After creating the durable row, the producer adds one internal queue-envelope
+field: `aiJobId: AiJob.id`. Callers cannot supply it and it is not stored in
+`AiJob.payload`. The worker uses it to claim the row by primary key even if
+Redis dequeues the job before the producer finishes persisting `bullJobId`.
+
 ---
 
 ## 4. BullMQ topology
@@ -285,8 +290,8 @@ Steps (all-or-nothing on the DB row):
    `job.type` (`interactive → high`, `background → low`).
 3. **Create** the `AiJob` row as `PENDING` (`payload = job`, `queueName` = the queue resolved in
    step 2). Position is not stored (§5).
-4. **Add** to that queue with priority:
-   `queue.add(job.kind, job, { jobId: job.idempotencyKey, priority })`.
+4. **Add** to that queue with priority and the durable row id:
+   `queue.add(job.kind, { ...job, aiJobId: aiJob.id }, { jobId: job.idempotencyKey, priority })`.
 5. **Persist** the returned BullMQ id into `AiJob.bullJobId` — unique against `queueName`, never
    on its own (§5).
 6. **Return** `{ jobId: aiJob.id }` — the durable handle only. Queue position / ETA are **not**
@@ -312,8 +317,8 @@ The worker consumes each pool queue and is the **only** writer of terminal state
    to the shared ioredis connection, one worker per pool sized to that pool's capacity. BullMQ
    drains higher-priority jobs first, so interactive work is served ahead of background whenever a
    queue holds both.
-2. **Transition** the `AiJob` (looked up by `(queueName, bullJobId)` — the id alone is ambiguous
-   across pools, §5) `PENDING → RUNNING`, set `startedAt`,
+2. **Transition** the `AiJob` (looked up by the internal `aiJobId` queue-envelope field, with
+   `(queueName, bullJobId)` retained for legacy jobs) `PENDING → RUNNING`, set `startedAt`,
    increment `attempts`.
 3. **Route:** map `job.type → fleet pool` via `resolveFleetHost()` (fleet layer). Resolve the
    model id (`requestedModel` or Auto) *before* the fleet pick, exactly as the live chat path

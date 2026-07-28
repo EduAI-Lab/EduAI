@@ -2,7 +2,11 @@ import type { Job } from "bullmq";
 import { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
-import { JobPayloadSchema, type JobPayload } from "./job-schema";
+import {
+  JobPayloadSchema,
+  type JobPayload,
+  type QueuedJobPayload,
+} from "./job-schema";
 import { getQueue } from "./queues.server";
 import { priorityFor, resolveQueueName } from "./resolve-pool.server";
 
@@ -90,9 +94,13 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
 
   // 5. Add to that queue with priority; BullMQ job name = kind.
   //    idempotencyKey, when present, becomes the BullMQ job id so a re-enqueue is a no-op.
+  const queuedPayload: QueuedJobPayload = {
+    ...payload,
+    aiJobId: aiJob.id,
+  };
   let bullJob: Job;
   try {
-    bullJob = await getQueue(queueName).add(payload.kind, payload, {
+    bullJob = await getQueue(queueName).add(payload.kind, queuedPayload, {
       jobId: payload.idempotencyKey,
       priority,
       ...aiJobRetryOptions(),

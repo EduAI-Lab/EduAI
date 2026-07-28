@@ -10,7 +10,11 @@ import { isAutoRoutingModelId } from "~/lib/chat-auto-model";
 import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
 import redis from "./connection.server";
-import { JobPayloadSchema, type JobPayload } from "./job-schema";
+import {
+  JobPayloadSchema,
+  type JobPayload,
+  type QueuedJobPayload,
+} from "./job-schema";
 import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { QUEUE_CHAT, type QueueName } from "./resolve-pool.server";
 
@@ -150,7 +154,7 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
   }
 }
 
-function maxAttempts(job: Job<JobPayload>): number {
+function maxAttempts(job: Job<JobPayload | QueuedJobPayload>): number {
   const attempts = job.opts.attempts;
   return typeof attempts === "number" && Number.isFinite(attempts)
     ? Math.max(1, Math.floor(attempts))
@@ -163,7 +167,7 @@ function maxAttempts(job: Job<JobPayload>): number {
  * are only unique within a queue.
  */
 export async function processAiJob(
-  job: Job<JobPayload>,
+  job: Job<JobPayload | QueuedJobPayload>,
   queueName: QueueName,
   execute: ExecuteAiJob = executeAiJobPayload,
 ): Promise<AiJobWorkerOutcome> {
@@ -172,23 +176,43 @@ export async function processAiJob(
   }
   const bullJobId = String(job.id);
 
+  const aiJobId =
+    "aiJobId" in job.data && typeof job.data.aiJobId === "string"
+      ? job.data.aiJobId
+      : null;
   const row = await prisma.aiJob.findUnique({
-    where: {
-      queueName_bullJobId: {
-        queueName,
-        bullJobId,
-      },
-    },
+    where: aiJobId
+      ? { id: aiJobId }
+      : {
+          queueName_bullJobId: {
+            queueName,
+            bullJobId,
+          },
+        },
     select: {
       id: true,
       status: true,
       startedAt: true,
       userId: true,
+      queueName: true,
+      bullJobId: true,
     },
   });
 
   if (!row) {
-    throw new Error(`No AiJob row for ${queueName}/${bullJobId}`);
+    throw new Error(
+      aiJobId
+        ? `No AiJob row ${aiJobId} for ${queueName}/${bullJobId}`
+        : `No AiJob row for ${queueName}/${bullJobId}`,
+    );
+  }
+  if (
+    row.queueName !== queueName ||
+    (row.bullJobId !== null && row.bullJobId !== bullJobId)
+  ) {
+    throw new Error(
+      `AiJob ${row.id} does not belong to ${queueName}/${bullJobId}`,
+    );
   }
   if (row.status === "CANCELLED") {
     return { skipped: true, reason: "cancelled" };
@@ -294,8 +318,8 @@ export function workerConcurrency(queueName: QueueName): number {
 export function createAiJobWorker(
   queueName: QueueName,
   options: Partial<WorkerOptions> = {},
-): Worker<JobPayload, AiJobWorkerOutcome> {
-  const worker = new Worker<JobPayload, AiJobWorkerOutcome>(
+): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
+  const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
     (job) => processAiJob(job, queueName),
     {
@@ -317,12 +341,15 @@ export function createAiJobWorker(
   return worker;
 }
 
-export function startAiJobWorkers(): Worker<JobPayload, AiJobWorkerOutcome>[] {
+export function startAiJobWorkers(): Worker<
+  JobPayload | QueuedJobPayload,
+  AiJobWorkerOutcome
+>[] {
   return AI_JOB_QUEUE_NAMES.map((queueName) => createAiJobWorker(queueName));
 }
 
 export async function closeAiJobWorkers(
-  workers: Worker<JobPayload, AiJobWorkerOutcome>[],
+  workers: Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>[],
 ): Promise<void> {
   await Promise.all(workers.map((worker) => worker.close()));
 }
