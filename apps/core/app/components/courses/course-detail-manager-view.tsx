@@ -221,6 +221,8 @@ export function CourseDetailManagerView({
   const [ragThreshold, setRagThreshold] = useState<string>(
     course.ragSimilarityThreshold?.toString() ?? "",
   );
+  const [courseScopeGuardrailEnabled, setCourseScopeGuardrailEnabled] =
+    useState(course.courseScopeGuardrailEnabled ?? true);
   const [ragSaving, setRagSaving] = useState(false);
   const [ragSaveMsg, setRagSaveMsg] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -503,7 +505,8 @@ export function CourseDetailManagerView({
     setRagSaving(true);
     setRagSaveMsg(null);
     try {
-      const payload: Record<string, number | null> = {
+      const payload: Record<string, number | boolean | null> = {
+        courseScopeGuardrailEnabled,
         ragTopK: ragTopK === "" ? null : parseInt(ragTopK, 10),
         ragSimilarityThreshold:
           ragThreshold === "" ? null : parseFloat(ragThreshold),
@@ -1472,7 +1475,7 @@ export function CourseDetailManagerView({
           </PageTabsContent>
         )}
 
-        {/* ── Settings (RAG retrieval tuning) ── */}
+        {/* ── Settings (course chat) ── */}
         {canManageRagSettings && (
           <PageTabsContent
             value="settings"
@@ -1492,15 +1495,34 @@ export function CourseDetailManagerView({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <IconSettings className="h-5 w-5" />
-                  Search Tuning
+                  Course Chat Settings
                 </CardTitle>
                 <CardDescription>
-                  Override how course chat searches this course's materials by
-                  default. Leave a field blank to use the platform default.
+                  Keep chat focused on this course and tune how it searches
+                  course materials.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-6 max-w-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="grid gap-1">
+                      <Label htmlFor="courseScopeGuardrail">
+                        Strict course-scope check
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Classify each substantive student message and redirect
+                        requests that are clearly unrelated. Course chat remains
+                        course-scoped when this stricter check is off.
+                      </p>
+                    </div>
+                    <Switch
+                      id="courseScopeGuardrail"
+                      checked={courseScopeGuardrailEnabled}
+                      onCheckedChange={setCourseScopeGuardrailEnabled}
+                      aria-label="Enable strict course-scope check"
+                    />
+                  </div>
+
                   <div className="grid gap-2">
                     <Label htmlFor="ragTopK">
                       Results per question{" "}

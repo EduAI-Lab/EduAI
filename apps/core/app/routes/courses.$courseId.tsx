@@ -121,6 +121,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           }
         : { aiInstructions: course.aiInstructions }),
       responseStyleTags: course.responseStyleTags,
+      courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled,
       ragTopK: course.ragTopK,
       ragSimilarityThreshold: course.ragSimilarityThreshold,
       instructorId: course.instructorId,

@@ -73,6 +73,7 @@ describe("GET /api/courses/:id/rag-settings", () => {
     const res = await loader(getArgs(courseId));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
+      courseScopeGuardrailEnabled: true,
       ragTopK: null,
       ragSimilarityThreshold: null,
     });
@@ -137,30 +138,44 @@ describe("PATCH /api/courses/:id/rag-settings", () => {
     await cleanupRbac({ userIds: [outsider.id] });
   });
 
-  it("persists ragTopK and ragSimilarityThreshold for instructors", async () => {
+  it("persists course-scope and RAG settings for instructors", async () => {
     const res = await action(
       patchArgs(
         courseId,
-        { ragTopK: 8, ragSimilarityThreshold: 0.65 },
+        {
+          courseScopeGuardrailEnabled: false,
+          ragTopK: 8,
+          ragSimilarityThreshold: 0.65,
+        },
         { id: instructorId, role: "INSTRUCTOR" },
       ),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       id: courseId,
+      courseScopeGuardrailEnabled: false,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });
 
     const row = await prisma.course.findUnique({
       where: { id: courseId },
-      select: { ragTopK: true, ragSimilarityThreshold: true },
+      select: {
+        courseScopeGuardrailEnabled: true,
+        ragTopK: true,
+        ragSimilarityThreshold: true,
+      },
     });
-    expect(row).toEqual({ ragTopK: 8, ragSimilarityThreshold: 0.65 });
+    expect(row).toEqual({
+      courseScopeGuardrailEnabled: false,
+      ragTopK: 8,
+      ragSimilarityThreshold: 0.65,
+    });
 
     mockSession({ id: instructorId, role: "INSTRUCTOR" });
     const readBack = await loader(getArgs(courseId));
     expect(await readBack.json()).toEqual({
+      courseScopeGuardrailEnabled: false,
       ragTopK: 8,
       ragSimilarityThreshold: 0.65,
     });

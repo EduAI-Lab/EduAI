@@ -93,6 +93,47 @@ describe("reviveStoredMessage", () => {
     expect(revived.metadata).toEqual({ resolvedModelId: "openai:gpt-4o" });
   });
 
+  it("preserves a validated course-scope redirect marker on assistant messages", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m-scope",
+      role: "assistant",
+      content: {
+        content: "Let's get back to the course.",
+        metadata: {
+          resolvedModelId: "vllm:qwen2.5-7b-instruct",
+          courseScopeRedirect: true,
+        },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      courseScopeRedirect: true,
+    });
+  });
+
+  it("drops malformed or non-assistant course-scope redirect metadata", () => {
+    const malformed = reviveStoredMessage({
+      messageId: "m-scope-bad",
+      role: "assistant",
+      content: {
+        content: "answer",
+        metadata: { courseScopeRedirect: "true" },
+      },
+    });
+    const user = reviveStoredMessage({
+      messageId: "m-scope-user",
+      role: "user",
+      content: {
+        content: "question",
+        metadata: { courseScopeRedirect: true },
+      },
+    });
+
+    expect(malformed).not.toHaveProperty("metadata");
+    expect(user).not.toHaveProperty("metadata");
+  });
+
   it("drops malformed or non-assistant resolved-model metadata", () => {
     const malformed = reviveStoredMessage({
       messageId: "m6",

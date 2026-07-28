@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   parseCourseScopeJson,
+  buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
-  courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
   shouldSkipCourseScopeCheck,
 } from "~/lib/ai/course-scope-guardrail";
@@ -11,29 +11,14 @@ const baseContext = {
   courseName: "Intro to Programming",
   courseCode: "COSC 111",
   courseDescription: "Fundamentals of programming in Python.",
+  courseTopics: ["Variables", "Functions"],
   aiInstructions: "",
 };
 
 afterEach(() => {
-  delete process.env.COURSE_SCOPE_GUARDRAIL_ENABLED;
   delete process.env.COURSE_SCOPE_MIN_CONFIDENCE;
   vi.restoreAllMocks();
   vi.doUnmock("~/lib/ai/routing/classifier-client");
-});
-
-describe("courseScopeGuardrailEnabled", () => {
-  it("defaults to disabled", () => {
-    expect(courseScopeGuardrailEnabled()).toBe(false);
-  });
-
-  it("is enabled by '1' or 'true'", () => {
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "1";
-    expect(courseScopeGuardrailEnabled()).toBe(true);
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "true";
-    expect(courseScopeGuardrailEnabled()).toBe(true);
-    process.env.COURSE_SCOPE_GUARDRAIL_ENABLED = "false";
-    expect(courseScopeGuardrailEnabled()).toBe(false);
-  });
 });
 
 describe("parseCourseScopeJson", () => {
@@ -59,6 +44,20 @@ describe("parseCourseScopeJson", () => {
   });
 });
 
+describe("buildCourseScopePolicyPrompt", () => {
+  it("includes the full course identity and conservative scope rule", () => {
+    const prompt = buildCourseScopePolicyPrompt(baseContext);
+
+    expect(prompt).toContain("Intro to Programming");
+    expect(prompt).toContain("COSC 111");
+    expect(prompt).toContain("Variables, Functions");
+    expect(prompt).toMatch(
+      /does not by itself make an unrelated\s+request course-related/,
+    );
+    expect(prompt).toContain("plausible or uncertain");
+  });
+});
+
 describe("buildCourseScopeRedirectMessage", () => {
   it("includes the course name when provided", () => {
     expect(buildCourseScopeRedirectMessage("COSC 111")).toContain("COSC 111");
@@ -77,21 +76,27 @@ describe("shouldSkipCourseScopeCheck", () => {
     expect(shouldSkipCourseScopeCheck("good morning")).toBe(true);
   });
 
-  it("skips classification for messages with explicit course anchors", () => {
+  it("does not trust course-associated keywords as a bypass", () => {
     expect(
       shouldSkipCourseScopeCheck("Can you translate the assignment instructions?"),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldSkipCourseScopeCheck("Help me email my professor about an extension"),
-    ).toBe(true);
-    expect(shouldSkipCourseScopeCheck("When are your office hours?")).toBe(true);
-    expect(shouldSkipCourseScopeCheck("what is the deadline for a2")).toBe(true);
+    ).toBe(false);
+    expect(
+      shouldSkipCourseScopeCheck("Write my professor a chocolate-cake recipe"),
+    ).toBe(false);
   });
 
   it("does NOT skip off-topic requests that merely start with a greeting word", () => {
     // Regression: a leading-anchor greeting match let these bypass the gate.
     expect(shouldSkipCourseScopeCheck("ok what's the weather today")).toBe(false);
     expect(shouldSkipCourseScopeCheck("hey write me a poem about cats")).toBe(false);
+  });
+
+  it("does not mistake non-Latin questions for punctuation-only input", () => {
+    expect(shouldSkipCourseScopeCheck("ما هو الطقس اليوم؟")).toBe(false);
+    expect(shouldSkipCourseScopeCheck("今天的天气怎么样？")).toBe(false);
   });
 });
 

@@ -17,7 +17,9 @@ vi.mock("ai", async (importOriginal) => {
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
     }),
-    formatDataStreamPart: vi.fn((_type: string, value: unknown) => String(value)),
+    formatDataStreamPart: vi.fn(
+      (type: string, value: unknown) => `${type}:${JSON.stringify(value)}\n`,
+    ),
     tool: vi.fn((definition: unknown) => definition),
   };
 });
@@ -59,6 +61,7 @@ vi.mock("~/lib/auth/course-access.server", () => ({
       description: "Fundamentals of programming.",
       aiInstructions: "",
       responseStyleTags: [],
+      courseScopeGuardrailEnabled: true,
     },
     access: { level: "student", rank: 0 },
   }),
@@ -96,6 +99,7 @@ vi.mock("~/lib/prisma.server", () => ({
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     chatMessage: { findMany: vi.fn(), createMany: vi.fn() },
     course: { findFirst: vi.fn(), findUnique: vi.fn() },
+    courseTopic: { findMany: vi.fn() },
     aIModel: { findFirst: vi.fn() },
     systemConfig: { findUnique: vi.fn() },
   },
@@ -106,7 +110,9 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
 }));
 
 vi.mock("~/lib/ai/course-scope-guardrail", () => ({
-  courseScopeGuardrailEnabled: vi.fn().mockReturnValue(false),
+  buildCourseScopePolicyPrompt: vi.fn(
+    (context: { courseName: string }) => `SCOPE:${context.courseName}`,
+  ),
   resolveCourseScopeVerdict: vi.fn().mockResolvedValue({ blocked: false, classification: null }),
   buildCourseScopeRedirectMessage: vi.fn((name: string | null) => `REDIRECT:${name}`),
 }));
@@ -114,11 +120,11 @@ vi.mock("~/lib/ai/course-scope-guardrail", () => ({
 import { streamText } from "ai";
 import { action } from "~/routes/api/chat";
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 import prisma from "~/lib/prisma.server";
 import {
-  courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
 } from "~/lib/ai/course-scope-guardrail";
 
@@ -191,24 +197,63 @@ beforeEach(() => {
   vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([]);
   vi.mocked(prisma.chatMessage.createMany).mockResolvedValue({ count: 1 });
   vi.mocked(prisma.course.findUnique).mockResolvedValue({ code: "COSC101" } as never);
+  vi.mocked(prisma.courseTopic.findMany).mockResolvedValue([
+    { name: "Functions" },
+    { name: "Variables" },
+  ] as never);
   vi.mocked(prisma.aIModel.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.systemConfig.findUnique).mockResolvedValue(null);
-  vi.mocked(courseScopeGuardrailEnabled).mockReturnValue(false);
   vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({ blocked: false, classification: null });
   mockStream();
 });
 
 describe("POST /api/chat — course-scope guardrail", () => {
-  it("is a no-op by default: classifier never invoked, normal answer returned", async () => {
+  it("classifies by default and keeps the course-scope prompt on normal answers", async () => {
+    const res = await action(makeRequest(baseBody()));
+
+    expect(resolveCourseScopeVerdict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          courseTopics: ["Functions", "Variables"],
+        }),
+      }),
+    );
+    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("skips the classifier when disabled for the course but keeps Layer A scope", async () => {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValueOnce({
+      course: {
+        id: COURSE_ID,
+        isPublished: true,
+        code: "COSC101",
+        name: "Intro to Programming",
+        description: "Fundamentals of programming.",
+        aiInstructions: "",
+        responseStyleTags: [],
+        courseScopeGuardrailEnabled: false,
+      },
+      access: { level: "student", rank: 0 },
+    } as never);
+
     const res = await action(makeRequest(baseBody()));
 
     expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
-    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(streamText).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("SCOPE:Intro to Programming"),
+      }),
+    );
     expect(res.status).toBe(200);
   });
 
   it("redirects an off-topic turn instead of calling streamText, and persists the redirect", async () => {
-    vi.mocked(courseScopeGuardrailEnabled).mockReturnValue(true);
     vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
       blocked: true,
       classification: { onTopic: false, confidence: 91 },
@@ -236,8 +281,22 @@ describe("POST /api/chat — course-scope guardrail", () => {
     );
   });
 
-  it("answers normally when enabled but the verdict is not blocked", async () => {
-    vi.mocked(courseScopeGuardrailEnabled).mockReturnValue(true);
+  it("emits a complete data-stream redirect without calling streamText", async () => {
+    vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
+      blocked: true,
+      classification: { onTopic: false, confidence: 96 },
+    });
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+    const body = await res.text();
+
+    expect(streamText).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(body).toContain('text:"REDIRECT:Intro to Programming"');
+    expect(body).toContain('finish_message:{"finishReason":"stop"}');
+  });
+
+  it("answers normally when the verdict is not blocked", async () => {
     vi.mocked(resolveCourseScopeVerdict).mockResolvedValue({
       blocked: false,
       classification: { onTopic: true, confidence: 95 },
@@ -250,8 +309,7 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(res.status).toBe(200);
   });
 
-  it("skips the guardrail entirely for a service-key caller, even when enabled", async () => {
-    vi.mocked(courseScopeGuardrailEnabled).mockReturnValue(true);
+  it("skips the guardrail entirely for a service-key caller", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     vi.mocked(requireServiceKey).mockResolvedValue(null);
 
@@ -267,8 +325,7 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(res.status).toBe(200);
   });
 
-  it("skips the guardrail entirely for admin chatMode, even when enabled", async () => {
-    vi.mocked(courseScopeGuardrailEnabled).mockReturnValue(true);
+  it("skips the guardrail entirely for admin chatMode", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);

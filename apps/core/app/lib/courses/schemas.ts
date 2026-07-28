@@ -66,6 +66,7 @@ export const UpdateCourseSchema = z.object({
 });
 
 export const UpdateCourseRagSettingsSchema = z.object({
+  courseScopeGuardrailEnabled: z.boolean().optional(),
   ragTopK: z
     .number()
     .int()

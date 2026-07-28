@@ -1,8 +1,8 @@
 /**
- * Course-scope chat guardrail — second-pass 7B classification on every course
- * chat turn. When enabled, an off-topic message gets a canned redirect instead
- * of reaching the main model. Fails open on classifier error/timeout: an
- * unreachable classifier host must never block a student's real question.
+ * Course-scope chat guardrail. Layer A is an always-on system-prompt policy for
+ * browser learning chat. Layer B is a per-course second-pass classifier that
+ * can redirect clearly off-topic turns before the main model. Layer B fails
+ * open: an unreachable classifier must never block a student's real question.
  */
 import { generateText } from "ai";
 import { z } from "zod";
@@ -13,6 +13,7 @@ export type CourseScopeContext = {
   courseName: string;
   courseCode: string | null;
   courseDescription: string | null;
+  courseTopics: string[];
   aiInstructions: string | null;
 };
 
@@ -27,11 +28,6 @@ export type CourseScopeVerdict = {
   blocked: boolean;
   classification: CourseScopeClassification | null;
 };
-
-export function courseScopeGuardrailEnabled(): boolean {
-  const raw = process.env.COURSE_SCOPE_GUARDRAIL_ENABLED?.trim().toLowerCase();
-  return raw === "1" || raw === "true";
-}
 
 function classifierModelId(): string {
   return process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
@@ -68,10 +64,38 @@ export function parseCourseScopeJson(text: string): CourseScopeClassification {
   return parsed.data;
 }
 
+function formatCourseTopics(topics: string[]): string {
+  const normalized = topics.map((topic) => topic.trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized.join(", ") : "none listed";
+}
+
+/**
+ * Always-on Layer A policy. This remains active when an instructor disables
+ * the stricter classifier so course chat still behaves as course chat.
+ */
+export function buildCourseScopePolicyPrompt(context: CourseScopeContext): string {
+  return `COURSE-SCOPE POLICY
+You are the assistant for this course:
+- Name: ${context.courseName}
+- Code: ${context.courseCode ?? "not provided"}
+- Description: ${context.courseDescription?.trim() || "not provided"}
+- Topics: ${formatCourseTopics(context.courseTopics)}
+- Instructor guidance: ${context.aiInstructions?.trim() || "none"}
+
+Only help with this course's content, activities, logistics, or support tasks
+that genuinely relate to the course. A mention of a professor, assignment,
+class, or other course-associated word does not by itself make an unrelated
+request course-related. If a request is unrelated, briefly say that you can
+only help with this course and invite a course-related question. When the
+relationship to the course is plausible or uncertain, answer helpfully rather
+than refusing.`;
+}
+
 function buildCourseScopeSystemPrompt(context: CourseScopeContext): string {
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
+Course topics: ${formatCourseTopics(context.courseTopics)}.
 Instructor notes: ${context.aiInstructions?.trim() || "none"}.
 
 A message is ON-TOPIC if it relates to this course in any way, including:
@@ -79,14 +103,17 @@ A message is ON-TOPIC if it relates to this course in any way, including:
 - assignments, exams, grading, deadlines, or other logistics
 - course-related support tasks, including translating course material, study
   planning, accessibility or extension requests, academic-integrity questions,
-  and drafting messages to an instructor, TA, or classmate
+  and drafting messages to an instructor, TA, or classmate when the requested
+  message's purpose or content genuinely relates to the course
 - questions about the course itself: what it covers, prerequisites, or asking
   what the course code means (e.g. "what is ${context.courseCode ?? "this course"}")
 - a natural follow-up, clarification, or greeting in an ongoing course conversation
 
 A message is OFF-TOPIC only when it is clearly unrelated to the course — small
-talk or a request about an unrelated subject or task. When you are unsure,
-treat the message as ON-TOPIC.
+talk or a request about an unrelated subject or task. Course-associated words
+alone do not make a request on-topic: for example, asking for unrelated content
+to send to a professor is still off-topic. When you are unsure, treat the
+message as ON-TOPIC.
 
 "confidence" is how sure you are (0-100) that your onTopic value is correct.
 
@@ -125,28 +152,17 @@ const GREETING_WORDS =
   /\b(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|ok|okay|bye)\b/gi;
 
 /**
- * Strong course anchors are safer to pass through deterministically than to
- * ask a small classifier to reinterpret. Real 7B E2E false positives included
- * translating "assignment instructions" and drafting an extension email to a
- * "professor", even though both are explicitly course-related.
- */
-const EXPLICIT_COURSE_SCOPE_ANCHORS =
-  /\b(course|class|lecture|reading|assignment|homework|exam|midterm|quiz|grade|grading|deadline|due date|syllabus|prerequisite|professor|instructor|teacher|teaching assistant|TA|office hours?)\b/i;
-
-/**
- * Never trips the gate: empty messages, messages that are *nothing but*
- * greetings/thanks, and messages with an explicit course anchor don't need a
- * classifier round-trip. Unlike a leading greeting match, this won't skip
- * off-topic requests that merely open with a greeting word ("ok what's the
- * weather", "hey write me a poem") — those still get classified.
+ * Never trips the gate for empty messages or messages that are nothing but
+ * greetings/thanks. Substantive requests always reach the classifier; keyword
+ * anchors are intentionally not trusted because an unrelated task can mention
+ * a professor, assignment, or course.
  */
 export function shouldSkipCourseScopeCheck(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed) return true;
-  if (EXPLICIT_COURSE_SCOPE_ANCHORS.test(trimmed)) return true;
-  // Strip greeting words, then anything non-alphanumeric. If nothing is left,
-  // the message carried no real content beyond greetings.
-  const residue = trimmed.replace(GREETING_WORDS, "").replace(/[^a-z0-9]/gi, "");
+  // Strip greeting words, then anything except Unicode letters/numbers. ASCII-
+  // only cleanup incorrectly treated substantive non-Latin questions as empty.
+  const residue = trimmed.replace(GREETING_WORDS, "").replace(/[^\p{L}\p{N}]/gu, "");
   return residue.length === 0;
 }
 

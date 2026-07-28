@@ -1,14 +1,14 @@
 /**
- * GET  /api/courses/:id/rag-settings  — read per-course RAG tuning values.
- * PATCH /api/courses/:id/rag-settings — update ragTopK and/or ragSimilarityThreshold.
+ * GET  /api/courses/:id/rag-settings  — read per-course chat settings.
+ * PATCH /api/courses/:id/rag-settings — update chat scope and/or RAG tuning.
  *
  * Auth: caller must have instructor-or-above access to the target course
  * (`resolveCourseAccessWithCourse`, rank >= 2 — ADMIN, UNIT_ADMIN of the
  * course's department, or the course's own INSTRUCTOR). TAs and students
- * never see or set RAG tuning values.
+ * never see or set these values.
  *
- * Both fields are nullable. Sending `null` for a field clears the override and
- * restores the global default.
+ * RAG fields are nullable; sending `null` clears the override and restores the
+ * global default. The course-scope classifier setting is Boolean and defaults on.
  */
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 
@@ -60,10 +60,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return new Response(JSON.stringify(settings), {
+  return new Response(
+    JSON.stringify({
+      ...settings,
+      courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled,
+    }),
+    {
     status: 200,
     headers: { "Content-Type": "application/json" },
-  });
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +134,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const updated = await prisma.course.update({
     where: { id: courseId },
     data: result.data,
-    select: { id: true, ragTopK: true, ragSimilarityThreshold: true },
+    select: {
+      id: true,
+      courseScopeGuardrailEnabled: true,
+      ragTopK: true,
+      ragSimilarityThreshold: true,
+    },
   });
 
   // Flush the in-memory cache so the next RAG query picks up the new settings immediately.

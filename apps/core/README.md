@@ -108,7 +108,6 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca
 # ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
 # ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
 # ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
-# COURSE_SCOPE_GUARDRAIL_ENABLED="false" # opt-in browser learning-chat scope check; fails open
 # COURSE_SCOPE_CLASSIFIER_MODEL=qwen2.5-7b-instruct
 # COURSE_SCOPE_MIN_CONFIDENCE=75
 # COURSE_SCOPE_CLASSIFIER_TIMEOUT_MS=1000
@@ -177,7 +176,7 @@ Send chat messages with course context for grounded responses.
 - `streaming` (boolean): Enable response streaming
 - `adhdAssist` (boolean, optional): Opt-in flag persisted on `Chat.adhdAssist` (default `false`). When `true`, the resolved system prompt is prepended with the verbatim ADHD Assist policy block from `docs/literature/adhd-assist-prompt-policy.md` §3 before being passed to `streamText`. Style is the only IV — model, retrieval, tools, temperature, and streaming behavior are unchanged. UI toggle lives at the top of the chat header on `/chat`. If the field is omitted from the request body, the request falls back to the persisted `Chat.adhdAssist` for the resolved chat — same precedence pattern as `systemPrompt`. If the field is present, it overrides the persisted value (and updates it). When Assist is ON, Phase 3 oversight (`ADHD_ASSIST_OVERSIGHT` env, default enabled) audits the full draft for structural compliance (`**Top summary**`, `**Next?**`, word cap) before emit; set `ADHD_ASSIST_OVERSIGHT=false` to disable the rewrite pass.
 
-When `COURSE_SCOPE_GUARDRAIL_ENABLED=true`, authenticated browser learning-chat turns receive a fast, course-aware classifier pass before main-model generation. High-confidence off-topic turns receive a persisted course-specific redirect; greeting-only turns bypass classification, and classifier errors or timeouts fail open. Admin preview and service-key calls from AI Tutor or Question Maker bypass this guardrail.
+Authenticated browser learning chat is always given a course-scoped system policy containing the course identity, description, topics, and instructor guidance. Each course also enables a stricter classifier by default; instructors can turn that second pass off in Course Settings. High-confidence off-topic turns receive a persisted course-specific redirect, greeting-only turns bypass classification, and classifier errors or timeouts fail open. Admin preview and service-key calls from AI Tutor or Question Maker bypass the classifier.
 
 **Admin chat (`chatMode: "admin"`)**:
 - Write tools only mutate after the admin confirms in chat and the model retries with `confirmed: true`. Write-safety rules are always appended to the system prompt — including when a custom `systemPrompt` is set.

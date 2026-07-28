@@ -136,6 +136,8 @@ model Course {
   aiInstructions         String               @default("")
   /// Instructor-selected response style tag ids (e.g. socratic, concise). Injected at chat time.
   responseStyleTags      String[]             @default([])
+  /// Enables the strict second-pass course-scope classifier. Layer A prompt scoping is always on.
+  courseScopeGuardrailEnabled Boolean         @default(true)
   /// Per-course RAG chunk limit. Overrides the global HYBRID_RAG_MAX_CHUNKS when set.
   ragTopK                Int?
   /// Per-course cosine-similarity threshold (0–1). Overrides RAG_SIMILARITY_THRESHOLD env when set.

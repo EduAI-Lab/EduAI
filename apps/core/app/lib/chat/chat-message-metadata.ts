@@ -23,6 +23,15 @@ export function resolvedModelIdFromMessage(message: unknown): string | null {
     : null;
 }
 
+/** Read the server-owned course-scope redirect marker from stored metadata. */
+export function courseScopeRedirectFromMessage(message: unknown): boolean {
+  return (
+    isRecord(message) &&
+    isRecord(message.metadata) &&
+    message.metadata.courseScopeRedirect === true
+  );
+}
+
 /** Attach durable routing metadata without changing the message id or content. */
 export function withResolvedModelMetadata<T extends Record<string, unknown>>(
   message: T,

@@ -1,5 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
+import {
+  courseScopeRedirectFromMessage,
+  resolvedModelIdFromMessage,
+} from "~/lib/chat/chat-message-metadata";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -85,14 +88,18 @@ export function reviveStoredMessage(record: {
   const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
   const resolvedModelId =
     role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
+  const courseScopeRedirect =
+    role === "assistant" && courseScopeRedirectFromMessage(parsed);
+  const metadata = {
+    ...(resolvedModelId ? { resolvedModelId } : {}),
+    ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
+  };
 
   return {
     id: isNonEmptyString(parsed.id) ? parsed.id : record.messageId,
     role,
     content: text,
     parts: [{ type: "text", text }],
-    ...(resolvedModelId
-      ? { metadata: { resolvedModelId } }
-      : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
 }

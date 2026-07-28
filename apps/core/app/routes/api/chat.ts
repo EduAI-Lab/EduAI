@@ -57,9 +57,10 @@ import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-a
 import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
 import {
+  buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
-  courseScopeGuardrailEnabled,
   resolveCourseScopeVerdict,
+  type CourseScopeContext,
   type CourseScopeVerdict,
 } from "~/lib/ai/course-scope-guardrail";
 import {
@@ -742,7 +743,9 @@ export async function action({ request }: ActionFunctionArgs) {
       code: string;
       description: string | null;
       responseStyleTags: string[];
-      aiInstructions: string;
+      aiInstructions: string | null;
+      courseTopics: string[];
+      courseScopeGuardrailEnabled: boolean;
     } | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
@@ -762,12 +765,28 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+      let courseTopics: string[] = [];
+      if (!isServiceKeyCaller && chatMode !== "admin") {
+        try {
+          const topicRows =
+            (await prisma.courseTopic?.findMany({
+              where: { courseId: effectiveCourseId, deletedAt: null },
+              select: { name: true },
+              orderBy: { name: "asc" },
+            })) ?? [];
+          courseTopics = topicRows.map((topic) => topic.name);
+        } catch (error) {
+          console.warn("[course-scope] failed to load course topics", error);
+        }
+      }
       effectiveCourse = {
         name: course.name,
         code: course.code,
         description: course.description ?? null,
         responseStyleTags: course.responseStyleTags ?? [],
         aiInstructions: course.aiInstructions ?? null,
+        courseTopics,
+        courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? true,
       };
     }
 
@@ -977,6 +996,15 @@ export async function action({ request }: ActionFunctionArgs) {
     const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
     const hasCourse = Boolean(effectiveCourseId);
     const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
+    const courseScopeContext: CourseScopeContext | null = effectiveCourse
+      ? {
+          courseName: effectiveCourse.name,
+          courseCode: effectiveCourse.code,
+          courseDescription: effectiveCourse.description,
+          courseTopics: effectiveCourse.courseTopics,
+          aiInstructions: effectiveCourse.aiInstructions,
+        }
+      : null;
 
     // Kick off the course-scope classifier alongside the RAG prefetch below so
     // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
@@ -984,18 +1012,13 @@ export async function action({ request }: ActionFunctionArgs) {
     // callers — AI Tutor/Question Maker — per design; QM's generation-style
     // prompts would false-positive against an "off-topic" gate).
     const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
-      courseScopeGuardrailEnabled() &&
-      effectiveCourse &&
+      effectiveCourse?.courseScopeGuardrailEnabled &&
+      courseScopeContext &&
       !isServiceKeyCaller &&
       chatMode !== "admin"
         ? resolveCourseScopeVerdict({
             message: lastUserMessageTextForRouting,
-            context: {
-              courseName: effectiveCourse.name,
-              courseCode: effectiveCourse.code,
-              courseDescription: effectiveCourse.description,
-              aiInstructions: effectiveCourse.aiInstructions,
-            },
+            context: courseScopeContext,
           })
         : null;
 
@@ -1463,6 +1486,10 @@ export async function action({ request }: ActionFunctionArgs) {
             effectiveCourse.aiInstructions,
           )
         : "";
+      const courseScopePolicyBlock =
+        courseScopeContext && !isServiceKeyCaller
+          ? buildCourseScopePolicyPrompt(courseScopeContext)
+          : "";
 
       const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
@@ -1473,10 +1500,15 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
-      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
-        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
-        courseStyleBlock,
-      );
+      const defaultCourseSystemPrompt = [
+        appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+          courseStyleBlock,
+        ),
+        courseScopePolicyBlock,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
         try {
@@ -1545,15 +1577,20 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
-          resolvedSystemPrompt ??
-            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = [
+          appendCourseStyleToSystemPrompt(
+            resolvedSystemPrompt ??
+              `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}`,
-          courseStyleBlock,
-        );
+            courseStyleBlock,
+          ),
+          courseScopePolicyBlock,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,

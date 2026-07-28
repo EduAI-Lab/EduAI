@@ -4,6 +4,7 @@ import type { Course } from './use-courses'
 
 export interface CourseDetail extends Omit<Course, 'aiInstructions'> {
   aiInstructions?: string
+  courseScopeGuardrailEnabled?: boolean
   ragTopK?: number | null
   ragSimilarityThreshold?: number | null
   responseStyleTags?: string[]
