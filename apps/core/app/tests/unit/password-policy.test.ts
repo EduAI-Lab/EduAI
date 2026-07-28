@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractPolicyPassword,
   isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
   SKIP_REUSE_PATHS,
   TOKEN_RESET_PATHS,
 } from "~/lib/auth/password-policy";
@@ -27,6 +28,31 @@ describe("isStrongPassword", () => {
 
   it("rejects a 15-char password that is neither complex nor a passphrase", () => {
     expect(isStrongPassword("abcdefghijklmno")).toBe(false); // 15 lowercase
+  });
+
+  it("rejects an 8+ char password missing only lowercase", () => {
+    expect(isStrongPassword("ABCDEFG1!")).toBe(false);
+  });
+
+  it("rejects an 8+ char password missing only uppercase", () => {
+    expect(isStrongPassword("abcdefg1!")).toBe(false);
+  });
+
+  it("rejects an 8+ char password missing only a digit", () => {
+    expect(isStrongPassword("Abcdefgh!")).toBe(false);
+  });
+
+  it("rejects an 8+ char password missing only a symbol", () => {
+    expect(isStrongPassword("Abcdefg1")).toBe(false);
+  });
+});
+
+describe("PASSWORD_POLICY_MESSAGE", () => {
+  it("describes both the complex-password and passphrase options", () => {
+    expect(PASSWORD_POLICY_MESSAGE).toBe(
+      "Password must be at least 8 characters with upper and lower case letters, " +
+        "numbers, and symbols — or a passphrase of at least 16 characters.",
+    );
   });
 });
 
@@ -57,6 +83,18 @@ describe("extractPolicyPassword", () => {
     expect(extractPolicyPassword("/sign-up/email", {})).toBeNull();
     expect(extractPolicyPassword("/sign-up/email", { password: 123 })).toBeNull();
     expect(extractPolicyPassword("/sign-up/email", null)).toBeNull();
+  });
+
+  it("returns null for an unmapped path even if the body has a property literally named 'undefined'", () => {
+    // Guards the early `if (!field) return null;` guard: without it, an unmapped path would
+    // fall through to `body?.[undefined]`, which would read this property and leak it.
+    expect(extractPolicyPassword("/sign-in/email", { undefined: "leaked-password" })).toBeNull();
+  });
+
+  it("returns the newPassword field on set-password", () => {
+    expect(extractPolicyPassword("/set-password", { newPassword: "Abcdef1!" })).toBe(
+      "Abcdef1!",
+    );
   });
 });
 

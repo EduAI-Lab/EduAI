@@ -2,17 +2,41 @@
  * Course API client for CRUD operations and topic retrieval scoped to the authenticated user.
  * Simplifies requests/responses for use in hooks and pages.
  */
-import api from './api';
+import api, { type Paginated } from './api';
+import { fetchAllPages, MAX_PAGE_SIZE } from './pagination';
 import { Course, CourseCreate } from '../types/question';
 import { Topic } from '../types/topic';
 import type { QmCourseAccess } from '@/lib/rbac';
 
+/** Server page size for course reads — the backend's clamp, so the whole-set
+ * read makes the fewest roundtrips possible. */
+const COURSE_LIST_PAGE_SIZE = MAX_PAGE_SIZE;
+
+/** Fetches one server page of courses with pagination metadata (#1044). */
+async function fetchCoursesPage(
+    page: number,
+    pageSize: number = COURSE_LIST_PAGE_SIZE,
+): Promise<Paginated<Course>> {
+    const response = await api.get('/api/course', { params: { page, pageSize } });
+    return response.data;
+}
+
 export const courseService = {
-    /** Fetches courses visible to the caller (role-scoped on the server). */
+    /**
+     * Fetches every course visible to the caller (role-scoped on the server).
+     *
+     * The list endpoint requires pagination (#1044) and clamps `pageSize` to
+     * 200, so this walks pages until `total` is covered. It has to return the
+     * whole set: the course selector does its own search/filter/term-grouping
+     * client-side over `courses`, and an ADMIN's list is Core's entire catalog,
+     * which routinely exceeds one page. Use `getCoursesPage` for a paged view.
+     */
     async getCourses(): Promise<Course[]> {
-        const response = await api.get('/api/course');
-        return response.data.data;
+        return fetchAllPages<Course>('/api/course', {}, COURSE_LIST_PAGE_SIZE);
     },
+
+    /** Fetches one server page of courses with pagination metadata (#1044). */
+    getCoursesPage: fetchCoursesPage,
 
     /** Gets a single course by ID. */
     async getCourse(id: number): Promise<Course> {
@@ -47,10 +71,15 @@ export const courseService = {
         await api.delete(`/api/course/${id}`);
     },
 
-    /** Retrieves topics for a course. */
+    /**
+     * Retrieves every topic for a course.
+     *
+     * The endpoint is paginated and bounded (#1044), so this walks pages. It has
+     * to return the whole set: callers use topics as picker options and compute
+     * coverage ratios over `length`, both of which are wrong on a partial list.
+     */
     async getCourseTopics(courseId: number): Promise<Topic[]> {
-        const response = await api.get(`/api/course/${courseId}/topics`);
-        return response.data.data;
+        return fetchAllPages<Topic>(`/api/course/${courseId}/topics`);
     },
 
     /** Creates a topic under a course. */
@@ -75,7 +104,11 @@ export const courseService = {
     async linkAndSyncFromCore(courseId: number, coreCourseId: string): Promise<void> {
         await api.patch(`/api/course/${courseId}/link-core`, { coreCourseId });
         await api.post(`/api/course/${courseId}/sync-topics`);
-        const topicsResponse = await api.get(`/api/course/${courseId}/topics`);
+        // Only "did the sync produce anything?" matters here, so one bounded
+        // page is enough — no need to walk the whole set to test emptiness.
+        const topicsResponse = await api.get(`/api/course/${courseId}/topics`, {
+            params: { page: 1, pageSize: 1 }
+        });
         const topics = topicsResponse.data.data ?? [];
         if (!Array.isArray(topics) || topics.length === 0) {
             await api.post(`/api/course/${courseId}/topics`, { name: 'General' });

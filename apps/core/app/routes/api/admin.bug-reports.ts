@@ -2,8 +2,10 @@
  * /api/admin/bug-reports (#304, §11) — ADMIN-only triage surface.
  *
  * GET  /api/admin/bug-reports?source=&status=&limit=&offset=
- *      Lists reports across all three apps. Anonymous reports surface with
- *      userId/email/name masked (identity stays in the DB for audit).
+ *      Lists reports across all three apps. Heavy diagnostic blobs are omitted;
+ *      use GET /api/admin/bug-reports/:id for full attachments (#979).
+ *      Anonymous reports surface with userId/email/name masked.
+ * GET  /api/admin/bug-reports/:id — single report including console/network/screenshot.
  * PATCH /api/admin/bug-reports/:id — change BugReportStatus.
  *
  * AI Tutor's admin bug-report routes proxy here once wired.
@@ -12,6 +14,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import { auth } from "~/lib/auth/server";
 import {
+  getBugReportById,
   isBugReportSource,
   isBugReportStatus,
   listBugReports,
@@ -54,9 +57,17 @@ async function requireAdmin(request: Request) {
   return { response: null, session };
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const { response } = await requireAdmin(request);
   if (response) return response;
+
+  if (params.id) {
+    const report = await getBugReportById(params.id);
+    if (!report) {
+      return json(404, { error: "REPORT_NOT_FOUND" });
+    }
+    return json(200, report);
+  }
 
   const url = new URL(request.url);
   const sourceParam = url.searchParams.get("source");

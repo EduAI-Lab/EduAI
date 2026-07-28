@@ -139,7 +139,7 @@ Copy `server/.env.example` to `server/.env` and configure:
 | `EDUAI_API_KEY`         | For AI   | EduAI API key                                      |
 | `EDUAI_BASE_URL`        | For AI   | EduAI API base URL                                 |
 | `EDUAI_MODEL`           | For AI   | Model identifier (e.g., `google:gemini-2.5-flash`) |
-| `EDUAI_CALL_TIMEOUT_MS` | No       | Timeout (ms) for a single EduAI chat completion round-trip (default: `45000`) |
+| `EDUAI_CALL_TIMEOUT_MS` | No       | Per-call timeout (ms) covering both completion attempts and the bounded Retry-After backoff within one logical `callEduAI` invocation (default: `45000`) |
 
 Frontend env vars:
 

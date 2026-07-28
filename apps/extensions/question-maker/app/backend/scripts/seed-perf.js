@@ -1,17 +1,22 @@
 /**
  * seed-perf.js — Issue #961 Question-Maker perf-baseline mutation POOL.
  *
- * ADDITIVE seed (run AFTER `npm run seed`; does NOT sync({force}) so it never
- * drops the demo data) that creates a disposable, tagged subtree so the repo-root
- * `scripts/perf-baseline.mjs` can exercise EVERY in-scope QM mutation endpoint.
- * Writes a manifest (`<repoRoot>/.perf-pool/qm.json`) the perf script reads —
- * QM ids are numeric autoincrement (Topics ids are CUID strings), not guessable.
+ * ADDITIVE seed (run AFTER `npm run seed`; only truncates its own previously
+ * tracked courses, never the demo data) that creates a disposable, tagged
+ * subtree so the repo-root `scripts/perf-baseline.mjs` can exercise EVERY
+ * in-scope QM mutation endpoint. Writes a manifest (`<repoRoot>/.perf-pool/qm.json`)
+ * the perf script reads — QM ids are numeric autoincrement (Topics ids are
+ * CUID strings), not guessable.
  *
  * Design (from the endpoint spec):
  *  - An UNLINKED perf course (coreCourseId = null) is used for every per-course
  *    endpoint so `requireCourseAccess` takes the owner fast-path (no Core call)
  *    and topics/enrollments/sync-status stay DB-pure.
  *  - Destructive endpoints consume victims → re-run this seed between perf runs.
+ *  - Reset (on re-run) deletes the course ids recorded in the PREVIOUS manifest;
+ *    every child row (topics/questions/variants/assessments/sections/links)
+ *    cascade-deletes with the course (schema.prisma `onDelete: Cascade`), so
+ *    there's no manual child-table walk needed like the old Sequelize version.
  *
  * Run from apps/extensions/question-maker/app/backend:
  *   node scripts/seed-perf.js         (PERF_POOL_SIZE=15 to change victim count)
@@ -20,7 +25,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { Op } from 'sequelize';
+import { createId } from '@paralleldrive/cuid2';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,7 +35,6 @@ else dotenv.config();
 
 const CORE_INSTRUCTOR = 'seed_user_instructor_cs'; // mirrors apps/core SEED_IDS
 const POOL = Number(process.env.PERF_POOL_SIZE ?? 15);
-const NAME_MARK = '__PERF__';
 const range = (n) => Array.from({ length: n }, (_, i) => i);
 
 function poolDir() {
@@ -48,74 +52,86 @@ function poolDir() {
   }
   return join(process.cwd(), '.perf-pool');
 }
+function manifestPath() {
+  return join(poolDir(), 'qm.json');
+}
 function writeManifest(obj) {
   const dir = poolDir();
   mkdirSync(dir, { recursive: true });
-  const f = join(dir, 'qm.json');
+  const f = manifestPath();
   writeFileSync(f, JSON.stringify(obj, null, 2));
   console.log(`  ✓ wrote pool manifest → ${f}`);
 }
 
-const {
-  sequelize, User, Course, Topics, Question_Metadata, Assessments,
-  Variants, AssessmentSections, SectionVariants,
-} = await import('../src/schema/index.js');
+const { prisma } = await import('../src/config/database.js');
 
+/** Deletes every course id recorded in the previous run's manifest (cascades children). */
 async function resetPool() {
-  // Delete perf courses (cascades? QM associations may not cascade — delete
-  // children first by walking the perf courses).
-  const perfCourses = await Course.findAll({ where: { name: { [Op.like]: `${NAME_MARK}%` } } });
-  const ids = perfCourses.map((c) => c.id);
-  if (ids.length) {
-    const metas = await Question_Metadata.findAll({ where: { courseId: { [Op.in]: ids } } });
-    const metaIds = metas.map((m) => m.id);
-    const variants = metaIds.length ? await Variants.findAll({ where: { questionMetadataId: { [Op.in]: metaIds } } }) : [];
-    const variantIds = variants.map((v) => v.id);
-    if (variantIds.length) await SectionVariants.destroy({ where: { variantId: { [Op.in]: variantIds } } });
-    const assessments = await Assessments.findAll({ where: { courseId: { [Op.in]: ids } } });
-    const assessmentIds = assessments.map((a) => a.id);
-    if (assessmentIds.length) await AssessmentSections.destroy({ where: { assessmentId: { [Op.in]: assessmentIds } } });
-    if (variantIds.length) await Variants.destroy({ where: { id: { [Op.in]: variantIds } } });
-    if (metaIds.length) await Question_Metadata.destroy({ where: { id: { [Op.in]: metaIds } } });
-    if (assessmentIds.length) await Assessments.destroy({ where: { id: { [Op.in]: assessmentIds } } });
-    await Topics.destroy({ where: { courseId: { [Op.in]: ids } } });
-    await Course.destroy({ where: { id: { [Op.in]: ids } } });
+  const f = manifestPath();
+  if (!existsSync(f)) return;
+  let prev;
+  try {
+    prev = JSON.parse(readFileSync(f, 'utf8'));
+  } catch {
+    return;
+  }
+  const courseIds = [prev.courseId, ...(prev.courseDeletePool ?? []), prev.courseUpdateId].filter(
+    (id) => Number.isInteger(id),
+  );
+  if (courseIds.length > 0) {
+    await prisma.course.deleteMany({ where: { id: { in: courseIds } } });
   }
 }
 
 async function main() {
-  await sequelize.authenticate();
+  await prisma.$queryRaw`SELECT 1`;
   console.log(`▶ QM perf pool: ${POOL} victims/endpoint`);
   await resetPool();
 
   // Ensure the instructor user row exists (mirror of Core CUID) for FKs.
-  await User.findOrCreate({ where: { id: CORE_INSTRUCTOR }, defaults: { id: CORE_INSTRUCTOR, email: 'instructor.cs@eduai.local', name: 'Dr. Ada Lovelace' } });
+  await prisma.user.upsert({
+    where: { id: CORE_INSTRUCTOR },
+    update: {},
+    create: { id: CORE_INSTRUCTOR, email: 'instructor.cs@eduai.local', name: 'Dr. Ada Lovelace' },
+  });
 
   // --- unlinked perf course + topics ---
-  const course = await Course.create({ name: `${NAME_MARK} QM Perf Course`, code: 'PERF', userId: CORE_INSTRUCTOR, coreCourseId: null });
+  // `name`/`code` are Core-owned and no longer stored locally (#1072 §4 step
+  // 10) — the anchor row is just userId + coreCourseId.
+  const course = await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } });
   const topics = [];
-  for (const i of range(3)) topics.push(await Topics.create({ name: `${NAME_MARK} Topic ${i}`, courseId: course.id }));
+  for (const i of range(3)) {
+    topics.push(await prisma.topics.create({ data: { id: createId(), name: `__PERF__ Topic ${i}`, courseId: course.id } }));
+  }
   const topicId = topics[0].id;
 
   const newQuestion = (desc) =>
-    Question_Metadata.create({ description: desc, type: 'MCQ', courseId: course.id, primaryTopicId: topicId, createdBy: CORE_INSTRUCTOR });
+    prisma.questionMetadata.create({
+      data: { description: desc, type: 'MCQ', courseId: course.id, primaryTopicId: topicId, createdBy: CORE_INSTRUCTOR },
+    });
   const newVariant = (metaId, assessmentId = null) =>
-    Variants.create({ questionText: `${NAME_MARK} variant`, questionMetadataId: metaId, assessmentId, isDraft: true, coreQuestionId: null, createdBy: CORE_INSTRUCTOR });
+    prisma.variants.create({
+      data: {
+        questionText: '__PERF__ variant', questionMetadataId: metaId, assessmentId,
+        isDraft: true, coreQuestionId: null, createdBy: CORE_INSTRUCTOR,
+      },
+    });
+  // `semester` no longer exists on Assessments (#1072 §4 step 10/#1077) — derived at read time.
   const newAssessment = (name) =>
-    Assessments.create({ courseId: course.id, type: 'Quiz', name: `${NAME_MARK} ${name}`, semester: 'Fall 2026' });
+    prisma.assessments.create({ data: { courseId: course.id, type: 'Quiz', name: `__PERF__ ${name}` } });
   const newSection = (assessmentId, name) =>
-    AssessmentSections.create({ assessmentId, name: `${NAME_MARK} ${name}`, position: 0 });
+    prisma.assessmentSections.create({ data: { assessmentId, name: `__PERF__ ${name}`, position: 0 } });
 
   // --- anchors (stable, never deleted) for reads + POST targets ---
-  const anchorQuestion = await newQuestion(`${NAME_MARK} anchor question`);
+  const anchorQuestion = await newQuestion('__PERF__ anchor question');
   const anchorVariant = await newVariant(anchorQuestion.id);
   const anchorAssessment = await newAssessment('Anchor Assessment');
   const anchorSection = await newSection(anchorAssessment.id, 'Anchor Section');
 
   // --- question pools: delete + update ---
   const questionDeletePool = [];
-  for (const i of range(POOL)) questionDeletePool.push((await newQuestion(`${NAME_MARK} del q ${i}`)).id);
-  const questionUpdateId = (await newQuestion(`${NAME_MARK} upd q`)).id;
+  for (const i of range(POOL)) questionDeletePool.push((await newQuestion(`__PERF__ del q ${i}`)).id);
+  const questionUpdateId = (await newQuestion('__PERF__ upd q')).id;
 
   // --- variant pools (draft, no core link) ---
   const variantDeletePool = [];
@@ -137,11 +153,11 @@ async function main() {
   const sectionVariantDeletePool = []; // {sectionId, variantId}
   for (const i of range(POOL)) {
     const v = await newVariant(anchorQuestion.id);
-    await SectionVariants.create({ sectionId: anchorSection.id, variantId: v.id, displayOrder: i });
+    await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: i } });
     sectionVariantDeletePool.push({ sectionId: anchorSection.id, variantId: v.id });
   }
   const svUpdVariant = await newVariant(anchorQuestion.id);
-  await SectionVariants.create({ sectionId: anchorSection.id, variantId: svUpdVariant.id, displayOrder: 999 });
+  await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: svUpdVariant.id, displayOrder: 999 } });
   const sectionVariantUpdate = { sectionId: anchorSection.id, variantId: svUpdVariant.id };
 
   // --- section-variant ADD pool: fresh variants NOT yet linked to anchorSection.
@@ -152,17 +168,21 @@ async function main() {
 
   // --- unlinked course pools (delete cascades children) + update ---
   const courseDeletePool = [];
-  for (const i of range(POOL)) courseDeletePool.push((await Course.create({ name: `${NAME_MARK} del course ${i}`, code: 'PERFDEL', userId: CORE_INSTRUCTOR, coreCourseId: null })).id);
-  const courseUpdateId = (await Course.create({ name: `${NAME_MARK} upd course`, code: 'PERFUPD', userId: CORE_INSTRUCTOR, coreCourseId: null })).id;
+  for (const i of range(POOL)) {
+    courseDeletePool.push((await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })).id);
+  }
+  const courseUpdateId = (await prisma.course.create({ data: { userId: CORE_INSTRUCTOR, coreCourseId: null } })).id;
 
   // --- questions linked to an assessment via questionOrder (for DELETE
   //     /:id/order/:assessmentId and DELETE /assessments/:id/questions/:qid) ---
   const orderAssessment = await newAssessment('order assessment');
   const questionOrderPool = []; // {questionId, assessmentId}
   for (const i of range(POOL)) {
-    const q = await Question_Metadata.create({
-      description: `${NAME_MARK} ordered q ${i}`, type: 'MCQ', courseId: course.id, primaryTopicId: topicId,
-      createdBy: CORE_INSTRUCTOR, questionOrder: { [orderAssessment.id]: i + 1 },
+    const q = await prisma.questionMetadata.create({
+      data: {
+        description: `__PERF__ ordered q ${i}`, type: 'MCQ', courseId: course.id, primaryTopicId: topicId,
+        createdBy: CORE_INSTRUCTOR, questionOrder: { [orderAssessment.id]: i + 1 },
+      },
     });
     questionOrderPool.push({ questionId: q.id, assessmentId: orderAssessment.id });
   }
@@ -170,9 +190,9 @@ async function main() {
   // --- questions with a section-linked variant (for remove-from-all-sections) ---
   const questionWithSectionLinkPool = [];
   for (const i of range(POOL)) {
-    const q = await newQuestion(`${NAME_MARK} sectioned q ${i}`);
+    const q = await newQuestion(`__PERF__ sectioned q ${i}`);
     const v = await newVariant(q.id);
-    await SectionVariants.create({ sectionId: anchorSection.id, variantId: v.id, displayOrder: 1000 + i });
+    await prisma.sectionVariants.create({ data: { sectionId: anchorSection.id, variantId: v.id, displayOrder: 1000 + i } });
     questionWithSectionLinkPool.push(q.id);
   }
 
@@ -210,4 +230,4 @@ async function main() {
 
 main()
   .catch((e) => { console.error('✗ QM perf seed failed:', e); process.exit(1); })
-  .finally(async () => { try { await sequelize.close(); } catch { /* */ } });
+  .finally(async () => { try { await prisma.$disconnect(); } catch { /* */ } });
