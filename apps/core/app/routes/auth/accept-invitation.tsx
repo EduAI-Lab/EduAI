@@ -3,6 +3,7 @@ import { GalleryVerticalEnd } from "lucide-react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
+import { PASSWORD_POLICY_MESSAGE } from "~/lib/auth/password-policy"
 import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
 import { fireAndForget, logAuditAction } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
@@ -189,10 +190,19 @@ export default function AcceptInvitationPage() {
                       type="password"
                       autoComplete="new-password"
                       required
+                      aria-describedby="password-requirements"
                       className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm"
                     />
+                    <p
+                      id="password-requirements"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {PASSWORD_POLICY_MESSAGE}
+                    </p>
                     {actionData?.fieldErrors?.password && (
-                      <p className="text-sm text-red-600">{actionData.fieldErrors.password}</p>
+                      <p className="text-sm text-red-600" role="alert">
+                        {actionData.fieldErrors.password}
+                      </p>
                     )}
                   </div>
 
