@@ -8,6 +8,7 @@ import prisma from '~/lib/prisma.server'
 import { CoreAppShell } from '~/components/layout/core-app-shell'
 import { CoursesView, type CoursesRole } from '~/components/courses/courses-view'
 import { useCourses } from '~/hooks/api/use-courses'
+import { TablePagination } from '~/components/ui/table-pagination'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -66,7 +67,16 @@ export default function CoursesPage() {
   const { user, authorizedUnits, taCourseIds, enrolledCourseIds, instructors } = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
   const accessDenied = searchParams.get('access') === 'denied'
-  const { courses, loading, createCourse, updateCourse, deleteCourse } = useCourses()
+  const {
+    courses,
+    total: courseTotal,
+    pagination,
+    setPagination,
+    loading,
+    createCourse,
+    updateCourse,
+    deleteCourse,
+  } = useCourses()
 
   const isAdmin = user.role === 'ADMIN'
   const isUnitAdmin = user.role === 'UNIT_ADMIN'
@@ -145,10 +155,11 @@ export default function CoursesPage() {
         ) : effectiveRole === 'unit-admin' ? (
           <CoursesView
             role="unit-admin"
-            // Unit-admin scoping stays here in the route/dispatch, not the view.
-            courses={courses.filter(
-              (c) => c.department !== null && authorizedUnits.includes(c.department)
-            )}
+            // `/api/courses` already scopes UNIT_ADMIN to their authorized units
+            // server-side (#1041). Re-filtering the loaded page here would
+            // silently drop rows that belong to the caller but happen to sit on
+            // another page, so pass the server's list through unchanged.
+            courses={courses}
             authorizedUnits={authorizedUnits}
             instructors={instructors}
             onCreateCourse={async (data) => { await createCourse(data) }}
@@ -173,6 +184,13 @@ export default function CoursesPage() {
             enrolledCourseIds={enrolledCourseIds}
           />
         )}
+        <div className="mt-4">
+          <TablePagination
+            pagination={pagination}
+            onPaginationChange={setPagination}
+            total={courseTotal}
+          />
+        </div>
       </div>
       <ConfirmDialog
         open={pendingPublish !== null}

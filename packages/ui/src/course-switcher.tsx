@@ -43,6 +43,17 @@ export interface CourseSwitcherProps {
   viewAllLabel?: string
   listLabel?: string
   className?: string
+  /**
+   * Opt into a search box above the list (#1143). Presentational only: the host
+   * app owns the query and re-fetches `courses` itself, so this component never
+   * filters — it renders exactly what it is given. Callers that page a large
+   * course list server-side need this, since the dropdown otherwise only ever
+   * shows the first page. Omit it and the switcher renders as before.
+   */
+  onQueryChange?: (query: string) => void
+  searchPlaceholder?: string
+  /** Shown in place of the list when `courses` is empty and search is enabled. */
+  emptyLabel?: string
 }
 
 export function CourseSwitcher({
@@ -54,9 +65,34 @@ export function CourseSwitcher({
   viewAllLabel = "All courses",
   listLabel = "Your courses",
   className,
+  onQueryChange,
+  searchPlaceholder = "Search courses…",
+  emptyLabel = "No courses found",
 }: CourseSwitcherProps) {
   const current = courses.find((c) => c.id === currentId) ?? null
   const label = current?.label ?? "Select course"
+  const searchable = Boolean(onQueryChange)
+  const [query, setQuery] = React.useState("")
+  const [open, setOpen] = React.useState(false)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  // Clear the query when the menu closes so reopening doesn't show a stale
+  // result set under an empty-looking box.
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next)
+    if (!next && searchable && query !== "") {
+      setQuery("")
+      onQueryChange?.("")
+    }
+  }
+
+  // Radix focuses the first menu item on open, which would send typing to the
+  // menu's own typeahead. Take focus back once it has settled.
+  React.useEffect(() => {
+    if (!open || !searchable) return
+    const timer = setTimeout(() => inputRef.current?.focus(), 0)
+    return () => clearTimeout(timer)
+  }, [open, searchable])
 
   return (
     <div
@@ -76,7 +112,7 @@ export function CourseSwitcher({
       ) : (
         <span className="min-w-0 truncate px-2 py-1">{label}</span>
       )}
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger
           aria-label="Switch course"
           className="inline-flex shrink-0 items-center rounded-md px-1 py-1 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary/50"
@@ -84,8 +120,31 @@ export function CourseSwitcher({
           <IconChevronDown className="size-3.5 opacity-60" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
+          {searchable && (
+            <div className="px-2 pt-1 pb-2">
+              <input
+                ref={inputRef}
+                type="text"
+                role="searchbox"
+                aria-label={searchPlaceholder}
+                placeholder={searchPlaceholder}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  onQueryChange?.(e.target.value)
+                }}
+                // Radix's menu typeahead swallows printable keys, and its
+                // arrow/Home/End handling would move focus out of the input.
+                onKeyDown={(e) => e.stopPropagation()}
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
+              />
+            </div>
+          )}
           <DropdownMenuLabel className="text-xs text-muted-foreground">{listLabel}</DropdownMenuLabel>
           <div className="max-h-72 overflow-y-auto">
+            {searchable && courses.length === 0 && (
+              <p className="px-2 py-3 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+            )}
             {courses.map((c) => {
               const active = c.id === currentId
               return (

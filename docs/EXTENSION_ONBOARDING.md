@@ -209,14 +209,31 @@ There are two kinds of server-to-server calls from an extension to Core. The aut
 When an extension makes an API call **on behalf of a specific user** (e.g., fetching that user's courses), forward the raw `Cookie` header from the incoming request. Core resolves the user identity from the session cookie and applies the appropriate role filtering.
 
 ```js
-async function getUserCourses(req) {
-  const response = await fetch(`${process.env.EDUAI_BASE_URL}/courses`, {
-    headers: { cookie: req.headers.cookie ?? '' },
-  });
+async function getUserCourses(req, { page = 1, pageSize = 25 } = {}) {
+  const response = await fetch(
+    `${process.env.EDUAI_BASE_URL}/courses?page=${page}&pageSize=${pageSize}`,
+    { headers: { cookie: req.headers.cookie ?? '' } },
+  );
   if (!response.ok) throw new Error(`Core returned ${response.status}`);
+  // { data, total, page, pageSize }
   return response.json();
 }
 ```
+
+> **Core's list endpoints are paginated (#1041).** `GET /api/users`, `/api/courses`,
+> `/api/ai-models`, and `/api/ai-providers` **require** `page` and `pageSize` — a
+> request without them is a `400 PAGINATION_REQUIRED`. They all answer with the
+> same envelope:
+>
+> ```json
+> { "data": [], "total": 0, "page": 1, "pageSize": 25 }
+> ```
+>
+> `pageSize` is clamped to 1–200. If you only need a handful of records you
+> already know the ids of, use `?ids=a,b,c` on `/api/users` and `/api/courses`
+> instead — it is unpaged, returns the same envelope, and cannot be combined
+> with `page`/`pageSize`. `?search=` is also available on both. Do not page-loop
+> a whole table to build an id→record map; that is what `?ids=` is for.
 
 ### Service-level calls
 

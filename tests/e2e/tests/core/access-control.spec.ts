@@ -9,6 +9,7 @@
 import { test, expect } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
 import { signUp, signIn, signOut, uniqueEmail, DEFAULT_PASSWORD } from '../helpers/auth';
+import { listCoreCoursePage } from '../helpers/core-courses';
 
 // ---------------------------------------------------------------------------
 // Unauthenticated guard — every protected route must return 401
@@ -52,13 +53,11 @@ test.describe('STUDENT access', () => {
   test('gets an empty course list via GET /api/courses (no enrollments)', async ({ request }) => {
     await signUp(request, { email: uniqueEmail('student-courses') });
 
-    const res = await request.get(`${CORE_URL}/api/courses`);
-    expect(res.status()).toBe(200);
-    const body = await res.json();
-    // Core wraps the list: { courses: [...] }
-    const list = Array.isArray(body) ? body : (body?.courses ?? []);
-    expect(Array.isArray(list)).toBe(true);
-    expect(list).toHaveLength(0);
+    // #1041: the list is paginated — `{ data, total, page, pageSize }`.
+    const { status, body } = await listCoreCoursePage(request);
+    expect(status).toBe(200);
+    expect(body.data).toHaveLength(0);
+    expect(body.total).toBe(0);
   });
 
   test('can read and update own assistive preferences', async ({ request }) => {
