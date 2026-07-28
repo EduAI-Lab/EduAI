@@ -48,7 +48,12 @@ vi.mock("~/lib/auth/guards.server", () => ({
 
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn().mockResolvedValue({
-    course: { id: "course-1", isPublished: true, code: "COSC101" },
+    course: {
+      id: "course-1",
+      isPublished: true,
+      code: "COSC101",
+      courseScopeGuardrailEnabled: false,
+    },
     access: { level: "student" },
   }),
 }));
