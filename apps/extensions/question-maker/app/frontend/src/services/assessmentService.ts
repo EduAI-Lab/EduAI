@@ -52,7 +52,12 @@ function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
   return { items: [], total: 0, limit: 50, offset: 0 };
 }
 
-async function fetchAllPages<T>(
+/**
+ * Walks #1040's `{ items, total, limit, offset }` envelope via a callback.
+ * Distinct from `./pagination`'s `fetchAllPages`, which walks #1044's
+ * `{ data, total, page, pageSize }` path-based contract (used for sections).
+ */
+async function fetchAllOffsetPages<T>(
   fetchPage: (offset: number, limit: number) => Promise<PaginatedList<T>>,
   options: { startOffset?: number; maxItems?: number } = {},
 ): Promise<T[]> {
@@ -121,7 +126,7 @@ export const assessmentService = {
       return page.items;
     }
 
-    return fetchAllPages(
+    return fetchAllOffsetPages(
       (offset, limit) =>
         this.getAssessmentsPage({
           courseId: options.courseId,
