@@ -22,7 +22,7 @@ describe('parseCsvParam / parseQuestionListFilters', () => {
       reasoningLevels: 'factual',
       aiGenerated: 'ai',
       draftStatus: 'reviewed',
-      sortBy: 'difficulty',
+      sortBy: 'type',
       search: '  recursion  ',
     });
     expect(parsed.types).toEqual(['MCQ', 'SA']);
@@ -30,21 +30,26 @@ describe('parseCsvParam / parseQuestionListFilters', () => {
     expect(parsed.reasoningLevels).toEqual(['factual']);
     expect(parsed.aiGenerated).toBe('ai');
     expect(parsed.draftStatus).toBe('reviewed');
-    expect(parsed.sortBy).toBe('difficulty');
+    expect(parsed.sortBy).toBe('type');
     expect(parsed.search).toBe('recursion');
+  });
+
+  it('falls unknown sortBy (including difficulty) back to newest', () => {
+    expect(parseQuestionListFilters({ sortBy: 'difficulty' }).sortBy).toBe('newest');
+    expect(parseQuestionListFilters({ sortBy: 'banana' }).sortBy).toBe('newest');
   });
 });
 
 describe('buildQuestionListQuery', () => {
-  it('matches description OR variant questionText for search', () => {
+  it('escapes LIKE metacharacters in search before Prisma contains/ILIKE', () => {
     const { where } = buildQuestionListQuery({ search: 'stack_%frame' });
     expect(where.OR).toHaveLength(2);
     expect(where.OR[0]).toEqual({
-      description: { contains: 'stack_%frame', mode: 'insensitive' },
+      description: { contains: 'stack\\_\\%frame', mode: 'insensitive' },
     });
     expect(where.OR[1]).toEqual({
       variants: {
-        some: { questionText: { contains: 'stack_%frame', mode: 'insensitive' } },
+        some: { questionText: { contains: 'stack\\_\\%frame', mode: 'insensitive' } },
       },
     });
   });
@@ -77,6 +82,14 @@ describe('buildQuestionListQuery', () => {
     expect(buildQuestionListQuery({ sortBy: 'oldest' }).orderBy).toEqual([
       { createdAt: 'asc' },
       { id: 'asc' },
+    ]);
+  });
+
+  it('orders by type with createdAt/id tie-breakers', () => {
+    expect(buildQuestionListQuery({ sortBy: 'type' }).orderBy).toEqual([
+      { type: 'asc' },
+      { createdAt: 'desc' },
+      { id: 'desc' },
     ]);
   });
 });

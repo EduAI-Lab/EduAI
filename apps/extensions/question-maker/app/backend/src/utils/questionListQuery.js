@@ -2,10 +2,15 @@
  * Shared parsing / Prisma filter helpers for GET /api/questions list filters (#1040 review).
  * Variant-scoped predicates use relation filters so paging stays on question_metadata rows.
  */
+import { escapeLikeLiteral } from './listPagination.js';
+
 const ALLOWED_TYPES = new Set(['MCQ', 'SA', 'LA']);
 const ALLOWED_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 const ALLOWED_REASONING = new Set(['factual', 'analytical', 'application']);
-const ALLOWED_SORT = new Set(['newest', 'oldest', 'type', 'difficulty']);
+// `difficulty` is intentionally omitted: Prisma cannot order question_metadata by a
+// related variant's difficulty enum without a raw query, and falling back to
+// newest would mislead library users who pick "By difficulty" (#1140 review).
+const ALLOWED_SORT = new Set(['newest', 'oldest', 'type']);
 
 /** Split comma-separated or repeated query values into a unique string list. */
 export function parseCsvParam(value) {
@@ -59,6 +64,9 @@ export function parseQuestionListFilters(query = {}) {
 
 /**
  * Build Prisma `where` + `orderBy` for getQuestionsByUser from parsed filters.
+ *
+ * Prisma turns `contains` into ILIKE, so `%` / `_` / `\` in the search text must
+ * be escaped via {@link escapeLikeLiteral} or they act as wildcards (#1140).
  */
 export function buildQuestionListQuery(filters = {}) {
   const {
@@ -78,12 +86,13 @@ export function buildQuestionListQuery(filters = {}) {
   }
 
   if (search) {
+    const escaped = escapeLikeLiteral(search);
     and.push({
       OR: [
-        { description: { contains: search, mode: 'insensitive' } },
+        { description: { contains: escaped, mode: 'insensitive' } },
         {
           variants: {
-            some: { questionText: { contains: search, mode: 'insensitive' } },
+            some: { questionText: { contains: escaped, mode: 'insensitive' } },
           },
         },
       ],
@@ -119,10 +128,6 @@ export function buildQuestionListQuery(filters = {}) {
       break;
     case 'type':
       orderBy = [{ type: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }];
-      break;
-    case 'difficulty':
-      // Prisma has no easy MIN(difficulty) sort; fall back to newest with id tie-breaker.
-      orderBy = [{ createdAt: 'desc' }, { id: 'desc' }];
       break;
     case 'newest':
     default:
