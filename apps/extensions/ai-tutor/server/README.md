@@ -60,7 +60,7 @@ server/
 
 The middleware chain in `app.js` processes requests in this order:
 
-1. **CORS** — Open origin with `credentials: true`.
+1. **CORS** — Exact-origin allowlist via `CORS_ORIGINS` with `credentials: true`.
 2. **JSON parser** — `express.json()` for all routes.
 3. **Health check** — `GET /api/health` runs `SELECT 1` against the database.
 4. **Auth gate** — `requireAuth` (`middleware/auth.js`) posts the incoming cookie to Core's
