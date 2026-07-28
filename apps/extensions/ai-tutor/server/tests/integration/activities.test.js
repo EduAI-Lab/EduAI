@@ -371,7 +371,17 @@ describe('Activities routes', () => {
       expect(res.body.error).toMatch(/only students/i);
     });
 
-    it('allows enrolled TA to submit answers', async () => {
+    it('returns 401 for unauthenticated request', async () => {
+      const noAuthApp = await createApp();
+
+      const res = await request(noAuthApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects platform-role TA from submitting answers (403, no Submission row)', async () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
@@ -379,7 +389,35 @@ describe('Activities routes', () => {
         .post(`/api/questions/${activity.id}/answer`)
         .send({ answerOption: 1 });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
+
+      const submission = await prisma.submission.findFirst({
+        where: { userId: ta.id, activityId: activity.id },
+      });
+      expect(submission).toBeNull();
+    });
+
+    it('rejects STUDENT-role user enrolled as TA from submitting answers (Core-style TA, 403 + no Submission row)', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: {
+          courseOfferingId: seed.course.id,
+          userId: student.id,
+          role: 'TA',
+        },
+      });
+      const studentApp = await createApp({ mockUser: student });
+
+      const res = await request(studentApp)
+        .post(`/api/questions/${activity.id}/answer`)
+        .send({ answerOption: 1 });
+
+      expect(res.status).toBe(403);
+
+      const submission = await prisma.submission.findFirst({
+        where: { userId: student.id, activityId: activity.id },
+      });
+      expect(submission).toBeNull();
     });
 
     it('returns 403 when lesson is unpublished', async () => {
