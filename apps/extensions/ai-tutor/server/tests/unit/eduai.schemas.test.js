@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   EduAiCourseSchema,
-  EduAiCourseListSchema,
+  EduAiCoursePageSchema,
   EduAiEnrollmentSchema,
   EduAiEnrollmentListSchema,
 } from '../../src/schemas/eduai.js';
@@ -43,9 +43,14 @@ describe('EduAiCourseSchema — isPublished (#477)', () => {
     expect(result.isPublished).toBeUndefined();
   });
 
-  it('parses a course list envelope containing isPublished', () => {
-    const result = EduAiCourseListSchema.parse({ courses: [CORE_COURSE] });
-    expect(result.courses[0].isPublished).toBe(true);
+  it('parses a paginated course envelope containing isPublished', () => {
+    const result = EduAiCoursePageSchema.parse({
+      data: [CORE_COURSE],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    expect(result.data[0].isPublished).toBe(true);
   });
 });
 
