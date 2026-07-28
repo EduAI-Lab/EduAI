@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  course: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  course: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
   courseTopic: {
     findMany: vi.fn(),
     findFirst: vi.fn(),
@@ -94,7 +94,17 @@ describe("getCourse", () => {
 });
 
 describe("getCourses — #315 ADMIN includeDeleted", () => {
-  beforeEach(() => vi.clearAllMocks());
+  // #1041: `page`/`pageSize` are required, and the list read runs count+findMany
+  // as one array transaction.
+  const PAGED = "page=1&pageSize=25";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.course.count.mockResolvedValue(0);
+    prismaMock.$transaction.mockImplementation(async (arg: any) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(prismaMock),
+    );
+  });
 
   it("drops the deletedAt filter for ADMIN with ?includeDeleted=true", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
@@ -103,9 +113,11 @@ describe("getCourses — #315 ADMIN includeDeleted", () => {
     prismaMock.course.findMany.mockResolvedValue([]);
     prismaMock.enrollment.findMany.mockResolvedValue([]);
 
-    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true"));
+    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true&" + PAGED));
 
-    expect(prismaMock.course.findMany).toHaveBeenCalledWith({ where: {} });
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {}, skip: 0, take: 25 }),
+    );
   });
 
   it("keeps deletedAt: null for ADMIN without the flag", async () => {
@@ -115,9 +127,11 @@ describe("getCourses — #315 ADMIN includeDeleted", () => {
     prismaMock.course.findMany.mockResolvedValue([]);
     prismaMock.enrollment.findMany.mockResolvedValue([]);
 
-    await getCourses(new Request("http://localhost/api/courses"));
+    await getCourses(new Request("http://localhost/api/courses?" + PAGED));
 
-    expect(prismaMock.course.findMany).toHaveBeenCalledWith({ where: { deletedAt: null } });
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { deletedAt: null }, skip: 0, take: 25 }),
+    );
   });
 
   it("ignores the flag for a non-ADMIN caller", async () => {
@@ -127,7 +141,7 @@ describe("getCourses — #315 ADMIN includeDeleted", () => {
     prismaMock.course.findMany.mockResolvedValue([]);
     prismaMock.enrollment.findMany.mockResolvedValue([]);
 
-    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true"));
+    await getCourses(new Request("http://localhost/api/courses?includeDeleted=true&" + PAGED));
 
     const where = prismaMock.course.findMany.mock.calls[0][0].where;
     expect(where.deletedAt).toBeNull();
@@ -280,13 +294,21 @@ describe("deleteCourseTopic", () => {
 // ---------------------------------------------------------------------------
 
 function makeGetRequest(headers?: Record<string, string>) {
-  return new Request("http://localhost/api/courses", { method: "GET", headers });
+  // #1041: `page`/`pageSize` are required on GET /api/courses.
+  return new Request("http://localhost/api/courses?page=1&pageSize=25", {
+    method: "GET",
+    headers,
+  });
 }
 
 describe("getCourses", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.enrollment.findMany.mockResolvedValue([]);
+    prismaMock.course.count.mockResolvedValue(0);
+    prismaMock.$transaction.mockImplementation(async (arg: any) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(prismaMock),
+    );
   });
 
   it("returns 401 when no session", async () => {
@@ -302,8 +324,12 @@ describe("getCourses", () => {
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
+    // #1041: the unified `{ data, total, page, pageSize }` envelope.
     expect(body).toEqual({
-      courses: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR" }],
+      data: [{ id: "c1", name: "Algorithms", callerEnrollmentRole: "INSTRUCTOR" }],
+      total: 0,
+      page: 1,
+      pageSize: 25,
     });
     expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
       where: {
@@ -319,7 +345,9 @@ describe("getCourses", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({ user: { id: "u1", role: "ADMIN" } } as any);
     prismaMock.course.findMany.mockResolvedValue([]);
     await getCourses(makeGetRequest());
-    expect(prismaMock.course.findMany).toHaveBeenCalledWith({ where: { deletedAt: null } });
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { deletedAt: null }, skip: 0, take: 25 }),
+    );
   });
 
   it("scopes non-admin callers to their enrollments with per-role publish gating (#298)", async () => {
@@ -327,7 +355,8 @@ describe("getCourses", () => {
     prismaMock.course.findMany.mockResolvedValue([]);
     const res = await getCourses(makeGetRequest());
     expect(res.status).toBe(200);
-    expect(prismaMock.course.findMany).toHaveBeenCalledWith({
+    expect(prismaMock.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
       where: {
         deletedAt: null,
         OR: [
@@ -342,7 +371,8 @@ describe("getCourses", () => {
           },
         ],
       },
-    });
+      }),
+    );
   });
 
   it("scopes UNIT_ADMIN to authorized units plus own enrollments (#298)", async () => {

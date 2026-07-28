@@ -1,6 +1,11 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 
-import { paletteNavItems, loadPaletteCourses } from "~/components/command/command-palette";
+import {
+  paletteNavItems,
+  loadPaletteCourses,
+  fetchPaletteCourses,
+  matchesQuery,
+} from "~/components/command/command-palette";
 import type { User } from "~/lib/auth/types";
 
 // The palette only needs `role` off the user; cast a minimal stub so we don't
@@ -43,7 +48,11 @@ describe("loadPaletteCourses", () => {
   });
 
   const jsonRes = (courses: { id: string; code: string; name: string }[]) =>
-    ({ ok: true, json: async () => ({ courses }) }) as unknown as Response;
+    // #1041: Core answers `{ data, total, page, pageSize }`.
+    ({
+      ok: true,
+      json: async () => ({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
+    }) as unknown as Response;
 
   it("loads courses once and sets them", async () => {
     const ref = { current: false };
@@ -90,5 +99,60 @@ describe("loadPaletteCourses", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
     await loadPaletteCourses(ref, vi.fn(), true);
     expect(ref.current).toBe(false);
+  });
+});
+
+describe("fetchPaletteCourses (#1143)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const jsonRes = (courses: { id: string; code: string; name: string }[]) =>
+    ({
+      ok: true,
+      json: async () => ({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
+    }) as unknown as Response;
+
+  it("sends the query to Core as ?search= so results aren't capped at the first page", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonRes([{ id: "9", code: "STAT 200", name: "Stats" }]));
+
+    const result = await fetchPaletteCourses("stat 200");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/courses?page=1&pageSize=200&search=stat%20200");
+    expect(result).toEqual([{ id: "9", code: "STAT 200", name: "Stats" }]);
+  });
+
+  it("omits ?search= entirely for the empty query", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonRes([]));
+    await fetchPaletteCourses("");
+    expect(fetchMock).toHaveBeenCalledWith("/api/courses?page=1&pageSize=200");
+  });
+
+  it("returns null (not []) on failure so a failed search can't blank the loaded list", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 500 } as Response);
+    await expect(fetchPaletteCourses("x")).resolves.toBeNull();
+
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+    await expect(fetchPaletteCourses("x")).resolves.toBeNull();
+  });
+});
+
+describe("matchesQuery (#1143)", () => {
+  // cmdk's filtering is off once the palette is host-driven, so the static
+  // groups rely on this instead.
+  it("keeps everything for an empty or whitespace query", () => {
+    expect(matchesQuery("nav Settings", "")).toBe(true);
+    expect(matchesQuery("nav Settings", "   ")).toBe(true);
+  });
+
+  it("matches case-insensitively across separate terms", () => {
+    expect(matchesQuery("nav Admin · Users", "adm us")).toBe(true);
+    expect(matchesQuery("nav Admin · Users", "ADMIN")).toBe(true);
+  });
+
+  it("requires every term to match", () => {
+    expect(matchesQuery("nav Admin · Users", "admin billing")).toBe(false);
   });
 });
