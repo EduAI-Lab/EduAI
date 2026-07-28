@@ -16,6 +16,7 @@ import { getAuthorizedUnits } from "~/lib/auth/course-access.server";
 import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import { parseCursorParams } from "~/lib/cursor-list.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const department = params.department;
@@ -50,25 +51,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   }
 
-  const chats = await prisma.chat.findMany({
-    where: { course: { department, deletedAt: null } },
-    select: {
-      id: true,
-      title: true,
-      createdAt: true,
-      updatedAt: true,
-      user: { select: { id: true, name: true } },
-      course: { select: { id: true, code: true, name: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-
   // Limit to chats owned by an active STUDENT of the chat's OWN course — the same
   // owner-role filter the per-course endpoint applies. Without this, staff
   // (instructor/TA/unit-admin) chats tagged to a department course would leak
   // into the unit aggregate, contradicting the "student chats" contract above.
   // Sibling relations (chat.user vs chat.course) can't be correlated in a single
   // Prisma `where`, so we resolve the active-student set and filter in memory.
+  // Computed once per request: bounded by department roster size, not by the
+  // department's total chat volume.
   const studentEnrollments = await prisma.enrollment.findMany({
     where: { role: "STUDENT", isActive: true, course: { department, deletedAt: null } },
     select: { courseId: true, userId: true },
@@ -76,12 +66,65 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const activeStudent = new Set(
     studentEnrollments.map((e) => `${e.courseId}:${e.userId}`),
   );
-  const studentChats = chats.filter(
-    (chat) => chat.course && activeStudent.has(`${chat.course.id}:${chat.user.id}`),
-  );
+
+  // The owner-role filter above can't be pushed into the `where`, so the base
+  // chat query is fetched in bounded batches (cursor-keyset on the raw,
+  // unfiltered rows) and filtered per batch — capped at MAX_BATCHES so a
+  // department with a low student-chat ratio still can't make one request scan
+  // every chat in the unit (#1042).
+  const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
+  const MAX_BATCHES = 4;
+
+  const page: {
+    id: string;
+    title: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    user: { id: string; name: string | null };
+    course: { id: string; code: string; name: string } | null;
+  }[] = [];
+  let rawCursor = cursor;
+  let exhausted = false;
+
+  for (let batch = 0; batch < MAX_BATCHES && page.length < limit && !exhausted; batch++) {
+    const rows = await prisma.chat.findMany({
+      where: { course: { department, deletedAt: null } },
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+        updatedAt: true,
+        user: { select: { id: true, name: true } },
+        course: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: limit,
+      ...(rawCursor ? { cursor: { id: rawCursor }, skip: 1 } : {}),
+    });
+
+    if (rows.length === 0) {
+      exhausted = true;
+      break;
+    }
+    rawCursor = rows[rows.length - 1]!.id;
+    if (rows.length < limit) exhausted = true;
+
+    for (const chat of rows) {
+      if (chat.course && activeStudent.has(`${chat.course.id}:${chat.user.id}`)) {
+        page.push(chat);
+      }
+    }
+  }
+
+  const overflow = page.length > limit;
+  const trimmedPage = overflow ? page.slice(0, limit) : page;
+  // More raw rows may exist even once we've filled `limit` filtered rows, or the
+  // batch cap was hit before the underlying data was exhausted — either way,
+  // resume from the last raw row examined, not from the last *returned* row.
+  const nextCursor = exhausted && !overflow ? null : rawCursor;
 
   return json({
-    chats: studentChats.map((chat) => ({
+    chats: trimmedPage.map((chat) => ({
       id: chat.id,
       title: chat.title,
       ownerId: chat.user.id,
@@ -92,5 +135,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       createdAt: chat.createdAt.toISOString(),
       updatedAt: chat.updatedAt.toISOString(),
     })),
+    nextCursor,
   });
 }
