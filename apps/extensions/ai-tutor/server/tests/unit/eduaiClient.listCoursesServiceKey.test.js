@@ -34,7 +34,7 @@ describe('listEduAiCoursesServiceKey', () => {
       ok: true,
       status: 200,
       text: () => Promise.resolve(''),
-      json: () => Promise.resolve({ courses: [] }),
+      json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 200 }),
     });
     vi.stubGlobal('fetch', mockFetch);
 
@@ -42,7 +42,8 @@ describe('listEduAiCoursesServiceKey', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe('http://core.test/api/courses');
+    // #1041: Core requires paging params on every list read.
+    expect(url).toBe('http://core.test/api/courses?page=1&pageSize=200');
     expect(options.headers.Authorization).toBe('Bearer test-service-key-abc');
   });
 
@@ -58,7 +59,7 @@ describe('listEduAiCoursesServiceKey', () => {
         ok: true,
         status: 200,
         text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ courses }),
+        json: () => Promise.resolve({ data: courses, total: courses.length, page: 1, pageSize: 200 }),
       }),
     );
 
@@ -67,7 +68,7 @@ describe('listEduAiCoursesServiceKey', () => {
     expect(result).toEqual(courses);
   });
 
-  it('throws a 502 when the response is missing the courses envelope (schema mismatch)', async () => {
+  it('throws a 502 when the response is missing the paginated envelope (schema mismatch)', async () => {
     process.env.EDUAI_API_KEY = 'test-service-key-abc';
     vi.stubGlobal(
       'fetch',
@@ -75,11 +76,46 @@ describe('listEduAiCoursesServiceKey', () => {
         ok: true,
         status: 200,
         text: () => Promise.resolve(''),
-        json: () => Promise.resolve({ data: 'unexpected shape' }),
+        json: () => Promise.resolve({ courses: 'unexpected legacy shape' }),
       }),
     );
 
     await expect(listEduAiCoursesServiceKey()).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('refuses to return a partial catalog when an all: true walk would exceed the page cap (#1129 review)', async () => {
+    process.env.EDUAI_API_KEY = 'test-service-key-abc';
+    // 50 pages × 200 is the cap; anything past it can only be answered partially,
+    // and reconcile callers would read the missing tail as "deleted in Core".
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () =>
+        Promise.resolve({ data: [{ id: 'core-1', name: 'One' }], total: 10_001, page: 1, pageSize: 200 }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(listEduAiCoursesServiceKey({ all: true })).rejects.toMatchObject({ status: 502 });
+    // Fails on the first page rather than walking 50 pages to return a partial set.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('walks every page when the total sits exactly on the cap', async () => {
+    process.env.EDUAI_API_KEY = 'test-service-key-abc';
+    const mockFetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve(''),
+        json: () =>
+          Promise.resolve({ data: [{ id: 'core-1', name: 'One' }], total: 10_000, page: 1, pageSize: 200 }),
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    await expect(listEduAiCoursesServiceKey({ all: true })).resolves.toHaveLength(50);
+    expect(mockFetch).toHaveBeenCalledTimes(50);
   });
 
   it('surfaces an upstream HTTP failure with its status', async () => {

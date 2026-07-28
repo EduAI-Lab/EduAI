@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { UsersTable } from "~/components/admin/users-table";
 
 const baseUser = {
@@ -31,6 +31,8 @@ const otherUser = {
 
 const defaultProps = {
   users: [baseUser],
+  total: 1,
+  onQueryChange: vi.fn(),
   currentUserId: "current-user",
   onEdit: vi.fn(),
   onDelete: vi.fn(),
@@ -100,22 +102,49 @@ describe("UsersTable — rendering", () => {
 // Name filter
 // ---------------------------------------------------------------------------
 
+// #1041: filtering is server-side. The table no longer drops rows locally — it
+// reports the query upward and renders whatever page it is handed next.
 describe("UsersTable — name filter", () => {
-  it("filters rows by name", () => {
-    render(<UsersTable {...defaultProps} users={[baseUser, otherUser]} />);
+  it("reports the search term instead of filtering the loaded page", async () => {
+    const onQueryChange = vi.fn();
+    render(
+      <UsersTable
+        {...defaultProps}
+        users={[baseUser, otherUser]}
+        total={2}
+        onQueryChange={onQueryChange}
+      />,
+    );
+
     const filterInput = screen.getByLabelText("Filter by name or email");
     fireEvent.change(filterInput, { target: { value: "bob" } });
-    expect(screen.queryByText("Alice Smith")).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ search: "bob" })),
+    );
+    // Both rows are still on screen: the server decides what the next page holds.
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
     expect(screen.getByText("Bob Jones")).toBeInTheDocument();
   });
 
-  it("shows all rows again when the filter is cleared", () => {
-    render(<UsersTable {...defaultProps} users={[baseUser, otherUser]} />);
+  it("reports an empty search when the filter is cleared", async () => {
+    const onQueryChange = vi.fn();
+    render(
+      <UsersTable
+        {...defaultProps}
+        users={[baseUser, otherUser]}
+        total={2}
+        onQueryChange={onQueryChange}
+      />,
+    );
+
     const filterInput = screen.getByLabelText("Filter by name or email");
     fireEvent.change(filterInput, { target: { value: "bob" } });
     fireEvent.change(filterInput, { target: { value: "" } });
-    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
-    expect(screen.getByText("Bob Jones")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(onQueryChange).toHaveBeenLastCalledWith(expect.objectContaining({ search: "" })),
+    );
   });
 });
 
