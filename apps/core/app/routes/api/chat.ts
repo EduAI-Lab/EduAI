@@ -18,10 +18,6 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
-  startSidecarMeasurement,
-  stopSidecarMeasurement,
-} from "~/lib/ai/energy/measurement.server";
-import {
   AdmissionTimeoutError,
   acquireAiAdmission,
   withAdmissionRelease,
@@ -1689,9 +1685,6 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    let energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
-    let sidecarTag: string | null = null;
-
     const needsAdmission =
       parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
@@ -1729,16 +1722,6 @@ ${buildEmptyCourseRagBlock()}`;
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
-    // Start energy measurement only after admission so timeout 503 cannot leak sessions.
-    sidecarTag = await startSidecarMeasurement(`chat-${chat.id}-${randomUUID()}`, {
-      sidecarBaseUrl: energySidecarBaseUrl,
-    });
-
-    const abandonSidecar = (baseUrl: string | null, tag: string | null) => {
-      if (!tag || !baseUrl) return;
-      void stopSidecarMeasurement(tag, { sidecarBaseUrl: baseUrl }).catch(() => undefined);
-    };
-
     const persistTurnTelemetry = async (params: {
       responseText: string;
       usage:
@@ -1763,8 +1746,6 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
-        sidecarTag,
-        energySidecarBaseUrl,
       });
     };
 
@@ -1846,7 +1827,6 @@ ${buildEmptyCourseRagBlock()}`;
       result = await runStreamText();
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
-        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -1861,13 +1841,7 @@ ${buildEmptyCourseRagBlock()}`;
             jobType,
           });
           if (nextPick) {
-            abandonSidecar(failedPick.energySidecarUrl, sidecarTag);
             fleetPick = nextPick;
-            energySidecarBaseUrl = nextPick.energySidecarUrl;
-            sidecarTag = await startSidecarMeasurement(
-              `chat-${chat.id}-${randomUUID()}`,
-              { sidecarBaseUrl: energySidecarBaseUrl },
-            );
             validatedApiKeys = mergeLocalInferenceFromEnv(
               providerSettingsBase,
               resolvedModelId,
@@ -1904,7 +1878,6 @@ ${buildEmptyCourseRagBlock()}`;
             throw error;
           }
         } catch (retryError) {
-          abandonSidecar(energySidecarBaseUrl, sidecarTag);
           releaseAdmission();
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
@@ -1928,7 +1901,6 @@ ${buildEmptyCourseRagBlock()}`;
           throw retryError;
         }
       } else {
-        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         if (chatMode === "admin") {
           logStreamError(error, streamTrace);
