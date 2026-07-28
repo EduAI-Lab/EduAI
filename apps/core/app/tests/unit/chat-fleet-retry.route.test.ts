@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Fleet Slice 2: fleetRetry: true success marker only after alternate host succeeds.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -82,11 +82,6 @@ vi.mock("~/lib/user-provider-settings.server", () => ({
   getUserProviderSettings: vi.fn().mockResolvedValue({}),
 }));
 
-vi.mock("~/lib/ai/energy/measurement.server", () => ({
-  startSidecarMeasurement: vi.fn().mockResolvedValue(null),
-  stopSidecarMeasurement: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
   return { ...actual, fleetRoutingEnabled: vi.fn(() => true) };
@@ -124,18 +119,17 @@ import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
 const COURSE_ID = "course-1";
+const originalEnergySidecarUrl = process.env.ENERGY_SIDECAR_URL;
 
 const pick1 = {
   serverId: "cmps01",
   baseUrl: "http://cmps01.ok.ubc.ca:8001",
   reason: "interactive-round-robin",
-  energySidecarUrl: null,
 };
 const pick2 = {
   serverId: "cmps02",
   baseUrl: "http://cmps02.ok.ubc.ca:8001",
   reason: "interactive-round-robin-retry",
-  energySidecarUrl: null,
 };
 
 function makeRequest(body: object) {
@@ -200,6 +194,15 @@ beforeEach(() => {
   vi.mocked(resolveFleetHostAfterFailure).mockResolvedValue(pick2 as never);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  if (originalEnergySidecarUrl === undefined) {
+    delete process.env.ENERGY_SIDECAR_URL;
+  } else {
+    process.env.ENERGY_SIDECAR_URL = originalEnergySidecarUrl;
+  }
+});
+
 describe("Fleet Slice 2 retry success marker (#876)", () => {
   it("does not log fleetRetry: true when the alternate host also fails", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -221,11 +224,12 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(streamText).toHaveBeenCalledTimes(2);
     expect(resolveFleetHostAfterFailure).toHaveBeenCalledTimes(1);
 
-    logSpy.mockRestore();
   });
 
   it("logs fleetRetry: true only after the alternate attempt succeeds", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    process.env.ENERGY_SIDECAR_URL = "http://cmps01.ok.ubc.ca:8001/energy";
     vi.mocked(streamText)
       .mockImplementationOnce(() => {
         throw new Error("connection refused");
@@ -253,12 +257,11 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
     expect(logMessages.some((m) => m.includes("retry attempt"))).toBe(true);
     expect(logMessages.some((m) => m.includes("fleetRetry: true"))).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
 
     const successIdx = logMessages.findIndex((m) => m.includes("fleetRetry: true"));
     const attemptIdx = logMessages.findIndex((m) => m.includes("retry attempt"));
     expect(attemptIdx).toBeGreaterThanOrEqual(0);
     expect(successIdx).toBeGreaterThan(attemptIdx);
-
-    logSpy.mockRestore();
   }, 15_000);
 });
