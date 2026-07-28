@@ -24,6 +24,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] fix: Bound five previously-unbounded Core list queries — course roster, chat transcript, course/unit chat lists, and course materials now page via a shared cursor `?cursor=`/`?limit=`/`nextCursor` "load more" envelope (`lib/cursor-list.server.ts`) instead of returning every row for a parent; the AI Tutor service-key roster sync stays unpaged (its documented full-sync contract). The all-STUDENT TA-candidate/enroll-student dropdown is replaced by a bounded, course-scoped search-select (`GET /api/courses/:id/student-candidates`), so the platform-wide STUDENT preload is gone. Closes #1042. (@Ayyhab, 2026-07-28) — [#PR](#PR)
+
+### Added
+
+- [core] test: Coverage for the #1042 pagination surface — `lib/cursor-list.server` helpers, the four cursor-paginated hooks, `GET /api/courses/:id/student-candidates`'s auth/exclusion/search/limit behavior, and a regression test for a silent-data-loss bug the review pass found in the unit-chats batched owner-role filter. (@Ayyhab, 2026-07-28) — [#PR](#PR)
+
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
 - [core] refactor: Remove hardware energy-sidecar session management from live `/api/chat` and fleet host selection while retaining passive token-based `AIInteraction` energy/carbon estimates; hardware measurement is now explicitly research-script-owned. Closes #1241. (@superbolt08, 2026-07-28) — [#1242](https://github.com/EduAI-Lab/EduAI/pull/1242)
 ## [Week 13 — July 27 – August 2, 2026]
 
