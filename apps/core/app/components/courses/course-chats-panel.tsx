@@ -31,7 +31,7 @@ function messageText(content: unknown): string {
 }
 
 function ChatMessageViewer({ chatId }: { chatId: string }) {
-  const { chat, loading, error } = useChatDetail(chatId)
+  const { chat, loading, error, hasMore, loadingMore, loadMore } = useChatDetail(chatId)
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading chat…</p>
@@ -53,6 +53,17 @@ function ChatMessageViewer({ chatId }: { chatId: string }) {
           </div>
         ))
       )}
+      {hasMore && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          disabled={loadingMore}
+          onClick={() => void loadMore()}
+        >
+          {loadingMore ? "Loading…" : "Load more messages"}
+        </Button>
+      )}
     </div>
   )
 }
@@ -63,6 +74,9 @@ interface Props {
   error?: string | null
   /** Optional extra label rendered next to each chat (e.g. the course code in a unit view). */
   secondaryLabel?: (chatId: string) => string | null
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
 }
 
 /**
@@ -70,7 +84,15 @@ interface Props {
  * chat's messages. The backend is the security boundary — this only renders what
  * the gated endpoints already return.
  */
-export function CourseChatsPanel({ chats, loading = false, error = null, secondaryLabel }: Props) {
+export function CourseChatsPanel({
+  chats,
+  loading = false,
+  error = null,
+  secondaryLabel,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+}: Props) {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
 
   if (loading) {
@@ -124,6 +146,16 @@ export function CourseChatsPanel({ chats, loading = false, error = null, seconda
             </Button>
           )
         })}
+        {hasMore && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loadingMore}
+            onClick={() => onLoadMore?.()}
+          >
+            {loadingMore ? "Loading…" : "Load more chats"}
+          </Button>
+        )}
       </div>
       <Card>
         <CardContent className="pt-6">
@@ -145,6 +177,15 @@ export function CourseChatsPanel({ chats, loading = false, error = null, seconda
  * which no longer grants staff access to other users' chats.
  */
 export function CourseChatsTab({ courseId }: { courseId: string }) {
-  const { chats, loading, error } = useCourseChats(courseId)
-  return <CourseChatsPanel chats={chats} loading={loading} error={error} />
+  const { chats, loading, error, hasMore, loadingMore, loadMore } = useCourseChats(courseId)
+  return (
+    <CourseChatsPanel
+      chats={chats}
+      loading={loading}
+      error={error}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onLoadMore={loadMore}
+    />
+  )
 }

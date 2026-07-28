@@ -26,12 +26,19 @@ import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { resolvePolicyGate } from "~/lib/rbac/permissions";
 import { getCourse } from "~/lib/courses/server";
 import { readStoredStudentId } from "~/lib/canvas/student-id.server";
-import { addEnrollment, getCourseEnrollments, requiredRankForEnrollmentRole } from "~/lib/courses/enrollments.server";
+import {
+  addEnrollment,
+  getCourseEnrollments,
+  getCourseEnrollmentsPage,
+  requiredRankForEnrollmentRole,
+} from "~/lib/courses/enrollments.server";
 import { fireAndForget, logAuditAction } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
 import { withIdempotency } from "~/lib/idempotency.server";
+import { parseCursorParams } from "~/lib/cursor-list.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
   const courseId = params.id;
   if (!courseId) {
     return new Response(JSON.stringify({ error: "COURSE_ID_REQUIRED" }), {
@@ -57,7 +64,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       });
     }
 
-    return enrollmentsResponse(courseId);
+    // Service key path stays a full, unpaged read — AI Tutor's enrollmentSync.js
+    // depends on getting every row back in one call (see module docblock).
+    return fullEnrollmentsResponse(courseId);
   }
 
   // User OAuth path: resolve session from cookies/headers.
@@ -87,14 +96,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  return enrollmentsResponse(courseId);
+  // Browser roster view: cursor/limit "load more" (#1042) — bounded, unlike the
+  // service-key path above. `cursor`/`limit` are both optional so existing
+  // callers that pass neither still get a bounded first page.
+  const { cursor, limit } = parseCursorParams(url.searchParams);
+  return pagedEnrollmentsResponse(courseId, { cursor, limit });
 }
 
-async function enrollmentsResponse(courseId: string) {
-  const enrollments = await getCourseEnrollments(courseId);
-
-  // Map Prisma model to the API contract shape (see api-wiring.md)
-  const mapped = enrollments.map((e) => ({
+function mapEnrollment(e: {
+  id: string;
+  userId: string;
+  enrolledAt: Date | null;
+  isActive: boolean;
+  role: string;
+  user: { email: string; name: string; studentId: string | null };
+}) {
+  return {
     id: e.id,
     studentId: e.userId,
     studentEmail: e.user.email,
@@ -103,12 +120,28 @@ async function enrollmentsResponse(courseId: string) {
     enrolledAt: e.enrolledAt?.toISOString() ?? null,
     isActive: e.isActive,
     role: e.role,
-  }));
+  };
+}
 
-  return new Response(JSON.stringify({ enrollments: mapped }), {
+/** Service-key path (AI Tutor sync): unpaged, matches the historical contract. */
+async function fullEnrollmentsResponse(courseId: string) {
+  const enrollments = await getCourseEnrollments(courseId);
+  return new Response(JSON.stringify({ enrollments: enrollments.map(mapEnrollment) }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** User-session path: cursor-paginated, with a `total` count for the roster stat. */
+async function pagedEnrollmentsResponse(
+  courseId: string,
+  params: { cursor: string | null; limit: number },
+) {
+  const { page, nextCursor, total } = await getCourseEnrollmentsPage(courseId, params);
+  return new Response(
+    JSON.stringify({ enrollments: page.map(mapEnrollment), nextCursor, total }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {

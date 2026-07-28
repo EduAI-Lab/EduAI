@@ -170,6 +170,15 @@ export interface MultiSelectProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * When provided, `options` is treated as server-driven (e.g. a search-select
+   * backed by an API call): local filtering is skipped and the raw search text
+   * is forwarded here instead so the caller can debounce/fetch. Omit for the
+   * default fully-local behavior.
+   */
+  onSearchChange?: (query: string) => void
+  /** Shows a loading indicator in place of the empty-state text. Only meaningful with `onSearchChange`. */
+  loading?: boolean
 }
 
 export function MultiSelect({
@@ -181,12 +190,14 @@ export function MultiSelect({
   emptyText = "No option found.",
   disabled = false,
   className,
+  onSearchChange,
+  loading = false,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
   const filtered =
-    search.trim() === ""
+    onSearchChange || search.trim() === ""
       ? options
       : options.filter((o) => {
           const q = search.toLowerCase()
@@ -196,6 +207,11 @@ export function MultiSelect({
             (o.description?.toLowerCase().includes(q) ?? false)
           )
         })
+
+  const handleSearchChange = (next: string) => {
+    setSearch(next)
+    onSearchChange?.(next)
+  }
 
   const handleSelect = (selectedValue: string) => {
     const isSelected = value.includes(selectedValue)
@@ -249,11 +265,11 @@ export function MultiSelect({
           <CommandInput
             placeholder={searchPlaceholder}
             value={search}
-            onValueChange={setSearch}
+            onValueChange={handleSearchChange}
             autoFocus
           />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Searching..." : emptyText}</CommandEmpty>
             <CommandGroup>
               {filtered.map((o) => (
                 <CommandItem
