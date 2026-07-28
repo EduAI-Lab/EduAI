@@ -4,6 +4,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
 
+const PrismaClientKnownRequestErrorMock = vi.hoisted(
+  () =>
+    class PrismaClientKnownRequestError extends Error {
+      code: string;
+      meta?: Record<string, unknown>;
+
+      constructor(
+        message: string,
+        options: {
+          code: string;
+          clientVersion?: string;
+          meta?: Record<string, unknown>;
+        },
+      ) {
+        super(message);
+        this.code = options.code;
+        this.meta = options.meta;
+      }
+    },
+);
+
 const prismaMock = vi.hoisted(() => ({
   aiJob: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
 }));
@@ -11,6 +32,11 @@ const prismaMock = vi.hoisted(() => ({
 const queueAdd = vi.hoisted(() => vi.fn());
 const getQueueMock = vi.hoisted(() => vi.fn(() => ({ add: queueAdd })));
 
+vi.mock("@prisma/client", () => ({
+  Prisma: {
+    PrismaClientKnownRequestError: PrismaClientKnownRequestErrorMock,
+  },
+}));
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 vi.mock("~/lib/queue/queues.server", () => ({ getQueue: getQueueMock }));
 vi.mock("~/lib/logging.server", () => ({
@@ -50,13 +76,18 @@ describe("enqueue", () => {
           status: "PENDING",
           kind: "question-generation",
           source: "question-maker",
-          queueName: "ai-jobs:chat",
+          queueName: "ai-jobs-chat",
         }),
       }),
     );
     // background → chat pool (heavy pool unset in v1), low priority (10), BullMQ name = kind.
-    expect(getQueueMock).toHaveBeenCalledWith("ai-jobs:chat");
-    expect(queueAdd).toHaveBeenCalledWith("question-generation", job, { jobId: undefined, priority: 10 });
+    expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
+    expect(queueAdd).toHaveBeenCalledWith("question-generation", job, {
+      jobId: undefined,
+      priority: 10,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 5000 },
+    });
     expect(prismaMock.aiJob.update).toHaveBeenCalledWith({
       where: { id: "aijob_1" },
       data: { bullJobId: "bull_1" },
@@ -65,7 +96,7 @@ describe("enqueue", () => {
 
   it("enqueues interactive work at high priority", async () => {
     await enqueue({ ...job, type: "interactive" });
-    expect(getQueueMock).toHaveBeenCalledWith("ai-jobs:chat");
+    expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
     expect(queueAdd).toHaveBeenCalledWith("question-generation", expect.anything(), expect.objectContaining({ priority: 1 }));
   });
 
@@ -73,7 +104,7 @@ describe("enqueue", () => {
     await enqueue({ ...job, idempotencyKey: "idem-9" });
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { queueName_bullJobId: { queueName: "ai-jobs:chat", bullJobId: "idem-9" } },
+        where: { queueName_bullJobId: { queueName: "ai-jobs-chat", bullJobId: "idem-9" } },
       }),
     );
     expect(queueAdd).toHaveBeenCalledWith(
@@ -81,6 +112,24 @@ describe("enqueue", () => {
       expect.anything(),
       expect.objectContaining({ jobId: "idem-9" }),
     );
+  });
+
+  it("configures the BullMQ retry policy from worker env", async () => {
+    vi.stubEnv("AI_JOB_ATTEMPTS", "5");
+    vi.stubEnv("AI_JOB_RETRY_DELAY_MS", "750");
+    try {
+      await enqueue(job);
+      expect(queueAdd).toHaveBeenCalledWith(
+        "question-generation",
+        expect.anything(),
+        expect.objectContaining({
+          attempts: 5,
+          backoff: { type: "exponential", delay: 750 },
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("returns the existing row for a repeated idempotencyKey without creating a new one", async () => {
@@ -110,16 +159,16 @@ describe("enqueue", () => {
     try {
       await enqueue({ ...job, idempotencyKey: "idem-9" });
 
-      // background + heavy pool configured → ai-jobs:heavy, and the dedupe lookup
+      // background + heavy pool configured → ai-jobs-heavy, and the dedupe lookup
       // must be keyed on that queue: a chat job may legitimately share bullJobId "1".
-      expect(getQueueMock).toHaveBeenCalledWith("ai-jobs:heavy");
+      expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-heavy");
       expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { queueName_bullJobId: { queueName: "ai-jobs:heavy", bullJobId: "idem-9" } },
+          where: { queueName_bullJobId: { queueName: "ai-jobs-heavy", bullJobId: "idem-9" } },
         }),
       );
       expect(prismaMock.aiJob.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ queueName: "ai-jobs:heavy" }) }),
+        expect.objectContaining({ data: expect.objectContaining({ queueName: "ai-jobs-heavy" }) }),
       );
     } finally {
       vi.unstubAllEnvs();
@@ -141,7 +190,7 @@ describe("enqueue", () => {
     expect(prismaMock.aiJob.delete).toHaveBeenCalledWith({ where: { id: "aijob_1" } });
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { queueName_bullJobId: { queueName: "ai-jobs:chat", bullJobId: "bull_1" } },
+        where: { queueName_bullJobId: { queueName: "ai-jobs-chat", bullJobId: "bull_1" } },
       }),
     );
   });
