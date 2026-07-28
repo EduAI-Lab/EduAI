@@ -118,10 +118,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const overflow = page.length > limit;
   const trimmedPage = overflow ? page.slice(0, limit) : page;
-  // More raw rows may exist even once we've filled `limit` filtered rows, or the
-  // batch cap was hit before the underlying data was exhausted — either way,
-  // resume from the last raw row examined, not from the last *returned* row.
-  const nextCursor = exhausted && !overflow ? null : rawCursor;
+  // When a single batch's filtered rows overflow `limit`, the trimmed-off rows
+  // were already fetched and matched but never returned — resuming from the
+  // batch's raw cursor would skip them forever. Resume from the last row we
+  // actually returned instead; chat.id is the same field the raw query cursors
+  // on, so it's a valid resume point either way. Only safe to fall back to the
+  // batch's raw cursor (skipping rows client never saw, all correctly filtered
+  // out) when there was no overflow.
+  const nextCursor = overflow
+    ? trimmedPage[trimmedPage.length - 1]!.id
+    : exhausted
+      ? null
+      : rawCursor;
 
   return json({
     chats: trimmedPage.map((chat) => ({

@@ -19,6 +19,9 @@ export function useStudentCandidates(courseId: string | undefined, exclude: 'enr
   const [candidates, setCandidates] = useState<StudentCandidate[]>([])
   const [loading, setLoading] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Guards against an in-flight request from a stale keystroke resolving after
+  // a newer one and clobbering fresher results (#1042 review).
+  const requestIdRef = useRef(0)
 
   const search = useCallback((next: string) => {
     setQuery(next)
@@ -29,6 +32,7 @@ export function useStudentCandidates(courseId: string | undefined, exclude: 'enr
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     debounceRef.current = setTimeout(async () => {
+      const requestId = ++requestIdRef.current
       setLoading(true)
       try {
         const params = new URLSearchParams({ exclude })
@@ -36,11 +40,13 @@ export function useStudentCandidates(courseId: string | undefined, exclude: 'enr
         const res = await fetch(`/api/courses/${courseId}/student-candidates?${params}`)
         if (!res.ok) throw new Error(await res.text())
         const data = (await res.json()) as { candidates: StudentCandidate[] }
+        if (requestId !== requestIdRef.current) return
         setCandidates(data.candidates)
       } catch {
+        if (requestId !== requestIdRef.current) return
         setCandidates([])
       } finally {
-        setLoading(false)
+        if (requestId === requestIdRef.current) setLoading(false)
       }
     }, SEARCH_DEBOUNCE_MS)
 
