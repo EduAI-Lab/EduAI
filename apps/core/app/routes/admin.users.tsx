@@ -34,6 +34,9 @@ export default function UsersPage() {
   const { user } = useLoaderData<typeof loader>()
   const {
     users,
+    total,
+    stats,
+    setQuery,
     isLoading,
     error,
     createUser,
@@ -65,6 +68,9 @@ export default function UsersPage() {
     >
       <UsersAdminView
         users={users}
+        total={total}
+        stats={stats}
+        onQueryChange={setQuery}
         isLoading={isLoading}
         error={error}
         currentUserId={user.id}

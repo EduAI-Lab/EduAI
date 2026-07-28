@@ -25,9 +25,17 @@ export const EduAiCourseSchema = z
   })
   .passthrough();
 
-export const EduAiCourseListSchema = z
+/**
+ * Core's paginated list envelope (#1041). Replaces the old `{ courses: [...] }`
+ * shape — `GET /api/courses` now always answers
+ * `{ data, total, page, pageSize }` and requires paging params.
+ */
+export const EduAiCoursePageSchema = z
   .object({
-    courses: z.array(EduAiCourseSchema),
+    data: z.array(EduAiCourseSchema),
+    total: z.number(),
+    page: z.number(),
+    pageSize: z.number(),
   })
   .passthrough();
 

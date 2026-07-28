@@ -32,6 +32,7 @@ import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
 import { LEVELS } from '../middleware/courseAccess.js';
 import { logger } from '../utils/logger.js';
+import { parsePaginationParams, pageOf } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -117,12 +118,15 @@ router.get(
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const variants = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
+      // Structure-bounded (#1044): always a bounded page — params are optional,
+      // so a caller that sends none gets the first page rather than a 400, but
+      // never the unbounded set. Sliced in memory (`total` = the question's
+      // full variant count) to stay uniform with the other structure-bounded
+      // lists in this app.
+      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+      const all = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
 
-      res.json({
-        success: true,
-        data: variants
-      });
+      res.json(pageOf(all, pagination));
     } catch (error) {
       next(error);
     }

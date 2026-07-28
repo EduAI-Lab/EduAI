@@ -222,12 +222,28 @@ export const createQuestion = async (userId, questionData) => {
 };
 
 /**
+ * Enriches raw question rows with their Core-backed course projection and the
+ * derived variant semesters. Exported so a batched reader (the export scan) can
+ * pay the single Core catalog fetch inside `enrichRowsWithCourse` once for the
+ * whole set instead of once per batch.
+ */
+export const enrichQuestionRows = async (rows) => {
+  const enriched = await enrichRowsWithCourse(rows);
+  return enriched.map(withDerivedVariantSemesters);
+};
+
+/**
  * Returns a paginated question list (with course + variant associations)
  * scoped to the requesting user. Shape: `{ items, total, limit, offset }` (#1040).
  *
  * Search matches description OR any variant's questionText. Type / difficulty /
  * reasoning / AI / draft filters and sortBy are applied in SQL before paging
  * so bank UI pagination stays correct (#1040 review).
+ *
+ * `enrich: false` returns the raw rows and skips `enrichRowsWithCourse`, whose
+ * `getAllCoursesFromCore()` call is an uncached full-catalog fetch — callers
+ * that page through in batches should skip it and run `enrichQuestionRows` once
+ * over the assembled set (#1044 export).
  */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
@@ -242,6 +258,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       sortBy,
       limit = 50,
       offset = 0,
+      enrich = true,
     } = options;
     const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
     const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
@@ -288,9 +305,12 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       prisma.questionMetadata.count({ where: whereClause }),
     ]);
 
-    const enriched = await enrichRowsWithCourse(rows);
+    const items = enrich
+      ? (await enrichRowsWithCourse(rows)).map(withDerivedVariantSemesters)
+      : rows;
+
     return {
-      items: enriched.map(withDerivedVariantSemesters),
+      items,
       total: count,
       limit: appliedLimit,
       offset: appliedOffset,
@@ -1051,7 +1071,11 @@ export const getVariantsByQuestion = async (questionId, userId) => {
 
     const variants = await prisma.variants.findMany({
       where: { questionMetadataId: questionId },
-      orderBy: { createdAt: 'asc' }
+      // `id` breaks ties so the ordering is total (#1044). `createdAt` is not
+      // unique — bank generation inserts a question's variants in one statement,
+      // so they share a timestamp — and paging a non-total order can repeat and
+      // drop rows across requests.
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
 
     return variants;
