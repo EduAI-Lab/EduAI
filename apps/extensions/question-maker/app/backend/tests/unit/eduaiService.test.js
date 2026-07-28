@@ -410,24 +410,29 @@ describe('listCourses', () => {
     await expect(eduaiService.listCourses()).rejects.toThrow(/not configured/i);
   });
 
-  it('returns the data unchanged when no codes are ignored', async () => {
-    axios.get.mockResolvedValue({ data: [{ id: 1, code: 'CS 101' }] });
+  // #1041: Core answers `{ data, total, page, pageSize }` and the service
+  // unwraps it to a plain course array.
+  const coursePage = (courses) => ({
+    data: { data: courses, total: courses.length, page: 1, pageSize: 200 },
+  });
+
+  it('returns the courses unchanged when no codes are ignored', async () => {
+    axios.get.mockResolvedValue(coursePage([{ id: 1, code: 'CS 101' }]));
     const out = await eduaiService.listCourses();
     expect(out).toEqual([{ id: 1, code: 'CS 101' }]);
   });
 
-  it('filters ignored codes out of an array payload', async () => {
-    config.eduaiIgnoredCourseCodes = ['CS101'];
-    axios.get.mockResolvedValue({ data: [{ id: 1, code: 'CS 101' }, { id: 2, code: 'BIO 200' }] });
-    const out = await eduaiService.listCourses();
-    expect(out).toEqual([{ id: 2, code: 'BIO 200' }]);
+  it('requests a bounded page rather than the whole catalog', async () => {
+    axios.get.mockResolvedValue(coursePage([]));
+    await eduaiService.listCourses();
+    expect(axios.get.mock.calls[0][0]).toMatch(/\/api\/courses\?page=1&pageSize=200$/);
   });
 
-  it('filters ignored codes inside a { courses: [...] } envelope', async () => {
-    config.eduaiIgnoredCourseCodes = ['bio200'];
-    axios.get.mockResolvedValue({ data: { courses: [{ id: 1, code: 'CS 101' }, { id: 2, code: 'BIO 200' }] } });
+  it('filters ignored codes out of the page', async () => {
+    config.eduaiIgnoredCourseCodes = ['CS101'];
+    axios.get.mockResolvedValue(coursePage([{ id: 1, code: 'CS 101' }, { id: 2, code: 'BIO 200' }]));
     const out = await eduaiService.listCourses();
-    expect(out.courses).toEqual([{ id: 1, code: 'CS 101' }]);
+    expect(out).toEqual([{ id: 2, code: 'BIO 200' }]);
   });
 
   it('translates a server error response', async () => {
@@ -480,10 +485,13 @@ describe('listAIModels', () => {
     await expect(eduaiService.listAIModels()).rejects.toThrow(/not configured/i);
   });
 
-  it('returns model data on success', async () => {
-    axios.get.mockResolvedValue({ data: { models: ['a', 'b'] } });
+  it('returns the model page data on success', async () => {
+    // #1041: `/api/ai-models` answers with the paginated envelope.
+    axios.get.mockResolvedValue({
+      data: { data: ['a', 'b'], total: 2, page: 1, pageSize: 200 },
+    });
     const out = await eduaiService.listAIModels();
-    expect(out).toEqual({ models: ['a', 'b'] });
+    expect(out).toEqual(['a', 'b']);
   });
 
   it('translates a server error response', async () => {

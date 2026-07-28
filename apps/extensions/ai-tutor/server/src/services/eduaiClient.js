@@ -1,4 +1,4 @@
-import { EduAiCourseListSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
+import { EduAiCoursePageSchema, EduAiTopicListSchema, EduAiEnrollmentListSchema, EduAiQuestionListSchema } from '../schemas/eduai.js';
 import { getEffectiveEduAiApiKey } from './systemSettings.js';
 const DEFAULT_BASE_URL = 'http://localhost:5174/api';
 
@@ -22,6 +22,19 @@ export function getEduAiCompletionUrl() {
 /**
  * @deprecated Use getEduAiCompletionUrl() for AI assist flows.
  */
+/**
+ * Core's list endpoints require paging (#1041) and cap `pageSize` at 200.
+ * Requests that genuinely need a caller's whole visible set page-loop at this
+ * size rather than asking for an unbounded list.
+ */
+export const CORE_PAGE_SIZE = 200;
+
+/**
+ * Safety stop for page-loops, so a bad `total` cannot spin forever. An
+ * `all: true` read past this cap throws rather than returning a partial set.
+ */
+const CORE_MAX_PAGES = 50;
+
 export function getEduAiChatUrl() {
   return `${getEduAiBaseUrl()}/chat`;
 }
@@ -65,6 +78,81 @@ async function requestEduAi(path, options = {}) {
   }
 
   return response.json();
+}
+
+/**
+ * Parse Core's paginated envelope into the course array these callers expect.
+ * Core answers `{ data, total, page, pageSize }` on every list endpoint (#1041).
+ */
+function parseCoursePage(payload, context) {
+  try {
+    const parsed = EduAiCoursePageSchema.parse(payload);
+    return parsed;
+  } catch (e) {
+    const err = new Error(`Invalid response when fetching EduAI courses (${context})`);
+    err.cause = e;
+    err.status = 502;
+    throw err;
+  }
+}
+
+/**
+ * Read one page, or walk every page when the caller needs its whole visible set.
+ *
+ * `/courses` requires `page`/`pageSize`, so "give me everything" is no longer a
+ * single request. Callers that only render a page pass `page`/`pageSize` and get
+ * that page; import/sync flows that must reconcile against the caller's complete
+ * set pass `all: true` and pay for the loop explicitly.
+ */
+async function fetchCoursePages(path, request, options = {}) {
+  const pageSize = Math.min(options.pageSize ?? CORE_PAGE_SIZE, CORE_PAGE_SIZE);
+  const search = options.search ? `&search=${encodeURIComponent(options.search)}` : '';
+
+  const readPage = async (page) => {
+    const payload = await requestEduAi(`${path}?page=${page}&pageSize=${pageSize}${search}`, request);
+    return parseCoursePage(payload, `page ${page}`);
+  };
+
+  const first = await readPage(1 + (options.page ? options.page - 1 : 0));
+  if (!options.all) return first.data;
+
+  const courses = [...first.data];
+  const pageCount = Math.ceil(first.total / pageSize) || 1;
+  if (pageCount > CORE_MAX_PAGES) {
+    // `all: true` promises the caller's complete set, so a truncated walk must
+    // not be returned as if it were whole — the reconcile flows that use it
+    // would read the missing tail as "deleted in Core". Every caller already
+    // catches and degrades closed, so failing here is the safe direction.
+    const error = new Error(
+      `EduAI ${path} returned ${first.total} rows, past the ${CORE_MAX_PAGES}×${pageSize} page-walk cap; ` +
+        'refusing to return a partial set for an all: true read.',
+    );
+    error.status = 502;
+    throw error;
+  }
+  for (let page = 2; page <= pageCount; page += 1) {
+    const next = await readPage(page);
+    courses.push(...next.data);
+  }
+  return courses;
+}
+
+/** Resolve a known set of course ids in one unpaged `?ids=` lookup (#1125). */
+async function fetchCoursesByIds(path, request, ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const courses = [];
+  // `ids` is capped server-side, so large id sets are chunked.
+  for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
+    const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
+    const payload = await requestEduAi(
+      `${path}?ids=${encodeURIComponent(chunk.join(','))}`,
+      request,
+    );
+    courses.push(...parseCoursePage(payload, 'ids lookup').data);
+  }
+  return courses;
 }
 
 /**
@@ -173,15 +261,53 @@ export async function getCoreAdminBugReport(cookie, bugReportId) {
 
 /**
  * GET Core platform users (ADMIN session cookie). Identity is owned by Core.
+ *
+ * Core requires `page`/`pageSize` and answers with
+ * `{ data, total, page, pageSize }` (#1041). Pass `ids` instead to resolve a
+ * known set of users in one unpaged lookup (#1125) — that is what the id→name
+ * maps in the admin routes use, since page-looping the whole table to build
+ * them would be strictly worse.
+ *
+ * Returns the raw envelope so callers can read `total` without a second call.
  */
-export async function listCoreAdminUsers(cookie) {
+export async function listCoreAdminUsers(cookie, options = {}) {
   if (!cookie) {
     const error = new Error('Session cookie is required to list Core users');
     error.status = 401;
     throw error;
   }
 
-  const url = `${getCoreBaseUrl()}/api/users`;
+  // Resolve a known id set (#1125). Core caps `ids` at CORE_PAGE_SIZE per
+  // request, so dedupe and chunk — a course with more than CORE_PAGE_SIZE
+  // enrolled users would otherwise exceed the cap and 400 with IDS_TOO_MANY,
+  // losing the whole id->name map. Combine each chunk's envelope back into one.
+  if (Array.isArray(options.ids)) {
+    const unique = [...new Set(options.ids.filter(Boolean))];
+    if (unique.length === 0) {
+      return { data: [], total: 0, page: 1, pageSize: 0 };
+    }
+    const data = [];
+    for (let start = 0; start < unique.length; start += CORE_PAGE_SIZE) {
+      const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
+      const params = new URLSearchParams();
+      params.set('ids', chunk.join(','));
+      const envelope = await fetchCoreUsers(cookie, params);
+      data.push(...(envelope?.data ?? []));
+    }
+    return { data, total: data.length, page: 1, pageSize: data.length };
+  }
+
+  const params = new URLSearchParams();
+  params.set('page', String(options.page ?? 1));
+  params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
+  if (options.role) params.set('role', options.role);
+  if (options.search) params.set('search', options.search);
+  return fetchCoreUsers(cookie, params);
+}
+
+/** Single `GET /api/users` request with the ADMIN session cookie. */
+async function fetchCoreUsers(cookie, params) {
+  const url = `${getCoreBaseUrl()}/api/users?${params}`;
   const response = await fetch(url, {
     headers: { cookie },
   });
@@ -256,21 +382,24 @@ export async function listEduAiCourses(options = {}) {
     error.status = 401;
     throw error;
   }
-  const data = await requestEduAi('/courses', { cookie });
-  try {
-    const parsed = EduAiCourseListSchema.parse(data);
-    return parsed.courses;
-  } catch (e) {
-    const err = new Error('Invalid response when fetching EduAI courses');
-    err.cause = e;
-    err.status = 502;
-    throw err;
-  }
+  return fetchCoursePages('/courses', { cookie }, options);
 }
 
+/**
+ * Resolve one Core course by id through the `?ids=` lookup (#1125).
+ *
+ * This used to fetch the caller's entire course list and scan it. Under
+ * required paging that would mean page-looping the list to find one row.
+ */
 export async function findEduAiCourseById(courseId, options = {}) {
   if (!courseId) return null;
-  const courses = await listEduAiCourses(options);
+  const cookie = typeof options.cookie === 'string' ? options.cookie : '';
+  if (!cookie) {
+    const error = new Error('Session cookie is required to fetch an EduAI course');
+    error.status = 401;
+    throw error;
+  }
+  const courses = await fetchCoursesByIds('/courses', { cookie }, [courseId]);
   return courses.find((course) => course.id === courseId) ?? null;
 }
 
@@ -288,23 +417,16 @@ export async function findEduAiCourseById(courseId, options = {}) {
  * Core-scoped for it," not "doesn't exist." Never use this as the primary/
  * oracle source for a caller-facing list.
  */
-export async function listEduAiCoursesServiceKey() {
+export async function listEduAiCoursesServiceKey(options = {}) {
   const serviceKey = process.env.EDUAI_API_KEY;
   if (!serviceKey) {
     throw new Error('EDUAI_API_KEY not configured');
   }
-  const data = await requestEduAi('/courses', {
-    headers: { Authorization: `Bearer ${serviceKey}` },
-  });
-  try {
-    const parsed = EduAiCourseListSchema.parse(data);
-    return parsed.courses;
-  } catch (e) {
-    const err = new Error('Invalid response when fetching EduAI courses (service key)');
-    err.cause = e;
-    err.status = 502;
-    throw err;
+  const request = { headers: { Authorization: `Bearer ${serviceKey}` } };
+  if (Array.isArray(options.ids)) {
+    return fetchCoursesByIds('/courses', request, options.ids);
   }
+  return fetchCoursePages('/courses', request, options);
 }
 
 export async function listEduAiCourseTopics(externalCourseId, options = {}) {
@@ -356,13 +478,14 @@ export async function listEduAiModels() {
     throw error;
   }
 
-  const data = await requestEduAi('/ai-models', {
+  // #1041: `/ai-models` is paged and answers with `{ data, total, ... }`.
+  const data = await requestEduAi(`/ai-models?page=1&pageSize=${CORE_PAGE_SIZE}`, {
     headers: { Authorization: `Bearer ${serviceKey}` },
   });
-  if (!Array.isArray(data)) {
+  if (!Array.isArray(data?.data)) {
     throw new Error('Invalid response from EduAI models endpoint');
   }
-  return data;
+  return data.data;
 }
 
 /**

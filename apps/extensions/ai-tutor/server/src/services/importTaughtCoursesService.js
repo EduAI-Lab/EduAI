@@ -170,7 +170,8 @@ export async function importTaughtCoursesFromCore(instructor, cookie, options = 
   let coreCourses = options.coreCourses;
   if (coreCourses === undefined) {
     try {
-      coreCourses = await listEduAiCourses({ cookie });
+      // #1041: import reconciles against every course the caller can see.
+      coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
       console.error('[eduai] Auto-import skipped: could not list Core courses', err);
       return { imported: 0, skipped: 0, error: err.message };
@@ -272,7 +273,8 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   let coreCourses = options.coreCourses;
   if (coreCourses === undefined) {
     try {
-      coreCourses = await listEduAiCourses({ cookie });
+      // #1041: import reconciles against every course the caller can see.
+      coreCourses = await listEduAiCourses({ cookie, all: true });
     } catch (err) {
       console.error('[eduai] Student enrollment mirror skipped: could not list Core courses', err);
       return { enrolled: 0, skipped: 0, removed: 0, error: err.message };
@@ -406,7 +408,7 @@ export function coreCoursesIncludeTaEnrollment(coreCourses) {
  */
 export async function userHasCoreTaEnrollment(cookie, coreCourses) {
   const courses =
-    coreCourses !== undefined ? coreCourses : await listEduAiCourses({ cookie });
+    coreCourses !== undefined ? coreCourses : await listEduAiCourses({ cookie, all: true });
   return coreCoursesIncludeTaEnrollment(courses);
 }
 

@@ -129,8 +129,14 @@ jobs:
         env:
           NODE_ENV: test
           GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+          # Deliberately NO step-level DATABASE_URL: this env block applies to every
+          # workspace turbo runs, and Core's resolveIntegrationTestDatabaseUrl() prefers
+          # the environment over apps/core/.env.test. Pointing it at question-maker's
+          # Postgres (5434, plain postgres:15 with no pgvector) sent Core's globalSetup
+          # there, so `prisma db push` died on `type "vector" does not exist` and Core
+          # reported 0% for every file. question-maker derives its own DATABASE_URL from
+          # TEST_DATABASE_URL (backend tests/globalSetup.js, tests/setup.js).
           TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
-          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
           TURBO_SCM_BASE: origin/${{ github.event.pull_request.base.ref }}
