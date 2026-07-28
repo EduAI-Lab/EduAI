@@ -133,6 +133,7 @@ export async function runCompletion(request: CompletionRequest) {
   const validatedModelId =
     `${parsedModel.providerId}:${parsedModel.modelId}` as const;
   let fleetBaseUrl: string | undefined;
+  let fleetServerId: string | undefined;
   if (parsedModel.providerId === "vllm" && fleetRoutingEnabled()) {
     try {
       const fleetPick = await resolveFleetHost({
@@ -140,6 +141,7 @@ export async function runCompletion(request: CompletionRequest) {
         resolvedModelId: validatedModelId,
       });
       fleetBaseUrl = fleetPick?.baseUrl;
+      fleetServerId = fleetPick?.serverId;
     } catch (error) {
       if (error instanceof FleetUnavailableError) {
         return {
@@ -228,6 +230,8 @@ export async function runCompletion(request: CompletionRequest) {
         model: validatedModelId,
         usage,
         finishReason,
+        fleetHost: fleetBaseUrl ?? null,
+        fleetServerId: fleetServerId ?? null,
       },
     };
   } catch (error) {

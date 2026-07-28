@@ -206,7 +206,7 @@ model AiJob {
   updatedAt    DateTime    @updatedAt
 
   // BullMQ auto-generated ids are per-queue counters, so `bullJobId` alone is not
-  // globally unique — `ai-jobs:chat` and `ai-jobs:heavy` both hand out "1".
+  // globally unique — `ai-jobs-chat` and `ai-jobs-heavy` both hand out "1".
   @@unique([queueName, bullJobId])
   @@index([userId, status])
   @@index([status, type])
