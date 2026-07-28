@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Added
+
+- [core] feat: Add the BullMQ dequeue/dispatch worker for durable AI jobs: per-pool consumers, composite queue/job lookup, cancellation-safe lifecycle transitions, Auto/fleet-aware question generation, configurable retries/concurrency, graceful shutdown, and producer-to-worker integration coverage. (#916/#168, @ssaada08, 2026-07-27)
+
+### Fixed
+
+- [core] perf: Prevent an unavailable optional energy sidecar from adding up to three seconds before basic fleet-routed chat inference; sidecar start/stop now use a short configurable timeout and retain token-estimate fallback. (#1231, @superbolt08, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Changed
