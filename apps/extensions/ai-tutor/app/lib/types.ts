@@ -78,6 +78,18 @@ export type AdminUser = {
   createdAt: string;
 };
 
+/**
+ * Core's paginated user envelope, proxied by `GET /api/admin/users` (#1041).
+ * `stats` is platform-wide and unaffected by the current page.
+ */
+export type AdminUserPage = {
+  data: AdminUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+  stats: { total: number; active: number; byRole: Record<string, number> };
+};
+
 export type EnrolledStudent = AdminUser & {
   role?: EnrollmentRole;
 };
@@ -85,7 +97,10 @@ export type EnrolledStudent = AdminUser & {
 export type AdminEnrollmentData = {
   courseId: number;
   enrolledStudents: EnrolledStudent[];
+  /** One page of Core's STUDENT list, minus anyone already enrolled (#1041). */
   availableStudents: AdminUser[];
+  /** Paging state for `availableStudents`; `total` counts Core's STUDENT matches. */
+  availableStudentsPage: { total: number; page: number; pageSize: number };
 };
 
 export type BugReportStatus = 'unhandled' | 'in progress' | 'resolved';
@@ -125,6 +140,10 @@ export type AdminBugReportRow = {
   consoleLogs?: string | null;
   networkLogs?: string | null;
   screenshot?: string | null;
+  /** Present on list rows when bodies are omitted (#979). */
+  hasConsoleLogs?: boolean;
+  hasNetworkLogs?: boolean;
+  hasScreenshot?: boolean;
   pageUrl?: string | null;
   userAgent?: string | null;
   isAnonymous: boolean;

@@ -135,7 +135,9 @@ router.get('/eduai/courses', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
   try {
     // #578: list the caller's Core-scoped courses using their session cookie
     // (the service key would return the full catalog). Mirrors the import path.
-    const courses = await listEduAiCourses({ cookie: req.headers.cookie });
+    // #1041: Core pages this endpoint, and the already-imported filter below
+    // needs the caller's complete set, so walk every page.
+    const courses = await listEduAiCourses({ cookie: req.headers.cookie, all: true });
 
     // Exclude any Core course already mirrored into AI Tutor. coreOfferingId is
     // required + @unique (#1072 step 4 — every row is Core-linked, no filter
@@ -1114,8 +1116,10 @@ router.get('/me/dashboard-stats', async (req, res) => {
       };
 
       try {
-        const users = await listCoreAdminUsers(req.headers.cookie ?? '');
-        if (Array.isArray(users)) stats.totalUsers = users.length;
+        // #1041: read Core's `total` instead of counting a fetched list —
+        // one row over the wire instead of the whole user table.
+        const users = await listCoreAdminUsers(req.headers.cookie ?? '', { pageSize: 1 });
+        if (typeof users?.total === 'number') stats.totalUsers = users.total;
       } catch (err) {
         console.warn('[me/dashboard-stats] Could not fetch Core users', err.message);
       }

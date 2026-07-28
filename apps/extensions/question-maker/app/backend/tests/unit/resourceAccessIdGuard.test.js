@@ -2,10 +2,10 @@
  * Unit tests for the resource-access loaders' id guard (#5).
  *
  * A non-integer resource id (e.g. PATCH /api/questions/variants/abc/testable) must 404
- * BEFORE the loader issues a Sequelize query against an INTEGER PK — otherwise
- * `Number('abc')` → NaN reaches the DB as `invalid input syntax for type integer: NaN`,
- * which errorHandler doesn't map and leaks as a 500. The course-id path already guards
- * this via `Number.isInteger` (courseAccess.resolveCourseAccessWithCourse); the resource
+ * BEFORE the loader issues a Prisma query against an INTEGER PK — otherwise
+ * `Number('abc')` → NaN reaches Prisma as an invalid `where.id`, which errorHandler
+ * doesn't map and leaks as a 500. The course-id path already guards this via
+ * `Number.isInteger` (courseAccess.resolveCourseAccessWithCourse); the resource
  * loaders must do the same.
  */
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -27,11 +27,13 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getMyProfileFromCore: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Variants: { findOne: mockVariantFindOne },
-  Question_Metadata: { findOne: mockQuestionFindOne },
-  Assessments: { findOne: mockAssessmentFindOne },
-  Course: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    variants: { findUnique: mockVariantFindOne },
+    questionMetadata: { findUnique: mockQuestionFindOne },
+    assessments: { findUnique: mockAssessmentFindOne },
+    course: {},
+  },
 }));
 
 const { requireVariantAccess, requireQuestionAccess, requireAssessmentAccess } = await import(
