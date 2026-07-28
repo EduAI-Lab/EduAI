@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 const cors = await import('../../src/config/cors.js');
 
-describe('cors origin callback', () => {
+describe('corsOriginCallback with empty allowlist (default)', () => {
   it('returns false for a missing Origin header', () => {
     cors.corsOriginCallback(undefined, (err, allowed) => {
       expect(err).toBeNull();
@@ -17,20 +17,6 @@ describe('cors origin callback', () => {
     });
   });
 
-  it('returns false for any origin when CORS_ORIGINS is unset', () => {
-    cors.corsOriginCallback('https://evil.example.com', (err, allowed) => {
-      expect(err).toBeNull();
-      expect(allowed).toBe(false);
-    });
-  });
-
-  it('returns false for localhost when CORS_ORIGINS is unset', () => {
-    cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
-      expect(err).toBeNull();
-      expect(allowed).toBe(false);
-    });
-  });
-
   it('returns false for an empty string origin', () => {
     cors.corsOriginCallback('', (err, allowed) => {
       expect(err).toBeNull();
@@ -38,7 +24,48 @@ describe('cors origin callback', () => {
     });
   });
 
-  it('does not throw for an untrusted origin', () => {
+  it('returns false for an untrusted origin', () => {
+    cors.corsOriginCallback('https://evil.example.com', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
+
+  it('returns false for localhost when unconfigured', () => {
+    cors.corsOriginCallback('http://localhost:3001', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
+
+  it('returns false for a prefix-match lookalike', () => {
+    cors.corsOriginCallback('https://trusted.example.com.evil.com', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
+
+  it('returns false for a suffix-match lookalike', () => {
+    cors.corsOriginCallback('https://evil-trusted.example.com', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
+
+  it('returns false for a different port on the same host', () => {
+    cors.corsOriginCallback('https://trusted.example.com:444', (err, allowed) => {
+      expect(err).toBeNull();
+      expect(allowed).toBe(false);
+    });
+  });
+
+  it('returns false for a malformed incoming Origin without throwing', () => {
+    expect(() => {
+      cors.corsOriginCallback('not-a-valid-origin-!@#$', () => {});
+    }).not.toThrow();
+  });
+
+  it('does not throw for any untrusted origin value', () => {
     expect(() => {
       cors.corsOriginCallback('https://evil.example.com', () => {});
     }).not.toThrow();
