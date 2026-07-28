@@ -15,6 +15,24 @@ function isBullJobIdConflict(error: unknown): boolean {
   );
 }
 
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function aiJobRetryOptions(): {
+  attempts: number;
+  backoff: { type: "exponential"; delay: number };
+} {
+  return {
+    attempts: positiveInt(process.env.AI_JOB_ATTEMPTS, 3),
+    backoff: {
+      type: "exponential",
+      delay: positiveInt(process.env.AI_JOB_RETRY_DELAY_MS, 5_000),
+    },
+  };
+}
+
 /**
  * Producer entry point for the async AI-job queue — the single seam used by
  * `app/lib/ai/` call sites (contract §6). Creates the durable `AiJob` row
@@ -77,6 +95,7 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
     bullJob = await getQueue(queueName).add(payload.kind, payload, {
       jobId: payload.idempotencyKey,
       priority,
+      ...aiJobRetryOptions(),
     });
   } catch (error) {
     // Redis down / queue unreachable: the PENDING row stays without a bullJobId

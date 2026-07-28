@@ -10,8 +10,8 @@ import { enqueue } from "./enqueue.server";
  * (contract §6, issue #914). Off by default: it fires only when
  * `QUEUE_ENQUEUE_ENABLED=true` AND the request explicitly opts in with
  * `enqueue: true`. Normal interactive chat never enters this path, so the live
- * synchronous stream is untouched until the dispatch worker (#168) exists to
- * drain the queue.
+ * synchronous stream is untouched unless the guarded producer is explicitly
+ * enabled. Deployments that enable it must run `npm run queue:worker`.
  *
  * Integration seam: QM's `eduaiService` must send `{ enqueue: true, source,
  * routingContext }` for this to fire — not flipped in #914.
