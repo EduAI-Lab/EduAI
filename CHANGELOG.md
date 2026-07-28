@@ -12,7 +12,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] perf: Prevent an unavailable optional energy sidecar from adding up to three seconds before basic fleet-routed chat inference; sidecar start/stop now use a short configurable timeout and retain token-estimate fallback. (#1231, @superbolt08, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] perf: Prevent an unavailable optional energy sidecar from adding up to three seconds before basic fleet-routed chat inference; sidecar start/stop now use a short configurable timeout and retain token-estimate fallback. (#1231, @superbolt08, 2026-07-27) — [#1232](https://github.com/EduAI-Lab/EduAI/pull/1232)
 
 ## [Week 12 — July 20–26, 2026]
 
