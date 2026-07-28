@@ -1181,7 +1181,7 @@ router.post('/questions/:id/answer', async (req, res) => {
                   select: {
                     id: true,
                     coreOfferingId: true,
-                    enrollments: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
                   },
                 },
               },
@@ -1196,10 +1196,10 @@ router.post('/questions/:id/answer', async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
 
-    if (authUser.role !== 'STUDENT' && authUser.role !== 'TA') {
-      return res.status(403).json({ error: 'Only students and TAs can submit answers' });
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can submit answers' });
     }
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id && e.role === 'STUDENT');
     if (!isEnrolled) {
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }
