@@ -82,12 +82,16 @@ describe("enqueue", () => {
     );
     // background → chat pool (heavy pool unset in v1), low priority (10), BullMQ name = kind.
     expect(getQueueMock).toHaveBeenCalledWith("ai-jobs-chat");
-    expect(queueAdd).toHaveBeenCalledWith("question-generation", job, {
-      jobId: undefined,
-      priority: 10,
-      attempts: 3,
-      backoff: { type: "exponential", delay: 5000 },
-    });
+    expect(queueAdd).toHaveBeenCalledWith(
+      "question-generation",
+      { ...job, aiJobId: "aijob_1" },
+      {
+        jobId: undefined,
+        priority: 10,
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5000 },
+      },
+    );
     expect(prismaMock.aiJob.update).toHaveBeenCalledWith({
       where: { id: "aijob_1" },
       data: { bullJobId: "bull_1" },
@@ -109,7 +113,10 @@ describe("enqueue", () => {
     );
     expect(queueAdd).toHaveBeenCalledWith(
       "question-generation",
-      expect.anything(),
+      expect.objectContaining({
+        idempotencyKey: "idem-9",
+        aiJobId: "aijob_1",
+      }),
       expect.objectContaining({ jobId: "idem-9" }),
     );
   });

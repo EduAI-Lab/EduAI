@@ -2,7 +2,10 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import type { JobPayload } from "~/lib/queue/job-schema";
+import type {
+  JobPayload,
+  QueuedJobPayload,
+} from "~/lib/queue/job-schema";
 
 const prismaMock = vi.hoisted(() => ({
   aiJob: {
@@ -63,9 +66,9 @@ const payload: JobPayload = {
 };
 
 function bullJob(
-  data: JobPayload = payload,
-  overrides: Partial<Job<JobPayload>> = {},
-): Job<JobPayload> {
+  data: JobPayload | QueuedJobPayload = payload,
+  overrides: Partial<Job<JobPayload | QueuedJobPayload>> = {},
+): Job<JobPayload | QueuedJobPayload> {
   return {
     id: "bull_1",
     name: data.kind,
@@ -73,7 +76,7 @@ function bullJob(
     attemptsMade: 0,
     opts: {},
     ...overrides,
-  } as Job<JobPayload>;
+  } as Job<JobPayload | QueuedJobPayload>;
 }
 
 beforeEach(() => {
@@ -87,23 +90,28 @@ beforeEach(() => {
 });
 
 describe("AI-job dequeue worker", () => {
-  it("consumes the exact producer payload and completes the durable row", async () => {
-    let emittedPayload: JobPayload | undefined;
+  it("uses the durable id when dequeue wins the bullJobId persistence race", async () => {
+    let emittedPayload: QueuedJobPayload | undefined;
     queueAdd.mockImplementation(
-      async (_name: string, data: JobPayload) => {
+      async (_name: string, data: QueuedJobPayload) => {
         emittedPayload = data;
         return { id: "bull_1" };
       },
     );
 
     await expect(enqueue(payload)).resolves.toEqual({ jobId: "aijob_1" });
-    expect(emittedPayload).toEqual(payload);
+    expect(emittedPayload).toEqual({
+      ...payload,
+      aiJobId: "aijob_1",
+    });
 
     prismaMock.aiJob.findUnique.mockResolvedValueOnce({
       id: "aijob_1",
       status: "PENDING",
       startedAt: null,
       userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: null,
     });
     const execute = vi.fn().mockResolvedValue({
       kind: "question-generation",
@@ -120,17 +128,14 @@ describe("AI-job dequeue worker", () => {
 
     expect(execute).toHaveBeenCalledWith(payload);
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith({
-      where: {
-        queueName_bullJobId: {
-          queueName: "ai-jobs-chat",
-          bullJobId: "bull_1",
-        },
-      },
+      where: { id: "aijob_1" },
       select: {
         id: true,
         status: true,
         startedAt: true,
         userId: true,
+        queueName: true,
+        bullJobId: true,
       },
     });
     expect(prismaMock.aiJob.updateMany).toHaveBeenNthCalledWith(
@@ -165,6 +170,8 @@ describe("AI-job dequeue worker", () => {
       status: "CANCELLED",
       startedAt: null,
       userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: "bull_1",
     });
     const execute = vi.fn();
 
@@ -181,6 +188,8 @@ describe("AI-job dequeue worker", () => {
       status: "PENDING",
       startedAt: null,
       userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: "bull_1",
     });
     const execute = vi.fn().mockRejectedValue(new Error("temporary outage"));
 
@@ -208,6 +217,8 @@ describe("AI-job dequeue worker", () => {
       status: "RUNNING",
       startedAt: new Date("2026-07-27T00:00:00Z"),
       userId: "user_1",
+      queueName: "ai-jobs-heavy",
+      bullJobId: "bull_1",
     });
     const execute = vi.fn().mockRejectedValue(new Error("permanent outage"));
 
@@ -235,6 +246,8 @@ describe("AI-job dequeue worker", () => {
       status: "PENDING",
       startedAt: null,
       userId: "user_1",
+      queueName: "ai-jobs-chat",
+      bullJobId: "bull_1",
     });
 
     await expect(
