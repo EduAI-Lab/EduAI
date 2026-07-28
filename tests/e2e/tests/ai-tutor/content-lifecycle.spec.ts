@@ -367,12 +367,20 @@ test.describe('AI Tutor cascade unpublish', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('AI Tutor admin endpoints', () => {
-  test('ADMIN GET /api/admin/users returns 200 with an array', async ({ request }) => {
+  // #1041: this proxies Core's paginated user list, so it answers with the
+  // `{ data, total, page, pageSize, stats }` envelope rather than a bare array.
+  test('ADMIN GET /api/admin/users returns 200 with a page envelope', async ({ request }) => {
     await createAdmin(request, { prefix: 'at-admin-users' });
 
-    const res = await request.get(`${AT}/api/admin/users`);
+    const res = await request.get(`${AT}/api/admin/users?page=1&pageSize=25`);
     expect(res.status()).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
+
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+    expect(typeof body.total).toBe('number');
+    expect(typeof body.stats.total).toBe('number');
   });
 
   test('ADMIN GET /api/admin/courses returns 200 with an array', async ({ request }) => {
