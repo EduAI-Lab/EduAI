@@ -26,4 +26,3 @@ done
 echo "ERROR: edge did not become ready"
 docker compose ps
 exit 1
-
