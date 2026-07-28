@@ -1,10 +1,11 @@
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router"
 import { GalleryVerticalEnd } from "lucide-react"
+import { useState } from "react"
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router"
 
 import { acceptInvitationSchema, type AcceptInvitationInput } from "~/lib/invitations/schemas"
-import { PASSWORD_POLICY_MESSAGE } from "~/lib/auth/password-policy"
 import { acceptInvitation, getInvitationByToken } from "~/lib/invitations/service.server"
+import { PasswordRequirements } from "~/components/password-requirements"
 import { fireAndForget, logAuditAction } from "~/lib/logging.server"
 import { getActorContext, getRequestContext } from "~/lib/request-context.server"
 import { userNeedsStudentIdOnboarding } from "~/lib/canvas/onboarding.server"
@@ -99,6 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default function AcceptInvitationPage() {
   const navigation = useNavigation();
+  const [password, setPassword] = useState("");
   // Covers the action submission and the post-accept redirect; resets to
   // "idle" automatically when the action returns an error.
   const isSubmitting = navigation.state !== "idle";
@@ -190,15 +192,14 @@ export default function AcceptInvitationPage() {
                       type="password"
                       autoComplete="new-password"
                       required
-                      aria-describedby="password-requirements"
+                      aria-describedby="invitation-password-requirements"
+                      onChange={(event) => setPassword(event.currentTarget.value)}
                       className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-sm"
                     />
-                    <p
-                      id="password-requirements"
-                      className="text-xs text-muted-foreground"
-                    >
-                      {PASSWORD_POLICY_MESSAGE}
-                    </p>
+                    <PasswordRequirements
+                      password={password}
+                      id="invitation-password-requirements"
+                    />
                     {actionData?.fieldErrors?.password && (
                       <p className="text-sm text-red-600" role="alert">
                         {actionData.fieldErrors.password}
