@@ -163,7 +163,9 @@ router.get(
       let coreEnrollmentMap = new Map();
       if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId, {
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
