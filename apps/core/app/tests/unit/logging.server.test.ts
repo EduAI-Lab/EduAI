@@ -116,6 +116,8 @@ describe("logging.server", () => {
         totp: "654321",
         mfa: "enabled",
         mfaSecret: "mfa-secret",
+        mfaCode: "123456",
+        mfaRecoveryCode: "rec-1",
         pin: "0000",
         userPin: "1111",
         auth: "Bearer xyz",
@@ -146,6 +148,8 @@ describe("logging.server", () => {
           totp: "[REDACTED]",
           mfa: "[REDACTED]",
           mfaSecret: "[REDACTED]",
+          mfaCode: "[REDACTED]",
+          mfaRecoveryCode: "[REDACTED]",
           pin: "[REDACTED]",
           userPin: "[REDACTED]",
           auth: "[REDACTED]",
@@ -161,8 +165,8 @@ describe("logging.server", () => {
   });
 
   it("uses segment-exact matching for short tokens and keeps ordinary fields visible", async () => {
-    // Table-driven positive / negative cases: short needles (auth/pin) use segment match;
-    // bare `mfa` is exact-key only so status flags like mfaEnabled stay visible.
+    // Table-driven positive / negative cases: short needles (auth/pin/otp/dsn/totp/mfa) use
+    // segment match; MFA status flags stay visible via the safe-key allowlist.
     const cases: Array<{ key: string; value: string; redact: boolean }> = [
       // positive — exact segment or longer unique substring
       { key: "auth", value: "secret", redact: true },
@@ -170,13 +174,27 @@ describe("logging.server", () => {
       { key: "userPin", value: "0000", redact: true },
       { key: "pin_code", value: "0000", redact: true },
       { key: "mfa", value: "on", redact: true },
-      { key: "mfaEnabled", value: "true", redact: false },
+      { key: "mfaCode", value: "123456", redact: true },
+      { key: "mfaRecoveryCode", value: "rec-1", redact: true },
+      { key: "mfa_secret", value: "s", redact: true },
+      { key: "otp", value: "123456", redact: true },
+      { key: "userOtp", value: "123456", redact: true },
+      { key: "otp_code", value: "123456", redact: true },
+      { key: "totp", value: "654321", redact: true },
+      { key: "userTotp", value: "654321", redact: true },
+      { key: "dsn", value: "https://key@sentry.io/1", redact: true },
+      { key: "sentryDsn", value: "https://key@sentry.io/1", redact: true },
+      { key: "database_dsn", value: "postgres://x", redact: true },
       { key: "passcode", value: "pc", redact: true },
       { key: "passphrase", value: "pp", redact: true },
       { key: "dbUrl", value: "postgres://x", redact: true },
       { key: "databaseUri", value: "postgres://x", redact: true },
       { key: "authorization", value: "Bearer x", redact: true },
-      // negative — ordinary fields that previously false-positived on substring auth/pin/mfa
+      // negative — ordinary fields that previously false-positived on short substrings
+      { key: "mfaEnabled", value: "true", redact: false },
+      { key: "mfaRequired", value: "false", redact: false },
+      { key: "mfaEnrolled", value: "true", redact: false },
+      { key: "mfaStatus", value: "active", redact: false },
       { key: "authorId", value: "a-1", redact: false },
       { key: "authorName", value: "Ada", redact: false },
       { key: "mapping", value: "course-map", redact: false },
@@ -184,6 +202,11 @@ describe("logging.server", () => {
       { key: "pinningPolicy", value: "none", redact: false },
       { key: "forceReauth", value: "false", redact: false },
       { key: "authorizedUnits", value: "3", redact: false },
+      // otp/dsn substring collisions (must stay visible with segment matching)
+      { key: "hotPath", value: "/api/hot", redact: false },
+      { key: "footprint", value: "12kb", redact: false },
+      { key: "fieldsName", value: "title", redact: false },
+      { key: "needsNormalization", value: "true", redact: false },
       { key: "canvasUrl", value: "https://canvas.example.com", redact: false },
       { key: "role", value: "ADMIN", redact: false },
     ];
