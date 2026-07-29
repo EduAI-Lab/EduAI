@@ -50,14 +50,15 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getCourseFromCore: vi.fn().mockResolvedValue({ id: 'cuid-core-course', department: 'COSC' }),
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
 }));
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: vi.fn() },
-  Question_Metadata: { findOne: vi.fn() },
-  Variants: {},
-  Assessments: {},
-  AssessmentSections: {},
-  Topics: {},
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findUnique: vi.fn() },
+    questionMetadata: { findFirst: vi.fn() },
+    variants: {},
+    assessments: {},
+    assessmentSections: {},
+    topics: {},
+  },
 }));
 
 const { default: app } = await import('../../src/app.js');

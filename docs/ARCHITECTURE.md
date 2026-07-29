@@ -309,7 +309,7 @@ EduAI/
 │       │                              Session validated via Core; service key for server-to-server
 │       ├── question-maker/          → Question bank / assessments
 │       │   └── app/
-│       │       ├── backend/         → Express/Sequelize API, own DB
+│       │       ├── backend/         → Express/Prisma API, own DB
 │       │       └── frontend/        → Vite/React authoring UI
 │       └── example-extension/       → Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/

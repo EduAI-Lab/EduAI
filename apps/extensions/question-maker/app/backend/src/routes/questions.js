@@ -15,6 +15,7 @@ import express from 'express';
 import {
   createQuestion,
   getQuestionsByUser,
+  enrichQuestionRows,
   getQuestionById,
   updateQuestion,
   deleteQuestion,
@@ -30,7 +31,7 @@ import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../middleware/courseAccess.js';
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
-import { Assessments } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
 
 const router = express.Router();
@@ -54,7 +55,7 @@ function denyTaNotOwner(req, res) {
 async function assessmentInCourse(assessmentId, courseId) {
   const id = Number(assessmentId);
   if (!Number.isInteger(id)) return null;
-  const assessment = await Assessments.findOne({ where: { id } });
+  const assessment = await prisma.assessments.findUnique({ where: { id } });
   return assessment && assessment.courseId === courseId ? assessment : null;
 }
 
@@ -219,11 +220,26 @@ router.get('/export', authenticateToken, requireRole(QM_AUTHORIZED), async (req,
     }
 
     // Owner-scope so an enrolled non-owner viewer still exports the full bank.
-    const questions = await getQuestionsByUser(course.userId, {
-      courseId: course.id,
-      limit: 100000,
-      offset: 0
-    });
+    // Batch the scan (#1044) instead of a single hard-coded limit:100000 read —
+    // page through in fixed chunks and stop on the first short page, so a large
+    // bank never materializes as one unbounded query.
+    // `enrich: false` keeps the per-batch work purely local — enrichment does an
+    // uncached fetch of Core's whole course catalog, so leaving it on would turn
+    // one Core roundtrip into one per batch and blow the request's time budget
+    // on a large bank. Enrich once over the assembled set instead.
+    const EXPORT_BATCH_SIZE = 500;
+    const rawQuestions = [];
+    for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
+      const batch = await getQuestionsByUser(course.userId, {
+        courseId: course.id,
+        limit: EXPORT_BATCH_SIZE,
+        offset,
+        enrich: false
+      });
+      rawQuestions.push(...batch);
+      if (batch.length < EXPORT_BATCH_SIZE) break;
+    }
+    const questions = await enrichQuestionRows(rawQuestions);
 
     if (normalizedFormat === 'json') {
       return res.json({ success: true, data: questions });
@@ -482,6 +498,13 @@ router.post(
         return res.status(400).json({
           success: false,
           error: 'At least one question is required'
+        });
+      }
+
+      if (questions.length > config.maxQuestions) {
+        return res.status(400).json({
+          success: false,
+          error: `Cannot save more than ${config.maxQuestions} questions at once`
         });
       }
 
