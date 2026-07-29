@@ -5,9 +5,11 @@ const { assertPublicHostnameMock } = vi.hoisted(() => ({
   assertPublicHostnameMock: vi.fn(async (_hostname: string) => {}),
 }));
 
-vi.mock("~/lib/net/ssrf-guard.server", () => ({
+// Only the DNS-backed check is mocked; assertPublicIpLiteral is synchronous and
+// does no I/O, so the real range logic runs.
+vi.mock("~/lib/net/ssrf-guard.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/net/ssrf-guard.server")>()),
   assertPublicHostname: (hostname: string) => assertPublicHostnameMock(hostname),
-  UnsafeHostError: class UnsafeHostError extends Error {},
 }));
 
 import {
@@ -43,6 +45,45 @@ describe("parseAndValidateCanvasUrl", () => {
     expect(() => parseAndValidateCanvasUrl("http://canvas.ubc.ca")).toThrow(
       CanvasVerificationError,
     );
+  });
+
+  it("rejects https to private, loopback, and metadata IP literals", () => {
+    for (const url of [
+      "https://10.0.0.5",
+      "https://192.168.1.1",
+      "https://172.20.1.1",
+      "https://127.0.0.1",
+      "https://169.254.169.254",
+      "https://100.64.0.1",
+      "https://[::1]",
+      "https://[fd00::1]",
+    ]) {
+      expect(() => parseAndValidateCanvasUrl(url), url).toThrow(CanvasVerificationError);
+    }
+  });
+
+  it("rejects https to a loopback literal even though http://localhost is allowed for dev", () => {
+    // The dev allowance is for the docker Canvas over plain http; it must not
+    // become a general loopback exemption.
+    expect(() => parseAndValidateCanvasUrl("https://localhost:8080")).toThrow(
+      CanvasVerificationError,
+    );
+  });
+
+  it("rejects the http dev-host allowance in production", () => {
+    const original = process.env.NODE_ENV;
+    try {
+      vi.stubEnv("NODE_ENV", "production");
+      expect(() => parseAndValidateCanvasUrl("http://canvas.docker")).toThrow(
+        CanvasVerificationError,
+      );
+      expect(() => parseAndValidateCanvasUrl("http://localhost:8080")).toThrow(
+        CanvasVerificationError,
+      );
+    } finally {
+      vi.stubEnv("NODE_ENV", original ?? "test");
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -100,6 +141,54 @@ describe("verifyCanvasCredentials", () => {
     const error = new CanvasVerificationError("Invalid Canvas API token", 400);
     expect(error).toBeInstanceOf(Error);
     expect(error.statusCode).toBe(400);
+  });
+
+  it("does not follow redirects", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+
+    await verifyCanvasCredentials("https://canvas.ubc.ca", "token");
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ redirect: "manual" }),
+    );
+  });
+
+  it("refuses a 302 instead of following it to an unvalidated host", async () => {
+    // Without redirect: "manual" undici would follow this to loopback, and the
+    // pre-flight host check would never see the redirect target.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://169.254.169.254/latest/meta-data/" },
+        }),
+      ),
+    );
+
+    await expect(verifyCanvasCredentials("https://canvas.ubc.ca", "token")).rejects.toMatchObject({
+      message: "Canvas redirected the request to an unvalidated host",
+      statusCode: 502,
+    });
+  });
+
+  it("pins the connection via a dispatcher for non-local hosts", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+
+    await verifyCanvasCredentials("https://canvas.ubc.ca", "token");
+
+    const init = vi.mocked(fetch).mock.calls[0]?.[1] as { dispatcher?: unknown };
+    expect(init.dispatcher).toBeDefined();
+  });
+
+  it("does not pin the local dev Canvas host, whose address the guard would reject", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+
+    await verifyCanvasCredentials("http://canvas.docker", "token");
+
+    const init = vi.mocked(fetch).mock.calls[0]?.[1] as { dispatcher?: unknown };
+    expect(init.dispatcher).toBeUndefined();
   });
 });
 
@@ -178,6 +267,32 @@ describe("SSRF guard for real Canvas requests", () => {
       verifyCanvasCredentials("http://localhost:8080", "token"),
     ).resolves.toBeUndefined();
     expect(assertPublicHostnameMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a redirect on the paginated list path instead of following it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://127.0.0.1:5432/" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listTeacherCanvasCourses({
+        canvasUrl: "https://canvas.ubc.ca",
+        apiKey: "token",
+        isTestMode: false,
+      }),
+    ).rejects.toMatchObject({
+      message: "Canvas redirected the request to an unvalidated host",
+      statusCode: 502,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ redirect: "manual" }),
+    );
   });
 
   it("does not let a pagination Link header pointing at loopback bypass the guard for a non-local-dev canvasUrl", async () => {
