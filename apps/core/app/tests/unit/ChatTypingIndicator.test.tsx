@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import { ChatTypingIndicator } from "~/components/chat/chat-typing-indicator";
 
 describe("ChatTypingIndicator — rendering", () => {
@@ -126,5 +126,63 @@ describe("ChatTypingIndicator — rendering", () => {
     expect(
       document.querySelector('[data-chat-progress-compact="true"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("ChatTypingIndicator — local timer (#1171 review)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ticks elapsed locally from startedAt without needing parent re-renders", () => {
+    const startedAt = Date.now();
+    const { container } = render(
+      <ChatTypingIndicator
+        startedAt={startedAt}
+        deadlineMs={40_000}
+        typicalExpectedMs={40_000}
+        hasRoutedModel
+        adhdAssist={false}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-chat-progress-stage="waiting_for_model"]'),
+    ).not.toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(7_000);
+    });
+
+    expect(screen.getAllByText(/7s elapsed/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/About .* left/i).length).toBeGreaterThan(0);
+  });
+
+  it("promotes to Working on Assist reply… after the Assist silence window", () => {
+    const startedAt = Date.now();
+    const { container } = render(
+      <ChatTypingIndicator
+        startedAt={startedAt}
+        deadlineMs={50_000}
+        typicalExpectedMs={50_000}
+        hasRoutedModel
+        adhdAssist
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(6_500);
+    });
+
+    expect(
+      container.querySelector('[data-chat-progress-stage="preparing_assist"]'),
+    ).not.toBeNull();
+    expect(
+      screen.getAllByText(/Working on Assist reply/i).length,
+    ).toBeGreaterThan(0);
   });
 });

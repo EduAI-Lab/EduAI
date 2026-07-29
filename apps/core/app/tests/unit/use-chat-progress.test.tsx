@@ -13,7 +13,7 @@ describe("useChatProgress — #1171", () => {
     vi.useRealTimers();
   });
 
-  it("resets elapsed when loading ends", () => {
+  it("clears startedAt when loading ends", () => {
     const { result, rerender } = renderHook(
       ({ isLoading }) =>
         useChatProgress({
@@ -25,13 +25,11 @@ describe("useChatProgress — #1171", () => {
       { initialProps: { isLoading: true } },
     );
 
-    act(() => {
-      vi.advanceTimersByTime(1_000);
-    });
-    expect(result.current.elapsedMs).toBeGreaterThanOrEqual(1000);
+    expect(result.current.startedAt).not.toBeNull();
+    expect(result.current.showProgressIndicator).toBe(true);
 
     rerender({ isLoading: false });
-    expect(result.current.elapsedMs).toBe(0);
+    expect(result.current.startedAt).toBeNull();
     expect(result.current.showProgressIndicator).toBe(false);
   });
 
@@ -52,7 +50,7 @@ describe("useChatProgress — #1171", () => {
 
     expect(result.current.showProgressIndicator).toBe(false);
 
-    // Long pause between tokens must NOT re-show status (slow local models).
+    // Parent must not need a timer tick — status stays hidden across pauses.
     act(() => {
       vi.advanceTimersByTime(5_000);
     });
@@ -62,7 +60,7 @@ describe("useChatProgress — #1171", () => {
     expect(result.current.showProgressIndicator).toBe(false);
   });
 
-  it("shows Searching… for in-progress tools even when text already exists", () => {
+  it("shows status for in-progress tools even when text already exists", () => {
     const { result } = renderHook(() =>
       useChatProgress({
         isLoading: true,
@@ -89,12 +87,12 @@ describe("useChatProgress — #1171", () => {
       }),
     );
 
-    expect(result.current.stage.id).toBe("searching_materials");
+    expect(result.current.activeToolName).toBe("getInformation");
     expect(result.current.showProgressIndicator).toBe(true);
     expect(result.current.compactProgress).toBe(true);
   });
 
-  it("keeps compact Generating… after a tool finishes until follow-up tokens", () => {
+  it("keeps compact status after a tool finishes until follow-up tokens", () => {
     const { result, rerender } = renderHook(
       ({ toolState, content }) =>
         useChatProgress({
@@ -128,19 +126,20 @@ describe("useChatProgress — #1171", () => {
       },
     );
 
-    expect(result.current.stage.id).toBe("searching_materials");
+    expect(result.current.activeToolName).toBe("getInformation");
 
     // Immediate first paint after tool completion — no effect-flush gap/flicker.
     rerender({ toolState: "result", content: "Earlier" });
     expect(result.current.showProgressIndicator).toBe(true);
     expect(result.current.compactProgress).toBe(true);
-    expect(result.current.stage.id).toBe("generating");
+    expect(result.current.awaitingFollowup).toBe(true);
+    expect(result.current.activeToolName).toBeNull();
 
     rerender({ toolState: "result", content: "Earlier\n\nFollow-up" });
     expect(result.current.showProgressIndicator).toBe(false);
   });
 
-  it("shows Searching… when tool-invocation state is omitted", () => {
+  it("treats omitted tool-invocation state as in-progress", () => {
     const { result } = renderHook(() =>
       useChatProgress({
         isLoading: true,
@@ -163,11 +162,11 @@ describe("useChatProgress — #1171", () => {
       }),
     );
 
-    expect(result.current.stage.id).toBe("searching_materials");
+    expect(result.current.activeToolName).toBe("getInformation");
     expect(result.current.showProgressIndicator).toBe(true);
   });
 
-  it("maps unknown in-progress tools to Working…", () => {
+  it("detects unknown in-progress tools for the Working stage", () => {
     const { result } = renderHook(() =>
       useChatProgress({
         isLoading: true,
@@ -193,43 +192,11 @@ describe("useChatProgress — #1171", () => {
       }),
     );
 
-    expect(result.current.stage.id).toBe("working");
-    expect(result.current.stage.label).toMatch(/Working/i);
+    expect(result.current.activeToolName).toBe("listUsers");
     expect(result.current.showProgressIndicator).toBe(true);
   });
 
-  it("detects in-progress tool parts for the Searching stage before text", () => {
-    const { result } = renderHook(() =>
-      useChatProgress({
-        isLoading: true,
-        messages: [
-          { id: "u1", role: "user", content: "hi" },
-          {
-            id: "a1",
-            role: "assistant",
-            content: "",
-            parts: [
-              {
-                type: "tool-invocation",
-                toolInvocation: {
-                  toolName: "getInformation",
-                  state: "call",
-                },
-              },
-            ],
-          },
-        ],
-        adhdAssist: true,
-        streamingRoutedRegistryId: "vllm:qwen",
-      }),
-    );
-
-    expect(result.current.stage.id).toBe("searching_materials");
-    expect(result.current.compactProgress).toBe(false);
-    expect(result.current.showProgressIndicator).toBe(true);
-  });
-
-  it("fills timed progress from elapsed vs expected without falsely overrunning on follow-up", () => {
+  it("rebases the deadline when entering post-tool follow-up", () => {
     const { result, rerender } = renderHook(
       ({ toolState, content }) =>
         useChatProgress({
@@ -267,20 +234,17 @@ describe("useChatProgress — #1171", () => {
       vi.advanceTimersByTime(20_000);
     });
 
-    expect(result.current.timed.percent).toBeGreaterThan(20);
-    expect(result.current.timed.isOverExpected).toBe(false);
-    expect(result.current.timed.timingLabel).toMatch(/About .* left/i);
+    const beforeFollowup = result.current.deadlineMs;
 
-    // Tool finishes late in the turn — remaining should rebase, not flip to
-    // “Taking longer than usual” just because total elapsed is already large.
     rerender({ toolState: "result", content: "Earlier" });
+    expect(result.current.awaitingFollowup).toBe(true);
     expect(result.current.showProgressIndicator).toBe(true);
-    expect(result.current.timed.isOverExpected).toBe(false);
-    expect(result.current.timed.timingLabel).toMatch(/About .* left/i);
-    expect(result.current.timed.remainingMs).toBeGreaterThan(0);
+    // Rebased short window — not stuck on the huge full-turn estimate alone.
+    expect(result.current.deadlineMs).toBeGreaterThan(20_000);
+    expect(result.current.deadlineMs).toBeLessThan(beforeFollowup + 20_000);
   });
 
-  it("keeps the bar from sliding backwards when the estimate grows", () => {
+  it("grows the deadline when the estimate increases (routed model)", () => {
     const { result, rerender } = renderHook(
       ({ routed }) =>
         useChatProgress({
@@ -293,13 +257,9 @@ describe("useChatProgress — #1171", () => {
       { initialProps: { routed: null as string | null } },
     );
 
-    act(() => {
-      vi.advanceTimersByTime(4_000);
-    });
-    const before = result.current.timed.percent;
+    const before = result.current.deadlineMs;
 
-    // Routed large local model raises the typical wait — fill must not drop.
     rerender({ routed: "vllm:qwen2.5-32b-instruct" });
-    expect(result.current.timed.percent).toBeGreaterThanOrEqual(before);
+    expect(result.current.deadlineMs).toBeGreaterThanOrEqual(before);
   });
 });

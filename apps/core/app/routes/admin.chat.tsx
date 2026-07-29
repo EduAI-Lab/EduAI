@@ -151,7 +151,13 @@ export default function AdminChatPage() {
       pendingRoutedRegistryIdRef.current = null;
       setStreamingRoutedRegistryId(null);
     },
-    onError: (error) => logChatUseChatError(error, "admin-chat"),
+    onError: (error) => {
+      logChatUseChatError(error, "admin-chat");
+      // Match learning ChatScreen: clear routed-model latch on error/abort so
+      // the next turn does not skip Routing… or estimate against a dead model.
+      pendingRoutedRegistryIdRef.current = null;
+      setStreamingRoutedRegistryId(null);
+    },
   });
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);

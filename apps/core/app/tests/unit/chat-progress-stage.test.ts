@@ -393,12 +393,27 @@ describe("shouldApplyAssistiveDisplayTransform", () => {
     expect(shouldApplyAssistiveDisplayTransform("partial", false)).toBe(true);
   });
 
-  it("applies mid-stream only when Top summary + Next? are both present", () => {
+  it("applies mid-stream once Next? (terminal) is present — not Top+Next only", () => {
     expect(shouldApplyAssistiveDisplayTransform(complete, true)).toBe(true);
+    expect(
+      shouldApplyAssistiveDisplayTransform("**Next?** Want to continue?", true),
+    ).toBe(true);
+    // Top summary alone: progressive relabel happens separately; full reorder waits.
     expect(
       shouldApplyAssistiveDisplayTransform("**Top summary**\n- Point", true),
     ).toBe(false);
     expect(shouldApplyAssistiveDisplayTransform("hello", true)).toBe(false);
+  });
+
+  it("applies mid-stream for a closed eduai-diagram without waiting for Next?", () => {
+    const withDiagram = `**Top summary**
+- Point
+
+\`\`\`eduai-diagram
+process-flow
+A — done
+\`\`\``;
+    expect(shouldApplyAssistiveDisplayTransform(withDiagram, true)).toBe(true);
   });
 
   it("defers while an eduai-diagram fence is still open", () => {

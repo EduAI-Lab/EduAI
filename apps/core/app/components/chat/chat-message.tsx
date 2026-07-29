@@ -17,7 +17,10 @@ import {
 } from "~/components/assistive/active-highlight";
 import { normalizeMathMarkdown } from "@eduai/ui/math-markdown";
 import { getChatToolDisplayName, isWebChatToolName } from "~/lib/ai/web-tool-ui";
-import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-display-transform";
+import {
+  relabelAssistiveHeadings,
+  transformAssistiveDisplayCopy,
+} from "~/components/chat/assistive-display-transform";
 import { shouldApplyAssistiveDisplayTransform } from "~/components/chat/chat-progress-stage";
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
@@ -169,15 +172,19 @@ function ChatMessageBody({
   const rawTextContent = rawTextFromParts || coerceMessageContent(message.content);
   const normalizedContent = isUser ? rawTextContent : normalizeMathMarkdown(rawTextContent);
   // #699: relabel Assistive policy headings at display time only (non-user).
-  // #1171: defer reorder/relabel while streaming incomplete Assist structure so
-  // mid-stream drafts don't flash a broken Step ladder / TLDR layout.
-  const applyAssistiveDisplay =
+  // #1171: progressive mid-stream relabel (Top summary → TLDR, Next? → Continue);
+  // defer full reorder + diagram widgets until structure is safe (idle stream,
+  // or Next?/closed diagram — never wait for both Top+Next, which snapped).
+  const applyAssistiveReorder =
     assistiveDisplay &&
     !isUser &&
     shouldApplyAssistiveDisplayTransform(normalizedContent, isStreaming);
-  const textContent = applyAssistiveDisplay
-    ? transformAssistiveDisplayCopy(normalizedContent)
-    : normalizedContent;
+  const textContent =
+    assistiveDisplay && !isUser
+      ? applyAssistiveReorder
+        ? transformAssistiveDisplayCopy(normalizedContent)
+        : relabelAssistiveHeadings(normalizedContent)
+      : normalizedContent;
 
   const hasTextContent = textContent.length > 0;
 
@@ -237,7 +244,7 @@ function ChatMessageBody({
                 chat keeps fences as ordinary markdown code blocks. While an
                 Assist reply is still streaming incomplete structure, keep plain
                 markdown (#1171) so half fences don't mount broken widgets. */}
-            {applyAssistiveDisplay
+            {applyAssistiveReorder
               ? splitEduaiDiagrams(textContent).map((segment, index) =>
                   segment.kind === "diagram" ? (
                     <EduaiDiagram

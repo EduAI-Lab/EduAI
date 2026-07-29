@@ -61,14 +61,23 @@ export function ChatConversationLayout({
   wasAutoRoutedByMessageId = {},
   streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
-  const { elapsedMs, stage, timed, showProgressIndicator, compactProgress } =
-    useChatProgress({
-      isLoading,
-      messages,
-      adhdAssist,
-      selectedModel,
-      streamingRoutedRegistryId,
-    });
+  const {
+    startedAt,
+    deadlineMs,
+    typicalExpectedMs,
+    hasAssistantText,
+    hasRoutedModel,
+    activeToolName,
+    awaitingFollowup,
+    showProgressIndicator,
+    compactProgress,
+  } = useChatProgress({
+    isLoading,
+    messages,
+    adhdAssist,
+    selectedModel,
+    streamingRoutedRegistryId,
+  });
 
   return (
     <div
@@ -172,9 +181,14 @@ export function ChatConversationLayout({
 
                   {showProgressIndicator && (
                     <ChatTypingIndicator
-                      stage={stage}
-                      elapsedMs={elapsedMs}
-                      timed={timed}
+                      startedAt={startedAt}
+                      deadlineMs={deadlineMs}
+                      typicalExpectedMs={typicalExpectedMs}
+                      hasAssistantText={hasAssistantText}
+                      hasRoutedModel={hasRoutedModel}
+                      activeToolName={activeToolName}
+                      adhdAssist={adhdAssist}
+                      awaitingFollowup={awaitingFollowup}
                       compact={compactProgress}
                     />
                   )}
