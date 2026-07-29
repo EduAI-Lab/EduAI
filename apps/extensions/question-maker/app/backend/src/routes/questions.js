@@ -33,6 +33,8 @@ import { requireCourseAccess, resolveCourseAccessWithCourse, LEVELS } from '../m
 import { requireQuestionAccess } from '../middleware/resourceAccess.js';
 import { prisma } from '../config/database.js';
 import { config } from '../config/settings.js';
+import { parseLimitOffset } from '../utils/listPagination.js';
+import { parseQuestionListFilters } from '../utils/questionListQuery.js';
 
 const router = express.Router();
 
@@ -127,7 +129,7 @@ router.post(
  */
 router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const { courseId, classId, search, limit, offset } = req.query;
+    const { courseId, classId } = req.query;
     const requestedCourseId = courseId ?? classId;
     const normalizedCourseId = requestedCourseId === undefined || requestedCourseId === '' ? undefined : requestedCourseId;
 
@@ -149,16 +151,18 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
       scopeCourseId = course.id;
     }
 
-    const questions = await getQuestionsByUser(scopeUserId, {
+    const { limit, offset } = parseLimitOffset(req.query);
+    const listFilters = parseQuestionListFilters(req.query);
+    const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
-      search,
+      ...listFilters,
       limit,
       offset
     });
 
     res.json({
       success: true,
-      data: questions
+      data: page
     });
   } catch (error) {
     next(error);
@@ -168,7 +172,26 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
 /** GET /api/questions/stats – returns aggregate stats (counts, types) for the user’s question bank. */
 router.get('/stats', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, next) => {
   try {
-    const stats = await getQuestionStats(req.user.id);
+    const { courseId, classId } = req.query;
+    const requestedCourseId = courseId ?? classId;
+    let scopeUserId = req.user.id;
+    let scopeCourseId;
+
+    if (requestedCourseId !== undefined && requestedCourseId !== '') {
+      const { course, access } = await resolveCourseAccessWithCourse(req.user, requestedCourseId, {
+        cookie: req.headers.cookie
+      });
+      if (!course) {
+        return res.status(404).json({ success: false, error: 'Course not found' });
+      }
+      if (!access || access.rank < LEVELS.ta.rank) {
+        return res.status(403).json({ success: false, error: 'Insufficient course access' });
+      }
+      scopeUserId = course.userId;
+      scopeCourseId = course.id;
+    }
+
+    const stats = await getQuestionStats(scopeUserId, { courseId: scopeCourseId });
 
     res.json({
       success: true,
@@ -227,6 +250,7 @@ router.get('/export', authenticateToken, requireRole(QM_AUTHORIZED), async (req,
     // uncached fetch of Core's whole course catalog, so leaving it on would turn
     // one Core roundtrip into one per batch and blow the request's time budget
     // on a large bank. Enrich once over the assembled set instead.
+    // Each batch is the #1040 `{ items, total, limit, offset }` envelope.
     const EXPORT_BATCH_SIZE = 500;
     const rawQuestions = [];
     for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
@@ -234,10 +258,10 @@ router.get('/export', authenticateToken, requireRole(QM_AUTHORIZED), async (req,
         courseId: course.id,
         limit: EXPORT_BATCH_SIZE,
         offset,
-        enrich: false
+        enrich: false,
       });
-      rawQuestions.push(...batch);
-      if (batch.length < EXPORT_BATCH_SIZE) break;
+      rawQuestions.push(...batch.items);
+      if (batch.items.length < EXPORT_BATCH_SIZE) break;
     }
     const questions = await enrichQuestionRows(rawQuestions);
 

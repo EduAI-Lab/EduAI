@@ -70,65 +70,79 @@ export const createAssessment = async (userId, assessmentData, { cookie } = {}) 
   }
 };
 
-/** Lists assessments owned by a user with optional filters and eager-loaded relations. */
+/** Lists assessments owned by a user with optional filters and eager-loaded relations.
+ * Returns `{ items, total, limit, offset }` (#1040).
+ */
 export const getAssessmentsByUser = async (userId, options = {}) => {
   try {
     const { limit = 50, offset = 0, courseId, isAdmin = false } = options;
+    const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
+    const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
 
     // If user is admin without a courseId constraint, allow all assessments; otherwise scope to owner
     const courseWhere = isAdmin ? {} : { userId };
 
-    const assessments = await prisma.assessments.findMany({
-      where: {
-        ...(courseId && { courseId }),
-        // `coreCourseId` is what `enrichRowsWithCourse` needs to project
-        // name/code from Core below — `Course` has no local name/code to
-        // select anymore (#1072 §4 step 10).
-        course: { ...courseWhere }
-      },
-      include: {
-        course: { select: { id: true, coreCourseId: true } },
-        variants: {
-          select: {
-            id: true, questionText: true, difficulty: true, answer: true, choices: true,
-            questionMetadataId: true, isAiGenerated: true, isDraft: true,
-            questionMetadata: {
-              select: {
-                id: true, description: true, type: true, questionOrder: true,
-                course: { select: { id: true } }
-              }
-            }
-          }
-        },
-        sections: {
-          orderBy: { position: 'asc' },
-          include: {
-            sectionVariants: {
-              include: {
-                variant: {
-                  select: {
-                    id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
-                    questionMetadataId: true, isAiGenerated: true, isDraft: true,
-                    questionMetadata: {
-                      select: {
-                        id: true, description: true, type: true, questionOrder: true,
-                        course: { select: { id: true } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: parseInt(limit),
-      skip: parseInt(offset)
-    });
+    const where = {
+      ...(courseId && { courseId }),
+      // `coreCourseId` is what `enrichRowsWithCourse` needs to project
+      // name/code from Core below — `Course` has no local name/code to
+      // select anymore (#1072 §4 step 10).
+      course: { ...courseWhere },
+    };
 
-    const enriched = await enrichRowsWithCourse(assessments);
-    return enriched.map(withDerivedSemester);
+    const [rows, count] = await Promise.all([
+      prisma.assessments.findMany({
+        where,
+        include: {
+          course: { select: { id: true, coreCourseId: true } },
+          variants: {
+            select: {
+              id: true, questionText: true, difficulty: true, answer: true, choices: true,
+              questionMetadataId: true, isAiGenerated: true, isDraft: true,
+              questionMetadata: {
+                select: {
+                  id: true, description: true, type: true, questionOrder: true,
+                  course: { select: { id: true } },
+                },
+              },
+            },
+          },
+          sections: {
+            orderBy: { position: 'asc' },
+            include: {
+              sectionVariants: {
+                include: {
+                  variant: {
+                    select: {
+                      id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true, choices: true,
+                      questionMetadataId: true, isAiGenerated: true, isDraft: true,
+                      questionMetadata: {
+                        select: {
+                          id: true, description: true, type: true, questionOrder: true,
+                          course: { select: { id: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: appliedLimit,
+        skip: appliedOffset,
+      }),
+      prisma.assessments.count({ where }),
+    ]);
+
+    const enriched = await enrichRowsWithCourse(rows);
+    return {
+      items: enriched.map(withDerivedSemester),
+      total: count,
+      limit: appliedLimit,
+      offset: appliedOffset,
+    };
   } catch (error) {
     throw error;
   }
