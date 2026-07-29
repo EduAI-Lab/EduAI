@@ -8,7 +8,8 @@ import express from 'express';
 import { createId } from '@paralleldrive/cuid2';
 import { Prisma } from '@eduai/question-maker-prisma-client';
 import { prisma } from '../config/database.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { INSTRUCTORS } from '../middleware/roles.js';
 import {
   requireCourseAccess,
   resolveCourseAccessWithCourse,
@@ -28,6 +29,21 @@ const router = express.Router();
 
 /** Resolves the QM course id from the URL param for per-course access gates. */
 const courseIdFromParam = (req) => req.params.id;
+
+/** Active Core enrollment roles that may materialize a QM course anchor (#1114). */
+const TEACHING_ENROLLMENT_ROLES = new Set(['INSTRUCTOR', 'TA']);
+
+// Advisory-lock namespace for concurrent POST /api/course anchors (#1114).
+const COURSE_ANCHOR_LOCK_NS = 1114;
+
+/** Stable positive int32 for pg_advisory_xact_lock's second key. */
+function advisoryLockKey(coreCourseId) {
+  let h = 0;
+  for (let i = 0; i < coreCourseId.length; i++) {
+    h = (Math.imul(31, h) + coreCourseId.charCodeAt(i)) | 0;
+  }
+  return h === 0 ? 1 : Math.abs(h);
+}
 
 // The Core course mirror (`importTaughtCoursesFromCore`) is a background side
 // effect, not a dependency of the list response: it fetches Core's cookie-
@@ -65,8 +81,14 @@ export function resetCoreImportThrottleForTests() {
  * "sandbox" creation has been retired: Core is the source of truth for course
  * data (name/code included, #1072 §4 step 10), so every row is just a
  * caller-scoped `coreCourseId` anchor.
+ *
+ * #1114: only ADMIN / UNIT_ADMIN / INSTRUCTOR may create anchors, and an
+ * INSTRUCTOR must hold an active teaching enrollment (INSTRUCTOR or TA) on
+ * that Core course — scoped-list membership alone (e.g. STUDENT) is not
+ * enough. Creation is serialized per coreCourseId via advisory lock so
+ * concurrent ensures return the same persisted owner.
  */
-router.post('/', authenticateToken, async (req, res, next) => {
+router.post('/', authenticateToken, requireRole(INSTRUCTORS), async (req, res, next) => {
   try {
     const { coreCourseId } = req.body;
 
@@ -90,27 +112,60 @@ router.post('/', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
     }
 
-    // Idempotent ENSURE (unified contract): coreCourseId is globally unique —
-    // the throttled background import mirror (or another caller) may have
-    // anchored this course between the caller's list and this request, so an
-    // existing anchor is a success (200 with the row), not an error. The
-    // create path race (mirror wins between our miss and the insert) is
-    // absorbed by re-reading on a unique-constraint violation.
-    let courseData = await prisma.course.findUnique({ where: { coreCourseId } });
-    let created = false;
-    if (!courseData) {
+    // Platform ADMIN/UNIT_ADMIN may materialize any scoped course; INSTRUCTOR
+    // must also hold a teaching enrollment on that Core course (#1114).
+    if (req.user.role === 'INSTRUCTOR') {
+      let enrollments = [];
       try {
-        courseData = await prisma.course.create({
+        const data = await getCourseEnrollmentsFromCore(coreCourseId, { cookie });
+        enrollments = data?.enrollments ?? [];
+      } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 502;
+        return res.status(status).json({
+          success: false,
+          error: err.message || 'Failed to verify Core teaching enrollment',
+        });
+      }
+      const teaches = enrollments.some(
+        (e) =>
+          e.studentId === req.user.id &&
+          e.isActive &&
+          TEACHING_ENROLLMENT_ROLES.has(e.role),
+      );
+      if (!teaches) {
+        return res.status(403).json({ success: false, error: 'CORE_COURSE_NOT_AUTHORIZED' });
+      }
+    }
+
+    // Idempotent ENSURE under a per-coreCourseId advisory lock so two concurrent
+    // creators cannot disagree about the persisted owner (#1114).
+    let courseData;
+    let created = false;
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${COURSE_ANCHOR_LOCK_NS}::int, ${advisoryLockKey(coreCourseId)}::int)`;
+
+      const existing = await tx.course.findUnique({ where: { coreCourseId } });
+      if (existing) {
+        courseData = existing;
+        created = false;
+        return;
+      }
+
+      try {
+        courseData = await tx.course.create({
           data: { userId: req.user.id, coreCourseId },
         });
         created = true;
       } catch (error) {
-        const isUniqueViolation = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+        // Unique constraint is a backstop if the advisory lock is unavailable.
+        const isUniqueViolation =
+          error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
         if (!isUniqueViolation) throw error;
-        courseData = await prisma.course.findUnique({ where: { coreCourseId } });
+        courseData = await tx.course.findUnique({ where: { coreCourseId } });
         if (!courseData) throw error;
+        created = false;
       }
-    }
+    });
 
     res.status(created ? 201 : 200).json({
       success: true,
@@ -121,7 +176,6 @@ router.post('/', authenticateToken, async (req, res, next) => {
     next(error);
   }
 });
-
 /**
  * GET /api/course – lists the courses the caller may access, role-scoped per the
  * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees

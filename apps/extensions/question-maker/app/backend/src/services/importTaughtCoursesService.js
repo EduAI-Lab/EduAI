@@ -90,11 +90,11 @@ async function provisionCourse(userId, course, cookie) {
  * An anchor can pre-exist under ANOTHER user's id — an ADMIN opening the
  * course list materializes catalog anchors under their own userId (#1074).
  * If the current owner holds no active teaching enrollment in Core, transfer
- * ownership to the importing instructor: ownership is the Core-down access
- * fallback (`courseAccess.resolveAccessForCourse`), and an ADMIN never needs
- * it (their role short-circuits access). If the owner IS a teaching
- * co-instructor/TA, leave ownership alone — first import wins, both keep
- * enrollment-based access while Core is up.
+ * ownership to the importing instructor so the local FK reflects a teaching
+ * owner. Access itself no longer follows ownership (#1114 fail-closed); this
+ * claim still keeps the mirror's ownership bookkeeping accurate. If the owner
+ * IS a teaching co-instructor/TA, leave ownership alone — first import wins.
+ * When the Core roster is unreachable, leave ownership unchanged (conservative).
  */
 async function maybeClaimAnchor(userId, course) {
   let roster = [];

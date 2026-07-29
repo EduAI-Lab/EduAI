@@ -281,8 +281,8 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     const scopedCourses = await listCoursesFromCore(cookie, { all: true });
     roleByCoreId = new Map(scopedCourses.map((c) => [c.id, c.callerEnrollmentRole ?? null]));
   } catch {
-    // Core unreachable — every row falls through to the owner-fallback below,
-    // same degrade as the old per-row path (§5 "Core-down" unchanged).
+    // Core unreachable — roleByCoreId stays empty; deriveListAccess fails closed
+    // (#1114). Ownership alone does not keep rows visible.
   }
 
   const authorizedUnits =
@@ -313,18 +313,11 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
  * `isPublished: true` (an INSTRUCTOR/TA enrollment has no such gate), so a
  * caller who is a STUDENT on an unpublished course is OMITTED from the cookie
  * list entirely — `roleByCoreId.get(...)` is then `undefined` for that course,
- * same as "no enrollment". That's harmless here: this function's result is
- * only ever kept when `rank >= MIN_LIST_RANK` (instructor), and `student` is
- * rank 0 — a caller in that edge either isn't the local owner (excluded either
- * way) or is (owner-fallback below still grants instructor access), so the
- * omission never changes what `listCoursesForUser` returns.
+ * same as "no enrollment". Local ownership never elevates that miss (#1114).
  */
 function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnits }) {
-  const ownerFallback = () => (reqUser.id === row.userId ? LEVELS.instructor : null);
-
-  // Course not yet linked to Core: no enrollment data exists (mirrors
-  // resolveAccessForCourse's unlinked branch).
-  if (!row.coreCourseId) return ownerFallback();
+  // Course not yet linked to Core: no enrollment/unit data can authorize anyone.
+  if (!row.coreCourseId) return null;
 
   // UNIT_ADMIN unit lock (§19): checked first, short-circuits on a match — a
   // null department is never a match. Department is read from the already-
@@ -347,11 +340,8 @@ function deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnit
     case 'STUDENT':
       return LEVELS.student;
     default:
-      // No cookie-scoped role for this course — either genuinely unenrolled,
-      // or the unpublished-student edge documented above. The QM course
-      // linker may also not appear in Core's roster yet right after a fresh
-      // link/sync (same edge `resolveAccessForCourse` handles).
-      return ownerFallback();
+      // No cookie-scoped role — fail closed (#1114). Ownership is not access.
+      return null;
   }
 }
 
