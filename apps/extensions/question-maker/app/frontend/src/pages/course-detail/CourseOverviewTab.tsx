@@ -26,6 +26,8 @@ interface CourseOverviewTabProps {
   assessmentsCount: number;
   topicsCount: number;
   analytics: QuestionAnalyticsProps;
+  /** When set, Overview shows this instead of page-slice / partial pie totals. */
+  analyticsStatus?: 'loading' | 'ready' | 'unavailable';
   canWrite: boolean;
   onAddQuestion: () => void;
   onNewAssessment: () => void;
@@ -37,6 +39,7 @@ export const CourseOverviewTab = ({
   assessmentsCount,
   topicsCount,
   analytics,
+  analyticsStatus = 'ready',
   canWrite,
   onAddQuestion,
   onNewAssessment,
@@ -93,6 +96,15 @@ export const CourseOverviewTab = ({
             ) : undefined
           }
         />
+      ) : analyticsStatus === 'unavailable' ? (
+        <EmptyState
+          icon={<IconStack2 className="size-6" />}
+          title="Analytics unavailable"
+          description="Couldn't load course-wide question stats. The question total above is still accurate — try refreshing the page."
+          bare={false}
+        />
+      ) : analyticsStatus === 'loading' ? (
+        <p className="text-sm text-muted-foreground">Loading course analytics…</p>
       ) : (
         <QuestionAnalytics {...analytics} />
       )}
