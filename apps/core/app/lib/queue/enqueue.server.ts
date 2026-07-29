@@ -33,18 +33,23 @@ export type EnqueueResult = {
  * Live position + depth snapshot for a row, computed in parallel (#915).
  * Never throws: by the time this runs the job is durably enqueued, and a
  * transient stats-read failure must not surface as a 502 for a job that
- * actually made it in (the retry would enqueue a duplicate). `knownDepth`
- * skips the depth query when the caller already counted (backpressure check).
+ * actually made it in (the retry would enqueue a duplicate).
+ *
+ * Both halves are read here, after the row exists — never reused from the
+ * pre-write backpressure count. That count is taken before the insert, so
+ * deriving depth from it (`count + 1`) while position is read fresh lets a
+ * concurrent burst report `queuePosition > queueDepth`, an arithmetically
+ * impossible snapshot. Neither read is transactional, so the pair can still
+ * skew by a job or two under load, but it can no longer contradict itself.
  */
 async function queueStatsFor(
   row: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null },
   queueName: QueueName,
-  knownDepth?: number,
 ): Promise<{ queuePosition: number | null; queueDepth: number | null }> {
   try {
     const [queuePosition, queueDepth] = await Promise.all([
       getQueuePosition(row),
-      knownDepth !== undefined ? Promise.resolve(knownDepth) : getQueueDepth(queueName),
+      getQueueDepth(queueName),
     ]);
     return { queuePosition, queueDepth };
   } catch {
@@ -108,9 +113,8 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   //    protective limit; a serialized count-and-insert isn't worth the hot-path
   //    contention.
   const maxDepth = maxQueueDepth();
-  let depthAtCheck: number | null = null;
   if (maxDepth !== null) {
-    depthAtCheck = await getQueueDepth(queueName);
+    const depthAtCheck = await getQueueDepth(queueName);
     if (depthAtCheck >= maxDepth) {
       throw new QueueFullError(queueName, depthAtCheck, maxDepth);
     }
@@ -207,10 +211,11 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   }
 
   // 8. Return the durable handle plus a live position/depth snapshot (#915).
-  //    Reuse the backpressure count (+1 for this job) when it ran; subsequent
+  //    Both halves are read here, after the row exists, so depth always counts
+  //    this job and can never come in below the reported position; subsequent
   //    polls read fresher values from the status endpoint (#917).
   return {
     jobId: aiJob.id,
-    ...(await queueStatsFor(aiJob, queueName, depthAtCheck === null ? undefined : depthAtCheck + 1)),
+    ...(await queueStatsFor(aiJob, queueName)),
   };
 }
