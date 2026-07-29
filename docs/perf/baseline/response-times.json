@@ -1265,6 +1265,36 @@
     },
     {
       "app": "ai-tutor",
+      "method": "PUT",
+      "path": "PUT /api/admin/settings/ai-model-policy",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 130,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 88,
+        "p95": 230,
+        "p99": 307,
+        "mean": 109,
+        "min": 56,
+        "max": 307
+      },
+      "payload_bytes": {
+        "avg": 237,
+        "p95": 237,
+        "max": 237
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
       "method": "GET",
       "path": "/api/courses/:id",
       "role": "instructor",
@@ -2319,34 +2349,30 @@
       "path": "POST /api/courses",
       "role": "instructor",
       "kind": "mutation",
-      "cold_start_ms": 150.91,
-      "cold_status": 422,
+      "cold_start_ms": 131,
+      "cold_status": 201,
       "count": 15,
-      "ok_count": 0,
-      "error_count": 15,
+      "ok_count": 15,
+      "error_count": 0,
       "latency_ms": {
-        "p50": null,
-        "p95": null,
-        "p99": null,
-        "mean": null,
-        "min": null,
-        "max": null
+        "p50": 80,
+        "p95": 202,
+        "p99": 300,
+        "mean": 109,
+        "min": 56,
+        "max": 300
       },
       "payload_bytes": {
-        "avg": null,
-        "p95": null,
-        "max": null
+        "avg": 651,
+        "p95": 652,
+        "max": 652
       },
       "status_codes": {
-        "422": 15
+        "201": 15
       },
-      "error_rate": 1,
-      "error_sample": {
-        "status": 422,
-        "message": "{\"error\":\"VALIDATION_ERROR\",\"fields\":{\"term\":\"Invalid enum value. Expected 'W1' | 'W2' | 'S1' | 'S2', received 'Fall'\"}}",
-        "body": "{\"error\":\"VALIDATION_ERROR\",\"fields\":{\"term\":\"Invalid enum value. Expected 'W1' | 'W2' | 'S1' | 'S2', received 'Fall'\"}}"
-      }
-    },
+      "error_rate": 0,
+      "error_sample": null
+      },
     {
       "app": "core",
       "method": "PATCH",

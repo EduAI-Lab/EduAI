@@ -31,7 +31,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [monorepo] docs: Commit the #961 endpoint-latency baseline captured against the seeded UBC dev server (`--target=ubc-dev`, 163 endpoints, 162 clean, headline outlier `qm GET /api/course` at 2714 ms p50). (#961, @mochi_21, 2026-07-21) — [#1142](https://github.com/EduAI-Lab/EduAI/pull/1142)
+- [monorepo] docs: Commit the #961 endpoint-latency baseline captured against the seeded UBC dev server (`--target=ubc-dev`, 164 endpoints, all clean, headline outlier `qm GET /api/course` at 2714 ms p50). (#961, @mochi_21, 2026-07-21) — [#1142](https://github.com/EduAI-Lab/EduAI/pull/1142)
 
 ### Changed
 
