@@ -90,12 +90,28 @@ describe("extractPdfTextIsolated", () => {
   it("terminates the worker when a decompression-bomb PDF breaches the heap soft ceiling", async () => {
     // Precomputed compressed fixture (~78KB on disk); parent never materializes the
     // ~80MB inflated stream. Low maxOldSpaceMb makes V8 abort the worker.
+    // Accept both termination forms: Unix typically signals (SIGABRT); Windows
+    // reports V8 heap fatal errors as a plain exit code with OOM stderr — the
+    // parent normalizes both to a "killed (signal …)" message.
     const bomb = readFileSync(BOMB_FIXTURE);
 
     await expect(
       extractPdfTextIsolated(bomb, { maxOldSpaceMb: 48, timeoutMs: 25_000 }),
     ).rejects.toThrow(/killed \(signal /i);
   }, 30_000);
+
+  it("spawns the worker under an OS address-space ceiling on Unix", async () => {
+    if (process.platform === "win32") return;
+
+    const spawnMock = vi.mocked(childProcess.spawn);
+    await extractPdfTextIsolated(buildEmptyPdf());
+
+    expect(spawnMock).toHaveBeenCalled();
+    const [command, args] = spawnMock.mock.calls[0]!;
+    expect(command).toBe("sh");
+    expect(args?.[0]).toBe("-c");
+    expect(String(args?.[1])).toMatch(/ulimit -v \d+/);
+  });
 
   it("terminates the worker on wall-clock timeout instead of hanging forever", async () => {
     const bomb = readFileSync(BOMB_FIXTURE);

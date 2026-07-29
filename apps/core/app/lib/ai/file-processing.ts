@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -623,19 +624,34 @@ export async function readFileAsText(file: File | any): Promise<string> {
 // single call, with no streaming/limit hook and no up-front declared size the way
 // a ZIP central directory gives PPTX/DOCX. A crafted <50MB PDF whose streams expand
 // to gigabytes can still OOM the host during inflation. Defense-in-depth is to run
-// the inflater in its own process with a V8 heap soft ceiling (`--max-old-space-size`)
-// and a wall-clock timeout, so a breach kills the worker instead of the main server.
+// the inflater in its own process with:
+//   1. a V8 heap soft ceiling (`--max-old-space-size`)
+//   2. an OS-enforced address-space / RSS hard ceiling (`ulimit -v` / RLIMIT_AS where
+//      supported, plus a parent RSS monitor that SIGKILLs on breach)
+//   3. a wall-clock timeout
+// so a breach kills the worker instead of the main server.
 //
-// `--max-old-space-size` is NOT a hard RSS / cgroup guarantee — it only bounds V8's
-// old-space heap. Native allocations and RSS can still grow beyond it. Prefer container
-// / OS memory limits for a true hard bound; this soft ceiling reduces blast radius.
+// `--max-old-space-size` alone is NOT a hard RSS / cgroup guarantee — native
+// allocations can still push RSS well above the V8 soft ceiling (e.g. ~866MB observed
+// against a 512MB soft setting). The hard RSS cap closes that gap per worker.
 // This is process isolation for resource separation, not a security sandbox.
 
 /** V8 old-space soft ceiling (MB) for the isolated PDF extraction worker process. */
 export const PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB = 512;
 
+/**
+ * Hard per-worker RSS ceiling (MB). Enforced via OS `ulimit -v` (RLIMIT_AS) where the
+ * platform supports it, plus a parent-side RSS poll that SIGKILLs on breach.
+ * Defaults above the V8 soft ceiling to allow native overhead without letting RSS run away.
+ * Override with `PDF_EXTRACTION_MAX_RSS_MB`.
+ */
+export const PDF_EXTRACTION_WORKER_MAX_RSS_MB = 640;
+
 /** Wall-clock ceiling for the isolated PDF extraction worker process. */
 export const PDF_EXTRACTION_WORKER_TIMEOUT_MS = 30_000;
+
+/** How often the parent samples worker RSS for the hard ceiling. */
+const PDF_EXTRACTION_RSS_POLL_MS = 100;
 
 /**
  * Maximum UTF-8 byte length of the worker's JSON result file. Distinct from
@@ -684,6 +700,76 @@ export function getPdfExtractionMaxConcurrent(): number {
 /** Waiting-queue depth before reject (0 = reject when all slots busy). Override with `PDF_EXTRACTION_MAX_QUEUED`. */
 export function getPdfExtractionMaxQueued(): number {
   return readIntEnv('PDF_EXTRACTION_MAX_QUEUED', PDF_EXTRACTION_DEFAULT_MAX_QUEUED, { min: 0 });
+}
+
+/** Hard per-worker RSS ceiling in MB. Override with `PDF_EXTRACTION_MAX_RSS_MB`. */
+export function getPdfExtractionMaxRssMb(): number {
+  return readIntEnv('PDF_EXTRACTION_MAX_RSS_MB', PDF_EXTRACTION_WORKER_MAX_RSS_MB, { min: 64 });
+}
+
+/** Best-effort RSS sample for a child PID (Linux `/proc`, Darwin `ps`). */
+export function readChildRssBytes(pid: number): number | null {
+  try {
+    if (process.platform === 'linux') {
+      const status = readFileSync(`/proc/${pid}/status`, 'utf8');
+      const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+      return match ? Number(match[1]) * 1024 : null;
+    }
+    if (process.platform === 'darwin') {
+      const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 1_000,
+      }).trim();
+      const kb = Number.parseInt(out, 10);
+      return Number.isFinite(kb) ? kb * 1024 : null;
+    }
+  } catch {
+    // Monitor stays a no-op when RSS cannot be read (permissions / platform).
+  }
+  return null;
+}
+
+function looksLikeHeapOom(stderr: string): boolean {
+  return /FATAL ERROR|JavaScript heap out of memory|Last few GCs|Ineffective mark-compacts|Allocation failed|ENOMEM/i.test(
+    stderr,
+  );
+}
+
+/**
+ * Spawn the PDF worker. On Unix, apply `ulimit -v` (RLIMIT_AS) before `exec` so the OS
+ * enforces a hard address-space ceiling; Darwin often rejects `ulimit -v`, in which case
+ * the parent RSS monitor is the hard bound.
+ */
+export function spawnPdfExtractionWorker(
+  maxOldSpaceMb: number,
+  maxRssMb: number,
+  inputPath: string,
+  outputPath: string,
+): ChildProcess {
+  const nodeArgs = [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath];
+  const opts = {
+    cwd: process.cwd(),
+    stdio: ['pipe', 'ignore', 'pipe'] as const,
+    env: buildPdfWorkerMinimalEnv(),
+  };
+
+  if (process.platform !== 'win32') {
+    const virtualMemKb = Math.max(1, Math.floor(maxRssMb * 1024));
+    return spawn(
+      'sh',
+      [
+        '-c',
+        // Ignore ulimit failures (e.g. Darwin) so the worker still starts; RSS monitor backs us.
+        `ulimit -v ${virtualMemKb} 2>/dev/null || true; exec "$@"`,
+        'pdf-extract-worker',
+        process.execPath,
+        ...nodeArgs,
+      ],
+      opts,
+    );
+  }
+
+  return spawn(process.execPath, nodeArgs, opts);
 }
 
 let activePdfExtractions = 0;
@@ -779,21 +865,24 @@ function buildPdfExtractionWorkerSource(maxOutputBytes: number): string {
 
 export type ExtractPdfTextIsolatedLimits = {
   maxOldSpaceMb?: number;
+  /** Hard RSS ceiling in MB (OS ulimit + parent monitor). */
+  maxRssMb?: number;
   timeoutMs?: number;
   maxOutputBytes?: number;
 };
 
 /**
- * Run `@opendocsg/pdf2md` in an isolated subprocess with a V8 heap soft ceiling and
- * wall-clock timeout, so a decompression-bomb PDF kills the worker instead of
- * over-allocating the main server. Throws if the worker breaches a limit,
- * exits non-zero, fails to start, or the waiting queue is full.
+ * Run `@opendocsg/pdf2md` in an isolated subprocess with a V8 heap soft ceiling,
+ * an OS-enforced RSS hard ceiling, and a wall-clock timeout, so a decompression-bomb
+ * PDF kills the worker instead of over-allocating the main server. Throws if the
+ * worker breaches a limit, exits non-zero, fails to start, or the waiting queue is full.
  */
 export async function extractPdfTextIsolated(
   buffer: Buffer,
   limits: ExtractPdfTextIsolatedLimits = {},
 ): Promise<{ content: string }> {
   const maxOldSpaceMb = limits.maxOldSpaceMb ?? PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB;
+  const maxRssMb = limits.maxRssMb ?? getPdfExtractionMaxRssMb();
   const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
   const maxOutputBytes = limits.maxOutputBytes ?? PDF_EXTRACTION_MAX_OUTPUT_BYTES;
 
@@ -812,25 +901,20 @@ export async function extractPdfTextIsolated(
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       let timedOut = false;
+      let rssBreached = false;
       let earlyFailure: Error | null = null;
       let childExited = false;
+      let rssMonitor: ReturnType<typeof setInterval> | undefined;
 
       const settle = (fn: () => void) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (rssMonitor) clearInterval(rssMonitor);
         fn();
       };
 
-      const child = spawn(
-        process.execPath,
-        [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath],
-        {
-          cwd: process.cwd(),
-          stdio: ['pipe', 'ignore', 'pipe'],
-          env: buildPdfWorkerMinimalEnv(),
-        },
-      );
+      const child = spawnPdfExtractionWorker(maxOldSpaceMb, maxRssMb, inputPath, outputPath);
 
       const stderrChunks: Buffer[] = [];
       let stderrBytes = 0;
@@ -859,6 +943,16 @@ export async function extractPdfTextIsolated(
           if (killed) timedOut = true;
         }
       }, timeoutMs);
+
+      // Parent-enforced hard RSS ceiling (backs ulimit -v on platforms that ignore it).
+      rssMonitor = setInterval(() => {
+        if (settled || !child.pid) return;
+        const rss = readChildRssBytes(child.pid);
+        if (rss != null && rss > maxRssMb * 1024 * 1024) {
+          rssBreached = true;
+          forceKillChild();
+        }
+      }, PDF_EXTRACTION_RSS_POLL_MS);
 
       child.stderr?.on('data', (chunk: Buffer) => {
         if (stderrBytes >= PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES) return;
@@ -902,14 +996,18 @@ export async function extractPdfTextIsolated(
             return;
           }
           const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-          // Report the actual signal/exit without claiming every signal is a "memory limit"
-          // — --max-old-space-size is only a V8 heap soft ceiling.
-          if (signal) {
+          // Hard RSS breach (parent monitor) or OS/V8 OOM: normalize to a "killed" message
+          // so callers/tests accept both signal termination (Unix) and plain exit-code OOM
+          // (Windows reports V8 heap fatal errors without a signal).
+          if (rssBreached || signal || looksLikeHeapOom(stderr)) {
+            const reason = rssBreached
+              ? ` after exceeding the ${maxRssMb}MB RSS hard limit`
+              : '';
             reject(
               new Error(
-                `PDF extraction worker was killed (signal ${signal}` +
+                `PDF extraction worker was killed (signal ${signal ?? 'none'}` +
                   (code != null ? `, exit code ${code}` : '') +
-                  `)`,
+                  `)${reason}`,
               ),
             );
             return;
