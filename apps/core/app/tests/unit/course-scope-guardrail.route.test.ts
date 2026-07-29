@@ -283,7 +283,27 @@ describe("POST /api/chat — course-scope guardrail", () => {
     expect(res.status).toBe(200);
   });
 
-  it("rejects unsupported image-only student turns explicitly", async () => {
+  it.each([
+    {
+      label: "image-only",
+      content: [
+        {
+          type: "image",
+          image: "data:image/png;base64,AAAA",
+        },
+      ],
+    },
+    {
+      label: "text-and-image",
+      content: [
+        { type: "text", text: "Explain this diagram." },
+        {
+          type: "image",
+          image: "data:image/png;base64,AAAA",
+        },
+      ],
+    },
+  ])("rejects unsupported $label student turns explicitly", async ({ content }) => {
     const res = await action(
       makeRequest(
         baseBody({
@@ -291,12 +311,7 @@ describe("POST /api/chat — course-scope guardrail", () => {
             {
               id: "image-only",
               role: "user",
-              content: [
-                {
-                  type: "image",
-                  image: "data:image/png;base64,AAAA",
-                },
-              ],
+              content,
             },
           ],
         }),
@@ -305,8 +320,8 @@ describe("POST /api/chat — course-scope guardrail", () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({
-      error: "IMAGE_ONLY_MESSAGE_UNSUPPORTED",
-      message: "Course Chat does not support image-only messages.",
+      error: "IMAGE_MESSAGE_UNSUPPORTED",
+      message: "Course Chat does not support image messages.",
     });
     expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
     expect(streamText).not.toHaveBeenCalled();

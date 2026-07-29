@@ -1024,22 +1024,20 @@ export async function action({ request }: ActionFunctionArgs) {
         }
       : null;
 
-    // Course Chat does not expose student image uploads. Reject a crafted
-    // image-only browser turn explicitly instead of letting empty extracted
-    // text silently bypass the strict classifier. Text+image turns still use
-    // their text for scope classification; admin/service-key integrations are
-    // unaffected.
+    // Course Chat does not expose student image uploads. Reject crafted
+    // image-bearing browser turns explicitly instead of retaining a hidden
+    // multimodal path that the supported product cannot produce.
+    // Admin/service-key integrations retain the existing multimodal routing.
     if (
       imagesPresent &&
-      lastUserMessageTextForRouting.trim().length === 0 &&
       courseScopeContext &&
       !isServiceKeyCaller &&
       chatMode !== "admin"
     ) {
       return new Response(
         JSON.stringify({
-          error: "IMAGE_ONLY_MESSAGE_UNSUPPORTED",
-          message: "Course Chat does not support image-only messages.",
+          error: "IMAGE_MESSAGE_UNSUPPORTED",
+          message: "Course Chat does not support image messages.",
         }),
         {
           status: 400,
