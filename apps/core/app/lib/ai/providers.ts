@@ -9,6 +9,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
 import { cmps01InternalAuthHeadersForUrl } from '~/lib/ai/cmps01-internal-auth.server';
 import { resolveAllowedOllamaBaseUrl } from '~/lib/ai/ollama-url.server';
+import { resolveVllmApiKey } from '~/lib/ai/vllm-api-key.server';
 import { resolveAllowedVllmBaseUrl } from '~/lib/ai/vllm-url.server';
 import { vllmThinkingDisabledFetch } from '~/lib/ai/vllm-thinking.server';
 import {
@@ -135,18 +136,16 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
         baseURL = `${baseURL}/v1`;
       }
 
-      const apiKey =
-        userSettings.vllm?.apiKey ||
-        process.env.VLLM_API_KEY ||
-        'vllm-local';
-
-      providers.vllm = createOpenAI({
-        apiKey,
-        baseURL,
-        // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
-        compatibility: "strict",
-        fetch: vllmThinkingDisabledFetch(),
-      });
+      const apiKey = userSettings.vllm?.apiKey || resolveVllmApiKey();
+      if (apiKey) {
+        providers.vllm = createOpenAI({
+          apiKey,
+          baseURL,
+          // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
+          compatibility: "strict",
+          fetch: vllmThinkingDisabledFetch(),
+        });
+      }
     }
   }
 
