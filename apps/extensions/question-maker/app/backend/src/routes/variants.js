@@ -24,7 +24,7 @@ import {
   deleteVariant,
   getVariantsByQuestion
 } from '../services/questionService.js';
-import { Topics } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { patchQuestionTestableOnCore } from '../services/coreApiService.js';
 import { pushVariantToCore, VALID_DIFFICULTIES, VALID_REASONING_LEVELS } from '../services/coreWiringService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
@@ -32,6 +32,7 @@ import { QM_AUTHORIZED } from '../middleware/roles.js';
 import { requireQuestionAccess, requireVariantAccess } from '../middleware/resourceAccess.js';
 import { LEVELS } from '../middleware/courseAccess.js';
 import { logger } from '../utils/logger.js';
+import { parsePaginationParams, pageOf } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -117,12 +118,15 @@ router.get(
   requireQuestionAccess({ min: 'ta' }),
   async (req, res, next) => {
     try {
-      const variants = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
+      // Structure-bounded (#1044): always a bounded page — params are optional,
+      // so a caller that sends none gets the first page rather than a 400, but
+      // never the unbounded set. Sliced in memory (`total` = the question's
+      // full variant count) to stay uniform with the other structure-bounded
+      // lists in this app.
+      const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+      const all = await getVariantsByQuestion(req.params.id, req.qmCourse.userId);
 
-      res.json({
-        success: true,
-        data: variants
-      });
+      res.json(pageOf(all, pagination));
     } catch (error) {
       next(error);
     }
@@ -191,12 +195,16 @@ router.put(
         if (course?.coreCourseId) {
           try {
             const pushResult = await pushVariantToCore(variant, course, req.headers.cookie);
-            await variant.update({ coreQuestionId: pushResult.coreQuestionId });
+            await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: pushResult.coreQuestionId } });
+            // Prisma's update() returns a new object rather than mutating `variant`
+            // in place (unlike Sequelize's `.update()`) — patch it locally so the
+            // response below reflects the freshly-linked Core id.
+            variant.coreQuestionId = pushResult.coreQuestionId;
           } catch (coreErr) {
             if (coreErr.status === 422) {
               const errBody = coreErr.body ?? {};
               if (errBody.error === 'INVALID_TOPIC_IDS' && Array.isArray(errBody.deletedTopicIds) && errBody.deletedTopicIds.length > 0) {
-                await Topics.update({ coreTopicId: null }, { where: { coreTopicId: errBody.deletedTopicIds } });
+                await prisma.topics.updateMany({ where: { coreTopicId: { in: errBody.deletedTopicIds } }, data: { coreTopicId: null } });
                 return res.status(422).json({
                   success: false,
                   error: 'INVALID_TOPIC_IDS',
@@ -251,7 +259,7 @@ router.patch(
       const result = await patchQuestionTestableOnCore(variant.coreQuestionId, testable);
 
       if (result === null) {
-        await variant.update({ coreQuestionId: null });
+        await prisma.variants.update({ where: { id: variant.id }, data: { coreQuestionId: null } });
         return res.status(404).json({ success: false, error: 'QUESTION_NOT_FOUND' });
       }
 

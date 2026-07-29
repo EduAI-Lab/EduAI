@@ -3,14 +3,17 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const topicsFindAll = vi.fn();
+const topicsFindMany = vi.fn();
 const topicsCreate = vi.fn();
-const topicUpdate = vi.fn();
+const topicsUpdate = vi.fn();
 
-vi.mock('../../src/schema/index.js', () => ({
-  Topics: {
-    findAll: topicsFindAll,
-    create: topicsCreate,
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    topics: {
+      findMany: topicsFindMany,
+      create: topicsCreate,
+      update: topicsUpdate,
+    },
   },
 }));
 
@@ -32,7 +35,7 @@ describe('syncTopicsFromCoreForCourse', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    topicsCreate.mockImplementation(async (data) => ({ id: 99, ...data, update: topicUpdate }));
+    topicsCreate.mockImplementation(async ({ data }) => ({ id: 99, ...data }));
   });
 
   it('returns 0 when the course is not linked to Core', async () => {
@@ -47,9 +50,9 @@ describe('syncTopicsFromCoreForCourse', () => {
         { id: 'ct-2', name: 'Data Structures' },
       ],
     });
-    topicsFindAll.mockImplementation(async ({ where }) => {
+    topicsFindMany.mockImplementation(async ({ where }) => {
       if (where.courseId) {
-        return [{ id: 1, name: 'Data Structures', courseId: 10, update: topicUpdate }];
+        return [{ id: 1, name: 'Data Structures', courseId: 10 }];
       }
       return [];
     });
@@ -57,22 +60,24 @@ describe('syncTopicsFromCoreForCourse', () => {
     const synced = await syncTopicsFromCoreForCourse(course, 'session=abc');
 
     expect(synced).toBe(2);
-    expect(topicsFindAll).toHaveBeenCalledTimes(2);
+    expect(topicsFindMany).toHaveBeenCalledTimes(2);
     expect(topicsCreate).toHaveBeenCalledWith({
-      name: 'Algorithms',
-      courseId: 10,
-      coreTopicId: 'ct-1',
+      data: expect.objectContaining({
+        name: 'Algorithms',
+        courseId: 10,
+        coreTopicId: 'ct-1',
+      }),
     });
-    expect(topicUpdate).toHaveBeenCalledWith({ coreTopicId: 'ct-2' });
+    expect(topicsUpdate).toHaveBeenCalledWith({ where: { id: 1 }, data: { coreTopicId: 'ct-2' } });
   });
 
   it('skips Core topics already linked to another local course', async () => {
     getCourseTopicsFromCore.mockResolvedValue({
       topics: [{ id: 'ct-1', name: 'Shared Topic' }],
     });
-    topicsFindAll.mockImplementation(async ({ where }) => {
+    topicsFindMany.mockImplementation(async ({ where }) => {
       if (where.courseId) return [];
-      return [{ id: 5, name: 'Shared Topic', courseId: 99, coreTopicId: 'ct-1', update: topicUpdate }];
+      return [{ id: 5, name: 'Shared Topic', courseId: 99, coreTopicId: 'ct-1' }];
     });
 
     const synced = await syncTopicsFromCoreForCourse(course, 'session=abc');
@@ -90,7 +95,7 @@ describe('syncTopicsFromCoreForCourse', () => {
     getCourseTopicsFromCore.mockResolvedValue({
       topics: [{ id: 'ct-live', name: 'Live Topic' }],
     });
-    topicsFindAll.mockResolvedValue([]);
+    topicsFindMany.mockResolvedValue([]);
 
     const synced = await syncTopicsFromCoreForCourse(course, 'session=abc');
 
@@ -98,12 +103,14 @@ describe('syncTopicsFromCoreForCourse', () => {
     // Only the surviving topic is created…
     expect(topicsCreate).toHaveBeenCalledTimes(1);
     expect(topicsCreate).toHaveBeenCalledWith({
-      name: 'Live Topic',
-      courseId: 10,
-      coreTopicId: 'ct-live',
+      data: expect.objectContaining({
+        name: 'Live Topic',
+        courseId: 10,
+        coreTopicId: 'ct-live',
+      }),
     });
     // …and the soft-deleted topic is never written locally.
-    const createdCoreIds = topicsCreate.mock.calls.map(([data]) => data.coreTopicId);
+    const createdCoreIds = topicsCreate.mock.calls.map(([{ data }]) => data.coreTopicId);
     expect(createdCoreIds).not.toContain('ct-deleted');
   });
 

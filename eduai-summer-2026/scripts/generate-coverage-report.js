@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Aggregate per-backend vitest `json-summary` coverage outputs into a single Markdown report.
+ * Aggregate per-package vitest `json-summary` coverage outputs into a single Markdown report.
  *
- * Each backend's `test:coverage` script writes `coverage/coverage-summary.json` (v8 provider,
+ * Each package's `test:coverage` script writes `coverage/coverage-summary.json` (v8 provider,
  * `json-summary` reporter). This reads the `total` block from each and renders one table plus a
- * combined row, then writes `eduai-summer-2026/reports/coverage-report.md`.
+ * combined row, then writes `eduai-summer-2026/reports/coverage/coverage-report.md`.
  *
- * Scope note: BACKEND packages only (core, ai-tutor-server, question-maker-backend). Frontend
- * suites (ai-tutor app, question-maker frontend) are intentionally excluded.
+ * Scope: every workspace with a test suite — the three backends (core, ai-tutor-server,
+ * question-maker-backend) plus the frontend/UI suites (@eduai/ui, ai-tutor client,
+ * question-maker-frontend).
  *
  * Env:
  *   REPO_ROOT          repo root (default: two levels up from this script)
@@ -24,11 +25,14 @@ const REPO_ROOT = process.env.REPO_ROOT
   ? path.resolve(process.env.REPO_ROOT)
   : path.resolve(__dirname, "..", "..");
 
-// label: display name; pkg: workspace package; dir: coverage-summary.json location, repo-relative.
-const BACKENDS = [
+// label: display name; dir: coverage-summary.json location, repo-relative.
+const PACKAGES = [
   { label: "core (edu-ai)", dir: "apps/core/coverage" },
   { label: "ai-tutor-server", dir: "apps/extensions/ai-tutor/server/coverage" },
   { label: "question-maker-backend", dir: "apps/extensions/question-maker/app/backend/coverage" },
+  { label: "@eduai/ui", dir: "packages/ui/coverage" },
+  { label: "ai-tutor (client)", dir: "apps/extensions/ai-tutor/coverage" },
+  { label: "question-maker-frontend", dir: "apps/extensions/question-maker/app/frontend/coverage" },
 ];
 
 const METRICS = ["statements", "branches", "functions", "lines"];
@@ -66,12 +70,12 @@ function fmtCount(metric) {
 }
 
 function buildReport() {
-  const rows = BACKENDS.map((backend) => ({
-    backend,
-    total: readSummary(backend.dir),
+  const rows = PACKAGES.map((pkg) => ({
+    pkg,
+    total: readSummary(pkg.dir),
   }));
 
-  // Combined totals are a covered/total sum across the backends that produced a summary,
+  // Combined totals are a covered/total sum across the packages that produced a summary,
   // so the percentage is weighted by code size rather than a naive average of percentages.
   const combined = {};
   for (const metric of METRICS) {
@@ -100,27 +104,27 @@ function buildReport() {
   const sha = process.env.COMMIT_SHA || "unknown";
 
   const lines = [];
-  lines.push("# Backend Test Coverage Report");
+  lines.push("# Test Coverage Report");
   lines.push("");
   lines.push(
-    "> **Scope: backend packages only** — `core`, `ai-tutor-server`, and `question-maker-backend`.",
+    "> **Scope: all workspaces with a test suite** — backends (`core`, `ai-tutor-server`, `question-maker-backend`)",
   );
   lines.push(
-    "> Frontend suites (ai-tutor app, question-maker frontend) are excluded. Figures cover the unit **and** integration suites in one pass.",
+    "> and frontends (`@eduai/ui`, `ai-tutor` client, `question-maker-frontend`). Backend figures cover the unit **and** integration suites in one pass.",
   );
   lines.push("");
   lines.push(`- Generated: \`${timestamp}\``);
   lines.push(`- Commit: \`${sha}\``);
   lines.push("");
-  lines.push("| Backend | Statements | Branches | Functions | Lines |");
+  lines.push("| Package | Statements | Branches | Functions | Lines |");
   lines.push("| --- | --- | --- | --- | --- |");
-  for (const { backend, total } of rows) {
+  for (const { pkg, total } of rows) {
     if (!total) {
-      lines.push(`| ${backend.label} | _no data_ | _no data_ | _no data_ | _no data_ |`);
+      lines.push(`| ${pkg.label} | _no data_ | _no data_ | _no data_ | _no data_ |`);
       continue;
     }
     lines.push(
-      `| ${backend.label} | ${fmtPct(pct(total.statements))} | ${fmtPct(pct(total.branches))} | ${fmtPct(pct(total.functions))} | ${fmtPct(pct(total.lines))} |`,
+      `| ${pkg.label} | ${fmtPct(pct(total.statements))} | ${fmtPct(pct(total.branches))} | ${fmtPct(pct(total.functions))} | ${fmtPct(pct(total.lines))} |`,
     );
   }
   if (anyData) {
@@ -131,15 +135,15 @@ function buildReport() {
   lines.push("");
   lines.push("### Covered / total");
   lines.push("");
-  lines.push("| Backend | Statements | Branches | Functions | Lines |");
+  lines.push("| Package | Statements | Branches | Functions | Lines |");
   lines.push("| --- | --- | --- | --- | --- |");
-  for (const { backend, total } of rows) {
+  for (const { pkg, total } of rows) {
     if (!total) {
-      lines.push(`| ${backend.label} | — | — | — | — |`);
+      lines.push(`| ${pkg.label} | — | — | — | — |`);
       continue;
     }
     lines.push(
-      `| ${backend.label} | ${fmtCount(total.statements)} | ${fmtCount(total.branches)} | ${fmtCount(total.functions)} | ${fmtCount(total.lines)} |`,
+      `| ${pkg.label} | ${fmtCount(total.statements)} | ${fmtCount(total.branches)} | ${fmtCount(total.functions)} | ${fmtCount(total.lines)} |`,
     );
   }
   if (anyData) {
@@ -149,7 +153,7 @@ function buildReport() {
   }
   lines.push("");
   lines.push(
-    "_Generated by `eduai-summer-2026/scripts/generate-coverage-report.js` via the Backend Coverage Report workflow._",
+    "_Generated by `eduai-summer-2026/scripts/generate-coverage-report.js` via the Test Coverage Report workflow._",
   );
   lines.push("");
 
@@ -160,7 +164,7 @@ function main() {
   const { markdown, anyData } = buildReport();
   if (!anyData) {
     console.error(
-      "No coverage-summary.json found for any backend. Did `test:coverage` run with the json-summary reporter?",
+      "No coverage-summary.json found for any package. Did `test:coverage` run with the json-summary reporter?",
     );
     process.exit(1);
   }

@@ -14,7 +14,8 @@
  * stub Core enrollment/course lookups via a catch-all `fetch` mock are
  * unaffected — see resolveAccessForCourse's owner-fallback path.
  */
-import { Course, Topics, Question_Metadata, Assessments, AssessmentSections, Variants, SectionVariants } from '../../src/schema/index.js';
+import { createId } from '@paralleldrive/cuid2';
+import { prisma } from '../../src/config/database.js';
 import { TOPIC_NAMES_BY_TEMPLATE, SEED_QUESTIONS_BY_TEMPLATE } from '../../scripts/seedData.js';
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
@@ -29,12 +30,14 @@ const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
  * @returns {Promise<{ coursesCreated: number, topicsCreated: number, questionsCreated: number, variantsCreated: number }>}
  */
 export async function seedCoursesForNewUser(userId) {
-  const courses = await Course.bulkCreate(
-    Array.from({ length: NUM_TEMPLATES }, (_, index) => ({
-      userId,
-      coreCourseId: `core-seed-course-${userId}-${index}`,
-    }))
-  );
+  const courses = [];
+  for (let index = 0; index < NUM_TEMPLATES; index++) {
+    courses.push(
+      await prisma.course.create({
+        data: { userId, coreCourseId: `core-seed-course-${userId}-${index}` },
+      }),
+    );
+  }
 
   let topicsCreated = 0;
   let questionsCreated = 0;
@@ -48,23 +51,27 @@ export async function seedCoursesForNewUser(userId) {
 
     const courseTopics = [];
     for (const name of topicNames) {
-      const topic = await Topics.create({ name, courseId: course.id });
+      const topic = await prisma.topics.create({ data: { id: createId(), name, courseId: course.id } });
       courseTopics.push(topic);
       topicsCreated++;
     }
 
     // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077).
-    const assessment = await Assessments.create({
-      courseId: course.id,
-      type: 'Quiz',
-      name: 'Practice Exam'
+    const assessment = await prisma.assessments.create({
+      data: {
+        courseId: course.id,
+        type: 'Quiz',
+        name: 'Practice Exam'
+      }
     });
 
-    const section = await AssessmentSections.create({
-      assessmentId: assessment.id,
-      name: 'Exam',
-      description: null,
-      position: 0
+    const section = await prisma.assessmentSections.create({
+      data: {
+        assessmentId: assessment.id,
+        name: 'Exam',
+        description: null,
+        position: 0
+      }
     });
 
     const difficulties = ['easy', 'medium', 'hard'];
@@ -76,12 +83,14 @@ export async function seedCoursesForNewUser(userId) {
       const primaryTopic = courseTopics[topicIndex];
       const order = { [assessment.id]: i + 1 };
 
-      const meta = await Question_Metadata.create({
-        description: q.description,
-        type: q.type,
-        courseId: course.id,
-        primaryTopicId: primaryTopic.id,
-        questionOrder: order
+      const meta = await prisma.questionMetadata.create({
+        data: {
+          description: q.description,
+          type: q.type,
+          courseId: course.id,
+          primaryTopicId: primaryTopic.id,
+          questionOrder: order
+        }
       });
       questionsCreated++;
 
@@ -98,13 +107,15 @@ export async function seedCoursesForNewUser(userId) {
       if (q.type === 'MCQ' && Array.isArray(q.choices) && q.correctAnswer) {
         variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
       }
-      const variant = await Variants.create(variantPayload);
+      const variant = await prisma.variants.create({ data: variantPayload });
       variantsCreated++;
 
-      await SectionVariants.create({
-        sectionId: section.id,
-        variantId: variant.id,
-        displayOrder: i
+      await prisma.sectionVariants.create({
+        data: {
+          sectionId: section.id,
+          variantId: variant.id,
+          displayOrder: i
+        }
       });
     }
   }

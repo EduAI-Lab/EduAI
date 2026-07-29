@@ -8,7 +8,7 @@ Full-stack app for building course question banks and assessments, with AI-assis
 | Layer        | Technology                                                                   |
 | ------------ | ---------------------------------------------------------------------------- |
 | Frontend     | React 19, TypeScript, Vite, React Router v7, Tailwind, Radix/shadcn-style UI |
-| Backend      | Node.js, Express (ESM), Sequelize, PostgreSQL                                |
+| Backend      | Node.js, Express (ESM), Prisma, PostgreSQL                                  |
 | Auth         | JWT + bcrypt                                                                 |
 | Integrations | EduAI API, Canvas (per-user API keys from the app UI)                        |
 | Testing      | Vitest (unit + integration + frontend)                                       |

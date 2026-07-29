@@ -3,6 +3,7 @@
  * Shapes payloads (e.g., blueprintConfig) and returns typed responses for UI consumers.
  */
 import api from './api';
+import { fetchAllPages } from './pagination';
 import {
   Assessment,
   AssessmentGenerationParams,
@@ -14,7 +15,78 @@ import {
 
 type GetAssessmentsOptions = {
   courseId?: number;
+  limit?: number;
+  offset?: number;
 };
+
+export type PaginatedList<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const PAGE_FETCH_SIZE = 100;
+const SERVER_MAX_LIST_LIMIT = 200;
+const MAX_FETCH_ALL = 10_000;
+
+/** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
+function unwrapPaginatedList<T>(data: unknown): PaginatedList<T> {
+  if (Array.isArray(data)) {
+    return {
+      items: data as T[],
+      total: data.length,
+      limit: data.length,
+      offset: 0,
+    };
+  }
+  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+    const page = data as PaginatedList<T>;
+    return {
+      items: page.items,
+      total: typeof page.total === 'number' ? page.total : page.items.length,
+      limit: typeof page.limit === 'number' ? page.limit : page.items.length,
+      offset: typeof page.offset === 'number' ? page.offset : 0,
+    };
+  }
+  return { items: [], total: 0, limit: 50, offset: 0 };
+}
+
+/**
+ * Walks #1040's `{ items, total, limit, offset }` envelope via a callback.
+ * Distinct from `./pagination`'s `fetchAllPages`, which walks #1044's
+ * `{ data, total, page, pageSize }` path-based contract (used for sections).
+ */
+async function fetchAllOffsetPages<T>(
+  fetchPage: (offset: number, limit: number) => Promise<PaginatedList<T>>,
+  options: { startOffset?: number; maxItems?: number } = {},
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = options.startOffset ?? 0;
+  let total = Infinity;
+  const maxItems = Math.min(options.maxItems ?? MAX_FETCH_ALL, MAX_FETCH_ALL);
+
+  while (all.length < total && all.length < maxItems) {
+    const page = await fetchPage(offset, PAGE_FETCH_SIZE);
+    all.push(...page.items);
+    total = Number.isFinite(page.total) ? page.total : all.length;
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+    if (offset >= total) break;
+  }
+
+  // The hard safety ceiling itself must never truncate silently — that's the exact bug
+  // this PR fixes for the server's 50-row cap. If a caller asked for fewer than
+  // MAX_FETCH_ALL explicitly, getting exactly that many back is expected, not a truncation.
+  if (maxItems === MAX_FETCH_ALL && all.length >= MAX_FETCH_ALL && all.length < total) {
+    throw new Error(
+      `Result set has ${total} rows, exceeding the ${MAX_FETCH_ALL}-row fetch-all safety cap. ` +
+        'Use getAssessmentsPage() with explicit pagination instead of fetching all rows.',
+    );
+  }
+
+  return all.slice(0, maxItems);
+}
 
 const toBlueprintConfig = (payload: AssessmentGenerationParams): AssessmentBlueprintConfig => ({
   primaryTopicIds: payload.primaryTopicIds,
@@ -26,17 +98,46 @@ const toBlueprintConfig = (payload: AssessmentGenerationParams): AssessmentBluep
 });
 
 export const assessmentService = {
-  /** Fetches assessments (optionally filtered by course) for the authenticated user. */
-  async getAssessments(options: GetAssessmentsOptions = {}): Promise<Assessment[]> {
+  /** Fetches one page of assessments with pagination metadata (#1040). */
+  async getAssessmentsPage(options: GetAssessmentsOptions = {}): Promise<PaginatedList<Assessment>> {
     const params: Record<string, number> = {};
-    if (options.courseId) {
-      params.courseId = options.courseId;
-    }
+    if (options.courseId !== undefined) params.courseId = options.courseId;
+    if (options.limit !== undefined) params.limit = options.limit;
+    if (options.offset !== undefined) params.offset = options.offset;
 
     const response = await api.get('/api/assessments', {
       params: Object.keys(params).length ? params : undefined
     });
-    return response.data.data || [];
+    return unwrapPaginatedList<Assessment>(response.data.data);
+  },
+
+  /**
+   * Fetches assessments for UI consumers.
+   * - With an explicit `limit` ≤ server max: returns that single page's items.
+   * - With a larger `limit`, or no limit: page-loops until all matching rows are loaded.
+   */
+  async getAssessments(options: GetAssessmentsOptions = {}): Promise<Assessment[]> {
+    if (
+      options.limit !== undefined &&
+      options.limit > 0 &&
+      options.limit <= SERVER_MAX_LIST_LIMIT
+    ) {
+      const page = await this.getAssessmentsPage(options);
+      return page.items;
+    }
+
+    return fetchAllOffsetPages(
+      (offset, limit) =>
+        this.getAssessmentsPage({
+          courseId: options.courseId,
+          limit,
+          offset,
+        }),
+      {
+        startOffset: options.offset ?? 0,
+        maxItems: options.limit,
+      },
+    );
   },
 
   /** Creates an empty "Practice Exam" assessment for a course (e.g. sandbox or new course). */
@@ -92,10 +193,15 @@ export const assessmentService = {
     return response.data.data;
   },
 
-  /** Lists sections for an assessment. */
+  /**
+   * Lists every section for an assessment.
+   *
+   * The endpoint is paginated and bounded (#1044), so this walks pages — the
+   * builder renders the whole section tree and reorders across it, so a partial
+   * list would drop sections and corrupt position maths.
+   */
   async getAssessmentSections(assessmentId: number): Promise<AssessmentSection[]> {
-    const response = await api.get(`/api/assessments/${assessmentId}/sections`);
-    return response.data.data || [];
+    return fetchAllPages<AssessmentSection>(`/api/assessments/${assessmentId}/sections`);
   },
 
   /** Creates a new section under an assessment. */

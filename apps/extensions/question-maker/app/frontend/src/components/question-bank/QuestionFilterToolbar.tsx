@@ -33,7 +33,8 @@ export interface QuestionFilters {
   draftStatus: 'all' | 'draft' | 'reviewed';
 }
 
-export type QuestionSort = 'newest' | 'oldest' | 'type' | 'difficulty';
+/** Server-backed sorts only — difficulty lives on variants and isn't orderable in SQL yet. */
+export type QuestionSort = 'newest' | 'oldest' | 'type';
 
 export const EMPTY_QUESTION_FILTERS: QuestionFilters = {
   questionTypes: [],
@@ -55,7 +56,6 @@ const SORT_LABELS: Record<QuestionSort, string> = {
   newest: 'Newest first',
   oldest: 'Oldest first',
   type: 'By type',
-  difficulty: 'By difficulty',
 };
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
