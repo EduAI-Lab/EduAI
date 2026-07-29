@@ -44,8 +44,8 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
     try {
       setCourses(await listCanvasCourses());
       setSelectedIds(new Set());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load Canvas courses");
+    } catch {
+      setError("Could not load Canvas courses. Please try again.");
       setCourses([]);
     } finally {
       setLoading(false);
@@ -85,8 +85,8 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
       if (syncResult.synced.length > 0 || syncResult.unsynced.length > 0) {
         window.dispatchEvent(new CustomEvent("eduai:courses-changed"));
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch Canvas courses");
+    } catch {
+      setError("Could not sync with Canvas. Please try again.");
     } finally {
       setSyncing(false);
     }

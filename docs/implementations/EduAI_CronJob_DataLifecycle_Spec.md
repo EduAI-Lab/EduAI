@@ -177,7 +177,7 @@ The Data Retention Guidelines specify that substantive records are retained for 
 
 ### 4.1 Required Schema Columns
 
-The following columns must be present before the deletion jobs will function correctly. Add these to your Prisma and Sequelize schemas if they do not already exist.
+The following columns must be present before the deletion jobs will function correctly. Add these to your Prisma schemas if they do not already exist.
 
 | Table (App) | Required Column | Purpose |
 | --- | --- | --- |

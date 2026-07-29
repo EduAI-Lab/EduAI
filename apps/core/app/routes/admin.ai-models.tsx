@@ -36,6 +36,9 @@ export default function AIModelsPage() {
   const { user } = useLoaderData<typeof loader>();
   const {
     providers,
+    total: providersTotal,
+    pagination: providersPagination,
+    setPagination: setProvidersPagination,
     isLoading: providersLoading,
     error: providersError,
     refresh: refreshProviders,
@@ -43,9 +46,18 @@ export default function AIModelsPage() {
     updateProvider,
     deleteProvider,
     toggleProviderActive,
-  } = useAiProviders();
+    // Providers also populate the model filter and form pickers, so load the
+    // largest page the API allows rather than the default 25.
+  } = useAiProviders({ pageSize: 200 });
   const {
     models,
+    total: modelsTotal,
+    pagination: modelsPagination,
+    setPagination: setModelsPagination,
+    search: modelSearch,
+    setSearch: setModelSearch,
+    providerId: modelProviderId,
+    setProviderId: setModelProviderId,
     isLoading: modelsLoading,
     error: modelsError,
     createModel,
@@ -104,7 +116,17 @@ export default function AIModelsPage() {
     >
       <AiModelsAdminView
         providers={providers}
+        providersTotal={providersTotal}
+        providersPagination={providersPagination}
+        onProvidersPaginationChange={setProvidersPagination}
         models={models}
+        modelsTotal={modelsTotal}
+        modelsPagination={modelsPagination}
+        onModelsPaginationChange={setModelsPagination}
+        modelSearch={modelSearch}
+        onModelSearchChange={setModelSearch}
+        modelProviderId={modelProviderId}
+        onModelProviderIdChange={setModelProviderId}
         isLoading={isLoading}
         error={error}
         onCreateProvider={createProvider}
