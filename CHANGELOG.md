@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Fixed
+
+- [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, and add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates. Closes #1218. (#PR, @gwan-kib, 2026-07-28)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Changed
