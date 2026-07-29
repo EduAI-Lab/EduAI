@@ -374,14 +374,14 @@ describe("PATCH /api/users/:id — admin-floor invariant (AUTH-04)", () => {
       isActive: true,
     } as never);
     const order: string[] = [];
-    vi.mocked(prisma.$executeRaw).mockImplementation(async () => {
+    vi.mocked(prisma.$executeRaw).mockImplementation((async () => {
       order.push("lock");
-      return undefined as never;
-    });
-    vi.mocked(prisma.user.count).mockImplementation(async () => {
+      return undefined;
+    }) as never);
+    vi.mocked(prisma.user.count).mockImplementation((async () => {
       order.push("count");
-      return 0 as never;
-    });
+      return 0;
+    }) as never);
 
     await action(makePatch("admin-2", { isActive: false }));
 
