@@ -4,7 +4,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-## [Week 13 — July 27–August 2, 2026]
+## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
 
