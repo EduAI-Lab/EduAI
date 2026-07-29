@@ -26,14 +26,12 @@ const describeDb = hasTestDb ? describe : describe.skip;
 const CORE_COURSE_ID = 'core-concurrency-1';
 
 describeDb('auto-import Practice Exam concurrency', () => {
-  let connectTestDatabase, truncateTestDatabase;
-  let User, Course, Assessments;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let importTaughtCoursesFromCore;
   let listCoursesFromCore, getCourseEnrollmentsFromCore;
 
   beforeAll(async () => {
-    ({ connectTestDatabase, truncateTestDatabase } = await import('../helpers/testDb.js'));
-    ({ User, Course, Assessments } = await import('../../src/schema/index.js'));
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = await import('../helpers/testDb.js'));
     ({ importTaughtCoursesFromCore } = await import(
       '../../src/services/importTaughtCoursesService.js'
     ));
@@ -45,10 +43,12 @@ describeDb('auto-import Practice Exam concurrency', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.bulkCreate([
-      { id: 'inst-a', email: 'a@test.com', name: 'Instructor A' },
-      { id: 'inst-b', email: 'b@test.com', name: 'Instructor B' },
-    ]);
+    await prisma.user.createMany({
+      data: [
+        { id: 'inst-a', email: 'a@test.com', name: 'Instructor A' },
+        { id: 'inst-b', email: 'b@test.com', name: 'Instructor B' },
+      ],
+    });
 
     // #1041: `listCoursesFromCore` returns a plain array of courses now — the
     // paging envelope is unwrapped inside coreApiService.
@@ -64,8 +64,7 @@ describeDb('auto-import Practice Exam concurrency', () => {
   });
 
   afterAll(async () => {
-    const { sequelize } = await import('../helpers/testDb.js');
-    await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   it('two co-instructors importing concurrently produce one anchor and ONE Practice Exam', async () => {
@@ -76,12 +75,12 @@ describeDb('auto-import Practice Exam concurrency', () => {
 
     // Exactly one anchor row for the Core course (unique core_course_id; the
     // create-race loser adopts the winner's row).
-    const anchors = await Course.findAll({ where: { coreCourseId: CORE_COURSE_ID } });
+    const anchors = await prisma.course.findMany({ where: { coreCourseId: CORE_COURSE_ID } });
     expect(anchors).toHaveLength(1);
 
     // The regression: both callers saw "no Practice Exam yet" and both
     // created one. The advisory lock serializes the check-then-create.
-    const exams = await Assessments.findAll({
+    const exams = await prisma.assessments.findMany({
       where: { courseId: anchors[0].id, name: 'Practice Exam' },
     });
     expect(exams).toHaveLength(1);
@@ -97,9 +96,9 @@ describeDb('auto-import Practice Exam concurrency', () => {
     await importTaughtCoursesFromCore('inst-b', 'INSTRUCTOR', 'session=b');
     await importTaughtCoursesFromCore('inst-a', 'INSTRUCTOR', 'session=a');
 
-    const anchors = await Course.findAll({ where: { coreCourseId: CORE_COURSE_ID } });
+    const anchors = await prisma.course.findMany({ where: { coreCourseId: CORE_COURSE_ID } });
     expect(anchors).toHaveLength(1);
-    const exams = await Assessments.findAll({
+    const exams = await prisma.assessments.findMany({
       where: { courseId: anchors[0].id, name: 'Practice Exam' },
     });
     expect(exams).toHaveLength(1);
