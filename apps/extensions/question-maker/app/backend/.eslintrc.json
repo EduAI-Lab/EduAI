@@ -13,7 +13,8 @@
   },
   "ignorePatterns": [
     "node_modules/",
-    "dist/"
+    "dist/",
+    "src/generated/"
   ],
   "rules": {}
 }

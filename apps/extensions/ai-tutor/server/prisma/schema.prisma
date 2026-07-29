@@ -1,11 +1,15 @@
 generator client {
   provider      = "prisma-client-js"
-  // Generate into this workspace's own node_modules instead of the hoisted
-  // repo-root copy. ai-tutor and question-maker both used the shared default
+  // Generate into this workspace instead of the hoisted repo-root
+  // node_modules. ai-tutor and question-maker both used the shared default
   // output, so whichever ran `prisma generate` last overwrote the other and
-  // its models came back `undefined` at runtime (#1255). Node resolution walks
-  // up from src/, finds this nested copy first, so imports stay "@prisma/client".
-  output        = "../node_modules/@prisma/client"
+  // its models came back `undefined` at runtime (#1255). A checked-out path
+  // under src/ is immune to npm hoisting, so every consumer (local dev, CI,
+  // Docker) imports this app's own client — import it by relative path, not
+  // "@prisma/client". Generating into node_modules/@prisma/client is rejected
+  // by `prisma generate` outright; node_modules/.prisma/client resolves back
+  // to the hoisted copy whenever npm dedupes this workspace's wrapper away.
+  output        = "../src/generated/prisma"
   // "native" auto-detects the local OS; "rhel-openssl-1.1.x" is needed
   // for RHEL 8 hosts (dev.eduai.ok.ubc.ca / s378); "linux-musl-openssl-3.0.x"
   // is required for node:*-alpine Docker images (musl libc, OpenSSL 3).

@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [monorepo] fix: AI Tutor and Question Maker now generate their Prisma clients into their own workspace `node_modules` instead of the shared repo-root path, where whichever app ran `prisma generate` last silently overwrote the other and left its models `undefined` at runtime. (#1255, @mochi_21, 2026-07-28) — [#1257](https://github.com/EduAI-Lab/EduAI/pull/1257)
+- [monorepo] fix: AI Tutor and Question Maker now generate their Prisma clients into their own `src/generated/prisma` and import them by relative path, instead of sharing the hoisted repo-root client where whichever app ran `prisma generate` last silently overwrote the other and left its models `undefined` at runtime. (#1255, @mochi_21, 2026-07-28) — [#1257](https://github.com/EduAI-Lab/EduAI/pull/1257)
 - [core] fix: Drop the stale `idempotencyKey` fields from the perf volume seed, which #828 removed from the schema, so `npm run db:seed:perf` runs to completion and writes `.perf-pool/` again. (#1256, @mochi_21, 2026-07-28) — [#1257](https://github.com/EduAI-Lab/EduAI/pull/1257)
 
 ## [Week 12 — July 20–26, 2026]

@@ -3,7 +3,7 @@
  * variables and retrying the initial connection so the server can still start
  * listening while Postgres (e.g. a Docker Compose dependency) finishes booting.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/index.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';

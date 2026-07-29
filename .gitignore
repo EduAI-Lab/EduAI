@@ -25,6 +25,10 @@ node_modules/
 # also ignore node_modules symlinks (trailing-slash rule above matches dirs only)
 node_modules
 
+# Per-app Prisma clients (#1255) — each app generates its own into src/generated/prisma
+apps/extensions/ai-tutor/server/src/generated/
+apps/extensions/question-maker/app/backend/src/generated/
+
 # Environment files
 .env
 .env.local
