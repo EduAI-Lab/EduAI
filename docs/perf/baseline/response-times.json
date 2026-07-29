@@ -1,0 +1,4957 @@
+{
+  "env": {
+    "captured_at": "2026-07-22T03:10:43.203Z",
+    "target_label": "ubc-dev",
+    "targets": {
+      "CORE_URL": "https://dev.eduai.ok.ubc.ca",
+      "AITUTOR_URL": "https://dev.aitutor.eduai.ok.ubc.ca",
+      "QM_URL": "https://dev.questionmaker.eduai.ok.ubc.ca"
+    },
+    "git_sha": "7a6bd939",
+    "git_branch": "feat/961-baseline-perf-codequality",
+    "node": "v23.11.0",
+    "platform": "darwin-arm64",
+    "warmup": 3,
+    "samples": 30,
+    "mut_samples": 15,
+    "concurrency": 1,
+    "include_mutations": true,
+    "validate_governor": {
+      "limit": 300,
+      "window_ms": 60000,
+      "applies_to": [
+        "ai-tutor",
+        "qm",
+        "core:sessions/validate"
+      ]
+    },
+    "seed_note": "Run `npm run db:seed:perf` (all three DBs + pool manifests) before each run; deletes consume the pool."
+  },
+  "pool_manifests": {
+    "core": true,
+    "aitutor": true,
+    "qm": true
+  },
+  "results": [
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/health",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 47.09,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 45.44,
+        "p95": 59.56,
+        "p99": 82.88,
+        "mean": 47.84,
+        "min": 34.55,
+        "max": 82.88
+      },
+      "payload_bytes": {
+        "avg": 15,
+        "p95": 15,
+        "max": 15
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/disciplines",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 61.94,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.96,
+        "p95": 115.75,
+        "p99": 119.41,
+        "mean": 68.02,
+        "min": 36.25,
+        "max": 119.41
+      },
+      "payload_bytes": {
+        "avg": 4507,
+        "p95": 4507,
+        "max": 4507
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 94.54,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 61.34,
+        "p95": 135.8,
+        "p99": 147.85,
+        "mean": 71.3,
+        "min": 48.23,
+        "max": 147.85
+      },
+      "payload_bytes": {
+        "avg": 15752,
+        "p95": 15752,
+        "max": 15752
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/ai-providers",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 188.87,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.87,
+        "p95": 102.17,
+        "p99": 381.91,
+        "mean": 78.51,
+        "min": 51.28,
+        "max": 381.91
+      },
+      "payload_bytes": {
+        "avg": 20929,
+        "p95": 20929,
+        "max": 20929
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/ai-models",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 92.11,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.17,
+        "p95": 77.83,
+        "p99": 177.38,
+        "mean": 63.83,
+        "min": 49.75,
+        "max": 177.38
+      },
+      "payload_bytes": {
+        "avg": 23825,
+        "p95": 23825,
+        "max": 23825
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/users",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 449.95,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 383.76,
+        "p95": 568.3,
+        "p99": 673.89,
+        "mean": 385.52,
+        "min": 238.29,
+        "max": 673.89
+      },
+      "payload_bytes": {
+        "avg": 750483,
+        "p95": 750483,
+        "max": 750483
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/invitations",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 60.04,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 55.11,
+        "p95": 89.96,
+        "p99": 95.68,
+        "mean": 60.53,
+        "min": 50.47,
+        "max": 95.68
+      },
+      "payload_bytes": {
+        "avg": 10702,
+        "p95": 10702,
+        "max": 10702
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/policies",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 55.67,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52.5,
+        "p95": 86.33,
+        "p99": 104.19,
+        "mean": 58.42,
+        "min": 39.15,
+        "max": 104.19
+      },
+      "payload_bytes": {
+        "avg": 4140,
+        "p95": 4140,
+        "max": 4140
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/dashboard/stats",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 167.18,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.72,
+        "p95": 138.55,
+        "p99": 169.92,
+        "mean": 79.93,
+        "min": 61.08,
+        "max": 169.92
+      },
+      "payload_bytes": {
+        "avg": 272,
+        "p95": 272,
+        "max": 272
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/admin/bug-reports",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 68.56,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.86,
+        "p95": 142.29,
+        "p99": 162.04,
+        "mean": 76.63,
+        "min": 50.26,
+        "max": 162.04
+      },
+      "payload_bytes": {
+        "avg": 11423,
+        "p95": 11423,
+        "max": 11423
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/admin/cron-jobs",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 254.95,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 57.93,
+        "p95": 78.57,
+        "p99": 128.17,
+        "mean": 64.28,
+        "min": 49.98,
+        "max": 128.17
+      },
+      "payload_bytes": {
+        "avg": 3961,
+        "p95": 3961,
+        "max": 3961
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 123.63,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 73.56,
+        "p95": 173.6,
+        "p99": 412.24,
+        "mean": 94.68,
+        "min": 58.06,
+        "max": 412.24
+      },
+      "payload_bytes": {
+        "avg": 12249,
+        "p95": 12249,
+        "max": 12249
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "/api/sessions/validate",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 72.81,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 48.8,
+        "p95": 94.99,
+        "p99": 107.25,
+        "mean": 54.14,
+        "min": 33.38,
+        "max": 107.25
+      },
+      "payload_bytes": {
+        "avg": 140,
+        "p95": 140,
+        "max": 140
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/me",
+      "role": "actor",
+      "kind": "read",
+      "cold_start_ms": 64.82,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.07,
+        "p95": 107.87,
+        "p99": 135.15,
+        "mean": 64.01,
+        "min": 48.72,
+        "max": 135.15
+      },
+      "payload_bytes": {
+        "avg": 252,
+        "p95": 252,
+        "max": 252
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/preferences",
+      "role": "actor",
+      "kind": "read",
+      "cold_start_ms": 58.37,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 53.17,
+        "p95": 77.14,
+        "p99": 118.25,
+        "mean": 57,
+        "min": 43.53,
+        "max": 118.25
+      },
+      "payload_bytes": {
+        "avg": 108,
+        "p95": 108,
+        "max": 108
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/bug-reports?mine",
+      "role": "actor",
+      "kind": "read",
+      "cold_start_ms": 49.84,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52,
+        "p95": 72.48,
+        "p99": 113.55,
+        "mean": 55.54,
+        "min": 37.41,
+        "max": 113.55
+      },
+      "payload_bytes": {
+        "avg": 259,
+        "p95": 259,
+        "max": 259
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 61.21,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.65,
+        "p95": 81.61,
+        "p99": 111.91,
+        "mean": 62.46,
+        "min": 48.87,
+        "max": 111.91
+      },
+      "payload_bytes": {
+        "avg": 651,
+        "p95": 651,
+        "max": 651
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/materials",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 147.78,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 98.97,
+        "p95": 225.41,
+        "p99": 253.09,
+        "mean": 117.06,
+        "min": 76.17,
+        "max": 253.09
+      },
+      "payload_bytes": {
+        "avg": 8552,
+        "p95": 8552,
+        "max": 8552
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/materials/:mid",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 61.55,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.82,
+        "p95": 108.78,
+        "p99": 153.25,
+        "mean": 70.56,
+        "min": 54.29,
+        "max": 153.25
+      },
+      "payload_bytes": {
+        "avg": 209,
+        "p95": 209,
+        "max": 209
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/embedding-settings",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 58.79,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52.08,
+        "p95": 94.22,
+        "p99": 147.97,
+        "mean": 61.08,
+        "min": 36.97,
+        "max": 147.97
+      },
+      "payload_bytes": {
+        "avg": 556,
+        "p95": 556,
+        "max": 556
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/topics",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 57.99,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 61.91,
+        "p95": 155.84,
+        "p99": 159.19,
+        "mean": 74.78,
+        "min": 53.18,
+        "max": 159.19
+      },
+      "payload_bytes": {
+        "avg": 4267,
+        "p95": 4267,
+        "max": 4267
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/topics/:tid",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 58.77,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.64,
+        "p95": 162.7,
+        "p99": 184.97,
+        "mean": 75.5,
+        "min": 50.89,
+        "max": 184.97
+      },
+      "payload_bytes": {
+        "avg": 248,
+        "p95": 248,
+        "max": 248
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/chats",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 72.59,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.26,
+        "p95": 106.91,
+        "p99": 154.48,
+        "mean": 70.73,
+        "min": 49.99,
+        "max": 154.48
+      },
+      "payload_bytes": {
+        "avg": 12,
+        "p95": 12,
+        "max": 12
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/units/:dept/chats",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 324.28,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 283.53,
+        "p95": 528.8,
+        "p99": 554.32,
+        "mean": 316.86,
+        "min": 207.35,
+        "max": 554.32
+      },
+      "payload_bytes": {
+        "avg": 405494,
+        "p95": 405494,
+        "max": 405494
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/tas",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 64.12,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.49,
+        "p95": 90.37,
+        "p99": 105.25,
+        "mean": 66.85,
+        "min": 54.26,
+        "max": 105.25
+      },
+      "payload_bytes": {
+        "avg": 2099,
+        "p95": 2099,
+        "max": 2099
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/enrollments",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 162.55,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.96,
+        "p95": 276.04,
+        "p99": 331.85,
+        "mean": 86.27,
+        "min": 54.06,
+        "max": 331.85
+      },
+      "payload_bytes": {
+        "avg": 4118,
+        "p95": 4118,
+        "max": 4118
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/courses/:id/rag-settings",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 110.81,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52.29,
+        "p95": 70.32,
+        "p99": 75.54,
+        "mean": 54.94,
+        "min": 33.88,
+        "max": 75.54
+      },
+      "payload_bytes": {
+        "avg": 46,
+        "p95": 46,
+        "max": 46
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/questions?courseId",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 137.24,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.15,
+        "p95": 118.73,
+        "p99": 141.14,
+        "mean": 70.49,
+        "min": 50.95,
+        "max": 141.14
+      },
+      "payload_bytes": {
+        "avg": 904,
+        "p95": 904,
+        "max": 904
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/questions/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 51.11,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.85,
+        "p95": 89.98,
+        "p99": 93.82,
+        "mean": 65.13,
+        "min": 49.76,
+        "max": 93.82
+      },
+      "payload_bytes": {
+        "avg": 426,
+        "p95": 426,
+        "max": 426
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats/:id",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 67.74,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.02,
+        "p95": 160.42,
+        "p99": 253.33,
+        "mean": 78.2,
+        "min": 46.45,
+        "max": 253.33
+      },
+      "payload_bytes": {
+        "avg": 178,
+        "p95": 178,
+        "max": 178
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "GET",
+      "path": "/api/chats/:id/messages",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 52.84,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 54.73,
+        "p95": 85.02,
+        "p99": 127.79,
+        "mean": 59.76,
+        "min": 38.47,
+        "max": 127.79
+      },
+      "payload_bytes": {
+        "avg": 430,
+        "p95": 430,
+        "max": 430
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 579.68,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 83.06,
+        "p95": 275.08,
+        "p99": 400.55,
+        "mean": 110.84,
+        "min": 71.86,
+        "max": 400.55
+      },
+      "payload_bytes": {
+        "avg": 140,
+        "p95": 140,
+        "max": 140
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 318.22,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 235.88,
+        "p95": 468.48,
+        "p99": 537.51,
+        "mean": 276.72,
+        "min": 195.48,
+        "max": 537.51
+      },
+      "payload_bytes": {
+        "avg": 14721,
+        "p95": 14721,
+        "max": 14721
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/suggested-prompts",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 56.76,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 56.11,
+        "p95": 115.51,
+        "p99": 119.76,
+        "mean": 65.29,
+        "min": 51.72,
+        "max": 119.76
+      },
+      "payload_bytes": {
+        "avg": 626,
+        "p95": 626,
+        "max": 626
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/ai-models",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 175.13,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 85.13,
+        "p95": 167.93,
+        "p99": 238.86,
+        "mean": 92.79,
+        "min": 68.53,
+        "max": 238.86
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/prompts",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 76.71,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.47,
+        "p95": 128.79,
+        "p99": 134.64,
+        "mean": 72.94,
+        "min": 54.67,
+        "max": 134.64
+      },
+      "payload_bytes": {
+        "avg": 5984,
+        "p95": 5984,
+        "max": 5984
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me/submissions",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 69.49,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.08,
+        "p95": 149.46,
+        "p99": 152.95,
+        "mean": 74.69,
+        "min": 53.25,
+        "max": 152.95
+      },
+      "payload_bytes": {
+        "avg": 1071,
+        "p95": 1071,
+        "max": 1071
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/me/feedback",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 69.97,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.91,
+        "p95": 77.49,
+        "p99": 102.38,
+        "mean": 63.36,
+        "min": 51.32,
+        "max": 102.38
+      },
+      "payload_bytes": {
+        "avg": 472,
+        "p95": 472,
+        "max": 472
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/courses",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 92.99,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.5,
+        "p95": 90,
+        "p99": 98.98,
+        "mean": 68.46,
+        "min": 46.86,
+        "max": 98.98
+      },
+      "payload_bytes": {
+        "avg": 18139,
+        "p95": 18139,
+        "max": 18139
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/settings/eduai-api-key",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 57.16,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.72,
+        "p95": 154.59,
+        "p99": 214.19,
+        "mean": 76.53,
+        "min": 52.59,
+        "max": 214.19
+      },
+      "payload_bytes": {
+        "avg": 120,
+        "p95": 120,
+        "max": 120
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/settings/ai-model-policy",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 95.27,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 83.74,
+        "p95": 132.38,
+        "p99": 132.81,
+        "mean": 94.1,
+        "min": 69.36,
+        "max": 132.81
+      },
+      "payload_bytes": {
+        "avg": 237,
+        "p95": 237,
+        "max": 237
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PUT",
+      "path": "PUT /api/admin/settings/ai-model-policy",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 130,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 88,
+        "p95": 230,
+        "p99": 307,
+        "mean": 109,
+        "min": 56,
+        "max": 307
+      },
+      "payload_bytes": {
+        "avg": 237,
+        "p95": 237,
+        "max": 237
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 59.17,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.11,
+        "p95": 355.91,
+        "p99": 413.76,
+        "mean": 91.76,
+        "min": 43.51,
+        "max": 413.76
+      },
+      "payload_bytes": {
+        "avg": 179,
+        "p95": 179,
+        "max": 179
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/feedback",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 62.19,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.45,
+        "p95": 119.26,
+        "p99": 284.67,
+        "mean": 74.43,
+        "min": 48.3,
+        "max": 284.67
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/submissions",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 69.39,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.31,
+        "p95": 243.02,
+        "p99": 279.75,
+        "mean": 103.47,
+        "min": 55.67,
+        "max": 279.75
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/student-metrics",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 60.54,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.66,
+        "p95": 113.81,
+        "p99": 187.06,
+        "mean": 72.1,
+        "min": 54.57,
+        "max": 187.06
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/analytics",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 63,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.67,
+        "p95": 100.14,
+        "p99": 161.02,
+        "mean": 71.66,
+        "min": 49.52,
+        "max": 161.02
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/modules",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 80.6,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 61.85,
+        "p95": 75.98,
+        "p99": 95.43,
+        "mean": 64.46,
+        "min": 53.2,
+        "max": 95.43
+      },
+      "payload_bytes": {
+        "avg": 2029,
+        "p95": 2029,
+        "max": 2029
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/courses/:id/topics",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 66.46,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.87,
+        "p95": 210.48,
+        "p99": 372.46,
+        "mean": 97.42,
+        "min": 51.72,
+        "max": 372.46
+      },
+      "payload_bytes": {
+        "avg": 180,
+        "p95": 180,
+        "max": 180
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/admin/courses/:id/enrollments",
+      "role": "admin",
+      "kind": "read",
+      "cold_start_ms": 453.11,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 392.2,
+        "p95": 910.2,
+        "p99": 949.45,
+        "mean": 483.43,
+        "min": 293.93,
+        "max": 949.45
+      },
+      "payload_bytes": {
+        "avg": 303151,
+        "p95": 303151,
+        "max": 303151
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/modules/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 56.01,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 69.55,
+        "p95": 165.98,
+        "p99": 178.06,
+        "mean": 83.28,
+        "min": 40.38,
+        "max": 178.06
+      },
+      "payload_bytes": {
+        "avg": 118,
+        "p95": 118,
+        "max": 118
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/modules/:id/lessons",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 58.39,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.38,
+        "p95": 97.22,
+        "p99": 128.89,
+        "mean": 67.05,
+        "min": 42.14,
+        "max": 128.89
+      },
+      "payload_bytes": {
+        "avg": 1859,
+        "p95": 1859,
+        "max": 1859
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/lessons/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 54.33,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 57.38,
+        "p95": 101.65,
+        "p99": 117.11,
+        "mean": 61.31,
+        "min": 50.85,
+        "max": 117.11
+      },
+      "payload_bytes": {
+        "avg": 130,
+        "p95": 130,
+        "max": 130
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/lessons/:id/activities",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 71.33,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.33,
+        "p95": 92.45,
+        "p99": 170.95,
+        "mean": 73.13,
+        "min": 55.64,
+        "max": 170.95
+      },
+      "payload_bytes": {
+        "avg": 6976,
+        "p95": 6976,
+        "max": 6976
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/activities/:id/submissions",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 65.16,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.04,
+        "p95": 145.14,
+        "p99": 148.12,
+        "mean": 67.52,
+        "min": 52.7,
+        "max": 148.12
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/activities/:id/feedback",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 61.38,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.73,
+        "p95": 174.55,
+        "p99": 248.72,
+        "mean": 79.08,
+        "min": 51.7,
+        "max": 248.72
+      },
+      "payload_bytes": {
+        "avg": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/activities/:id/chat-sessions",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 59.07,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.38,
+        "p95": 84.05,
+        "p99": 186.66,
+        "mean": 68,
+        "min": 53,
+        "max": 186.66
+      },
+      "payload_bytes": {
+        "avg": 156,
+        "p95": 156,
+        "max": 156
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "GET",
+      "path": "/api/activities/:id/chat-sessions/:cid/messages",
+      "role": "student",
+      "kind": "read",
+      "cold_start_ms": 74.83,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 95.31,
+        "p95": 222.05,
+        "p99": 3442.06,
+        "mean": 218.94,
+        "min": 73.82,
+        "max": 3442.06
+      },
+      "payload_bytes": {
+        "avg": 430,
+        "p95": 430,
+        "max": 430
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/auth/me",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 453.82,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 72.44,
+        "p95": 138.14,
+        "p99": 159.67,
+        "mean": 80.38,
+        "min": 54.14,
+        "max": 159.67
+      },
+      "payload_bytes": {
+        "avg": 182,
+        "p95": 182,
+        "max": 182
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 3873.43,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 2713.82,
+        "p95": 3152.44,
+        "p99": 3312.74,
+        "mean": 2719.21,
+        "min": 2378.63,
+        "max": 3312.74
+      },
+      "payload_bytes": {
+        "avg": 11810,
+        "p95": 11810,
+        "max": 11810
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 151.4,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.01,
+        "p95": 107.42,
+        "p99": 169.75,
+        "mean": 79.7,
+        "min": 59.36,
+        "max": 169.75
+      },
+      "payload_bytes": {
+        "avg": 39102,
+        "p95": 39102,
+        "max": 39102
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions/stats",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 65.99,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.2,
+        "p95": 163.31,
+        "p99": 167.57,
+        "mean": 78.18,
+        "min": 50.27,
+        "max": 167.57
+      },
+      "payload_bytes": {
+        "avg": 139,
+        "p95": 139,
+        "max": 139
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 73.03,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 88.63,
+        "p95": 191.09,
+        "p99": 273.22,
+        "mean": 102.17,
+        "min": 67.29,
+        "max": 273.22
+      },
+      "payload_bytes": {
+        "avg": 37402,
+        "p95": 37402,
+        "max": 37402
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 55.53,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.3,
+        "p95": 122.03,
+        "p99": 139.71,
+        "mean": 68.46,
+        "min": 47.22,
+        "max": 139.71
+      },
+      "payload_bytes": {
+        "avg": 212,
+        "p95": 212,
+        "max": 212
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id/access",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 56.65,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.55,
+        "p95": 113.78,
+        "p99": 163.67,
+        "mean": 70.94,
+        "min": 46.28,
+        "max": 163.67
+      },
+      "payload_bytes": {
+        "avg": 55,
+        "p95": 55,
+        "max": 55
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id/topics",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 158.52,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 81.78,
+        "p95": 141.48,
+        "p99": 163.21,
+        "mean": 90.26,
+        "min": 63.87,
+        "max": 163.21
+      },
+      "payload_bytes": {
+        "avg": 535,
+        "p95": 535,
+        "max": 535
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/course/:id/enrollments",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 65.24,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.54,
+        "p95": 96.01,
+        "p99": 128.8,
+        "mean": 69.22,
+        "min": 50.17,
+        "max": 128.8
+      },
+      "payload_bytes": {
+        "avg": 26,
+        "p95": 26,
+        "max": 26
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions/export?courseId",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 102.75,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 80.65,
+        "p95": 184.79,
+        "p99": 328.73,
+        "mean": 98.65,
+        "min": 60.77,
+        "max": 328.73
+      },
+      "payload_bytes": {
+        "avg": 35997,
+        "p95": 35997,
+        "max": 35997
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 74.87,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 77.48,
+        "p95": 181.81,
+        "p99": 218.98,
+        "mean": 88.35,
+        "min": 60.8,
+        "max": 218.98
+      },
+      "payload_bytes": {
+        "avg": 15892,
+        "p95": 15892,
+        "max": 15892
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/questions/:id/variants",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 66.42,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 72.04,
+        "p95": 359.49,
+        "p99": 469.91,
+        "mean": 102.99,
+        "min": 60.28,
+        "max": 469.91
+      },
+      "payload_bytes": {
+        "avg": 18792,
+        "p95": 18792,
+        "max": 18792
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 132.29,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.71,
+        "p95": 212.91,
+        "p99": 223.41,
+        "mean": 89.87,
+        "min": 61.23,
+        "max": 223.41
+      },
+      "payload_bytes": {
+        "avg": 20725,
+        "p95": 20725,
+        "max": 20725
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments/:id/questions",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 98.72,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.14,
+        "p95": 116.89,
+        "p99": 155.78,
+        "mean": 69.3,
+        "min": 51.54,
+        "max": 155.78
+      },
+      "payload_bytes": {
+        "avg": 26,
+        "p95": 26,
+        "max": 26
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments/:id/sections",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 74.06,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 70.49,
+        "p95": 155.97,
+        "p99": 202.68,
+        "mean": 85.42,
+        "min": 55.07,
+        "max": 202.68
+      },
+      "payload_bytes": {
+        "avg": 20420,
+        "p95": 20420,
+        "max": 20420
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessments/questions/:qid/check-in-assessments",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 75.2,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.66,
+        "p95": 220.19,
+        "p99": 308.07,
+        "mean": 91.5,
+        "min": 47.25,
+        "max": 308.07
+      },
+      "payload_bytes": {
+        "avg": 68,
+        "p95": 68,
+        "max": 68
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessment-variant/assessments/:id/blueprint-snapshot",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 71.91,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 83.74,
+        "p95": 118.17,
+        "p99": 119.97,
+        "mean": 85.93,
+        "min": 65.07,
+        "max": 119.97
+      },
+      "payload_bytes": {
+        "avg": 5570,
+        "p95": 5570,
+        "max": 5570
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/assessment-variant/assessments/:id/variant-readiness",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 94.63,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 118.49,
+        "p95": 193.22,
+        "p99": 331.66,
+        "mean": 129.15,
+        "min": 76.16,
+        "max": 331.66
+      },
+      "payload_bytes": {
+        "avg": 2280,
+        "p95": 2280,
+        "max": 2280
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "GET",
+      "path": "/api/topics/sync-status/:id",
+      "role": "instructor",
+      "kind": "read",
+      "cold_start_ms": 98.15,
+      "cold_status": 200,
+      "count": 30,
+      "ok_count": 30,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.85,
+        "p95": 163.42,
+        "p99": 165.3,
+        "mean": 82.35,
+        "min": 57.01,
+        "max": 165.3
+      },
+      "payload_bytes": {
+        "avg": 89,
+        "p95": 89,
+        "max": 89
+      },
+      "status_codes": {
+        "200": 30
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/courses",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 131,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 80,
+        "p95": 202,
+        "p99": 300,
+        "mean": 109,
+        "min": 56,
+        "max": 300
+      },
+      "payload_bytes": {
+        "avg": 651,
+        "p95": 652,
+        "max": 652
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+      },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 82.67,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 75.68,
+        "p95": 167.68,
+        "p99": 167.68,
+        "mean": 82.66,
+        "min": 57.38,
+        "max": 167.68
+      },
+      "payload_bytes": {
+        "avg": 639,
+        "p95": 640,
+        "max": 640
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/courses/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 107.32,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.35,
+        "p95": 174.57,
+        "p99": 174.57,
+        "mean": 90.4,
+        "min": 68.39,
+        "max": 174.57
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/publish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 54.73,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 54.74,
+        "p95": 182.48,
+        "p99": 182.48,
+        "mean": 63.64,
+        "min": 51.87,
+        "max": 182.48
+      },
+      "payload_bytes": {
+        "avg": 639,
+        "p95": 639,
+        "max": 639
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/unpublish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 113.38,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.09,
+        "p95": 127.48,
+        "p99": 127.48,
+        "mean": 67.3,
+        "min": 49.28,
+        "max": 127.48
+      },
+      "payload_bytes": {
+        "avg": 640,
+        "p95": 640,
+        "max": 640
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/materials/:mid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 53.14,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 67.09,
+        "p95": 446.54,
+        "p99": 446.54,
+        "mean": 99.87,
+        "min": 52.73,
+        "max": 446.54
+      },
+      "payload_bytes": {
+        "avg": 126,
+        "p95": 127,
+        "max": 127
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PUT",
+      "path": "PUT /api/courses/:id/materials/:mid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 69.79,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.5,
+        "p95": 71.57,
+        "p99": 71.57,
+        "mean": 60.83,
+        "min": 52.49,
+        "max": 71.57
+      },
+      "payload_bytes": {
+        "avg": 130,
+        "p95": 131,
+        "max": 131
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/courses/:id/materials/:mid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 58.64,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.63,
+        "p95": 102.93,
+        "p99": 102.93,
+        "mean": 64.01,
+        "min": 54.99,
+        "max": 102.93
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/embedding-settings",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 64.08,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.47,
+        "p95": 155.9,
+        "p99": 155.9,
+        "mean": 68.21,
+        "min": 49.49,
+        "max": 155.9
+      },
+      "payload_bytes": {
+        "avg": 595,
+        "p95": 595,
+        "max": 595
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/rag-settings",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 54.93,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 56.78,
+        "p95": 70.54,
+        "p99": 70.54,
+        "mean": 57.56,
+        "min": 49.84,
+        "max": 70.54
+      },
+      "payload_bytes": {
+        "avg": 75,
+        "p95": 75,
+        "max": 75
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/courses/:id/topics",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 75.97,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 55.38,
+        "p95": 102.57,
+        "p99": 102.57,
+        "mean": 63.51,
+        "min": 51.53,
+        "max": 102.57
+      },
+      "payload_bytes": {
+        "avg": 253,
+        "p95": 254,
+        "max": 254
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/topics/:tid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 138.48,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.45,
+        "p95": 138.48,
+        "p99": 138.48,
+        "mean": 77.42,
+        "min": 44.07,
+        "max": 138.48
+      },
+      "payload_bytes": {
+        "avg": 250,
+        "p95": 251,
+        "max": 251
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/courses/:id/topics/:tid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 140.98,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 125.19,
+        "p95": 140.98,
+        "p99": 140.98,
+        "mean": 123.88,
+        "min": 66.71,
+        "max": 140.98
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/courses/:id/tas",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 249.25,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 69,
+        "p95": 249.25,
+        "p99": 249.25,
+        "mean": 89.82,
+        "min": 58.28,
+        "max": 249.25
+      },
+      "payload_bytes": {
+        "avg": 140,
+        "p95": 141,
+        "max": 141
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/courses/:id/tas",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 62.66,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 130.91,
+        "p95": 229.35,
+        "p99": 229.35,
+        "mean": 132.7,
+        "min": 56.6,
+        "max": 229.35
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/courses/:id/enrollments",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 132.14,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.85,
+        "p95": 132.14,
+        "p99": 132.14,
+        "mean": 74.02,
+        "min": 53.12,
+        "max": 132.14
+      },
+      "payload_bytes": {
+        "avg": 284,
+        "p95": 284,
+        "max": 284
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/enrollments/:eid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 56.2,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.09,
+        "p95": 233.85,
+        "p99": 233.85,
+        "mean": 75.58,
+        "min": 53.9,
+        "max": 233.85
+      },
+      "payload_bytes": {
+        "avg": 279,
+        "p95": 279,
+        "max": 279
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/questions",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 80.12,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.39,
+        "p95": 123.82,
+        "p99": 123.82,
+        "mean": 64.79,
+        "min": 53.44,
+        "max": 123.82
+      },
+      "payload_bytes": {
+        "avg": 34,
+        "p95": 34,
+        "max": 34
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/questions/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 55.72,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.36,
+        "p95": 134.26,
+        "p99": 134.26,
+        "mean": 78.27,
+        "min": 54.63,
+        "max": 134.26
+      },
+      "payload_bytes": {
+        "avg": 50,
+        "p95": 51,
+        "max": 51
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/ai-providers",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 51.49,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 55.93,
+        "p95": 136.27,
+        "p99": 136.27,
+        "mean": 68.31,
+        "min": 49.97,
+        "max": 136.27
+      },
+      "payload_bytes": {
+        "avg": 260,
+        "p95": 261,
+        "max": 261
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/ai-providers/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 58.78,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 57.49,
+        "p95": 69.38,
+        "p99": 69.38,
+        "mean": 60.07,
+        "min": 49.9,
+        "max": 69.38
+      },
+      "payload_bytes": {
+        "avg": 264,
+        "p95": 265,
+        "max": 265
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/ai-providers/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 104.29,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.11,
+        "p95": 104.29,
+        "p99": 104.29,
+        "mean": 62.75,
+        "min": 49.59,
+        "max": 104.29
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/ai-models",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 70.88,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 53.45,
+        "p95": 70.88,
+        "p99": 70.88,
+        "mean": 55.53,
+        "min": 49.1,
+        "max": 70.88
+      },
+      "payload_bytes": {
+        "avg": 743,
+        "p95": 744,
+        "max": 744
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/ai-models/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 59.27,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65,
+        "p95": 120.36,
+        "p99": 120.36,
+        "mean": 67.45,
+        "min": 54.77,
+        "max": 120.36
+      },
+      "payload_bytes": {
+        "avg": 747,
+        "p95": 748,
+        "max": 748
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/ai-models/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 63.81,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.69,
+        "p95": 106.26,
+        "p99": 106.26,
+        "mean": 67.26,
+        "min": 50.72,
+        "max": 106.26
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/me",
+      "role": "actor",
+      "kind": "mutation",
+      "cold_start_ms": 55.27,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.76,
+        "p95": 113,
+        "p99": 113,
+        "mean": 70.16,
+        "min": 49.55,
+        "max": 113
+      },
+      "payload_bytes": {
+        "avg": 253,
+        "p95": 254,
+        "max": 254
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/preferences",
+      "role": "actor",
+      "kind": "mutation",
+      "cold_start_ms": 64.67,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.28,
+        "p95": 121.76,
+        "p99": 121.76,
+        "mean": 67.96,
+        "min": 47.27,
+        "max": 121.76
+      },
+      "payload_bytes": {
+        "avg": 107,
+        "p95": 107,
+        "max": 107
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/preferences",
+      "role": "actor",
+      "kind": "mutation",
+      "cold_start_ms": 51.7,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 51.08,
+        "p95": 66.74,
+        "p99": 66.74,
+        "mean": 52.44,
+        "min": 43.09,
+        "max": 66.74
+      },
+      "payload_bytes": {
+        "avg": 106,
+        "p95": 107,
+        "max": 107
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/users",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 54.69,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.94,
+        "p95": 205.28,
+        "p99": 205.28,
+        "mean": 80.3,
+        "min": 54.69,
+        "max": 205.28
+      },
+      "payload_bytes": {
+        "avg": 340,
+        "p95": 341,
+        "max": 341
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/users/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 72.51,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 56.43,
+        "p95": 150.43,
+        "p99": 150.43,
+        "mean": 64.47,
+        "min": 49.87,
+        "max": 150.43
+      },
+      "payload_bytes": {
+        "avg": 387,
+        "p95": 388,
+        "max": 388
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/users/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 53.27,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52.07,
+        "p95": 72.95,
+        "p99": 72.95,
+        "mean": 58.28,
+        "min": 47.45,
+        "max": 72.95
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/invitations",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 61.69,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 61.69,
+        "p95": 70.54,
+        "p99": 70.54,
+        "mean": 58.71,
+        "min": 50.48,
+        "max": 70.54
+      },
+      "payload_bytes": {
+        "avg": 500,
+        "p95": 501,
+        "max": 501
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/invitations/:id (resend)",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 61.98,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.55,
+        "p95": 132.38,
+        "p99": 132.38,
+        "mean": 69.5,
+        "min": 51.41,
+        "max": 132.38
+      },
+      "payload_bytes": {
+        "avg": 498,
+        "p95": 498,
+        "max": 498
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "DELETE",
+      "path": "DELETE /api/invitations/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 59.45,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 55.12,
+        "p95": 174.4,
+        "p99": 174.4,
+        "mean": 70.5,
+        "min": 50.42,
+        "max": 174.4
+      },
+      "payload_bytes": {
+        "avg": 357,
+        "p95": 357,
+        "max": 357
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/bug-reports",
+      "role": "actor",
+      "kind": "mutation",
+      "cold_start_ms": 62.95,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 53.6,
+        "p95": 105.5,
+        "p99": 105.5,
+        "mean": 57.3,
+        "min": 47.7,
+        "max": 105.5
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/admin/bug-reports/:id",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 51.45,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 52.87,
+        "p95": 68.88,
+        "p99": 68.88,
+        "mean": 57,
+        "min": 49.72,
+        "max": 68.88
+      },
+      "payload_bytes": {
+        "avg": 56,
+        "p95": 57,
+        "max": 57
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/assistive-events",
+      "role": "actor",
+      "kind": "mutation",
+      "cold_start_ms": 57,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 50.01,
+        "p95": 135.31,
+        "p99": 135.31,
+        "mean": 56.74,
+        "min": 37.08,
+        "max": 135.31
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "POST",
+      "path": "POST /api/admin/cron-jobs",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 342.84,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.3,
+        "p95": 342.84,
+        "p99": 342.84,
+        "mean": 88.83,
+        "min": 50.45,
+        "max": 342.84
+      },
+      "payload_bytes": {
+        "avg": 3961,
+        "p95": 3961,
+        "max": 3961
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PATCH",
+      "path": "PATCH /api/policies",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 181.21,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.16,
+        "p95": 181.21,
+        "p99": 181.21,
+        "mean": 72.82,
+        "min": 49.1,
+        "max": 181.21
+      },
+      "payload_bytes": {
+        "avg": 573,
+        "p95": 573,
+        "max": 573
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "core",
+      "method": "PUT",
+      "path": "PUT /api/policies",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 56.5,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.87,
+        "p95": 85.34,
+        "p99": 85.34,
+        "mean": 63,
+        "min": 49.72,
+        "max": 85.34
+      },
+      "payload_bytes": {
+        "avg": 573,
+        "p95": 573,
+        "max": 573
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 170.15,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.61,
+        "p95": 170.15,
+        "p99": 170.15,
+        "mean": 73.12,
+        "min": 52.68,
+        "max": 170.15
+      },
+      "payload_bytes": {
+        "avg": 166,
+        "p95": 167,
+        "max": 167
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/courses/:id/modules",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 72.95,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.87,
+        "p95": 74.02,
+        "p99": 74.02,
+        "mean": 64.96,
+        "min": 57.18,
+        "max": 74.02
+      },
+      "payload_bytes": {
+        "avg": 104,
+        "p95": 105,
+        "max": 105
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/modules/:id/publish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 52.96,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 57.74,
+        "p95": 166.26,
+        "p99": 166.26,
+        "mean": 70.01,
+        "min": 52.1,
+        "max": 166.26
+      },
+      "payload_bytes": {
+        "avg": 117,
+        "p95": 117,
+        "max": 117
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "DELETE",
+      "path": "DELETE /api/modules/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 75.5,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 58.31,
+        "p95": 76.24,
+        "p99": 76.24,
+        "mean": 60.64,
+        "min": 49.29,
+        "max": 76.24
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/modules/:id/lessons",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 64.41,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.76,
+        "p95": 92.12,
+        "p99": 92.12,
+        "mean": 63.35,
+        "min": 52.45,
+        "max": 92.12
+      },
+      "payload_bytes": {
+        "avg": 92,
+        "p95": 93,
+        "max": 93
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/lessons/:id/publish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 167.21,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 63.15,
+        "p95": 297.08,
+        "p99": 297.08,
+        "mean": 86.83,
+        "min": 54.09,
+        "max": 297.08
+      },
+      "payload_bytes": {
+        "avg": 107,
+        "p95": 107,
+        "max": 107
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/lessons/:id/unpublish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 63.73,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.5,
+        "p95": 153.95,
+        "p99": 153.95,
+        "mean": 68.64,
+        "min": 54.06,
+        "max": 153.95
+      },
+      "payload_bytes": {
+        "avg": 108,
+        "p95": 108,
+        "max": 108
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/modules/:id/unpublish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 82.34,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.66,
+        "p95": 158.94,
+        "p99": 158.94,
+        "mean": 74.42,
+        "min": 55.86,
+        "max": 158.94
+      },
+      "payload_bytes": {
+        "avg": 118,
+        "p95": 118,
+        "max": 118
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/publish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 55.45,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 59.06,
+        "p95": 89.22,
+        "p99": 89.22,
+        "mean": 63.33,
+        "min": 55.45,
+        "max": 89.22
+      },
+      "payload_bytes": {
+        "avg": 167,
+        "p95": 167,
+        "max": 167
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/courses/:id/unpublish",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 69.81,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 69.66,
+        "p95": 400.47,
+        "p99": 400.47,
+        "mean": 97.83,
+        "min": 59.07,
+        "max": 400.47
+      },
+      "payload_bytes": {
+        "avg": 168,
+        "p95": 168,
+        "max": 168
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/lessons/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 70.2,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 56.33,
+        "p95": 96.83,
+        "p99": 96.83,
+        "mean": 59.01,
+        "min": 41.61,
+        "max": 96.83
+      },
+      "payload_bytes": {
+        "avg": 112,
+        "p95": 113,
+        "max": 113
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "DELETE",
+      "path": "DELETE /api/lessons/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 47.91,
+      "cold_status": 204,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 76.55,
+        "p95": 139.06,
+        "p99": 139.06,
+        "mean": 81.86,
+        "min": 47.91,
+        "max": 139.06
+      },
+      "payload_bytes": {
+        "avg": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "status_codes": {
+        "204": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/lessons/:id/activities",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 72.88,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.09,
+        "p95": 114.89,
+        "p99": 114.89,
+        "mean": 68.93,
+        "min": 57.23,
+        "max": 114.89
+      },
+      "payload_bytes": {
+        "avg": 415,
+        "p95": 415,
+        "max": 415
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/activities/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 68.22,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.22,
+        "p95": 124.01,
+        "p99": 124.01,
+        "mean": 72.09,
+        "min": 54.08,
+        "max": 124.01
+      },
+      "payload_bytes": {
+        "avg": 389,
+        "p95": 390,
+        "max": 390
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "DELETE",
+      "path": "DELETE /api/activities/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 55.84,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.5,
+        "p95": 301.99,
+        "p99": 301.99,
+        "mean": 87.43,
+        "min": 54.52,
+        "max": 301.99
+      },
+      "payload_bytes": {
+        "avg": 11,
+        "p95": 11,
+        "max": 11
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/courses/:id/topics",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 65.21,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.21,
+        "p95": 220.04,
+        "p99": 220.04,
+        "mean": 86.98,
+        "min": 54.27,
+        "max": 220.04
+      },
+      "payload_bytes": {
+        "avg": 183,
+        "p95": 184,
+        "max": 184
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/prompts",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 241.04,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.35,
+        "p95": 241.04,
+        "p99": 241.04,
+        "mean": 85.6,
+        "min": 52.17,
+        "max": 241.04
+      },
+      "payload_bytes": {
+        "avg": 235,
+        "p95": 236,
+        "max": 236
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "POST",
+      "path": "POST /api/admin/courses/:id/enrollments",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 69.47,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.22,
+        "p95": 87.63,
+        "p99": 87.63,
+        "mean": 71.03,
+        "min": 57.88,
+        "max": 87.63
+      },
+      "payload_bytes": {
+        "avg": 11,
+        "p95": 11,
+        "max": 11
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "DELETE",
+      "path": "DELETE /api/admin/courses/:id/enrollments/:uid",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 63.61,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 60.65,
+        "p95": 143.4,
+        "p99": 143.4,
+        "mean": 74.26,
+        "min": 54.89,
+        "max": 143.4
+      },
+      "payload_bytes": {
+        "avg": 11,
+        "p95": 11,
+        "max": 11
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PATCH",
+      "path": "PATCH /api/admin/courses/:id/enrollments/:uid/role",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 100.37,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.54,
+        "p95": 278.34,
+        "p99": 278.34,
+        "mean": 90.85,
+        "min": 55.63,
+        "max": 278.34
+      },
+      "payload_bytes": {
+        "avg": 26,
+        "p95": 28,
+        "max": 28
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "ai-tutor",
+      "method": "PUT",
+      "path": "PUT /api/admin/settings/eduai-api-key",
+      "role": "admin",
+      "kind": "mutation",
+      "cold_start_ms": 132.21,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 56.21,
+        "p95": 132.21,
+        "p99": 132.21,
+        "mean": 62.65,
+        "min": 53.87,
+        "max": 132.21
+      },
+      "payload_bytes": {
+        "avg": 120,
+        "p95": 120,
+        "max": 120
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/questions",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 207.95,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.15,
+        "p95": 207.95,
+        "p99": 207.95,
+        "mean": 89.63,
+        "min": 59.26,
+        "max": 207.95
+      },
+      "payload_bytes": {
+        "avg": 303,
+        "p95": 303,
+        "max": 303
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/questions/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 72.62,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 73.81,
+        "p95": 203.98,
+        "p99": 203.98,
+        "mean": 86.42,
+        "min": 59.41,
+        "max": 203.98
+      },
+      "payload_bytes": {
+        "avg": 507,
+        "p95": 508,
+        "max": 508
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/questions/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 64.68,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 72.19,
+        "p95": 142.18,
+        "p99": 142.18,
+        "mean": 74.33,
+        "min": 56.86,
+        "max": 142.18
+      },
+      "payload_bytes": {
+        "avg": 58,
+        "p95": 58,
+        "max": 58
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/questions/approve",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 58.55,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.18,
+        "p95": 142.36,
+        "p99": 142.36,
+        "mean": 73.67,
+        "min": 54.2,
+        "max": 142.36
+      },
+      "payload_bytes": {
+        "avg": 313,
+        "p95": 313,
+        "max": 313
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/questions/:id/order",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 66.12,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 75.83,
+        "p95": 387.98,
+        "p99": 387.98,
+        "mean": 109.96,
+        "min": 47.4,
+        "max": 387.98
+      },
+      "payload_bytes": {
+        "avg": 530,
+        "p95": 530,
+        "max": 530
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/questions/:id/order/:aid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 76.3,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.48,
+        "p95": 216.7,
+        "p99": 216.7,
+        "mean": 82.43,
+        "min": 57.13,
+        "max": 216.7
+      },
+      "payload_bytes": {
+        "avg": 524,
+        "p95": 525,
+        "max": 525
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/questions/:id/variants",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 89.2,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 72.73,
+        "p95": 98.15,
+        "p99": 98.15,
+        "mean": 74.22,
+        "min": 57.01,
+        "max": 98.15
+      },
+      "payload_bytes": {
+        "avg": 445,
+        "p95": 446,
+        "max": 446
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/questions/variants/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 73.06,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 73.06,
+        "p95": 120.86,
+        "p99": 120.86,
+        "mean": 79.14,
+        "min": 48.66,
+        "max": 120.86
+      },
+      "payload_bytes": {
+        "avg": 927,
+        "p95": 928,
+        "max": 928
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/questions/variants/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 69.03,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.9,
+        "p95": 95.65,
+        "p99": 95.65,
+        "mean": 69.02,
+        "min": 58.09,
+        "max": 95.65
+      },
+      "payload_bytes": {
+        "avg": 57,
+        "p95": 57,
+        "max": 57
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/course",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 66.59,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 61.53,
+        "p95": 150.19,
+        "p99": 150.19,
+        "mean": 68.28,
+        "min": 55.03,
+        "max": 150.19
+      },
+      "payload_bytes": {
+        "avg": 253,
+        "p95": 254,
+        "max": 254
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/course/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 178.35,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 62.17,
+        "p95": 178.35,
+        "p99": 178.35,
+        "mean": 77.74,
+        "min": 53.42,
+        "max": 178.35
+      },
+      "payload_bytes": {
+        "avg": 247,
+        "p95": 248,
+        "max": 248
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/course/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 174.66,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 70.41,
+        "p95": 174.66,
+        "p99": 174.66,
+        "mean": 80.54,
+        "min": 57.68,
+        "max": 174.66
+      },
+      "payload_bytes": {
+        "avg": 56,
+        "p95": 56,
+        "max": 56
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/course/:id/topics",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 83.46,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 69.84,
+        "p95": 163.17,
+        "p99": 163.17,
+        "mean": 73.97,
+        "min": 51.53,
+        "max": 163.17
+      },
+      "payload_bytes": {
+        "avg": 240,
+        "p95": 241,
+        "max": 241
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/assessments",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 63.25,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.88,
+        "p95": 168.78,
+        "p99": 168.78,
+        "mean": 77.3,
+        "min": 50.11,
+        "max": 168.78
+      },
+      "payload_bytes": {
+        "avg": 267,
+        "p95": 267,
+        "max": 267
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/assessments/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 69.34,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.05,
+        "p95": 155.1,
+        "p99": 155.1,
+        "mean": 76.18,
+        "min": 59.18,
+        "max": 155.1
+      },
+      "payload_bytes": {
+        "avg": 485,
+        "p95": 486,
+        "max": 486
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/assessments/:id",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 72.1,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.19,
+        "p95": 392.14,
+        "p99": 392.14,
+        "mean": 103.43,
+        "min": 59.9,
+        "max": 392.14
+      },
+      "payload_bytes": {
+        "avg": 60,
+        "p95": 60,
+        "max": 60
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/assessments/:id/questions",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 64.34,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 68.11,
+        "p95": 170.31,
+        "p99": 170.31,
+        "mean": 81.21,
+        "min": 60.85,
+        "max": 170.31
+      },
+      "payload_bytes": {
+        "avg": 536,
+        "p95": 536,
+        "max": 536
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/assessments/:id/questions/:qid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 65.6,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 65.6,
+        "p95": 114.44,
+        "p99": 114.44,
+        "mean": 69.19,
+        "min": 56.48,
+        "max": 114.44
+      },
+      "payload_bytes": {
+        "avg": 531,
+        "p95": 532,
+        "max": 532
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/assessments/:id/sections",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 67.05,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 66.51,
+        "p95": 101.14,
+        "p99": 101.14,
+        "mean": 73.03,
+        "min": 59.11,
+        "max": 101.14
+      },
+      "payload_bytes": {
+        "avg": 307,
+        "p95": 308,
+        "max": 308
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/assessments/:aid/sections/:sid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 77.31,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 73.73,
+        "p95": 187.37,
+        "p99": 187.37,
+        "mean": 80.06,
+        "min": 57.93,
+        "max": 187.37
+      },
+      "payload_bytes": {
+        "avg": 556,
+        "p95": 557,
+        "max": 557
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/assessments/:aid/sections/:sid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 60.06,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 71.87,
+        "p95": 120.6,
+        "p99": 120.6,
+        "mean": 79.76,
+        "min": 57.84,
+        "max": 120.6
+      },
+      "payload_bytes": {
+        "avg": 57,
+        "p95": 57,
+        "max": 57
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "POST",
+      "path": "POST /api/assessments/:aid/sections/:sid/variants",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 69.68,
+      "cold_status": 201,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 72.84,
+        "p95": 200.25,
+        "p99": 200.25,
+        "mean": 83.54,
+        "min": 62.43,
+        "max": 200.25
+      },
+      "payload_bytes": {
+        "avg": 223,
+        "p95": 223,
+        "max": 223
+      },
+      "status_codes": {
+        "201": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PUT",
+      "path": "PUT /api/assessments/:aid/sections/:sid/variants/:vid/order",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 74.58,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 73.75,
+        "p95": 225.03,
+        "p99": 225.03,
+        "mean": 83.61,
+        "min": 58.94,
+        "max": 225.03
+      },
+      "payload_bytes": {
+        "avg": 220,
+        "p95": 221,
+        "max": 221
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/assessments/:aid/sections/:sid/variants/:vid",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 65.78,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 74.06,
+        "p95": 220.81,
+        "p99": 220.81,
+        "mean": 85.8,
+        "min": 63.43,
+        "max": 220.81
+      },
+      "payload_bytes": {
+        "avg": 70,
+        "p95": 70,
+        "max": 70
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "DELETE",
+      "path": "DELETE /api/assessments/questions/:qid/remove-from-all-sections",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 95.57,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 70.2,
+        "p95": 95.89,
+        "p99": 95.89,
+        "mean": 73.1,
+        "min": 60.07,
+        "max": 95.89
+      },
+      "payload_bytes": {
+        "avg": 128,
+        "p95": 128,
+        "max": 128
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    },
+    {
+      "app": "qm",
+      "method": "PATCH",
+      "path": "PATCH /api/assessment-variant/assessments/:id/role",
+      "role": "instructor",
+      "kind": "mutation",
+      "cold_start_ms": 66.47,
+      "cold_status": 200,
+      "count": 15,
+      "ok_count": 15,
+      "error_count": 0,
+      "latency_ms": {
+        "p50": 64.54,
+        "p95": 95.15,
+        "p99": 95.15,
+        "mean": 67.87,
+        "min": 53.24,
+        "max": 95.15
+      },
+      "payload_bytes": {
+        "avg": 285,
+        "p95": 286,
+        "max": 286
+      },
+      "status_codes": {
+        "200": 15
+      },
+      "error_rate": 0,
+      "error_sample": null
+    }
+  ]
+}
