@@ -381,11 +381,23 @@ function opCreate({ app, path, role, url, body, idPath, cleanupUrl }) {
   };
 }
 // PUT/PATCH update: reuse one row, body(i) each iteration.
-function opUpdate({ app, method, path, role, url, body }) {
+// `prepare` runs one unmeasured request before the samples, for endpoints whose
+// contract is "read the current object, write the same one back" (see the
+// ai-model-policy row in aitutor-measurement-spec.md). Its result is passed to
+// `body` so the PUT stays idempotent instead of inventing a payload.
+function opUpdate({ app, method, path, role, url, body, prepare }) {
   return async (cookies) => {
     const H = jsonHeaders(cookies[role]);
+    let ctx;
+    if (prepare) {
+      try {
+        ctx = await prepare(cookies);
+      } catch (e) {
+        return errRow(app, method, path, role, String(e?.message ?? e));
+      }
+    }
     const samples = [];
-    for (let i = 0; i < MUT; i++) samples.push(await pacedFetch(app, url, { method, headers: H, body: JSON.stringify(body(i)) }));
+    for (let i = 0; i < MUT; i++) samples.push(await pacedFetch(app, url, { method, headers: H, body: JSON.stringify(body(i, ctx)) }));
     return mutRow(app, method, path, role, samples);
   };
 }
@@ -416,7 +428,9 @@ function buildMutations(m, disc) {
     // courses
     ops.push(opCreate({ app: "core", path: "POST /api/courses", role: "instructor", url: `${base}/api/courses`, idPath: "id", cleanupUrl: (id) => `${base}/api/courses/${id}`,
       // `term` is the canonical UBC code enum (`@eduai/ui/term` TERM_CODES) — W2 matches the Jan startDate.
-      body: (i) => ({ name: "Perf C", code: uniq("PERF-NEW", i), section: "001", term: "W2", year: 2026, startDate: "2026-01-01", department: C.department, isPublished: false, aiInstructions: "" }) }));
+      // `year` is the *academic* year, which for W2 is the calendar year the session started in (2025W2 runs Jan–Apr 2026).
+      // `instructorUserIds` is required by CreateCourseSchema (`.min(1)`); reuse the seeded instructor from the perf pool.
+      body: (i) => ({ name: "Perf C", code: uniq("PERF-NEW", i), section: "001", term: "W2", year: 2025, startDate: "2026-01-01", department: C.department, isPublished: false, aiInstructions: "", instructorUserIds: [C.instructorUserId] }) }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}`, body: (i) => ({ name: `Perf C v${i}` }) }));
     ops.push(opDelete({ app: "core", path: "DELETE /api/courses/:id", role: "instructor", pool: C.deleteCoursePool, urlFn: (id) => `${base}/api/courses/${id}` }));
     ops.push(opUpdate({ app: "core", method: "PATCH", path: "PATCH /api/courses/:id/publish", role: "instructor", url: `${base}/api/courses/${C.updateCourseId}/publish`, body: () => ({}) }));
@@ -511,6 +525,18 @@ function buildMutations(m, disc) {
     ops.push(opDelete({ app: "ai-tutor", path: "DELETE /api/admin/courses/:id/enrollments/:uid", role: "admin", pool: A.enrollDropUserIds, urlFn: (uid) => `${base}/api/admin/courses/${nc}/enrollments/${uid}` }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PATCH", path: "PATCH /api/admin/courses/:id/enrollments/:uid/role", role: "admin", url: `${base}/api/admin/courses/${nc}/enrollments/${A.enrollRoleUserIds[0]}/role`, body: (i) => ({ role: i % 2 ? "TA" : "STUDENT" }) }));
     ops.push(opUpdate({ app: "ai-tutor", method: "PUT", path: "PUT /api/admin/settings/eduai-api-key", role: "admin", url: `${base}/api/admin/settings/eduai-api-key`, body: () => ({ apiKey: "perf-test-key" }) }));
+    // GET the live policy first and write the same object back — the route validates
+    // against the model catalog, so any invented payload 400s. `state.policy` is the
+    // exact shape `setAiModelPolicy` expects; writing it back is a no-op.
+    ops.push(opUpdate({ app: "ai-tutor", method: "PUT", path: "PUT /api/admin/settings/ai-model-policy", role: "admin", url: `${base}/api/admin/settings/ai-model-policy`,
+      prepare: async (cookies) => {
+        const r = await pacedFetch("ai-tutor", `${base}/api/admin/settings/ai-model-policy`, { headers: { Cookie: cookies.admin ?? "" } });
+        if (r.status !== 200) throw new Error(`GET ai-model-policy returned ${r.status}`);
+        const policy = idFrom(r.text, "policy");
+        if (!policy) throw new Error("GET ai-model-policy returned no policy object");
+        return policy;
+      },
+      body: (_i, policy) => policy }));
   }
 
   // ===================== Question Maker =====================
