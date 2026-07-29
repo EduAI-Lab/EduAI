@@ -720,4 +720,56 @@ ${longBody}
     expect(forced).toMatch(/\*\*Next\?\*\*/);
     expect(forced.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(120);
   });
+
+  it("truncateToWordCap replaces oversized Sources footer instead of overrunning the cap", () => {
+    // Reproduces review finding: reserving a 180-word Sources tail + min body
+    // previously returned ~210 words under a 120-word cap.
+    const hugeSources = `Sources: ${Array(180).fill("citation").join(" ")}`;
+    const draft = `**Top summary**
+- Point one about the topic.
+
+${hugeSources}
+
+**Next?** Want me to continue with the next step?`;
+    const clipped = truncateToWordCap(draft, 120);
+    const wordCount = clipped.split(/\s+/).filter(Boolean).length;
+    expect(wordCount).toBeLessThanOrEqual(120);
+    expect(clipped).toMatch(/Sources:\s*Retrieved materials used this turn/i);
+    expect(clipped).toMatch(/\*\*Next\?\*\*/);
+    expect(clipped).toMatch(/^\*\*Top summary\*\*/);
+  });
+
+  it("forced_deterministic stays under cap and contentOk with oversized Sources", async () => {
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: "still broken",
+        usage: { promptTokens: 5, completionTokens: 5 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: "still broken",
+        usage: { promptTokens: 5, completionTokens: 5 },
+      } as never);
+
+    const hugeSources = `Sources: ${Array(180).fill("citation").join(" ")}`;
+    const draft = `**Top summary**
+- ${Array(40).fill("padding").join(" ")}
+
+${hugeSources}
+
+**Next?** Continue?`;
+    const result = await auditAndMaybeRewrite({
+      draft,
+      model: mockModel,
+      wordCap: 120,
+      profile: "full_tutoring",
+      expectSources: true,
+    });
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.afterMetrics.underCap).toBe(true);
+    expect(result.afterMetrics.wordCount).toBeLessThanOrEqual(120);
+    expect(result.afterMetrics.profileStructuralPass).toBe(true);
+    expect(result.afterMetrics.hasSources).toBe(true);
+    expect(result.text).toMatch(/\*\*Next\?\*\*/);
+    expect(result.text).toMatch(/Sources:/i);
+  });
 });
