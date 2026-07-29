@@ -37,7 +37,7 @@ src/
 │   └── settings.js          # Environment settings
 ├── middleware/
 │   ├── auth.js               # Core session validation (requireAuth/authenticateToken), role gates
-│   ├── courseAccess.js        # Per-course access-level resolution (owner/Core enrollment/unit-admin)
+│   ├── courseAccess.js        # Per-course access from Core enrollment/unit-admin (fail closed; #1114)
 │   ├── resourceAccess.js       # Ownership guards for variant/question/assessment routes
 │   ├── errorHandler.js        # Maps Prisma error codes + generic errors to HTTP responses
 │   ├── roles.js                # Role/level rank helpers
