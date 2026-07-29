@@ -124,6 +124,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [packages/ui] test: New `self-hosted-font.test.ts` pins the #1221 contract — `base.css` imports `@fontsource-variable/outfit`, all three `--font-sans` declarations name the `"Outfit Variable"` family (dropping `Variable` leaves valid CSS that silently falls through to the system sans), and none of the three app document heads reference a Google Fonts origin. The deleted `<link>` blocks were identical across the apps, so a merge can resurrect one of them alone without anything visibly breaking. (@yta3216, 2026-08-05)
 ## [Week 13 — July 27 – August 2, 2026]
 
+### Fixed
+
+- [infra/core] fix: Reject example LiteLLM / cmps01 secrets at deploy — `deploy-edge-proxy.sh` exits before starting services when `CMPS01_INTERNAL_KEY` is unset, empty, or a known placeholder (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`); LiteLLM `master_key` and health-check bearers use the same secret; production Core no longer falls back to `vllm-local`. (#1115, @Ayyhab, 2026-07-29) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Added
 
 - [ai-tutor] feat: Add server-side `search` to the AI Tutor tree and importable-activity list endpoints, plus `PATCH .../position` move-to-position and `GET .../context` ordinal endpoints so a paged client can reorder and number rows without holding every sibling. Closes #1207. (@abdullahmoh21, 2026-08-02) — [#1207](https://github.com/EduAI-Lab/EduAI/issues/1207)

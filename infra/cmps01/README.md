@@ -24,7 +24,20 @@ Backends stay on **localhost** (`:9100`, `:11434`). Nginx on `:8001` path-routes
 
 **Ollama direct port:** keep Ollama bound to **`127.0.0.1:11434`** on cmps01 so `:11434` is not a public bypass. Only nginx `:8001/ollama/` should be reachable from s378.
 
-`/v1/*` stays behind LiteLLM’s bearer token (`vllm-local`). Copy `infra/cmps01/.env.example` → `.env` on cmps01 before running `./deploy-edge-proxy.sh`.
+`/v1/*` stays behind LiteLLM’s bearer token. That token is **`CMPS01_INTERNAL_KEY`** (rendered into LiteLLM `master_key` by `deploy-edge-proxy.sh`) — **not** the old example `vllm-local`. Copy `infra/cmps01/.env.example` → `.env` on cmps01, replace the example key with `openssl rand -hex 32`, then run `./deploy-edge-proxy.sh`.
+
+### Key validation (#1115)
+
+`deploy-edge-proxy.sh` exits **before** starting Docker services if `CMPS01_INTERNAL_KEY` is unset, empty, or equal to a known example value (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`). The fatal message never prints the supplied secret.
+
+On s378 set **both** to the same value:
+
+```bash
+CMPS01_INTERNAL_KEY=<secret from cmps01 .env>
+VLLM_API_KEY=<same secret>   # required for /v1; production has no vllm-local fallback
+```
+
+Unit test for the denylist: `bash infra/cmps01/tests/check-example-secrets.test.sh`.
 
 ---
 
@@ -56,6 +69,7 @@ s378 `apps/core/.env` (dev server at `206.87.25.229`):
 ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy
 OLLAMA_BASE_URL=http://cmps01.ok.ubc.ca:8001/ollama
 CMPS01_INTERNAL_KEY=<same secret as cmps01 .env>
+VLLM_API_KEY=<same secret as CMPS01_INTERNAL_KEY>
 ```
 
 After deploy, run `./verify-edge-security.sh` on cmps01. From a laptop, `/energy/` and `/ollama/` should return **403** (or fail to connect if campus firewall blocks you).
@@ -155,7 +169,7 @@ docker compose up -d
 Verify **both** models through the proxy:
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 # expect: qwen2.5-7b-instruct
 #         qwen2.5-32b-instruct
 ```
@@ -163,14 +177,14 @@ curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | 
 From dev (after firewall):
 
 ```bash
-curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 ```
 
 ### Step 4 — EduAI dev server (`apps/core/.env` on s378)
 
 ```env
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="$CMPS01_INTERNAL_KEY"
 ```
 
 Use **`http://`** not `https://`. Restart the dev server (tmux).
@@ -256,7 +270,7 @@ curl -s http://127.0.0.1:18003/v1/chat/completions \
 
 ### Step 2 — Register in LiteLLM
 
-Edit `~/cmps01/litellm-config.yaml` — add a block (copy an existing entry, change names and port):
+Edit `~/cmps01/litellm-config.yaml.template` — add a block (copy an existing entry, change names and port), then re-run `./deploy-edge-proxy.sh` so `litellm-config.runtime.yaml` is re-rendered:
 
 ```yaml
   - model_name: qwen2.5-14b-instruct
@@ -278,11 +292,11 @@ docker compose restart
 On cmps01:
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 # should include the new id alongside existing models
 
 curl -s http://127.0.0.1:8001/v1/chat/completions \
-  -H "Authorization: Bearer vllm-local" \
+  -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
@@ -290,7 +304,7 @@ curl -s http://127.0.0.1:8001/v1/chat/completions \
 From dev (s378):
 
 ```bash
-curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}" | jq '.data[].id'
 cd apps/core && VLLM_MODEL=qwen2.5-14b-instruct npm run vllm:smoke
 ```
 
