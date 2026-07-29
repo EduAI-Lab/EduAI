@@ -56,23 +56,12 @@ export default function handleRequest(
 
     const { pipe, abort } = renderToPipeableStream(
       <NonceProvider value={nonce}>
-        {/*
-          `nonce` must be passed here, not only to `<Scripts nonce>`: React
-          Router emits the SSR data stream as bare inline
-          `window.__reactRouterContext.streamController.enqueue(...)` /
-          `.close()` scripts. Without the nonce our strict `script-src` blocks
-          them, the stream never closes, and the client hangs on
-          `HydrateFallback` until it refetches — which is what pushed FCP/LCP
-          far past the point every asset had already downloaded.
-        */}
+        {/* Nonces the SSR data-stream scripts (`streamController.enqueue`/
+            `.close()`); `<Scripts nonce>` does not cover them. */}
         <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceProvider>,
       {
-        // Nonces React's own inline scripts — the `$RC`/`$RV`/`$RB` calls it
-        // emits to reveal a Suspense boundary that resolved after the shell
-        // flushed. Those are separate from anything React Router renders, so
-        // `<ServerRouter nonce>` above does not cover them, and without this
-        // `script-src` blocks them and the boundary never swaps in.
+        // Nonces React's own `$RC`/`$RV`/`$RB` Suspense-reveal scripts.
         nonce,
         [readyOption]() {
           shellRendered = true;
