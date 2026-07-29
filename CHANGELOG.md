@@ -55,6 +55,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [question-maker] perf: Code-split the frontend by route and load `pdfjs-dist`, `tesseract.js`, and `docx` on demand, cutting the entry chunk from 2.73MB to 907kB. (#1281, @abdullahmoh21, 2026-07-30)
 - [monorepo] refactor: s378 dev serves tree-shaken production-style builds instead of `npm run dev` — five systemd **user** units become three group-owned **system** units restartable by any `eduai-dev` member, both extension SPAs are served statically by Apache, and the new `infra/s378/go-live-build.sh` becomes the deploy command (builds keep `NODE_ENV=development`, so every dev-only code path still behaves as development). (#1281, @abdullahmoh21, 2026-07-30)
 
+### Tests
+
+- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Added
