@@ -59,11 +59,16 @@ const activeStudentEnrollmentWhere = {
  * ADMIN. Applies to every caller, including another ADMIN demoting or
  * deactivating a peer, with no override. Caller must run this inside the
  * same transaction as the write so the check-then-write is atomic.
+ *
+ * Takes a transaction-scoped advisory lock first so two concurrent demotions
+ * cannot each count the other admin, both pass, and both commit (leaving
+ * zero active admins under default READ COMMITTED isolation).
  */
 async function adminFloorViolation(
-  tx: Pick<Prisma.TransactionClient, "user">,
+  tx: Pick<Prisma.TransactionClient, "user" | "$executeRaw">,
   userId: string,
 ) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"admin-floor"}))`;
   const remainingAdmins = await tx.user.count({
     where: { role: "ADMIN", isActive: true, id: { not: userId } },
   });

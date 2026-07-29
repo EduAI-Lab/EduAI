@@ -22,6 +22,7 @@ vi.mock("~/lib/logging.server", () => ({
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $transaction: vi.fn(),
+    $executeRaw: vi.fn().mockResolvedValue(undefined),
     user: {
       findMany: vi.fn(),
       count: vi.fn(),
@@ -365,6 +366,27 @@ describe("PATCH /api/users/:id — admin-floor invariant (AUTH-04)", () => {
 
     expect(res.status).toBe(200);
     expect(prisma.user.count).not.toHaveBeenCalled();
+  });
+
+  it("takes an advisory lock before counting remaining admins (AUTH-04 concurrency)", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    const order: string[] = [];
+    vi.mocked(prisma.$executeRaw).mockImplementation(async () => {
+      order.push("lock");
+      return undefined as never;
+    });
+    vi.mocked(prisma.user.count).mockImplementation(async () => {
+      order.push("count");
+      return 0 as never;
+    });
+
+    await action(makePatch("admin-2", { isActive: false }));
+
+    expect(order).toEqual(["lock", "count"]);
+    expect(prisma.$executeRaw).toHaveBeenCalled();
   });
 });
 

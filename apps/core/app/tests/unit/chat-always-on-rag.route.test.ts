@@ -313,17 +313,28 @@ describe("Smart course RAG gate (#484)", () => {
       expect(streamText).not.toHaveBeenCalled();
     });
 
-    it("does not fail closed when retrieval throws but this turn never needed grounding (#225 RAG-01/RAG-02)", async () => {
+    it("fails closed on prefetch failure even when intent heuristics skip grounding (#225 RAG-01/RAG-02)", async () => {
       vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
-      mockStream();
+      const res = await action(
+        makeRequest(baseBody({
+          messages: [{ id: "msg-1", role: "user", content: "Explain polymorphism" }],
+        })),
+      );
+      expect(res.status).toBe(503);
+      const body = await res.json();
+      expect(body.code).toBe("RAG_DIMENSION_MISMATCH");
+      expect(streamText).not.toHaveBeenCalled();
+    });
+
+    it("fails closed on prefetch failure for a greeting that would otherwise skip inject", async () => {
+      vi.mocked(findRelevantContent).mockRejectedValue(new Error("Embedding dimension mismatch"));
       const res = await action(
         makeRequest(baseBody({
           messages: [{ id: "msg-1", role: "user", content: "Hello!" }],
         })),
       );
-      expect(res.status).toBe(200);
-      expect(lastStreamConfig().system).not.toContain("Course grounding rules");
-      expect(lastStreamConfig().system).not.toContain("did not return relevant excerpts");
+      expect(res.status).toBe(503);
+      expect(streamText).not.toHaveBeenCalled();
     });
 
     it("does not prefetch when no course is selected", async () => {
