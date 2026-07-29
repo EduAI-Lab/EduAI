@@ -50,28 +50,25 @@ const asStranger = () => ({ Cookie: 'session=stranger' });
 const asAdmin = () => ({ Cookie: 'session=admin' });
 
 describeDb('course RBAC (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let courseId;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: OWNER.id, email: OWNER.email, name: OWNER.name });
-    await User.create({ id: STRANGER.id, email: STRANGER.email, name: STRANGER.name });
-    await User.create({ id: ADMIN.id, email: ADMIN.email, name: ADMIN.name });
+    await prisma.user.create({ data: { id: OWNER.id, email: OWNER.email, name: OWNER.name } });
+    await prisma.user.create({ data: { id: STRANGER.id, email: STRANGER.email, name: STRANGER.name } });
+    await prisma.user.create({ data: { id: ADMIN.id, email: ADMIN.email, name: ADMIN.name } });
     await seedCoursesForNewUser(OWNER.id);
-    const course = await Course.findOne({ where: { userId: OWNER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: OWNER.id } });
     courseId = course.id;
 
     vi.stubGlobal('fetch', multiUserFetch());
@@ -80,7 +77,7 @@ describeDb('course RBAC (integration)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   describe('GET /api/course/:id/access', () => {

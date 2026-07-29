@@ -308,7 +308,7 @@ describe('userHasCoreTaEnrollment (AI Tutor)', () => {
     ]);
 
     await expect(userHasCoreTaEnrollment('session=abc')).resolves.toBe(true);
-    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
+    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc', all: true });
   });
 
   it('uses a pre-fetched course list without calling Core again', async () => {

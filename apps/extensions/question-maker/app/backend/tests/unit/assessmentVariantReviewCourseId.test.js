@@ -16,20 +16,17 @@ vi.mock('../../src/services/eduaiService.js', () => ({
   },
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Assessments: { findOne },
-  AssessmentSections: {},
-  SectionVariants: {},
-  Variants: {},
-  Question_Metadata: {},
-  Course: {},
-  Topics: {},
-  VariantSelectionCursor: {},
-  sequelize: {},
-}));
-
 vi.mock('../../src/config/database.js', () => ({
-  sequelize: { query: vi.fn() },
+  prisma: {
+    assessments: { findFirst: findOne },
+    assessmentSections: {},
+    sectionVariants: {},
+    variants: {},
+    questionMetadata: {},
+    course: {},
+    topics: {},
+    variantSelectionCursor: {},
+  },
 }));
 
 vi.mock('../../src/services/courseListService.js', () => ({
@@ -104,9 +101,9 @@ describe('reviewVariantExamWithAi (#1072 course code read-through)', () => {
 
     expect(findOne).toHaveBeenCalledTimes(2);
     for (const call of findOne.mock.calls) {
-      const include = call[0]?.include?.[0];
-      expect(include?.attributes).toEqual(['id', 'coreCourseId']);
-      expect(include?.attributes).not.toContain('code');
+      const select = call[0]?.include?.course?.select;
+      expect(select).toEqual({ id: true, coreCourseId: true });
+      expect(select).not.toHaveProperty('code');
     }
 
     expect(enrichCourseDetail).toHaveBeenCalledWith(

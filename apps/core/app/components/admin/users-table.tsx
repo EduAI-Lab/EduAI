@@ -2,10 +2,6 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
 import type {
@@ -94,11 +90,32 @@ import {
 } from "@eduai/ui";
 import { Switch } from "@eduai/ui";
 import type { PlatformUser } from "~/hooks/api/types";
+import { DEFAULT_PAGE_SIZE } from "~/hooks/api/pagination";
+import type { UsersQuery, UserSortField } from "~/hooks/api/use-users";
+
+/** Roles the server accepts in `?role=`. */
+const USER_ROLE_OPTIONS = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
+
+/** Columns `/api/users` can sort by; anything else falls back to name. */
+const SERVER_SORTABLE_COLUMNS: UserSortField[] = [
+  "name",
+  "email",
+  "role",
+  "isActive",
+  "emailVerified",
+  "createdAt",
+  "updatedAt",
+];
+
+const QUERY_DEBOUNCE_MS = 300;
 
 export type User = PlatformUser;
 
 export interface UsersTableProps {
   users: User[];
+  /** Server-reported row count for the current filters, for the pager. */
+  total: number;
+  onQueryChange: (query: UsersQuery) => void;
   currentUserId: string;
   onEdit: (user: User) => void;
   onDelete: (id: string) => void;
@@ -215,6 +232,8 @@ function RowActions({
 
 export function UsersTable({
   users,
+  total,
+  onQueryChange,
   currentUserId,
   onEdit,
   onDelete,
@@ -228,7 +247,7 @@ export function UsersTable({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
-    pageSize: 10,
+    pageSize: DEFAULT_PAGE_SIZE,
   });
   const [sorting, setSorting] = useState<SortingState>([
     {
@@ -311,6 +330,7 @@ export function UsersTable({
       },
       {
         header: "Activity",
+        // Derived from per-row counts; `/api/users` cannot order by it.
         accessorKey: "activity",
         cell: ({ row }) => {
           const user = row.original;
@@ -368,15 +388,17 @@ export function UsersTable({
     data: users,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    // #1041: paging, sorting, and filtering all happen in `/api/users`; the
+    // table renders exactly the page it was handed.
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true,
+    rowCount: total,
     onSortingChange: setSorting,
     enableSortingRemoval: false,
-    getPaginationRowModel: getPaginationRowModel(),
     onPaginationChange: setPagination,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    getFilteredRowModel: getFilteredRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
     state: {
       sorting,
       pagination,
@@ -385,25 +407,58 @@ export function UsersTable({
     },
   });
 
-  // Get unique role values
-  const uniqueRoleValues = useMemo(() => {
-    const roleColumn = table.getColumn("role");
-    if (!roleColumn) return [];
-    const values = Array.from(roleColumn.getFacetedUniqueValues().keys());
-    return values.sort();
-  }, [table.getColumn("role")?.getFacetedUniqueValues()]);
+  // Roles are a fixed enum. Under server-side filtering the client only ever
+  // holds one page, so faceting from the loaded rows would list the wrong set.
+  const uniqueRoleValues = USER_ROLE_OPTIONS;
+
+  // Translate the table's control state into the API query and hand it up.
+  // Typing must not fan out into one request per keystroke.
+  const nameFilter = (table.getColumn("name")?.getFilterValue() ?? "") as string;
+  const roleFilter = (table.getColumn("role")?.getFilterValue() ?? []) as string[];
+  const statusFilter = (table.getColumn("isActive")?.getFilterValue() ?? []) as string[];
+  const sortEntry = sorting[0];
+
+  const isActiveFilter = useMemo(() => {
+    const wantsActive = statusFilter.includes("Active");
+    const wantsInactive = statusFilter.includes("Inactive");
+    // Both (or neither) selected means no constraint.
+    if (wantsActive === wantsInactive) return null;
+    return wantsActive;
+  }, [statusFilter]);
+
+  const filterKey = `${nameFilter}|${roleFilter.join(",")}|${String(isActiveFilter)}`;
+  const previousFilterKey = useRef(filterKey);
+
+  useEffect(() => {
+    // A changed filter invalidates the current offset — reset before fetching so
+    // the user never lands on a page past the end of the new result set.
+    const filtersChanged = previousFilterKey.current !== filterKey;
+    previousFilterKey.current = filterKey;
+    if (filtersChanged && pagination.pageIndex !== 0) {
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      onQueryChange({
+        pagination,
+        search: nameFilter,
+        roles: roleFilter,
+        isActive: isActiveFilter,
+        sortBy: SERVER_SORTABLE_COLUMNS.includes(sortEntry?.id as UserSortField)
+          ? (sortEntry.id as UserSortField)
+          : "name",
+        sortDir: sortEntry?.desc ? "desc" : "asc",
+      });
+    }, QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey, pagination, sortEntry?.id, sortEntry?.desc, onQueryChange]);
 
   // Get unique status values
   const uniqueStatusValues = useMemo(() => {
     return ["Active", "Inactive"];
   }, []);
-
-  // Get counts for each role
-  const roleCounts = useMemo(() => {
-    const roleColumn = table.getColumn("role");
-    if (!roleColumn) return new Map();
-    return roleColumn.getFacetedUniqueValues();
-  }, [table.getColumn("role")?.getFacetedUniqueValues()]);
 
   const selectedRoles = useMemo(() => {
     const filterValue = table.getColumn("role")?.getFilterValue() as string[];
@@ -540,10 +595,7 @@ export function UsersTable({
                         htmlFor={`${id}-role-${i}`}
                         className="flex grow justify-between gap-2 font-normal"
                       >
-                        {value}{" "}
-                        <span className="text-muted-foreground ms-2 text-xs">
-                          {roleCounts.get(value)}
-                        </span>
+                        {value}
                       </Label>
                     </div>
                   ))}

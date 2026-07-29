@@ -3,6 +3,8 @@ import path from 'node:path';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import type { ViteUserConfig } from 'vitest/config';
 
+import { uiAliases } from './vitest.ui-aliases';
+
 // Walk up from a config file's directory until we find the monorepo root
 // (identified by a packages/ui subdirectory). This must work both for a
 // normal run (coreDir === apps/core) and inside Stryker's sandbox, where
@@ -32,15 +34,8 @@ export function baseVitestConfig(coreDir: string): ViteUserConfig {
   return {
     plugins: [tsconfigPaths()],
     resolve: {
-      alias: {
-        // More specific subpath must precede the barrel alias (prefix match).
-        '@eduai/ui/term-boundary-fixtures': path.resolve(
-          rootDir,
-          'packages/ui/src/tests/fixtures/term-boundary-fixtures.ts',
-        ),
-        '@eduai/ui/term': path.resolve(rootDir, 'packages/ui/src/lib/term.ts'),
-        '@eduai/ui': path.resolve(rootDir, 'packages/ui/src/index.ts'),
-      },
+      // Derived from packages/ui's `exports` map — see vitest.ui-aliases.ts.
+      alias: uiAliases(rootDir),
     },
     test: {
       globals: true,

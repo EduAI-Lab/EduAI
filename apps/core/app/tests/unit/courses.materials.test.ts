@@ -546,7 +546,7 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe(
-      "Material indexing failed due to a database error. Please try again or contact support.",
+      "Couldn't save this material's search data due to a database error. Please try again or contact support.",
     );
     expect(body.error).not.toMatch(/prisma/i);
   });
