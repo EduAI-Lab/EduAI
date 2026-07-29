@@ -318,14 +318,77 @@ function insertBeforeNext(text: string, block: string): string {
   return `${trimmed}\n\n${block}`.trim();
 }
 
+/** Count whitespace-separated words in a string. */
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Clip body text to a word budget while preserving newlines and whole fenced
+ * blocks. Never emits a partial ``` fence — take the whole block or skip it.
+ */
+function clipBodyPreservingMarkdown(body: string, wordBudget: number): string {
+  if (!body || wordBudget <= 0) return "";
+  if (countWords(body) <= wordBudget) return body;
+
+  const lines = body.split(/\r?\n/);
+  const out: string[] = [];
+  let used = 0;
+  let i = 0;
+
+  while (i < lines.length && used < wordBudget) {
+    const line = lines[i];
+    if (/^```/.test(line.trim())) {
+      const fenceLines = [line];
+      let j = i + 1;
+      while (j < lines.length) {
+        fenceLines.push(lines[j]);
+        if (/^```/.test(lines[j].trim())) break;
+        j += 1;
+      }
+      const closed = j < lines.length && /^```/.test(lines[j].trim());
+      const fenceText = fenceLines.join("\n");
+      const fenceWords = countWords(fenceText);
+      // Incomplete fence (no closer): drop it rather than emit broken Markdown.
+      if (closed && used + fenceWords <= wordBudget) {
+        out.push(...fenceLines);
+        used += fenceWords;
+      }
+      i = closed ? j + 1 : lines.length;
+      continue;
+    }
+
+    const lineWords = line.split(/\s+/).filter(Boolean);
+    if (lineWords.length === 0) {
+      out.push(line);
+      i += 1;
+      continue;
+    }
+    if (used + lineWords.length <= wordBudget) {
+      out.push(line);
+      used += lineWords.length;
+      i += 1;
+      continue;
+    }
+    const remaining = wordBudget - used;
+    if (remaining > 0) {
+      out.push(lineWords.slice(0, remaining).join(" "));
+      used = wordBudget;
+    }
+    break;
+  }
+
+  return out.join("\n").trim();
+}
+
 /**
  * Keep trailing **Next?** (and optional Sources) when trimming to the word cap.
+ * Preserves Markdown structure (newlines + fenced blocks) in the body.
  */
 export function truncateToWordCap(text: string, wordCap: number): string {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return trimmed;
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  if (words.length <= wordCap) return trimmed;
+  if (countWords(trimmed) <= wordCap) return trimmed;
 
   const lines = trimmed.split(/\r?\n/);
   let nextIdx = -1;
@@ -348,10 +411,9 @@ export function truncateToWordCap(text: string, wordCap: number): string {
   const body = (tailStart >= 0 ? lines.slice(0, tailStart) : lines)
     .join("\n")
     .trim();
-  const tailWords = tail ? tail.split(/\s+/).filter(Boolean).length : 0;
+  const tailWords = tail ? countWords(tail) : 0;
   const bodyBudget = Math.max(20, wordCap - tailWords);
-  const bodyWords = body.split(/\s+/).filter(Boolean);
-  const clippedBody = bodyWords.slice(0, bodyBudget).join(" ");
+  const clippedBody = clipBodyPreservingMarkdown(body, bodyBudget);
   return (tail ? `${clippedBody}\n\n${tail}` : clippedBody).trim();
 }
 
@@ -409,7 +471,11 @@ export function forceDeterministicCompliance(
 
   text = truncateToWordCap(text, options.wordCap);
 
-  // Truncation can drop the Next? line if the body was empty — re-assert anchors.
+  // Truncation can drop anchors or a diagram fence — revalidate requirements.
+  if (options.requireDiagram && !hasEduaiDiagramFence(text)) {
+    text = ensureDiagramBeforeNext(text, { userText: options.userText });
+    text = truncateToWordCap(text, options.wordCap);
+  }
   if (req.expectNextLine) {
     const after = computeAdhdResponseMetrics(text, { wordCap: options.wordCap });
     if (!after.nextLine) {
@@ -424,23 +490,12 @@ export function forceDeterministicCompliance(
       text = truncateToWordCap(text, options.wordCap);
     }
   }
+  if (options.expectSources && !hasSourcesFooter(text)) {
+    text = insertBeforeNext(text, ADHD_OVERSIGHT_GENERIC_SOURCES);
+    text = truncateToWordCap(text, options.wordCap);
+  }
 
   return normalizeAdhdStructuralAnchors(text);
-}
-
-function profileStructuralScore(
-  metrics: AdhdStructuralCompliance,
-  profile: AdhdTurnProfile,
-  text: string,
-): number {
-  let score = metrics.underCap ? 1 : 0;
-  const req = getProfileRequirements(profile);
-  if (req.expectTopSummary) score += metrics.topSummary ? 1 : 0;
-  if (req.expectNextLine) score += metrics.nextLine ? 1 : 0;
-  if (req.expectRedirectTemplate && isRedirectTemplatePass(metrics, text)) {
-    score += 2;
-  }
-  return score;
 }
 
 function passesProfileStructure(
@@ -735,27 +790,16 @@ export async function auditAndMaybeRewrite(args: {
   const oversightStartedAt = Date.now();
   let usageAcc: OversightUsage | null = null;
 
+  // Accept only full contentOk compliance — never ship a rewrite that merely
+  // improves the structural score while still missing anchors (e.g. **Next?**).
   const acceptLlm = (llmText: string): boolean => {
+    if (!llmText) return false;
     const afterMetrics = withProfileStructuralPass(
       computeAdhdResponseMetrics(llmText, { wordCap }),
       profile,
       llmText,
     );
-    const urgencyWasProblem = !beforeMetrics.noUrgency;
-    const diagramOk = !requireDiagram || hasEduaiDiagramFence(llmText);
-    const sourcesOk = !expectSources || afterMetrics.hasSources;
-    const structuralOk =
-      afterMetrics.profileStructuralPass ||
-      profileStructuralScore(afterMetrics, profile, llmText) >
-        profileStructuralScore(beforeMetrics, profile, trimmed);
-    return (
-      llmText.length > 0 &&
-      afterMetrics.underCap &&
-      diagramOk &&
-      sourcesOk &&
-      (!urgencyWasProblem || afterMetrics.noUrgency) &&
-      structuralOk
-    );
+    return afterMetrics.underCap && contentOk(afterMetrics, profile, llmText, gateOpts);
   };
 
   const runLlm = async (rejectReasons?: string[]) => {

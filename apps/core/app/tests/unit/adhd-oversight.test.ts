@@ -15,12 +15,15 @@ import {
   buildOverseenAssistantMessagesToPersist,
   extractNextPromptCandidate,
   findLastInlineNextMatch,
+  forceDeterministicCompliance,
   isAdhdOversightEnabled,
   isForwardContinuationOffer,
   isOversightEligibleDraft,
   resolveOversightRewriteMaxTokens,
+  truncateToWordCap,
   tryDeterministicStructuralFix,
 } from "~/lib/ai/adhd-oversight";
+import { hasEduaiDiagramFence } from "~/lib/ai/adhd-assist";
 import {
   ADHD_CLARIFICATION_WORD_CAP,
   ADHD_TUTORING_WORD_CAP,
@@ -635,5 +638,86 @@ Two: Second
         result.text,
       ),
     ).toBe(true);
+  });
+  it("rejects score-improving LLM rewrites that still miss **Next?** (contentOk gate)", async () => {
+    // Improves score (adds Top summary) but still fails profileStructuralPass —
+    // must retry then force-wrap rather than accept the partial rewrite.
+    const partial = `**Top summary**
+- Gradient descent nudges parameters downhill.
+
+Want me to expand step 2?`;
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: partial,
+        usage: { promptTokens: 10, completionTokens: 20 },
+      } as never)
+      .mockResolvedValueOnce({
+        text: partial,
+        usage: { promptTokens: 10, completionTokens: 20 },
+      } as never);
+
+    const messy = Array(300).fill("word").join(" ");
+    const result = await auditAndMaybeRewrite({
+      draft: messy,
+      model: mockModel,
+      wordCap: 250,
+      profile: "full_tutoring",
+    });
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(result.method).toBe("forced_deterministic");
+    expect(result.afterMetrics.profileStructuralPass).toBe(true);
+    expect(result.text).toMatch(/\*\*Next\?\*\*/);
+  });
+
+  it("truncateToWordCap preserves eduai-diagram fences instead of flattening Markdown", () => {
+    const filler = Array(80).fill("padding").join(" ");
+    const draft = `**Top summary**
+- Keep the diagram intact under the word cap.
+
+\`\`\`eduai-diagram
+process-flow
+title: Steps
+One: First
+Two: Second
+\`\`\`
+
+${filler}
+
+**Next?** Continue?`;
+    const clipped = truncateToWordCap(draft, 120);
+    expect(clipped).toMatch(/```eduai-diagram/);
+    expect(clipped).toContain("\n");
+    expect(hasEduaiDiagramFence(clipped)).toBe(true);
+    expect(clipped.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(120);
+  });
+
+  it("forceDeterministicCompliance revalidates diagram after truncation", () => {
+    const longBody = Array(200).fill("word").join(" ");
+    const draft = `**Top summary**
+- Point one
+
+\`\`\`eduai-diagram
+process-flow
+title: Steps
+One: First
+Two: Second
+Three: Third
+Four: Fourth
+Five: Fifth
+\`\`\`
+
+${longBody}
+
+**Next?** Continue?`;
+    const forced = forceDeterministicCompliance(draft, {
+      wordCap: 120,
+      profile: "full_tutoring",
+      requireDiagram: true,
+      userText: "Can you draw a diagram of the steps?",
+    });
+    expect(hasEduaiDiagramFence(forced)).toBe(true);
+    expect(forced).toMatch(/^\*\*Top summary\*\*/);
+    expect(forced).toMatch(/\*\*Next\?\*\*/);
+    expect(forced.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(120);
   });
 });
