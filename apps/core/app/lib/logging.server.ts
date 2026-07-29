@@ -41,6 +41,8 @@ const CIRCULAR_VALUE = "[CIRCULAR]";
 // Longer, reasonably unique needles matched as substrings against the alphanumerics-only
 // lowercased key so compound names stay covered (`secret` → sessionSecret/clientSecret,
 // `apikey` → x-api-key, `dburl`/`databaseuri` → dbUrl/databaseUri, etc.).
+// Short tokens (`otp`/`dsn`/`auth`/`pin`/`mfa`/`totp`) live in REDACT_KEY_EXACT_SEGMENTS
+// instead — substring matching would false-positive on hotPath/footprint/fieldsName/etc.
 const REDACT_KEY_SUBSTRINGS = [
   "password",
   "passwd",
@@ -62,21 +64,29 @@ const REDACT_KEY_SUBSTRINGS = [
   "databaseuri",
   "dburl",
   "connectionstring",
-  "dsn",
-  "otp",
   "signature",
   "sessionid",
   "authorization",
+  // Explicit MFA secret compounds (segment `mfa` also covers these; aliases keep intent clear
+  // and catch unusual spellings that may not split cleanly).
+  "mfacode",
+  "mfarecoverycode",
+  "mfarecovery",
 ];
 
 // Short / ambiguous tokens that must match a whole camelCase / snake_case / kebab segment
-// rather than a raw substring — otherwise `auth` redacts authorId and `pin` redacts mapping /
-// shippingAddress via includes().
-const REDACT_KEY_EXACT_SEGMENTS = new Set(["auth", "pin"]);
+// rather than a raw substring — otherwise `auth` redacts authorId, `pin` redacts mapping /
+// shippingAddress, `otp` redacts hotPath/footprint, and `dsn` redacts fieldsName /
+// needsNormalization via includes().
+const REDACT_KEY_EXACT_SEGMENTS = new Set(["auth", "pin", "otp", "dsn", "totp", "mfa"]);
 
-// Bare `mfa` is secret-shaped when used as the full key, but status flags like `mfaEnabled`
-// must remain visible — so match the normalized full key only, not a segment of a compound name.
-const REDACT_KEY_EXACT_KEYS = new Set(["mfa"]);
+// Status / non-secret flags that contain a redact segment (e.g. `mfa`) but must stay visible.
+const REDACT_KEY_SAFE_NORMALIZED = new Set([
+  "mfaenabled",
+  "mfarequired",
+  "mfaenrolled",
+  "mfastatus",
+]);
 
 /** Split a key into lowercased segments on non-alphanumerics and camelCase boundaries. */
 function splitKeySegments(key: string): string[] {
@@ -99,16 +109,17 @@ function shouldRedactKey(key: string) {
     return false;
   }
 
+  // Known-safe status flags that would otherwise match a redact segment (e.g. mfaEnabled).
+  if (REDACT_KEY_SAFE_NORMALIZED.has(normalized)) {
+    return false;
+  }
+
   // This deny-list covers credentials and direct contact PII explicitly requested as non-loggable.
   //
   // NOTE: `email` is intentionally NOT redacted right now — full email addresses are logged
   // across all logs by current product decision. This is a temporary measure; emails will be
   // purged/redacted later for privacy. Add `"email"` to REDACT_KEY_SUBSTRINGS to restore redaction.
   if (REDACT_KEY_SUBSTRINGS.some((needle) => normalized.includes(needle))) {
-    return true;
-  }
-
-  if (REDACT_KEY_EXACT_KEYS.has(normalized)) {
     return true;
   }
 
