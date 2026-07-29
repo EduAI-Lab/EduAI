@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   REDACTED_VALUE,
   redactDiagnosticLogString,
+  redactErrorForConsole,
   redactSecretValuesInString,
-  sanitizeDetails,
   sanitizeSensitiveData,
 } from "~/lib/redact.server";
 
@@ -82,20 +82,6 @@ describe("redactSecretValuesInString", () => {
     const start = Date.now();
     expect(redactSecretValuesInString(long)).toBe(long);
     expect(Date.now() - start).toBeLessThan(500);
-  });
-});
-
-describe("sanitizeDetails (key-level)", () => {
-  it("redacts credential keys but leaves string values under safe keys intact", () => {
-    expect(
-      sanitizeDetails({
-        password: "secret",
-        note: "Bearer still-visible-here",
-      }),
-    ).toEqual({
-      password: REDACTED_VALUE,
-      note: "Bearer still-visible-here",
-    });
   });
 });
 
@@ -193,5 +179,47 @@ describe("redactDiagnosticLogString", () => {
     expect(redacted).not.toContain("session=abc");
     expect(redacted).not.toContain("dXNlcjpwYXNz");
     expect(redacted).not.toContain("super-secret");
+  });
+});
+
+describe("redactErrorForConsole", () => {
+  it("scrubs an Error's message and stack and returns a plain shape", () => {
+    const err = new Error("Can't reach postgres://appuser:s3cr3t@db.internal:5432/eduai");
+    const result = redactErrorForConsole(err) as {
+      name: string;
+      message: string;
+      stack?: string;
+    };
+
+    // A plain object, not an Error — console.error prints an Error's own fields
+    // rather than any properties we would set on it.
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result.name).toBe("Error");
+    expect(result.message).toBe(`Can't reach postgres://${REDACTED_VALUE}@db.internal:5432/eduai`);
+    expect(result.stack).not.toContain("s3cr3t");
+  });
+
+  it("omits stack when the Error has none", () => {
+    const err = new Error("plain failure");
+    err.stack = undefined;
+
+    expect(redactErrorForConsole(err)).toEqual({
+      name: "Error",
+      message: "plain failure",
+      stack: undefined,
+    });
+  });
+
+  it("scrubs thrown strings", () => {
+    expect(redactErrorForConsole("failed /cb?access_token=abc123def456")).toBe(
+      `failed /cb?access_token=${REDACTED_VALUE}`,
+    );
+  });
+
+  it("falls back to full sanitization for non-Error throwables", () => {
+    expect(redactErrorForConsole({ apiKey: "sk-live-1", note: "hit /cb?token=abc" })).toEqual({
+      apiKey: REDACTED_VALUE,
+      note: `hit /cb?token=${REDACTED_VALUE}`,
+    });
   });
 });

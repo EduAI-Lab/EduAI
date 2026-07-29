@@ -148,53 +148,14 @@ export function redactSecretValuesInString(text: string): string {
 }
 
 /**
- * Key-level sanitize used by the logging facade. Object keys on the deny-list are replaced;
- * string leaves are left untouched (callers that need value scrubbing should use
- * {@link sanitizeSensitiveData}).
- */
-export function sanitizeDetails(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (!value || typeof value !== "object" || value instanceof Date) {
-    return value;
-  }
-
-  const obj = value as object;
-
-  // Cycle guard: only ancestors on the current branch live in `seen` (removed on unwind),
-  // so shared-but-acyclic references (DAGs) are still fully sanitized.
-  if (seen.has(obj)) {
-    return CIRCULAR_VALUE;
-  }
-  seen.add(obj);
-
-  let result: unknown;
-  if (Array.isArray(value)) {
-    result = value.map((entry) => sanitizeDetails(entry, seen));
-  } else if (value instanceof Map) {
-    // Maps are not enumerable via Object.entries (they'd serialize to {} and silently drop
-    // their contents), so normalize to a plain object first.
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, entry] of value.entries()) {
-      const keyStr = typeof key === "string" ? key : String(key);
-      sanitized[keyStr] = shouldRedactKey(keyStr) ? REDACTED_VALUE : sanitizeDetails(entry, seen);
-    }
-    result = sanitized;
-  } else if (value instanceof Set) {
-    result = Array.from(value, (entry) => sanitizeDetails(entry, seen));
-  } else {
-    const sanitized: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      sanitized[key] = shouldRedactKey(key) ? REDACTED_VALUE : sanitizeDetails(entry, seen);
-    }
-    result = sanitized;
-  }
-
-  seen.delete(obj);
-  return result;
-}
-
-/**
  * Key-level redaction plus value-level scrubbing of every string leaf.
- * Use for bug-report console/network logs and context JSON before persist.
+ *
+ * This is the only sanitizer callers should reach for. A key-only variant used to exist
+ * alongside it and was the cause of #976: a secret under an innocuous key survived intact.
+ * Keeping the weaker function exported invited the same bug again, so it was removed —
+ * value scrubbing is a strict superset of what it did.
+ *
+ * Used for audit / security / system log details and bug-report console+network captures.
  */
 export function sanitizeSensitiveData(
   value: unknown,
