@@ -12,7 +12,7 @@ const { mockUpdate, mockDelete, mockCreate, mockList, mockQuestionFindOne, mockC
   mockUpdate: vi.fn(),
   mockDelete: vi.fn().mockResolvedValue(true),
   mockCreate: vi.fn(),
-  mockList: vi.fn().mockResolvedValue([]),
+  mockList: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
   mockQuestionFindOne: vi.fn(),
   mockCourseFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
