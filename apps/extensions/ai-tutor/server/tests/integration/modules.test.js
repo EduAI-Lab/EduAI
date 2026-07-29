@@ -70,19 +70,22 @@ describe('Modules routes', () => {
       expect(res.body.position).toBe(1);
 
       const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
-      expect(list.body.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
+      expect(list.body.total).toBe(2);
+      expect(list.body.data.map((m) => m.title)).toEqual([seed.module.title, 'Second Module']);
     });
 
     it('does not shift existing modules to a lower position', async () => {
       const before = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
-      expect(before.body[0].position).toBe(0);
+      expect(before.body.total).toBe(1);
+      expect(before.body.data[0].position).toBe(0);
 
       await request(profApp)
         .post(`/api/courses/${seed.course.id}/modules`)
         .send({ title: 'Appended' });
 
       const after = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
-      const original = after.body.find((m) => m.id === seed.module.id);
+      expect(after.body.total).toBe(2);
+      const original = after.body.data.find((m) => m.id === seed.module.id);
       expect(original.position).toBe(0);
     });
 
@@ -121,7 +124,8 @@ describe('Modules routes', () => {
 
       // Persisted order matches on a fresh read.
       const list = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
-      expect(list.body.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
+      expect(list.body.total).toBe(3);
+      expect(list.body.data.map((m) => m.id)).toEqual([c.id, a.id, b.id]);
     });
 
     it('rejects an id set that does not match the course modules', async () => {
@@ -177,14 +181,15 @@ describe('Modules routes', () => {
       const res = await request(profApp).get(`/api/courses/${seed.course.id}/modules`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
 
-      const ids = res.body.map((m) => m.id);
+      const ids = res.body.data.map((m) => m.id);
       expect(ids).toContain(seed.module.id);
       expect(ids).toContain(unpublishedModule.id);
 
       // Professor modules have no progress object
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('student sees only published modules with progress', async () => {
@@ -206,9 +211,10 @@ describe('Modules routes', () => {
 
       expect(res.status).toBe(200);
       // Student should only see the published module
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.module.id);
-      expect(res.body[0].progress).toEqual(
+      expect(res.body.total).toBe(1);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(seed.module.id);
+      expect(res.body.data[0].progress).toEqual(
         expect.objectContaining({
           completed: expect.any(Number),
           total: expect.any(Number),
@@ -234,12 +240,13 @@ describe('Modules routes', () => {
       const res = await request(taApp).get(`/api/courses/${seed.course.id}/modules`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      const ids = res.body.map((m) => m.id);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
+      const ids = res.body.data.map((m) => m.id);
       expect(ids).toContain(seed.module.id);
       expect(ids).toContain(unpublishedModule.id);
       // TAs have no progress object (elevated access, not student)
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('TA cannot POST (create) a module', async () => {
@@ -293,12 +300,13 @@ describe('Modules routes', () => {
       const res = await request(adminApp).get(`/api/courses/${seed.course.id}/modules`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      const ids = res.body.map((m) => m.id);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
+      const ids = res.body.data.map((m) => m.id);
       expect(ids).toContain(seed.module.id);
       expect(ids).toContain(unpublishedModule.id);
       // Admins have no progress object (elevated access, not student)
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
   });
 
@@ -547,8 +555,9 @@ describe('Modules routes', () => {
     it('sees modules for a course in their authorizedUnits', async () => {
       const res = await request(unitAdminApp).get(`/api/courses/${coscCourse.id}/modules`);
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.total).toBe(1);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('gets 403 for a course outside their authorizedUnits', async () => {

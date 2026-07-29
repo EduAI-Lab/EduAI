@@ -12,6 +12,7 @@
 import { test, expect } from '@playwright/test';
 import { AI_TUTOR_API_URL } from '../../playwright.config';
 import { signUp, uniqueEmail } from '../helpers/auth';
+import { atListResponse } from '../helpers/at-pagination';
 
 // ---------------------------------------------------------------------------
 // INSTRUCTOR-only course routes — STUDENT must receive 403
@@ -149,9 +150,21 @@ test.describe('AI Tutor routes accessible to all authenticated users', () => {
 
   test('GET /api/courses is accessible to STUDENT (200)', async ({ request }) => {
     await signUp(request, { email: uniqueEmail('at-rbac-courses-read') });
-    const res = await request.get(`${AI_TUTOR_API_URL}/api/courses`);
+    // #1043: paginated — send a complete page/pageSize pair and read `.data`.
+    const res = await atListResponse(request, `${AI_TUTOR_API_URL}/api/courses`);
     expect(res.status()).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(typeof body.total).toBe('number');
+  });
+
+  // #1043: the contract is required-mode — a half-supplied pair is a 400, and
+  // that must not be mistaken for an authorization failure.
+  test('GET /api/courses without pagination params returns 400', async ({ request }) => {
+    await signUp(request, { email: uniqueEmail('at-rbac-courses-nopage') });
+    const res = await request.get(`${AI_TUTOR_API_URL}/api/courses`);
+    expect(res.status()).toBe(400);
+    expect((await res.json()).code).toBe('PAGINATION_REQUIRED');
   });
 });
 

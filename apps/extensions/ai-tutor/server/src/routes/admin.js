@@ -31,6 +31,7 @@ import {
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
 import { syncCourseEnrollments } from '../services/enrollmentSync.js';
@@ -89,6 +90,9 @@ router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res)
 
 router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
   try {
+    // #1043: unbounded admin list — require explicit paging (Group A contract).
+    const pageParams = parsePaginationParams(req);
+
     // Unified contract (#1072): fields come from ONE service-key catalog
     // fetch, joined against the local anchors — same read-through shape as
     // `GET /courses`'s ADMIN branch. No cookie-scoped call: nothing here
@@ -100,15 +104,30 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     }
     // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
     // Core course before listing, so this shows Core's full catalog rather
-    // than whatever happened to already have a local row.
+    // than whatever happened to already have a local row. Anchor creation
+    // stays full-set (bounded by the Core catalog); only the response paginates.
     if (!coreUnavailable && catalogCourses.length > 0) {
       await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
     }
-    const courses = await prisma.courseOffering.findMany({
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
-    res.json(courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))));
+    const [total, courses] = await prisma.$transaction([
+      prisma.courseOffering.count(),
+      prisma.courseOffering.findMany({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
+    res.json(
+      paginated(
+        courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))),
+        total,
+        pageParams,
+      ),
+    );
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });
