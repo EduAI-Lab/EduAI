@@ -75,8 +75,8 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  getSession.mockImplementation(async ({ headers }) => {
-    const cookie = headers.get("cookie") ?? "";
+  getSession.mockImplementation((async (ctx: { headers?: Headers } | undefined) => {
+    const cookie = ctx?.headers?.get("cookie") ?? "";
     if (cookie.includes("session=admin-b")) {
       return {
         user: {
@@ -85,7 +85,7 @@ beforeEach(() => {
           name: "Floor Admin B",
           email: `admin-floor-b-${suffix}@test.local`,
         },
-      } as never;
+      };
     }
     return {
       user: {
@@ -94,8 +94,8 @@ beforeEach(() => {
         name: "Floor Admin A",
         email: `admin-floor-a-${suffix}@test.local`,
       },
-    } as never;
-  });
+    };
+  }) as never);
 });
 
 function patchUser(actorCookie: string, userId: string, body: Record<string, unknown>) {
