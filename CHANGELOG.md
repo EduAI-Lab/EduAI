@@ -24,6 +24,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Pass the CSP nonce to `ServerRouter` and the theme provider so React Router's SSR data-stream scripts are no longer blocked, and allow `data:` in `font-src` for Vite-inlined fonts. (#1219, @mochi_21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 - [core] fix: Nonce the SSR data-stream and theme scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 
+### Fixed
+
+- [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Changed
