@@ -352,6 +352,29 @@ describe('Courses routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(seed.course.id);
     });
+
+    it('bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(fetchCoreCourseSafe).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        expect.objectContaining({ signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the Core course-field lookup hangs, instead of hanging the request', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValueOnce(
+        new DOMException('The operation was aborted', 'TimeoutError'),
+      );
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.course.id);
+      expect(res.body.title).toBeNull();
+      expect(res.headers['x-core-status']).toBe('unavailable');
+    });
   });
 
   // ── POST /api/courses ─────────────────────────────────────────────

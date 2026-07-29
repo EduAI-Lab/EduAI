@@ -480,8 +480,13 @@ router.get('/courses/:courseId', async (req, res) => {
     // for both the UNIT_ADMIN department check below and the response body
     // — `department` is Core-owned data, not a local column. Degrades to a
     // stale-but-present course (and a closed unit-admin department check) on
-    // any Core failure rather than hard-erroring.
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
+    // any Core failure rather than hard-erroring. Bounded to
+    // `AUTO_SYNC_TIMEOUT_MS` (#1173 review) — without a signal here, a Core
+    // that's up but hung on this lookup defeats the local fallback the
+    // enrollment sync above was just bounded to guarantee.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId, {
+      signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+    });
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
