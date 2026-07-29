@@ -80,8 +80,9 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
       // enrollment (cookie remains the fallback when no key is configured).
       coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
     } catch {
-      if (reqUser.id === course.userId) return LEVELS.instructor;
-      // fall through to enrollment check
+      // #225 SEAM-02: do not grant the QM owner instructor on a Core course
+      // lookup failure — linked courses use Core as source of truth. Fall
+      // through to the enrollment check (which itself fails closed on throw).
     }
     const department = coreCourse?.department ?? null;
     if (department !== null) {

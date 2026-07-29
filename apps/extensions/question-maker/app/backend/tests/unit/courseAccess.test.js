@@ -147,6 +147,15 @@ describe('resolveCourseAccess', () => {
       );
       expect(access).toEqual(LEVELS.instructor);
     });
+    it('denies a UNIT_ADMIN QM owner when getCourseFromCore and enrollments both throw', async () => {
+      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'UNIT_ADMIN' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
   });
 
   describe('UNIT_ADMIN unit lock', () => {

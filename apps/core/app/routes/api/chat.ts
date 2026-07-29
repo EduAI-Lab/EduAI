@@ -1455,27 +1455,21 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
           // #225 RAG-01/RAG-02: an exception here means retrieval itself
           // failed (stale embedding dimension vs. the stored corpus, or the
           // embedding provider is down) — never treat it like a legitimate
-          // zero-hit result. If this turn actually needed course grounding,
-          // silently falling through would answer ungrounded or wrongly tell
-          // the student "the materials do not contain an answer." Fail
-          // closed and surface the failure instead of guessing.
-          const neededGrounding = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: [],
-          });
-          if (neededGrounding) {
-            return chatApiReject(
-              503,
-              {
-                error:
-                  "Course materials could not be searched right now. Please try again shortly.",
-                code: classifyRagRetrievalError(error),
-              },
-              { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
-            );
-          }
-          courseRagInject = false;
+          // zero-hit result. Any failed course prefetch must fail closed:
+          // prompts that the intent heuristic skips (e.g. "Explain
+          // polymorphism") can still inject via strong similarity when
+          // retrieval succeeds, so gating 503 on courseRagNeeded would still
+          // answer ungrounded. Deliberately skipped retrieval never enters
+          // this try (see shouldPrefetchCourseRag).
+          return chatApiReject(
+            503,
+            {
+              error:
+                "Course materials could not be searched right now. Please try again shortly.",
+              code: classifyRagRetrievalError(error),
+            },
+            { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
+          );
         }
       }
 
