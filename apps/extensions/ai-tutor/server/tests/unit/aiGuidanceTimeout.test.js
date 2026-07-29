@@ -18,7 +18,7 @@ vi.mock('../../src/config/database.js', () => ({
 }));
 
 vi.mock('../../src/services/eduaiClient.js', () => ({
-  getEduAiChatUrl: () => 'http://mock-eduai/api/chat',
+  getEduAiCompletionUrl: () => 'http://mock-eduai/api/completion',
 }));
 
 const originalTimeout = process.env.EDUAI_CALL_TIMEOUT_MS;
@@ -93,5 +93,34 @@ describe('callEduAI timeout (#999)', () => {
 
     expect(result.message).toBe('Here is a hint.');
     expect(result.trace.finalOutcome).toBe('single_pass');
+  });
+
+  it('does not retry when Retry-After consumes the remaining timeout', async () => {
+    process.env.EDUAI_CALL_TIMEOUT_MS = '300';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: new Headers({ 'Retry-After': '120' }),
+      text: () => Promise.resolve('Upstream unavailable'),
+    });
+
+    const { generateGuideResponse } = await import('../../src/services/aiGuidance.js');
+
+    await expect(
+      generateGuideResponse({
+        activity: { mainTopic: { name: 'Recursion' }, answer: '42' },
+        knowledgeLevel: 'beginner',
+        message: 'I am stuck',
+        studentAnswer: null,
+        dualLoopEnabled: false,
+        cookie: 'session=abc',
+        apiKey: 'test-key',
+      }),
+    ).rejects.toMatchObject({
+      message: 'The AI study buddy took too long to respond. Please try again.',
+      status: 504,
+      code: 'TIMEOUT',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

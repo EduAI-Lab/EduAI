@@ -44,6 +44,16 @@ export type ApiEndpointEntry = {
   supportsIdempotency?: boolean;
   sendsEmail?: boolean;
   adminChatTool?: string;
+  /**
+   * Required `page`/`pageSize` query params and the `{ data, total, page,
+   * pageSize }` response envelope (#1041). Additional lookup params (#1125) are
+   * listed in `lookupParams`.
+   */
+  pagination?: {
+    required: true;
+    /** Optional non-paging selectors, e.g. `ids`, `search`. */
+    lookupParams?: string[];
+  };
   note?: string;
 };
 
@@ -151,13 +161,20 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     routeFile: "routes/api/chat.ts",
   }),
   entry({
+    method: "POST",
+    path: "/api/completion",
+    readiness: "excluded",
+    reason: "Stateless LLM completion (#858) — streaming + apiKeys; extension AI-assist only",
+    gaps: ["streaming"],
+    routeFile: "routes/api/completion.ts",
+  }),
+  entry({
     method: "GET",
     path: "/api/chats",
     readiness: "excluded",
     reason: "Chat UI persistence — not ops",
     routeFile: "routes/api/chats.ts",
-  }),
-  entry({
+  }),  entry({
     method: "GET",
     path: "/api/chats/:chatId",
     readiness: "excluded",
@@ -192,6 +209,7 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/courses",
     readiness: "ready",
+    pagination: { required: true, lookupParams: ["ids", "search", "isActive"] },
     errorEnvelope: "standard",
     adminChatTool: "listCourses",
     routeFile: "routes/api/courses.$.ts",
@@ -491,6 +509,7 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/users",
     readiness: "ready",
+    pagination: { required: true, lookupParams: ["ids", "search", "role", "isActive", "sortBy", "sortDir"] },
     errorEnvelope: "standard",
     adminChatTool: "listUsers",
     routeFile: "routes/api/users.$.ts",
@@ -626,6 +645,7 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/ai-providers",
     readiness: "ready",
+    pagination: { required: true },
     adminChatTool: "listAiProviders",
     errorEnvelope: "standard",
     routeFile: "routes/api/ai-providers.$.ts",
@@ -657,6 +677,7 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     method: "GET",
     path: "/api/ai-models",
     readiness: "ready",
+    pagination: { required: true, lookupParams: ["search", "providerId"] },
     errorEnvelope: "standard",
     routeFile: "routes/api/ai-models.$.ts",
   }),

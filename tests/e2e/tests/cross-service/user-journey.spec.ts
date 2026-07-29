@@ -201,8 +201,9 @@ test.describe('User data isolation across services', () => {
       await createQmCourseForInstructor(playwright, req2, { name: 'User 2 Course' });
 
       // Each user only sees their own courses
-      const raw1 = await (await req1.get(`${QM_BACKEND_URL}/api/course`)).json();
-      const raw2 = await (await req2.get(`${QM_BACKEND_URL}/api/course`)).json();
+      // Pagination params are required on this list (#1044).
+      const raw1 = await (await req1.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)).json();
+      const raw2 = await (await req2.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`)).json();
 
       const courses1: Array<{ name: string }> = Array.isArray(raw1) ? raw1 : raw1?.data ?? [];
       const courses2: Array<{ name: string }> = Array.isArray(raw2) ? raw2 : raw2?.data ?? [];
