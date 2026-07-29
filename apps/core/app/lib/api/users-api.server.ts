@@ -1,5 +1,5 @@
 import prisma from "~/lib/prisma.server";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, UserRole } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
@@ -17,6 +17,28 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import {
+  paginatedResponse,
+  parseIdsParam,
+  parsePaginationParams,
+  parseSearchParam,
+  unpagedResponse,
+  type Pagination,
+} from "~/lib/pagination.server";
+
+const USER_ROLES: UserRole[] = ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
+
+/** Columns the admin users table may sort by. Whitelisted so `sortBy` cannot reach arbitrary fields. */
+const USER_SORT_FIELDS = [
+  "name",
+  "email",
+  "role",
+  "isActive",
+  "emailVerified",
+  "createdAt",
+  "updatedAt",
+] as const;
+type UserSortField = (typeof USER_SORT_FIELDS)[number];
 
 function userEntityLabel(
   name: string | null | undefined,
@@ -60,7 +82,57 @@ export async function handleUsersApiRequest(request: Request) {
         return apiError(403, "Forbidden");
       }
 
-      const users = await prisma.user.findMany({
+      // #1041: `page`/`pageSize` are required; `?ids=` is the unpaged batch-lookup
+      // escape hatch for callers resolving a known set of users (#1125).
+      const idsResult = parseIdsParam(url.searchParams);
+      if ("response" in idsResult) return idsResult.response;
+
+      const search = parseSearchParam(url.searchParams);
+      // `role` accepts a comma-separated list so the table's multi-select facet
+      // maps to a single request.
+      const roleFilter = (url.searchParams.get("role") ?? "")
+        .split(",")
+        .map((role) => role.trim())
+        .filter(Boolean);
+      const unknownRole = roleFilter.find((role) => !USER_ROLES.includes(role as UserRole));
+      if (unknownRole) {
+        return apiError(400, "VALIDATION_ERROR", { role: `Unknown role: ${unknownRole}` });
+      }
+
+      const isActiveParam = url.searchParams.get("isActive");
+
+      const sortBy = url.searchParams.get("sortBy") ?? "createdAt";
+      if (!USER_SORT_FIELDS.includes(sortBy as UserSortField)) {
+        return apiError(400, "VALIDATION_ERROR", { sortBy: `Unknown sort field: ${sortBy}` });
+      }
+      const sortDir = url.searchParams.get("sortDir") === "asc" ? "asc" : "desc";
+      const orderBy = { [sortBy]: sortDir } as Prisma.UserOrderByWithRelationInput;
+
+      const where: Prisma.UserWhereInput = {};
+      if (idsResult.ids) {
+        where.id = { in: idsResult.ids };
+      }
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+        ];
+      }
+      if (roleFilter.length > 0) {
+        where.role = { in: roleFilter as UserRole[] };
+      }
+      if (isActiveParam !== null) {
+        where.isActive = isActiveParam === "true";
+      }
+
+      let pagination: Pagination | null = null;
+      if (!idsResult.ids) {
+        const paginationResult = parsePaginationParams(url.searchParams);
+        if ("response" in paginationResult) return paginationResult.response;
+        pagination = paginationResult.pagination;
+      }
+
+      const userSelect = {
         select: {
           id: true,
           email: true,
@@ -80,9 +152,36 @@ export async function handleUsersApiRequest(request: Request) {
             },
           },
         },
-        orderBy: { createdAt: "desc" },
-      });
+      } satisfies Prisma.UserFindManyArgs;
 
+      const [total, users, statsTotal, statsActive, ...roleCounts] = pagination
+        ? await prisma.$transaction([
+            prisma.user.count({ where }),
+            prisma.user.findMany({
+              ...userSelect,
+              where,
+              orderBy,
+              skip: pagination.skip,
+              take: pagination.take,
+            }),
+            // Unfiltered platform-wide counts for the admin header, which must
+            // not shift as the admin searches or pages.
+            prisma.user.count(),
+            prisma.user.count({ where: { isActive: true } }),
+            // Role breakdown for dashboard charts. Callers used to derive this
+            // by counting a full user list, which paging makes impossible.
+            ...USER_ROLES.map((role) => prisma.user.count({ where: { role } })),
+          ])
+        : await (async () => {
+            const rows = await prisma.user.findMany({
+              ...userSelect,
+              where,
+              orderBy,
+            });
+            return [rows.length, rows, 0, 0, ...USER_ROLES.map(() => 0)] as const;
+          })();
+
+      // Scoped to the current page's user ids so this second query stays bounded.
       const taEnrollments = await prisma.enrollment.findMany({
         where: { role: "TA", isActive: true, userId: { in: users.map((u) => u.id) } },
         select: { userId: true, courseId: true },
@@ -105,10 +204,17 @@ export async function handleUsersApiRequest(request: Request) {
         },
       }));
 
-      return new Response(JSON.stringify(mapped), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return pagination
+        ? paginatedResponse(mapped, total, pagination, {
+            stats: {
+              total: statsTotal,
+              active: statsActive,
+              byRole: Object.fromEntries(
+                USER_ROLES.map((role, index) => [role, (roleCounts[index] as number) ?? 0]),
+              ),
+            },
+          })
+        : unpagedResponse(mapped);
     }
 
     case "POST": {
