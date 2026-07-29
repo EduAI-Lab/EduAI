@@ -141,11 +141,14 @@ export {
   STATUS_OPTIONS,
   buildBugReportCopyText,
   getReporterLabel,
+  getContextLabel,
   sortReports,
   CORE_STATUS_TO_UI,
   UI_STATUS_TO_CORE,
   toUiStatus,
+  normalizeAdminBugReportRow,
 } from "./bug-reports/bug-reports-utils"
+export type { RawAdminBugReport } from "./bug-reports/bug-reports-utils"
 export { SettingsPageScaffold } from "./settings/settings-page-scaffold"
 export type { SettingsPageScaffoldProps, SettingsTab } from "./settings/settings-page-scaffold"
 export { ProvidersTable } from "./settings/providers-table"

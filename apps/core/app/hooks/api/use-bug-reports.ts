@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
-import { toUiStatus, UI_STATUS_TO_CORE } from "@eduai/ui";
-import type { AdminBugReportRow, BugReportStatus } from "@eduai/ui";
+import { normalizeAdminBugReportRow, UI_STATUS_TO_CORE } from "@eduai/ui";
+import type { AdminBugReportRow, BugReportStatus, RawAdminBugReport } from "@eduai/ui";
 
 /**
  * The admin list endpoint returns the full row — including the captured
@@ -11,7 +11,7 @@ import type { AdminBugReportRow, BugReportStatus } from "@eduai/ui";
  * could not open a screenshot that was sitting in the response.
  */
 type AdminBugReportsResponse = {
-  reports: AdminBugReportRow[];
+  reports: RawAdminBugReport[];
   total?: number;
   limit?: number;
   offset?: number;
@@ -39,20 +39,10 @@ export function useBugReports() {
       const data = await apiFetch<AdminBugReportsResponse>(
         `/api/admin/bug-reports?limit=${PAGE_LIMIT}`,
       );
-      setReports(
-        data.reports.map((r) => ({
-          ...r,
-          bugType: r.bugType ?? null,
-          // Core returns the Prisma enum; the shared view renders lowercase.
-          status: toUiStatus(r.status as unknown as string),
-          // Core's payload names the reporter userName/userEmail; the shared row
-          // reads reporterName/reporterEmail first and falls back to these.
-          reporterName: r.reporterName ?? r.userName ?? null,
-          reporterEmail: r.reporterEmail ?? r.userEmail ?? null,
-          createdAt:
-            typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
-        })),
-      );
+      // The shared normaliser handles the enum casing, the userName/userEmail →
+      // reporterName/reporterEmail rename, and flattening the `context` blob's
+      // course/module/lesson/activity ids that `getContextLabel` reads.
+      setReports(data.reports.map(normalizeAdminBugReportRow));
       setTotal(typeof data.total === "number" ? data.total : null);
     } catch (err) {
       console.error("Failed to fetch bug reports:", err);
@@ -71,14 +61,8 @@ export function useBugReports() {
    * flags; the shared view calls this when a viewer or copy needs the bodies.
    */
   const loadReportDetail = useCallback(async (id: string) => {
-    const report = await apiFetch<AdminBugReportRow>(`/api/admin/bug-reports/${id}`);
-    return {
-      ...report,
-      bugType: report.bugType ?? null,
-      status: toUiStatus(report.status as unknown as string),
-      reporterName: report.reporterName ?? report.userName ?? null,
-      reporterEmail: report.reporterEmail ?? report.userEmail ?? null,
-    } satisfies Partial<AdminBugReportRow>;
+    const report = await apiFetch<RawAdminBugReport>(`/api/admin/bug-reports/${id}`);
+    return normalizeAdminBugReportRow(report) satisfies Partial<AdminBugReportRow>;
   }, []);
 
   const updateReportStatus = useCallback(async (id: string, status: BugReportStatus) => {

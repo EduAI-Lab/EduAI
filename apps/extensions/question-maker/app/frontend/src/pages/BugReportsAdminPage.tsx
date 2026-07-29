@@ -12,7 +12,7 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { BugReportsAdminView, PageHeading, toUiStatus } from '@eduai/ui';
+import { BugReportsAdminView, PageHeading } from '@eduai/ui';
 import type { AdminBugReportRow, BugReportStatus } from '@eduai/ui';
 import { toast } from 'sonner';
 
@@ -31,13 +31,9 @@ export function BugReportsAdminPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await bugReportApi.list({ source: QM_SOURCE });
-      setRows(
-        (data as unknown as AdminBugReportRow[]).map((row) => ({
-          ...row,
-          status: toUiStatus(row.status as unknown as string),
-        })),
-      );
+      // `bugReportApi` already normalises Core's payload into the shared row
+      // shape (reporter fields, flattened context, UI status casing).
+      setRows(await bugReportApi.list({ source: QM_SOURCE }));
     } catch {
       toast.error('Could not load bug reports', { description: 'You may not have admin access.' });
       navigate('/home');
@@ -75,11 +71,7 @@ export function BugReportsAdminPage() {
         onUpdateStatus={async (reportId: string, status: BugReportStatus) => {
           await bugReportApi.updateStatus(reportId, status);
         }}
-        onLoadDetail={async (reportId: string) => {
-          const detail = await bugReportApi.get(reportId);
-          // `bugReportApi` already maps Core's enum to the UI status vocabulary.
-          return detail as unknown as Partial<AdminBugReportRow>;
-        }}
+        onLoadDetail={(reportId: string) => bugReportApi.get(reportId)}
       />
     </div>
   );
