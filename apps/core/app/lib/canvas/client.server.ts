@@ -1,5 +1,6 @@
 import { request as undiciRequest } from "undici";
-import { assertPublicHostname } from "~/lib/net/ssrf-guard.server";
+import { getPinnedDispatcher } from "~/lib/net/pinned-dispatcher.server";
+import { assertPublicHostname, assertPublicIpLiteral } from "~/lib/net/ssrf-guard.server";
 
 const CANVAS_VERIFY_TIMEOUT_MS = 10_000;
 const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
@@ -8,6 +9,13 @@ const CANVAS_PAGE_SIZE = 100;
 const LOCAL_CANVAS_DOCKER_HOST = "canvas.docker";
 
 export const CANVAS_EXTERNAL_SOURCE = "canvas";
+
+/**
+ * `dispatcher` is honoured by both undici's fetch and Node's global fetch, but
+ * it isn't part of the DOM `RequestInit` type — hence the widened init type
+ * rather than a bare cast at each call site.
+ */
+type CanvasFetchInit = RequestInit & { dispatcher?: unknown };
 
 export type CanvasIntegrationCredentials = {
   canvasUrl: string;
@@ -162,7 +170,24 @@ export class CanvasVerificationError extends Error {
   }
 }
 
-/** Validates Canvas base URL before server-side fetch (SSRF guard). */
+/**
+ * The plain-HTTP local-host allowance exists for the docker-compose Canvas used
+ * in development. Gated on the environment so a production deployment cannot be
+ * talked into an unencrypted request to a loopback address.
+ */
+function allowsLocalHttpCanvas(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+/**
+ * Validates Canvas base URL before server-side fetch (SSRF guard).
+ *
+ * Rejects IP literals in private/loopback/link-local/reserved ranges here, at
+ * save time, rather than relying on the request-time guard alone — a URL that
+ * never survives validation cannot be persisted and retried later, and callers
+ * that build URLs from a stored integration inherit the check for free.
+ * Hostnames still need the request-time DNS check, since resolving them is async.
+ */
 export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
   let parsed: URL;
   try {
@@ -171,13 +196,36 @@ export function parseAndValidateCanvasUrl(canvasUrl: string): URL {
     throw new CanvasVerificationError("Invalid Canvas URL format", 400);
   }
 
+  const hostname = parsed.hostname.toLowerCase();
+  // Scoped to http: the allowance exists for the dev docker Canvas, so an
+  // https URL aimed at a loopback address gets the IP check like any other.
+  const isAllowedLocalHost =
+    parsed.protocol === "http:" &&
+    HTTP_ALLOWED_HOSTNAMES.has(hostname) &&
+    allowsLocalHttpCanvas();
+
+  if (!isAllowedLocalHost) {
+    // "localhost" is a name, so the IP-literal check below can't see it, but
+    // RFC6761 guarantees it resolves to loopback — reject it here rather than
+    // leaning on the request-time DNS check alone.
+    if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+      throw new CanvasVerificationError(`Host "${hostname}" is a disallowed network address`, 400);
+    }
+
+    try {
+      assertPublicIpLiteral(hostname);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "disallowed network address";
+      throw new CanvasVerificationError(detail, 400);
+    }
+  }
+
   if (parsed.protocol === "https:") {
     return parsed;
   }
 
   if (parsed.protocol === "http:") {
-    const hostname = parsed.hostname.toLowerCase();
-    if (HTTP_ALLOWED_HOSTNAMES.has(hostname)) {
+    if (isAllowedLocalHost) {
       return parsed;
     }
     throw new CanvasVerificationError(
@@ -206,17 +254,64 @@ function buildCanvasProfileUrl(canvasUrl: string): string {
  * metadata endpoints). This keeps a public canvasUrl from being used to pivot
  * inward via a malicious Link/Location header pointing at loopback.
  * Re-checked on every call, not just once at connect time, to narrow the
- * DNS-rebinding window.
+ * DNS-rebinding window; `canvasRequestDispatcher` then closes what remains of
+ * that window by pinning the connection to the address checked here.
  */
+function isLocalCanvasDevRequest(url: string, canvasUrl: string): boolean {
+  const hostname = new URL(url).hostname.toLowerCase();
+  return isLocalCanvasDev(canvasUrl) && HTTP_ALLOWED_HOSTNAMES.has(hostname);
+}
+
+/**
+ * Pins outbound Canvas connections to the validated address, except on the
+ * local-dev path — the pinned lookup rejects loopback by design, so applying it
+ * to the docker Canvas host would break development.
+ */
+function canvasRequestDispatcher(url: string, canvasUrl: string) {
+  return isLocalCanvasDevRequest(url, canvasUrl) ? undefined : getPinnedDispatcher();
+}
+
+/**
+ * Rejects a redirect instead of following it to a host nothing has validated.
+ *
+ * `redirect: "manual"` is what makes the pre-flight host check meaningful: with
+ * the default "follow", a host that passes validation can hand the request off
+ * to one that never did, and the redirect target controls the full URL (path
+ * included) rather than only the origin.
+ */
+function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+const REDIRECT_REFUSED_MESSAGE = "Canvas redirected the request to an unvalidated host";
+
 async function assertSafeCanvasRequestHost(url: string, canvasUrl: string): Promise<void> {
   const hostname = new URL(url).hostname.toLowerCase();
-  if (isLocalCanvasDev(canvasUrl) && HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
+  if (isLocalCanvasDevRequest(url, canvasUrl)) return;
 
   try {
     await assertPublicHostname(hostname);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "disallowed network address";
     throw new CanvasApiError(detail, 400);
+  }
+}
+
+/**
+ * Resolves the Canvas hostname and rejects internal targets before an
+ * integration is persisted. `parseAndValidateCanvasUrl` covers IP literals
+ * synchronously; this covers hostnames that resolve inward, and applies on every
+ * save path rather than only the one that goes on to verify credentials.
+ */
+export async function assertSafeCanvasSaveHost(parsed: URL): Promise<void> {
+  const hostname = parsed.hostname.toLowerCase();
+  if (parsed.protocol === "http:" && HTTP_ALLOWED_HOSTNAMES.has(hostname)) return;
+
+  try {
+    await assertPublicHostname(hostname);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "disallowed network address";
+    throw new CanvasVerificationError(detail, 400);
   }
 }
 
@@ -234,7 +329,13 @@ export async function verifyCanvasCredentials(
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_VERIFY_TIMEOUT_MS),
-    });
+      redirect: "manual",
+      dispatcher: canvasRequestDispatcher(url, canvasUrl),
+    } as CanvasFetchInit);
+
+    if (isRedirect(response.status)) {
+      throw new CanvasVerificationError(REDIRECT_REFUSED_MESSAGE, 502);
+    }
 
     if (response.status === 401 || response.status === 403) {
       throw new CanvasVerificationError("Invalid Canvas API token", 400);
@@ -287,7 +388,13 @@ async function canvasFetchJson<T>(
     const response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
-    });
+      redirect: "manual",
+      dispatcher: canvasRequestDispatcher(url, canvasUrl),
+    } as CanvasFetchInit);
+
+    if (isRedirect(response.status)) {
+      throw new CanvasApiError(REDIRECT_REFUSED_MESSAGE, 502);
+    }
 
     if (response.status === 401 || response.status === 403) {
       throw new CanvasApiError("Invalid Canvas API token", 401);
@@ -527,7 +634,8 @@ async function performCanvasFileDownloadRequest(
     headers,
     redirect: "manual",
     signal: AbortSignal.timeout(CANVAS_REQUEST_TIMEOUT_MS),
-  });
+    dispatcher: canvasRequestDispatcher(url, credentials.canvasUrl),
+  } as CanvasFetchInit);
   return {
     status: response.status,
     getHeader: (name) => response.headers.get(name),
