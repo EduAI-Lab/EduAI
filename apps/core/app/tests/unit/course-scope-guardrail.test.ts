@@ -74,6 +74,12 @@ describe("buildCourseScopeClassifierPrompt", () => {
     expect(prompt).toContain(
       '"Write my professor a chocolate-cake recipe." is OFF-TOPIC.',
     );
+    expect(prompt).toContain(
+      '"Following up on help center" and "Following up on Math and Science Help Desk"\n  are ON-TOPIC.',
+    );
+    expect(prompt).toContain(
+      "the assistant\n  introduced in its immediately preceding answer",
+    );
   });
 
   it("treats conversation content as untrusted data", () => {
@@ -109,6 +115,30 @@ describe("buildCourseScopeClassifierPrompt", () => {
     expect(parsed.recentConversation[0].content).toContain("turn-2");
     expect(parsed.recentConversation[0].content).toHaveLength(1_000);
   });
+
+  it("preserves a resource at the end of a long assistant answer", () => {
+    const longBiologyAnswer = [
+      "Support and resources for BIOL 116.",
+      "Study materials and office hours. ".repeat(45),
+      "For scientific calculations related to the course, contact the Math and Science Help Desk.",
+    ].join(" ");
+
+    const parsed = JSON.parse(
+      buildCourseScopeClassifierUserPrompt(
+        "Following up on Math and Science Help Desk",
+        [{ role: "assistant", content: longBiologyAnswer }],
+      ),
+    );
+    const retainedAssistantAnswer = parsed.recentConversation[0].content;
+
+    expect(longBiologyAnswer.length).toBeGreaterThan(1_000);
+    expect(retainedAssistantAnswer).toHaveLength(1_000);
+    expect(retainedAssistantAnswer).toContain(
+      "Support and resources for BIOL 116",
+    );
+    expect(retainedAssistantAnswer).toContain("Math and Science Help Desk");
+    expect(retainedAssistantAnswer).toContain(" … ");
+  });
 });
 
 describe("buildCourseScopeRedirectMessage", () => {
@@ -131,10 +161,14 @@ describe("shouldSkipCourseScopeCheck", () => {
 
   it("does not trust course-associated keywords as a bypass", () => {
     expect(
-      shouldSkipCourseScopeCheck("Can you translate the assignment instructions?"),
+      shouldSkipCourseScopeCheck(
+        "Can you translate the assignment instructions?",
+      ),
     ).toBe(false);
     expect(
-      shouldSkipCourseScopeCheck("Help me email my professor about an extension"),
+      shouldSkipCourseScopeCheck(
+        "Help me email my professor about an extension",
+      ),
     ).toBe(false);
     expect(
       shouldSkipCourseScopeCheck("Write my professor a chocolate-cake recipe"),
@@ -143,8 +177,12 @@ describe("shouldSkipCourseScopeCheck", () => {
 
   it("does NOT skip off-topic requests that merely start with a greeting word", () => {
     // Regression: a leading-anchor greeting match let these bypass the gate.
-    expect(shouldSkipCourseScopeCheck("ok what's the weather today")).toBe(false);
-    expect(shouldSkipCourseScopeCheck("hey write me a poem about cats")).toBe(false);
+    expect(shouldSkipCourseScopeCheck("ok what's the weather today")).toBe(
+      false,
+    );
+    expect(shouldSkipCourseScopeCheck("hey write me a poem about cats")).toBe(
+      false,
+    );
   });
 
   it("does not mistake non-Latin questions for punctuation-only input", () => {
@@ -207,9 +245,8 @@ describe("resolveCourseScopeVerdict", () => {
       },
     }));
     vi.resetModules();
-    const { resolveCourseScopeVerdict: resolveWithMock } = await import(
-      "~/lib/ai/course-scope-guardrail"
-    );
+    const { resolveCourseScopeVerdict: resolveWithMock } =
+      await import("~/lib/ai/course-scope-guardrail");
     const verdict = await resolveWithMock({
       message: "What's the deadline for assignment 2?",
       context: baseContext,

@@ -37,9 +37,12 @@ export type CourseScopeVerdict = {
 const MAX_COURSE_SCOPE_HISTORY_TURNS = 6;
 const MAX_COURSE_SCOPE_HISTORY_TURN_CHARS = 1_000;
 const MAX_COURSE_SCOPE_MESSAGE_CHARS = 4_000;
+const COURSE_SCOPE_HISTORY_OMISSION = " … ";
 
 function classifierModelId(): string {
-  return process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct";
+  return (
+    process.env.COURSE_SCOPE_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct"
+  );
 }
 
 function courseScopeMinConfidence(): number {
@@ -64,11 +67,15 @@ export function parseCourseScopeJson(text: string): CourseScopeClassification {
   const trimmed = text.trim();
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("Course-scope classifier response contained no JSON object");
+    throw new Error(
+      "Course-scope classifier response contained no JSON object",
+    );
   }
   const parsed = courseScopeSchema.safeParse(JSON.parse(jsonMatch[0]));
   if (!parsed.success) {
-    throw new Error(`Course-scope classifier JSON invalid: ${parsed.error.message}`);
+    throw new Error(
+      `Course-scope classifier JSON invalid: ${parsed.error.message}`,
+    );
   }
   return parsed.data;
 }
@@ -82,7 +89,9 @@ function formatCourseTopics(topics: string[]): string {
  * Always-on Layer A policy. This remains active when an instructor disables
  * the stricter classifier so course chat still behaves as course chat.
  */
-export function buildCourseScopePolicyPrompt(context: CourseScopeContext): string {
+export function buildCourseScopePolicyPrompt(
+  context: CourseScopeContext,
+): string {
   return `COURSE-SCOPE POLICY
 You are the assistant for this course:
 - Name: ${context.courseName}
@@ -100,7 +109,9 @@ relationship to the course is plausible or uncertain, answer helpfully rather
 than refusing.`;
 }
 
-export function buildCourseScopeClassifierPrompt(context: CourseScopeContext): string {
+export function buildCourseScopeClassifierPrompt(
+  context: CourseScopeContext,
+): string {
   return `You are a scope-enforcement classifier for a university course AI assistant.
 Course: ${context.courseName} (${context.courseCode ?? "no code"}).
 Course description: ${context.courseDescription?.trim() || "none"}.
@@ -122,7 +133,11 @@ A message is ON-TOPIC if it relates to this course in any way, including:
   message's purpose or content genuinely relates to the course
 - questions about the course itself: what it covers, prerequisites, or asking
   what the course code means (e.g. "what is ${context.courseCode ?? "this course"}")
-- a natural follow-up, clarification, or greeting in an ongoing course conversation
+- a natural follow-up or clarification in an ongoing course conversation,
+  including questions about information, services, or resources the assistant
+  introduced in its immediately preceding answer. Do not require that referenced
+  item to appear independently in the course description or topic list.
+- a greeting in an ongoing course conversation
 
 A message is OFF-TOPIC only when it is clearly unrelated to the course — small
 talk or a request about an unrelated subject or task. Course-associated words
@@ -133,12 +148,33 @@ message as ON-TOPIC.
 Examples:
 - "Help me email my professor for an extension because I was sick." is ON-TOPIC.
 - "Translate the assignment instructions into Punjabi." is ON-TOPIC.
+- After the assistant mentions a Writing Center and Math and Science Help Desk,
+  "Following up on help center" and "Following up on Math and Science Help Desk"
+  are ON-TOPIC.
 - "Write my professor a chocolate-cake recipe." is OFF-TOPIC.
 
 "confidence" is how sure you are (0-100) that your onTopic value is correct.
 
 Respond with a single JSON object only (no markdown fences):
 {"onTopic": true|false, "confidence": 0-100}`;
+}
+
+function boundCourseScopeHistoryContent(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= MAX_COURSE_SCOPE_HISTORY_TURN_CHARS) {
+    return normalized;
+  }
+
+  // References such as "the last part" often point near the end of a long
+  // assistant answer. Preserve both ends instead of silently retaining only
+  // the opening, while keeping the classifier prompt at the same size.
+  const availableChars =
+    MAX_COURSE_SCOPE_HISTORY_TURN_CHARS - COURSE_SCOPE_HISTORY_OMISSION.length;
+  const leadingChars = Math.floor(availableChars / 3);
+  const trailingChars = availableChars - leadingChars;
+  return `${normalized.slice(0, leadingChars)}${COURSE_SCOPE_HISTORY_OMISSION}${normalized.slice(
+    -trailingChars,
+  )}`;
 }
 
 export function buildCourseScopeClassifierUserPrompt(
@@ -149,17 +185,16 @@ export function buildCourseScopeClassifierUserPrompt(
     .filter((turn) => turn.role === "user" || turn.role === "assistant")
     .map((turn) => ({
       role: turn.role,
-      content: turn.content
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, MAX_COURSE_SCOPE_HISTORY_TURN_CHARS),
+      content: boundCourseScopeHistoryContent(turn.content),
     }))
     .filter((turn) => turn.content.length > 0)
     .slice(-MAX_COURSE_SCOPE_HISTORY_TURNS);
 
   return JSON.stringify({
     recentConversation: boundedHistory,
-    latestStudentMessage: message.trim().slice(0, MAX_COURSE_SCOPE_MESSAGE_CHARS),
+    latestStudentMessage: message
+      .trim()
+      .slice(0, MAX_COURSE_SCOPE_MESSAGE_CHARS),
   });
 }
 
@@ -186,7 +221,9 @@ export async function classifyCourseScope(
 }
 
 /** Static, no-model-call redirect — keeps the guardrail's total extra output to just the classifier label. */
-export function buildCourseScopeRedirectMessage(courseName: string | null): string {
+export function buildCourseScopeRedirectMessage(
+  courseName: string | null,
+): string {
   const name = courseName?.trim() || "this course";
   return `That looks outside the scope of ${name}. I'm here to help with course content, so let's get back on track — ask me about lecture material, assignments, or anything else from the course and I'll do my best to help.`;
 }
@@ -205,14 +242,19 @@ export function shouldSkipCourseScopeCheck(message: string): boolean {
   if (!trimmed) return true;
   // Strip greeting words, then anything except Unicode letters/numbers. ASCII-
   // only cleanup incorrectly treated substantive non-Latin questions as empty.
-  const residue = trimmed.replace(GREETING_WORDS, "").replace(/[^\p{L}\p{N}]/gu, "");
+  const residue = trimmed
+    .replace(GREETING_WORDS, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
   return residue.length === 0;
 }
 
 export function shouldBlockCourseScopeClassification(
   classification: CourseScopeClassification,
 ): boolean {
-  return !classification.onTopic && classification.confidence >= courseScopeMinConfidence();
+  return (
+    !classification.onTopic &&
+    classification.confidence >= courseScopeMinConfidence()
+  );
 }
 
 /**
