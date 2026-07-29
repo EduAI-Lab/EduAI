@@ -749,7 +749,7 @@ export function spawnPdfExtractionWorker(
   const nodeArgs = [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath];
   const opts = {
     cwd: process.cwd(),
-    stdio: ['pipe', 'ignore', 'pipe'] as const,
+    stdio: ['pipe', 'ignore', 'pipe'] as ['pipe', 'ignore', 'pipe'],
     env: buildPdfWorkerMinimalEnv(),
   };
 
