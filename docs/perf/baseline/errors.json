@@ -27,23 +27,5 @@
     },
     "seed_note": "Run `npm run db:seed:perf` (all three DBs + pool manifests) before each run; deletes consume the pool."
   },
-  "errors": [
-    {
-      "app": "core",
-      "method": "POST",
-      "path": "POST /api/courses",
-      "role": "instructor",
-      "kind": "mutation",
-      "count": 15,
-      "error_count": 15,
-      "status_codes": {
-        "422": 15
-      },
-      "error_sample": {
-        "status": 422,
-        "message": "{\"error\":\"VALIDATION_ERROR\",\"fields\":{\"term\":\"Invalid enum value. Expected 'W1' | 'W2' | 'S1' | 'S2', received 'Fall'\"}}",
-        "body": "{\"error\":\"VALIDATION_ERROR\",\"fields\":{\"term\":\"Invalid enum value. Expected 'W1' | 'W2' | 'S1' | 'S2', received 'Fall'\"}}"
-      }
-    }
-  ]
+  "errors": []
 }
