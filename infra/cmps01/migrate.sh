@@ -59,27 +59,13 @@ wait_for_model() {
 wait_for_model "http://127.0.0.1:18001" "eduai-vllm"
 wait_for_model "http://127.0.0.1:18002" "eduai-vllm-t3"
 
-echo "=== Step 3: start LiteLLM proxy on :8001 ==="
-docker compose up -d
-
-echo "Waiting for proxy ..."
-for i in $(seq 1 20); do
-  if curl -sf http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 3
-done
-
-echo "=== Step 4: verify ==="
-echo "Backends:"
-curl -s http://127.0.0.1:18001/v1/models | jq -r '.data[].id' | sed 's/^/  7B: /'
-curl -s http://127.0.0.1:18002/v1/models | jq -r '.data[].id' | sed 's/^/  32B: /'
-
-echo "Proxy (both models):"
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq -r '.data[].id' | sed 's/^/  /'
+echo "=== Step 3: start LiteLLM + nginx edge via deploy-edge-proxy.sh ==="
+# Renders LiteLLM master_key from CMPS01_INTERNAL_KEY and rejects example secrets (#1115).
+./deploy-edge-proxy.sh
 
 echo ""
 echo "Done. Next on s378:"
 echo '  VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"'
-echo '  VLLM_API_KEY="vllm-local"'
+echo '  CMPS01_INTERNAL_KEY=<same as cmps01 .env>'
+echo '  VLLM_API_KEY=<same as CMPS01_INTERNAL_KEY>'
 echo "  restart dev server, npm run vllm:smoke, register models in Admin → AI Models"
