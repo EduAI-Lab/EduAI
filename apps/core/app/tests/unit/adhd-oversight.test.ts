@@ -762,7 +762,7 @@ ${hugeSources}
       model: mockModel,
       wordCap: 120,
       profile: "full_tutoring",
-      expectSources: true,
+      toolsUsed: true,
     });
     expect(result.method).toBe("forced_deterministic");
     expect(result.afterMetrics.underCap).toBe(true);
