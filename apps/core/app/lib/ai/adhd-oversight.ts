@@ -132,8 +132,8 @@ export type AuditAndMaybeRewriteResult = {
   text: string;
   rewritten: boolean;
   method: OversightMethod;
-  beforeMetrics: AdhdStructuralCompliance;
-  afterMetrics: AdhdStructuralCompliance;
+  beforeMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
+  afterMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
   oversightDurationMs: number;
   oversightUsage: OversightUsage | null;
 };
