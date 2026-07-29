@@ -60,9 +60,9 @@ describe('resolveCourseAccess', () => {
       mockCourseFindOne.mockResolvedValue({ id: 2, userId: 'owner-1', coreCourseId: null });
     });
 
-    it('grants the owner instructor access', async () => {
+    it('denies the owner — ownership alone is not access (#1114)', async () => {
       const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 2);
-      expect(access).toEqual(LEVELS.instructor);
+      expect(access).toBeNull();
       expect(mockEnrollments).not.toHaveBeenCalled();
     });
 
@@ -108,6 +108,18 @@ describe('resolveCourseAccess', () => {
       const access = await resolveCourseAccess({ id: 'u1', role: 'STUDENT' }, 1);
       expect(access).toBeNull();
     });
+
+    it('fails closed for the owner when enrollment fetch throws (#1114)', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+      expect(access).toBeNull();
+    });
+
+    it('fails closed for the owner when no matching enrollment exists (#1114)', async () => {
+      mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'INSTRUCTOR' }, 1);
+      expect(access).toBeNull();
+    });
   });
 
   describe('UNIT_ADMIN unit lock', () => {
@@ -147,6 +159,13 @@ describe('resolveCourseAccess', () => {
       );
       expect(access).toEqual(LEVELS.unit);
       expect(mockMe).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for a UNIT_ADMIN owner when Core course fetch throws (#1114)', async () => {
+      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess({ id: 'owner-1', role: 'UNIT_ADMIN' }, 1);
+      expect(access).toBeNull();
     });
   });
 });
@@ -239,5 +258,18 @@ describe('requireCourseAccess', () => {
       },
     })(reqBase, makeRes(), next);
     expect(next).toHaveBeenCalledWith(boom);
+  });
+
+  it('403s the course owner when Core enrollment fetch fails (#1114)', async () => {
+    mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+    const res = makeRes();
+    const next = vi.fn();
+    await requireCourseAccess({ min: 'instructor', getCourseId: () => 1 })(
+      { user: { id: 'owner-1', role: 'INSTRUCTOR' }, headers: {} },
+      res,
+      next,
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });

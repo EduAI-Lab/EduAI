@@ -236,16 +236,15 @@ describe('listCoursesForUser', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('falls back to owner-instructor when the course is absent from the cookie-scoped list', async () => {
+    it('denies the local owner when absent from the cookie-scoped list (#1114 fail-closed)', async () => {
       // Mirrors the unpublished-student edge and the "linker not yet in Core
-      // roster" edge: the cookie list omits the course, but the caller is the
-      // local QM owner — grant instructor so the anchor stays reachable.
+      // roster" edge: the cookie list omits the course — ownership alone must
+      // not keep the anchor visible.
       mockFindMany.mockResolvedValue([{ id: 1, userId: 'owner-1', coreCourseId: 'core-1' }]);
       mockListCoursesFromCore.mockResolvedValue([]);
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].accessLevel).toBe('instructor');
+      expect(rows).toHaveLength(0);
     });
 
     it('denies a non-owner absent from the cookie-scoped list', async () => {
@@ -256,15 +255,14 @@ describe('listCoursesForUser', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('grants owner-instructor access for a course not yet linked to Core, without any cookie-scoped lookup gating it', async () => {
+    it('denies an unlinked course even for the local owner (#1114)', async () => {
       mockFindMany.mockResolvedValue([{ id: 1, userId: 'owner-1', coreCourseId: null }]);
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].accessLevel).toBe('instructor');
+      expect(rows).toHaveLength(0);
     });
 
-    it('degrades to owner-fallback for every row when Core is unreachable for the cookie-scoped call', async () => {
+    it('fails closed for every row when Core is unreachable for the cookie-scoped call (#1114)', async () => {
       mockFindMany.mockResolvedValue([
         { id: 1, userId: 'owner-1', coreCourseId: 'core-1' },
         { id: 2, userId: 'stranger', coreCourseId: 'core-2' },
@@ -272,8 +270,7 @@ describe('listCoursesForUser', () => {
       mockListCoursesFromCore.mockRejectedValue(new Error('Core unreachable'));
 
       const rows = await listCoursesForUser({ id: 'owner-1', role: 'INSTRUCTOR' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0].id).toBe(1);
+      expect(rows).toHaveLength(0);
     });
 
     describe('UNIT_ADMIN unit lock', () => {

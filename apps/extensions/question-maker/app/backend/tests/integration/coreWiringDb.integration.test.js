@@ -26,17 +26,23 @@ const TEST_USER = { id: 'cuid-test-user', email: 'test@test.com', role: 'INSTRUC
 
 // Returns a fetch stub that:
 //  - answers session/validate with TEST_USER
+//  - answers enrollment lookups with an instructor enrollment (#1114 fail-closed)
 //  - answers any further calls with the provided mocks in order
 function makeFetch(...extraMocks) {
   const sessionReply = { ok: true, json: () => Promise.resolve({ user: TEST_USER }) };
-  return vi.fn()
-    .mockResolvedValueOnce(sessionReply)
-    .mockImplementation(() => {
-      const next = extraMocks.shift();
-      return next
-        ? Promise.resolve(next)
-        : Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-    });
+  return vi.fn().mockImplementation((url) => {
+    const path = String(url).split('?')[0];
+    if (path.endsWith('/api/sessions/validate')) {
+      return Promise.resolve(sessionReply);
+    }
+    if (/\/enrollments$/.test(path)) {
+      return Promise.resolve(enrollmentOk());
+    }
+    const next = extraMocks.shift();
+    return next
+      ? Promise.resolve(next)
+      : Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  });
 }
 
 /** #1041: Core's course list answers with `{ data, total, page, pageSize }`. */
@@ -77,8 +83,11 @@ describeDb('Core wiring DB integration', () => {
     // Seed user (mirrors what requireAuth puts in req.user)
     await prisma.user.create({ data: { id: TEST_USER.id, email: TEST_USER.email, name: TEST_USER.name } });
 
-    // Seed a course (not yet linked to Core)
-    const course = await prisma.course.create({ data: { userId: TEST_USER.id } });
+    // Seed a Core-linked course — #1114 fail-closed: unlinked rows grant no
+    // instructor access, so per-course gates need a coreCourseId + enrollment.
+    const course = await prisma.course.create({
+      data: { userId: TEST_USER.id, coreCourseId: 'cuid-seed-core' },
+    });
     courseId = course.id;
 
     // Seed a topic
@@ -113,15 +122,39 @@ describeDb('Core wiring DB integration', () => {
   // PATCH /api/course/:id/link-core
   // ---------------------------------------------------------------------------
   describe('PATCH /api/course/:id/link-core', () => {
+    const ADMIN_USER = { id: 'cuid-link-admin', email: 'link-admin@test.com', role: 'ADMIN', name: 'Link Admin' };
+    const adminCookie = () => ({ Cookie: 'session=admin-link' });
+
+    // #1114: unlinked rows grant no instructor access, so link-core is exercised
+    // as ADMIN (platform short-circuit) against an unlinked anchor.
+    async function seedUnlinkedForAdmin() {
+      await prisma.user.create({
+        data: { id: ADMIN_USER.id, email: ADMIN_USER.email, name: ADMIN_USER.name },
+      });
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
+    }
+
+    function makeAdminFetch(...extraMocks) {
+      const queue = [
+        { ok: true, json: () => Promise.resolve({ user: ADMIN_USER }) },
+        ...extraMocks,
+      ];
+      return vi.fn().mockImplementation(() => {
+        const next = queue.shift();
+        return Promise.resolve(next ?? { ok: true, json: () => Promise.resolve({}) });
+      });
+    }
+
     it('stores coreCourseId on the course', async () => {
+      await seedUnlinkedForAdmin();
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
+        makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
       );
 
       const res = await request(app)
         .patch(`/api/course/${courseId}/link-core`)
-        .set(cookie())
+        .set(adminCookie())
         .send({ coreCourseId: 'cuid-core-course' });
 
       expect(res.status).toBe(200);
@@ -132,14 +165,15 @@ describeDb('Core wiring DB integration', () => {
     });
 
     it('returns 403 when coreCourseId is outside the instructor scoped Core list (#578)', async () => {
+      await seedUnlinkedForAdmin();
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk(coursePage([{ id: 'cuid-other', code: 'MATH 101' }]))),
+        makeAdminFetch(coreOk(coursePage([{ id: 'cuid-other', code: 'MATH 101' }]))),
       );
 
       const res = await request(app)
         .patch(`/api/course/${courseId}/link-core`)
-        .set(cookie())
+        .set(adminCookie())
         .send({ coreCourseId: 'cuid-core-course' });
 
       expect(res.status).toBe(403);
@@ -150,14 +184,15 @@ describeDb('Core wiring DB integration', () => {
     });
 
     it('returns 404 for a course the user does not own', async () => {
+      await seedUnlinkedForAdmin();
       vi.stubGlobal(
         'fetch',
-        makeFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
+        makeAdminFetch(coreOk(coursePage([{ id: 'cuid-core-course', code: 'COSC 111' }]))),
       );
 
       const res = await request(app)
         .patch('/api/course/99999/link-core')
-        .set(cookie())
+        .set(adminCookie())
         .send({ coreCourseId: 'cuid-core-course' });
 
       expect(res.status).toBe(404);
@@ -168,15 +203,17 @@ describeDb('Core wiring DB integration', () => {
   // POST /api/course/:id/sync-topics
   // ---------------------------------------------------------------------------
   describe('POST /api/course/:id/sync-topics', () => {
-    it('returns 400 when course is not linked to Core', async () => {
+    it('returns 403 when course is not linked to Core (#1114 fail-closed for owners)', async () => {
+      await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: null } });
       vi.stubGlobal('fetch', makeFetch());
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
         .set(cookie());
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/not linked/i);
+      // Unlinked anchors no longer grant owner instructor access, so the
+      // per-course gate rejects before the handler's "not linked" 400.
+      expect(res.status).toBe(403);
     });
 
     it('upserts new Core topics and links existing ones by name', async () => {
@@ -186,7 +223,7 @@ describeDb('Core wiring DB integration', () => {
         { id: 'cuid-t1', name: 'Chapter 1' }, // matches existing local topic by name
         { id: 'cuid-t2', name: 'Chapter 2' }, // new
       ];
-      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ topics: coreTopics })));
+      vi.stubGlobal('fetch', makeFetch(coreOk({ topics: coreTopics })));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -205,7 +242,7 @@ describeDb('Core wiring DB integration', () => {
     it('returns 502 when Core fetch fails', async () => {
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
-      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreErr({ error: 'Service Unavailable' }, 503)));
+      vi.stubGlobal('fetch', makeFetch(coreErr({ error: 'Service Unavailable' }, 503)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/sync-topics`)
@@ -223,7 +260,7 @@ describeDb('Core wiring DB integration', () => {
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
       // fetch: session validate, enrollment access check, then Core POST /topics
-      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
+      vi.stubGlobal('fetch', makeFetch(coreOk({ id: 'cuid-new-topic', name: 'Sorting' }, 201)));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -240,7 +277,7 @@ describeDb('Core wiring DB integration', () => {
     it('creates topic locally even when Core push fails', async () => {
       await prisma.course.update({ where: { id: courseId }, data: { coreCourseId: 'cuid-core-course' } });
 
-      vi.stubGlobal('fetch', makeFetch(enrollmentOk(), { ok: false, status: 503, json: () => Promise.resolve({}) }));
+      vi.stubGlobal('fetch', makeFetch({ ok: false, status: 503, json: () => Promise.resolve({}) }));
 
       const res = await request(app)
         .post(`/api/course/${courseId}/topics`)
@@ -260,7 +297,7 @@ describeDb('Core wiring DB integration', () => {
 
       vi.stubGlobal(
         'fetch',
-        makeFetch(enrollmentOk(), {
+        makeFetch({
           ok: false,
           status: 409,
           json: () => Promise.resolve({ error: 'TOPIC_ALREADY_EXISTS', existingId: 'cuid-existing-topic' }),
