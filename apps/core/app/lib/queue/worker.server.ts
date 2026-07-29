@@ -19,6 +19,7 @@ import { AI_JOB_QUEUE_NAMES } from "./queues.server";
 import { QUEUE_CHAT, type QueueName } from "./resolve-pool.server";
 
 const DEFAULT_WORKER_MODEL = "vllm:qwen2.5-32b-instruct";
+const DEFAULT_AI_JOB_TIMEOUT_MS = 120_000;
 
 export type AiJobResult = {
   kind: JobPayload["kind"];
@@ -37,6 +38,18 @@ export type AiJobWorkerOutcome =
   | { skipped: true; reason: "cancelled" | "already-terminal" };
 
 export type ExecuteAiJob = (payload: JobPayload) => Promise<AiJobResult>;
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function aiJobTimeoutMs(): number {
+  return positiveInt(
+    process.env.AI_JOB_EXECUTION_TIMEOUT_MS,
+    DEFAULT_AI_JOB_TIMEOUT_MS,
+  );
+}
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {
@@ -130,6 +143,7 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
         ],
         streaming: false,
         routingContext: { jobType: payload.type },
+        signal: AbortSignal.timeout(aiJobTimeoutMs()),
       });
 
       if (!completion.ok) {
@@ -147,8 +161,8 @@ export async function executeAiJobPayload(payload: JobPayload): Promise<AiJobRes
           requestedCount: payload.input.count,
         },
         usage: completion.body.usage,
-        fleetHost: completion.body.fleetHost,
-        fleetServerId: completion.body.fleetServerId,
+        fleetHost: completion.internal.fleetHost,
+        fleetServerId: completion.internal.fleetServerId,
       };
     }
   }
@@ -180,24 +194,30 @@ export async function processAiJob(
     "aiJobId" in job.data && typeof job.data.aiJobId === "string"
       ? job.data.aiJobId
       : null;
-  const row = await prisma.aiJob.findUnique({
-    where: aiJobId
-      ? { id: aiJobId }
-      : {
-          queueName_bullJobId: {
-            queueName,
-            bullJobId,
-          },
+  const select = {
+    id: true,
+    status: true,
+    startedAt: true,
+    userId: true,
+    queueName: true,
+    bullJobId: true,
+  } as const;
+  const row =
+    (aiJobId
+      ? await prisma.aiJob.findUnique({
+          where: { id: aiJobId },
+          select,
+        })
+      : null) ??
+    (await prisma.aiJob.findUnique({
+      where: {
+        queueName_bullJobId: {
+          queueName,
+          bullJobId,
         },
-    select: {
-      id: true,
-      status: true,
-      startedAt: true,
-      userId: true,
-      queueName: true,
-      bullJobId: true,
-    },
-  });
+      },
+      select,
+    }));
 
   if (!row) {
     throw new Error(
@@ -224,7 +244,7 @@ export async function processAiJob(
   const claimed = await prisma.aiJob.updateMany({
     where: {
       id: row.id,
-      status: { in: ["PENDING", "RUNNING"] },
+      status: "PENDING",
     },
     data: {
       status: "RUNNING",
@@ -318,10 +338,11 @@ export function workerConcurrency(queueName: QueueName): number {
 export function createAiJobWorker(
   queueName: QueueName,
   options: Partial<WorkerOptions> = {},
+  execute: ExecuteAiJob = executeAiJobPayload,
 ): Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome> {
   const worker = new Worker<JobPayload | QueuedJobPayload, AiJobWorkerOutcome>(
     queueName,
-    (job) => processAiJob(job, queueName),
+    (job) => processAiJob(job, queueName, execute),
     {
       connection: redis as unknown as ConnectionOptions,
       concurrency: workerConcurrency(queueName),
