@@ -140,10 +140,12 @@ jobs:
           npm run db:generate -w edu-ai
           npm run typecheck -w edu-ai
 
-      - name: Generate Prisma client for core
+      - name: Generate Prisma clients
         run: |
           set -euo pipefail
           npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
 
       - name: Verify Prisma client isolation
         run: npm run test:prisma-client-isolation
