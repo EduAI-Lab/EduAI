@@ -50,9 +50,11 @@ describeDb('auto-import Practice Exam concurrency', () => {
       ],
     });
 
-    listCoursesFromCore.mockResolvedValue({
-      courses: [{ id: CORE_COURSE_ID, callerEnrollmentRole: 'INSTRUCTOR' }],
-    });
+    // #1041: `listCoursesFromCore` returns a plain array of courses now — the
+    // paging envelope is unwrapped inside coreApiService.
+    listCoursesFromCore.mockResolvedValue([
+      { id: CORE_COURSE_ID, callerEnrollmentRole: 'INSTRUCTOR' },
+    ]);
     getCourseEnrollmentsFromCore.mockResolvedValue({
       enrollments: [
         { studentId: 'inst-a', role: 'INSTRUCTOR', isActive: true },
