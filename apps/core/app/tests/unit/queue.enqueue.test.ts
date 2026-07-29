@@ -30,6 +30,19 @@ const job: JobPayload = {
   input: { kind: "question-generation", courseId: "course_1", prompt: "5 qs", count: 5 },
 };
 
+/**
+ * Both stats reads go through `prisma.aiJob.count`, so the two have to be told
+ * apart by query shape rather than call order — only the position read excludes
+ * a specific row (`id: { not: job.id }`). Routing on shape lets each test state
+ * "N jobs ahead, M in the queue" independently, so a regression that swaps the
+ * queries or drops this job from the depth count actually fails an assertion.
+ */
+function stubCounts({ ahead, depth }: { ahead: number; depth: number }) {
+  prismaMock.aiJob.count.mockImplementation((args: { where?: { id?: unknown } }) =>
+    Promise.resolve(args?.where?.id === undefined ? depth : ahead),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
@@ -42,7 +55,9 @@ beforeEach(() => {
   prismaMock.aiJob.update.mockResolvedValue({});
   prismaMock.aiJob.findUnique.mockResolvedValue(null);
   prismaMock.aiJob.delete.mockResolvedValue({});
-  prismaMock.aiJob.count.mockResolvedValue(0);
+  // Default: this job is alone in the queue — nothing ahead of it, and the depth
+  // count includes it. `{ ahead: 0, depth: 0 }` would be an impossible snapshot.
+  stubCounts({ ahead: 0, depth: 1 });
   queueAdd.mockResolvedValue({ id: "bull_1" });
 });
 
@@ -50,9 +65,10 @@ describe("enqueue", () => {
   it("creates a PENDING AiJob, enqueues, persists bullJobId, and returns the DB id", async () => {
     const result = await enqueue(job);
 
-    // Position/depth are live snapshots (#915): no other PENDING rows mocked,
-    // so this job is next up (position 1) in an otherwise-empty queue.
-    expect(result).toEqual({ jobId: "aijob_1", queuePosition: 1, queueDepth: 0 });
+    // Position/depth are live snapshots (#915): nothing ahead of this job, so
+    // it's next up, and the depth count includes it — depth is never below
+    // position for a job that just landed.
+    expect(result).toEqual({ jobId: "aijob_1", queuePosition: 1, queueDepth: 1 });
 
     expect(prismaMock.aiJob.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -101,8 +117,8 @@ describe("enqueue", () => {
       createdAt: new Date("2026-07-19T00:00:00Z"),
     });
 
-    // Replay stats come from the existing row (position query first, then depth).
-    prismaMock.aiJob.count.mockResolvedValueOnce(2).mockResolvedValueOnce(5);
+    // Replay stats come from the existing row: 2 ahead of it, 5 in the queue.
+    stubCounts({ ahead: 2, depth: 5 });
 
     const result = await enqueue({ ...job, idempotencyKey: "idem-9" });
 
@@ -113,7 +129,7 @@ describe("enqueue", () => {
 
   it("rejects with QueueFullError when QUEUE_MAX_DEPTH is reached, before writing anything", async () => {
     vi.stubEnv("QUEUE_MAX_DEPTH", "2");
-    prismaMock.aiJob.count.mockResolvedValueOnce(2); // depth check sees a full queue
+    stubCounts({ ahead: 0, depth: 2 }); // depth check sees a full queue
 
     await expect(enqueue(job)).rejects.toBeInstanceOf(QueueFullError);
     expect(prismaMock.aiJob.create).not.toHaveBeenCalled();
@@ -122,15 +138,28 @@ describe("enqueue", () => {
 
   it("enqueues when depth is below QUEUE_MAX_DEPTH", async () => {
     vi.stubEnv("QUEUE_MAX_DEPTH", "2");
-    prismaMock.aiJob.count.mockResolvedValueOnce(1); // depth check passes
+    stubCounts({ ahead: 0, depth: 1 }); // depth check passes
 
     const result = await enqueue(job);
     expect(result.jobId).toBe("aijob_1");
     expect(prismaMock.aiJob.create).toHaveBeenCalled();
   });
 
+  it("reports depth from a post-write read, never the pre-write backpressure count", async () => {
+    // The cap's count is taken before the row exists. Deriving depth from it
+    // (`count + 1`) while position is read fresh can report position > depth,
+    // an impossible snapshot — so depth must come from its own later read.
+    vi.stubEnv("QUEUE_MAX_DEPTH", "100");
+    stubCounts({ ahead: 6, depth: 12 });
+
+    const result = await enqueue(job);
+
+    expect(result).toEqual({ jobId: "aijob_1", queuePosition: 7, queueDepth: 12 });
+    expect(result.queueDepth!).toBeGreaterThanOrEqual(result.queuePosition!);
+  });
+
   it("never applies backpressure when QUEUE_MAX_DEPTH is unset", async () => {
-    prismaMock.aiJob.count.mockResolvedValue(9999);
+    stubCounts({ ahead: 9999, depth: 9999 });
 
     const result = await enqueue(job);
     expect(result.jobId).toBe("aijob_1");
@@ -138,7 +167,7 @@ describe("enqueue", () => {
 
   it("never rejects an idempotent replay even when the queue is full", async () => {
     vi.stubEnv("QUEUE_MAX_DEPTH", "1");
-    prismaMock.aiJob.count.mockResolvedValue(50);
+    stubCounts({ ahead: 50, depth: 50 });
     prismaMock.aiJob.findUnique.mockResolvedValueOnce({
       id: "aijob_existing",
       type: "background",
@@ -218,7 +247,7 @@ describe("enqueue", () => {
       queueName: "ai-jobs:chat",
     });
     // 2 ahead of the winner → 1-based position 3; depth is a separate count.
-    prismaMock.aiJob.count.mockResolvedValueOnce(2).mockResolvedValueOnce(9);
+    stubCounts({ ahead: 2, depth: 9 });
 
     const result = await enqueue(job);
 
