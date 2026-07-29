@@ -381,9 +381,65 @@ function clipBodyPreservingMarkdown(body: string, wordBudget: number): string {
   return out.join("\n").trim();
 }
 
+const MIN_BODY_WORDS_WHEN_FITTING = 20;
+
+/**
+ * Bound the Sources:/Next? tail so it can never push the response over
+ * `wordCap`. Oversized citation footers are replaced with the short generic
+ * Sources line; if even that cannot fit with **Next?**, Sources is dropped.
+ */
+function boundStructuralTail(
+  sourcesBlock: string,
+  nextBlock: string,
+  wordCap: number,
+): string {
+  const next = (nextBlock ?? "").trim();
+  const nextWords = next ? countWords(next) : 0;
+  let sources = (sourcesBlock ?? "").trim();
+
+  if (sources) {
+    const genericWords = countWords(ADHD_OVERSIGHT_GENERIC_SOURCES);
+    // Prefer leaving room for a short body when the cap allows it.
+    const sourcesBudget = Math.max(
+      0,
+      wordCap - nextWords - MIN_BODY_WORDS_WHEN_FITTING,
+    );
+    if (
+      countWords(sources) > sourcesBudget &&
+      sourcesBudget >= genericWords
+    ) {
+      sources = ADHD_OVERSIGHT_GENERIC_SOURCES;
+    } else if (countWords(sources) > Math.max(0, wordCap - nextWords)) {
+      // Still too large even without a body reserve — swap or drop.
+      if (genericWords <= Math.max(0, wordCap - nextWords)) {
+        sources = ADHD_OVERSIGHT_GENERIC_SOURCES;
+      } else {
+        sources = "";
+      }
+    }
+  }
+
+  let tail = [sources, next].filter(Boolean).join("\n\n");
+  if (countWords(tail) > wordCap) {
+    // Last resort: keep **Next?** only (or clip if somehow still over).
+    if (next && nextWords <= wordCap) return next;
+    if (next) {
+      return next.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
+    }
+    return ADHD_OVERSIGHT_GENERIC_SOURCES.split(/\s+/)
+      .filter(Boolean)
+      .slice(0, wordCap)
+      .join(" ");
+  }
+  return tail;
+}
+
 /**
  * Keep trailing **Next?** (and optional Sources) when trimming to the word cap.
  * Preserves Markdown structure (newlines + fenced blocks) in the body.
+ * Never returns more than `wordCap` words — oversized Sources footers are
+ * replaced with the short generic citation line rather than reserving the
+ * full footer and still granting a minimum body (which previously overran).
  */
 export function truncateToWordCap(text: string, wordCap: number): string {
   const trimmed = (text ?? "").trim();
@@ -402,19 +458,35 @@ export function truncateToWordCap(text: string, wordCap: number): string {
     if (nextIdx >= 0 && sourcesIdx >= 0) break;
   }
 
-  const tailStart =
+  const nextBlock =
+    nextIdx >= 0 ? lines.slice(nextIdx).join("\n").trim() : "";
+  const sourcesEnd =
+    sourcesIdx >= 0
+      ? nextIdx >= 0 && nextIdx > sourcesIdx
+        ? nextIdx
+        : lines.length
+      : -1;
+  const sourcesBlock =
+    sourcesIdx >= 0
+      ? lines.slice(sourcesIdx, sourcesEnd).join("\n").trim()
+      : "";
+  const bodyEnd =
     sourcesIdx >= 0 && (nextIdx < 0 || sourcesIdx < nextIdx)
       ? sourcesIdx
-      : nextIdx;
-  const tail =
-    tailStart >= 0 ? lines.slice(tailStart).join("\n").trim() : "";
-  const body = (tailStart >= 0 ? lines.slice(0, tailStart) : lines)
-    .join("\n")
-    .trim();
+      : nextIdx >= 0
+        ? nextIdx
+        : lines.length;
+  const body = lines.slice(0, bodyEnd).join("\n").trim();
+
+  const tail = boundStructuralTail(sourcesBlock, nextBlock, wordCap);
   const tailWords = tail ? countWords(tail) : 0;
-  const bodyBudget = Math.max(20, wordCap - tailWords);
+  // Never force a body minimum that would exceed the cap.
+  const bodyBudget = Math.max(0, wordCap - tailWords);
   const clippedBody = clipBodyPreservingMarkdown(body, bodyBudget);
-  return (tail ? `${clippedBody}\n\n${tail}` : clippedBody).trim();
+  const result = (tail ? `${clippedBody}\n\n${tail}` : clippedBody).trim();
+  // Final safety: hard-clip if anything still overran (should be rare).
+  if (countWords(result) <= wordCap) return result;
+  return result.split(/\s+/).filter(Boolean).slice(0, wordCap).join(" ");
 }
 
 /**
@@ -495,7 +567,13 @@ export function forceDeterministicCompliance(
     text = truncateToWordCap(text, options.wordCap);
   }
 
-  return normalizeAdhdStructuralAnchors(text);
+  text = normalizeAdhdStructuralAnchors(text);
+  // Guaranteed under-cap after any re-inserted anchors / Sources.
+  if (countWords(text) > options.wordCap) {
+    text = truncateToWordCap(text, options.wordCap);
+    text = normalizeAdhdStructuralAnchors(text);
+  }
+  return text;
 }
 
 function passesProfileStructure(
@@ -866,50 +944,124 @@ export async function auditAndMaybeRewrite(args: {
     }
 
     // Track B: never fail-open with a non-compliant tutoring draft.
-    const forced = forceDeterministicCompliance(trimmed, {
+    const forcedResult = finalizeForcedDeterministic({
+      draft: trimmed,
+      rawDraft,
       wordCap,
       profile,
       requireDiagram,
       expectSources,
       userText: args.userText,
-    });
-    const forcedMetrics = withProfileStructuralPass(
-      computeAdhdResponseMetrics(forced, { wordCap }),
-      profile,
-      forced,
-    );
-    return {
-      text: forced,
-      rewritten: forced !== rawDraft,
-      method: "forced_deterministic",
       beforeMetrics,
-      afterMetrics: forcedMetrics,
-      oversightDurationMs: Date.now() - oversightStartedAt,
+      oversightStartedAt,
       oversightUsage: usageAcc,
-    };
+      gateOpts,
+    });
+    return forcedResult;
   } catch (error) {
     console.error("[adhd-oversight] LLM rewrite failed", error);
-    const forced = forceDeterministicCompliance(trimmed, {
+    return finalizeForcedDeterministic({
+      draft: trimmed,
+      rawDraft,
       wordCap,
       profile,
       requireDiagram,
       expectSources,
       userText: args.userText,
-    });
-    return {
-      text: forced,
-      rewritten: forced !== rawDraft,
-      method: "forced_deterministic",
       beforeMetrics,
-      afterMetrics: withProfileStructuralPass(
-        computeAdhdResponseMetrics(forced, { wordCap }),
-        profile,
-        forced,
-      ),
-      oversightDurationMs: Date.now() - oversightStartedAt,
+      oversightStartedAt,
       oversightUsage: usageAcc,
-    };
+      gateOpts,
+    });
   }
+}
+
+/**
+ * Build the forced_deterministic result and refuse to return it unless it is
+ * under the word cap and passes contentOk (anchors / urgency / diagram /
+ * Sources). If the first wrap still fails, rebuild a minimal skeleton.
+ */
+function finalizeForcedDeterministic(args: {
+  draft: string;
+  rawDraft: string;
+  wordCap: number;
+  profile: AdhdTurnProfile;
+  requireDiagram?: boolean;
+  expectSources?: boolean;
+  userText?: string;
+  beforeMetrics: AdhdStructuralCompliance & { profileStructuralPass?: boolean };
+  oversightStartedAt: number;
+  oversightUsage: OversightUsage | null;
+  gateOpts: { requireDiagram?: boolean; expectSources?: boolean };
+}): AuditAndMaybeRewriteResult {
+  const wrapOpts = {
+    wordCap: args.wordCap,
+    profile: args.profile,
+    requireDiagram: args.requireDiagram,
+    expectSources: args.expectSources,
+    userText: args.userText,
+  };
+
+  let forced = forceDeterministicCompliance(args.draft, wrapOpts);
+  let forcedMetrics = withProfileStructuralPass(
+    computeAdhdResponseMetrics(forced, { wordCap: args.wordCap }),
+    args.profile,
+    forced,
+  );
+
+  const forcedOk =
+    forcedMetrics.underCap &&
+    contentOk(forcedMetrics, args.profile, forced, args.gateOpts);
+
+  if (!forcedOk) {
+    // Minimal under-cap skeleton — prefer compliance over preserving draft prose.
+    const req = getProfileRequirements(args.profile);
+    const parts: string[] = [];
+    if (req.expectTopSummary) {
+      parts.push("**Top summary**", "- See the question above.");
+    } else {
+      parts.push("One topic at a time — happy to switch or return.");
+    }
+    if (args.requireDiagram) {
+      parts.push(
+        [
+          "```eduai-diagram",
+          "process-flow",
+          "title: Steps",
+          "One: First",
+          "Two: Second",
+          "```",
+        ].join("\n"),
+      );
+    }
+    if (args.expectSources) {
+      parts.push(ADHD_OVERSIGHT_GENERIC_SOURCES);
+    }
+    if (req.expectNextLine || req.expectRedirectTemplate) {
+      parts.push(
+        `**Next?** ${
+          req.expectRedirectTemplate ? DEFAULT_REDIRECT_NEXT : DEFAULT_NEXT_OFFER
+        }`,
+      );
+    }
+    forced = truncateToWordCap(parts.filter(Boolean).join("\n\n"), args.wordCap);
+    forced = normalizeAdhdStructuralAnchors(forced);
+    forcedMetrics = withProfileStructuralPass(
+      computeAdhdResponseMetrics(forced, { wordCap: args.wordCap }),
+      args.profile,
+      forced,
+    );
+  }
+
+  return {
+    text: forced,
+    rewritten: forced !== args.rawDraft,
+    method: "forced_deterministic",
+    beforeMetrics: args.beforeMetrics,
+    afterMetrics: forcedMetrics,
+    oversightDurationMs: Date.now() - args.oversightStartedAt,
+    oversightUsage: args.oversightUsage,
+  };
 }
 
 export type OverseenAssistantMessage = {

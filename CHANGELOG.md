@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap); forced wrap revalidates diagram/Sources after truncation. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ### Changed
 
@@ -18,7 +18,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
-- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ## [Week 12 — July 20–26, 2026]
 
