@@ -70,22 +70,150 @@ const mapQuestion = (item: any): Question => ({
   variants: Array.isArray(item.variants) ? item.variants.map(mapVariant) : []
 });
 
+export type PaginatedList<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const PAGE_FETCH_SIZE = 100;
+/** Server list endpoints clamp to this; larger explicit limits must page-loop. */
+const SERVER_MAX_LIST_LIMIT = 200;
+/** Hard ceiling so a bad `total` cannot spin forever. */
+const MAX_FETCH_ALL = 10_000;
+
+/** Unwraps list API payload — supports envelope `{ items, total, ... }` and legacy arrays. */
+function unwrapPaginatedList<T>(data: unknown, mapItem: (row: any) => T): PaginatedList<T> {
+  if (Array.isArray(data)) {
+    const items = data.map(mapItem);
+    return { items, total: items.length, limit: items.length, offset: 0 };
+  }
+  if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+    const page = data as { items: any[]; total?: number; limit?: number; offset?: number };
+    const items = page.items.map(mapItem);
+    return {
+      items,
+      total: typeof page.total === 'number' ? page.total : items.length,
+      limit: typeof page.limit === 'number' ? page.limit : items.length,
+      offset: typeof page.offset === 'number' ? page.offset : 0,
+    };
+  }
+  return { items: [], total: 0, limit: 50, offset: 0 };
+}
+
+async function fetchAllPages<T>(
+  fetchPage: (offset: number, limit: number) => Promise<PaginatedList<T>>,
+  options: { startOffset?: number; maxItems?: number } = {},
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = options.startOffset ?? 0;
+  let total = Infinity;
+  const maxItems = Math.min(options.maxItems ?? MAX_FETCH_ALL, MAX_FETCH_ALL);
+
+  while (all.length < total && all.length < maxItems) {
+    const page = await fetchPage(offset, PAGE_FETCH_SIZE);
+    all.push(...page.items);
+    total = Number.isFinite(page.total) ? page.total : all.length;
+    if (page.items.length === 0) break;
+    offset += page.items.length;
+    if (offset >= total) break;
+  }
+
+  // The hard safety ceiling itself must never truncate silently — that's the exact bug
+  // this PR fixes for the server's 50-row cap. If a caller asked for fewer than
+  // MAX_FETCH_ALL explicitly, getting exactly that many back is expected, not a truncation.
+  if (maxItems === MAX_FETCH_ALL && all.length >= MAX_FETCH_ALL && all.length < total) {
+    throw new Error(
+      `Result set has ${total} rows, exceeding the ${MAX_FETCH_ALL}-row fetch-all safety cap. ` +
+        'Use getQuestionsPage() with explicit pagination instead of fetching all rows.',
+    );
+  }
+
+  return all.slice(0, maxItems);
+}
+
 export const questionService = {
-  /** Fetches questions with optional filters and maps them to frontend shape. */
-  async getQuestions(options: {
+  /** Fetches one page of questions with pagination metadata (#1040). */
+  async getQuestionsPage(options: {
     courseId?: number;
     search?: string;
+    types?: string[];
+    difficulties?: string[];
+    reasoningLevels?: string[];
+    aiGenerated?: 'all' | 'ai' | 'not-ai';
+    draftStatus?: 'all' | 'draft' | 'reviewed';
+    sortBy?: 'newest' | 'oldest' | 'type';
     limit?: number;
     offset?: number;
-  } = {}): Promise<Question[]> {
+  } = {}): Promise<PaginatedList<Question>> {
     const params: Record<string, unknown> = {};
     if (options.courseId !== undefined) params.courseId = options.courseId;
     if (options.search !== undefined) params.search = options.search;
+    if (options.types?.length) params.types = options.types.join(',');
+    if (options.difficulties?.length) params.difficulties = options.difficulties.join(',');
+    if (options.reasoningLevels?.length) {
+      params.reasoningLevels = options.reasoningLevels.join(',');
+    }
+    if (options.aiGenerated && options.aiGenerated !== 'all') {
+      params.aiGenerated = options.aiGenerated;
+    }
+    if (options.draftStatus && options.draftStatus !== 'all') {
+      params.draftStatus = options.draftStatus;
+    }
+    if (options.sortBy && options.sortBy !== 'newest') params.sortBy = options.sortBy;
     if (options.limit !== undefined) params.limit = options.limit;
     if (options.offset !== undefined) params.offset = options.offset;
 
     const response = await api.get('/api/questions', { params });
-    return (response.data.data || []).map(mapQuestion);
+    return unwrapPaginatedList(response.data.data, mapQuestion);
+  },
+
+  /**
+   * Fetches questions for UI consumers.
+   * - With an explicit `limit` ≤ server max: returns that single page's items.
+   * - With a larger `limit`, or no limit: page-loops until all matching rows (or the
+   *   requested cap) are loaded — fixes silent 50-cap and avoids silent clamp at 200.
+   */
+  async getQuestions(options: {
+    courseId?: number;
+    search?: string;
+    types?: string[];
+    difficulties?: string[];
+    reasoningLevels?: string[];
+    aiGenerated?: 'all' | 'ai' | 'not-ai';
+    draftStatus?: 'all' | 'draft' | 'reviewed';
+    sortBy?: 'newest' | 'oldest' | 'type';
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<Question[]> {
+    if (
+      options.limit !== undefined &&
+      options.limit > 0 &&
+      options.limit <= SERVER_MAX_LIST_LIMIT
+    ) {
+      const page = await this.getQuestionsPage(options);
+      return page.items;
+    }
+
+    const {
+      limit: _ignoredLimit,
+      offset: startOffset,
+      ...filterOptions
+    } = options;
+
+    return fetchAllPages(
+      (offset, limit) =>
+        this.getQuestionsPage({
+          ...filterOptions,
+          limit,
+          offset,
+        }),
+      {
+        startOffset: startOffset ?? 0,
+        maxItems: options.limit,
+      },
+    );
   },
 
   /** Retrieves a single question by ID. */
@@ -173,9 +301,18 @@ export const questionService = {
     return (response.data.data || []).map(mapQuestion);
   },
 
-  /** Returns aggregate question/variant stats for the current user. */
-  async getQuestionStats(): Promise<QuestionStats> {
-    const response = await api.get('/api/questions/stats');
+  /** Returns aggregate question/variant stats for the current user (optional course scope). */
+  async getQuestionStats(options: { courseId?: number } = {}): Promise<QuestionStats & {
+    totalVariants?: number;
+    typeStats?: Array<{ type: string; count: number | string }>;
+    aiCount?: number;
+    humanCount?: number;
+    reviewedCount?: number;
+    usedTopicIds?: string[];
+  }> {
+    const params: Record<string, unknown> = {};
+    if (options.courseId !== undefined) params.courseId = options.courseId;
+    const response = await api.get('/api/questions/stats', { params });
     return response.data.data;
   },
 
