@@ -14,8 +14,8 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Canvas LMS integration**: connect a Canvas account, import quizzes as questions, export assessments as
   Canvas quizzes
 - **Auth**: no local accounts — every request is authenticated by validating the caller's session cookie
-  against Core (`requireAuth` in `src/middleware/auth.js`); RBAC is course-scoped (owner, Core enrollment
-  role, or unit-admin department match)
+  against Core (`requireAuth` in `src/middleware/auth.js`); RBAC is course-scoped from Core enrollment
+  role or unit-admin department match (local course ownership is an FK only — not an access grant; #1114)
 
 ## Tech Stack
 
