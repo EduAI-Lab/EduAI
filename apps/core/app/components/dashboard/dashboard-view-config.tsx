@@ -33,7 +33,6 @@ import { useCourses } from "~/hooks/api/use-courses";
 import { useDashboardStats } from "~/hooks/api/use-dashboard-stats";
 import type { DashboardStats } from "~/hooks/api/use-dashboard-stats";
 import type { Course } from "~/hooks/api/use-courses";
-import type { PlatformUser } from "~/hooks/api/types";
 import { DashboardView } from "~/components/dashboard/dashboard-view";
 import { DashboardAnalytics } from "~/components/dashboard/dashboard-analytics";
 import type { DashboardStatDef, DashboardQuickAction } from "~/components/dashboard/dashboard-view";
@@ -52,14 +51,29 @@ export type DashboardHeroCopy = {
   subheading: string;
 };
 
-/** Data available to every `statBuilder` — `users`/`usersLoading` are only populated for ADMIN. */
+/**
+ * Data available to every `statBuilder`.
+ *
+ * #1041: `/api/users` and `/api/courses` are server-paginated now, so a count
+ * must come from the server's `total`/`stats`, never from `.length` on the
+ * loaded page (which would only ever count the first page). `courses` is still
+ * the loaded page — the course-card panel renders it — but every *count* below
+ * reads a total. `userTotal`/`activeCourseTotal` are only populated for the
+ * roles that show them (ADMIN, UNIT_ADMIN).
+ */
 export type DashboardStatContext = {
   courses: Course[];
   coursesLoading: boolean;
+  /** Server-side total for the caller's visible course list (#1041). */
+  courseTotal: number;
   stats: DashboardStats | null;
   statsLoading: boolean;
-  users?: PlatformUser[];
+  /** Platform-wide user count from `/api/users` stats — ADMIN only (#1041). */
+  userTotal?: number;
   usersLoading?: boolean;
+  /** Server-side count of active courses — ADMIN and UNIT_ADMIN only (#1041). */
+  activeCourseTotal?: number;
+  activeCoursesLoading?: boolean;
 };
 
 export type DashboardRoleConfig = {
@@ -121,9 +135,9 @@ const UNIT_ADMIN_QUICK_ACTIONS: DashboardQuickAction[] = [
 
 export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
   ADMIN: {
-    statBuilder: ({ users, usersLoading, courses, coursesLoading, stats, statsLoading }) => [
-      { label: "Total users", value: usersLoading ? "—" : String(users?.length ?? 0) },
-      { label: "Active courses", value: coursesLoading ? "—" : String(courses.filter((c) => c.isActive).length) },
+    statBuilder: ({ userTotal, usersLoading, activeCourseTotal, activeCoursesLoading, stats, statsLoading }) => [
+      { label: "Total users", value: usersLoading ? "—" : String(userTotal ?? 0) },
+      { label: "Active courses", value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0) },
       { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
       { label: "Materials uploaded", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
     ],
@@ -136,9 +150,9 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     }),
   },
   UNIT_ADMIN: {
-    statBuilder: ({ courses, coursesLoading, stats, statsLoading }) => [
-      { label: "Unit courses", value: coursesLoading ? "—" : String(courses.length) },
-      { label: "Active courses", value: coursesLoading ? "—" : String(courses.filter((c) => c.isActive).length) },
+    statBuilder: ({ courseTotal, coursesLoading, activeCourseTotal, activeCoursesLoading, stats, statsLoading }) => [
+      { label: "Unit courses", value: coursesLoading ? "—" : String(courseTotal) },
+      { label: "Active courses", value: activeCoursesLoading ? "—" : String(activeCourseTotal ?? 0) },
       { label: "Instructors", value: statsLoading ? "—" : String(stats?.instructorCount ?? 0) },
       { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
     ],
@@ -151,8 +165,8 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     }),
   },
   INSTRUCTOR: {
-    statBuilder: ({ courses, coursesLoading, stats, statsLoading }) => [
-      { label: "Courses teaching", value: coursesLoading ? "—" : String(courses.length) },
+    statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
+      { label: "Courses teaching", value: coursesLoading ? "—" : String(courseTotal) },
       { label: "Students enrolled", value: statsLoading ? "—" : String(stats?.studentCount ?? 0) },
       { label: "Materials uploaded", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
       { label: "AI interactions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
@@ -165,8 +179,8 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     }),
   },
   TA: {
-    statBuilder: ({ courses, coursesLoading, stats, statsLoading }) => [
-      { label: "Courses assisting", value: coursesLoading ? "—" : String(courses.length) },
+    statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
+      { label: "Courses assisting", value: coursesLoading ? "—" : String(courseTotal) },
       { label: "Students", value: statsLoading ? "—" : String(stats?.studentCount ?? 0) },
       { label: "Materials", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
       { label: "AI sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
@@ -179,8 +193,8 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
     }),
   },
   STUDENT: {
-    statBuilder: ({ courses, coursesLoading, stats, statsLoading }) => [
-      { label: "Courses enrolled", value: coursesLoading ? "—" : String(courses.length) },
+    statBuilder: ({ courseTotal, coursesLoading, stats, statsLoading }) => [
+      { label: "Courses enrolled", value: coursesLoading ? "—" : String(courseTotal) },
       { label: "AI sessions / week", value: statsLoading ? "—" : String(stats?.chatCountWeek ?? 0) },
       { label: "Materials available", value: statsLoading ? "—" : String(stats?.materialCount ?? 0) },
       { label: "Total sessions", value: statsLoading ? "—" : String(stats?.chatCount ?? 0) },
@@ -194,16 +208,34 @@ export const DASHBOARD_CONFIG: Record<EffectiveRole, DashboardRoleConfig> = {
   },
 };
 
-/** ADMIN only — the sole role that needs `useUsers()`, kept out of `DashboardStandardBody`
- * so the hook is never called (and `/api/users` never fetched) for other roles. */
+/**
+ * ADMIN only — the sole role that needs `useUsers()`, kept out of the other
+ * bodies so the hook is never called (and `/api/users` never fetched) for other
+ * roles. Its panel is quick actions, so it never renders course cards; both its
+ * counts (#1041) are server totals, so it asks for the smallest page and reads
+ * `stats.total` / the active-course `total` rather than a loaded array.
+ */
 export function DashboardAdminBody() {
-  const { users, isLoading: usersLoading } = useUsers();
-  const { courses, loading: coursesLoading } = useCourses();
+  const { stats: userStats, isLoading: usersLoading } = useUsers({ pageSize: 1 });
+  const { total: activeCourseTotal, loading: activeCoursesLoading } = useCourses({
+    pageSize: 1,
+    isActive: true,
+  });
   const { chats, isLoading: chatsLoading } = useRecentChats();
   const { stats, isLoading: statsLoading } = useDashboardStats();
 
   const config = DASHBOARD_CONFIG.ADMIN;
-  const ctx: DashboardStatContext = { courses, coursesLoading, stats, statsLoading, users, usersLoading };
+  const ctx: DashboardStatContext = {
+    courses: [],
+    coursesLoading: false,
+    courseTotal: 0,
+    stats,
+    statsLoading,
+    userTotal: userStats.total,
+    usersLoading,
+    activeCourseTotal,
+    activeCoursesLoading,
+  };
 
   return (
     <DashboardView
@@ -217,14 +249,59 @@ export function DashboardAdminBody() {
   );
 }
 
-/** Every other role — UNIT_ADMIN, INSTRUCTOR, TA, STUDENT. */
-export function DashboardStandardBody({ effectiveRole }: { effectiveRole: Exclude<EffectiveRole, "ADMIN"> }) {
-  const { courses, loading: coursesLoading } = useCourses();
+/**
+ * UNIT_ADMIN — like the standard body, but with a second `total`-only read for
+ * the active-course count (#1041). Its panel is quick actions too, so it needs
+ * course totals, not the loaded page — hence the `pageSize: 1` reads.
+ */
+export function DashboardUnitAdminBody() {
+  const { total: courseTotal, loading: coursesLoading } = useCourses({ pageSize: 1 });
+  const { total: activeCourseTotal, loading: activeCoursesLoading } = useCourses({
+    pageSize: 1,
+    isActive: true,
+  });
+  const { chats, isLoading: chatsLoading } = useRecentChats();
+  const { stats, isLoading: statsLoading } = useDashboardStats();
+
+  const config = DASHBOARD_CONFIG.UNIT_ADMIN;
+  const ctx: DashboardStatContext = {
+    courses: [],
+    coursesLoading,
+    courseTotal,
+    stats,
+    statsLoading,
+    activeCourseTotal,
+    activeCoursesLoading,
+  };
+
+  return (
+    <DashboardView
+      stats={config.statBuilder(ctx)}
+      quickActions={config.quickActions}
+      leftPanelTitle={config.leftPanelTitle}
+      recentChats={chats}
+      recentChatsLoading={chatsLoading}
+      analytics={<DashboardAnalytics stats={stats} loading={statsLoading} />}
+    />
+  );
+}
+
+/**
+ * INSTRUCTOR, TA, STUDENT — a course-card panel plus a course count. The panel
+ * renders the loaded page; the count is the server `total`, not the rows on
+ * screen (#1041).
+ */
+export function DashboardStandardBody({
+  effectiveRole,
+}: {
+  effectiveRole: Exclude<EffectiveRole, "ADMIN" | "UNIT_ADMIN">;
+}) {
+  const { courses, total: courseTotal, loading: coursesLoading } = useCourses();
   const { chats, isLoading: chatsLoading } = useRecentChats();
   const { stats, isLoading: statsLoading } = useDashboardStats();
 
   const config = DASHBOARD_CONFIG[effectiveRole];
-  const ctx: DashboardStatContext = { courses, coursesLoading, stats, statsLoading };
+  const ctx: DashboardStatContext = { courses, coursesLoading, courseTotal, stats, statsLoading };
 
   return (
     <DashboardView

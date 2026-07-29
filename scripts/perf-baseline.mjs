@@ -64,6 +64,11 @@ function cliFlag(name) {
 const CORE_URL = (process.env.CORE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const AITUTOR_URL = (process.env.AITUTOR_URL ?? "http://localhost:4000").replace(/\/$/, "");
 const QM_URL = (process.env.QM_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// #1041: Core's paginated list endpoints reject a request with no `page`/`pageSize`.
+// Page 1 at the server's max page size keeps the benchmark measuring the widest
+// read the contract allows, which is the closest equivalent to the old unpaged call.
+const CORE_PAGE_SIZE = 200;
+const CORE_PAGE_QUERY = `page=1&pageSize=${CORE_PAGE_SIZE}`;
 const SEED_PASSWORD = process.env.SEED_PASSWORD ?? "EduAI2026!";
 const WARMUP = Number(process.env.PERF_WARMUP ?? 3);
 const SAMPLES = Number(process.env.PERF_SAMPLES ?? 30);
@@ -253,10 +258,13 @@ function buildReads(cookies, m) {
   if (CORE_URL) {
     add("core", "GET", "/api/health", "student", `${CORE_URL}/api/health`);
     add("core", "GET", "/api/disciplines", "student", `${CORE_URL}/api/disciplines`);
-    add("core", "GET", "/api/courses", "instructor", `${CORE_URL}/api/courses`);
-    add("core", "GET", "/api/ai-providers", "admin", `${CORE_URL}/api/ai-providers`);
-    add("core", "GET", "/api/ai-models", "admin", `${CORE_URL}/api/ai-models`);
-    add("core", "GET", "/api/users", "admin", `${CORE_URL}/api/users`);
+    // #1041: these four list endpoints require `page`/`pageSize` and answer 400
+    // PAGINATION_REQUIRED without them, so the benchmark has to send the paging
+    // params or it would time a validation error instead of the real read.
+    add("core", "GET", "/api/courses", "instructor", `${CORE_URL}/api/courses?${CORE_PAGE_QUERY}`);
+    add("core", "GET", "/api/ai-providers", "admin", `${CORE_URL}/api/ai-providers?${CORE_PAGE_QUERY}`);
+    add("core", "GET", "/api/ai-models", "admin", `${CORE_URL}/api/ai-models?${CORE_PAGE_QUERY}`);
+    add("core", "GET", "/api/users", "admin", `${CORE_URL}/api/users?${CORE_PAGE_QUERY}`);
     add("core", "GET", "/api/invitations", "admin", `${CORE_URL}/api/invitations`);
     add("core", "GET", "/api/policies", "admin", `${CORE_URL}/api/policies`);
     add("core", "GET", "/api/dashboard/stats", "admin", `${CORE_URL}/api/dashboard/stats`);

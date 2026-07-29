@@ -53,14 +53,16 @@ async function signIn(email, password) {
 }
 
 async function getToolModel(cookies) {
-  const res = await fetch(`${BASE_URL}/api/ai-models`, {
+  // #1041: /api/ai-models requires `page`/`pageSize` and answers
+  // 400 PAGINATION_REQUIRED without them, returning a `{ data, total }` envelope.
+  const res = await fetch(`${BASE_URL}/api/ai-models?page=1&pageSize=200`, {
     headers: { Cookie: cookieHeader(cookies) },
   });
   if (!res.ok) {
     return null;
   }
-  const data = await res.json();
-  const models = Array.isArray(data) ? data : data.models ?? [];
+  const payload = await res.json();
+  const models = payload?.data ?? [];
   const toolModel = models.find((m) => m.supportsTools && m.isActive);
   if (!toolModel?.provider?.name || !toolModel?.modelId) {
     return null;
