@@ -420,7 +420,6 @@ async function main() {
         choices: type === "MCQ" ? { options: ["A", "B", "C", "D"], correct: 0 } : undefined,
         answer: type === "MCQ" ? "A" : "Sample answer.",
         testable: rnd() < 0.5,
-        idempotencyKey: `${MARKER}-q-${c}-${q}`,
       };
     });
     await prisma.question.createMany({ data: qRows, skipDuplicates: true });
@@ -478,7 +477,6 @@ async function main() {
         userId: sid,
         role: "STUDENT" as const,
         isActive: true,
-        idempotencyKey: `${MARKER}-enr-${c}-${e}`,
         externalSource: MARKER,
       });
     }
