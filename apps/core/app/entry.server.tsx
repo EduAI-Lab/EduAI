@@ -68,6 +68,12 @@ export default function handleRequest(
         <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceProvider>,
       {
+        // Nonces React's own inline scripts — the `$RC`/`$RV`/`$RB` calls it
+        // emits to reveal a Suspense boundary that resolved after the shell
+        // flushed. Those are separate from anything React Router renders, so
+        // `<ServerRouter nonce>` above does not cover them, and without this
+        // `script-src` blocks them and the boundary never swaps in.
+        nonce,
         [readyOption]() {
           shellRendered = true;
           const body = new PassThrough({
