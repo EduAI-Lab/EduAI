@@ -80,7 +80,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   let exhausted = false;
 
   for (let batch = 0; batch < MAX_BATCHES && page.length < limit && !exhausted; batch++) {
-    const rows = await prisma.chat.findMany({
+    // `take: limit + 1` lookahead so a final raw batch of exactly `limit` rows
+    // marks the stream exhausted instead of handing back a nextCursor that
+    // yields an empty page on the next click.
+    const fetched = await prisma.chat.findMany({
       where: { course: { department, deletedAt: null } },
       select: {
         id: true,
@@ -91,16 +94,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         course: { select: { id: true, code: true, name: true } },
       },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      take: limit,
+      take: limit + 1,
       ...(rawCursor ? { cursor: { id: rawCursor }, skip: 1 } : {}),
     });
 
-    if (rows.length === 0) {
+    if (fetched.length === 0) {
       exhausted = true;
       break;
     }
+    const hasMoreRaw = fetched.length > limit;
+    const rows = hasMoreRaw ? fetched.slice(0, limit) : fetched;
     rawCursor = rows[rows.length - 1]!.id;
-    if (rows.length < limit) exhausted = true;
+    if (!hasMoreRaw) exhausted = true;
 
     const pairs = rows
       .filter((chat) => chat.course)

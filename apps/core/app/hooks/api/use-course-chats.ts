@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiFetch } from '~/hooks/api/config'
 
@@ -148,6 +148,10 @@ export function useChatDetail(chatId: string | null) {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Guard against a slower loadMore for chat A resolving after the viewer
+  // switched to chat B (even if the parent remounts via key=chatId).
+  const activeChatIdRef = useRef(chatId)
+  activeChatIdRef.current = chatId
 
   useEffect(() => {
     if (!chatId) {
@@ -174,18 +178,23 @@ export function useChatDetail(chatId: string | null) {
 
   const loadMore = useCallback(async () => {
     if (!chatId || !chat?.nextCursor || loadingMore) return
+    const forChatId = chatId
+    const cursor = chat.nextCursor
     setLoadingMore(true)
     try {
       const data = await apiFetch<ChatDetail>(
-        `/api/chats/${chatId}?cursor=${encodeURIComponent(chat.nextCursor)}`,
+        `/api/chats/${forChatId}?cursor=${encodeURIComponent(cursor)}`,
       )
+      if (activeChatIdRef.current !== forChatId) return
       setChat((prev) =>
         prev ? { ...data, messages: [...prev.messages, ...data.messages] } : data,
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load more messages')
+      if (activeChatIdRef.current === forChatId) {
+        setError(e instanceof Error ? e.message : 'Failed to load more messages')
+      }
     } finally {
-      setLoadingMore(false)
+      if (activeChatIdRef.current === forChatId) setLoadingMore(false)
     }
   }, [chatId, chat?.nextCursor, loadingMore])
 

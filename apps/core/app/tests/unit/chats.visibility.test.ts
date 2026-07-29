@@ -245,8 +245,30 @@ describe("GET /api/units/:department/chats", () => {
   // `where`, so matching rows are filtered in memory per raw-row batch).
   it("bounds the response to `limit` and resumes from the last raw row scanned", async () => {
     session("ADMIN");
-    // Batch of 2 raw rows (limit=2), both owned by active students — a full
-    // page with more data behind it.
+    // `take: limit + 1` lookahead — three rows for limit=2 means more data
+    // behind the page; only the first two are returned.
+    prismaMock.chat.findMany.mockResolvedValueOnce([
+      { id: "chat-2", title: "B", createdAt: AT, updatedAt: AT, user: { id: "s2", name: "Stu2" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+      { id: "chat-1", title: "A", createdAt: AT, updatedAt: AT, user: { id: "s1", name: "Stu1" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+      { id: "chat-0", title: "Z", createdAt: AT, updatedAt: AT, user: { id: "s0", name: "Stu0" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
+    ]);
+    prismaMock.enrollment.findMany.mockResolvedValue([
+      { courseId: "c1", userId: "s0" },
+      { courseId: "c1", userId: "s1" },
+      { courseId: "c1", userId: "s2" },
+    ]);
+    const res = await unitChatsLoader(unitArgs("COSC", "?limit=2"));
+    const body = await res.json();
+    expect(body.chats).toHaveLength(2);
+    expect(body.nextCursor).toBe("chat-1");
+    expect(prismaMock.chat.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 3 }),
+    );
+  });
+
+  it("marks the stream exhausted when a final raw batch returns exactly `limit` rows (no empty next page)", async () => {
+    session("ADMIN");
+    // Exactly `limit` rows with take=limit+1 → no lookahead → nextCursor null.
     prismaMock.chat.findMany.mockResolvedValueOnce([
       { id: "chat-2", title: "B", createdAt: AT, updatedAt: AT, user: { id: "s2", name: "Stu2" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
       { id: "chat-1", title: "A", createdAt: AT, updatedAt: AT, user: { id: "s1", name: "Stu1" }, course: { id: "c1", code: "COSC 101", name: "Intro" } },
@@ -258,7 +280,7 @@ describe("GET /api/units/:department/chats", () => {
     const res = await unitChatsLoader(unitArgs("COSC", "?limit=2"));
     const body = await res.json();
     expect(body.chats).toHaveLength(2);
-    expect(body.nextCursor).toBe("chat-1");
+    expect(body.nextCursor).toBeNull();
   });
 
   it("scopes the active-student enrollment check to just the current batch's rows, not the whole department (#1042 review)", async () => {
@@ -294,13 +316,12 @@ describe("GET /api/units/:department/chats", () => {
       user: { id: userId, name: userId },
       course: { id: "c1", code: "COSC 101", name: "Intro" },
     });
-    // Batch 1 (raw take=2): chat-4 matches, chat-3 doesn't (staff chat) — only
-    // 1 filtered row so far, batch not exhausted (2 raw rows returned, equal
-    // to `limit`), loop continues.
+    // Batch 1 (raw take=limit+1=3): first two processed — chat-4 matches,
+    // chat-3 doesn't (staff). Lookahead row proves the stream continues.
     prismaMock.chat.findMany
-      .mockResolvedValueOnce([row("chat-4", "s1"), row("chat-3", "staff1")])
-      // Batch 2: both rows match — pushes the accumulated filtered count to 3,
-      // one past `limit`=2 (overflow within the *loop*, spread across batches).
+      .mockResolvedValueOnce([row("chat-4", "s1"), row("chat-3", "staff1"), row("chat-x", "staff2")])
+      // Batch 2: both processed rows match — pushes the accumulated filtered
+      // count to 3, one past `limit`=2 (overflow within the *loop*).
       .mockResolvedValueOnce([row("chat-2", "s1"), row("chat-1", "s1")]);
     prismaMock.enrollment.findMany.mockResolvedValue([{ courseId: "c1", userId: "s1" }]);
 

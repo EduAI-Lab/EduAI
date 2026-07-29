@@ -42,14 +42,3 @@ export function splitPage<T extends { id: string }>(
   }
   return { page: rows, nextCursor: null };
 }
-
-export function cursorResponse<T>(
-  data: T[],
-  nextCursor: string | null,
-  extra?: Record<string, unknown>,
-): Response {
-  return new Response(JSON.stringify({ data, nextCursor, ...extra }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}

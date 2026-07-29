@@ -47,23 +47,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // "ta" excludes users already an active TA in this course; the default
   // ("enrolled") excludes anyone with any active enrollment — used by the
   // "add student" picker so an existing TA/instructor can't be re-added as a
-  // student.
+  // student. Anti-join via `enrollments: { none }` keeps the exclusion
+  // bounded — no unbounded `NOT IN` list of every enrollment userId.
   const exclude = url.searchParams.get("exclude") === "ta" ? "ta" : "enrolled";
-
-  const excludedEnrollments = await prisma.enrollment.findMany({
-    where:
-      exclude === "ta"
-        ? { courseId, role: "TA", isActive: true }
-        : { courseId, isActive: true },
-    select: { userId: true },
-  });
-  const excludedIds = excludedEnrollments.map((e) => e.userId);
+  const enrollmentNone =
+    exclude === "ta"
+      ? { courseId, role: "TA" as const, isActive: true }
+      : { courseId, isActive: true };
 
   const candidates = await prisma.user.findMany({
     where: {
       role: "STUDENT",
       isActive: true,
-      id: { notIn: excludedIds },
+      enrollments: { none: enrollmentNone },
       ...(q
         ? {
             OR: [

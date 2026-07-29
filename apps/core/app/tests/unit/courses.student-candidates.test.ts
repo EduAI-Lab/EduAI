@@ -3,7 +3,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  enrollment: { findMany: vi.fn() },
   user: { findMany: vi.fn() },
 }));
 
@@ -44,7 +43,6 @@ function args(query = "") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.enrollment.findMany.mockResolvedValue([]);
   prismaMock.user.findMany.mockResolvedValue([]);
   mockAccess({ level: "instructor", rank: 2 });
 });
@@ -81,34 +79,27 @@ describe("GET /api/courses/:courseId/student-candidates", () => {
     expect(body.candidates).toEqual([{ id: "s1", name: "Alice", email: "alice@test.com" }]);
   });
 
-  it("excludes any active enrollment by default (not just STUDENT-role)", async () => {
+  it("excludes any active enrollment by default via anti-join (not a NOT IN list)", async () => {
     session();
-    await loader(args());
-    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
-      where: { courseId: "c1", isActive: true },
-      select: { userId: true },
-    });
-  });
-
-  it("excludes only active TA enrollments when exclude=ta", async () => {
-    session();
-    await loader(args("?exclude=ta"));
-    expect(prismaMock.enrollment.findMany).toHaveBeenCalledWith({
-      where: { courseId: "c1", role: "TA", isActive: true },
-      select: { userId: true },
-    });
-  });
-
-  it("passes the notIn filter built from excluded enrollment userIds", async () => {
-    session();
-    prismaMock.enrollment.findMany.mockResolvedValue([{ userId: "already-enrolled" }]);
     await loader(args());
     expect(prismaMock.user.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           role: "STUDENT",
           isActive: true,
-          id: { notIn: ["already-enrolled"] },
+          enrollments: { none: { courseId: "c1", isActive: true } },
+        }),
+      }),
+    );
+  });
+
+  it("excludes only active TA enrollments when exclude=ta", async () => {
+    session();
+    await loader(args("?exclude=ta"));
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          enrollments: { none: { courseId: "c1", role: "TA", isActive: true } },
         }),
       }),
     );

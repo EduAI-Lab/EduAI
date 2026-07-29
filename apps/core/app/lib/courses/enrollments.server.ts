@@ -40,21 +40,24 @@ export async function getCourseEnrollments(courseId: string) {
 }
 
 /**
- * Cursor-paginated roster for the browser-facing course detail page (#1042).
- * Same row shape and ordering as {@link getCourseEnrollments}, bounded to
- * `limit` (+ a `total` count so the UI can show an accurate stat without
- * loading every page).
+ * Cursor-paginated student roster for the browser-facing course detail page
+ * (#1042). Filters to active STUDENT rows — the same set the Students tab
+ * renders — so `total` and each page agree with the UI (instructors/TAs/soft-
+ * removed rows are excluded). Staff live on the Staff tab via separate
+ * endpoints. Bounded to `limit` (+ `total` so the UI can show an accurate
+ * student count without loading every page).
  */
 export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit }: CursorParams) {
+  const where = { courseId, role: "STUDENT" as const, isActive: true };
   const [rows, total] = await prisma.$transaction([
     prisma.enrollment.findMany({
-      where: { courseId },
+      where,
       include: ENROLLMENT_INCLUDE,
       orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     }),
-    prisma.enrollment.count({ where: { courseId } }),
+    prisma.enrollment.count({ where }),
   ]);
   const { page, nextCursor } = splitPage(rows, limit);
   return { page, nextCursor, total };
