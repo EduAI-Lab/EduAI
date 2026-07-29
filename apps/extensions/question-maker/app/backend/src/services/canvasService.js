@@ -3,7 +3,8 @@
  * Supports both real Canvas API calls and a mock test mode for development/demo flows.
  */
 import axios from 'axios';
-import { CanvasIntegration, CanvasCourseMapping, Question_Metadata, Variants, AssessmentSections, SectionVariants, Course } from '../schema/index.js';
+import { prisma } from '../config/database.js';
+import { encrypt, decrypt, isEncrypted } from '../utils/encryption.js';
 import { getAssessmentById, createAssessment } from './assessmentService.js';
 import { createQuestion } from './questionService.js';
 import { createAssessmentSection } from './assessmentSectionService.js';
@@ -26,11 +27,14 @@ const MOCK_CANVAS_COURSES = [
 /** Retrieves the Canvas integration settings (if any) for the specified user. */
 export const getCanvasIntegration = async (userId) => {
   try {
-    let integration = await CanvasIntegration.findOne({
+    const integration = await prisma.canvasIntegration.findUnique({
       where: { userId }
     });
+    if (!integration) return null;
 
-    return integration;
+    // apiKey is stored encrypted (Sequelize used to decrypt this via a model
+    // getter; Prisma has no field-level accessors, so decrypt explicitly here).
+    return { ...integration, apiKey: decrypt(integration.apiKey) };
   } catch (error) {
     throw new Error(`Failed to get Canvas integration: ${error.message}`);
   }
@@ -39,25 +43,18 @@ export const getCanvasIntegration = async (userId) => {
 /** Creates or updates the Canvas integration credentials/test-mode flag for a user. */
 export const saveCanvasIntegration = async (userId, { canvasUrl, apiKey, isTestMode = false }) => {
   try {
-    const [integration, created] = await CanvasIntegration.findOrCreate({
+    // Encrypt on write (Sequelize used to do this via a model setter + hooks).
+    // Idempotent: leaves an already-encrypted value (e.g. re-saved from a prior
+    // read) as-is instead of double-encrypting.
+    const storedApiKey = isEncrypted(apiKey) ? apiKey : encrypt(apiKey);
+
+    const integration = await prisma.canvasIntegration.upsert({
       where: { userId },
-      defaults: {
-        userId,
-        canvasUrl,
-        apiKey, // In production, encrypt this
-        isTestMode
-      }
+      create: { userId, canvasUrl, apiKey: storedApiKey, isTestMode },
+      update: { canvasUrl, apiKey: storedApiKey, isTestMode },
     });
 
-    if (!created) {
-      await integration.update({
-        canvasUrl,
-        apiKey,
-        isTestMode
-      });
-    }
-
-    return integration;
+    return { ...integration, apiKey: decrypt(integration.apiKey) };
   } catch (error) {
     throw new Error(`Failed to save Canvas integration: ${error.message}`);
   }
@@ -271,19 +268,20 @@ export const exportAssessmentToCanvas = async (callerId, assessmentId, canvasCou
     }
 
     // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
-    const courseMapping = await CanvasCourseMapping.findOne({
+    const courseMapping = await prisma.canvasCourseMapping.findUnique({
       where: {
-        userId: ownerId,
         localCourseId: assessment.courseId
       }
     });
 
     if (!courseMapping) {
-      await CanvasCourseMapping.create({
-        userId: ownerId,
-        localCourseId: assessment.courseId,
-        canvasCourseId,
-        canvasCourseName: integration.isTestMode ? 'Test Course' : undefined
+      await prisma.canvasCourseMapping.create({
+        data: {
+          userId: ownerId,
+          localCourseId: assessment.courseId,
+          canvasCourseId,
+          canvasCourseName: integration.isTestMode ? 'Test Course' : undefined
+        }
       });
     }
 
@@ -399,12 +397,16 @@ const parseMCQOptions = (questionText, answerText) => {
   return options;
 };
 
-/** Returns the stored Canvas course mapping for a given user/local-course pair. */
+/**
+ * Returns the stored Canvas course mapping for a local course. `userId` is
+ * unused in the lookup itself (kept for call-site compatibility) — a mapping
+ * is 1:1 with the course, not scoped per-user, so any authorized caller sees
+ * the same mapping a co-instructor created.
+ */
 export const getCanvasCourseMapping = async (userId, localCourseId) => {
   try {
-    const mapping = await CanvasCourseMapping.findOne({
+    const mapping = await prisma.canvasCourseMapping.findUnique({
       where: {
-        userId,
         localCourseId
       }
     });
@@ -741,9 +743,9 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
 
     // Verify local course exists and is accessible (owner-scoped). Existence
     // check only — `Course` has no local name to select anymore (#1072 §4 step 10).
-    const course = await Course.findOne({
+    const course = await prisma.course.findFirst({
       where: { id: localCourseId, userId: ownerId },
-      attributes: ['id']
+      select: { id: true }
     });
 
     if (!course) {
@@ -825,35 +827,41 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
         console.log(`${DEBUG_PREFIX} importQuizFromCanvas: converted question ${i + 1} => type=${converted.type} choices count=${converted.choices?.length ?? 0} answer=${converted.answer ?? 'null'}`);
 
         // Create question metadata
-        const questionMetadata = await Question_Metadata.create({
-          courseId: localCourseId,
-          primaryTopicId: primaryTopicId,
-          type: converted.type,
-          description: converted.description,
-          questionOrder: {},
-          createdBy: callerId
+        const questionMetadata = await prisma.questionMetadata.create({
+          data: {
+            courseId: localCourseId,
+            primaryTopicId: primaryTopicId,
+            type: converted.type,
+            description: converted.description,
+            questionOrder: {},
+            createdBy: callerId
+          }
         });
 
         // Create variant
         console.log(`${DEBUG_PREFIX} importQuizFromCanvas: creating variant with answer=${converted.answer ?? 'null'}, choices count=${converted.choices?.length ?? 0}`);
-        const variant = await Variants.create({
-          questionMetadataId: questionMetadata.id,
-          questionText: converted.questionText,
-          difficulty: 'medium', // Default difficulty
-          answer: converted.answer,
-          choices: converted.choices || null, // Include choices for MCQ
-          assessmentId: assessment.id,
-          secondaryTopicsId: [],
-          isAiGenerated: false,
-          isDraft: true, // Mark as draft for review
-          createdBy: callerId
+        const variant = await prisma.variants.create({
+          data: {
+            questionMetadataId: questionMetadata.id,
+            questionText: converted.questionText,
+            difficulty: 'medium', // Default difficulty
+            answer: converted.answer,
+            choices: converted.choices || null, // Include choices for MCQ
+            assessmentId: assessment.id,
+            secondaryTopicsId: [],
+            isAiGenerated: false,
+            isDraft: true, // Mark as draft for review
+            createdBy: callerId
+          }
         });
 
         // Link variant to section
-        await SectionVariants.create({
-          sectionId: section.id,
-          variantId: variant.id,
-          displayOrder: converted.position || i
+        await prisma.sectionVariants.create({
+          data: {
+            sectionId: section.id,
+            variantId: variant.id,
+            displayOrder: converted.position || i
+          }
         });
 
         importedQuestions.push({
@@ -881,19 +889,20 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
     }
 
     // Save course mapping if it doesn't exist (mapping is course-scoped → owner-keyed).
-    const courseMapping = await CanvasCourseMapping.findOne({
+    const courseMapping = await prisma.canvasCourseMapping.findUnique({
       where: {
-        userId: ownerId,
         localCourseId: localCourseId
       }
     });
 
     if (!courseMapping) {
-      await CanvasCourseMapping.create({
-        userId: ownerId,
-        localCourseId: localCourseId,
-        canvasCourseId: canvasCourseId,
-        canvasCourseName: integration.isTestMode ? 'Test Course' : undefined
+      await prisma.canvasCourseMapping.create({
+        data: {
+          userId: ownerId,
+          localCourseId: localCourseId,
+          canvasCourseId: canvasCourseId,
+          canvasCourseName: integration.isTestMode ? 'Test Course' : undefined
+        }
       });
     }
 

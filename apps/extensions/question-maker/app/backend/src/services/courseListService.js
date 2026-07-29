@@ -5,7 +5,7 @@
  * `resolveAccessForCourse` roster fetch — see that function's docstring for
  * the callerEnrollmentRole-vs-roster parity analysis.
  */
-import { Course } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { LEVELS, getAuthorizedUnits } from '../middleware/courseAccess.js';
 import {
   getAllCoursesFromCore,
@@ -69,7 +69,7 @@ function projectCoreFields(row, core) {
 
 /** Batched-list variant: `core` is looked up from a pre-fetched `coreById` map. */
 function enrichCourseRow(course, coreById, accessLevel) {
-  const row = course.toJSON ? course.toJSON() : course;
+  const row = course;
   const core = row.coreCourseId ? coreById.get(row.coreCourseId) : null;
   return {
     ...row,
@@ -85,7 +85,7 @@ function enrichCourseRow(course, coreById, accessLevel) {
  * (placeholder, not a hard error) when Core is unreachable.
  */
 export async function enrichCourseDetail(course, { cookie } = {}) {
-  const row = course.toJSON ? course.toJSON() : course;
+  const row = course;
 
   let core = null;
   if (row.coreCourseId) {
@@ -117,10 +117,7 @@ export async function enrichCourseDetail(course, { cookie } = {}) {
  * in its `attributes`) pass through unchanged.
  */
 export async function enrichRowsWithCourse(rows) {
-  const wantedIds = rows
-    .map((row) => (row.toJSON ? row.toJSON() : row))
-    .map((plain) => plain.course?.coreCourseId)
-    .filter(Boolean);
+  const wantedIds = rows.map((row) => row.course?.coreCourseId).filter(Boolean);
 
   let coreById = new Map();
   try {
@@ -133,7 +130,7 @@ export async function enrichRowsWithCourse(rows) {
   }
 
   return rows.map((row) => {
-    const plain = row.toJSON ? row.toJSON() : row;
+    const plain = row;
     if (!plain.course) return plain;
     const core = plain.course.coreCourseId ? coreById.get(plain.course.coreCourseId) : null;
     return { ...plain, course: { ...plain.course, ...projectCoreFields(plain.course, core) } };
@@ -145,7 +142,7 @@ export async function enrichRowsWithCourse(rows) {
  * that eager-load one nested `course` (e.g. `getQuestionById`, `getAssessmentById`).
  */
 export async function enrichRowWithCourse(row) {
-  const plain = row.toJSON ? row.toJSON() : row;
+  const plain = row;
   if (!plain.course) return plain;
   return { ...plain, course: await enrichCourseDetail(plain.course) };
 }
@@ -189,7 +186,10 @@ export function formatSemesterDisplay(term, year) {
  */
 export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}) {
   if (!courseId) return formatSemesterDisplay(null, null);
-  const course = await Course.findByPk(courseId, { attributes: ['id', 'coreCourseId'] });
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, coreCourseId: true },
+  });
   if (!course) return formatSemesterDisplay(null, null);
   const detail = await enrichCourseDetail(course, { cookie });
   return formatSemesterDisplay(detail.term, detail.year);
@@ -202,7 +202,13 @@ export async function deriveSemesterDisplayForCourseId(courseId, { cookie } = {}
  * local rows only.
  */
 export async function listCoursesForUser(reqUser, { cookie } = {}) {
-  const allCourses = await Course.findAll({ order: [['createdAt', 'DESC']] });
+  // `id` breaks ties so the caller's offset slice is stable across requests:
+  // ADMIN anchor materialization below creates many rows in one statement,
+  // giving them an identical `createdAt` that would otherwise let a course show
+  // up on two pages while another never appears.
+  const allCourses = await prisma.course.findMany({
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
+  });
 
   let coreById = new Map();
   try {
@@ -213,7 +219,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
       reqUser.role === 'ADMIN'
         ? await getAllCoursesFromCore()
         : await getCoursesByIdsFromCore(
-            allCourses.map((c) => (c.toJSON ? c.toJSON() : c).coreCourseId),
+            allCourses.map((c) => c.coreCourseId),
             {},
             { serviceKeyOnly: true },
           );
@@ -229,14 +235,14 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // ai-tutor's `ensureOfferingAnchors`, apps/extensions/ai-tutor/server/src/
     // services/importTaughtCoursesService.js). Batched: `allCourses` above is
     // already every local row unfiltered, so the "existing ids" read is free
-    // — no extra findAll. One bulkCreate for the missing set, idempotent via
+    // — no extra findMany. One createMany for the missing set, idempotent via
     // `ignoreDuplicates` (Postgres ON CONFLICT DO NOTHING on the unique
     // `core_course_id` index) so concurrent admin requests racing to
     // materialize the same course never error. Core unreachable ⇒ coreById is
     // empty ⇒ nothing to materialize ⇒ falls through to the existing local
     // rows with placeholder projection (degrade, not error).
     const existingCoreCourseIds = new Set(
-      allCourses.map((c) => (c.toJSON ? c.toJSON() : c).coreCourseId).filter(Boolean),
+      allCourses.map((c) => c.coreCourseId).filter(Boolean),
     );
     const missingCoreCourseIds = Array.from(coreById.keys()).filter(
       (id) => !existingCoreCourseIds.has(id),
@@ -244,14 +250,14 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 
     let adminCourses = allCourses;
     if (missingCoreCourseIds.length > 0) {
-      await Course.bulkCreate(
-        missingCoreCourseIds.map((coreCourseId) => ({ userId: reqUser.id, coreCourseId })),
-        { ignoreDuplicates: true },
-      );
-      // Re-fetch: bulkCreate's returned instances aren't reliable under
-      // ON CONFLICT DO NOTHING, and a racing request may have inserted some
-      // of these rows first — read back the ground truth.
-      adminCourses = await Course.findAll({ order: [['createdAt', 'DESC']] });
+      await prisma.course.createMany({
+        data: missingCoreCourseIds.map((coreCourseId) => ({ userId: reqUser.id, coreCourseId })),
+        skipDuplicates: true,
+      });
+      // Re-fetch: createMany doesn't return the created rows, and a racing
+      // request may have inserted some of these rows first — read back the
+      // ground truth.
+      adminCourses = await prisma.course.findMany({ orderBy: { createdAt: 'desc' } });
     }
 
     // Catalog-sourced dedupe: an existing local anchor and a freshly
@@ -284,7 +290,7 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 
   const visible = [];
   for (const course of allCourses) {
-    const row = course.toJSON ? course.toJSON() : course;
+    const row = course;
     const access = deriveListAccess(reqUser, row, { coreById, roleByCoreId, authorizedUnits });
     if (access && access.rank >= MIN_LIST_RANK) {
       visible.push(enrichCourseRow(course, coreById, access.level));
@@ -376,7 +382,7 @@ export async function findCoursesByProjectedCode(codeQuery) {
     return []; // Core unreachable — no code-based match is possible; degrade to no access.
   }
 
-  const allCourses = await Course.findAll();
+  const allCourses = await prisma.course.findMany();
   return allCourses.filter((course) => {
     if (!course.coreCourseId) return false;
     const core = coreById.get(course.coreCourseId);

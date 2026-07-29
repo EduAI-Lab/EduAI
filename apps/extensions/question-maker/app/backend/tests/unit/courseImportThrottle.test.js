@@ -17,10 +17,12 @@ vi.mock('../../src/middleware/courseAccess.js', () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findAll: vi.fn() },
-  Question_Metadata: {},
-  Topics: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+    questionMetadata: {},
+    topics: {},
+  },
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
@@ -75,7 +77,7 @@ describe('GET /api/course auto-import mirror throttle', () => {
   });
 
   it('triggers the Core mirror on the first list call', async () => {
-    const res = await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
 
     expect(res.status).toBe(200);
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1);
@@ -83,8 +85,8 @@ describe('GET /api/course auto-import mirror throttle', () => {
   });
 
   it('does not re-trigger the mirror on a second list call within the throttle window', async () => {
-    await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
-    const second = await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+    const second = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
 
     expect(second.status).toBe(200);
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(1);
@@ -93,8 +95,8 @@ describe('GET /api/course auto-import mirror throttle', () => {
   it('throttles per user, not globally', async () => {
     const other = { id: 'u-2', role: 'INSTRUCTOR' };
 
-    await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
-    await request(appFor(other)).get('/api/course').set('Cookie', 'session=y');
+    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
+    await request(appFor(other)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=y');
 
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(2);
   });
@@ -105,7 +107,7 @@ describe('GET /api/course auto-import mirror throttle', () => {
       () => new Promise((resolve) => { releaseImport = resolve; }),
     );
 
-    const res = await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
 
     // The response already came back even though the mirror promise above is
     // still unsettled — proves the route didn't await it.
@@ -117,15 +119,15 @@ describe('GET /api/course auto-import mirror throttle', () => {
   it('logs and swallows a mirror failure without failing the list response', async () => {
     importTaughtCoursesFromCore.mockRejectedValue(new Error('Core unreachable'));
 
-    const res = await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    const res = await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
 
     expect(res.status).toBe(200);
   });
 
   it('resetCoreImportThrottleForTests clears the per-user throttle', async () => {
-    await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
     resetCoreImportThrottleForTests();
-    await request(appFor(instructor)).get('/api/course').set('Cookie', 'session=x');
+    await request(appFor(instructor)).get('/api/course?page=1&pageSize=25').set('Cookie', 'session=x');
 
     expect(importTaughtCoursesFromCore).toHaveBeenCalledTimes(2);
   });

@@ -20,14 +20,16 @@ vi.mock('../../src/services/assessmentService.js', () => ({
 vi.mock('../../src/services/questionService.js', () => ({ createQuestion: vi.fn() }));
 vi.mock('../../src/services/assessmentSectionService.js', () => ({ createAssessmentSection: vi.fn() }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  CanvasIntegration: { findOne: integrationFindOne },
-  CanvasCourseMapping: { findOne: vi.fn(), create: vi.fn() },
-  Question_Metadata: {},
-  Variants: {},
-  AssessmentSections: {},
-  SectionVariants: {},
-  Course: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    canvasIntegration: { findUnique: integrationFindOne },
+    canvasCourseMapping: { findUnique: vi.fn(), create: vi.fn() },
+    questionMetadata: {},
+    variants: {},
+    assessmentSections: {},
+    sectionVariants: {},
+    course: {},
+  },
 }));
 
 const { getCanvasCourses } = await import('../../src/services/canvasService.js');
