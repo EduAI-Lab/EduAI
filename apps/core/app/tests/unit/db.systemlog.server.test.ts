@@ -85,6 +85,96 @@ describe("db.systemlog.server", () => {
     });
   });
 
+  // #976: message/stack previously had no sanitize pass at all.
+  describe("secret redaction", () => {
+    it("redacts secrets in message and stack on the direct write path", async () => {
+      await createSystemLog({
+        level: "ERROR",
+        source: "API",
+        code: "FETCH_FAILED",
+        message: "GET https://canvas.test/api/v1/self?access_token=abc123def456 failed",
+        stack: "Error: boom\n    at fetch (postgres://appuser:s3cr3t@db.internal:5432/eduai)",
+      });
+
+      expect(prisma.systemLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          message: "GET https://canvas.test/api/v1/self?access_token=[REDACTED] failed",
+          stack: "Error: boom\n    at fetch (postgres://[REDACTED]@db.internal:5432/eduai)",
+        }),
+      });
+    });
+
+    it("redacts the stack derived from an Error object", async () => {
+      const err = new Error("upstream https://ai.test/v1?api_key=sk-live-abcdef123456 rejected");
+
+      await createSystemError({
+        source: "AI",
+        code: "AI_HTTP_ERROR",
+        message: err.message,
+        error: err,
+      });
+
+      const data = vi.mocked(prisma.systemLog.create).mock.calls[0]?.[0].data;
+      expect(data.message).toBe("upstream https://ai.test/v1?api_key=[REDACTED] rejected");
+      // `stack` embeds the message, so the derived copy must be scrubbed as well.
+      expect(data.stack).toContain("api_key=[REDACTED]");
+      expect(data.stack).not.toContain("sk-live-abcdef123456");
+    });
+
+    it("redacts a string error, which normalizeErrorMetadata routes into stack", async () => {
+      await createSystemError({
+        source: "CANVAS",
+        code: "CANVAS_SYNC_FAILED",
+        message: "sync failed",
+        error: "boom at https://canvas.test/api?access_token=abc123def456",
+      });
+
+      expect(prisma.systemLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          stack: "boom at https://canvas.test/api?access_token=[REDACTED]",
+        }),
+      });
+    });
+
+    it("re-sanitizes details so direct callers are covered too", async () => {
+      await createSystemLog({
+        level: "WARN",
+        source: "ROUTE",
+        code: "SLOW_REQUEST",
+        message: "slow",
+        details: { note: "hit /cb?refresh_token=abc123def456", apiKey: "sk-live-1" },
+      });
+
+      expect(prisma.systemLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          details: { note: "hit /cb?refresh_token=[REDACTED]", apiKey: "[REDACTED]" },
+        }),
+      });
+    });
+
+    it("redacts message and driver credentials in the console fallback", async () => {
+      // A DB outage is exactly when the driver error carries the connection string.
+      vi.mocked(prisma.systemLog.create).mockRejectedValue(
+        new Error("Can't reach database at postgres://appuser:s3cr3t@db.internal:5432/eduai"),
+      );
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      await createSystemLog({
+        level: "ERROR",
+        source: "DB",
+        code: "DB_WRITE_FAILED",
+        message: "write failed for /cb?access_token=abc123def456",
+      });
+
+      const payload = JSON.stringify(consoleSpy.mock.calls[0]?.[1]);
+      expect(payload).toContain("access_token=[REDACTED]");
+      expect(payload).not.toContain("abc123def456");
+      expect(payload).not.toContain("s3cr3t");
+
+      consoleSpy.mockRestore();
+    });
+  });
+
   it("lists system rows with pagination", async () => {
     vi.mocked(prisma.systemLog.count).mockResolvedValue(2 as any);
     vi.mocked(prisma.systemLog.findMany).mockResolvedValue([{ id: "sys-2" }] as any);
