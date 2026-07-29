@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { ChatToolContext } from "./chat-mode";
-import { withIdempotency } from "~/lib/idempotency.server";
+import { runIdempotentAdminMutation } from "./idempotent-admin-mutation.server";
 import {
   getAccessibleCourse,
   listAccessibleCourses,
@@ -118,32 +118,6 @@ const instructorRef = {
     .optional()
     .describe("Instructor email when id is unknown"),
 };
-
-async function runIdempotentAdminMutation<T>(
-  actorId: string,
-  route: string,
-  idempotencyKey: string,
-  body: Record<string, unknown>,
-  mutation: () => Promise<T>,
-): Promise<T> {
-  const request = new Request(`http://localhost${route}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey,
-    },
-    body: JSON.stringify(body),
-  });
-  const response = await withIdempotency(
-    { request, route, actorId },
-    async () =>
-      new Response(JSON.stringify(await mutation()), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-  );
-  return (await response.json()) as T;
-}
 
 /** Admin assistant tools — platform ops with read + write (ADMIN-only). */
 export function createAdminChatTools(ctx: ChatToolContext) {
