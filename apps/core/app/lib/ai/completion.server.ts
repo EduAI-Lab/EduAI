@@ -230,6 +230,9 @@ export async function runCompletion(request: CompletionRequest) {
         model: validatedModelId,
         usage,
         finishReason,
+      },
+      // Server-only routing metadata. API routes serialize `body` only.
+      internal: {
         fleetHost: fleetBaseUrl ?? null,
         fleetServerId: fleetServerId ?? null,
       },

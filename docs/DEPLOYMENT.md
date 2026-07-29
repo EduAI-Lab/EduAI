@@ -236,6 +236,7 @@ shutdown closes both BullMQ workers before disconnecting Redis.
 | `AI_JOB_DEFAULT_MODEL` | Optional explicit worker model; otherwise Auto routing is used |
 | `AI_JOB_CHAT_CONCURRENCY` | Chat-pool worker concurrency (default `8`) |
 | `AI_JOB_HEAVY_CONCURRENCY` | Heavy-pool worker concurrency (default `1`) |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | Per-attempt provider timeout in milliseconds (default `120000`) |
 | `AI_JOB_ATTEMPTS` | Total BullMQ attempts per job (default `3`) |
 | `AI_JOB_RETRY_DELAY_MS` | Exponential retry base delay (default `5000`) |
 

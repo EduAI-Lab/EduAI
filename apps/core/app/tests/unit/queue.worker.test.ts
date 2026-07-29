@@ -44,6 +44,7 @@ vi.mock("~/lib/logging.server", () => ({
 
 import { enqueue } from "~/lib/queue/enqueue.server";
 import {
+  aiJobTimeoutMs,
   executeAiJobPayload,
   processAiJob,
   workerConcurrency,
@@ -143,7 +144,7 @@ describe("AI-job dequeue worker", () => {
       expect.objectContaining({
         where: {
           id: "aijob_1",
-          status: { in: ["PENDING", "RUNNING"] },
+          status: "PENDING",
         },
         data: expect.objectContaining({
           status: "RUNNING",
@@ -160,6 +161,76 @@ describe("AI-job dequeue worker", () => {
           result,
           errorMessage: null,
         }),
+      }),
+    );
+  });
+
+  it("falls back to the queue identity when the embedded row lost an idempotency race", async () => {
+    prismaMock.aiJob.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "aijob_winner",
+        status: "PENDING",
+        startedAt: null,
+        userId: "user_1",
+        queueName: "ai-jobs-chat",
+        bullJobId: "dedupe-key",
+      });
+    const execute = vi.fn().mockResolvedValue({
+      kind: "question-generation",
+      model: "vllm:qwen2.5-32b-instruct",
+      output: { content: "[]", requestedCount: 5 },
+    });
+
+    await expect(
+      processAiJob(
+        bullJob(
+          { ...payload, idempotencyKey: "dedupe-key", aiJobId: "deleted-row" },
+          { id: "dedupe-key" },
+        ),
+        "ai-jobs-chat",
+        execute,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ kind: "question-generation" }));
+
+    expect(prismaMock.aiJob.findUnique).toHaveBeenNthCalledWith(2, {
+      where: {
+        queueName_bullJobId: {
+          queueName: "ai-jobs-chat",
+          bullJobId: "dedupe-key",
+        },
+      },
+      select: expect.any(Object),
+    });
+    expect(prismaMock.aiJob.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { id: "aijob_winner", status: "PENDING" },
+      }),
+    );
+  });
+
+  it("rejects a duplicate delivery while the durable row is already running", async () => {
+    prismaMock.aiJob.findUnique
+      .mockResolvedValueOnce({
+        id: "aijob_1",
+        status: "RUNNING",
+        startedAt: new Date("2026-07-29T00:00:00Z"),
+        userId: "user_1",
+        queueName: "ai-jobs-chat",
+        bullJobId: "bull_1",
+      })
+      .mockResolvedValueOnce({ status: "RUNNING" });
+    prismaMock.aiJob.updateMany.mockResolvedValueOnce({ count: 0 });
+    const execute = vi.fn();
+
+    await expect(
+      processAiJob(bullJob(), "ai-jobs-chat", execute),
+    ).rejects.toThrow("Could not claim AiJob aijob_1");
+    expect(execute).not.toHaveBeenCalled();
+    expect(prismaMock.aiJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "aijob_1", status: "PENDING" },
       }),
     );
   });
@@ -214,7 +285,7 @@ describe("AI-job dequeue worker", () => {
   it("marks the row FAILED only after the final BullMQ attempt", async () => {
     prismaMock.aiJob.findUnique.mockResolvedValueOnce({
       id: "aijob_1",
-      status: "RUNNING",
+      status: "PENDING",
       startedAt: new Date("2026-07-27T00:00:00Z"),
       userId: "user_1",
       queueName: "ai-jobs-heavy",
@@ -274,6 +345,8 @@ describe("AI-job execution", () => {
         model: "vllm:qwen2.5-32b-instruct",
         usage: { inputTokens: 12, outputTokens: 20 },
         finishReason: "stop",
+      },
+      internal: {
         fleetHost: "http://cmps03:8001",
         fleetServerId: "cmps03",
       },
@@ -296,6 +369,7 @@ describe("AI-job execution", () => {
         apiKeys: {},
         streaming: false,
         routingContext: { jobType: "background" },
+        signal: expect.any(AbortSignal),
       }),
     );
   });
@@ -305,5 +379,13 @@ describe("AI-job execution", () => {
     vi.stubEnv("AI_JOB_HEAVY_CONCURRENCY", "2");
     expect(workerConcurrency("ai-jobs-chat")).toBe(12);
     expect(workerConcurrency("ai-jobs-heavy")).toBe(2);
+  });
+
+  it("uses an independently configurable provider execution timeout", () => {
+    vi.stubEnv("AI_JOB_EXECUTION_TIMEOUT_MS", "4321");
+    expect(aiJobTimeoutMs()).toBe(4321);
+
+    vi.stubEnv("AI_JOB_EXECUTION_TIMEOUT_MS", "invalid");
+    expect(aiJobTimeoutMs()).toBe(120_000);
   });
 });

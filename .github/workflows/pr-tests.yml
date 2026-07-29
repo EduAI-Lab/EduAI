@@ -95,6 +95,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 10s
           --health-timeout 5s --health-retries 12
+      core-redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s
+          --health-timeout 5s --health-retries 12
 
     steps:
       - uses: actions/checkout@v4
@@ -169,6 +176,7 @@ jobs:
         env:
           NODE_ENV: test
           GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+          REDIS_URL: redis://127.0.0.1:6379
           TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
