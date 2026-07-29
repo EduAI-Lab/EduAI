@@ -40,9 +40,10 @@ describe('Topics routes', () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBe(1);
-      expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
+      expect(res.body.total).toBe(1);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
     });
 
     it('returns 404 for a non-existent course', async () => {
@@ -69,8 +70,9 @@ describe('Topics routes', () => {
       const res = await request(adminApp).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
+      expect(res.body.total).toBe(1);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data[0]).toMatchObject({ id: seed.topic.id, name: 'Test Topic' });
     });
 
     // #1072 step 4: every CourseOffering is a Core anchor (`coreOfferingId`
@@ -88,7 +90,8 @@ describe('Topics routes', () => {
         seed.course.coreOfferingId,
         expect.objectContaining({ signal: expect.anything() }),
       );
-      const names = res.body.map((t) => t.name);
+      expect(res.body.total).toBe(2);
+      const names = res.body.data.map((t) => t.name);
       expect(names).toContain('Test Topic');
       expect(names).toContain('Core-only Topic');
     });
@@ -99,7 +102,8 @@ describe('Topics routes', () => {
       const res = await request(app).get(`/api/courses/${seed.course.id}/topics`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject([{ id: seed.topic.id, name: 'Test Topic' }]);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data).toMatchObject([{ id: seed.topic.id, name: 'Test Topic' }]);
     });
   });
 
