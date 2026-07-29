@@ -126,7 +126,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [infra/core] fix: Reject example LiteLLM / cmps01 secrets at deploy — `deploy-edge-proxy.sh` exits before starting services when `CMPS01_INTERNAL_KEY` is unset, empty, or a known placeholder (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`); LiteLLM `master_key` and health-check bearers use the same secret; production Core no longer falls back to `vllm-local`. (#1115, @Ayyhab, 2026-07-29) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [infra/core] fix: Reject example LiteLLM / cmps01 secrets at deploy — `deploy-edge-proxy.sh` exits before starting services when `CMPS01_INTERNAL_KEY` is unset, empty, or a known placeholder (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`); LiteLLM `master_key` and health-check bearers use the same secret; production Core no longer falls back to `vllm-local`. (#1115, @Ayyhab, 2026-07-29) — [#1268](https://github.com/EduAI-Lab/EduAI/pull/1268)
 
 ### Added
 
