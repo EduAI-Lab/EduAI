@@ -130,20 +130,21 @@ describe('Admin routes', () => {
         }),
       );
 
-      const res = await request(adminApp).get('/api/admin/courses');
+      const res = await request(adminApp).get('/api/admin/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThanOrEqual(1);
-      expect(res.body[0]).toHaveProperty('id');
-      expect(res.body[0]).toHaveProperty('title');
-      expect(res.body[0]).toHaveProperty('isPublished');
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.total).toBeGreaterThanOrEqual(1);
+      expect(res.body.data[0]).toHaveProperty('id');
+      expect(res.body.data[0]).toHaveProperty('title');
+      expect(res.body.data[0]).toHaveProperty('isPublished');
     });
 
     it('returns 403 for non-admin (professor)', async () => {
       const prof = makeProfessor();
       const profApp = await createApp({ mockUser: prof });
-      const res = await request(profApp).get('/api/admin/courses');
+      const res = await request(profApp).get('/api/admin/courses?page=1&pageSize=200');
       expect(res.status).toBe(403);
     });
 
@@ -153,15 +154,22 @@ describe('Admin routes', () => {
         { id: UNANCHORED_CORE_ID, code: 'MATH 200', name: 'Not Yet Imported' },
       ]);
 
-      const res = await request(adminApp).get('/api/admin/courses');
+      const res = await request(adminApp).get('/api/admin/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
+      expect(res.body.data.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
 
       const anchor = await prisma.courseOffering.findFirst({
         where: { coreOfferingId: UNANCHORED_CORE_ID },
       });
       expect(anchor).not.toBeNull();
+    });
+
+    it('returns 400 PAGINATION_REQUIRED when page/pageSize are omitted', async () => {
+      const res = await request(adminApp).get('/api/admin/courses');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PAGINATION_REQUIRED');
     });
   });
 

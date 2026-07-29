@@ -2,6 +2,7 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapLesson, mapProgressData } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { calculateLessonProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -52,10 +53,19 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
       ? { moduleId }
       : { moduleId, isPublished: true };
 
-    const lessons = await prisma.lesson.findMany({
-      where: whereClause,
-      orderBy: { position: 'asc' },
-    });
+    // Structure-bounded list (a module has a handful of lessons). The lesson
+    // grid + drag-and-drop reorder need the whole set, so callers request one
+    // bounded page (pageSize=200); pagination is optional here.
+    const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const [total, lessons] = await prisma.$transaction([
+      prisma.lesson.count({ where: whereClause }),
+      prisma.lesson.findMany({
+        where: whereClause,
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
 
     // For students, add progress to each lesson
     if (isStudent && !hasElevatedAccess) {
@@ -68,11 +78,14 @@ router.get('/modules/:moduleId/lessons', async (req, res) => {
           };
         }),
       );
-      res.json(lessonsWithProgress);
+      res.json(paginated(lessonsWithProgress, total, pageParams));
     } else {
-      res.json(lessons.map(mapLesson));
+      res.json(paginated(lessons.map(mapLesson), total, pageParams));
     }
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });
