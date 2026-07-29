@@ -110,7 +110,8 @@ describe("extractPdfTextIsolated", () => {
     const [command, args] = spawnMock.mock.calls[0]!;
     expect(command).toBe("sh");
     expect(args?.[0]).toBe("-c");
-    expect(String(args?.[1])).toMatch(/ulimit -v \d+/);
+    // RLIMIT_AS must be >> RSS (Node VAS >> RSS). Floor is 2048 MB → ≥ 2_097_152 KB.
+    expect(String(args?.[1])).toMatch(/ulimit -v ([2-9]\d{6,}|\d{8,})/);
   });
 
   it("terminates the worker on wall-clock timeout instead of hanging forever", async () => {

@@ -626,8 +626,8 @@ export async function readFileAsText(file: File | any): Promise<string> {
 // to gigabytes can still OOM the host during inflation. Defense-in-depth is to run
 // the inflater in its own process with:
 //   1. a V8 heap soft ceiling (`--max-old-space-size`)
-//   2. an OS-enforced address-space / RSS hard ceiling (`ulimit -v` / RLIMIT_AS where
-//      supported, plus a parent RSS monitor that SIGKILLs on breach)
+//   2. an OS-enforced hard ceiling: parent RSS monitor (SIGKILL on breach) plus a
+//      generous `ulimit -v` / RLIMIT_AS backstop (AS sized >> RSS so Node can start)
 //   3. a wall-clock timeout
 // so a breach kills the worker instead of the main server.
 //
@@ -640,12 +640,21 @@ export async function readFileAsText(file: File | any): Promise<string> {
 export const PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB = 512;
 
 /**
- * Hard per-worker RSS ceiling (MB). Enforced via OS `ulimit -v` (RLIMIT_AS) where the
- * platform supports it, plus a parent-side RSS poll that SIGKILLs on breach.
- * Defaults above the V8 soft ceiling to allow native overhead without letting RSS run away.
- * Override with `PDF_EXTRACTION_MAX_RSS_MB`.
+ * Hard per-worker RSS ceiling (MB). Enforced primarily by a parent-side RSS poll that
+ * SIGKILLs on breach. On Unix we also apply `ulimit -v` (RLIMIT_AS) as a backstop, but
+ * that limit is sized well above this RSS target — RLIMIT_AS bounds virtual address
+ * space, and Node/V8 maps far more VAS than its RSS (a 640MB AS ceiling kills workers
+ * at startup on Linux). Override with `PDF_EXTRACTION_MAX_RSS_MB`.
  */
 export const PDF_EXTRACTION_WORKER_MAX_RSS_MB = 640;
+
+/**
+ * RLIMIT_AS (`ulimit -v`) must be >> RSS. Node + V8 reserve multi-GB virtual address
+ * space even with a 512MB old-space soft ceiling. Multiplier + floor keep the OS
+ * backstop meaningful without SIGTRAP/SIGKILL on healthy workers.
+ */
+const PDF_EXTRACTION_AS_MULTIPLIER = 8;
+const PDF_EXTRACTION_AS_FLOOR_MB = 2048;
 
 /** Wall-clock ceiling for the isolated PDF extraction worker process. */
 export const PDF_EXTRACTION_WORKER_TIMEOUT_MS = 30_000;
@@ -736,9 +745,9 @@ function looksLikeHeapOom(stderr: string): boolean {
 }
 
 /**
- * Spawn the PDF worker. On Unix, apply `ulimit -v` (RLIMIT_AS) before `exec` so the OS
- * enforces a hard address-space ceiling; Darwin often rejects `ulimit -v`, in which case
- * the parent RSS monitor is the hard bound.
+ * Spawn the PDF worker. On Unix, apply `ulimit -v` (RLIMIT_AS) before `exec` as an
+ * address-space backstop (sized >> RSS — see `PDF_EXTRACTION_AS_*`). Darwin often
+ * rejects `ulimit -v`; the parent RSS monitor is the hard RSS bound on all platforms.
  */
 export function spawnPdfExtractionWorker(
   maxOldSpaceMb: number,
@@ -754,7 +763,12 @@ export function spawnPdfExtractionWorker(
   };
 
   if (process.platform !== 'win32') {
-    const virtualMemKb = Math.max(1, Math.floor(maxRssMb * 1024));
+    // RLIMIT_AS is virtual address space, not RSS. Size it generously so Node can start.
+    const addressSpaceMb = Math.max(
+      maxRssMb * PDF_EXTRACTION_AS_MULTIPLIER,
+      PDF_EXTRACTION_AS_FLOOR_MB,
+    );
+    const virtualMemKb = Math.max(1, Math.floor(addressSpaceMb * 1024));
     return spawn(
       'sh',
       [
