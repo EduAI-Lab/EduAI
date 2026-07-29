@@ -170,6 +170,29 @@ function mockStream() {
   } as never);
 }
 
+function mockPriorCourseConversation() {
+  vi.mocked(prisma.chatMessage.findMany).mockResolvedValue([
+    {
+      messageId: "assistant-prior",
+      role: "assistant",
+      content: {
+        id: "assistant-prior",
+        role: "assistant",
+        content: "A function packages reusable behavior.",
+      },
+    },
+    {
+      messageId: "user-prior",
+      role: "user",
+      content: {
+        id: "user-prior",
+        role: "user",
+        content: "What is a function in Python?",
+      },
+    },
+  ] as never);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimitsForTests();
@@ -225,6 +248,69 @@ describe("POST /api/chat — course-scope guardrail", () => {
       }),
     );
     expect(res.status).toBe(200);
+  });
+
+  it("passes recent stored conversation context for a natural follow-up", async () => {
+    mockPriorCourseConversation();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "follow-up",
+              role: "user",
+              content: "Explain that further.",
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(resolveCourseScopeVerdict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Explain that further.",
+        recentConversation: [
+          { role: "user", content: "What is a function in Python?" },
+          {
+            role: "assistant",
+            content: "A function packages reusable behavior.",
+          },
+        ],
+      }),
+    );
+    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects unsupported image-only student turns explicitly", async () => {
+    const res = await action(
+      makeRequest(
+        baseBody({
+          messages: [
+            {
+              id: "image-only",
+              role: "user",
+              content: [
+                {
+                  type: "image",
+                  image: "data:image/png;base64,AAAA",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "IMAGE_ONLY_MESSAGE_UNSUPPORTED",
+      message: "Course Chat does not support image-only messages.",
+    });
+    expect(resolveCourseScopeVerdict).not.toHaveBeenCalled();
+    expect(streamText).not.toHaveBeenCalled();
+    expect(prisma.chatMessage.createMany).not.toHaveBeenCalled();
   });
 
   it("skips the classifier when disabled for the course but keeps Layer A scope", async () => {

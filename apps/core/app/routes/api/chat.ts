@@ -60,6 +60,7 @@ import {
   buildCourseScopePolicyPrompt,
   buildCourseScopeRedirectMessage,
   resolveCourseScopeVerdict,
+  type CourseScopeConversationTurn,
   type CourseScopeContext,
   type CourseScopeVerdict,
 } from "~/lib/ai/course-scope-guardrail";
@@ -994,6 +995,23 @@ export async function action({ request }: ActionFunctionArgs) {
     const lastUserMessageForRouting = [...trimmedMessages].reverse().find((m) => m.role === "user");
     const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
     const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
+    const lastUserMessageIndex = lastUserMessageForRouting
+      ? trimmedMessages.lastIndexOf(lastUserMessageForRouting)
+      : -1;
+    const recentCourseScopeConversation: CourseScopeConversationTurn[] =
+      lastUserMessageIndex > 0
+        ? trimmedMessages
+            .slice(0, lastUserMessageIndex)
+            .filter(
+              (message) =>
+                message.role === "user" || message.role === "assistant",
+            )
+            .map((message) => ({
+              role: message.role as CourseScopeConversationTurn["role"],
+              content: extractMessageText(message),
+            }))
+            .filter((turn) => turn.content.trim().length > 0)
+        : [];
     const hasCourse = Boolean(effectiveCourseId);
     const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
     const courseScopeContext: CourseScopeContext | null = effectiveCourse
@@ -1005,6 +1023,30 @@ export async function action({ request }: ActionFunctionArgs) {
           aiInstructions: effectiveCourse.aiInstructions,
         }
       : null;
+
+    // Course Chat does not expose student image uploads. Reject a crafted
+    // image-only browser turn explicitly instead of letting empty extracted
+    // text silently bypass the strict classifier. Text+image turns still use
+    // their text for scope classification; admin/service-key integrations are
+    // unaffected.
+    if (
+      imagesPresent &&
+      lastUserMessageTextForRouting.trim().length === 0 &&
+      courseScopeContext &&
+      !isServiceKeyCaller &&
+      chatMode !== "admin"
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "IMAGE_ONLY_MESSAGE_UNSUPPORTED",
+          message: "Course Chat does not support image-only messages.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     // Kick off the course-scope classifier alongside the RAG prefetch below so
     // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
@@ -1019,6 +1061,7 @@ export async function action({ request }: ActionFunctionArgs) {
         ? resolveCourseScopeVerdict({
             message: lastUserMessageTextForRouting,
             context: courseScopeContext,
+            recentConversation: recentCourseScopeConversation,
           })
         : null;
 
