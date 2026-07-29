@@ -461,9 +461,14 @@ export function hasIncompleteEduaiDiagramFence(content: string): boolean {
 }
 
 /**
- * Assist display transform is safe once the stream is idle, or when a full
- * Top summary + Next? pair is present without a half-open diagram fence.
- * Oversight dumps arrive whole; true mid-stream Assist should not reorder yet.
+ * Full Assist reorder + diagram widgets are safe once the stream is idle, or
+ * mid-stream once a terminal `**Next?**` section or a closed `eduai-diagram`
+ * fence is present (and no fence is still open).
+ *
+ * Do **not** require both Top summary + Next?: Assist emits Next? last, so that
+ * gate was effectively `!isStreaming` and caused a final-frame snap. Progressive
+ * heading relabel (Top summary → TLDR, Next? → Continue) is applied separately
+ * in `ChatMessage` and does not wait for this gate.
  */
 export function shouldApplyAssistiveDisplayTransform(
   content: string,
@@ -471,7 +476,7 @@ export function shouldApplyAssistiveDisplayTransform(
 ): boolean {
   if (!isStreaming) return true;
   if (hasIncompleteEduaiDiagramFence(content)) return false;
-  const hasTop = /\*\*Top summary\*\*/i.test(content);
   const hasNext = /\*\*Next\?\*\*/i.test(content);
-  return hasTop && hasNext;
+  const hasClosedDiagram = /```eduai-diagram\b/i.test(content);
+  return hasNext || hasClosedDiagram;
 }

@@ -4,13 +4,9 @@ import {
   activeToolNameFromMessage,
   assistantMessageHasText,
   assistantTextFingerprint,
-  computeTimedChatProgress,
   estimateExpectedResponseMs,
   estimateFollowupRemainingMs,
   resolveAwaitingFollowup,
-  resolveChatProgressStage,
-  type ChatProgressStage,
-  type TimedChatProgress,
 } from "~/components/chat/chat-progress-stage";
 
 type MessageLike = {
@@ -33,15 +29,20 @@ type ProgressEdgeRef = {
 };
 
 /**
- * Tracks elapsed wait + resolved status stage while a chat turn is in flight.
+ * Derives in-flight chat progress *inputs* for the typing indicator.
+ *
+ * Deliberately does **not** tick elapsed time here: a 250ms interval in this
+ * hook (called from `ChatConversationLayout`) would re-render every message /
+ * Streamdown / KaTeX / diagram in the thread 4×/sec. Elapsed + bar fill tick
+ * locally inside `ChatTypingIndicator` from `startedAt` instead.
  *
  * Multi-step gaps are gated on tool activity (active tool, or waiting for the
  * next tokens after a tool completes) — not on inter-token silence — so slow
  * local models do not flicker a compact status between streamed tokens.
  *
- * The progress bar fills against a deadline derived from the typical model /
- * Assist wait (extended when tools run; rebased to a short remaining window
- * after a tool finishes) so ADHD users can see how close they are.
+ * The progress deadline is derived from the typical model / Assist wait
+ * (extended when tools run; rebased to a short remaining window after a tool
+ * finishes) so ADHD users can see how close they are.
  */
 export function useChatProgress(args: {
   isLoading: boolean;
@@ -50,10 +51,15 @@ export function useChatProgress(args: {
   selectedModel?: string | null;
   streamingRoutedRegistryId?: string | null;
 }): {
-  elapsedMs: number;
-  stage: ChatProgressStage;
-  timed: TimedChatProgress;
+  /** Wall-clock start of the in-flight turn; null when idle. */
+  startedAt: number | null;
+  /** Absolute elapsed target for fill + “About Xs left”. */
+  deadlineMs: number;
+  typicalExpectedMs: number;
   hasAssistantText: boolean;
+  hasRoutedModel: boolean;
+  activeToolName: string | null;
+  awaitingFollowup: boolean;
   showProgressIndicator: boolean;
   /** Slimmer row under an already-streaming assistant bubble (multi-step). */
   compactProgress: boolean;
@@ -66,18 +72,17 @@ export function useChatProgress(args: {
     streamingRoutedRegistryId = null,
   } = args;
 
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   /** Monotonic wall-clock target for fill + “About Xs left”. */
   const [deadlineMs, setDeadlineMs] = useState(0);
-  const [peakPercent, setPeakPercent] = useState(0);
   const edgeRef = useRef<ProgressEdgeRef>({
     hasActiveTool: false,
     fingerprint: "",
     awaitingFollowup: false,
   });
   const wasAwaitingFollowupRef = useRef(false);
-  const elapsedMsRef = useRef(0);
-  elapsedMsRef.current = elapsedMs;
+  const startedAtRef = useRef<number | null>(null);
+  startedAtRef.current = startedAt;
 
   const lastMessage = messages[messages.length - 1] as MessageLike | undefined;
   const inFlightAssistant =
@@ -116,9 +121,8 @@ export function useChatProgress(args: {
 
   useEffect(() => {
     if (!isLoading) {
-      setElapsedMs(0);
+      setStartedAt(null);
       setDeadlineMs(0);
-      setPeakPercent(0);
       wasAwaitingFollowupRef.current = false;
       edgeRef.current = {
         hasActiveTool: false,
@@ -128,14 +132,8 @@ export function useChatProgress(args: {
       return;
     }
 
-    const startedAt = Date.now();
-    setElapsedMs(0);
+    setStartedAt(Date.now());
     setDeadlineMs(0);
-    setPeakPercent(0);
-    const id = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
-    }, 250);
-    return () => window.clearInterval(id);
   }, [isLoading]);
 
   // Grow the deadline when the typical estimate grows (routed model / tools).
@@ -152,33 +150,13 @@ export function useChatProgress(args: {
       return;
     }
     if (awaitingFollowup && !wasAwaitingFollowupRef.current) {
+      const origin = startedAtRef.current ?? Date.now();
+      const elapsed = Math.max(0, Date.now() - origin);
       const followupMs = estimateFollowupRemainingMs({ modelId, adhdAssist });
-      setDeadlineMs(elapsedMsRef.current + followupMs);
+      setDeadlineMs(elapsed + followupMs);
     }
     wasAwaitingFollowupRef.current = awaitingFollowup;
   }, [isLoading, awaitingFollowup, modelId, adhdAssist]);
-
-  const stage = resolveChatProgressStage({
-    elapsedMs,
-    hasAssistantText,
-    hasRoutedModel,
-    activeToolName,
-    adhdAssist,
-    awaitingFollowup,
-  });
-
-  const timed = computeTimedChatProgress({
-    elapsedMs,
-    deadlineMs: deadlineMs > 0 ? deadlineMs : typicalExpectedMs,
-    typicalExpectedMs,
-    stageFloor: stage.progress,
-    peakPercent,
-  });
-
-  useEffect(() => {
-    if (!isLoading) return;
-    setPeakPercent((prevPeak) => Math.max(prevPeak, timed.percent));
-  }, [isLoading, timed.percent]);
 
   // Prefer streaming tokens while text is arriving. Re-show only for tools or
   // the post-tool follow-up gap — never for inter-token silence alone.
@@ -187,10 +165,13 @@ export function useChatProgress(args: {
   const compactProgress = hasAssistantText && showProgressIndicator;
 
   return {
-    elapsedMs,
-    stage,
-    timed,
+    startedAt,
+    deadlineMs: deadlineMs > 0 ? deadlineMs : typicalExpectedMs,
+    typicalExpectedMs,
     hasAssistantText,
+    hasRoutedModel,
+    activeToolName,
+    awaitingFollowup,
     showProgressIndicator,
     compactProgress,
   };

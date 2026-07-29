@@ -18,7 +18,10 @@ export type ChatCourseOption = {
 export type ChatViewMessage = {
   id: string;
   role: string;
-  content: string | { text?: string } | unknown;
+  content:
+    | string
+    | { text?: string }
+    | Array<{ type?: string; text?: string }>;
   parts?: Array<{
     type?: string;
     text?: string;

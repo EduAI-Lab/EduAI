@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Message as BasicMessage,
   MessageAvatar,
@@ -6,17 +7,34 @@ import {
 } from "@eduai/ui";
 
 import {
+  computeTimedChatProgress,
   formatChatProgressElapsed,
+  resolveChatProgressStage,
   type ChatProgressStage,
   type TimedChatProgress,
 } from "~/components/chat/chat-progress-stage";
 import { cn } from "~/lib/utils";
 
 export type ChatTypingIndicatorProps = {
+  /**
+   * Wall-clock start of the in-flight turn. When set, elapsed / stage / timed
+   * fill tick locally here so the conversation layout does not re-render 4×/sec.
+   */
+  startedAt?: number | null;
+  /** Absolute elapsed target for fill + remaining copy. */
+  deadlineMs?: number;
+  typicalExpectedMs?: number;
+  hasAssistantText?: boolean;
+  hasRoutedModel?: boolean;
+  activeToolName?: string | null;
+  adhdAssist?: boolean;
+  awaitingFollowup?: boolean;
+  /**
+   * Optional precomputed stage/elapsed/timed — used by unit tests and as a
+   * fallback when `startedAt` is omitted.
+   */
   stage?: ChatProgressStage;
-  /** Elapsed ms since the request went in-flight. */
   elapsedMs?: number;
-  /** Timed fill against the expected response duration. */
   timed?: TimedChatProgress;
   /**
    * Compact row under an already-streaming assistant bubble (multi-step waits).
@@ -26,13 +44,91 @@ export type ChatTypingIndicatorProps = {
 };
 
 export function ChatTypingIndicator({
-  stage,
-  elapsedMs = 0,
-  timed,
+  startedAt = null,
+  deadlineMs = 0,
+  typicalExpectedMs = 0,
+  hasAssistantText = false,
+  hasRoutedModel = false,
+  activeToolName = null,
+  adhdAssist = false,
+  awaitingFollowup = false,
+  stage: stageOverride,
+  elapsedMs: elapsedOverride,
+  timed: timedOverride,
   compact = false,
 }: ChatTypingIndicatorProps) {
+  const tickLocally = typeof startedAt === "number" && startedAt > 0;
+  const [elapsedMs, setElapsedMs] = useState(() =>
+    tickLocally ? Math.max(0, Date.now() - startedAt) : (elapsedOverride ?? 0),
+  );
+  const [peakPercent, setPeakPercent] = useState(0);
+
+  useEffect(() => {
+    if (!tickLocally || startedAt == null) {
+      setElapsedMs(elapsedOverride ?? 0);
+      setPeakPercent(0);
+      return;
+    }
+
+    setElapsedMs(Math.max(0, Date.now() - startedAt));
+    setPeakPercent(0);
+    const id = window.setInterval(() => {
+      setElapsedMs(Math.max(0, Date.now() - startedAt));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [tickLocally, startedAt, elapsedOverride]);
+
+  const resolvedElapsed = tickLocally ? elapsedMs : (elapsedOverride ?? 0);
+  // Only auto-resolve a stage when wired for an in-flight turn. Bare renders
+  // (unit smoke tests) keep the legacy “EduAI is thinking” fallback.
+  const hasLiveProgressInputs =
+    tickLocally ||
+    deadlineMs > 0 ||
+    typicalExpectedMs > 0 ||
+    hasRoutedModel ||
+    hasAssistantText ||
+    awaitingFollowup ||
+    Boolean(activeToolName) ||
+    adhdAssist;
+  const stage =
+    stageOverride ??
+    (hasLiveProgressInputs
+      ? resolveChatProgressStage({
+          elapsedMs: resolvedElapsed,
+          hasAssistantText,
+          hasRoutedModel,
+          activeToolName,
+          adhdAssist,
+          awaitingFollowup,
+        })
+      : undefined);
+
+  const expectedMs =
+    typicalExpectedMs > 0 ? typicalExpectedMs : Math.max(deadlineMs, 1_000);
+  const resolvedDeadline = deadlineMs > 0 ? deadlineMs : expectedMs;
+
+  const timedComputed =
+    stage != null
+      ? computeTimedChatProgress({
+          elapsedMs: resolvedElapsed,
+          deadlineMs: resolvedDeadline,
+          typicalExpectedMs: expectedMs,
+          stageFloor: stage.progress,
+          peakPercent,
+        })
+      : null;
+
+  useEffect(() => {
+    if (!tickLocally || !timedComputed) return;
+    setPeakPercent((prevPeak) => Math.max(prevPeak, timedComputed.percent));
+  }, [tickLocally, timedComputed?.percent]);
+
+  const timed =
+    timedOverride ??
+    (timedComputed && (tickLocally || deadlineMs > 0) ? timedComputed : undefined);
+
   const label = stage?.label ?? "EduAI is thinking";
-  const elapsedLabel = formatChatProgressElapsed(elapsedMs);
+  const elapsedLabel = formatChatProgressElapsed(resolvedElapsed);
   const percent = timed?.percent ?? stage?.progress ?? 18;
   const timingLabel = timed?.timingLabel ?? null;
   const expectedLabel = timed

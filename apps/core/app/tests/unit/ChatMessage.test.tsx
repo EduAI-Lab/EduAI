@@ -255,7 +255,7 @@ describe("ChatMessage — streaming", () => {
     expect(screen.getByText("Partial response...")).toBeInTheDocument();
   });
 
-  it("defers Assist display transform for incomplete mid-stream structure (#1171)", () => {
+  it("progressively relabels Assist headings mid-stream without waiting for Next? (#1171)", () => {
     const partialAssist: Message = {
       ...aiMessage,
       content: "**Top summary**\n- Only half so far",
@@ -267,12 +267,24 @@ describe("ChatMessage — streaming", () => {
         assistiveDisplay
       />,
     );
-    // Incomplete Assist drafts keep policy headings until Top summary + Next? arrive.
-    expect(screen.getByText(/Top summary/i)).toBeInTheDocument();
-    expect(screen.queryByText(/^TLDR$/i)).not.toBeInTheDocument();
+    // Progressive relabel — no final-frame snap waiting for Next?.
+    expect(screen.getByText(/TLDR/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Top summary/i)).not.toBeInTheDocument();
   });
 
-  it("applies Assist display transform when a complete dump arrives while streaming", () => {
+  it("relabels Next?-only redirect turns mid-stream (#1171)", () => {
+    const redirect: Message = {
+      ...aiMessage,
+      content: "**Next?** Want to try a different angle?",
+    };
+    render(
+      <ChatMessage message={redirect} isStreaming assistiveDisplay />,
+    );
+    expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*Next\?/i)).not.toBeInTheDocument();
+  });
+
+  it("applies full Assist reorder when a complete dump arrives while streaming", () => {
     const completeAssist: Message = {
       ...aiMessage,
       content: "**Top summary**\n- Point\n\n**Next?** Want to continue?",
