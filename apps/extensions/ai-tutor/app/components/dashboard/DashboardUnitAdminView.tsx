@@ -20,29 +20,36 @@ export function DashboardUnitAdminView({ courses, dashboardStats }: DashboardUni
   const drafts = courses.filter((c) => !c.isPublished);
   const synced = courses.filter((c) => !!c.coreOfferingId);
 
+  // #1043: `courses` is one page of a paged endpoint — counts come from
+  // `dashboardStats` (whole-set); array fallbacks cover the pre-rollup frame.
+  const totalCourses = dashboardStats?.totalCourses ?? courses.length;
+  const publishedCount = dashboardStats?.publishedCourses ?? published.length;
+  const draftCount = dashboardStats?.draftCourses ?? drafts.length;
+  const syncedCount = dashboardStats?.syncedCourses ?? synced.length;
+
   const stats = [
-    { label: 'Unit courses', value: dashboardStats?.totalCourses ?? courses.length },
-    { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
-    { label: 'Drafts', value: dashboardStats?.draftCourses ?? drafts.length },
-    { label: 'Synced from EduAI', value: synced.length },
+    { label: 'Unit courses', value: totalCourses },
+    { label: 'Published', value: publishedCount },
+    { label: 'Drafts', value: draftCount },
+    { label: 'Synced from EduAI', value: syncedCount },
   ];
 
   const statusSegments: DonutSegment[] = [
-    { label: 'Published', value: published.length, color: PUBLISHED_COLOR },
-    { label: 'Draft', value: drafts.length, color: DRAFT_COLOR },
+    { label: 'Published', value: publishedCount, color: PUBLISHED_COLOR },
+    { label: 'Draft', value: draftCount, color: DRAFT_COLOR },
   ];
 
   const analytics =
-    courses.length > 0 ? (
+    totalCourses > 0 ? (
       <div className="grid gap-4 md:grid-cols-2">
         <PanelCard title="Publish status">
-          <DonutChart data={statusSegments} centerValue={courses.length} centerLabel="Courses" />
+          <DonutChart data={statusSegments} centerValue={totalCourses} centerLabel="Courses" />
         </PanelCard>
         <PanelCard title="Draft courses">
           <p className="py-6 text-center text-sm text-muted-foreground">
-            {drafts.length === 0
+            {draftCount === 0
               ? 'Every course in your units is published.'
-              : `${drafts.length} of ${courses.length} unit courses are still in draft.`}
+              : `${draftCount} of ${totalCourses} unit courses are still in draft.`}
           </p>
         </PanelCard>
       </div>

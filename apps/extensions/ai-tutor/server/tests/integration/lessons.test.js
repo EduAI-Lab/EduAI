@@ -74,14 +74,15 @@ describe('Lessons routes', () => {
       const res = await request(profApp).get(`/api/modules/${seed.module.id}/lessons`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
 
-      const ids = res.body.map((l) => l.id);
+      const ids = res.body.data.map((l) => l.id);
       expect(ids).toContain(seed.lesson.id);
       expect(ids).toContain(unpublishedLesson.id);
 
       // Professor lessons have no progress object
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('student sees only published lessons with progress', async () => {
@@ -103,9 +104,10 @@ describe('Lessons routes', () => {
 
       expect(res.status).toBe(200);
       // Student should only see the published lesson
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.lesson.id);
-      expect(res.body[0].progress).toEqual(
+      expect(res.body.total).toBe(1);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(seed.lesson.id);
+      expect(res.body.data[0].progress).toEqual(
         expect.objectContaining({
           completed: expect.any(Number),
           total: expect.any(Number),
@@ -131,11 +133,12 @@ describe('Lessons routes', () => {
       const res = await request(taApp).get(`/api/modules/${seed.module.id}/lessons`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      const ids = res.body.map((l) => l.id);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
+      const ids = res.body.data.map((l) => l.id);
       expect(ids).toContain(seed.lesson.id);
       expect(ids).toContain(unpublishedLesson.id);
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('TA cannot create a lesson', async () => {
@@ -175,11 +178,12 @@ describe('Lessons routes', () => {
       const res = await request(adminApp).get(`/api/modules/${seed.module.id}/lessons`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      const ids = res.body.map((l) => l.id);
+      expect(res.body.total).toBe(2);
+      expect(res.body.data).toHaveLength(2);
+      const ids = res.body.data.map((l) => l.id);
       expect(ids).toContain(seed.lesson.id);
       expect(ids).toContain(unpublishedLesson.id);
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
   });
 
@@ -455,7 +459,8 @@ describe('Lessons routes', () => {
       expect(res.body.map((l) => l.position)).toEqual([0, 1, 2]);
 
       const list = await request(profApp).get(`/api/modules/${seed.module.id}/lessons`);
-      expect(list.body.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
+      expect(list.body.total).toBe(3);
+      expect(list.body.data.map((l) => l.id)).toEqual([c.id, a.id, b.id]);
     });
 
     it('rejects an id set that does not match the module lessons', async () => {
