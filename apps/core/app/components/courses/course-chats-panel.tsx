@@ -111,7 +111,9 @@ export function CourseChatsPanel({
       </Card>
     )
   }
-  if (chats.length === 0) {
+  // Unit chats can return `{ chats: [], nextCursor }` when early batches are
+  // all staff chats — only treat as truly empty once the stream is exhausted.
+  if (chats.length === 0 && !hasMore) {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-8 text-muted-foreground">
@@ -160,7 +162,7 @@ export function CourseChatsPanel({
       <Card>
         <CardContent className="pt-6">
           {selectedChatId ? (
-            <ChatMessageViewer chatId={selectedChatId} />
+            <ChatMessageViewer key={selectedChatId} chatId={selectedChatId} />
           ) : (
             <p className="text-sm text-muted-foreground">Select a chat to view its messages.</p>
           )}

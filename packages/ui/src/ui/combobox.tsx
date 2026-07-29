@@ -195,6 +195,10 @@ export function MultiSelect({
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  // When `onSearchChange` makes `options` server-driven, selected rows drop out
+  // of `options` as the user types a new query. Cache labels by value so chips
+  // and checkmarks stay visible until deselected.
+  const selectedOptionsCache = useRef(new Map<string, ComboboxOption>())
 
   const filtered =
     onSearchChange || search.trim() === ""
@@ -220,14 +224,27 @@ export function MultiSelect({
     )
   }
 
-  const selectedOptions = options.filter((o) => value.includes(o.value))
+  for (const o of options) {
+    if (value.includes(o.value)) selectedOptionsCache.current.set(o.value, o)
+  }
+  for (const key of [...selectedOptionsCache.current.keys()]) {
+    if (!value.includes(key)) selectedOptionsCache.current.delete(key)
+  }
+  const selectedOptions = value
+    .map((v) => selectedOptionsCache.current.get(v))
+    .filter((o): o is ComboboxOption => o != null)
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) setSearch("")
+        if (!next) {
+          setSearch("")
+          // Clear the server-driven search too — otherwise reopening shows the
+          // previous query's results under a blank input.
+          onSearchChange?.("")
+        }
       }}
       modal={false}
     >

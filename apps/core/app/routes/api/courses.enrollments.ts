@@ -132,7 +132,7 @@ async function fullEnrollmentsResponse(courseId: string) {
   });
 }
 
-/** User-session path: cursor-paginated, with a `total` count for the roster stat. */
+/** User-session path: cursor-paginated active STUDENT roster, with `total`. */
 async function pagedEnrollmentsResponse(
   courseId: string,
   params: { cursor: string | null; limit: number },

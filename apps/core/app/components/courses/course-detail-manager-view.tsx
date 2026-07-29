@@ -273,6 +273,8 @@ export function CourseDetailManagerView({
   const canManageRagSettings = access === "admin" || access === "instructor";
 
   const activeEnrollments = enrollments.filter((e) => e.isActive);
+  // Server already pages active STUDENT rows (#1042 review); keep the client
+  // filter as a belt-and-suspenders so a mismatched payload can't render staff.
   const studentEnrollments = activeEnrollments.filter((e) => e.role === "STUDENT");
   const studentCandidates = useStudentCandidates(courseId, "enrolled");
   const taCandidates = useStudentCandidates(courseId, "ta");
@@ -541,8 +543,9 @@ export function CourseDetailManagerView({
     ...(course.isActive ? ["Active"] : [])
   ];
   const readyMaterials = materials.filter((m) => m.status === "READY").length;
-  // `enrollmentsTotal` is the server-side count across all pages; only the
-  // loaded pages are actually in `studentEnrollments` (#1042 cursor paging).
+  // `enrollmentsTotal` is the server-side active-STUDENT count across all
+  // pages; only the loaded pages are actually in `studentEnrollments`
+  // (#1042 cursor paging).
   const studentCount = enrollmentsTotal ?? studentEnrollments.length;
 
   return (
