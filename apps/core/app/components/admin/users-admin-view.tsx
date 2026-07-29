@@ -10,9 +10,18 @@ import type {
   UpdateUserInput,
 } from "~/hooks/api/types";
 import { useCourses } from "~/hooks/api/use-courses";
+import type { UsersQuery, UserStats } from "~/hooks/api/use-users";
+
+/** Upper bound on the course picker's page; matches the API's max pageSize. */
+const COURSE_PICKER_PAGE_SIZE = 200;
 
 export type UsersAdminViewProps = {
   users: PlatformUser[];
+  /** Rows matching the current filters, from the server. */
+  total: number;
+  /** Platform-wide counts, unaffected by the current filters. */
+  stats: UserStats;
+  onQueryChange: (query: UsersQuery) => void;
   isLoading: boolean;
   error: string | null;
   currentUserId: string;
@@ -24,6 +33,9 @@ export type UsersAdminViewProps = {
 
 export function UsersAdminView({
   users,
+  total,
+  stats,
+  onQueryChange,
   isLoading,
   error,
   currentUserId,
@@ -35,7 +47,9 @@ export function UsersAdminView({
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
   const [historyUser, setHistoryUser] = useState<{ id: string; name: string } | null>(null);
-  const { courses, loading: coursesLoading } = useCourses();
+  // The user form's course picker needs a browsable set, not the whole table —
+  // one bounded page rather than the unbounded list this used to request.
+  const { courses, loading: coursesLoading } = useCourses({ pageSize: COURSE_PICKER_PAGE_SIZE });
 
   const handleUserDialogOpenChange = (open: boolean) => {
     setUserDialogOpen(open);
@@ -94,11 +108,9 @@ export function UsersAdminView({
               subheading={
                 <>
                   Manage users and their access to the platform &mdash;{" "}
-                  <span className="text-foreground font-medium">{users.length} total</span>
+                  <span className="text-foreground font-medium">{stats.total} total</span>
                   {" · "}
-                  <span className="text-foreground font-medium">
-                    {users.filter((u) => u.isActive !== false).length} active
-                  </span>
+                  <span className="text-foreground font-medium">{stats.active} active</span>
                 </>
               }
             />
@@ -116,13 +128,15 @@ export function UsersAdminView({
                 <div>
                   <CardTitle>Platform Users</CardTitle>
                   <CardDescription>
-                    {users.length} total &middot; {users.filter((u) => u.isActive !== false).length} active
+                    {stats.total} total &middot; {stats.active} active
                   </CardDescription>
                 </div>
               </CardHeader>
               <CardContent>
                 <UsersTable
                   users={users}
+                  total={total}
+                  onQueryChange={onQueryChange}
                   currentUserId={currentUserId}
                   onEdit={(user) => {
                     setEditingUser(user);
