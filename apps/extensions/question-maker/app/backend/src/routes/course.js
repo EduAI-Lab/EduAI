@@ -22,6 +22,7 @@ import { listCoursesForUser, enrichCourseDetail } from '../services/courseListSe
 import { syncTopicsFromCoreForCourse } from '../services/topicSyncService.js';
 import { importTaughtCoursesFromCore } from '../services/importTaughtCoursesService.js';
 import { logger } from '../utils/logger.js';
+import { parsePaginationParams, paginated } from '../utils/pagination.js';
 
 const router = express.Router();
 
@@ -125,20 +126,37 @@ router.post('/', authenticateToken, async (req, res, next) => {
  * GET /api/course – lists the courses the caller may access, role-scoped per the
  * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees
  * courses they are enrolled in. Optionally includes per-course question/topic stats.
+ *
+ * Paginated (#1044, required `page`/`pageSize`). Role visibility is resolved in
+ * JS after the full local `course.findMany()`, so honest SQL `limit`/`offset`
+ * isn't possible without a larger refactor — the visible set is sliced in memory
+ * here and `total` reflects the caller's true visible count. Same bounded-interim
+ * call #1041 made for Core's pickers.
+ *
+ * The per-request cost is not an N+1: `listCoursesForUser` resolves
+ * `callerEnrollmentRole` for every row from one cookie-scoped Core list call
+ * (#1072 replaced the per-row roster fetch). What remains is that each page
+ * redoes the whole filter — one unfiltered `findMany` plus ~2 uncached Core
+ * catalog reads — so a client walking P pages pays that P times. Pushing the
+ * role filter into the query (or caching the catalog reads) is #1206.
  */
 router.get('/', authenticateToken, async (req, res, next) => {
   try {
+    const pagination = parsePaginationParams(req, { required: true });
+
     runCoreImportMirror(req.user.id, req.user.role, req.headers.cookie);
 
     const { includeStats = false } = req.query;
 
-    const courses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+    const allCourses = await listCoursesForUser(req.user, { cookie: req.headers.cookie });
+    const total = allCourses.length;
+    const courses = allCourses.slice(pagination.offset, pagination.offset + pagination.limit);
 
     if (includeStats !== 'true') {
-      return res.json({ success: true, data: courses });
+      return res.json(paginated(courses, total, pagination));
     }
 
-    // Stats are scoped to the courses the caller can already see.
+    // Stats are scoped to the courses on the current page only.
     const visibleIds = courses.map((course) => course.id);
     const statRows = visibleIds.length
       ? await prisma.course.findMany({
@@ -173,7 +191,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
       }
     }));
 
-    res.json({ success: true, data: coursesWithStats });
+    res.json(paginated(coursesWithStats, total, pagination));
   } catch (error) {
     next(error);
   }
@@ -292,6 +310,12 @@ router.get(
   requireCourseAccess({ min: 'ta', getCourseId: courseIdFromParam }),
   async (req, res, next) => {
   try {
+    // Structure-bounded list (#1044): always a bounded page. Flat query, so the
+    // window is a true DB-level limit/offset. Params are optional — a caller
+    // that sends none gets the first page at `defaultPageSize` instead of a 400
+    // — but the response is never unbounded; `getCourseTopics` walks pages.
+    const pagination = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+
     const course = req.qmCourse;
 
     const cookie = req.headers.cookie ?? '';
@@ -299,15 +323,21 @@ router.get(
       await syncTopicsFromCoreForCourse(course, cookie);
     }
 
-    const topics = await prisma.topics.findMany({
-      where: { courseId: course.id },
-      orderBy: { createdAt: 'asc' }
-    });
+    const where = { courseId: course.id };
+    const [count, rows] = await prisma.$transaction([
+      prisma.topics.count({ where }),
+      prisma.topics.findMany({
+        where,
+        // `id` breaks ties — `createdAt` is not unique (topic sync inserts a
+        // whole Core set in one statement), and without a tiebreak LIMIT/OFFSET
+        // pages can repeat and drop rows across requests.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: pagination.limit,
+        skip: pagination.offset
+      })
+    ]);
 
-    res.json({
-      success: true,
-      data: topics
-    });
+    res.json(paginated(rows, count, pagination));
   } catch (error) {
     next(error);
   }

@@ -43,6 +43,8 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.
@@ -308,6 +310,14 @@ npm run test:coverage   # Aggregates coverage for all six suites (backends + fro
 > **Note:** The root `test:coverage` command covers the three backends (Core, AI Tutor server, Question Maker backend) and the three frontend/UI suites (`@eduai/ui`, AI Tutor client, Question Maker frontend).
 
 Run a single app's coverage from its own directory with `npm run test:coverage`. Generated coverage report directories are gitignored.
+
+### PICT combinatorial models
+
+```bash
+npm run test:pict:gen   # Regenerate tests/models/*.cases.json from their .pict sources
+```
+
+Runs `pict` inside a pinned Docker image (built on first use) rather than a host install — a native `pict` build isn't reproducible across platforms. See [TESTS.md](TESTS.md#pict-combinatorial-tests) for why, how to add a model, and the model/oracle/world-builder split.
 
 ### Integration tests
 

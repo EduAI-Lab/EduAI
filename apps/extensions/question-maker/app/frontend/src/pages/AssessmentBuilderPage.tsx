@@ -159,7 +159,7 @@ const AssessmentBuilderPage = () => {
                 if (loadedAssessment.course?.id) {
                     const [courseTopics, courseQuestions] = await Promise.all([
                         courseService.getCourseTopics(loadedAssessment.course.id),
-                        questionService.getQuestions({ courseId: loadedAssessment.course.id, limit: 500 })
+                        questionService.getQuestions({ courseId: loadedAssessment.course.id })
                     ]);
                     setTopics(courseTopics);
                     setQuestions(courseQuestions);
@@ -252,7 +252,7 @@ const AssessmentBuilderPage = () => {
         if (!assessment?.course?.id) return;
         try {
             const [courseQuestions, updatedAssessment] = await Promise.all([
-                questionService.getQuestions({ courseId: assessment.course.id, limit: 500 }),
+                questionService.getQuestions({ courseId: assessment.course.id }),
                 assessmentService.getAssessment(assessment.id)
             ]);
             setQuestions(courseQuestions);
