@@ -12,15 +12,15 @@ import request from 'supertest';
 
 const {
   mockUpdateVariant,
-  mockVariantUpdate,
-  mockTopicsUpdate,
+  mockVariantsUpdate,
+  mockTopicsUpdateMany,
   mockPushVariantToCore,
   mockVariantsFindOne,
   mockEnrollments,
 } = vi.hoisted(() => ({
   mockUpdateVariant: vi.fn(),
-  mockVariantUpdate: vi.fn().mockResolvedValue(undefined),
-  mockTopicsUpdate: vi.fn().mockResolvedValue([1]),
+  mockVariantsUpdate: vi.fn().mockResolvedValue(undefined),
+  mockTopicsUpdateMany: vi.fn().mockResolvedValue({ count: 1 }),
   mockPushVariantToCore: vi.fn(),
   mockVariantsFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
@@ -73,18 +73,18 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   patchQuestionTestableOnCore: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Variants: {
-    findByPk: vi.fn(),
-    findOne: mockVariantsFindOne,
-    update: mockTopicsUpdate,
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    variants: {
+      findUnique: mockVariantsFindOne,
+      update: mockVariantsUpdate,
+    },
+    questionMetadata: {},
+    assessments: {},
+    assessmentSections: {},
+    course: {},
+    topics: { updateMany: mockTopicsUpdateMany },
   },
-  Question_Metadata: {},
-  Assessments: {},
-  AssessmentSections: {},
-  Course: {},
-  Topics: { update: mockTopicsUpdate },
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
 }));
 
 const { default: app } = await import('../../src/app.js');
@@ -105,7 +105,6 @@ function loadedDraft() {
     isDraft: true,
     coreQuestionId: null,
     createdBy: INSTRUCTOR.id,
-    update: mockVariantUpdate,
     questionMetadata: { type: 'SA', primaryTopicId: 'local-t1', course: COURSE },
   };
 }
@@ -116,7 +115,6 @@ function makeVariant({ isDraft = false, coreQuestionId = null } = {}) {
     id: 42,
     isDraft,
     coreQuestionId,
-    update: mockVariantUpdate,
     questionMetadata: { type: 'SA', primaryTopicId: 'local-t1', course: COURSE },
   };
 }
@@ -148,7 +146,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(mockPushVariantToCore).toHaveBeenCalledOnce();
-    expect(mockVariantUpdate).toHaveBeenCalledWith({ coreQuestionId: 'cuid-core-q' });
+    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { coreQuestionId: 'cuid-core-q' } });
   });
 
   it('does NOT push when isDraft is not explicitly false in the request body', async () => {
@@ -192,8 +190,8 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('INVALID_TOPIC_IDS');
     expect(res.body.deletedTopicIds).toEqual(deletedTopicIds);
-    expect(mockTopicsUpdate).toHaveBeenCalledWith({ coreTopicId: null }, { where: { coreTopicId: deletedTopicIds } });
-    expect(mockVariantUpdate).not.toHaveBeenCalled();
+    expect(mockTopicsUpdateMany).toHaveBeenCalledWith({ where: { coreTopicId: { in: deletedTopicIds } }, data: { coreTopicId: null } });
+    expect(mockVariantsUpdate).not.toHaveBeenCalled();
   });
 
   it('re-approval after INVALID_TOPIC_IDS fires push again (state-based gating)', async () => {
@@ -221,7 +219,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
 
     expect(secondRes.status).toBe(200);
     expect(mockPushVariantToCore).toHaveBeenCalledTimes(2);
-    expect(mockVariantUpdate).toHaveBeenCalledWith({ coreQuestionId: 'cuid-core-q-recovered' });
+    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { coreQuestionId: 'cuid-core-q-recovered' } });
   });
 
   it('returns 422 DUPLICATE_TOPIC without storing coreQuestionId', async () => {
@@ -239,7 +237,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('DUPLICATE_TOPIC');
-    expect(mockVariantUpdate).not.toHaveBeenCalled();
+    expect(mockVariantsUpdate).not.toHaveBeenCalled();
   });
 
   // #225 SEAM-03 / #1197 fix: a Core push failure (Core down, 5xx, network
@@ -258,7 +256,7 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('CORE_PUSH_FAILED');
-    expect(mockVariantUpdate).not.toHaveBeenCalled();
+    expect(mockVariantsUpdate).not.toHaveBeenCalled();
   });
 
   it('re-approval after a transient Core push failure retries the push (state-based gating)', async () => {
@@ -279,6 +277,6 @@ describe('PUT /api/questions/variants/:id — Core push on approval', () => {
 
     expect(secondRes.status).toBe(200);
     expect(mockPushVariantToCore).toHaveBeenCalledTimes(2);
-    expect(mockVariantUpdate).toHaveBeenCalledWith({ coreQuestionId: 'cuid-core-q-retry' });
+    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 42 }, data: { coreQuestionId: 'cuid-core-q-retry' } });
   });
 });

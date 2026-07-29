@@ -6,7 +6,7 @@
  * whose names were updated were NOT counted, so after the first sync the
  * response always returned { synced: 0 } even when real name-update work was done.
  *
- * All DB (Sequelize) and Core HTTP calls are mocked — no test DB required.
+ * All DB (Prisma) and Core HTTP calls are mocked — no test DB required.
  */
 import { vi, describe, it, expect, afterEach } from 'vitest';
 import request from 'supertest';
@@ -39,10 +39,12 @@ vi.mock('../../src/config/settings.js', () => {
   return { config: cfg, default: cfg };
 });
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: vi.fn() },
-  Topics: { findAll: vi.fn(), create: vi.fn() },
-  Question_Metadata: {},
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findUnique: vi.fn() },
+    topics: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+    questionMetadata: {},
+  },
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
@@ -61,7 +63,7 @@ vi.mock('../../src/services/coreApiService.js', () => ({
 }));
 
 const { default: app } = await import('../../src/app.js');
-const { Course, Topics } = await import('../../src/schema/index.js');
+const { prisma } = await import('../../src/config/database.js');
 const { getCourseTopicsFromCore } = await import('../../src/services/coreApiService.js');
 
 const INSTRUCTOR = { id: 'user-cuid-inst', email: 'inst@test.com', role: 'INSTRUCTOR', name: 'Instructor' };
@@ -82,7 +84,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
   it('counts already-linked topics whose names are updated (previously returned 0)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
-    Course.findOne.mockResolvedValue({
+    prisma.course.findUnique.mockResolvedValue({
       id: 1,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-1',
@@ -101,7 +103,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
       update: vi.fn().mockResolvedValue(undefined),
     };
     // findAll #1: topics for this course; findAll #2: topics linked by coreTopicId
-    Topics.findAll
+    prisma.topics.findMany
       .mockResolvedValueOnce([mockExistingTopic])
       .mockResolvedValueOnce([mockExistingTopic]);
 
@@ -119,7 +121,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
   it('counts newly created topics', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
-    Course.findOne.mockResolvedValue({
+    prisma.course.findUnique.mockResolvedValue({
       id: 2,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-2',
@@ -130,10 +132,10 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     });
 
     // No existing topics locally → create path
-    Topics.findAll
+    prisma.topics.findMany
       .mockResolvedValueOnce([]) // topics for this course
       .mockResolvedValueOnce([]); // topics linked by coreTopicId
-    Topics.create.mockResolvedValue({ id: 'local-t-new', name: 'Brand New Topic', coreTopicId: 'core-t-new' });
+    prisma.topics.create.mockResolvedValue({ id: 'local-t-new', name: 'Brand New Topic', coreTopicId: 'core-t-new' });
 
     const res = await request(app)
       .post('/api/course/2/sync-topics')
@@ -147,7 +149,7 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
   it('counts multiple topics across all update paths', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sessionOk()));
 
-    Course.findOne.mockResolvedValue({
+    prisma.course.findUnique.mockResolvedValue({
       id: 3,
       userId: INSTRUCTOR.id,
       coreCourseId: 'core-c-3',
@@ -170,10 +172,10 @@ describe('POST /api/course/:id/sync-topics — synced counter', () => {
     };
     // Second topic has no local match → create path.
     // findAll #1: topics for this course; findAll #2: topics linked by coreTopicId
-    Topics.findAll
+    prisma.topics.findMany
       .mockResolvedValueOnce([linkedTopic])
       .mockResolvedValueOnce([linkedTopic]);
-    Topics.create.mockResolvedValue({ id: 'local-t-new2', name: 'New Topic', coreTopicId: 'core-t-brand-new' });
+    prisma.topics.create.mockResolvedValue({ id: 'local-t-new2', name: 'New Topic', coreTopicId: 'core-t-brand-new' });
 
     const res = await request(app)
       .post('/api/course/3/sync-topics')

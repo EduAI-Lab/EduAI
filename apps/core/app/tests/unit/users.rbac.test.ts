@@ -24,11 +24,11 @@ vi.mock("~/lib/prisma.server", () => ({
     $transaction: vi.fn(),
     user: {
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
-      count: vi.fn(),
     },
     course: { findMany: vi.fn() },
     enrollment: {
@@ -84,7 +84,8 @@ function makePost(body: unknown) {
 
 function makeGet() {
   return {
-    request: new Request("http://localhost/api/users", { method: "GET" }),
+    // #1041: `page`/`pageSize` are required on GET /api/users.
+    request: new Request("http://localhost/api/users?page=1&pageSize=25", { method: "GET" }),
     params: { "*": undefined },
     context: {} as never,
   } as any;
@@ -114,7 +115,12 @@ beforeEach(() => {
   vi.mocked(prisma.enrollment.findMany).mockResolvedValue([]);
   vi.mocked(prisma.enrollment.groupBy).mockResolvedValue([] as never);
   vi.mocked(prisma.course.findMany).mockResolvedValue([]);
-  vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => callback(prisma));
+  // GET /api/users batches its count+findMany as an array transaction (#1041);
+  // the mutation paths still pass an interactive callback.
+  vi.mocked(prisma.$transaction).mockImplementation(async (arg: any) =>
+    Array.isArray(arg) ? Promise.all(arg) : arg(prisma),
+  );
+  vi.mocked(prisma.user.count).mockResolvedValue(1 as never);
 });
 
 describe("GET /api/users — TA course assignments (#967)", () => {
@@ -134,7 +140,8 @@ describe("GET /api/users — TA course assignments (#967)", () => {
     ] as never);
 
     const res = await loader(makeGet());
-    const users = await res.json();
+    const body = await res.json();
+    const users = body.data;
 
     expect(res.status).toBe(200);
     expect(prisma.user.findMany).toHaveBeenCalledWith(

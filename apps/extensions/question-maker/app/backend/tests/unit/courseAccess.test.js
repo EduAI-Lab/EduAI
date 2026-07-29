@@ -11,8 +11,8 @@ const { mockCourseFindOne, mockEnrollments, mockCourse, mockMe } = vi.hoisted(()
   mockMe: vi.fn(),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: mockCourseFindOne },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: { course: { findUnique: mockCourseFindOne } },
 }));
 
 vi.mock('../../src/services/coreApiService.js', () => ({
