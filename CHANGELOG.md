@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, and add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
+- [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates, and align the supported Question Maker deployment image with the monorepo workspace context. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
 
 ## [Week 12 — July 20–26, 2026]
 
