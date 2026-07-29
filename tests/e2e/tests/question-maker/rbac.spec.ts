@@ -93,7 +93,8 @@ test.describe('QM assessment route gates (STUDENT → 403)', () => {
 test.describe('QM course routes accessible to all authenticated users', () => {
   test('GET /api/course returns 200 for STUDENT', async ({ request }) => {
     await signUp(request, { email: uniqueEmail('qm-rbac-course-list') });
-    const res = await request.get(`${QM_BACKEND_URL}/api/course`);
+    // Pagination params are required on this list (#1044).
+    const res = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(res.status()).toBe(200);
   });
 

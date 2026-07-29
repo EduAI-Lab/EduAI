@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "~/hooks/api/config";
+import {
+  initialPaginationState,
+  paginationQuery,
+  type PaginatedResponse,
+  type PaginationState,
+} from "~/hooks/api/pagination";
 import type { AIProvider } from "~/hooks/api/types";
 
 function normalizeProvider(provider: AIProvider): AIProvider {
@@ -10,21 +16,34 @@ function normalizeProvider(provider: AIProvider): AIProvider {
   };
 }
 
-export function useAiProviders() {
+export type UseAiProvidersOptions = {
+  /** Rows per request. Callers that also drive a provider picker pass the max. */
+  pageSize?: number;
+};
+
+/** Server-paginated AI provider list (#1041). */
+export function useAiProviders(options: UseAiProvidersOptions = {}) {
+  const [pagination, setPagination] = useState<PaginationState>(
+    initialPaginationState(options.pageSize),
+  );
   const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const data = await apiFetch<AIProvider[]>("/api/ai-providers");
-      setProviders(data.map(normalizeProvider));
+      const response = await apiFetch<PaginatedResponse<AIProvider>>(
+        `/api/ai-providers?${paginationQuery(pagination)}`,
+      );
+      setProviders(response.data.map(normalizeProvider));
+      setTotal(response.total);
     } catch (err) {
       console.error("Failed to fetch providers:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch providers");
     }
-  }, []);
+  }, [pagination]);
 
   useEffect(() => {
     void (async () => {
@@ -72,6 +91,9 @@ export function useAiProviders() {
 
   return {
     providers,
+    total,
+    pagination,
+    setPagination,
     isLoading,
     error,
     refresh,

@@ -71,10 +71,9 @@ if (process.env.DATABASE_URL.includes('@postgres:')) {
   }
 }
 
-const dbModule = await import('../src/config/database.js');
-const schemaModule = await import('../src/schema/index.js');
-const { sequelize } = dbModule;
-const { Course, Topics, Question_Metadata, Assessments, Variants } = schemaModule;
+import { createId } from '@paralleldrive/cuid2';
+
+const { prisma } = await import('../src/config/database.js');
 
 const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 
@@ -87,10 +86,10 @@ const NUM_TEMPLATES = TOPIC_NAMES_BY_TEMPLATE.length;
 const run = async () => {
   try {
     console.log('Connecting to database...');
-    await sequelize.authenticate();
+    await prisma.$queryRaw`SELECT 1`;
     console.log('Connected.\n');
 
-    const courses = await Course.findAll({ order: [['id', 'ASC']] });
+    const courses = await prisma.course.findMany({ orderBy: { id: 'asc' } });
     if (!courses.length) {
       console.log('No courses found. Nothing to seed.');
       return;
@@ -114,21 +113,23 @@ const run = async () => {
       // Ensure all template topics exist for this course (find or create by name)
       const courseTopics = [];
       for (const name of topicNames) {
-        let topic = await Topics.findOne({ where: { courseId: course.id, name } });
+        let topic = await prisma.topics.findFirst({ where: { courseId: course.id, name } });
         if (!topic) {
-          topic = await Topics.create({ name, courseId: course.id });
+          topic = await prisma.topics.create({ data: { id: createId(), name, courseId: course.id } });
           totalTopics++;
         }
         courseTopics.push(topic);
       }
 
-      let assessment = await Assessments.findOne({ where: { courseId: course.id }, order: [['id', 'ASC']] });
+      let assessment = await prisma.assessments.findFirst({ where: { courseId: course.id }, orderBy: { id: 'asc' } });
       if (!assessment) {
         // `semester` no longer exists on `Assessments` (#1072 §4 step 10/#1077).
-        assessment = await Assessments.create({
-          courseId: course.id,
-          type: 'Quiz',
-          name: 'Practice Exam'
+        assessment = await prisma.assessments.create({
+          data: {
+            courseId: course.id,
+            type: 'Quiz',
+            name: 'Practice Exam'
+          }
         });
         totalAssessments++;
         console.log(`    Created assessment "Practice Exam"`);
@@ -140,12 +141,14 @@ const run = async () => {
         const primaryTopic = courseTopics[topicIndex];
         const order = { [assessment.id]: i + 1 };
 
-        const meta = await Question_Metadata.create({
-          description: q.description,
-          type: q.type,
-          courseId: course.id,
-          primaryTopicId: primaryTopic.id,
-          questionOrder: order
+        const meta = await prisma.questionMetadata.create({
+          data: {
+            description: q.description,
+            type: q.type,
+            courseId: course.id,
+            primaryTopicId: primaryTopic.id,
+            questionOrder: order
+          }
         });
         totalQuestions++;
 
@@ -164,7 +167,7 @@ const run = async () => {
         if (q.type === 'MCQ' && Array.isArray(q.choices) && q.correctAnswer) {
           variantPayload.choices = q.choices.map((c) => ({ letter: c.letter, text: c.text }));
         }
-        await Variants.create(variantPayload);
+        await prisma.variants.create({ data: variantPayload });
         totalVariants++;
       }
       console.log(`    Added ${topicNames.length} topics, ${questions.length} questions.`);
@@ -179,7 +182,7 @@ const run = async () => {
     console.error('❌ Seed failed:', err);
     throw err;
   } finally {
-    await sequelize.close();
+    await prisma.$disconnect();
     console.log('\nDatabase connection closed.');
   }
 };

@@ -42,8 +42,8 @@ export function CanvasIntegrationSettings() {
       if (data?.canvasUrl) {
         setCanvasUrl(data.canvasUrl);
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load Canvas integration");
+    } catch {
+      setError("Could not load Canvas integration. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,11 @@ export function CanvasIntegrationSettings() {
           : "Canvas connected. Your API key is stored encrypted and is not shown again.",
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect Canvas");
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Could not connect to Canvas. Please try again.",
+      );
     } finally {
       setConnecting(false);
     }
@@ -86,8 +90,8 @@ export function CanvasIntegrationSettings() {
       setIntegration(null);
       setApiKey("");
       setSuccess("Canvas disconnected.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to disconnect Canvas");
+    } catch {
+      setError("Could not disconnect Canvas. Please try again.");
     } finally {
       setDisconnecting(false);
     }

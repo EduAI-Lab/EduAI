@@ -17,8 +17,7 @@ const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 const describeDb = hasTestDb ? describe : describe.skip;
 
 describeDb('canvasService import/export (integration, test mode)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics, CanvasIntegration, Assessments, AssessmentSections, SectionVariants, Variants;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
   let canvas;
 
@@ -27,11 +26,9 @@ describeDb('canvasService import/export (integration, test mode)', () => {
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
-    ({ connectTestDatabase, truncateTestDatabase, sequelize } = testDb);
+    ({ connectTestDatabase, truncateTestDatabase, prisma } = testDb);
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics, CanvasIntegration, Assessments, AssessmentSections, SectionVariants, Variants } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
     canvas = await import('../../src/services/canvasService.js');
 
@@ -44,26 +41,28 @@ describeDb('canvasService import/export (integration, test mode)', () => {
 
   beforeEach(async () => {
     await truncateTestDatabase();
-    await User.create({ id: USER.id, email: USER.email, name: USER.name });
+    await prisma.user.create({ data: { id: USER.id, email: USER.email, name: USER.name } });
     // OTHER exists but has no Canvas integration — used for "not configured" paths.
-    await User.create({ id: OTHER.id, email: OTHER.email, name: OTHER.name });
+    await prisma.user.create({ data: { id: OTHER.id, email: OTHER.email, name: OTHER.name } });
     await seedCoursesForNewUser(USER.id);
-    const course = await Course.findOne({ where: { userId: USER.id } });
+    const course = await prisma.course.findFirst({ where: { userId: USER.id } });
     courseId = course.id;
-    const topic = await Topics.findOne({ where: { courseId } });
+    const topic = await prisma.topics.findFirst({ where: { courseId } });
     topicId = topic.id;
 
-    await CanvasIntegration.create({
-      userId: USER.id,
-      canvasUrl: 'https://canvas.test',
-      apiKey: 'test-token',
-      isTestMode: true,
+    await prisma.canvasIntegration.create({
+      data: {
+        userId: USER.id,
+        canvasUrl: 'https://canvas.test',
+        apiKey: 'test-token',
+        isTestMode: true,
+      },
     });
   });
 
   afterAll(async () => {
     vi.restoreAllMocks();
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   describe('saveCanvasIntegration / getCanvasIntegration', () => {
@@ -127,7 +126,7 @@ describeDb('canvasService import/export (integration, test mode)', () => {
       expect(result.questionsImported).toBe(1);
       expect(result.assessmentName).toBe('Imported Exam');
 
-      const variants = await Variants.findAll({ where: { assessmentId: result.assessmentId } });
+      const variants = await prisma.variants.findMany({ where: { assessmentId: result.assessmentId } });
       expect(variants).toHaveLength(1);
       expect(variants[0].choices).toBeTruthy();
 
