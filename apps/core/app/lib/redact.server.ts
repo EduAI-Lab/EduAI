@@ -257,6 +257,33 @@ export function sanitizeSensitiveData(
 }
 
 /**
+ * Redact a caught error before it is handed to `console.error`.
+ *
+ * Console fallbacks are a real exfiltration path: a DB outage surfaces a driver error whose
+ * message embeds the connection string (`//user:pass@host`), and fetch failures embed the
+ * request URL with its query string. Logging the raw error object would put those in stdout
+ * even though the DB row itself is redacted, so scrub message and stack the same way.
+ *
+ * Returns a plain shape rather than an `Error` because `console.error` prints an Error's own
+ * (unredacted) fields rather than the properties we set on it.
+ */
+export function redactErrorForConsole(error: unknown): unknown {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: redactSecretValuesInString(error.message),
+      stack: error.stack ? redactSecretValuesInString(error.stack) : undefined,
+    };
+  }
+
+  if (typeof error === "string") {
+    return redactSecretValuesInString(error);
+  }
+
+  return sanitizeSensitiveData(error);
+}
+
+/**
  * Redact a diagnostic log string that is typically JSON (console/network capture).
  * Parses when possible so key-level redaction applies; always runs value-level scrubbing.
  */
