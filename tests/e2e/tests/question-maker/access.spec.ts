@@ -90,7 +90,7 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
   }) => {
     await signUp(request, { email: uniqueEmail('qm-courses') });
 
-    const res = await request.get(`${QM_BACKEND_URL}/api/course`);
+    const res = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(res.status()).toBe(200);
     const body = await res.json();
     // Success envelope or direct array
@@ -99,6 +99,21 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
     // #1072: QM no longer seeds demo courses on first login — every course is
     // a caller-scoped anchor to a real Core course, created explicitly.
     expect(list.length).toBe(0);
+    // #1044: `data` stays a bare array, with pagination metadata as siblings.
+    expect(body).toMatchObject({ page: 1, pageSize: 100, total: 0 });
+  });
+
+  test('GET /api/course requires pagination params (400 PAGINATION_REQUIRED)', async ({
+    request,
+  }) => {
+    await signUp(request, { email: uniqueEmail('qm-courses-nopage') });
+
+    // #1044: this list is unbounded, so page/pageSize are mandatory rather
+    // than defaulted — omitting them is a client error, not a full dump.
+    const res = await request.get(`${QM_BACKEND_URL}/api/course`);
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('PAGINATION_REQUIRED');
   });
 
   test('GET /api/questions is blocked for STUDENT (403)', async ({ request }) => {
@@ -147,7 +162,7 @@ test.describe('Authenticated access to Question Maker via Core session', () => {
 
     expect(typeof qmCourseId).toBe('number');
 
-    const listRes = await request.get(`${QM_BACKEND_URL}/api/course`);
+    const listRes = await request.get(`${QM_BACKEND_URL}/api/course?page=1&pageSize=100`);
     expect(listRes.status()).toBe(200);
     const listBody = await listRes.json();
     const list = Array.isArray(listBody) ? listBody : listBody?.data;

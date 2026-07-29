@@ -24,22 +24,35 @@ import {
 // ---------------------------------------------------------------------------
 
 test.describe('Core admin user list (GET /api/users)', () => {
-  test('ADMIN can retrieve the full user list', async ({ request }) => {
+  // #1041: paging is mandatory — the endpoint never returns the full table.
+  test('ADMIN can retrieve a page of the user list', async ({ request }) => {
     await createAdmin(request, { prefix: 'ul-admin' });
 
-    const res = await request.get(`${CORE_URL}/api/users`);
+    const res = await request.get(`${CORE_URL}/api/users?page=1&pageSize=25`);
     expect(res.status()).toBe(200);
 
-    const users = await res.json();
-    expect(Array.isArray(users)).toBe(true);
-    expect(users.length).toBeGreaterThan(0);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+    expect(body.total).toBeGreaterThanOrEqual(body.data.length);
+    expect(body.data.length).toBeLessThanOrEqual(25);
+  });
+
+  test('a request without page/pageSize is rejected', async ({ request }) => {
+    await createAdmin(request, { prefix: 'ul-nopage-admin' });
+
+    const res = await request.get(`${CORE_URL}/api/users`);
+    expect(res.status()).toBe(400);
+    expect((await res.json()).error).toBe('PAGINATION_REQUIRED');
   });
 
   test('each user entry includes id, email, role, and isActive', async ({ request }) => {
     await createAdmin(request, { prefix: 'ul-fields-admin' });
 
-    const res = await request.get(`${CORE_URL}/api/users`);
-    const users = await res.json();
+    const res = await request.get(`${CORE_URL}/api/users?page=1&pageSize=25`);
+    const { data: users } = await res.json();
     const sample = users[0];
 
     expect(typeof sample.id).toBe('string');
@@ -56,8 +69,13 @@ test.describe('Core admin user list (GET /api/users)', () => {
       await createAdmin(adminCtx, { prefix: 'ul-new-admin' });
       const { email } = await registerUser(studentCtx, { prefix: 'ul-new-student' });
 
-      const res = await adminCtx.get(`${CORE_URL}/api/users`);
-      const users = await res.json();
+      // Paging means "somewhere in the table" is no longer assertable from one
+      // page — look the new user up with ?search= (#1125) instead.
+      const res = await adminCtx.get(
+        `${CORE_URL}/api/users?page=1&pageSize=25&search=${encodeURIComponent(email)}`,
+      );
+      const { data: users, total } = await res.json();
+      expect(total).toBeGreaterThan(0);
       expect(users.some((u: any) => u.email === email)).toBe(true);
     } finally {
       await adminCtx.dispose();
@@ -82,8 +100,10 @@ test.describe('Core admin user role update (PATCH /api/users/:id)', () => {
       });
 
       // Find the target user's id
-      const usersRes = await adminCtx.get(`${CORE_URL}/api/users`);
-      const users = await usersRes.json();
+      const usersRes = await adminCtx.get(
+        `${CORE_URL}/api/users?page=1&pageSize=25&search=${encodeURIComponent(targetEmail)}`,
+      );
+      const { data: users } = await usersRes.json();
       const target = users.find((u: any) => u.email === targetEmail);
       expect(target).toBeDefined();
 

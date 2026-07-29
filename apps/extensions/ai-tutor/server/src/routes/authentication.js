@@ -24,7 +24,8 @@ router.get('/me', async (req, res) => {
   let coreCourses;
 
   try {
-    coreCourses = await listEduAiCourses({ cookie });
+    // #1041: paged upstream; this flow reconciles against the caller's full set.
+    coreCourses = await listEduAiCourses({ cookie, all: true });
   } catch (err) {
     console.error('[eduai] Core course list failed on /me', err);
     coreCourses = null;

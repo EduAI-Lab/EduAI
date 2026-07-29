@@ -1,7 +1,7 @@
 import { IconBooks, IconBug, IconSettings } from '@tabler/icons-react';
 import { DonutChart, PanelCard, type DonutSegment } from '@eduai/ui';
 import type { DashboardStats } from '~/lib/api';
-import type { AdminBugReportRow, AdminUser, Course } from '~/lib/types';
+import type { AdminBugReportRow, AdminUserPage, Course } from '~/lib/types';
 import { DashboardView, type DashboardQuickAction } from './DashboardView';
 import { BugReportTriagePanel } from './BugReportTriagePanel';
 import { toDashboardCourseRow } from './dashboard-helpers';
@@ -15,7 +15,7 @@ const OTHER_COLOR = 'oklch(0.70 0.03 255)';
 
 type DashboardAdminViewProps = {
   courses: Course[];
-  adminUsers: AdminUser[];
+  adminUsers: AdminUserPage | null;
   bugReports: AdminBugReportRow[];
   /** Platform-wide rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
   dashboardStats?: DashboardStats | null;
@@ -30,10 +30,18 @@ export function DashboardAdminView({
   const published = courses.filter((c) => c.isPublished);
   const openReports = bugReports.filter((r) => r.status === 'unhandled');
 
+  // #1041: counts come from Core's platform-wide `stats`. Deriving them from a
+  // fetched list is no longer possible — the list is one page.
+  const userStats = adminUsers?.stats ?? { total: 0, active: 0, byRole: {} };
+  const byRole = userStats.byRole;
+  const studentCount = byRole.STUDENT ?? 0;
+  const instructorCount = (byRole.INSTRUCTOR ?? 0) + (byRole.UNIT_ADMIN ?? 0);
+  const otherCount = Math.max(0, userStats.total - studentCount - instructorCount);
+
   const stats = [
     { label: 'Total courses', value: dashboardStats?.totalCourses ?? courses.length },
     { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
-    { label: 'Platform users', value: dashboardStats?.totalUsers ?? adminUsers.length },
+    { label: 'Platform users', value: dashboardStats?.totalUsers ?? userStats.total },
     { label: 'Open bug reports', value: dashboardStats?.openBugReports ?? openReports.length },
   ];
 
@@ -42,9 +50,6 @@ export function DashboardAdminView({
     { label: 'Draft', value: courses.length - published.length, color: DRAFT_COLOR },
   ];
 
-  const studentCount = adminUsers.filter((u) => u.role === 'STUDENT').length;
-  const instructorCount = adminUsers.filter((u) => u.role === 'INSTRUCTOR' || u.role === 'UNIT_ADMIN').length;
-  const otherCount = adminUsers.length - studentCount - instructorCount;
   const roleSegments: DonutSegment[] = [
     { label: 'Students', value: studentCount, color: STUDENT_COLOR },
     { label: 'Instructors', value: instructorCount, color: INSTRUCTOR_COLOR },
@@ -61,10 +66,10 @@ export function DashboardAdminView({
         )}
       </PanelCard>
       <PanelCard title="Users by role">
-        {adminUsers.length === 0 ? (
+        {userStats.total === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No users yet.</p>
         ) : (
-          <DonutChart data={roleSegments} centerValue={adminUsers.length} centerLabel="Users" />
+          <DonutChart data={roleSegments} centerValue={userStats.total} centerLabel="Users" />
         )}
       </PanelCard>
     </div>

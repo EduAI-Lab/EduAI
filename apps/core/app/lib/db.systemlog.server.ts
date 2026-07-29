@@ -5,6 +5,7 @@
  * a console fallback when DB writes fail so operational diagnostics are still preserved.
  */
 import prisma from "~/lib/prisma.server";
+import { normalizePagination } from "~/lib/pagination.server";
 
 export type SystemLogLevel = "ERROR" | "WARN" | "INFO";
 
@@ -45,20 +46,6 @@ export type SystemLogListParams = {
 };
 
 export type SystemLogRow = Awaited<ReturnType<typeof prisma.systemLog.findFirst>>;
-
-function normalizePagination(page = 1, pageSize = 25) {
-  // Clamping keeps expensive system-log queries bounded in admin views.
-  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
-  const safePageSize = Number.isFinite(pageSize)
-    ? Math.min(200, Math.max(1, Math.floor(pageSize)))
-    : 25;
-
-  return {
-    safePage,
-    safePageSize,
-    skip: (safePage - 1) * safePageSize,
-  };
-}
 
 function buildSystemLogWhere(params: SystemLogListParams) {
   const where: Record<string, unknown> = {};
