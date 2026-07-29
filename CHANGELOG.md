@@ -35,6 +35,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] tests: `admission.server` + `fleet-probe-stream` unit coverage; fleet-routing exclude/retry cases. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
 - [question-maker] refactor: Migrate the Question Maker backend from Sequelize to Prisma for platform-wide ORM consistency (Core and AI Tutor already use Prisma) — full schema/services/routes/jobs/seed-scripts/test-suite/Docker/CI port. `CanvasCourseMapping` is now a true 1:1 with `Course`; deleting an assessment un-links (not deletes) its variants. Surfaced and fixed three real bugs during the real-DB integration test pass: a Postgres advisory-lock type/void-deserialization issue, a latent race condition in default-topic creation, and Prisma's stricter typing rejecting string route params that Sequelize silently coerced. (#1122, @evanbones, 2026-07-23) — [#1168](https://github.com/EduAI-Lab/EduAI/pull/1168)
 
+### Added
+
+- [monorepo] docs: Commit the #961 endpoint-latency baseline captured against the seeded UBC dev server (`--target=ubc-dev`, 164 endpoints, all clean, headline outlier `qm GET /api/course` at 2714 ms p50). (#961, @mochi_21, 2026-07-21) — [#1142](https://github.com/EduAI-Lab/EduAI/pull/1142)
+
 ### Changed
 
 - [core] fix: Fleet Slice 2 startup probe now runs for non-streaming and oversight turns (not only streaming); docs call out soft-timeout / mid-stream non-retry tradeoffs. (@ssaada08, 2026-07-21) — [#1121](https://github.com/EduAI-Lab/EduAI/pull/1121)
