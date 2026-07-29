@@ -119,7 +119,7 @@ describeDb('Plan coverage (integration)', () => {
     const qid = createQ.body.data.id;
 
     const alist = await request(app).get('/api/assessments').set(cookieA()).query({ courseId });
-    const practice = alist.body.data.find((a) => a.name === 'Practice Exam');
+    const practice = alist.body.data.items.find((a) => a.name === 'Practice Exam');
     expect(practice).toBeTruthy();
 
     // The assemble flow reads questions from the reference assessment's sections,

@@ -38,10 +38,10 @@ describe('Auth routes', () => {
     });
 
     it('allows admin to list courses for the shared dashboard (#781)', async () => {
-      const res = await request(adminApp).get('/api/courses');
+      const res = await request(adminApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
 
     it('still blocks admin from non-allowlisted endpoints (GET /api/eduai/courses)', async () => {
