@@ -82,12 +82,14 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid course id', { status: 400 });
   }
 
-  const [course, modules] = await Promise.all([
+  const [course, modulesPage] = await Promise.all([
     api.courseById(courseId) as Promise<Course>,
-    api.modulesForCourse(courseId) as Promise<Module[]>,
+    // #1043: modules endpoint returns the pagination envelope. Reorder host —
+    // keep `total` so we can refuse a partial-order persist past the page.
+    api.modulesForCourse(courseId),
   ]);
 
-  return { course, modules };
+  return { course, modules: modulesPage.data, modulesTotal: modulesPage.total };
 }
 
 /**
@@ -103,10 +105,18 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   const perms = useAtPermissions();
   const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
-  const { course, modules: initialModules } = loaderData;
+  const { course, modules: initialModules, modulesTotal: initialModulesTotal } = loaderData;
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
+  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
+  // all replace `modules`, so the truncation flag has to move with them or it
+  // goes stale and re-enables reorder after the list crosses the page bound.
+  const [modulesTotal, setModulesTotal] = useState(initialModulesTotal);
+  // More modules than the bounded page we loaded — reorder is disabled all the
+  // way down (provider, item, drag handle) so a partial-order persist can't
+  // orphan the unseen tail, and the UI never advertises a drag it will reject.
+  const modulesTruncated = modulesTotal > modules.length;
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -146,13 +156,15 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   if (initialModules !== prevInitialModules) {
     setPrevInitialModules(initialModules);
     setModules(initialModules);
+    setModulesTotal(initialModulesTotal);
   }
 
   const refreshModules = async () => {
     if (!numericCourseId) return;
     try {
       const modulesData = await api.modulesForCourse(numericCourseId);
-      setModules(modulesData);
+      setModules(modulesData.data);
+      setModulesTotal(modulesData.total);
     } catch (error) {
       console.error('Failed to refresh modules', error);
     }
@@ -163,7 +175,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     setLoadingSourceCourses(true);
     api
       .listCourses()
-      .then((data: Course[]) => {
+      .then((page) => {
+        const data = page.data;
         const nextCourses = numericCourseId
           ? data.filter((course: Course) => course.id !== numericCourseId)
           : data;
@@ -191,7 +204,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     try {
       const data = await api.modulesForCourse(nextCourseId);
       if (modulesRequestIdRef.current === requestId) {
-        setSourceModules(data);
+        setSourceModules(data.data);
       }
     } catch (error) {
       if (modulesRequestIdRef.current === requestId) {
@@ -289,6 +302,10 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderModulesList = async (orderedIds: number[]) => {
     if (!numericCourseId) return;
+    if (modulesTruncated) {
+      toast.error('This course has more modules than can be reordered at once.');
+      return;
+    }
     const current = modules;
     const byId = new Map(current.map((m) => [m.id, m]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
@@ -663,6 +680,13 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </Dialog>
           </PermissionGate>
 
+          {modulesTruncated && perms.canManageContent ? (
+            <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+              Showing {modules.length} of {modulesTotal} modules. Reordering is unavailable until the
+              full list fits on one page, so a partial order can&apos;t be saved over the rest.
+            </p>
+          ) : null}
+
           {oModules.length === 0 ? (
             <Card>
               <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
@@ -672,7 +696,12 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               ids={oModules.map((m) => m.id)}
               onReorder={reorderModulesList}
               strategy="grid"
-              disabled={!perms.canManageContent || oModules.length < 2 || reorderingModules}
+              disabled={
+                !perms.canManageContent ||
+                oModules.length < 2 ||
+                reorderingModules ||
+                modulesTruncated
+              }
             >
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {oModules.map((m, idx) => {
@@ -682,7 +711,8 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     ? `Publish ${m.title} after publishing ${course?.title ?? 'the parent course'}.`
                     : null;
                   const busy = publishingId === m.id;
-                  const canReorder = perms.canManageContent && oModules.length > 1;
+                  const canReorder =
+                    perms.canManageContent && oModules.length > 1 && !modulesTruncated;
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
                       {({ handleProps }) => (
