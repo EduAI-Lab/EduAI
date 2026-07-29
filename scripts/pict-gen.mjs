@@ -9,9 +9,10 @@
  * Generation always goes through Docker rather than a host-installed `pict`: PICT's greedy
  * solver breaks ties between equally-valid rows via hash-container iteration order, which
  * differs across C++ standard library implementations (e.g. macOS/Homebrew's libc++ vs a Linux
- * build's libstdc++) — same model, same row count, different row selection/order. Since the
- * output is committed and diffed, every environment generating it must agree byte-for-byte, so
- * everyone (local dev or CI) runs the same pinned Linux image. See docker/pict/Dockerfile.
+ * build's libstdc++) — same model, different row *count* (19 vs 18 for this repo's pilot
+ * model), not just reordering. Since the output is committed and diffed, every environment
+ * generating it must agree byte-for-byte, so everyone (local dev or CI) runs the same pinned
+ * Linux image. See docker/pict/Dockerfile.
  *
  * Optional per-model sidecar tests/models/<name>.config.json:
  *   { "order": 3, "seed": "<name>.seed.tsv" }
@@ -65,12 +66,11 @@ function dockerFail(err) {
 }
 
 function ensureImage() {
-  try {
-    execFileSync("docker", ["image", "inspect", IMAGE], { stdio: "ignore" });
-    return;
-  } catch {
-    // fall through to build
-  }
+  // Always run `docker build` rather than skipping when an image tagged IMAGE already exists:
+  // a pre-existing local image under that tag could have been built from an older revision of
+  // this Dockerfile (or hand-built some other way), and since generated rows depend on the
+  // exact toolchain, silently trusting it would defeat the pinning in docker/pict/Dockerfile.
+  // Docker's own layer cache keeps this fast when nothing has actually changed.
   try {
     execFileSync("docker", ["build", "-f", path.join(DOCKER_DIR, "Dockerfile"), "-t", IMAGE, DOCKER_DIR], {
       stdio: ["ignore", "ignore", "inherit"],
@@ -85,7 +85,7 @@ function runPict(modelPath, config) {
   if (config.order !== undefined) args.push(`/o:${config.order}`);
   if (config.seed !== undefined) args.push(`/e:/models/${config.seed}`);
   try {
-    return execFileSync("docker", args, { encoding: "utf8" });
+    return execFileSync("docker", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   } catch (err) {
     if (err.code === "ENOENT") dockerFail(err);
     console.error(`pict-gen: pict failed on ${path.relative(process.cwd(), modelPath)}`);
@@ -103,6 +103,21 @@ function main() {
   const modelFiles = readdirSync(MODELS_DIR)
     .filter((f) => f.endsWith(".pict"))
     .sort();
+
+  const modelNames = new Set(modelFiles.map((f) => f.replace(/\.pict$/, "")));
+  const orphanedCaseFiles = readdirSync(MODELS_DIR)
+    .filter((f) => f.endsWith(".cases.json"))
+    .filter((f) => !modelNames.has(f.replace(/\.cases\.json$/, "")))
+    .sort();
+
+  if (orphanedCaseFiles.length > 0) {
+    console.error(
+      `pict-gen: found ${orphanedCaseFiles.length} case table(s) with no matching .pict model:\n` +
+        orphanedCaseFiles.map((f) => `  - ${f}`).join("\n") +
+        "\nDelete the stale .cases.json file(s), or restore the .pict model that generates them.",
+    );
+    process.exit(1);
+  }
 
   if (modelFiles.length === 0) {
     console.log("pict-gen: no *.pict models found under tests/models/ — nothing to do.");

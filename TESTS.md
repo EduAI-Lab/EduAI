@@ -159,8 +159,10 @@ census candidate is picked up.
 
 ### Generation runs in Docker, not a host install
 
-`npm run test:pict:gen` always runs `pict` inside the pinned `docker/pict` image (building it on
-first use) rather than a natively-installed `pict` binary. This isn't incidental: PICT's greedy
+`npm run test:pict:gen` always runs `pict` inside the pinned `docker/pict` image — rebuilding it
+every run (fast no-op via Docker's own layer cache once the image is current) rather than trusting
+whatever a local image with that tag happens to be — instead of a natively-installed `pict` binary.
+This isn't incidental: PICT's greedy
 solver breaks ties between equally-valid candidate rows via hash-container iteration order, which
 differs across C++ standard library implementations. A macOS/Homebrew build (clang + libc++) and a
 Linux build (g++ + libstdc++) produce a **different row count** for the identical model — 19 rows
