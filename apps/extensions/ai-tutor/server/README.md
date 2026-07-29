@@ -11,6 +11,7 @@ server/
     app.js                # Express app factory (createApp), middleware + route mounting
     config/
       database.js         # PrismaClient singleton
+      cors.js             # Exact-origin CORS allowlist configuration
       bootstrapAdmins.js  # Hardcoded admin email list
     middleware/
       auth.js             # requireAuth, requireRole, requireRoles, requireInstructorPolicy
