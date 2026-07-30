@@ -133,7 +133,7 @@ import {
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
 } from "~/lib/chat-rag";
-import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import {
   withResolvedModelMetadata,
   withCourseScopeRedirectMetadata,
@@ -509,12 +509,41 @@ export async function action({ request }: ActionFunctionArgs) {
       model = undefined;
     }
 
-    if (!routerAutoDefaultEnabled() && model === undefined) {
+    const routingModelSettings =
+      model === undefined || model === "auto" || model === "auto-llm"
+        ? await getRoutingModelSettings()
+        : null;
+    if (model === undefined && routingModelSettings) {
+      model = routingModelSettings.autoLlmEnabled
+        ? "auto-llm"
+        : routingModelSettings.autoRulesEnabled
+          ? "auto"
+          : undefined;
+    }
+
+    if (
+      (model === "auto-llm" && !routingModelSettings?.autoLlmEnabled) ||
+      (model === "auto" && !routingModelSettings?.autoRulesEnabled)
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Routing model disabled",
+          details:
+            "The selected Auto routing mode is disabled in Admin → AI Models.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (model === undefined) {
       return new Response(
         JSON.stringify({
           error: "Missing model",
           details:
-            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", "auto-hybrid", or a concrete registry id.',
+            "Enable an Auto routing mode in Admin → AI Models or send a concrete provider:modelId.",
         }),
         {
           status: 400,

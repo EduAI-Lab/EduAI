@@ -1,3 +1,5 @@
+import type { RoutingModelSettings } from "~/lib/routing-model-settings";
+
 export const AUTO_MODEL_ID = "auto";
 export const AUTO_LLM_MODEL_ID = "auto-llm";
 
@@ -14,7 +16,7 @@ export type ChatModelOption = {
 export const AUTO_CHAT_MODEL: ChatModelOption = {
   id: AUTO_MODEL_ID,
   name: "Auto (rules)",
-  description: "Rule-based routing (P1) — picks 7B or 32B from heuristics",
+  description: "Rule-based routing across active tiered models",
   provider: "routing",
   supportsTools: true,
   supportsImages: true,
@@ -22,16 +24,16 @@ export const AUTO_CHAT_MODEL: ChatModelOption = {
 
 export const AUTO_LLM_CHAT_MODEL: ChatModelOption = {
   id: AUTO_LLM_MODEL_ID,
-  name: "Auto (LLM)",
-  description: "LLM classifier routing (P3b) — 7B classifies, then tier pick",
+  name: "Auto",
+  description: "LLM-classified routing across active tiered models",
   provider: "routing",
   supportsTools: true,
   supportsImages: true,
 };
 
 export const ROUTING_CHAT_MODELS: ChatModelOption[] = [
-  AUTO_CHAT_MODEL,
   AUTO_LLM_CHAT_MODEL,
+  AUTO_CHAT_MODEL,
 ];
 
 export function isAutoRoutingModelId(modelId: string): boolean {
@@ -40,17 +42,27 @@ export function isAutoRoutingModelId(modelId: string): boolean {
 
 export function withAutoChatModel(
   models: ChatModelOption[],
-  showRoutingModels: boolean,
+  settings: RoutingModelSettings,
 ): ChatModelOption[] {
-  if (!showRoutingModels) return models;
-  return [...ROUTING_CHAT_MODELS, ...models];
+  const routingModels = [
+    ...(settings.autoLlmEnabled ? [AUTO_LLM_CHAT_MODEL] : []),
+    ...(settings.autoRulesEnabled ? [AUTO_CHAT_MODEL] : []),
+  ];
+  return [...routingModels, ...models];
 }
 
 export function defaultChatModelId(
   models: ChatModelOption[],
   routerAutoEnabled: boolean,
 ): string {
-  if (routerAutoEnabled) return AUTO_MODEL_ID;
+  if (routerAutoEnabled) {
+    if (models.some((model) => model.id === AUTO_LLM_MODEL_ID)) {
+      return AUTO_LLM_MODEL_ID;
+    }
+    if (models.some((model) => model.id === AUTO_MODEL_ID)) {
+      return AUTO_MODEL_ID;
+    }
+  }
   return models[0]?.id ?? "";
 }
 
