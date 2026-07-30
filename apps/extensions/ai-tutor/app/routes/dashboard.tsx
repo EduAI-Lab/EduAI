@@ -56,7 +56,11 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   const isAdmin = user.role === 'ADMIN';
 
   const [courses, submissions, adminUsers, adminBugReports, dashboardStats] = await Promise.all([
-    api.listCourses() as Promise<Course[]>,
+    // #1043: /courses is paginated. Dashboards render a bounded page for the
+    // Continue-Learning / Needs-Attention panels; every COUNT tile and donut
+    // reads from `dashboardStats` (server-computed over the full set), not this
+    // page's length — so the panels' bounded view never skews a stat.
+    api.listCourses().then((r) => r.data),
     wantsSubmissions ? (api.mySubmissions() as Promise<SubmissionRow[]>) : Promise.resolve([]),
     // #1041: one page plus Core's platform-wide `stats`, instead of the whole
     // user table the role breakdown used to be computed from.
