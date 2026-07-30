@@ -8,7 +8,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: Per-course question banks (`QuestionBank` + memberships) with course-scoped CRUD for extensions. (#845, @GlowyBlack, @KitheK, 2026-07-29) — [#1274](https://github.com/EduAI-Lab/EduAI/pull/1274)
+- [question-maker] feat: Banks workspace (tab + bank detail), Core bank proxy via `coreCourseId`, and Canvas bank import/sync. (#845, @GlowyBlack, @KitheK, 2026-07-29) — [#1274](https://github.com/EduAI-Lab/EduAI/pull/1274)
 - [monorepo] feat: PICT combinatorial-testing infra — `tests/models/` directory, `scripts/pict-gen.mjs` generator (writes deterministic `<name>.cases.json`; supports `/o:N` order and `/e:<seed>` seed rows via a per-model sidecar config), `npm run test:pict:gen`, and a CI drift check (`pict-drift` job) that fails the PR if a committed case table goes stale relative to its model. Generation always runs `pict` inside a pinned `docker/pict` image rather than a host install — PICT's greedy solver breaks ties via hash-container iteration order, so a macOS/Homebrew build and a Linux build produce a *different row count* for the identical model (19 vs 18 for the pilot model here), not just a reordering; pinning to one Docker image is the only way the committed JSON stays byte-identical across every contributor's machine and CI. TESTS.md documents this, plus install/add-a-model/regen and the model→oracle→world-builder split. Ships with one pilot model (`material-visibility`, census § S1) to prove the path end to end — oracle and world-builder tests land in a separate issue. (#1179, @evanbones, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/1210)
+
+### Fixed
+
+- [monorepo] fix: Generate Prisma clients per-app (AI Tutor + QM) so turbo parallel `prisma generate` no longer clobbers hoisted `@prisma/client` on Windows. (#845, @GlowyBlack, @KitheK, 2026-07-29) — [#1274](https://github.com/EduAI-Lab/EduAI/pull/1274)
 
 ## [Week 12 — July 20–26, 2026]
 
