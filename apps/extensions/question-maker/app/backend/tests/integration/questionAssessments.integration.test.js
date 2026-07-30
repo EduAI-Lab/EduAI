@@ -77,7 +77,10 @@ describeDb('Questions & assessments (integration)', () => {
 
     const list = await request(app).get('/api/questions').set(cookie());
     expect(list.status).toBe(200);
-    expect(list.body.data.some((q) => q.id === create.body.data.id)).toBe(true);
+    expect(list.body.data.items.some((q) => q.id === create.body.data.id)).toBe(true);
+    expect(list.body.data.total).toBeGreaterThanOrEqual(1);
+    expect(list.body.data.limit).toBe(50);
+    expect(list.body.data.offset).toBe(0);
   });
 
   it('creates an assessment and fetches it by id', async () => {
@@ -223,7 +226,7 @@ describeDb('Questions & assessments (integration)', () => {
     const qid = createQ.body.data.id;
 
     const alist = await request(app).get('/api/assessments').set(cookie()).query({ courseId });
-    const practice = alist.body.data.find((a) => a.name === 'Practice Exam');
+    const practice = alist.body.data.items.find((a) => a.name === 'Practice Exam');
     expect(practice).toBeTruthy();
 
     const v = await request(app)
@@ -259,5 +262,55 @@ describeDb('Questions & assessments (integration)', () => {
       .set(cookie())
       .send({ questionText: '   ' });
     expect(res.status).toBe(400);
+  });
+
+  it('paginates questions and assessments with total/limit/offset metadata (#1040)', async () => {
+    for (let i = 0; i < 55; i += 1) {
+      const create = await request(app)
+        .post('/api/questions')
+        .set(cookie())
+        .send({
+          description: `Pagination Q ${i}`,
+          courseId,
+          primaryTopicId: topicId,
+          type: 'MCQ',
+        });
+      expect(create.status).toBe(201);
+    }
+
+    const page1 = await request(app)
+      .get('/api/questions')
+      .set(cookie())
+      .query({ courseId, limit: 50, offset: 0 });
+    expect(page1.status).toBe(200);
+    expect(page1.body.data.items).toHaveLength(50);
+    expect(page1.body.data.total).toBeGreaterThanOrEqual(55);
+    expect(page1.body.data.limit).toBe(50);
+    expect(page1.body.data.offset).toBe(0);
+
+    const page2 = await request(app)
+      .get('/api/questions')
+      .set(cookie())
+      .query({ courseId, limit: 50, offset: 50 });
+    expect(page2.status).toBe(200);
+    expect(page2.body.data.items.length).toBeGreaterThanOrEqual(5);
+    expect(page2.body.data.offset).toBe(50);
+    expect(page2.body.data.total).toBe(page1.body.data.total);
+
+    const ids = new Set([
+      ...page1.body.data.items.map((q) => q.id),
+      ...page2.body.data.items.map((q) => q.id),
+    ]);
+    expect(ids.size).toBe(page1.body.data.items.length + page2.body.data.items.length);
+
+    const assessments = await request(app)
+      .get('/api/assessments')
+      .set(cookie())
+      .query({ courseId, limit: 10, offset: 0 });
+    expect(assessments.status).toBe(200);
+    expect(Array.isArray(assessments.body.data.items)).toBe(true);
+    expect(typeof assessments.body.data.total).toBe('number');
+    expect(assessments.body.data.limit).toBe(10);
+    expect(assessments.body.data.offset).toBe(0);
   });
 });
