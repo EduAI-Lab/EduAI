@@ -7,17 +7,18 @@
 3. [Structure](#structure)
 4. [How to Run Tests](#how-to-run-tests)
 5. [Populating TESTS.md](#populating-testsmd)
-6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
-7. [EduAI Unit Tests](#eduai-unit-tests)
-8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [@eduai/ui Component Tests](#eduaiui-component-tests)
-10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-14. [Question Maker Unit Tests](#question-maker-unit-tests)
-15. [Question Maker Integration Tests](#question-maker-integration-tests)
-16. [Extending This Document](#extending-this-document)
+6. [PICT Combinatorial Tests](#pict-combinatorial-tests)
+7. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
+8. [EduAI Unit Tests](#eduai-unit-tests)
+9. [EduAI Integration Tests](#eduai-integration-tests)
+10. [@eduai/ui Component Tests](#eduaiui-component-tests)
+11. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+12. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+13. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+14. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+15. [Question Maker Unit Tests](#question-maker-unit-tests)
+16. [Question Maker Integration Tests](#question-maker-integration-tests)
+17. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -133,6 +134,96 @@ Each section should use this format:
 
 ---
 
+## PICT Combinatorial Tests
+
+**Path:** `tests/models/`
+
+PICT (Microsoft's [Pairwise Independent Combinatorial Tool](https://github.com/microsoft/pict)) generates
+a minimal table of input combinations covering every pair of parameter values, for surfaces where 3+
+independent inputs decide a forked outcome. See [`docs/PICT_CENSUS.md`](docs/PICT_CENSUS.md) for which
+surfaces qualify and why.
+
+A model is four pieces, only the first two of which live in this repo today:
+
+| File | What it is | Who writes it |
+|---|---|---|
+| `<name>.pict` | Parameters, values, constraints (~20 lines) | Author, by hand |
+| `<name>.cases.json` | Generated rows — **committed**, never hand-edited | `npm run test:pict:gen` |
+| `<name>.oracle.ts` | Pure function `(row) => expected outcome`, derived from the spec | Author, by hand |
+| `<name>.test.ts` | World-builder `(row) => seeded state` + `describe.each` over the rows | Author, by hand |
+
+The oracle must be derived from the spec, never read off the handler under test — copying the
+handler's branch logic makes the test tautological (it asserts the code does what the code does).
+This document only covers the first two files; the oracle/test pair is written per-model as each
+census candidate is picked up.
+
+### Generation runs in Docker, not a host install
+
+`npm run test:pict:gen` always runs `pict` inside the pinned `docker/pict` image — rebuilding it
+every run (fast no-op via Docker's own layer cache once the image is current) rather than trusting
+whatever a local image with that tag happens to be — instead of a natively-installed `pict` binary.
+This isn't incidental: PICT's greedy
+solver breaks ties between equally-valid candidate rows via hash-container iteration order, which
+differs across C++ standard library implementations. A macOS/Homebrew build (clang + libc++) and a
+Linux build (g++ + libstdc++) produce a **different row count** for the identical model — 19 rows
+vs 18 for this repo's pilot model, not just a reordering. Since the generated JSON is committed and
+diffed, every environment producing it must agree byte-for-byte, so generation only ever happens
+through the one pinned image. Docker is already a required dependency for this repo (see the root
+README's "Getting started"), so this adds no new local prerequisite.
+
+If you want a `pict` binary on your host to experiment interactively with a model's shape before
+running the real generator, `brew install pict` (macOS) works fine for that — just never treat its
+output as authoritative, and always run `npm run test:pict:gen` before committing.
+
+### Adding a model
+
+1. Create `tests/models/<name>.pict` — parameter list, values, and any `IF ... THEN ...`
+   constraints. PICT's own model syntax; see existing models for examples.
+2. Run `npm run test:pict:gen`. This writes `tests/models/<name>.cases.json`: an array of
+   `{ParamName: "value"}` objects, one per row, in column order.
+3. Commit both files. A model change then shows up in review as a plain row diff, not an invisible
+   behavior change, and CI needs nothing beyond Docker (already preinstalled on GitHub-hosted
+   runners) to regenerate and verify it.
+
+Optional sidecar `tests/models/<name>.config.json` controls generation:
+
+```json
+{ "order": 3, "seed": "<name>.seed.tsv" }
+```
+
+- `order` — PICT's `/o:N` (2 = pairwise, the default when omitted; 3 = triples; higher toward
+  exhaustive).
+- `seed` — PICT's `/e:<file>`, a path relative to `tests/models/` to a TSV of rows (header + data,
+  same column names as the model) that must appear in the output. Use this to pin a specific
+  regression combination into a model permanently.
+
+### Regenerating
+
+```bash
+npm run test:pict:gen
+```
+
+Regenerates every `tests/models/*.cases.json` from its `.pict` (and optional `.config.json`)
+source. Generation is deterministic — the script never passes a random seed, and always runs the
+same pinned image — so re-running on an unchanged model produces byte-identical output. If the
+`docker` CLI isn't on `PATH`, the script fails immediately with an install pointer rather than
+silently skipping.
+
+### CI drift check
+
+The `pict-drift` job in `pr-tests.yml` runs the generator (via the same Docker image) and fails the
+PR if that dirties `tests/models/` — covering both a stale `.cases.json` (source changed, output
+didn't) and a new `.pict` committed without its generated sibling. Without this check a stale case
+table silently tests the old row set, which is worse than no coverage because it still looks green.
+
+### Current models
+
+| Model | Dims | What it covers |
+|---|---|---|
+| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route and both RAG retrieval branches — census § S1 pilot. Oracle and world-builder not yet written; this model exists to prove the generator path end to end. |
+
+---
+
 ## EduAI Full Platform End-to-End Tests
 
 **Path:** `tests/e2e/tests/`
@@ -190,7 +281,7 @@ Each section should use this format:
 | `invitation-token.test.ts` | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. || `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection; `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
 | `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection; `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
 | `invitations.route.test.ts` | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and may invite any role incl. STUDENT; GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
-| `logging.server.test.ts` | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails, handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
+| `logging.server.test.ts` | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, `jwt`, `databaseUrl`/`dbUrl`/`databaseUri`, `passcode`/`passphrase`, `otp`/`totp`/`dsn`/`mfa`/`mfaCode`/`mfaRecoveryCode`/`pin`, `sessionId`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails; short tokens (`auth`/`pin`/`otp`/`dsn`/`totp`/`mfa`) use segment-exact matching so ordinary fields (`authorId`, `mapping`, `shippingAddress`, `hotPath`, `footprint`, `fieldsName`, `needsNormalization`) stay visible; MFA status flags (`mfaEnabled`/`mfaRequired`/`mfaEnrolled`/`mfaStatus`) stay visible via a safe-key allowlist; table-driven positive/negative cases; handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | `db.auditlog.server.test.ts` | The audit-log data layer: `createAuditLog` stable defaults (`outcome: SUCCESS`, `actorType: USER`), `createSecurityLog` forcing `category: SECURITY`, `listAuditLogs` excluding SECURITY rows by default vs `listSecurityLogs` scoping to them, `getAuditLogById` including the actor relation, and `deleteAuditLogsOlderThan` / `runAuditLogRetention` using timestamp cutoffs so recent rows survive cleanup. |
 | `db.systemlog.server.test.ts` | The system-log data layer: `createSystemLog` write path, fire-and-forget fallback to `console.error` when the DB write fails, `createSystemError` deriving `level: ERROR` / `errorName` / `stack` from an `Error`, paginated and level-filtered `listSystemLogs`, and `deleteSystemLogsOlderThan` / `runSystemLogRetention` timestamp cutoffs. |
 | `db.log-retention-policy.server.test.ts` | The singleton log-retention policy: `getLogRetentionPolicy` returns the existing `default` row, creates it when missing, and recovers the raced row after a P2002 create collision; `updateLogRetentionPolicy` persists normalized integer day counts; `runConfiguredLogRetention` deletes both audit and system rows past their windows and reports the counts. |
@@ -493,6 +584,7 @@ Each section should use this format:
 | [`invitation-token.test.ts`](apps/core/app/tests/unit/invitation-token.test.ts) | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. |
 | [`invitations.route.test.ts`](apps/core/app/tests/unit/invitations.route.test.ts) | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and may invite any role incl. STUDENT; GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
 | [`local-model-sync.test.ts`](apps/core/app/tests/unit/local-model-sync.test.ts) | Local model sync: discovers Ollama/vLLM models, diffs against DB registry, and upserts model records for admin AI Management. |
+| [`logging.server.test.ts`](apps/core/app/tests/unit/logging.server.test.ts) | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, `jwt`, `databaseUrl`/`dbUrl`/`databaseUri`, `passcode`/`passphrase`, `otp`/`totp`/`dsn`/`mfa`/`mfaCode`/`mfaRecoveryCode`/`pin`, `sessionId`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails; short tokens (`auth`/`pin`/`otp`/`dsn`/`totp`/`mfa`) use segment-exact matching so ordinary fields (`authorId`, `mapping`, `shippingAddress`, `hotPath`, `footprint`, `fieldsName`, `needsNormalization`) stay visible; MFA status flags (`mfaEnabled`/`mfaRequired`/`mfaEnrolled`/`mfaStatus`) stay visible via a safe-key allowlist; table-driven positive/negative cases; handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | [`logging.server.test.ts`](apps/core/app/tests/unit/logging.server.test.ts) | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails, handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | [`redact.server.test.ts`](apps/core/app/tests/unit/redact.server.test.ts) | Shared redactor (#979/#976 patterns): value-level scrubbing of Bearer/Basic credentials (anchored to `Authorization:` context or 16+-char tokens so prose like "Basic setup complete" survives — PR #1116 review), Cookie/Set-Cookie and X-Api-Key header lines, token query params, and URL userinfo; HAR-style `{ name, value }` header redaction; key-level `sanitizeDetails`; combined `sanitizeSensitiveData`; JSON diagnostic-log redaction; linear-time guard so long non-URL blobs do not ReDoS. |
 | [`bug-reports.test.ts`](apps/core/app/tests/unit/bug-reports.test.ts) | `createBugReport` service: validation, source tagging, anonymity persistence, bugType enum handling, optional fields; plus #979 field caps (oversized screenshot/context dropped to null so the report still persists — PR #1116 review; oversized logs truncated after redaction) and redaction of Authorization headers / secret-shaped context before persist. |
@@ -747,6 +839,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`StudentChatHistoryPanel.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/StudentChatHistoryPanel.test.tsx) | Chat history sidebar (#1003): sheet content absent when closed; fetches on open / empty state; mode badge + relative timestamp rows; active-session `aria-current`; session select and New chat close the panel; no-activity placeholder when `activityId` is undefined. Load-error paths (#1000 / PR #1023): failed list load renders "Couldn't load history" with Retry (not the empty state); Retry refetches successfully; a stale rejection after a newer request succeeded is ignored. |
 | [`tour-engine.test.ts`](apps/extensions/ai-tutor/app/tests/unit/tour-engine.test.ts) | Tests the onboarding tour engine: seeds the lesson route when a tour starts on a lesson page (and skips seeding on non-lesson pages), finds the next available step once stored routes exist while skipping route-dependent steps before a route is discovered, computes step metadata for the lesson-help tour, and stores discovered routes from the highlighted element. |
 | [`useLocalUser.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/useLocalUser.test.tsx) | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error; retries the session check on a transient network failure instead of treating the caller as logged out, but still logs out on a real authentication error |
+| [`PaginationControls.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/PaginationControls.test.tsx) | The shared `#1043` pager renders nothing when everything fits on one page (including an exact fill), shows the current row range (`Showing X–Y of Z`) and page-of-count clamped to `total` on the last page, disables Previous on the first page / Next on the last, calls `onPageChange` with the neighbouring page on click, and disables both controls while a page fetch is in flight (`disabled`). |
 | [`DashboardAdminView.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/DashboardAdminView.test.tsx) | The admin dashboard's role breakdown after Core's user list became one page (#1041): the counts come from the platform-wide `stats` on the envelope rather than the length of the page it was handed, UNIT_ADMIN is counted alongside INSTRUCTOR in the role donut, the "Other" bucket can never render negative when the role counts exceed the total, an absent user envelope falls back to zeroed stats instead of `undefined`, and the server's `dashboardStats` rollup wins over the client-derived counts when both are present. |
 
 **E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
@@ -799,6 +892,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`mappers.test.js`](apps/extensions/ai-tutor/server/tests/unit/mappers.test.js) | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values; `mapCourseOffering` (#1072 steps 2/4) sources title/description/department/dates/isPublished/term/year/aiInstructions from the resolved Core course, degrades every Core-owned field to null/false when no Core course resolves, fails closed on `isPublished` when Core omits it, defaults `coreOfferingId`/code/term/year/aiInstructions to null with no Core course, and never emits `externalId`/`externalSource`/`externalMetadata` — consolidated into `coreOfferingId`. |
 | [`policyService.test.js`](apps/extensions/ai-tutor/server/tests/unit/policyService.test.js) | Reads Core's RBAC policy flags: fetches `GET /api/policies` with the `Bearer EDUAI_API_KEY` service key and returns the value, caches within the TTL (a second read does not re-fetch), serves the last known-good value when a later fetch fails, and falls back to built-in defaults when the first fetch fails or no service key is configured. |
 | [`reconcile.test.js`](apps/extensions/ai-tutor/server/tests/unit/reconcile.test.js) | Unit tests for the AI Tutor daily reconciliation cron: `runReconciliation` deletes the `CourseOffering` (cascading to modules/lessons/activities via its Prisma `onDelete: Cascade` FKs, §802 safety net for a missed live cascade push) on Core 404, skips (preserves the row) on 5xx, leaves intact on 200, continues processing remaining rows when one row throws; topic phase nullifies `coreTopicId` on 404, skips topics whose parent offering has no `coreOfferingId`, skips on 5xx; completes without error when both tables are empty. |
+| [`pagination.test.js`](apps/extensions/ai-tutor/server/tests/unit/pagination.test.js) | The `#1043` pagination contract helpers: `parsePaginationParams` in required mode 400s (`PAGINATION_REQUIRED`) when `page`/`pageSize` are absent or empty strings, while optional mode treats those same inputs as absent and falls back to page 1 at `defaultPageSize`; a param that is *present but unparseable* (non-numeric, `Infinity`) 400s (`PAGINATION_INVALID`) in both modes. Out-of-range but finite values are clamped rather than rejected — `page` to `1..MAX_PAGE` (1e6, so an absurd `?page=` keeps `skip` a safe integer), `pageSize` to `1..maxPageSize` (default `MAX_PAGE_SIZE` 200, overridable per call), with fractional values floored; `skip`/`take` derive from the clamped pair, and `paginated` wraps rows — including an empty page — in the `{ data, total, page, pageSize }` envelope. |
 | [`eduaiClient.coursesByIds.test.js`](apps/extensions/ai-tutor/server/tests/unit/eduaiClient.coursesByIds.test.js) | The `?ids=` course lookup that replaced a page-walk-and-scan (#1125) plus the paged `/ai-models` read (#1041): `fetchCoursesByIds` never hits the network for an empty set, dedupes ids, and chunks at Core's cap — one request past `CORE_PAGE_SIZE` would come back `IDS_TOO_MANY` and lose the whole result; `findEduAiCourseById` resolves a single id through it and returns null when Core has no such course; `listEduAiCourses` surfaces a 401 rather than an empty list; and `listEduAiModels` sends paging params and throws on a non-envelope response instead of the old bare-array assumption. |
 
 ---
@@ -861,6 +955,10 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | `canvasServiceConvert.test.js` | Pure canvas converters: `convertCanvasQuestionToVariant` (MCQ/true-false/essay/short-answer/text-fallback/unsupported), `convertVariantToCanvasQuestion`, `stripHtmlTags`, `parseChoicesFromQuestionText`, `normalizeCanvasQuestionType`, `parseMCQOptions` |
 | `canvasServiceSsrf.test.js` | SSRF re-validation at Canvas request time (#991): a stored `canvasUrl` targeting a cloud metadata IP, a loopback IP, or a non-HTTPS scheme is rejected before `axios` is ever called; a valid stored HTTPS URL passes through; the outbound request is configured with a pinned DNS `lookup` and a `beforeRedirect` hook; `beforeRedirect` rejects a redirect hop targeting a private IP or downgrading to HTTP, and allows one to another valid HTTPS host. |
 | `canvasUrlGuard.test.js` | `validateCanvasUrl` (#991): accepts a well-formed HTTPS Canvas URL; rejects malformed URLs, non-HTTPS schemes, and IP-literal targets in the cloud-metadata/loopback/10.0.0.0/8/172.16.0.0/12/192.168.0.0/16/0.0.0.0/8 ranges (IPv4) and loopback/unspecified/link-local (full fe80::/10 range, not just the fe80 prefix)/unique-local (fc00::/7)/IPv4-mapped/deprecated IPv4-compatible (`::a.b.c.d`, including Node's normalized hex form) ranges (IPv6), including boundary neighbors just outside those ranges; does not reject a public IP literal, a public IPv4-compatible IPv6 literal, or a hostname that merely starts with digits. `createPinnedLookup` rejects a hostname resolving to a private address (any of multiple results), pins to the first address when resolution is public, and fails closed with a plain `Error` (not a `TypeError`) if resolution returns zero addresses. |
+| [`listPagination.test.js`](apps/extensions/question-maker/app/backend/tests/unit/listPagination.test.js) | `parseLimitOffset` (#1040) defaults to limit 50 / offset 0, parses valid values, clamps above max 200, rejects non-positive / NaN inputs, and `escapeLikeLiteral` (#1040 review) escapes `%`/`_` (and a literal `\` first) so search text is matched literally instead of stripped. |
+| [`questionListQuery.test.js`](apps/extensions/question-maker/app/backend/tests/unit/questionListQuery.test.js) | Question list filter helpers (#1040 review): parse CSV/types/difficulty/AI/draft/sort query params, build `description OR variants.question_text` search with escaped LIKE metacharacters, AND type + variant EXISTS filters, and stable newest/oldest order with an `id` tie-breaker. |
+| [`listPaginationTieBreaker.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/listPaginationTieBreaker.integration.test.js) | `getQuestionsByUser`/`getAssessmentsByUser` (#1040 review): with 5 rows sharing an identical `createdAt`, the `id DESC` tie-breaker keeps offset pagination stable — no row is duplicated or skipped across two page requests. Also covers variant `questionText` search and SQL type/difficulty/AI/draft filters before paging. |
+| `coreApiService.test.js` | Core HTTP client — topics, questions, enrollments, profile, and scoped `listCoursesFromCore` / `isCoreCourseInScopedList` / `findScopedCoreCourseByCode` (#578) with cookie-only auth (no service-key fallback on stale session), enrollment reads preferring service key, and cookie forwarding on topics |
 | `coreApiService.test.js` | Core HTTP client — topics, questions, enrollments, profile, and scoped `listCoursesFromCore` / `isCoreCourseInScopedList` / `findScopedCoreCourseByCode` (#578) with cookie-only auth (no service-key fallback on stale session), enrollment reads preferring service key, cookie forwarding on topics, and an `all` page-walk past the 50x200 cap throwing 502 rather than returning a partial catalog reconcile would read as deletions (#1041) |
 | `coreWiringService.test.js` | `pushVariantToCore` maps variant payloads to Core, lowercases enum values, handles CUID topic ids, and surfaces `INVALID_TOPIC_IDS` |
 | `courseCodeUtils.test.js` | `normalizeCourseCode` lowercases and strips whitespace; returns empty string for null/blank input |
@@ -947,7 +1045,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`internal.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/internal.integration.test.js) | DB-backed test for `DELETE /api/internal/courses/:coreCourseId` (§802) against the real Prisma relations (not mocked): cascade-deletes the course plus its topics/questions/assessments end to end through the actual HTTP endpoint; idempotent 200 `{ deleted: false }` when no course is linked; 401 without a valid service key. |
 | [`planCoverage.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/planCoverage.integration.test.js) | Users cannot access another user's courses, saved questions persist correctly, and variant assembly rotates picks fairly across runs without repeating the baseline |
 | [`practiceExamConcurrency.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/practiceExamConcurrency.integration.test.js) | Auto-import provisioning concurrency: two co-instructors importing the same Core course simultaneously produce exactly one anchor row and ONE Practice Exam (the check-then-create is serialized by a per-course Postgres advisory lock), and repeated sequential imports never add a second Practice Exam. |
-| [`questionAssessments.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/questionAssessments.integration.test.js) | Questions and assessments can be created and retrieved, invalid inputs are rejected, and variants can be added to questions; `POST /api/course` (#1072 step 7) creates a course when `coreCourseId` is in the caller's scoped Core list and it appears in `GET /api/course`, rejects creation with no `coreCourseId` (400), and rejects a `coreCourseId` outside the caller's scoped Core list (403). |
+| [`questionAssessments.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/questionAssessments.integration.test.js) | Questions and assessments can be created and retrieved, invalid inputs are rejected, and variants can be added to questions; list endpoints return paginated `{ items, total, limit, offset }` and page correctly past the default 50-row window (#1040); `POST /api/course` (#1072 step 7) creates a course when `coreCourseId` is in the caller's scoped Core list and it appears in `GET /api/course`, rejects creation with no `coreCourseId` (400), and rejects a `coreCourseId` outside the caller's scoped Core list (403). |
 | [`questionImmutability.integration.test.js`](apps/extensions/question-maker/app/backend/tests/integration/questionImmutability.integration.test.js) | Reviewed-question locking (#1080): `PUT /api/questions/:id` rejects a `type` change (409 `VARIANT_LOCKED`) and a primary-topic change (409) on a question with a reviewed sibling variant; `PUT /api/questions/variants/:id` rejects a secondary-topics change (409) on a reviewed variant; an unrelated edit (e.g. description) still succeeds on a reviewed question; un-reviewing (`isDraft: true`) clears `coreQuestionId`, unlocks the primary topic for editing, and a re-approve re-pushes a fresh copy to Core under a distinct content-derived idempotency key (`qm-variant-<id>-<12-hex>`) rather than reusing the stale pre-edit key and relinking the old Core row. |
 | [`questionOrderRbac.test.js`](apps/extensions/question-maker/app/backend/tests/integration/questionOrderRbac.test.js) | Question-order routes (`PUT /:id/order`, `DELETE /:id/order/:assessmentId`) are instructor-only (TA → 403, §17) and reject an `assessmentId` from a different course than the question (→ 404). |
 | [`questionRbac.test.js`](apps/extensions/question-maker/app/backend/tests/integration/questionRbac.test.js) | Question route RBAC: STUDENT blocked from all writes (403), TA may view the whole course bank but edit/delete only their own questions (`createdBy`, else 403), and INSTRUCTOR may create/edit/delete any question in the course. |
@@ -969,6 +1067,8 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | Test file | What it tests |
 |-----------|---------------|
 | [`courseDisplay.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/courseDisplay.test.ts) | `dedupeCoursesByCoreId` (#1072 §4 step 6 — identity is `coreCourseId`, not course code) collapses rows sharing the same `coreCourseId` to the newest id, and keeps unlinked rows separate by id even when their (now-derived, Core-owned) codes match or are both empty. |
+| [`listPaginationClient.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/listPaginationClient.test.ts) | Question/assessment list clients (#1040) unwrap `{ items, total, limit, offset }`, page-loop when no limit is provided, and page-loop when an explicit limit exceeds the server max (200) so callers do not silently stop at a clamped page. Also (#1040 review): `getQuestions`/`getAssessments` throw instead of silently truncating when the fetched total exceeds the 10,000-row fetch-all safety cap. |
+| [`ListPaginationBar.test.tsx`](apps/extensions/question-maker/app/frontend/src/tests/unit/ListPaginationBar.test.tsx) | Prev/next list pagination bar (#1040 review) hides when the full set fits on one page, shows the "Showing X–Y of Z" range otherwise, and advances/rewinds offset via the buttons. |
 | [`mcqChoiceDisplay.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/mcqChoiceDisplay.test.ts) | Correct-answer MCQ choice rows and summary use strong success styling classes |
 | [`questionMetadataEdit.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/questionMetadataEdit.test.ts) | Metadata edit builds variant PUT payload only for draft variants when question text or difficulty changed |
 | [`rbac-course-labels.test.ts`](apps/extensions/question-maker/app/frontend/src/tests/unit/rbac-course-labels.test.ts) | Course nav label formatting for RBAC views |
