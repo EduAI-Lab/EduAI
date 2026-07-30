@@ -2,15 +2,22 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const prismaMock = vi.hoisted(() => ({
-  aiJob: { count: vi.fn() },
-}));
+const prismaMock = vi.hoisted(() => {
+  const aiJob = { count: vi.fn() };
+  return {
+    aiJob,
+    // getQueueSnapshot runs both reads on a transaction client; the mock hands
+    // the callback this same client so the count assertions still apply.
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+  };
+});
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
 import {
   getQueueDepth,
   getQueuePosition,
+  getQueueSnapshot,
   maxQueueDepth,
   QueueFullError,
 } from "~/lib/queue/queue-stats.server";
@@ -170,6 +177,71 @@ describe("maxQueueDepth", () => {
   it("parses a positive integer cap", () => {
     vi.stubEnv("QUEUE_MAX_DEPTH", "25");
     expect(maxQueueDepth()).toBe(25);
+  });
+});
+
+describe("getQueueSnapshot", () => {
+  const pendingBackground = {
+    id: "aijob_1",
+    type: "background" as const,
+    status: "PENDING",
+    createdAt: new Date("2026-07-20T00:00:00Z"),
+    queueName: QUEUE_CHAT,
+  };
+
+  it("reads position and depth under one REPEATABLE READ transaction", async () => {
+    prismaMock.aiJob.count.mockResolvedValueOnce(2).mockResolvedValueOnce(9);
+
+    await expect(getQueueSnapshot(pendingBackground, QUEUE_CHAT)).resolves.toEqual({
+      queuePosition: 3,
+      queueDepth: 9,
+    });
+
+    // The isolation level is the fix, not decoration: under the READ COMMITTED
+    // default each statement takes a fresh snapshot even inside a transaction,
+    // so jobs draining between the two counts could still push position past
+    // depth. Assert it explicitly so a future refactor can't quietly drop it.
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "RepeatableRead",
+    });
+  });
+
+  it("pins one grace-window cutoff across both reads", async () => {
+    // The clock has to move between the two reads for this to prove anything —
+    // with a real clock both `new Date()` calls land in the same millisecond and
+    // the test passes even when the cutoff is not shared.
+    vi.useFakeTimers();
+    prismaMock.aiJob.count.mockImplementation(async () => {
+      vi.advanceTimersByTime(50);
+      return 0;
+    });
+
+    try {
+      await getQueueSnapshot(pendingBackground, QUEUE_CHAT);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Two `Date.now()` values would age the same orphan differently between the
+    // two queries — a second way the pair could disagree.
+    const cutoffs = prismaMock.aiJob.count.mock.calls.map((call) => {
+      const where = call[0].where as {
+        OR?: Array<{ createdAt?: { gt?: Date } }>;
+        AND?: Array<{ OR?: Array<{ createdAt?: { gt?: Date } }> }>;
+      };
+      const transport = where.OR ?? where.AND?.[0]?.OR;
+      return transport?.find((clause) => clause.createdAt?.gt)?.createdAt?.gt?.getTime();
+    });
+    expect(cutoffs).toHaveLength(2);
+    expect(cutoffs[0]).toBe(cutoffs[1]);
+  });
+
+  it("still returns a null position for a job that is no longer PENDING", async () => {
+    prismaMock.aiJob.count.mockResolvedValue(4);
+
+    await expect(
+      getQueueSnapshot({ ...pendingBackground, status: "RUNNING" }, QUEUE_CHAT),
+    ).resolves.toEqual({ queuePosition: null, queueDepth: 4 });
   });
 });
 
