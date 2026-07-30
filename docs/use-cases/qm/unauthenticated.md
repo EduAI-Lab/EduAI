@@ -6,40 +6,45 @@ One documentation/code mismatch worth noting up front: `requireAuth`'s own heade
 
 ---
 
-### UC-UNAUTH-001: First-ever authenticated request auto-provisions the user — and silently seeds demo content for non-instructors
+### UC-UNAUTH-001: First-ever authenticated request provisions only a thin local user
 
 - **Category:** Happy Path
 - **Actor:** Any Core-authenticated user (any platform role) hitting QM for the very first time
 - **Preconditions:** Valid Core session cookie; no local QM `User` row exists yet for this Core user id
-- **Entry point(s):** `middleware/auth.js` (`requireAuth`), `services/authService.js` (`findOrCreateUser`), `services/seedNewUserService.js`
+- **Entry point(s):** `middleware/auth.js` (`requireAuth`), `services/authService.js` (`findOrCreateUser`)
 - **Flow:**
   1. User's browser sends any request to a `requireAuth`-gated QM route with a valid Core session cookie (e.g. the frontend's initial `GET /api/auth/me`)
   2. `requireAuth` validates against Core, gets back `{ user: coreUser }`, normalizes the role, and calls `findOrCreateUser(normalizedUser)`
-  3. `User.findOrCreate` creates the local row; since `coursesSeededAt` is `null` (brand new), the seeding branch runs: it checks `courseCount === 0 && !['INSTRUCTOR', 'UNIT_ADMIN'].includes(role)` — **true for `ADMIN`, `STUDENT`, and course-level TA (whose platform role is `STUDENT`)** alike
-  4. `seedCoursesForNewUser(user.id)` bulk-creates **7 fully populated demo courses** (`Machine Architecture`, `Computer Programming II`, `Introduction to Statistics`, etc.), each with topics, one `Practice Exam` assessment, a section, and several sample MCQ/SA/LA questions with approved (`isDraft: false`) variants — all owned by this brand-new user, all `coreCourseId: null` (never linked to Core)
-  5. `coursesSeededAt` is stamped so this never re-runs on subsequent logins
-- **Expected outcome:** The new user's local QM account now contains 7 real, browsable demo courses — the same seed data used in dev/prod seeding scripts (`scripts/seedData.js`). For a brand-new `STUDENT`, this is not just "no product surface" — they now own local `Course` rows they can reach at instructor rank via the same unlinked-course owner-fallback documented in `docs/use-cases/qm/student.md` (`resolveAccessForCourse`: `!course.coreCourseId → reqUser.id === course.userId → LEVELS.instructor`), because seeding sets `userId` to the new user themselves.
-- **Failure modes / what could go wrong:** This is a materially bigger version of the gap already flagged in `student.md` UC-STUDENT-004/005 — it doesn't require the student to intentionally create a sandbox course at all; **every new STUDENT (and TA) account is automatically seeded with 7 instructor-rank-accessible demo courses complete with real question content**, reachable via `GET /api/course` (listed, `accessLevel: 'instructor'`) and `GET /api/course/:id?includeDetails=true` (full question/topic detail — note this route has **no** `requireRole(QM_AUTHORIZED)` gate, only `requireCourseAccess`, so the flat role gate that blocks `questions.js`/`assessments.js` doesn't apply here at all). This directly contradicts the stated "STUDENT should have zero QM access" design intent, and does so automatically rather than requiring any deliberate action from the student. Flagging this as a follow-up finding for `student.md` and the project memory on QM's instructor-only intent.
+  3. `prisma.user.upsert` creates the local row with `id`, `email`, and `name`
+     when it does not already exist
+  4. No course or demo-content seeding is invoked from authentication
+- **Expected outcome:** QM has the thin local identity needed for foreign keys.
+  Courses arrive only through Core-linked ensure/import flows.
+- **Failure modes / what could go wrong:** None found. A platform `STUDENT`
+  receives no demo courses or instructor-rank content as a side effect of
+  authentication.
 - **Related code:**
   - `apps/extensions/question-maker/app/backend/src/middleware/auth.js`
   - `apps/extensions/question-maker/app/backend/src/services/authService.js`
-  - `apps/extensions/question-maker/app/backend/src/services/seedNewUserService.js`
-  - `apps/extensions/question-maker/app/backend/src/middleware/courseAccess.js`
 
 ---
 
-### UC-UNAUTH-002: Returning authenticated user does not get re-seeded
+### UC-UNAUTH-002: Returning authenticated user provisioning is idempotent
 
 - **Category:** Typical Use
 - **Actor:** Any previously-provisioned user, valid Core session
-- **Preconditions:** Local `User` row exists with `coursesSeededAt` already set
+- **Preconditions:** Local `User` row already exists
 - **Entry point(s):** `middleware/auth.js`, `services/authService.js`
 - **Flow:**
   1. `requireAuth` validates the session and calls `findOrCreateUser` again (every request, not just the first)
-  2. `User.findOrCreate` finds the existing row (`created: false`)
-  3. `if (!user.coursesSeededAt)` is `false` — the seeding branch is skipped entirely; only `req.user` is populated for this request
-- **Expected outcome:** No duplicate courses are ever created on subsequent logins; `findOrCreateUser` is cheap (one `findOrCreate` lookup) on the steady-state path.
-- **Failure modes / what could go wrong:** None — `coursesSeededAt` is a durable flag, not a courseCount re-check on every request, so even if the user later deletes all 7 seeded courses, they won't be reseeded.
+  2. `prisma.user.upsert` matches the row by Core user id and applies an empty
+     update
+  3. `req.user` is populated from the freshly validated Core response
+- **Expected outcome:** No duplicate user or course rows are created.
+- **Failure modes / what could go wrong:** The local identity fields are not
+  refreshed on later requests because the upsert update is intentionally
+  empty; authorization still uses the current Core response rather than the
+  local row.
 - **Related code:**
   - `apps/extensions/question-maker/app/backend/src/services/authService.js`
 

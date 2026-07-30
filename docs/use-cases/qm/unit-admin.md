@@ -11,7 +11,7 @@ if (reqUser.role === 'UNIT_ADMIN') {
   const coreCourse = await getCourseFromCore(course.coreCourseId, { cookie });
   const department = coreCourse?.department ?? null;
   if (department !== null) {
-    const units = await getAuthorizedUnits(reqUser, cookie);   // live Core lookup, see below
+    const units = await getAuthorizedUnits(reqUser, cookie);   // session fast path; /api/me fallback
     if (units.includes(department)) return LEVELS.unit;         // rank 3
   }
   // outside their units (or department is null) — falls through to the same
@@ -22,8 +22,17 @@ if (reqUser.role === 'UNIT_ADMIN') {
 Three consequences worth calling out:
 
 1. **`rank: 3` clears every gate an instructor (`rank: 2`) clears**, plus the `rank >= 3` gates Core reserves for department-scoped actions — QM has no such higher gate of its own, so in practice `unit` and `instructor` access behave identically inside QM once granted.
-2. **`authorizedUnits` is not carried on the QM session at all.** Core's `POST /api/sessions/validate` returns only `id/email/name/role`, so `getAuthorizedUnits` (`middleware/courseAccess.js`) fetches it fresh via `GET /api/me` (`getMyProfileFromCore`) **on every single course-access check** where the fast-path (`reqUser.authorizedUnits` already an array) doesn't apply — which, for a UNIT_ADMIN, is essentially always, since nothing in the request pipeline populates it. This means listing many courses (`listCoursesForUser`) can issue one `/api/me` call *per course row* for a UNIT_ADMIN.
-3. **No auto-import.** `AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR'])` excludes UNIT_ADMIN exactly like it excludes ADMIN — a department course never appears in QM automatically just because a unit admin is authorized over it; someone with `INSTRUCTOR` platform role must have opened QM at least once (or the unit admin must manually `POST /api/course` + `PATCH /:id/link-core`).
+2. **`authorizedUnits` takes the session fast path.** Core's
+   `POST /api/sessions/validate` includes `authorizedUnits`, and QM preserves
+   that field when it builds `req.user`. `getAuthorizedUnits` therefore
+   normally returns the array without another Core call. If an older or
+   incomplete user shape omits it, `/api/me` is the fallback. The list path
+   obtains the units once per request and reuses them for every row.
+3. **No auto-import.** `AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR'])` excludes
+   UNIT_ADMIN exactly like it excludes ADMIN. A unit admin can explicitly
+   ensure an anchor with `POST /api/course`, but must supply a `coreCourseId`
+   from their scoped Core catalog; QM no longer creates an unlinked local
+   course and links it later.
 
 ---
 
@@ -37,10 +46,12 @@ Three consequences worth calling out:
   1. Unit admin opens a CPSC course they've never taught and edits its name (`PUT /api/course/:id`, `requireCourseAccess({ min: 'instructor' })`)
   2. `resolveAccessForCourse` sees the course is Core-linked, is not the unit admin's own (`course.userId` mismatch, so the pre-link fallback doesn't apply), and the role is `UNIT_ADMIN`
   3. `getCourseFromCore(course.coreCourseId, { cookie })` returns `{ department: 'CPSC', ... }`
-  4. `getAuthorizedUnits` — `reqUser.authorizedUnits` is not an array on the QM session object, so it calls `getMyProfileFromCore(cookie)` (`GET /api/me` with the caller's own session cookie) and reads `profile.authorizedUnits`
+  4. `getAuthorizedUnits` returns `reqUser.authorizedUnits` directly; the
+     `/api/me` fallback is not called
   5. `'CPSC'` is in the returned list → `LEVELS.unit` (`rank: 3`) is returned; `3 >= 2` (the route's `min: 'instructor'`) passes
 - **Expected outcome:** `200`, course updated — identical result to the course's actual instructor performing the same edit.
-- **Failure modes / what could go wrong:** None on this path. This does mean a stale `/api/me` response (e.g. Core-side caching) could grant or withhold department access slightly out of step with the latest Core state, but there's no evidence of caching on that endpoint in this codebase.
+- **Failure modes / what could go wrong:** None on this path. The units come
+  from the Core validation performed for the current request.
 - **Related code:**
   - `apps/extensions/question-maker/app/backend/src/middleware/courseAccess.js`
   - `apps/extensions/question-maker/app/backend/src/routes/course.js`
@@ -85,14 +96,19 @@ Three consequences worth calling out:
 
 - **Category:** Wrong/Malformed Usage
 - **Actor:** `UNIT_ADMIN` with `authorizedUnits: ['CPSC']`, target course is a CPSC course in Core but its QM `Course` row has never been `link-core`'d
-- **Preconditions:** A QM `Course` row exists (created locally by someone, e.g. via `POST /api/course`) with `coreCourseId: null`
+- **Preconditions:** A legacy, migrated, or test-fixture QM `Course` row exists
+  with `coreCourseId: null`; the current `POST /api/course` route cannot create
+  this state
 - **Entry point(s):** `middleware/courseAccess.js`
 - **Flow:**
   1. Unit admin requests the course by its QM id
   2. `resolveAccessForCourse`'s very first branch fires: `if (!course.coreCourseId) { if (reqUser.id === course.userId) return LEVELS.instructor; return null; }` — this check happens **before** the `UNIT_ADMIN` role check, so the department lookup is never attempted at all
   3. The unit admin is not `course.userId` (they didn't create this local row)
 - **Expected outcome:** `access` resolves to `null` → `403`/`404` depending on the route, even though the course genuinely belongs to their department in Core.
-- **Failure modes / what could go wrong:** A real access gap for the "new local course not yet linked" window: a unit admin's department authority is meaningless until *someone* links the QM row to Core (`PATCH /:id/link-core`, itself gated at `min: 'instructor'`, which the unit admin also can't reach on this unlinked row) — a deadlock the unit admin cannot resolve alone unless they also happen to hold a direct enrollment on the course.
+- **Failure modes / what could go wrong:** This is legacy-state behavior, not a
+  normal creation window. A unit admin cannot repair someone else's unlinked
+  row through the current access gate; cleanup or migration must restore the
+  Core anchor.
 - **Related code:**
   - `apps/extensions/question-maker/app/backend/src/middleware/courseAccess.js`
   - `apps/extensions/question-maker/app/backend/src/routes/course.js`
@@ -129,22 +145,4 @@ Three consequences worth calling out:
 - **Expected outcome:** No unit admin gets `unit`-level access to a null-department course through the department path, ever — only through a genuine Core enrollment. This is correct, defensive behavior: a null department can't be exploited as an accidental wildcard match.
 - **Failure modes / what could go wrong:** None found — this is the guard working as documented (`courseAccess.js`'s own comment: "a null department is never a match").
 - **Related code:**
-  - `apps/extensions/question-maker/app/backend/src/middleware/courseAccess.js`
-
----
-
-### UC-UNIT-ADMIN-007: Listing courses triggers one live Core profile fetch per row
-
-- **Category:** Security
-- **Actor:** `UNIT_ADMIN`, or an attacker who has compromised/borrowed a `UNIT_ADMIN` session, requesting `GET /api/course` against a QM instance with many course rows
-- **Preconditions:** A large number of QM `Course` rows exist (any department, any owner)
-- **Entry point(s):** `services/courseListService.js`, `middleware/courseAccess.js`
-- **Flow:**
-  1. `listCoursesForUser` loads **every** QM `Course` row (`Course.findAll` with no filter) then loops, calling `resolveAccessForCourse` per row for the non-ADMIN branch
-  2. For each Core-linked row, the `UNIT_ADMIN` branch calls `getCourseFromCore` (one Core HTTP call) and, since the QM session never carries `authorizedUnits`, `getAuthorizedUnits` calls `getMyProfileFromCore` (`GET /api/me`, another Core HTTP call) — **per course row**, not once per request
-  3. A caller who can trigger this endpoint repeatedly (it's a normal, unauthenticated-rate-limited-only `GET`) drives proportionally many outbound requests to Core for every single call
-- **Expected outcome:** The endpoint still returns correctly-scoped results — this is a correctness non-issue, purely a resource-amplification one. No rate limiting on `GET /api/course` is visible in this router (unlike Canvas sync, which has `CANVAS_SYNC_RATE_LIMIT`).
-- **Failure modes / what could go wrong:** A UNIT_ADMIN session (legitimate or hijacked) repeatedly calling `GET /api/course` amplifies into `O(courses)` calls to Core per request, with no caching of `authorizedUnits` across rows within the same request, let alone across requests. On an instance with hundreds of courses this is a real amplification vector against Core, not just a QM-local slowdown — flagged as a gap, not a confirmed exploited vulnerability.
-- **Related code:**
-  - `apps/extensions/question-maker/app/backend/src/services/courseListService.js`
   - `apps/extensions/question-maker/app/backend/src/middleware/courseAccess.js`
