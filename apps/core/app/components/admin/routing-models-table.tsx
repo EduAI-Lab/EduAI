@@ -64,6 +64,7 @@ export function RoutingModelsTable({
                             <button
                               type="button"
                               aria-label={`About ${definition.name}`}
+                              aria-description={definition.description}
                               className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               <IconInfoCircle className="h-4 w-4" />
