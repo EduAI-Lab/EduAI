@@ -3,7 +3,7 @@
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
 import { createId } from '@paralleldrive/cuid2';
-import { Prisma } from '../generated/prisma/index.js';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database.js';
 import { listCoursesFromCore, getCourseEnrollmentsFromCore } from './coreApiService.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';

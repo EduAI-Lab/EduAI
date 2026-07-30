@@ -18,7 +18,7 @@
  *   cd apps/extensions/ai-tutor/server && npx tsx prisma/seed-perf.ts
  *   PERF_POOL_SIZE=15 npx tsx prisma/seed-perf.ts
  */
-import { PrismaClient } from '../src/generated/prisma/index.js';
+import { PrismaClient } from '@prisma/client';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 

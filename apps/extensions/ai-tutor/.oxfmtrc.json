@@ -12,7 +12,6 @@
     "dist",
     ".react-router",
     "server/node_modules",
-    "server/prisma/migrations",
-    "server/src/generated"
+    "server/prisma/migrations"
   ]
 }

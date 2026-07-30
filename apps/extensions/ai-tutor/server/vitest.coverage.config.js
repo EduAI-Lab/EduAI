@@ -27,7 +27,7 @@ export default defineConfig({
       // Emit the summary even when some tests fail, so CI always gets a coverage figure.
       reportOnFailure: true,
       include: ['src/**/*.js'],
-      exclude: ['src/index.js', 'src/generated/**'],
+      exclude: ['src/index.js'],
       // lcov.info feeds the per-PR patch-coverage warning (pr-coverage.yml); json-summary
       // feeds the scheduled full-suite report. Both stay gitignored under coverage/.
       reporter: ['text-summary', 'json-summary', 'lcov'],
