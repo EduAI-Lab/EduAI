@@ -43,7 +43,7 @@ cleanup_db() {
   (
     cd "$AITUTOR_SERVER"
     node --input-type=module >/dev/null 2>&1 <<'JSEOF'
-    import { PrismaClient } from "@prisma/client";
+    import { PrismaClient } from "./generated/prisma/index.js";
     const prisma = new PrismaClient();
     const runId = process.env.RUN_ID;
     const importedCourseId = process.env.IMPORTED_COURSE_ID ? Number(process.env.IMPORTED_COURSE_ID) : null;

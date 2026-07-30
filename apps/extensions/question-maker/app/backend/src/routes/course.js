@@ -6,7 +6,7 @@
  */
 import express from 'express';
 import { createId } from '@paralleldrive/cuid2';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma/index.js';
 import { prisma } from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
