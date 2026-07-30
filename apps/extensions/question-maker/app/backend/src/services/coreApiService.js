@@ -393,3 +393,64 @@ export async function searchCoursesFromCore(search, authOptions = {}, { serviceK
     : await fetchFromCore(path, authOptions);
   return Array.isArray(data?.data) ? data.data : [];
 }
+
+/** GET /api/courses/:courseId/banks */
+export async function listQuestionBanksFromCore(coreCourseId, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks`, opts);
+}
+
+/** POST /api/courses/:courseId/banks */
+export async function createQuestionBankOnCore(coreCourseId, payload, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks`, {
+    method: 'POST',
+    body: payload,
+    ...opts,
+  });
+}
+
+/** PUT /api/courses/:courseId/banks/:bankId */
+export async function updateQuestionBankOnCore(coreCourseId, bankId, payload, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
+    method: 'PUT',
+    body: payload,
+    ...opts,
+  });
+}
+
+/** DELETE /api/courses/:courseId/banks/:bankId */
+export async function deleteQuestionBankOnCore(coreCourseId, bankId, payload = {}, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}`, {
+    method: 'DELETE',
+    body: payload,
+    ...opts,
+  });
+}
+
+/** GET /api/courses/:courseId/banks/:bankId/questions */
+export async function listQuestionBankMembershipsFromCore(coreCourseId, bankId, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, opts);
+}
+
+/** POST /api/courses/:courseId/banks/:bankId/questions */
+export async function addQuestionBankMembershipOnCore(coreCourseId, bankId, payload, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
+    method: 'POST',
+    body: payload,
+    ...opts,
+  });
+}
+
+/** DELETE /api/courses/:courseId/banks/:bankId/questions/:externalQuestionId */
+export async function removeQuestionBankMembershipOnCore(
+  coreCourseId,
+  bankId,
+  externalQuestionId,
+  source = 'question-maker',
+  opts = {},
+) {
+  const qs = `?source=${encodeURIComponent(source)}`;
+  return fetchFromCore(
+    `/api/courses/${coreCourseId}/banks/${bankId}/questions/${externalQuestionId}${qs}`,
+    { method: 'DELETE', ...opts },
+  );
+}

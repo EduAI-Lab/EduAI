@@ -155,6 +155,7 @@ router.get('/', authenticateToken, requireRole(QM_AUTHORIZED), async (req, res, 
     const listFilters = parseQuestionListFilters(req.query);
     const page = await getQuestionsByUser(scopeUserId, {
       courseId: scopeCourseId,
+      questionBankId: req.query.questionBankId,
       ...listFilters,
       limit,
       offset

@@ -919,6 +919,285 @@ export const importQuizFromCanvas = async (callerId, canvasCourseId, quizId, loc
   }
 };
 
+/** Lists Classic Canvas Assessment Question Banks for a course. */
+export const getCanvasQuestionBanks = async (userId, canvasCourseId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks?context_type=Course&context_id=${canvasCourseId}&include_question_count=true`,
+  );
+  const banks = Array.isArray(response.data) ? response.data : [response.data];
+  return banks.filter(Boolean);
+};
+
+/** Fetches a single Canvas question bank. */
+export const getCanvasQuestionBank = async (userId, canvasBankId) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const response = await makeCanvasRequest(
+    integration,
+    'GET',
+    `/question_banks/${canvasBankId}?include_question_count=true`,
+  );
+  return response.data;
+};
+
+/**
+ * Lists assessment questions in a Canvas question bank (follows page query when provided).
+ */
+export const getCanvasQuestionBankQuestions = async (userId, canvasBankId, opts = {}) => {
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const page = opts.page || 1;
+  const perPage = opts.perPage || 100;
+  const all = [];
+  let currentPage = page;
+
+  for (;;) {
+    const response = await makeCanvasRequest(
+      integration,
+      'GET',
+      `/question_banks/${canvasBankId}/questions?per_page=${perPage}&page=${currentPage}`,
+    );
+    const batch = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
+    all.push(...batch);
+    if (integration.isTestMode || batch.length < perPage) {
+      break;
+    }
+    currentPage += 1;
+    if (currentPage > 50) {
+      break;
+    }
+  }
+
+  return all;
+};
+
+/**
+ * Imports / re-syncs a Canvas Assessment Question Bank into a Core-backed local course bank.
+ */
+export const importQuestionBankFromCanvas = async (
+  userId,
+  canvasCourseId,
+  canvasBankId,
+  localCourseId,
+  options = {},
+  ownerId = userId,
+) => {
+  const {
+    listBanks,
+    createBank,
+    addQuestionToBank,
+  } = await import('./questionBankService.js');
+
+  const integration = await getCanvasIntegration(userId);
+  if (!integration) {
+    throw new Error('Canvas integration not configured. Please connect your Canvas account first.');
+  }
+
+  const parsedLocalCourseId = Number(localCourseId);
+  const course = await prisma.course.findFirst({
+    where: { id: parsedLocalCourseId, userId: ownerId },
+    select: { id: true, coreCourseId: true, userId: true },
+  });
+  if (!course) {
+    const err = new Error('Local course not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const primaryTopicId =
+    typeof options.primaryTopicId === 'string' && options.primaryTopicId.trim()
+      ? options.primaryTopicId.trim()
+      : null;
+  if (!primaryTopicId) {
+    throw new Error('Primary topic ID is required for importing questions. Please select a topic.');
+  }
+
+  const remoteBank = await getCanvasQuestionBank(userId, canvasBankId);
+  const remoteQuestions = await getCanvasQuestionBankQuestions(userId, canvasBankId);
+
+  const banks = await listBanks(parsedLocalCourseId, userId);
+  let localBank = null;
+  const existingMapping = await prisma.canvasBankMapping.findUnique({
+    where: {
+      userId_canvasBankId: {
+        userId,
+        canvasBankId: Number(canvasBankId),
+      },
+    },
+  });
+
+  if (options.targetBankId) {
+    const targetId = String(options.targetBankId);
+    localBank = banks.find((b) => b.id === targetId) || null;
+    if (!localBank) {
+      const err = new Error('Target bank not found in this course');
+      err.status = 400;
+      throw err;
+    }
+  } else if (existingMapping) {
+    localBank = banks.find((b) => b.id === String(existingMapping.localBankId)) || null;
+  }
+
+  if (!localBank) {
+    const title =
+      (remoteBank && (remoteBank.title || remoteBank.name)) ||
+      `Canvas bank ${canvasBankId}`;
+    localBank = await createBank(parsedLocalCourseId, userId, {
+      name: String(title).trim() || 'Imported bank',
+    });
+  }
+
+  const bankMapping = await prisma.canvasBankMapping.upsert({
+    where: {
+      userId_canvasBankId: {
+        userId,
+        canvasBankId: Number(canvasBankId),
+      },
+    },
+    create: {
+      userId,
+      localBankId: String(localBank.id),
+      canvasCourseId: Number(canvasCourseId),
+      canvasBankId: Number(canvasBankId),
+      lastSyncedAt: null,
+    },
+    update: {
+      localBankId: String(localBank.id),
+      canvasCourseId: Number(canvasCourseId),
+    },
+  });
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const remote of remoteQuestions) {
+    const canvasAssessmentQuestionId = remote?.id;
+    if (canvasAssessmentQuestionId == null) {
+      skipped += 1;
+      continue;
+    }
+
+    let converted;
+    try {
+      converted = convertCanvasQuestionToVariant(remote);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+
+    const existingQMap = await prisma.canvasBankQuestionMapping.findUnique({
+      where: {
+        userId_canvasAssessmentQuestionId: {
+          userId,
+          canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
+        },
+      },
+    });
+
+    if (existingQMap) {
+      const metadata = await prisma.questionMetadata.findUnique({
+        where: { id: existingQMap.localQuestionMetadataId },
+      });
+      if (metadata) {
+        await prisma.questionMetadata.update({
+          where: { id: metadata.id },
+          data: {
+            description: converted.description || metadata.description,
+            type: converted.type || metadata.type,
+          },
+        });
+        const variants = await prisma.variants.findMany({
+          where: { questionMetadataId: metadata.id },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        });
+        if (variants[0]) {
+          await prisma.variants.update({
+            where: { id: variants[0].id },
+            data: {
+              questionText: converted.questionText,
+              answer: converted.answer,
+              choices: converted.choices,
+            },
+          });
+        }
+        await addQuestionToBank(
+          parsedLocalCourseId,
+          userId,
+          localBank.id,
+          metadata.id,
+        );
+        await prisma.canvasBankQuestionMapping.update({
+          where: { id: existingQMap.id },
+          data: { localBankId: String(localBank.id) },
+        });
+        updated += 1;
+      } else {
+        skipped += 1;
+      }
+      continue;
+    }
+
+    const question = await createQuestion(ownerId, {
+      description: converted.description,
+      courseId: parsedLocalCourseId,
+      primaryTopicId,
+      type: converted.type,
+      questionBankId: localBank.id,
+      createdBy: userId,
+    });
+
+    await prisma.variants.create({
+      data: {
+        questionMetadataId: question.id,
+        questionText: converted.questionText,
+        difficulty: 'medium',
+        answer: converted.answer,
+        choices: converted.choices,
+        isDraft: false,
+        isAiGenerated: false,
+      },
+    });
+
+    await prisma.canvasBankQuestionMapping.create({
+      data: {
+        userId,
+        localQuestionMetadataId: question.id,
+        canvasAssessmentQuestionId: Number(canvasAssessmentQuestionId),
+        localBankId: String(localBank.id),
+      },
+    });
+    created += 1;
+  }
+
+  const synced = await prisma.canvasBankMapping.update({
+    where: { id: bankMapping.id },
+    data: { lastSyncedAt: new Date() },
+  });
+
+  return {
+    bankId: localBank.id,
+    created,
+    updated,
+    skipped,
+    lastSyncedAt: synced.lastSyncedAt,
+  };
+};
+
 export {
   convertVariantToCanvasQuestion,
   parseMCQOptions,

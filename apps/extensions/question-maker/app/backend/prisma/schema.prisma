@@ -1,5 +1,9 @@
 generator client {
   provider = "prisma-client-js"
+  // App-local output so turbo `dev` can generate AI Tutor + Question Maker in
+  // parallel without racing/clobbering the hoisted root `@prisma/client`
+  // (Windows EPERM on query_engine-windows.dll.node).
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -21,8 +25,10 @@ model User {
   courses              Course[]
   createdQuestions     QuestionMetadata[]    @relation("QuestionMetadataCreator")
   createdVariants      Variants[]            @relation("VariantsCreator")
-  canvasIntegration    CanvasIntegration?
-  canvasCourseMappings CanvasCourseMapping[]
+  canvasIntegration          CanvasIntegration?
+  canvasCourseMappings       CanvasCourseMapping[]
+  canvasBankMappings         CanvasBankMapping[]
+  canvasBankQuestionMappings CanvasBankQuestionMapping[]
 
   @@map("users")
 }
@@ -81,11 +87,12 @@ model QuestionMetadata {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
 
-  course           Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  primaryTopic     Topics                   @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
-  creator          User?                    @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
-  variants         Variants[]
-  selectionCursors VariantSelectionCursor[]
+  course                     Course                     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  primaryTopic               Topics                     @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
+  creator                    User?                      @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  variants                   Variants[]
+  selectionCursors           VariantSelectionCursor[]
+  canvasBankQuestionMappings CanvasBankQuestionMapping[]
 
   @@map("question_metadata")
 }
@@ -274,4 +281,40 @@ model VariantSelectionCursor {
 
   @@unique([courseId, questionMetadataId])
   @@map("variant_selection_cursors")
+}
+
+/// Maps a Core question bank CUID to a Canvas Assessment Question Bank for sync.
+model CanvasBankMapping {
+  id             Int       @id @default(autoincrement())
+  userId         String    @map("user_id")
+  /// Core QuestionBank id (cuid string) — banks live in EduAI Core
+  localBankId    String    @map("local_bank_id")
+  canvasCourseId Int       @map("canvas_course_id")
+  canvasBankId   Int       @map("canvas_bank_id")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, canvasBankId])
+  @@map("canvas_bank_mappings")
+}
+
+/// Maps a Canvas assessment question id to a local QuestionMetadata shell for re-sync.
+model CanvasBankQuestionMapping {
+  id                         Int      @id @default(autoincrement())
+  userId                     String   @map("user_id")
+  localQuestionMetadataId    Int      @map("local_question_metadata_id")
+  canvasAssessmentQuestionId Int      @map("canvas_assessment_question_id")
+  /// Core QuestionBank id (cuid string) that last synced this remote question
+  localBankId                String?  @map("local_bank_id")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localQuestionMetadata  QuestionMetadata @relation(fields: [localQuestionMetadataId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, canvasAssessmentQuestionId])
+  @@map("canvas_bank_question_mappings")
 }

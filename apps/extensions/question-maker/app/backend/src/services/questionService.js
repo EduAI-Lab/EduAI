@@ -11,6 +11,10 @@ import {
   formatSemesterDisplay
 } from './courseListService.js';
 import { buildQuestionListQuery } from '../utils/questionListQuery.js';
+import {
+  attachQuestionToBanks,
+  listExternalQuestionIdsForBank,
+} from './questionBankService.js';
 
 /**
  * `saveExtractedQuestions` writes each question's metadata/variant/section-link
@@ -175,7 +179,9 @@ export const createQuestion = async (userId, questionData) => {
       courseId,
       primaryTopicId,
       type = 'MCQ',
-      questionOrder = {}
+      questionOrder = {},
+      questionBankId,
+      questionBankIds,
     } = questionData;
 
     const normalizedDescription = typeof description === 'string' && description.trim()
@@ -215,6 +221,12 @@ export const createQuestion = async (userId, questionData) => {
       }
     });
 
+    // Soft-fail: Core banks require linked coreCourseId + service key
+    await attachQuestionToBanks(parsedCourseId, userId, question.id, {
+      questionBankId,
+      questionBankIds,
+    }).catch(() => null);
+
     return question;
   } catch (error) {
     throw error;
@@ -249,6 +261,7 @@ export const getQuestionsByUser = async (userId, options = {}) => {
   try {
     const {
       courseId,
+      questionBankId,
       search,
       types,
       difficulties,
@@ -280,6 +293,19 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       if (Number.isInteger(parsedCourseId)) {
         whereClause.courseId = parsedCourseId;
       }
+    }
+
+    const parsedBankId =
+      questionBankId !== undefined && questionBankId !== '' && questionBankId !== null
+        ? String(questionBankId)
+        : null;
+    if (parsedBankId && whereClause.courseId) {
+      const memberIds = await listExternalQuestionIdsForBank(
+        whereClause.courseId,
+        userId,
+        parsedBankId,
+      );
+      whereClause.id = { in: memberIds.length ? memberIds : [-1] };
     }
 
     const [rows, count] = await Promise.all([

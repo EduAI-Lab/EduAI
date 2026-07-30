@@ -19,7 +19,10 @@ import {
   getCanvasCourseMapping,
   getCanvasQuizzes,
   getCanvasQuizQuestions,
-  importQuizFromCanvas
+  importQuizFromCanvas,
+  getCanvasQuestionBanks,
+  getCanvasQuestionBankQuestions,
+  importQuestionBankFromCanvas,
 } from '../services/canvasService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { CANVAS_ROLES } from '../middleware/roles.js';
@@ -283,6 +286,90 @@ router.post(
       next(error);
     }
   }
+);
+
+/** GET /api/canvas/courses/:canvasCourseId/banks – lists Canvas Assessment Question Banks. */
+router.get(
+  '/courses/:canvasCourseId/banks',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  async (req, res, next) => {
+    try {
+      const banks = await getCanvasQuestionBanks(req.user.id, req.params.canvasCourseId);
+      res.json({ success: true, data: banks });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** GET /api/canvas/courses/:canvasCourseId/banks/:canvasBankId/questions */
+router.get(
+  '/courses/:canvasCourseId/banks/:canvasBankId/questions',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  async (req, res, next) => {
+    try {
+      const questions = await getCanvasQuestionBankQuestions(
+        req.user.id,
+        req.params.canvasBankId,
+      );
+      res.json({ success: true, data: questions });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** POST /api/canvas/import/:canvasCourseId/banks/:canvasBankId – sync Canvas bank → Core bank. */
+router.post(
+  '/import/:canvasCourseId/banks/:canvasBankId',
+  authenticateToken,
+  requireRole(CANVAS_ROLES),
+  requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.localCourseId }),
+  async (req, res, next) => {
+    try {
+      const { canvasCourseId, canvasBankId } = req.params;
+      const { primaryTopicId, targetBankId } = req.body;
+
+      if (!primaryTopicId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Primary topic ID is required for importing questions',
+        });
+      }
+
+      const topic = await prisma.topics.findFirst({
+        where: { id: String(primaryTopicId), courseId: req.qmCourse.id },
+      });
+      if (!topic) {
+        return res.status(404).json({
+          success: false,
+          error: 'Primary topic not found in this course',
+        });
+      }
+
+      const result = await importQuestionBankFromCanvas(
+        req.user.id,
+        canvasCourseId,
+        canvasBankId,
+        req.qmCourse.id,
+        {
+          primaryTopicId: String(primaryTopicId),
+          targetBankId: targetBankId ? String(targetBankId) : undefined,
+        },
+        req.qmCourse.userId,
+      );
+
+      res.json({
+        success: true,
+        message: 'Question bank synced from Canvas successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 );
 
 export default router;
