@@ -265,3 +265,35 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  pict-drift:
+    name: PICT Case Drift Check
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Generation runs pict inside the pinned docker/pict image (Docker is preinstalled on
+      # GitHub-hosted runners) rather than a natively-installed pict — see scripts/pict-gen.mjs
+      # for why a host install can't be trusted to reproduce the committed output.
+      - name: Regenerate PICT case tables
+        run: npm run test:pict:gen
+
+      # Modified rows (stale .cases.json) and untracked rows (new .pict committed without
+      # its generated sibling) both count as drift.
+      - name: Fail if regeneration produced a diff
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- tests/models)" ]; then
+            echo "::error::tests/models/*.cases.json is stale relative to its .pict source. Run 'npm run test:pict:gen' and commit the result."
+            git status --porcelain -- tests/models
+            git diff -- tests/models
+            exit 1
+          fi
