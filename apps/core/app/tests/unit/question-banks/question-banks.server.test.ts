@@ -34,8 +34,11 @@ import {
   createQuestionBank,
   deleteQuestionBank,
   ensureDefaultBank,
+  listBankMemberships,
+  listMembershipsForQuestion,
   listQuestionBanks,
   removeQuestionFromBank,
+  updateQuestionBank,
 } from "~/lib/question-banks/server";
 
 const COURSE_ID = "course_cuid_1";
@@ -154,6 +157,13 @@ describe("deleteQuestionBank", () => {
 });
 
 describe("addQuestionToBank", () => {
+  it("rejects invalid membership input", async () => {
+    const result = await addQuestionToBank(COURSE_ID, EXTRA_BANK.id, {
+      source: "question-maker",
+    } as never);
+    expect(result).toMatchObject({ error: "Invalid input" });
+  });
+
   it("upserts membership for a valid bank", async () => {
     prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
     const membership = {
@@ -182,7 +192,135 @@ describe("addQuestionToBank", () => {
   });
 });
 
+describe("updateQuestionBank", () => {
+  it("rejects invalid input", async () => {
+    const result = await updateQuestionBank(COURSE_ID, EXTRA_BANK.id, {
+      name: "  ",
+    });
+    expect(result).toMatchObject({ error: "Invalid input" });
+  });
+
+  it("returns not found when the bank is missing", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(null);
+    const result = await updateQuestionBank(COURSE_ID, "missing", {
+      name: "Renamed",
+    });
+    expect(result).toEqual({ error: "Question bank not found" });
+  });
+
+  it("updates name and description", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    const updated = { ...EXTRA_BANK, name: "Renamed", description: "Prep" };
+    prismaMock.questionBank.update.mockResolvedValue(updated);
+
+    const result = await updateQuestionBank(COURSE_ID, EXTRA_BANK.id, {
+      name: " Renamed ",
+      description: "Prep",
+    });
+
+    expect(result).toEqual({ bank: updated });
+    expect(prismaMock.questionBank.update).toHaveBeenCalledWith({
+      where: { id: EXTRA_BANK.id },
+      data: { name: "Renamed", description: "Prep" },
+    });
+  });
+});
+
+describe("deleteQuestionBank with membership move", () => {
+  it("moves memberships then deletes the bank", async () => {
+    prismaMock.questionBank.findFirst
+      .mockResolvedValueOnce(EXTRA_BANK)
+      .mockResolvedValueOnce(DEFAULT_BANK);
+    prismaMock.questionBankMembership.count.mockResolvedValue(1);
+    prismaMock.questionBankMembership.findMany.mockResolvedValue([
+      {
+        id: "mem_1",
+        questionBankId: EXTRA_BANK.id,
+        source: "question-maker",
+        externalQuestionId: "42",
+      },
+    ]);
+    prismaMock.questionBankMembership.upsert.mockResolvedValue({});
+    prismaMock.questionBankMembership.deleteMany.mockResolvedValue({
+      count: 1,
+    });
+    prismaMock.questionBank.delete.mockResolvedValue(EXTRA_BANK);
+
+    const result = await deleteQuestionBank(COURSE_ID, EXTRA_BANK.id, {
+      moveMembershipsToBankId: DEFAULT_BANK.id,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(prismaMock.questionBankMembership.upsert).toHaveBeenCalled();
+    expect(prismaMock.questionBankMembership.deleteMany).toHaveBeenCalledWith({
+      where: { questionBankId: EXTRA_BANK.id },
+    });
+  });
+
+  it("rejects a missing or self move target", async () => {
+    prismaMock.questionBank.findFirst
+      .mockResolvedValueOnce(EXTRA_BANK)
+      .mockResolvedValueOnce(null);
+    prismaMock.questionBankMembership.count.mockResolvedValue(1);
+
+    const result = await deleteQuestionBank(COURSE_ID, EXTRA_BANK.id, {
+      moveMembershipsToBankId: "missing",
+    });
+    expect(result).toEqual({ error: "Target bank not found in this course" });
+  });
+});
+
+describe("listBankMemberships", () => {
+  it("returns not found for a missing bank", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(null);
+    await expect(listBankMemberships(COURSE_ID, "missing")).resolves.toEqual({
+      error: "Question bank not found",
+    });
+  });
+
+  it("lists memberships ordered by createdAt", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    prismaMock.questionBankMembership.findMany.mockResolvedValue([
+      { id: "m1", externalQuestionId: "1" },
+    ]);
+
+    await expect(listBankMemberships(COURSE_ID, EXTRA_BANK.id)).resolves.toEqual({
+      memberships: [{ id: "m1", externalQuestionId: "1" }],
+    });
+  });
+});
+
+describe("listMembershipsForQuestion", () => {
+  it("queries memberships for a question in the course", async () => {
+    prismaMock.questionBankMembership.findMany.mockResolvedValue([]);
+    await listMembershipsForQuestion(COURSE_ID, "42");
+    expect(prismaMock.questionBankMembership.findMany).toHaveBeenCalledWith({
+      where: {
+        source: "question-maker",
+        externalQuestionId: "42",
+        questionBank: { courseId: COURSE_ID },
+      },
+      include: { questionBank: true },
+    });
+  });
+});
+
 describe("removeQuestionFromBank", () => {
+  it("returns not found when the bank is missing", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(null);
+    await expect(
+      removeQuestionFromBank(COURSE_ID, "missing", "42"),
+    ).resolves.toEqual({ error: "Question bank not found" });
+  });
+
+  it("returns not found when the membership is missing", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    prismaMock.questionBankMembership.findUnique.mockResolvedValue(null);
+    await expect(
+      removeQuestionFromBank(COURSE_ID, EXTRA_BANK.id, "42"),
+    ).resolves.toEqual({ error: "Question is not a member of this bank" });
+  });
+
   it("reassigns to the default bank when no other memberships remain", async () => {
     prismaMock.questionBank.findFirst
       .mockResolvedValueOnce(EXTRA_BANK)
