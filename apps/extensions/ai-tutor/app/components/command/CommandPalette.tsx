@@ -47,8 +47,9 @@ export function CommandPalette() {
     coursesLoaded.current = true;
     void (async () => {
       try {
-        const list = (await api.listCourses()) as Course[];
-        setCourses(Array.isArray(list) ? list : []);
+        // #1043: /courses is paginated; the palette lists one bounded page.
+        const page = await api.listCourses();
+        setCourses(Array.isArray(page.data) ? page.data : []);
       } catch {
         coursesLoaded.current = false; // allow a retry on the next open
       }
