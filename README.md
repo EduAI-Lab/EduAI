@@ -70,6 +70,7 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`rag-ai/CHAT_RAG_PIPELINE.md`](docs/rag-ai/CHAT_RAG_PIPELINE.md) | `POST /api/chat` flow — hybrid vs tool-calling RAG, capped context, `findRelevantContent`, Mermaid diagram |
 | [`AGENT_READINESS.md`](docs/AGENT_READINESS.md) | Agent-ready REST endpoints and admin/learning chat tool coverage snapshot ([#167](https://github.com/EduAI-Lab/EduAI/issues/167), [#672](https://github.com/EduAI-Lab/EduAI/issues/672)) |
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core vs hosted services, provider keys, RAG/chat flows, and **codebase walkthrough** (§7 — full repo layout, routes, schema, RBAC) |
+| [`INSTRUCTOR_ONBOARDING.md`](docs/INSTRUCTOR_ONBOARDING.md) | Pilot instructor guide — login, Canvas, Core course setup, AI Tutor, Question Maker |
 | [`EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) | Step-by-step guide for connecting a new extension to Core — session validation, auth middleware, RBAC, sidebar registration, and local dev verification checklist |
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |

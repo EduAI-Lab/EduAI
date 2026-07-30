@@ -58,6 +58,7 @@ build/
 dist/
 .next/
 .react-router/
+.turbo/cache/
 
 # Test coverage reports (build artifacts)
 coverage/
@@ -69,8 +70,9 @@ coverage/
 *.db
 *.sqlite
 
-# Turborepo
-.turbo
+# Prisma clients generated per-app (not the hoisted root @prisma/client)
+apps/extensions/ai-tutor/server/generated/
+apps/extensions/question-maker/app/backend/generated/
 
 # Stryker mutation-testing sandbox (runs from the monorepo root)
 .stryker-tmp/
