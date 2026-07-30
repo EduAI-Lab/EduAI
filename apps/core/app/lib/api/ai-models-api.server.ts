@@ -5,6 +5,7 @@ import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -85,6 +86,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -157,6 +159,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -206,6 +209,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         const model = await prisma.aIModel.delete({
           where: { id: modelId },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({

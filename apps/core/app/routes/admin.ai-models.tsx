@@ -6,6 +6,7 @@ import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
+import { useRoutingModelSettings } from "~/hooks/api/use-routing-model-settings";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -53,9 +54,16 @@ export default function AIModelsPage() {
     deleteModel,
     toggleModelActive,
   } = useAiModels();
+  const {
+    settings: routingModelSettings,
+    definitions: routingModelDefinitions,
+    isLoading: routingModelsLoading,
+    error: routingModelsError,
+    setEnabled: setRoutingModelEnabled,
+  } = useRoutingModelSettings();
 
-  const isLoading = providersLoading || modelsLoading;
-  const error = providersError ?? modelsError;
+  const isLoading = providersLoading || modelsLoading || routingModelsLoading;
+  const error = providersError ?? modelsError ?? routingModelsError;
 
   const handleCreateModel = useCallback(
     async (data: Record<string, unknown>) => {
@@ -115,6 +123,9 @@ export default function AIModelsPage() {
         onUpdateModel={handleUpdateModel}
         onDeleteModel={handleDeleteModel}
         onToggleModelActive={toggleModelActive}
+        routingModelSettings={routingModelSettings}
+        routingModelDefinitions={routingModelDefinitions}
+        onToggleRoutingModel={setRoutingModelEnabled}
       />
     </CoreAppShell>
   );

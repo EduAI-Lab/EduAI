@@ -5,6 +5,7 @@ import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
+import { RoutingModelsTable } from "~/components/admin/routing-models-table";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
@@ -19,6 +20,11 @@ import {
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
+import type {
+  RoutingModelSettingKey,
+  RoutingModelSettings,
+} from "~/lib/routing-model-settings";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -48,6 +54,12 @@ export type AiModelsAdminViewProps = {
   onUpdateModel: (id: string, data: Record<string, unknown>) => Promise<void>;
   onDeleteModel: (id: string) => Promise<void>;
   onToggleModelActive: (model: AIModel) => Promise<void>;
+  routingModelSettings: RoutingModelSettings;
+  routingModelDefinitions: RoutingModelSettingDefinition[];
+  onToggleRoutingModel: (
+    key: RoutingModelSettingKey,
+    value: boolean,
+  ) => Promise<void>;
 };
 
 export function AiModelsAdminView({
@@ -63,6 +75,9 @@ export function AiModelsAdminView({
   onUpdateModel,
   onDeleteModel,
   onToggleModelActive,
+  routingModelSettings,
+  routingModelDefinitions,
+  onToggleRoutingModel,
 }: AiModelsAdminViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("all");
@@ -291,6 +306,17 @@ export function AiModelsAdminView({
     }
   };
 
+  const handleToggleRoutingModel = async (
+    key: RoutingModelSettingKey,
+    value: boolean,
+  ) => {
+    try {
+      await onToggleRoutingModel(key, value);
+    } catch (err) {
+      console.error("Failed to toggle routing model:", err);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center">
@@ -366,6 +392,12 @@ export function AiModelsAdminView({
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <RoutingModelsTable
+                      definitions={routingModelDefinitions}
+                      settings={routingModelSettings}
+                      onToggle={handleToggleRoutingModel}
+                    />
+
                     {(syncMessage || ollamaError || vllmError) && (
                       <div className="space-y-2">
                         {syncMessage && (

@@ -55,6 +55,11 @@ export interface ChatScreenProps {
   initialTranscript: ChatTranscript | null;
 }
 
+type ChatNavigationState = {
+  focusMode?: boolean;
+  selectedModel?: string;
+};
+
 export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const { chatModels, routerAutoEnabled, user, assistDefault, lastCourseCode } = data;
   // Only an editable (owned) transcript seeds the live composer; everything else
@@ -64,6 +69,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationState = location.state as ChatNavigationState | null;
   const { assistive, setAssistive } = useAssistiveUi();
   const { courses } = useCourses();
   // Every chat is course-scoped now (global/no-course chat was removed). The
@@ -78,9 +84,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const isStudentWithCourseChat = user.role === "STUDENT";
   const hasNoCourses = availableCourses.length === 0;
   const disabledReason = hasNoCourses ? "no-courses" : undefined;
-  const [selectedModel, setSelectedModel] = useState(() =>
-    defaultChatModelId(chatModels, routerAutoEnabled),
-  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const navigatedModel = navigationState?.selectedModel;
+    return navigatedModel &&
+      chatModels.some((model) => model.id === navigatedModel)
+      ? navigatedModel
+      : defaultChatModelId(chatModels, routerAutoEnabled);
+  });
   const [selectedCourseCode, setSelectedCourseCode] = useState<string | null>(
     editableTranscript?.chat.courseCode ?? lastCourseCode ?? null,
   );
@@ -96,12 +106,12 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [readOnlyTranscript, setReadOnlyTranscript] = useState<ChatTranscript | null>(
     initialTranscript && !initialTranscript.canEdit ? initialTranscript : null,
   );
-  // Carried across the /chat -> /chat/:chatId replace-navigation that fires once
-  // the first message in a new chat creates its chatId (that route swap remounts
-  // ChatScreen — see chat.$chatId.tsx's `key={transcript.chat.id}` — which would
-  // otherwise silently drop focus mode back to its default).
+  // Focus mode and the explicit model choice are carried across the
+  // /chat -> /chat/:chatId replace-navigation below. That route swap remounts
+  // ChatScreen (see chat.$chatId.tsx's key), so uncarried state would reset to
+  // its defaults — notably switching a concrete model back to Auto.
   const [focusMode, setFocusMode] = useState(
-    Boolean((location.state as { focusMode?: boolean } | null)?.focusMode),
+    Boolean(navigationState?.focusMode),
   );
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
@@ -297,7 +307,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         const id = pendingNavigateChatId.current;
         if (id && location.pathname === "/chat") {
           pendingNavigateChatId.current = null;
-          navigate(`/chat/${id}`, { replace: true, state: { focusMode } });
+          navigate(`/chat/${id}`, {
+            replace: true,
+            state: { focusMode, selectedModel },
+          });
         }
       },
       onError: (error) => {
@@ -400,7 +413,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       if (data.chatId && !chatId) {
         setChatId(data.chatId);
         if (location.pathname === "/chat") {
-          navigate(`/chat/${data.chatId}`, { replace: true, state: { focusMode } });
+          navigate(`/chat/${data.chatId}`, {
+            replace: true,
+            state: { focusMode, selectedModel },
+          });
         }
       }
     } catch (error) {
