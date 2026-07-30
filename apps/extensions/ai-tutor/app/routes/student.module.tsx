@@ -22,7 +22,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   const [module, lessons] = await Promise.all([
     api.moduleById(moduleId) as Promise<ModuleDetail>,
-    api.lessonsForModule(moduleId) as Promise<Lesson[]>,
+    // #1043: lessons endpoint returns the pagination envelope; unwrap the
+    // bounded page. moduleProgress below aggregates over the full lesson set,
+    // which this bounded page still represents (a module's lessons fit 200).
+    api.lessonsForModule(moduleId).then((r) => r.data),
   ]);
 
   // Course + ordered module list in parallel — the sibling list gives the
@@ -32,7 +35,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (module.courseOfferingId) {
     const [courseData, siblingModules] = await Promise.all([
       api.courseById(module.courseOfferingId) as Promise<Course>,
-      api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+      api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
     ]);
     course = courseData;
     moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;

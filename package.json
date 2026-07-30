@@ -15,6 +15,7 @@
     "perf:quality": "node scripts/perf-quality.mjs",
     "perf:endpoints": "node scripts/perf-baseline.mjs",
     "perf:compare": "node scripts/perf-compare.mjs",
+    "test:pict:gen": "node scripts/pict-gen.mjs",
     "docker:dev:db": "node scripts/dev-db.js",
     "docker:dev:db:eduai": "docker compose -f docker-compose.dev.yml up -d --wait eduai-db",
     "docker:dev:db:ai-tutor": "docker compose -f docker-compose.dev.yml up -d --wait ai-tutor-db",
