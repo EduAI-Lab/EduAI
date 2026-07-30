@@ -7,17 +7,18 @@
 3. [Structure](#structure)
 4. [How to Run Tests](#how-to-run-tests)
 5. [Populating TESTS.md](#populating-testsmd)
-6. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
-7. [EduAI Unit Tests](#eduai-unit-tests)
-8. [EduAI Integration Tests](#eduai-integration-tests)
-9. [@eduai/ui Component Tests](#eduaiui-component-tests)
-10. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
-11. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
-12. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
-13. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
-14. [Question Maker Unit Tests](#question-maker-unit-tests)
-15. [Question Maker Integration Tests](#question-maker-integration-tests)
-16. [Extending This Document](#extending-this-document)
+6. [PICT Combinatorial Tests](#pict-combinatorial-tests)
+7. [EduAI Full Platform End-to-End Tests](#eduai-full-platform-end-to-end-tests)
+8. [EduAI Unit Tests](#eduai-unit-tests)
+9. [EduAI Integration Tests](#eduai-integration-tests)
+10. [@eduai/ui Component Tests](#eduaiui-component-tests)
+11. [AI Tutor Unit Tests](#ai-tutor-unit-tests)
+12. [AI Tutor Integration Tests](#ai-tutor-integration-tests)
+13. [AI Tutor Server Unit Tests](#ai-tutor-server-unit-tests)
+14. [AI Tutor Server Integration Tests](#ai-tutor-server-integration-tests)
+15. [Question Maker Unit Tests](#question-maker-unit-tests)
+16. [Question Maker Integration Tests](#question-maker-integration-tests)
+17. [Extending This Document](#extending-this-document)
 
 ---
 
@@ -133,6 +134,96 @@ Each section should use this format:
 
 ---
 
+## PICT Combinatorial Tests
+
+**Path:** `tests/models/`
+
+PICT (Microsoft's [Pairwise Independent Combinatorial Tool](https://github.com/microsoft/pict)) generates
+a minimal table of input combinations covering every pair of parameter values, for surfaces where 3+
+independent inputs decide a forked outcome. See [`docs/PICT_CENSUS.md`](docs/PICT_CENSUS.md) for which
+surfaces qualify and why.
+
+A model is four pieces, only the first two of which live in this repo today:
+
+| File | What it is | Who writes it |
+|---|---|---|
+| `<name>.pict` | Parameters, values, constraints (~20 lines) | Author, by hand |
+| `<name>.cases.json` | Generated rows — **committed**, never hand-edited | `npm run test:pict:gen` |
+| `<name>.oracle.ts` | Pure function `(row) => expected outcome`, derived from the spec | Author, by hand |
+| `<name>.test.ts` | World-builder `(row) => seeded state` + `describe.each` over the rows | Author, by hand |
+
+The oracle must be derived from the spec, never read off the handler under test — copying the
+handler's branch logic makes the test tautological (it asserts the code does what the code does).
+This document only covers the first two files; the oracle/test pair is written per-model as each
+census candidate is picked up.
+
+### Generation runs in Docker, not a host install
+
+`npm run test:pict:gen` always runs `pict` inside the pinned `docker/pict` image — rebuilding it
+every run (fast no-op via Docker's own layer cache once the image is current) rather than trusting
+whatever a local image with that tag happens to be — instead of a natively-installed `pict` binary.
+This isn't incidental: PICT's greedy
+solver breaks ties between equally-valid candidate rows via hash-container iteration order, which
+differs across C++ standard library implementations. A macOS/Homebrew build (clang + libc++) and a
+Linux build (g++ + libstdc++) produce a **different row count** for the identical model — 19 rows
+vs 18 for this repo's pilot model, not just a reordering. Since the generated JSON is committed and
+diffed, every environment producing it must agree byte-for-byte, so generation only ever happens
+through the one pinned image. Docker is already a required dependency for this repo (see the root
+README's "Getting started"), so this adds no new local prerequisite.
+
+If you want a `pict` binary on your host to experiment interactively with a model's shape before
+running the real generator, `brew install pict` (macOS) works fine for that — just never treat its
+output as authoritative, and always run `npm run test:pict:gen` before committing.
+
+### Adding a model
+
+1. Create `tests/models/<name>.pict` — parameter list, values, and any `IF ... THEN ...`
+   constraints. PICT's own model syntax; see existing models for examples.
+2. Run `npm run test:pict:gen`. This writes `tests/models/<name>.cases.json`: an array of
+   `{ParamName: "value"}` objects, one per row, in column order.
+3. Commit both files. A model change then shows up in review as a plain row diff, not an invisible
+   behavior change, and CI needs nothing beyond Docker (already preinstalled on GitHub-hosted
+   runners) to regenerate and verify it.
+
+Optional sidecar `tests/models/<name>.config.json` controls generation:
+
+```json
+{ "order": 3, "seed": "<name>.seed.tsv" }
+```
+
+- `order` — PICT's `/o:N` (2 = pairwise, the default when omitted; 3 = triples; higher toward
+  exhaustive).
+- `seed` — PICT's `/e:<file>`, a path relative to `tests/models/` to a TSV of rows (header + data,
+  same column names as the model) that must appear in the output. Use this to pin a specific
+  regression combination into a model permanently.
+
+### Regenerating
+
+```bash
+npm run test:pict:gen
+```
+
+Regenerates every `tests/models/*.cases.json` from its `.pict` (and optional `.config.json`)
+source. Generation is deterministic — the script never passes a random seed, and always runs the
+same pinned image — so re-running on an unchanged model produces byte-identical output. If the
+`docker` CLI isn't on `PATH`, the script fails immediately with an install pointer rather than
+silently skipping.
+
+### CI drift check
+
+The `pict-drift` job in `pr-tests.yml` runs the generator (via the same Docker image) and fails the
+PR if that dirties `tests/models/` — covering both a stale `.cases.json` (source changed, output
+didn't) and a new `.pict` committed without its generated sibling. Without this check a stale case
+table silently tests the old row set, which is worse than no coverage because it still looks green.
+
+### Current models
+
+| Model | Dims | What it covers |
+|---|---|---|
+| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route and both RAG retrieval branches — census § S1 pilot. Oracle and world-builder not yet written; this model exists to prove the generator path end to end. |
+
+---
+
 ## EduAI Full Platform End-to-End Tests
 
 **Path:** `tests/e2e/tests/`
@@ -188,6 +279,12 @@ Each section should use this format:
 | `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection, and the §567 UBC-only gate (well-formed non-UBC email rejected on the `email` path, UBC subdomains accepted); `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` shared strength-policy enforcement, complex passwords, 16-character passphrases, confirmation matching, and required token/name. |
 | `invitations.route.test.ts` | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and may invite any role incl. STUDENT; a well-formed non-UBC invite email is 400'd at the schema (§567); GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
 | `logging.server.test.ts` | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails, handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
+| `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection, and the §567 UBC-only gate (well-formed non-UBC email rejected on the `email` path, UBC subdomains accepted); `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
+| `invitations.route.test.ts` | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and cannot invite a STUDENT; a well-formed non-UBC invite email is 400'd at the schema (§567); GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
+| `invitation-token.test.ts` | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. || `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection; `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
+| `invitation-schemas.test.ts` | `createInvitationSchema` — INSTRUCTOR/ADMIN/UNIT_ADMIN/STUDENT accepted at the schema level, TA rejected, units required for UNIT_ADMIN and rejected for every other role (incl. STUDENT), invalid email / unknown unit code rejection; `invitableRolesFor` per-actor allowlists (ADMIN → admin/unit-admin/instructor, UNIT_ADMIN → instructor/student, anyone else → none) — and `acceptInvitationSchema` min-8 password, confirmPassword match, and required token/name. |
+| `invitations.route.test.ts` | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and may invite any role incl. STUDENT; GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
+| `logging.server.test.ts` | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, `jwt`, `databaseUrl`/`dbUrl`/`databaseUri`, `passcode`/`passphrase`, `otp`/`totp`/`dsn`/`mfa`/`mfaCode`/`mfaRecoveryCode`/`pin`, `sessionId`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails; short tokens (`auth`/`pin`/`otp`/`dsn`/`totp`/`mfa`) use segment-exact matching so ordinary fields (`authorId`, `mapping`, `shippingAddress`, `hotPath`, `footprint`, `fieldsName`, `needsNormalization`) stay visible; MFA status flags (`mfaEnabled`/`mfaRequired`/`mfaEnrolled`/`mfaStatus`) stay visible via a safe-key allowlist; table-driven positive/negative cases; handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | `db.auditlog.server.test.ts` | The audit-log data layer: `createAuditLog` stable defaults (`outcome: SUCCESS`, `actorType: USER`), `createSecurityLog` forcing `category: SECURITY`, `listAuditLogs` excluding SECURITY rows by default vs `listSecurityLogs` scoping to them, `getAuditLogById` including the actor relation, and `deleteAuditLogsOlderThan` / `runAuditLogRetention` using timestamp cutoffs so recent rows survive cleanup. |
 | `db.systemlog.server.test.ts` | The system-log data layer: `createSystemLog` write path, fire-and-forget fallback to `console.error` when the DB write fails, `createSystemError` deriving `level: ERROR` / `errorName` / `stack` from an `Error`, paginated and level-filtered `listSystemLogs`, and `deleteSystemLogsOlderThan` / `runSystemLogRetention` timestamp cutoffs. |
 | `db.log-retention-policy.server.test.ts` | The singleton log-retention policy: `getLogRetentionPolicy` returns the existing `default` row, creates it when missing, and recovers the raced row after a P2002 create collision; `updateLogRetentionPolicy` persists normalized integer day counts; `runConfiguredLogRetention` deletes both audit and system rows past their windows and reports the counts. |
@@ -491,6 +588,7 @@ Each section should use this format:
 | [`invitation-token.test.ts`](apps/core/app/tests/unit/invitation-token.test.ts) | `hashToken` determinism and 64-char sha256 hex output, distinct tokens hashing to distinct values, and `generateInviteToken` returning a URL-safe token whose hash matches `hashToken` and is fresh on every call. |
 | [`invitations.route.test.ts`](apps/core/app/tests/unit/invitations.route.test.ts) | Authorization for the shared `/api/invitations` endpoints (#686): `requireInviter` 403s non-admin/non-unit-admin actors; a UNIT_ADMIN is denied when `unitAdmins.canInvite` is off and admitted when on (instructor/student only — inviting an ADMIN is `FORBIDDEN_ROLE`); ADMIN is never policy-gated and may invite any role incl. STUDENT; GET scopes a UNIT_ADMIN's list to `invitedById`; revoke/resend pass the own-only ownership scope (404 on another inviter's invite). |
 | [`local-model-sync.test.ts`](apps/core/app/tests/unit/local-model-sync.test.ts) | Local model sync: discovers Ollama/vLLM models, diffs against DB registry, and upserts model records for admin AI Management. |
+| [`logging.server.test.ts`](apps/core/app/tests/unit/logging.server.test.ts) | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, `jwt`, `databaseUrl`/`dbUrl`/`databaseUri`, `passcode`/`passphrase`, `otp`/`totp`/`dsn`/`mfa`/`mfaCode`/`mfaRecoveryCode`/`pin`, `sessionId`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails; short tokens (`auth`/`pin`/`otp`/`dsn`/`totp`/`mfa`) use segment-exact matching so ordinary fields (`authorId`, `mapping`, `shippingAddress`, `hotPath`, `footprint`, `fieldsName`, `needsNormalization`) stay visible; MFA status flags (`mfaEnabled`/`mfaRequired`/`mfaEnrolled`/`mfaStatus`) stay visible via a safe-key allowlist; table-driven positive/negative cases; handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | [`logging.server.test.ts`](apps/core/app/tests/unit/logging.server.test.ts) | The logging facade redaction: `logAuditAction` replaces credential- and PII-shaped keys (`password`, `phone`, `apiKey`, `secret`, `clientSecret`, `privateKey`, etc.) with `[REDACTED]` while keeping accountability IDs and full emails, handles circular references (`[CIRCULAR]`) and Map/Set values without overflowing; `logSecurityEvent` forces the SECURITY category and still logs full emails; `logSystemError` routes through the centralized helper with redacted details. |
 | [`redact.server.test.ts`](apps/core/app/tests/unit/redact.server.test.ts) | Shared redactor (#979/#976 patterns): value-level scrubbing of Bearer/Basic credentials (anchored to `Authorization:` context or 16+-char tokens so prose like "Basic setup complete" survives — PR #1116 review), Cookie/Set-Cookie and X-Api-Key header lines, token query params, and URL userinfo; HAR-style `{ name, value }` header redaction; key-level `sanitizeDetails`; combined `sanitizeSensitiveData`; JSON diagnostic-log redaction; linear-time guard so long non-URL blobs do not ReDoS. |
 | [`bug-reports.test.ts`](apps/core/app/tests/unit/bug-reports.test.ts) | `createBugReport` service: validation, source tagging, anonymity persistence, bugType enum handling, optional fields; plus #979 field caps (oversized screenshot/context dropped to null so the report still persists — PR #1116 review; oversized logs truncated after redaction) and redaction of Authorization headers / secret-shaped context before persist. |
@@ -745,6 +843,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`StudentChatHistoryPanel.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/StudentChatHistoryPanel.test.tsx) | Chat history sidebar (#1003): sheet content absent when closed; fetches on open / empty state; mode badge + relative timestamp rows; active-session `aria-current`; session select and New chat close the panel; no-activity placeholder when `activityId` is undefined. Load-error paths (#1000 / PR #1023): failed list load renders "Couldn't load history" with Retry (not the empty state); Retry refetches successfully; a stale rejection after a newer request succeeded is ignored. |
 | [`tour-engine.test.ts`](apps/extensions/ai-tutor/app/tests/unit/tour-engine.test.ts) | Tests the onboarding tour engine: seeds the lesson route when a tour starts on a lesson page (and skips seeding on non-lesson pages), finds the next available step once stored routes exist while skipping route-dependent steps before a route is discovered, computes step metadata for the lesson-help tour, and stores discovered routes from the highlighted element. |
 | [`useLocalUser.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/useLocalUser.test.tsx) | Users can log in, log out, and have their session available across the app; accessing the session outside its provider throws an error; retries the session check on a transient network failure instead of treating the caller as logged out, but still logs out on a real authentication error |
+| [`PaginationControls.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/PaginationControls.test.tsx) | The shared `#1043` pager renders nothing when everything fits on one page (including an exact fill), shows the current row range (`Showing X–Y of Z`) and page-of-count clamped to `total` on the last page, disables Previous on the first page / Next on the last, calls `onPageChange` with the neighbouring page on click, and disables both controls while a page fetch is in flight (`disabled`). |
 | [`DashboardAdminView.test.tsx`](apps/extensions/ai-tutor/app/tests/unit/DashboardAdminView.test.tsx) | The admin dashboard's role breakdown after Core's user list became one page (#1041): the counts come from the platform-wide `stats` on the envelope rather than the length of the page it was handed, UNIT_ADMIN is counted alongside INSTRUCTOR in the role donut, the "Other" bucket can never render negative when the role counts exceed the total, an absent user envelope falls back to zeroed stats instead of `undefined`, and the server's `dashboardStats` rollup wins over the client-derived counts when both are present. |
 
 **E2E (Playwright):** `tests/e2e/ai-tutor-rbac.spec.ts` — login smoke tests for student, instructor, and admin shells (requires Core + AiTutor dev servers).
@@ -797,6 +896,7 @@ Unit tests for the shared design-system component library (`@eduai/ui`). Run wit
 | [`mappers.test.js`](apps/extensions/ai-tutor/server/tests/unit/mappers.test.js) | Sensitive fields like passwords are stripped before data leaves the server, IDs resolve correctly whether stored flat or nested, and missing optional fields default to safe values; `mapCourseOffering` (#1072 steps 2/4) sources title/description/department/dates/isPublished/term/year/aiInstructions from the resolved Core course, degrades every Core-owned field to null/false when no Core course resolves, fails closed on `isPublished` when Core omits it, defaults `coreOfferingId`/code/term/year/aiInstructions to null with no Core course, and never emits `externalId`/`externalSource`/`externalMetadata` — consolidated into `coreOfferingId`. |
 | [`policyService.test.js`](apps/extensions/ai-tutor/server/tests/unit/policyService.test.js) | Reads Core's RBAC policy flags: fetches `GET /api/policies` with the `Bearer EDUAI_API_KEY` service key and returns the value, caches within the TTL (a second read does not re-fetch), serves the last known-good value when a later fetch fails, and falls back to built-in defaults when the first fetch fails or no service key is configured. |
 | [`reconcile.test.js`](apps/extensions/ai-tutor/server/tests/unit/reconcile.test.js) | Unit tests for the AI Tutor daily reconciliation cron: `runReconciliation` deletes the `CourseOffering` (cascading to modules/lessons/activities via its Prisma `onDelete: Cascade` FKs, §802 safety net for a missed live cascade push) on Core 404, skips (preserves the row) on 5xx, leaves intact on 200, continues processing remaining rows when one row throws; topic phase nullifies `coreTopicId` on 404, skips topics whose parent offering has no `coreOfferingId`, skips on 5xx; completes without error when both tables are empty. |
+| [`pagination.test.js`](apps/extensions/ai-tutor/server/tests/unit/pagination.test.js) | The `#1043` pagination contract helpers: `parsePaginationParams` in required mode 400s (`PAGINATION_REQUIRED`) when `page`/`pageSize` are absent or empty strings, while optional mode treats those same inputs as absent and falls back to page 1 at `defaultPageSize`; a param that is *present but unparseable* (non-numeric, `Infinity`) 400s (`PAGINATION_INVALID`) in both modes. Out-of-range but finite values are clamped rather than rejected — `page` to `1..MAX_PAGE` (1e6, so an absurd `?page=` keeps `skip` a safe integer), `pageSize` to `1..maxPageSize` (default `MAX_PAGE_SIZE` 200, overridable per call), with fractional values floored; `skip`/`take` derive from the clamped pair, and `paginated` wraps rows — including an empty page — in the `{ data, total, page, pageSize }` envelope. |
 | [`eduaiClient.coursesByIds.test.js`](apps/extensions/ai-tutor/server/tests/unit/eduaiClient.coursesByIds.test.js) | The `?ids=` course lookup that replaced a page-walk-and-scan (#1125) plus the paged `/ai-models` read (#1041): `fetchCoursesByIds` never hits the network for an empty set, dedupes ids, and chunks at Core's cap — one request past `CORE_PAGE_SIZE` would come back `IDS_TOO_MANY` and lose the whole result; `findEduAiCourseById` resolves a single id through it and returns null when Core has no such course; `listEduAiCourses` surfaces a 401 rather than an empty list; and `listEduAiModels` sends paging params and throws on a non-envelope response instead of the old bare-array assumption. |
 
 ---
