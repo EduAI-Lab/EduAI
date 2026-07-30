@@ -16,7 +16,7 @@ apps/core/                                  Core SSR app and central API
 apps/extensions/ai-tutor/                   AI Tutor React Router frontend
 apps/extensions/ai-tutor/server/            AI Tutor Express/Prisma API
 apps/extensions/question-maker/app/frontend Question Maker Vite SPA
-apps/extensions/question-maker/app/backend  Question Maker Express/Sequelize API
+apps/extensions/question-maker/app/backend  Question Maker Express/Prisma API
 packages/ui/                                Shared @eduai/ui components
 packages/types/                             Shared roles and enrollment types
 tests/e2e/                                  Full-platform Playwright tests
@@ -33,7 +33,7 @@ the local data needed for their product workflows.
 | --- | --- | --- | --- |
 | Frontend | React 19, React Router 7 SSR, TypeScript, Vite | React 19, React Router 7, TypeScript, Vite | React 19, React Router 7 SPA, TypeScript, Vite |
 | Backend | React Router server routes on Node | Express 5 on Node | Express 4 on Node |
-| Data access | Prisma 6 | Prisma 6 | Sequelize 6 |
+| Data access | Prisma 6 | Prisma 6 | Prisma 6 |
 | Database | PostgreSQL with pgvector for RAG | PostgreSQL | PostgreSQL |
 | Validation | Zod | Zod | Joi plus route/service validation |
 | UI | Tailwind CSS 4, Radix primitives, `@eduai/ui` | Tailwind CSS 4, Radix, `@eduai/ui` | Tailwind CSS 4, Radix, `@eduai/ui` |
@@ -174,8 +174,7 @@ changing them and rebuild for deployment.
   design notes belong beside the app.
 - Route handlers should delegate substantial database/business logic to the
   existing `lib`, `service`, or model layer.
-- Use the app's established data-access library. Do not introduce Sequelize
-  into Prisma apps or Prisma into Question Maker as part of an unrelated change.
+- Use each app's established Prisma schema, client, and migration workflow.
 
 ### UI and navigation
 
@@ -192,10 +191,14 @@ changing them and rebuild for deployment.
 ### Validation and API behavior
 
 - Validate at the request boundary using the library already used by the app.
-- Return `401` for a missing/invalid identity, `403` for an authenticated user
-  without permission, and `503` when Core cannot be reached for session
-  validation.
-- Do not silently convert an auth-service outage into an authorization denial.
+- Return `401` for a missing or invalid identity and `403` for an authenticated
+  user without permission.
+- **Known gap:** AI Tutor and Question Maker currently also return `401` when
+  Core cannot be reached for session validation because their auth middleware
+  collapses fetch failures into the same response. Clients can consequently
+  redirect to login during a Core outage. Preserve this behavior in
+  documentation and tests until the middleware is intentionally changed to a
+  distinct `503` contract.
 - Verify identifiers against the authenticated actor's resolved course access.
 - Prefer explicit response shapes and shared mapping functions at
   frontend/backend seams.
@@ -267,7 +270,7 @@ canonical test inventory and policy document.
 | AI Tutor database | `apps/extensions/ai-tutor/server/prisma/` |
 | Question Maker UI | `apps/extensions/question-maker/app/frontend/src/` |
 | Question Maker API | `apps/extensions/question-maker/app/backend/src/` |
-| Question Maker models/migrations | `apps/extensions/question-maker/app/backend/src/models/`, migration/seed scripts |
+| Question Maker database | `apps/extensions/question-maker/app/backend/prisma/`, `apps/extensions/question-maker/app/backend/scripts/` |
 | Shared UI | `packages/ui/` |
 | Shared roles | `packages/types/` |
 | Full-platform E2E | `tests/e2e/` |
