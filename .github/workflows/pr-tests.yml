@@ -156,15 +156,9 @@ jobs:
       # --env-mode=loose: the suites read their config from process env / .env files
       # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
       #
-      # ai-tutor-server and question-maker-backend both leave `output` unset in
-      # their Prisma schemas, and neither has its own @prisma/client, so both
-      # generate into the single hoisted <repo>/node_modules/@prisma/client.
-      # Generating both up front left whichever ran last as the only app with
-      # its models on the client; question-maker gained a schema in #1168, and
-      # that made ai-tutor's suite fail with `Cannot read properties of
-      # undefined (reading 'deleteMany')`. So generate and test one app at a
-      # time. `status` keeps a first-batch failure from masking the second
-      # batch, matching what --continue does within a single run.
+      # ai-tutor-server and question-maker-backend generate into app-local
+      # `generated/prisma` outputs (not the hoisted @prisma/client) so they can
+      # be generated independently without clobbering each other on Windows/CI.
       - name: Run tests
         env:
           NODE_ENV: test
@@ -177,12 +171,8 @@ jobs:
           status=0
 
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
-          npx turbo run test --continue --env-mode=loose \
-            --filter='!question-maker-backend' || status=1
-
           ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
-          npx turbo run test --continue --env-mode=loose \
-            --filter=question-maker-backend || status=1
+          npx turbo run test --continue --env-mode=loose || status=1
 
           exit $status
 

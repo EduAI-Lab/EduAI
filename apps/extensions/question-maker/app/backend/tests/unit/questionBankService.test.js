@@ -27,6 +27,8 @@ vi.mock('../../src/services/coreApiService.js', () => ({
 const {
   listQuestionBanksFromCore,
   createQuestionBankOnCore,
+  updateQuestionBankOnCore,
+  deleteQuestionBankOnCore,
   addQuestionBankMembershipOnCore,
   removeQuestionBankMembershipOnCore,
   listQuestionBankMembershipsFromCore,
@@ -35,6 +37,11 @@ const {
 const {
   listBanks,
   createBank,
+  updateBank,
+  deleteBank,
+  ensureDefaultBank,
+  attachQuestionToBanks,
+  backfillDefaultBanks,
   resolveCoreCourse,
   addQuestionToBank,
   removeQuestionFromBank,
@@ -208,5 +215,71 @@ describe('listExternalQuestionIdsForBank', () => {
     await expect(listExternalQuestionIdsForBank(9, USER_ID, 'bank_1')).resolves.toEqual([
       10, 12,
     ]);
+  });
+});
+
+describe('updateBank / deleteBank / ensureDefaultBank / attachQuestionToBanks', () => {
+  it('updateBank remaps Core response', async () => {
+    updateQuestionBankOnCore.mockResolvedValue({
+      id: 'bank_1',
+      name: 'Renamed',
+      description: null,
+      isDefault: false,
+      createdAt: 't',
+      updatedAt: 't',
+    });
+
+    await expect(
+      updateBank(9, USER_ID, 'bank_1', { name: 'Renamed' }),
+    ).resolves.toMatchObject({ id: 'bank_1', courseId: 9, name: 'Renamed' });
+  });
+
+  it('deleteBank forwards moveMembershipsToBankId', async () => {
+    deleteQuestionBankOnCore.mockResolvedValue({ success: true });
+    await expect(
+      deleteBank(9, USER_ID, 'bank_1', { moveMembershipsToBankId: 'bank_default' }),
+    ).resolves.toEqual({ success: true });
+    expect(deleteQuestionBankOnCore).toHaveBeenCalledWith(
+      'core_course_1',
+      'bank_1',
+      { moveMembershipsToBankId: 'bank_default' },
+    );
+  });
+
+  it('ensureDefaultBank returns the default from Core', async () => {
+    listQuestionBanksFromCore.mockResolvedValue({
+      banks: [
+        {
+          id: 'bank_default',
+          name: 'Course bank',
+          description: null,
+          isDefault: true,
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      ],
+    });
+    await expect(ensureDefaultBank(9, USER_ID)).resolves.toMatchObject({
+      id: 'bank_default',
+      isDefault: true,
+      courseId: 9,
+    });
+  });
+
+  it('attachQuestionToBanks uses explicit ids', async () => {
+    questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
+    addQuestionBankMembershipOnCore.mockResolvedValue({ id: 'm1' });
+    await expect(
+      attachQuestionToBanks(9, USER_ID, 42, { questionBankIds: ['bank_a', 'bank_b'] }),
+    ).resolves.toEqual(['bank_a', 'bank_b']);
+    expect(addQuestionBankMembershipOnCore).toHaveBeenCalledTimes(2);
+  });
+
+  it('backfillDefaultBanks is a no-op', async () => {
+    await expect(backfillDefaultBanks()).resolves.toEqual({
+      coursesProcessed: 0,
+      banksCreated: 0,
+      membershipsCreated: 0,
+    });
   });
 });

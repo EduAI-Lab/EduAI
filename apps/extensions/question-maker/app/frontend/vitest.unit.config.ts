@@ -29,6 +29,8 @@ export default defineConfig({
         'src/tests/unit/**/*.test.tsx',
         'src/components/**/*.test.ts',
         'src/components/**/*.test.tsx',
+        'src/pages/**/*.test.ts',
+        'src/pages/**/*.test.tsx',
       ],
       exclude: ['src/tests/integration/**'],
       passWithNoTests: true,
