@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext } from '@playwright/test';
 import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
 import { createAdmin } from './auth';
+import { atListData } from './at-pagination';
 
 const AT = AI_TUTOR_API_URL;
 const RUN_SUFFIX = Date.now().toString().slice(-5);
@@ -42,25 +43,27 @@ export async function importAtCourseForInstructor(
     expect(coreRes.status()).toBe(201);
     const { id: coreCourseId } = await coreRes.json();
 
-    const listRes = await instrCtx.get(`${AT}/api/courses`);
-    expect(listRes.status()).toBe(200);
-    const courses = await listRes.json();
-    let atCourse = courses.find(
-      (c: { coreOfferingId?: string; externalId?: string }) =>
-        c.coreOfferingId === coreCourseId || c.externalId === coreCourseId,
+    const courses = await atListData<{ coreOfferingId?: string; externalId?: string; id: number }>(
+      instrCtx,
+      `${AT}/api/courses`,
+    );
+    const existing = courses.find(
+      (c) => c.coreOfferingId === coreCourseId || c.externalId === coreCourseId,
     );
 
-    if (!atCourse) {
-      const importRes = await instrCtx.post(`${AT}/api/courses/import-external`, {
-        data: { externalCourseId: coreCourseId },
-      });
-      // Import is an idempotent ensure: 201 = created here, 200 = the
-      // throttled background mirror won the race and anchored it first.
-      expect([200, 201]).toContain(importRes.status());
-      atCourse = await importRes.json();
+    if (existing) {
+      return { coreCourseId, atCourseId: existing.id };
     }
 
-    return { coreCourseId, atCourseId: atCourse.id };
+    const importRes = await instrCtx.post(`${AT}/api/courses/import-external`, {
+      data: { externalCourseId: coreCourseId },
+    });
+    // Import is an idempotent ensure: 201 = created here, 200 = the
+    // throttled background mirror won the race and anchored it first.
+    expect([200, 201]).toContain(importRes.status());
+    const imported = (await importRes.json()) as { id: number };
+
+    return { coreCourseId, atCourseId: imported.id };
   } finally {
     await adminCtx.dispose();
   }

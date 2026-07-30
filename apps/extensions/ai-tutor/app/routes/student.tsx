@@ -21,8 +21,10 @@ import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext'
 
 export async function clientLoader(_: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
-  const courses = (await api.listCourses()) as Course[];
-  return { courses };
+  // #1043: /courses is paginated; students take one bounded page (enrolled
+  // course counts sit well under the page size).
+  const page = await api.listCourses();
+  return { courses: page.data };
 }
 
 /** Time-of-day greeting for the page heading — mirrors EduAI Core's dashboard

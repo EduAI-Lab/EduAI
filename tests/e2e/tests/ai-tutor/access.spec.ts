@@ -16,6 +16,7 @@
 import { test, expect } from '@playwright/test';
 import { CORE_URL, AI_TUTOR_API_URL } from '../../playwright.config';
 import { signUp, signOut, uniqueEmail, checkStatus } from '../helpers/auth';
+import { atListResponse } from '../helpers/at-pagination';
 
 // ---------------------------------------------------------------------------
 // Health / smoke
@@ -65,13 +66,15 @@ test.describe('Authenticated access to AI Tutor via Core session', () => {
     expect(body.user).not.toHaveProperty('password');
   });
 
-  test('GET /api/courses returns an array (empty for a new STUDENT)', async ({ request }) => {
+  test('GET /api/courses returns an empty page for a new STUDENT', async ({ request }) => {
     await signUp(request, { email: uniqueEmail('at-courses') });
 
-    const res = await request.get(`${AI_TUTOR_API_URL}/api/courses`);
+    // #1043: the response is the `{ data, total, page, pageSize }` envelope.
+    const res = await atListResponse(request, `${AI_TUTOR_API_URL}/api/courses`);
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(Array.isArray(body)).toBe(true);
+    expect(body.data).toEqual([]);
+    expect(body.total).toBe(0);
   });
 
   test('ADMIN role blocks access to non-admin instructor/student routes', async ({ request }) => {
@@ -80,7 +83,7 @@ test.describe('Authenticated access to AI Tutor via Core session', () => {
     await signUp(request, { email: uniqueEmail('at-role-check') });
 
     // STUDENT should NOT be blocked from /api/courses (their own list)
-    const coursesRes = await request.get(`${AI_TUTOR_API_URL}/api/courses`);
+    const coursesRes = await atListResponse(request, `${AI_TUTOR_API_URL}/api/courses`);
     expect(coursesRes.status()).toBe(200);
   });
 
