@@ -129,7 +129,7 @@ export function ChatConversationLayout({
                           (isStreamingMessage ? streamingRoutedRegistryId : null))
                         : null;
                     const answeredByLabel =
-                      routedRegistryId
+                      selectedModel !== "auto" && selectedModel !== "auto-llm" && routedRegistryId
                         ? displayNameForRegistryId(routedRegistryId, chatModels)
                         : undefined;
 
