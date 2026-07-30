@@ -80,7 +80,7 @@ describe("ChatConversationLayout — routed model labels", () => {
     expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
   });
 
-  it("uses the response-header fallback for an in-flight assistant message", () => {
+  it("does not expose the routed vLLM model for an auto-routed reply", () => {
     render(
       <ChatConversationLayout
         {...baseProps}
@@ -93,8 +93,6 @@ describe("ChatConversationLayout — routed model labels", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Answered by vllm:qwen2.5-7b-instruct"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
   });
 });
