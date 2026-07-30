@@ -7,18 +7,37 @@ describe("PasswordRequirements", () => {
   it("shows both valid password options before the password is valid", () => {
     render(<PasswordRequirements password="" />);
 
-    expect(screen.getByText("16 or more characters").closest("li")).toHaveAttribute(
-      "data-state",
-      "unmet",
-    );
-    expect(screen.getByText("8 or more characters").closest("li")).toHaveAttribute(
-      "data-state",
-      "unmet",
-    );
+    const eightCharacterRequirement = screen
+      .getByText("8 or more characters")
+      .closest("li");
+    const passphraseRequirement = screen
+      .getByText("16 or more characters")
+      .closest("li");
+
+    expect(eightCharacterRequirement).toHaveAttribute("data-state", "unmet");
+    expect(passphraseRequirement).toHaveAttribute("data-state", "unmet");
+    expect(
+      eightCharacterRequirement?.compareDocumentPosition(passphraseRequirement!),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("One uppercase letter").closest("li")).toHaveAttribute(
       "data-state",
       "unmet",
     );
+  });
+
+  it("announces whether each requirement is met", () => {
+    render(<PasswordRequirements password="abcdefgh" />);
+
+    expect(
+      screen.getByRole("listitem", {
+        name: "Requirement met: 8 or more characters",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("listitem", {
+        name: "Requirement not met: One uppercase letter",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("updates individual requirements as the user types", () => {
