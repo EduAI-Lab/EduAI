@@ -14,7 +14,7 @@ import {
 } from '@eduai/ui';
 import type { QuestionCardChoice, QuestionDifficulty as UiDifficulty } from '@eduai/ui';
 
-import { IconCopy, IconDots } from '@tabler/icons-react';
+import { IconCopy, IconDots, IconTrash } from '@tabler/icons-react';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { formatCourseAccessLevel } from '@/lib/rbac/course-labels';
 import { markCorrectChoices } from '@/lib/mcq';
@@ -25,6 +25,8 @@ interface QuestionCardProps {
   questionNumber: number;
   onView: (entry: QuestionVariantEntry) => void;
   onCreateVariant: (entry: QuestionVariantEntry) => void;
+  /** Optional bank action — shown in the kebab when provided. */
+  onRemoveFromBank?: (entry: QuestionVariantEntry) => void;
   /**
    * 1-based ordinal of this variant among its question's variants (the primary/base
    * variant is excluded). Resolved by the caller, which sees the full variant list.
@@ -55,6 +57,7 @@ export const QuestionCard = ({
   questionNumber,
   onView,
   onCreateVariant,
+  onRemoveFromBank,
   variantNumber,
   compact = false,
 }: QuestionCardProps) => {
@@ -91,18 +94,30 @@ export const QuestionCard = ({
       : undefined;
 
   const canCreateVariant = canCreateQuestion && canWriteInCourse;
-  const menu = canCreateVariant ? (
+  const showMenu = canCreateVariant || Boolean(onRemoveFromBank);
+  const menu = showMenu ? (
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Question actions"
         className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(e) => e.stopPropagation()}
       >
         <IconDots className="size-[18px]" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
-          <IconCopy className="size-4" /> Create variant
-        </DropdownMenuItem>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {canCreateVariant && (
+          <DropdownMenuItem onSelect={() => onCreateVariant(entry)}>
+            <IconCopy className="size-4" /> Create variant
+          </DropdownMenuItem>
+        )}
+        {onRemoveFromBank && (
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={() => onRemoveFromBank(entry)}
+          >
+            <IconTrash className="size-4" /> Remove from bank
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   ) : undefined;

@@ -15,6 +15,7 @@ import SettingsPage from './pages/SettingsPage';
 import { QuestionComposerPage } from './pages/QuestionComposerPage';
 import { ApiTestPage } from './pages/ApiTestPage';
 import AssessmentBuilderPage from './pages/AssessmentBuilderPage';
+import BankDetailPage from './pages/BankDetailPage';
 import { HelpPage } from './pages/HelpPage';
 import { BugReportsAdminPage } from './pages/BugReportsAdminPage';
 import { AssessmentVariantPage } from './pages/AssessmentVariantPage';
@@ -109,6 +110,7 @@ function App() {
                       <Route path="/courses/:courseId" element={<CourseDetailPage />} />
                       <Route path="/courses/:courseId/questions/new" element={<QuestionComposerPage />} />
                       <Route path="/courses/:courseId/questions/:questionId/edit" element={<QuestionComposerPage />} />
+                      <Route path="/courses/:courseId/banks/:bankId" element={<BankDetailPage />} />
                       <Route path="/courses/:courseId/assessments/:assessmentId" element={<AssessmentBuilderPage />} />
                       <Route path="/courses/:courseId/assessments/:assessmentId/variants" element={<AssessmentVariantPage />} />
                       <Route path="/courses/:courseId/assessments/variants" element={<AssessmentVariantPage />} />

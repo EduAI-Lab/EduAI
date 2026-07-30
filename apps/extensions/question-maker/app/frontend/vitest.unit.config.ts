@@ -24,7 +24,12 @@ export default defineConfig({
       clearMocks: true,
       environment: 'jsdom',
       setupFiles: ['./src/tests/vitest.setup.ts'],
-      include: ['src/tests/unit/**/*.test.ts', 'src/tests/unit/**/*.test.tsx'],
+      include: [
+        'src/tests/unit/**/*.test.ts',
+        'src/tests/unit/**/*.test.tsx',
+        'src/components/**/*.test.ts',
+        'src/components/**/*.test.tsx',
+      ],
       exclude: ['src/tests/integration/**'],
       passWithNoTests: true,
   },

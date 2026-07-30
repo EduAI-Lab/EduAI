@@ -39,8 +39,12 @@ export const DeleteConfirmationModal = ({
   variant = 'destructive',
 }: DeleteConfirmationModalProps) => {
   const handleConfirm = async () => {
-    await onConfirm();
-    onOpenChange(false);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } catch {
+      // Leave the dialog open so the user can retry after an error toast.
+    }
   };
 
   return (
