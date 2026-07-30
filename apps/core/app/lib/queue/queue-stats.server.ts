@@ -30,15 +30,37 @@ export const PENDING_WITHOUT_BULL_GRACE_MS = 5 * 60 * 1000;
 /**
  * Rows that are plausibly in Redis: `bullJobId` persisted, or still inside the
  * short window where a healthy enqueue hasn't written it back yet.
+ *
+ * `now` is injectable so a caller reading depth and position as a pair can pin
+ * one cutoff across both — two `Date.now()` values would age the same orphan
+ * differently between the two queries.
  */
-function inTransportFilter(): Prisma.AiJobWhereInput {
+function inTransportFilter(now: Date): Prisma.AiJobWhereInput {
   return {
     OR: [
       { bullJobId: { not: null } },
-      { createdAt: { gt: new Date(Date.now() - PENDING_WITHOUT_BULL_GRACE_MS) } },
+      { createdAt: { gt: new Date(now.getTime() - PENDING_WITHOUT_BULL_GRACE_MS) } },
     ],
   };
 }
+
+/**
+ * Either the base client or an interactive-transaction client — the reads below
+ * are identical in both, and `getQueueSnapshot()` needs to run them on a `tx`.
+ */
+type StatsClient = Prisma.TransactionClient;
+
+/** Shared options for the stats reads: which client to run on, and the grace cutoff. */
+type StatsReadOptions = { client?: StatsClient; now?: Date };
+
+/** The `AiJob` fields a position read needs — the row itself, not a full record. */
+type QueuePositionInput = {
+  id: string;
+  type: JobType;
+  status: string;
+  createdAt: Date;
+  queueName?: string | null;
+};
 
 /**
  * Max PENDING jobs per queue before `enqueue()` rejects with `QueueFullError`.
@@ -72,9 +94,12 @@ export class QueueFullError extends Error {
 }
 
 /** Live depth of `queueName`: count of PENDING rows pushed onto that queue. */
-export async function getQueueDepth(queueName: QueueName): Promise<number> {
-  return prisma.aiJob.count({
-    where: { status: "PENDING", queueName, ...inTransportFilter() },
+export async function getQueueDepth(
+  queueName: QueueName,
+  { client = prisma, now = new Date() }: StatsReadOptions = {},
+): Promise<number> {
+  return client.aiJob.count({
+    where: { status: "PENDING", queueName, ...inTransportFilter(now) },
   });
 }
 
@@ -91,13 +116,10 @@ export async function getQueueDepth(queueName: QueueName): Promise<number> {
  * `priorityFor()` — while queue membership comes from the row's persisted
  * `queueName` (falling back to the current mapping for a row that predates it).
  */
-export async function getQueuePosition(job: {
-  id: string;
-  type: JobType;
-  status: string;
-  createdAt: Date;
-  queueName?: string | null;
-}): Promise<number | null> {
+export async function getQueuePosition(
+  job: QueuePositionInput,
+  { client = prisma, now = new Date() }: StatsReadOptions = {},
+): Promise<number | null> {
   if (job.status !== "PENDING") return null;
 
   const queueName = job.queueName ?? resolveQueueName(job.type);
@@ -105,13 +127,13 @@ export async function getQueuePosition(job: {
   const strongerTypes = ALL_JOB_TYPES.filter((type) => priorityFor(type) < priority);
   const samePriorityTypes = ALL_JOB_TYPES.filter((type) => priorityFor(type) === priority);
 
-  const ahead = await prisma.aiJob.count({
+  const ahead = await client.aiJob.count({
     where: {
       status: "PENDING",
       queueName,
       id: { not: job.id },
       AND: [
-        inTransportFilter(),
+        inTransportFilter(now),
         {
           OR: [
             ...(strongerTypes.length > 0 ? [{ type: { in: [...strongerTypes] } }] : []),
@@ -128,4 +150,38 @@ export async function getQueuePosition(job: {
     },
   });
   return ahead + 1;
+}
+
+/**
+ * Position and depth for one row, read as a mutually consistent pair (#915).
+ *
+ * `ahead` is a strict subset of the depth set, so `position = ahead + 1 <= depth`
+ * holds within a single snapshot — but not across two. Read separately, a job
+ * draining `PENDING -> RUNNING` between them shrinks depth below a position that
+ * already counted it as ahead, so a client can see `queuePosition > queueDepth`.
+ * (Nothing drains PENDING until the #168 dispatch worker exists, so this is
+ * latent today and live the moment it lands.)
+ *
+ * REPEATABLE READ is load-bearing, not decoration: under Postgres' default READ
+ * COMMITTED every statement takes a fresh snapshot — including statements inside
+ * a transaction — so wrapping these two counts in a plain transaction would not
+ * fix anything. The reads are sequential rather than parallel because they share
+ * one connection, and the snapshot is fixed at the first statement either way.
+ *
+ * Read-only, so there is no lock contention and no serialization-failure retry
+ * to handle. The caller decides how a failure degrades.
+ */
+export async function getQueueSnapshot(
+  job: QueuePositionInput,
+  queueName: QueueName,
+): Promise<{ queuePosition: number | null; queueDepth: number }> {
+  const now = new Date();
+  return prisma.$transaction(
+    async (tx) => {
+      const queuePosition = await getQueuePosition(job, { client: tx, now });
+      const queueDepth = await getQueueDepth(queueName, { client: tx, now });
+      return { queuePosition, queueDepth };
+    },
+    { isolationLevel: "RepeatableRead" },
+  );
 }

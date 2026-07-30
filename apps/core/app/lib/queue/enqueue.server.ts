@@ -5,7 +5,7 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import { JobPayloadSchema, type JobPayload, type JobType } from "./job-schema";
 import {
   getQueueDepth,
-  getQueuePosition,
+  getQueueSnapshot,
   maxQueueDepth,
   QueueFullError,
 } from "./queue-stats.server";
@@ -30,28 +30,24 @@ export type EnqueueResult = {
 };
 
 /**
- * Live position + depth snapshot for a row, computed in parallel (#915).
+ * Live position + depth snapshot for a row (#915).
+ *
  * Never throws: by the time this runs the job is durably enqueued, and a
  * transient stats-read failure must not surface as a 502 for a job that
  * actually made it in (the retry would enqueue a duplicate).
  *
  * Both halves are read here, after the row exists — never reused from the
- * pre-write backpressure count. That count is taken before the insert, so
- * deriving depth from it (`count + 1`) while position is read fresh lets a
- * concurrent burst report `queuePosition > queueDepth`, an arithmetically
- * impossible snapshot. Neither read is transactional, so the pair can still
- * skew by a job or two under load, but it can no longer contradict itself.
+ * pre-write backpressure count, which is taken before the insert and would let
+ * `count + 1` disagree with a freshly-read position. `getQueueSnapshot()` then
+ * reads the pair under REPEATABLE READ so they also cannot disagree in the
+ * other direction, when jobs drain out between the two counts.
  */
 async function queueStatsFor(
   row: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null },
   queueName: QueueName,
 ): Promise<{ queuePosition: number | null; queueDepth: number | null }> {
   try {
-    const [queuePosition, queueDepth] = await Promise.all([
-      getQueuePosition(row),
-      getQueueDepth(queueName),
-    ]);
-    return { queuePosition, queueDepth };
+    return await getQueueSnapshot(row, queueName);
   } catch {
     return { queuePosition: null, queueDepth: null };
   }
@@ -211,9 +207,9 @@ export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   }
 
   // 8. Return the durable handle plus a live position/depth snapshot (#915).
-  //    Both halves are read here, after the row exists, so depth always counts
-  //    this job and can never come in below the reported position; subsequent
-  //    polls read fresher values from the status endpoint (#917).
+  //    Read after the row exists and under one REPEATABLE READ snapshot, so
+  //    depth always counts this job and can never come in below the reported
+  //    position; later polls read fresher values from the status endpoint (#917).
   return {
     jobId: aiJob.id,
     ...(await queueStatsFor(aiJob, queueName)),

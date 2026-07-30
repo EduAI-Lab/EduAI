@@ -4,9 +4,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { JobPayload } from "~/lib/queue/job-schema";
 
-const prismaMock = vi.hoisted(() => ({
-  aiJob: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), count: vi.fn() },
-}));
+const prismaMock = vi.hoisted(() => {
+  const aiJob = {
+    create: vi.fn(),
+    update: vi.fn(),
+    findUnique: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn(),
+  };
+  return {
+    aiJob,
+    // The post-enqueue snapshot reads position + depth inside one REPEATABLE
+    // READ transaction; the mock runs that callback against the same client.
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({ aiJob })),
+  };
+});
 
 const queueAdd = vi.hoisted(() => vi.fn());
 const getQueueMock = vi.hoisted(() => vi.fn(() => ({ add: queueAdd })));
