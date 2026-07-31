@@ -25,7 +25,10 @@ function buildHtmlCsp(nonce: string): string {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    // `data:` — Vite inlines any font under `assetsInlineLimit` (4 KB) into the
+    // stylesheet as a base64 `data:font/woff2` URL; without this the browser
+    // blocks it and that glyph range silently falls back.
+    "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
