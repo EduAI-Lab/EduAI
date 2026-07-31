@@ -1,29 +1,43 @@
 apps/core/react-router.config.ts:3 - default
-apps/core/vite.config.ts:14 - default
-apps/core/vitest.config.ts:8 - default
-apps/core/vitest.coverage.config.ts:20 - default
+apps/core/vite.config.ts:45 - default
+apps/core/vitest.config.ts:9 - default
+apps/core/vitest.coverage.config.ts:21 - default
 apps/core/vitest.integration.config.ts:4 - default
+apps/core/vitest.mutation.config.ts:23 - default
+apps/core/vitest.shared.ts:14 - findMonorepoRoot (used in module)
+tools/energy-meter/rapl-util.d.mts:1 - RaplZoneReading (used in module)
+tools/energy-meter/rapl-util.d.mts:7 - PowerSample (used in module)
+packages/types/src/index.ts:29 - hasAttachmentContent
 packages/types/src/index.ts:8 - EnrollmentRole (used in module)
 packages/types/src/index.ts:11 - USER_ROLE_VALUES
 packages/types/src/index.ts:17 - satisfies (used in module)
 packages/types/src/index.ts:17 - readonly (used in module)
 packages/types/src/index.ts:19 - ENROLLMENT_ROLE_VALUES
-packages/types/src/index.ts:40 - CanvasMaterialSkipReason (used in module)
-apps/core/app/root.tsx:134 - default
-apps/core/app/root.tsx:150 - ErrorBoundary
-apps/core/app/root.tsx:28 - links
+apps/core/app/entry.server.tsx:16 - streamTimeout (used in module)
 apps/core/app/routes.ts:3 - default
-apps/core/app/components/app-sidebar.tsx:99 - AppSidebarProps (used in module)
+packages/ui/src/lib/term.ts:37 - isTermCode (used in module)
+packages/ui/src/lib/term.ts:51 - termFromMonth (used in module)
+packages/ui/src/lib/term.ts:87 - termFromDate (used in module)
+packages/ui/src/lib/term.ts:102 - termInfoFromDate (used in module)
+packages/ui/src/lib/term.ts:118 - normalizeTerm (used in module)
+packages/ui/src/lib/term.ts:150 - termName (used in module)
+packages/ui/src/lib/term.ts:160 - termLabel (used in module)
+packages/ui/src/lib/term.ts:170 - termLabelLong (used in module)
+packages/ui/src/lib/term.ts:200 - termSortKey (used in module)
+packages/ui/src/lib/term.ts:236 - compareByTerm
+packages/ui/src/lib/term.ts:254 - groupCoursesByTerm
+packages/ui/src/lib/term.ts:18 - TERM_CODES (used in module)
+packages/ui/src/lib/term.ts:71 - UBC_TIME_ZONE (used in module)
+packages/ui/src/lib/term.ts:179 - TermInfo (used in module)
+packages/ui/src/lib/term.ts:240 - CourseTermGroup (used in module)
 apps/core/app/components/course-materials-upload.tsx:36 - CourseMaterialsUploadProps (used in module)
 apps/core/app/components/course-selector.tsx:12 - CourseSelectorProps (used in module)
 apps/core/app/components/login-form.tsx:7 - LoginFormProps (used in module)
 apps/core/app/components/nav-documents.tsx:34 - NavDocumentsProps (used in module)
-apps/core/app/components/register-form.tsx:7 - RegisterFormProps (used in module)
-apps/core/app/components/site-header.tsx:19 - SiteHeaderProps (used in module)
+apps/core/app/components/register-form.tsx:10 - RegisterFormProps (used in module)
 apps/core/app/components/site-navigation.tsx:5 - SiteNavigationProps (used in module)
 apps/core/app/components/team-member-card.tsx:5 - TeamMemberCardProps (used in module)
 apps/core/app/components/theme-provider.tsx:1 - useTheme
-apps/core/app/hooks/use-api-keys.ts:5 - ApiKeyData
 apps/core/app/lib/assistive-events.server.ts:14 - ASSISTIVE_EVENT_RESPONSE_COMPLIANCE (used in module)
 apps/core/app/lib/assistive-events.server.ts:25 - AssistiveClientEventType (used in module)
 apps/core/app/lib/assistive-events.server.ts:27 - AssistiveEventType (used in module)
@@ -33,110 +47,164 @@ apps/core/app/lib/assistive-events.server.ts:180 - AdhdResponseMetrics (used in 
 apps/core/app/lib/chat-api-keys.schema.ts:14 - ClientApiKeysBody (used in module)
 apps/core/app/lib/chat-api-log.ts:5 - isChatApiDebug (used in module)
 apps/core/app/lib/chat-api-log.ts:13 - isChatApiTrace (used in module)
+apps/core/app/lib/chat-auto-model.ts:6 - ChatModelOption (used in module)
+apps/core/app/lib/chat-auto-model.ts:16 - AUTO_CHAT_MODEL (used in module)
+apps/core/app/lib/chat-auto-model.ts:25 - AUTO_LLM_CHAT_MODEL (used in module)
+apps/core/app/lib/chat-auto-model.ts:34 - ROUTING_CHAT_MODELS
 apps/core/app/lib/chat-disclaimer-content.ts:6 - CHAT_DISCLAIMER_CONTACT_EMAIL (used in module)
 apps/core/app/lib/chat-rag.ts:131 - resolveSessionRecentMessages (used in module)
 apps/core/app/lib/chat-rag.ts:141 - resolveSessionDigestMaxChars (used in module)
 apps/core/app/lib/chat-rag.ts:22 - EMPTY_COURSE_RAG_INSTRUCTION (used in module)
 apps/core/app/lib/chat-rag.ts:29 - RAG_ANSWER_RULES (used in module)
 apps/core/app/lib/chat-rag.ts:38 - BuildRagAnswerInstructionsOptions (used in module)
+apps/core/app/lib/idempotency.server.ts:199 - failIdempotency (used in module)
+apps/core/app/lib/idempotency.server.ts:16 - IdempotencyClaimResult (used in module)
+apps/core/app/lib/idempotency.server.ts:215 - WithIdempotencyOptions (used in module)
 apps/core/app/lib/policy.server.ts:115 - policyForbidden (used in module)
 apps/core/app/lib/policy.server.ts:38 - POLICY_KEYS (used in module)
 apps/core/app/lib/policy.server.ts:42 - PolicyMap (used in module)
 apps/core/app/lib/policy.server.ts:122 - PolicyDenialInput (used in module)
+apps/core/app/lib/redact.server.ts:111 - shouldRedactKey (used in module)
 apps/core/app/lib/request-context.server.ts:8 - RequestContext (used in module)
 apps/core/app/lib/request-context.server.ts:16 - ActorContext (used in module)
 apps/core/app/lib/ui-preferences.ts:3 - UI_DENSITY_VALUES (used in module)
 apps/core/app/lib/ui-preferences.ts:6 - UI_THEME_VALUES (used in module)
 apps/core/app/lib/ui-preferences.ts:9 - UiPreferenceFields (used in module)
 apps/core/app/lib/user-preferences.server.ts:10 - ChatPreferences (used in module)
-apps/core/app/routes/admin.ai-models.tsx:21 - loader (used in module)
-apps/core/app/routes/admin.ai-models.tsx:37 - default
-apps/core/app/routes/admin.bug-reports.tsx:19 - loader (used in module)
-apps/core/app/routes/admin.bug-reports.tsx:35 - default
-apps/core/app/routes/admin.chat.tsx:27 - loader (used in module)
-apps/core/app/routes/admin.chat.tsx:60 - default
-apps/core/app/routes/admin.cron-jobs.tsx:20 - loader (used in module)
-apps/core/app/routes/admin.cron-jobs.tsx:34 - default
-apps/core/app/routes/admin.invitations.tsx:95 - loader (used in module)
-apps/core/app/routes/admin.invitations.tsx:120 - default
-apps/core/app/routes/admin.logs.tsx:186 - loader (used in module)
-apps/core/app/routes/admin.logs.tsx:272 - action (used in module)
-apps/core/app/routes/admin.logs.tsx:316 - default
-apps/core/app/routes/admin.settings.tsx:71 - loader (used in module)
-apps/core/app/routes/admin.settings.tsx:87 - default
-apps/core/app/routes/admin.users.tsx:19 - loader (used in module)
-apps/core/app/routes/admin.users.tsx:35 - default
+apps/core/app/lib/user-provider-settings.server.ts:27 - UpsertProviderInput (used in module)
+apps/core/app/routes/admin.ai-models.tsx:20 - loader (used in module)
+apps/core/app/routes/admin.ai-models.tsx:36 - default
+apps/core/app/routes/admin.bug-reports.tsx:17 - loader (used in module)
+apps/core/app/routes/admin.bug-reports.tsx:33 - default
+apps/core/app/routes/admin.chat.tsx:23 - loader (used in module)
+apps/core/app/routes/admin.chat.tsx:56 - default
+apps/core/app/routes/admin.cron-jobs.tsx:17 - loader (used in module)
+apps/core/app/routes/admin.cron-jobs.tsx:31 - default
+apps/core/app/routes/admin.invitations.tsx:92 - loader (used in module)
+apps/core/app/routes/admin.invitations.tsx:117 - default
+apps/core/app/routes/admin.logs.tsx:184 - loader (used in module)
+apps/core/app/routes/admin.logs.tsx:270 - action (used in module)
+apps/core/app/routes/admin.logs.tsx:314 - default
+apps/core/app/routes/admin.settings.tsx:68 - loader (used in module)
+apps/core/app/routes/admin.settings.tsx:84 - default
+apps/core/app/routes/admin.users.tsx:17 - loader (used in module)
+apps/core/app/routes/admin.users.tsx:33 - default
 apps/core/app/routes/chat.$chatId.tsx:16 - loader (used in module)
 apps/core/app/routes/chat.$chatId.tsx:37 - default
 apps/core/app/routes/chat.$chatId.tsx:35 - action
 apps/core/app/routes/chat.tsx:15 - loader (used in module)
 apps/core/app/routes/chat.tsx:21 - default
 apps/core/app/routes/chat.tsx:19 - action
-apps/core/app/routes/courses.$courseId.tsx:32 - loader (used in module)
-apps/core/app/routes/courses.$courseId.tsx:133 - default
-apps/core/app/routes/courses.tsx:24 - loader (used in module)
-apps/core/app/routes/courses.tsx:67 - default
-apps/core/app/routes/dashboard.tsx:27 - loader (used in module)
+apps/core/app/routes/courses.$courseId.tsx:30 - loader (used in module)
+apps/core/app/routes/courses.$courseId.tsx:145 - default
+apps/core/app/routes/courses.tsx:22 - loader (used in module)
+apps/core/app/routes/dashboard.tsx:28 - loader (used in module)
 apps/core/app/routes/dashboard.tsx:131 - default
-apps/core/app/routes/home.tsx:15 - meta
-apps/core/app/routes/home.tsx:22 - loader
-apps/core/app/routes/home.tsx:32 - default
+apps/core/app/routes/help.tsx:8 - loader (used in module)
+apps/core/app/routes/help.tsx:16 - default
+apps/core/app/routes/home.tsx:14 - meta
+apps/core/app/routes/home.tsx:21 - loader
+apps/core/app/routes/home.tsx:31 - default
 apps/core/app/routes/login.ts:4 - loader
 apps/core/app/routes/onboarding.student-id.tsx:13 - loader (used in module)
 apps/core/app/routes/onboarding.student-id.tsx:34 - action (used in module)
 apps/core/app/routes/onboarding.student-id.tsx:71 - default
-apps/core/app/routes/settings.tsx:13 - loader (used in module)
-apps/core/app/routes/settings.tsx:36 - default
-apps/core/app/routes/team.tsx:124 - default
-apps/core/app/routes/team.tsx:18 - teamMembers (used in module)
-apps/core/app/routes/unit-admin.invitations.tsx:86 - loader (used in module)
-apps/core/app/routes/unit-admin.invitations.tsx:110 - default
-apps/core/app/routes/units.$department.chats.tsx:27 - loader (used in module)
-apps/core/app/routes/units.$department.chats.tsx:59 - default
+apps/core/app/routes/settings.tsx:11 - loader (used in module)
+apps/core/app/routes/settings.tsx:50 - action
+apps/core/app/routes/settings.tsx:81 - default
+apps/core/app/routes/team.tsx:123 - default
+apps/core/app/routes/team.tsx:17 - teamMembers (used in module)
+apps/core/app/routes/unit-admin.invitations.tsx:83 - loader (used in module)
+apps/core/app/routes/unit-admin.invitations.tsx:107 - default
+apps/core/app/routes/units.$department.chats.tsx:24 - loader (used in module)
+apps/core/app/routes/units.$department.chats.tsx:56 - default
 apps/core/app/tests/globalSetup.ts:32 - setup
-apps/core/app/components/admin/ai-models-admin-view.tsx:38 - AiModelsAdminViewProps (used in module)
+apps/core/scripts/research/backfill-match.d.mts:1 - BackfillRow (used in module)
+apps/core/scripts/research/backfill-match.d.mts:8 - BackfillIndex (used in module)
+apps/core/scripts/research/backfill-match.d.mts:15 - TakeMatchOptions (used in module)
+apps/core/app/components/admin/ai-models-admin-view.tsx:47 - AiModelsAdminViewProps (used in module)
 apps/core/app/components/admin/ai-models-table.tsx:45 - AIModelsTableProps (used in module)
-apps/core/app/components/admin/bug-reports-admin-view.tsx:34 - BugReportsAdminViewProps (used in module)
 apps/core/app/components/admin/cron-jobs-admin-view.tsx:388 - CronJobsAdminViewProps (used in module)
 apps/core/app/components/admin/model-form-dialog.tsx:28 - ModelFormDialogProps (used in module)
 apps/core/app/components/admin/provider-form-dialog.tsx:24 - ProviderFormDialogProps (used in module)
 apps/core/app/components/admin/provider-form-dialog.tsx:32 - ProviderFormData (used in module)
 apps/core/app/components/admin/providers-table.tsx:14 - AIProvider (used in module)
 apps/core/app/components/admin/providers-table.tsx:16 - ProvidersTableProps (used in module)
-apps/core/app/components/admin/user-form-dialog.tsx:27 - UserFormDialogProps (used in module)
-apps/core/app/components/admin/users-admin-view.tsx:13 - UsersAdminViewProps (used in module)
-apps/core/app/components/admin/users-table.tsx:116 - UsersTableProps (used in module)
+apps/core/app/components/admin/user-form-dialog.tsx:28 - UserFormDialogProps (used in module)
+apps/core/app/components/admin/users-admin-view.tsx:18 - UsersAdminViewProps (used in module)
+apps/core/app/components/admin/users-table.tsx:114 - UsersTableProps (used in module)
 apps/core/app/components/assistive/ui-preferences-provider.tsx:109 - DEFAULT_UI_PREFERENCES (used in module)
-apps/core/app/components/canvas/canvas-fetch-dialog.tsx:23 - CanvasFetchDialogProps (used in module)
-apps/core/app/components/canvas/canvas-material-sync-dialog.tsx:24 - CanvasMaterialSyncDialogProps (used in module)
+apps/core/app/components/canvas/canvas-fetch-dialog.tsx:24 - CanvasFetchDialogProps (used in module)
+apps/core/app/components/canvas/canvas-material-sync-dialog.tsx:28 - CanvasMaterialSyncDialogProps (used in module)
 apps/core/app/components/chat/admin-chat-welcome.tsx:4 - AdminChatWelcomeProps (used in module)
-apps/core/app/components/chat/api-key-settings.tsx:40 - ApiKeySettingsProps (used in module)
+apps/core/app/components/chat/api-key-settings.tsx:41 - ApiKeySettingsProps (used in module)
 apps/core/app/components/chat/chat-header-controls.tsx:5 - ChatHeaderControlsProps (used in module)
 apps/core/app/components/chat/chat-history-rail.tsx:10 - ChatHistoryRailProps (used in module)
-apps/core/app/components/chat/chat-message.tsx:23 - ChatMessageProps (used in module)
-apps/core/app/components/chat/chat-screen.tsx:49 - ChatScreenProps (used in module)
+apps/core/app/components/chat/chat-message.tsx:25 - ChatMessageProps (used in module)
+apps/core/app/components/chat/chat-screen.tsx:47 - ChatScreenProps (used in module)
 apps/core/app/components/chat/chat-typing-indicator.tsx:7 - ChatTypingIndicatorProps
 apps/core/app/components/chat/markdown-renderer.tsx:6 - MarkdownRendererProps (used in module)
 apps/core/app/components/chat/suggested-prompts.tsx:6 - SuggestedPromptsProps (used in module)
 apps/core/app/components/chat/system-prompt-settings.tsx:17 - SystemPromptSettingsProps (used in module)
-apps/core/app/components/dashboard/dashboard-view.tsx:43 - DashboardCourse (used in module)
-apps/core/app/components/dashboard/dashboard-view.tsx:51 - DashboardRecentChat (used in module)
-apps/core/app/components/dashboard/dashboard-view.tsx:61 - DashboardViewProps (used in module)
+apps/core/app/components/courses/course-card-scroll-item.tsx:11 - CourseCardScrollItem
+apps/core/app/components/courses/courses-view.tsx:102 - COURSES_ROLE_CONFIG (used in module)
+apps/core/app/components/dashboard/dashboard-view-config.tsx:49 - DashboardHeroCopy (used in module)
+apps/core/app/components/dashboard/dashboard-view-config.tsx:64 - DashboardStatContext (used in module)
+apps/core/app/components/dashboard/dashboard-view-config.tsx:79 - DashboardRoleConfig (used in module)
+apps/core/app/components/dashboard/dashboard-view.tsx:40 - DashboardCourse (used in module)
+apps/core/app/components/dashboard/dashboard-view.tsx:48 - DashboardRecentChat (used in module)
+apps/core/app/components/dashboard/dashboard-view.tsx:58 - DashboardViewProps (used in module)
+apps/core/app/components/layout/core-app-shell.tsx:67 - CoreAppShellProps (used in module)
 apps/core/app/components/onboarding/student-id-onboarding-form.tsx:8 - StudentIdOnboardingFormProps (used in module)
-apps/core/app/components/policy/policy-gate.tsx:11 - PolicyKey (used in module)
+apps/core/app/components/ui/table-pagination.tsx:26 - TablePaginationProps (used in module)
 apps/core/app/hooks/api/config.ts:9 - ApiError (used in module)
+apps/core/app/hooks/api/pagination.ts:57 - idsQuery
+apps/core/app/hooks/api/types.ts:5 - BugReportType (used in module)
+apps/core/app/hooks/api/types.ts:36 - BugReportStatus (used in module)
+apps/core/app/hooks/api/types.ts:38 - BugReportSource (used in module)
+apps/core/app/hooks/api/use-ai-providers.ts:19 - UseAiProvidersOptions (used in module)
 apps/core/app/hooks/api/use-chat-history.ts:38 - ChatHistoryFilters (used in module)
 apps/core/app/hooks/api/use-chat-sessions.ts:6 - useChatSession
 apps/core/app/hooks/api/use-course-chats.ts:15 - UnitChatSummary (used in module)
 apps/core/app/hooks/api/use-course-chats.ts:21 - ChatMessageView (used in module)
 apps/core/app/hooks/api/use-course-chats.ts:28 - ChatDetail (used in module)
-apps/core/app/hooks/api/use-course-detail.ts:14 - useCourseDetail
-apps/core/app/hooks/api/use-course-materials.ts:4 - STUB_ONLY
+apps/core/app/hooks/api/use-course-detail.ts:18 - useCourseDetail
 apps/core/app/hooks/api/use-course-topics.ts:3 - STUB_ONLY
-apps/core/app/hooks/api/use-dashboard-stats.ts:5 - DashboardStats (used in module)
+apps/core/app/hooks/api/use-courses.ts:55 - UseCoursesOptions (used in module)
 apps/core/app/hooks/api/use-disciplines.ts:5 - DisciplineOption (used in module)
 apps/core/app/hooks/api/use-policies.ts:5 - PolicyDefinition (used in module)
 apps/core/app/hooks/api/use-recent-chats.ts:4 - RecentChat (used in module)
+apps/core/app/hooks/api/use-users.ts:41 - defaultUsersQuery (used in module)
+apps/core/app/hooks/api/use-users.ts:59 - UseUsersOptions (used in module)
+apps/core/app/lib/agent-readiness/index.ts:2 - CORE_API_ENDPOINTS
+apps/core/app/lib/agent-readiness/index.ts:3 - AGENT_READY_ENDPOINTS
+apps/core/app/lib/agent-readiness/index.ts:4 - agentReadyEndpoints
+apps/core/app/lib/agent-readiness/index.ts:5 - partialEndpoints
+apps/core/app/lib/agent-readiness/index.ts:6 - excludedEndpoints
+apps/core/app/lib/agent-readiness/index.ts:7 - agentReadyIdempotentEndpoints
+apps/core/app/lib/agent-readiness/index.ts:8 - agentReadyEmailEndpoints
+apps/core/app/lib/agent-readiness/index.ts:9 - readinessSummary
+apps/core/app/lib/agent-readiness/index.ts:10 - endpointKey
+apps/core/app/lib/agent-readiness/index.ts:11 - ApiEndpointEntry
+apps/core/app/lib/agent-readiness/index.ts:12 - AgentReadiness
+apps/core/app/lib/agent-readiness/index.ts:13 - AgentReadinessGap
+apps/core/app/lib/agent-readiness/index.ts:14 - ErrorEnvelope
+apps/core/app/lib/agent-readiness/index.ts:15 - HttpMethod
+apps/core/app/lib/agent-tools/admin-canvas.server.ts:25 - resolveCanvasSubjectUserId (used in module)
+apps/core/app/lib/agent-tools/admin-platform.server.ts:780 - resetAdminCronSchedule
+apps/core/app/lib/agent-tools/admin-reads.server.ts:91 - readAdminCourseRagSettings
+apps/core/app/lib/agent-tools/admin-reads.server.ts:98 - readAdminCourseMaterials
+apps/core/app/lib/agent-tools/admin-reads.server.ts:105 - readAdminCourseEmbeddingSettings
+apps/core/app/lib/agent-tools/admin-reads.server.ts:112 - readAdminCourseReEmbedJob
+apps/core/app/lib/agent-tools/admin-reads.server.ts:124 - readAdminCanvasMaterials
+apps/core/app/lib/agent-tools/admin-reads.server.ts:131 - readAdminCourseTAs
+apps/core/app/lib/agent-tools/admin-reads.server.ts:138 - readAdminCourseChats
+apps/core/app/lib/agent-tools/admin-reads.server.ts:145 - readAdminUnitChats
+apps/core/app/lib/agent-tools/admin-reads.server.ts:149 - readAdminPolicies
+apps/core/app/lib/agent-tools/admin-reads.server.ts:153 - readAdminAiProviders
+apps/core/app/lib/agent-tools/admin-reads.server.ts:157 - readAdminCronJobs
+apps/core/app/lib/agent-tools/admin-reads.server.ts:161 - readAdminCronJobRuns
+apps/core/app/lib/agent-tools/admin-reads.server.ts:165 - readAdminDashboardStats
 apps/core/app/lib/agent-tools/course-context.server.ts:132 - ToolError (used in module)
 apps/core/app/lib/agent-tools/create-learning-chat-tools.ts:49 - ChatToolContext (used in module)
 apps/core/app/lib/agent-tools/index.ts:49 - createChatTools
@@ -174,43 +242,62 @@ apps/core/app/lib/agent-tools/index.ts:43 - chatbotTypeFromMode
 apps/core/app/lib/agent-tools/index.ts:44 - parseChatMode
 apps/core/app/lib/agent-tools/index.ts:45 - ChatMode (used in module)
 apps/core/app/lib/agent-tools/index.ts:46 - ChatToolContext (used in module)
+apps/core/app/lib/ai/adhd-assist.ts:256 - hasFencedDiagram
+apps/core/app/lib/ai/adhd-assist.ts:295 - ensureAsciiDiagramBeforeNext
 apps/core/app/lib/ai/adhd-metrics.ts:42 - ADHD_URGENCY_TERMS (used in module)
-apps/core/app/lib/ai/adhd-oversight.ts:46 - buildOversightRewriteSystem (used in module)
-apps/core/app/lib/ai/adhd-oversight.ts:477 - resolveAdhdWordCap
-apps/core/app/lib/ai/adhd-oversight.ts:89 - OversightUsage (used in module)
-apps/core/app/lib/ai/adhd-oversight.ts:94 - AuditAndMaybeRewriteResult (used in module)
-apps/core/app/lib/ai/adhd-oversight.ts:446 - OverseenAssistantMessage (used in module)
+apps/core/app/lib/ai/adhd-oversight.ts:65 - buildOversightRewriteSystem (used in module)
+apps/core/app/lib/ai/adhd-oversight.ts:558 - resolveAdhdWordCap
+apps/core/app/lib/ai/adhd-oversight.ts:118 - OversightUsage (used in module)
+apps/core/app/lib/ai/adhd-oversight.ts:123 - AuditAndMaybeRewriteResult (used in module)
+apps/core/app/lib/ai/adhd-oversight.ts:527 - OverseenAssistantMessage (used in module)
 apps/core/app/lib/ai/adhd-turn-profile.ts:16 - AdhdProfileRequirements (used in module)
+apps/core/app/lib/ai/adhd-turn-profile.ts:51 - ADHD_DIAGRAM_REQUEST_PATTERN (used in module)
 apps/core/app/lib/ai/chat-tools.ts:56 - ChatToolRegistry (used in module)
+apps/core/app/lib/ai/cmps01-internal-auth.server.ts:2 - CMPS01_INTERNAL_KEY_HEADER (used in module)
+apps/core/app/lib/ai/completion.server.ts:27 - CompletionMessage (used in module)
+apps/core/app/lib/ai/completion.server.ts:46 - ResolvedCompletionPrompt (used in module)
 apps/core/app/lib/ai/course-rag-policy.ts:28 - CourseRagInjectInput (used in module)
+apps/core/app/lib/ai/eduai-diagram-payload.ts:255 - inferDiagramTitle (used in module)
 apps/core/app/lib/ai/embedding-config.ts:41 - normalizeEmbeddingProvider (used in module)
 apps/core/app/lib/ai/embedding-config.ts:57 - resolveEnvEmbeddingModel (used in module)
 apps/core/app/lib/ai/embedding-config.ts:3 - EmbeddingProviderSetting (used in module)
 apps/core/app/lib/ai/embedding-config.ts:114 - EmbeddingSettingsUpdate (used in module)
+apps/core/app/lib/ai/hybrid-web-tools.ts:75 - buildHybridWebToolContext
+apps/core/app/lib/ai/hybrid-web-tools.ts:116 - appendHybridWebContext
+apps/core/app/lib/ai/hybrid-web-tools.ts:8 - HybridWebToolMode (used in module)
+apps/core/app/lib/ai/hybrid-web-tools.ts:69 - HybridWebToolContext (used in module)
+apps/core/app/lib/ai/local-inference-url.server.ts:16 - LocalInferenceUrlOptions (used in module)
 apps/core/app/lib/ai/local-model-sync.ts:4 - LocalModelSyncResult (used in module)
 apps/core/app/lib/ai/prompt-safety.ts:72 - ALLOWED_CLIENT_MESSAGE_ROLES (used in module)
-apps/core/app/lib/ai/providers.server.ts:150 - modelSupportsTools
+apps/core/app/lib/ai/providers.server.ts:202 - modelSupportsTools
 apps/core/app/lib/ai/providers.server.ts:4 - ActiveChatModel (used in module)
-apps/core/app/lib/ai/providers.server.ts:118 - ChatModelCapabilities (used in module)
-apps/core/app/lib/ai/providers.ts:95 - validateProviderConfig
-apps/core/app/lib/ai/providers.ts:115 - getAvailableProviders
-apps/core/app/lib/ai/providers.ts:122 - getProviderConfig
-apps/core/app/lib/ai/providers.ts:129 - isProviderConfigured
-apps/core/app/lib/ai/providers.ts:149 - getModelIdentifier
-apps/core/app/lib/ai/providers.ts:20 - ProviderConfig (used in module)
-apps/core/app/lib/ai/providers.ts:22 - LOCAL_INFERENCE_PROVIDERS (used in module)
-apps/core/app/lib/ai/providers.ts:25 - PROVIDER_CONFIGS (used in module)
+apps/core/app/lib/ai/providers.server.ts:170 - ChatModelCapabilities (used in module)
+apps/core/app/lib/ai/providers.ts:158 - validateProviderConfig
+apps/core/app/lib/ai/providers.ts:178 - getAvailableProviders
+apps/core/app/lib/ai/providers.ts:185 - getProviderConfig
+apps/core/app/lib/ai/providers.ts:192 - isProviderConfigured
+apps/core/app/lib/ai/providers.ts:212 - getModelIdentifier
+apps/core/app/lib/ai/providers.ts:23 - ProviderConfig (used in module)
+apps/core/app/lib/ai/providers.ts:25 - LOCAL_INFERENCE_PROVIDERS (used in module)
+apps/core/app/lib/ai/providers.ts:28 - PROVIDER_CONFIGS (used in module)
 apps/core/app/lib/ai/re-embed-job-status.ts:1 - ReEmbedJobTerminalStatus (used in module)
+apps/core/app/lib/ai/response-style-tags.ts:16 - ResponseStyleTag (used in module)
 apps/core/app/lib/ai/schemas.ts:55 - CreateAIProvider
 apps/core/app/lib/ai/schemas.ts:56 - UpdateAIProvider
 apps/core/app/lib/ai/schemas.ts:57 - CreateAIModel
 apps/core/app/lib/ai/schemas.ts:58 - UpdateAIModel
+apps/core/app/lib/ai/service-status.server.ts:14 - ServiceState (used in module)
+apps/core/app/lib/ai/service-status.server.ts:16 - ServiceStatus (used in module)
+apps/core/app/lib/ai/service-status.server.ts:22 - AiServiceStatus (used in module)
+apps/core/app/lib/ai/streamdown-config.ts:4 - streamdownMathPlugin (used in module)
+apps/core/app/lib/ai/streamdown-config.ts:8 - streamdownPlugins
 apps/core/app/lib/ai/tools-help.ts:2 - CHAT_TOOLS_TOOLTIP
 apps/core/app/lib/ai/web-tool-ui.ts:1 - WEB_CHAT_TOOL_NAMES (used in module)
 apps/core/app/lib/ai/web-tool-ui.ts:3 - WebChatToolName (used in module)
 apps/core/app/lib/ai/web-tool-ui.ts:9 - WEB_CHAT_TOOL_LABELS (used in module)
 apps/core/app/lib/api/re-embed-job.client.ts:24 - fetchReEmbedJob (used in module)
 apps/core/app/lib/api/re-embed-job.client.ts:3 - ReEmbedJobResponse (used in module)
+apps/core/app/lib/api-keys/expiration.ts:22 - ApiKeyExpirationStatus (used in module)
 apps/core/app/lib/auth/index.ts:3 - authClient
 apps/core/app/lib/auth/index.ts:4 - signIn
 apps/core/app/lib/auth/index.ts:5 - signUp
@@ -238,49 +325,62 @@ apps/core/app/lib/auth/index.ts:32 - ChangePasswordInput
 apps/core/app/lib/auth/index.ts:33 - UpdateProfileInput
 apps/core/app/lib/auth/password-policy.ts:8 - MIN_COMPLEX_PASSWORD_LENGTH (used in module)
 apps/core/app/lib/auth/password-policy.ts:10 - MIN_PASSPHRASE_LENGTH (used in module)
-apps/core/app/lib/auth/schemas.ts:99 - UpdateMeInput
-apps/core/app/lib/bug-reports/server.ts:9 - CreateBugReportResult (used in module)
-apps/core/app/lib/canvas/client.server.ts:276 - canvasGetPaginated (used in module)
-apps/core/app/lib/canvas/client.server.ts:413 - listCanvasCourseModules
-apps/core/app/lib/canvas/client.server.ts:17 - CanvasTermApi (used in module)
-apps/core/app/lib/canvas/client.server.ts:73 - CanvasModuleItemApi (used in module)
-apps/core/app/lib/canvas/client.server.ts:80 - CanvasModuleApi (used in module)
+apps/core/app/lib/auth/password-policy.ts:17 - PasswordRequirementStatus (used in module)
+apps/core/app/lib/auth/schemas.ts:105 - UpdateMeInput
+apps/core/app/lib/bug-reports/server.ts:25 - CreateBugReportResult (used in module)
+apps/core/app/lib/canvas/client.server.ts:311 - canvasGetPaginated (used in module)
+apps/core/app/lib/canvas/client.server.ts:458 - listCanvasCourseModules
+apps/core/app/lib/canvas/client.server.ts:18 - CanvasTermApi (used in module)
+apps/core/app/lib/canvas/client.server.ts:74 - CanvasModuleItemApi (used in module)
+apps/core/app/lib/canvas/client.server.ts:81 - CanvasModuleApi (used in module)
 apps/core/app/lib/canvas/client.ts:16 - CanvasMaterialDiscoverItem (used in module)
 apps/core/app/lib/canvas/client.ts:17 - LinkRosterResponse (used in module)
 apps/core/app/lib/canvas/client.ts:18 - SyncCanvasCoursesInput (used in module)
 apps/core/app/lib/canvas/client.ts:20 - SyncCanvasMaterialsResult (used in module)
-apps/core/app/lib/canvas/integration.server.ts:11 - toCanvasIntegrationPublic (used in module)
-apps/core/app/lib/canvas/integration.server.ts:9 - canManageCanvasIntegration
-apps/core/app/lib/canvas/link-roster.server.ts:23 - LinkRosterResult (used in module)
+apps/core/app/lib/canvas/link-roster.server.ts:27 - LinkRosterResult (used in module)
 apps/core/app/lib/canvas/onboarding.server.ts:8 - STUDENT_ID_ONBOARDING_ROLES (used in module)
-apps/core/app/lib/canvas/schemas.ts:71 - LinkRosterInput
-apps/core/app/lib/canvas/schemas.ts:82 - SyncCanvasMaterialsInput
-apps/core/app/lib/canvas/schemas.ts:88 - ExcludeCanvasMaterialInput
-apps/core/app/lib/canvas/schemas.ts:91 - CanvasMaterialImportStatus
-apps/core/app/lib/canvas/schemas.ts:92 - CanvasMaterialDiscoverItem
-apps/core/app/lib/canvas/schemas.ts:93 - SyncCanvasMaterialsResult
+apps/core/app/lib/canvas/schemas.ts:64 - UBC_STUDENT_NUMBER_PATTERN (used in module)
+apps/core/app/lib/canvas/schemas.ts:78 - LinkRosterInput
+apps/core/app/lib/canvas/schemas.ts:89 - SyncCanvasMaterialsInput
+apps/core/app/lib/canvas/schemas.ts:95 - ExcludeCanvasMaterialInput
+apps/core/app/lib/canvas/schemas.ts:98 - CanvasMaterialImportStatus
+apps/core/app/lib/canvas/schemas.ts:99 - CanvasMaterialDiscoverItem
+apps/core/app/lib/canvas/schemas.ts:100 - SyncCanvasMaterialsResult
+apps/core/app/lib/chat/chat-message-metadata.ts:1 - ChatMessageMetadata (used in module)
 apps/core/app/lib/chat-history/server.ts:23 - ChatHistoryViewer (used in module)
 apps/core/app/lib/chat-history/server.ts:29 - ChatHistoryItem (used in module)
 apps/core/app/lib/chat-history/server.ts:44 - ListChatsOptions (used in module)
 apps/core/app/lib/chat-history/server.ts:95 - ChatReadAccess (used in module)
 apps/core/app/lib/courses/course-card-preferences.ts:33 - isValidCourseCardColor (used in module)
 apps/core/app/lib/courses/course-card-preferences.ts:2 - COURSE_CARD_COLOR_PRESETS
-apps/core/app/lib/courses/schemas.ts:57 - UpdateCourseRagSettingsInput
+apps/core/app/lib/courses/schemas.ts:10 - ResponseStyleTagIdSchema (used in module)
+apps/core/app/lib/courses/schemas.ts:28 - UpdateCourseResponseStyleInput
+apps/core/app/lib/courses/schemas.ts:84 - UpdateCourseRagSettingsInput
 apps/core/app/lib/courses/term-filter.ts:6 - normalizeTerm (used in module)
+apps/core/app/lib/courses/term-filter.ts:1 - TermBucket (used in module)
 apps/core/app/lib/email/mailer.server.ts:56 - resetMailerTransport
 apps/core/app/lib/email/mailer.server.ts:20 - SendEmailResult (used in module)
 apps/core/app/lib/eval/eval-adhd-assist-conditions.ts:1 - EvalCondition (used in module)
 apps/core/app/lib/eval/eval-adhd-assist-conditions.ts:6 - EvalConditionConfig (used in module)
 apps/core/app/lib/eval/eval-adhd-assist-conditions.ts:53 - ResolveConditionsOptions (used in module)
-apps/core/app/lib/invitations/schemas.ts:11 - INVITABLE_ROLES (used in module)
-apps/core/app/lib/invitations/schemas.ts:12 - InvitableRole (used in module)
+apps/core/app/lib/invitations/schemas.ts:15 - INVITABLE_ROLES (used in module)
+apps/core/app/lib/invitations/schemas.ts:16 - InvitableRole (used in module)
 apps/core/app/lib/invitations/service.server.ts:21 - PublicInvitation (used in module)
 apps/core/app/lib/invitations/service.server.ts:27 - CreateInvitationResult (used in module)
 apps/core/app/lib/invitations/service.server.ts:37 - RevokeInvitationResult (used in module)
 apps/core/app/lib/invitations/service.server.ts:41 - AcceptInvitationResult (used in module)
 apps/core/app/lib/invitations/service.server.ts:131 - ResendInvitationResult (used in module)
 apps/core/app/lib/questions/server.ts:5 - CreateQuestionBody
-apps/core/app/lib/questions/server.ts:162 - ListQuestionsParams (used in module)
+apps/core/app/lib/questions/server.ts:135 - ListQuestionsParams (used in module)
+apps/core/app/lib/queue/chat-producer.server.ts:64 - ChatEnqueueParams (used in module)
+apps/core/app/lib/queue/job-schema.ts:13 - JobKindSchema (used in module)
+apps/core/app/lib/queue/job-schema.ts:14 - JobKind
+apps/core/app/lib/queue/job-schema.ts:19 - JobTypeSchema (used in module)
+apps/core/app/lib/queue/job-schema.ts:30 - JobInputSchema (used in module)
+apps/core/app/lib/queue/queues.server.ts:38 - AI_JOB_QUEUE_NAMES
+apps/core/app/lib/queue/resolve-pool.server.ts:25 - PRIORITY_INTERACTIVE (used in module)
+apps/core/app/lib/queue/resolve-pool.server.ts:26 - PRIORITY_BACKGROUND (used in module)
+apps/core/app/lib/queue/serialize.server.ts:12 - serializeAiJob
 apps/core/app/lib/rbac/index.ts:3 - CourseAccess
 apps/core/app/lib/rbac/index.ts:4 - UserRole
 apps/core/app/lib/rbac/index.ts:5 - RbacUser
@@ -309,36 +409,77 @@ apps/core/app/lib/rbac/index.ts:29 - isStudentAccess
 apps/core/app/lib/rbac/index.ts:31 - ChatViewGate
 apps/core/app/lib/rbac/index.ts:32 - getNavForUser
 apps/core/app/lib/rbac/index.ts:32 - getNavSecondaryForUser
-apps/core/app/lib/rbac/nav.ts:70 - usesGlobalChat
-apps/core/app/lib/rbac/nav.ts:35 - NavOptions (used in module)
+apps/core/app/lib/rbac/nav.ts:69 - usesGlobalChat
+apps/core/app/lib/rbac/nav.ts:34 - NavOptions (used in module)
 apps/core/app/lib/rbac/permissions.ts:129 - CourseCapability (used in module)
 apps/core/app/routes/api/ai-models.$.ts:8 - action
 apps/core/app/routes/api/ai-providers.$.ts:8 - action
+apps/core/app/routes/api/ai-status.ts:10 - loader
 apps/core/app/routes/api/auth.$.ts:7 - loader
 apps/core/app/routes/api/auth.$.ts:11 - action
 apps/core/app/routes/api/chats.ts:13 - loader
 apps/core/app/routes/api/courses.$.ts:7 - loader
 apps/core/app/routes/api/courses.$.ts:11 - action
-apps/core/app/routes/api/courses.canvas-materials.$.ts:80 - action
+apps/core/app/routes/api/courses.canvas-materials.$.ts:81 - action
 apps/core/app/routes/api/courses.re-embed.$.ts:13 - action
 apps/core/app/routes/api/courses.re-embed.$jobId.ts:10 - loader
-apps/core/app/routes/api/dashboard.stats.ts:13 - loader
+apps/core/app/routes/api/dashboard.stats.ts:55 - loader
 apps/core/app/routes/api/disciplines.ts:5 - loader
 apps/core/app/routes/api/e2e.promote.ts:16 - action
 apps/core/app/routes/api/health.ts:1 - loader
-apps/core/app/routes/api/users.$.ts:3 - loader
 apps/core/app/routes/api/vllm-models.ts:32 - loader
-apps/core/app/routes/auth/accept-invitation.tsx:99 - default
-apps/core/app/routes/auth/login.tsx:31 - action
-apps/core/app/routes/auth/login.tsx:159 - default
+apps/core/app/routes/auth/accept-invitation.tsx:101 - default
+apps/core/app/routes/auth/login.tsx:35 - action
+apps/core/app/routes/auth/login.tsx:163 - default
 apps/core/app/routes/auth/logout.tsx:12 - loader
 apps/core/app/routes/auth/logout.tsx:17 - action
 apps/core/app/routes/auth/logout.tsx:57 - default
 apps/core/app/routes/auth/register.tsx:100 - default
+apps/core/app/components/chat/diagrams/diagram-stage-ui.tsx:16 - resolveDiagramStages (used in module)
+apps/core/app/components/chat/diagrams/diagram-stage-ui.tsx:36 - useDiagramStageSelection (used in module)
+apps/core/app/components/chat/diagrams/diagram-stage-ui.tsx:60 - DiagramStageDetail (used in module)
+apps/core/app/components/chat/diagrams/eduai-diagram.tsx:26 - EDUAI_DIAGRAM_TYPE_IDS
+apps/core/app/components/chat/diagrams/split-eduai-diagrams.ts:14 - EduaiDiagramSegment (used in module)
+apps/core/app/lib/ai/energy/measurement.server.ts:7 - EnergyMeasurementInput (used in module)
+apps/core/app/lib/ai/energy/measurement.server.ts:18 - EnergyMeasurementResult (used in module)
+apps/core/app/lib/ai/routing/carbon-policy.ts:6 - CarbonPolicyMode (used in module)
+apps/core/app/lib/ai/routing/knn.ts:42 - defaultExemplarsPath (used in module)
+apps/core/app/lib/ai/routing/knn.ts:50 - loadExemplarFile (used in module)
+apps/core/app/lib/ai/routing/knn.ts:123 - parseKnnK (used in module)
+apps/core/app/lib/ai/routing/knn.ts:131 - parseKnnMinSimilarity (used in module)
+apps/core/app/lib/ai/routing/knn.ts:10 - KnnExemplar (used in module)
+apps/core/app/lib/ai/routing/knn.ts:18 - KnnExemplarFile (used in module)
+apps/core/app/lib/ai/routing/knn.ts:23 - KnnNeighbor (used in module)
+apps/core/app/lib/ai/routing/llm-classifier.ts:10 - LlmClassifierContext (used in module)
+apps/core/app/lib/ai/routing/llm-classifier.ts:19 - routeTaskSchema (used in module)
+apps/core/app/lib/ai/routing/llm-classifier.ts:20 - routeComplexitySchema (used in module)
+apps/core/app/lib/ai/routing/llm-classifier.ts:22 - llmRouteSchema (used in module)
+apps/core/app/lib/ai/routing/router.ts:53 - resolveRouterMode (used in module)
+apps/core/app/lib/ai/routing/router.ts:57 - routerVersionForMode (used in module)
+apps/core/app/lib/ai/routing/router.ts:247 - resolveRoutedModelKnn (used in module)
+apps/core/app/lib/ai/routing/router.ts:283 - resolveRoutedModelHybrid (used in module)
+apps/core/app/lib/ai/routing/router.ts:334 - resolveRoutedModelLlm (used in module)
+apps/core/app/lib/ai/routing/router.ts:29 - ROUTER_VERSION_RULES (used in module)
+apps/core/app/lib/ai/routing/router.ts:30 - ROUTER_VERSION_KNN (used in module)
+apps/core/app/lib/ai/routing/router.ts:31 - ROUTER_VERSION_HYBRID (used in module)
+apps/core/app/lib/ai/routing/router.ts:32 - ROUTER_VERSION_LLM (used in module)
+apps/core/app/lib/ai/routing/router.ts:35 - ROUTER_VERSION
+apps/core/app/lib/ai/routing/router.ts:70 - ResolveRouterOptions (used in module)
+apps/core/app/lib/ai/routing/router.ts:78 - RouterInputContext (used in module)
+apps/core/app/lib/ai/routing/rules.ts:117 - isWebLookupPrompt (used in module)
+apps/core/app/lib/ai/routing/rules.ts:122 - isDebugEscalationPrompt (used in module)
+apps/core/app/lib/ai/routing/rules.ts:127 - isComplexReasoningPrompt (used in module)
+apps/core/app/lib/ai/routing/rules.ts:136 - needsRagReasoningEscalation (used in module)
+apps/core/app/lib/ai/routing/rules.ts:144 - needsDistinctEnumerationEscalation (used in module)
+apps/core/app/lib/ai/routing/rules.ts:27 - Phase1RuleMatch (used in module)
+apps/core/app/lib/ai/routing/telemetry.ts:5 - NormalizedTokenUsage (used in module)
+apps/core/app/lib/ai/routing/tiers.ts:146 - pickFromCandidates (used in module)
+apps/core/app/lib/ai/tools/fetch-page.ts:39 - FetchPageResult (used in module)
 apps/core/app/lib/ai/tools/index.ts:1 - webSearch
 apps/core/app/lib/ai/tools/index.ts:2 - ExternalSearchResult
 apps/core/app/lib/ai/tools/index.ts:3 - fetchPage
-apps/core/app/lib/ai/tools/web-search.ts:235 - FirecrawlApp (used in module)
+apps/core/app/lib/ai/tools/web-search.ts:243 - FirecrawlApp (used in module)
+apps/core/app/lib/email/templates/api-key-expiry.ts:3 - ApiKeyExpiryEmailInput (used in module)
 apps/core/app/lib/email/templates/invitation.ts:10 - InvitationEmailInput (used in module)
 apps/core/.react-router/types/app/routes/+types/admin.ai-models.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/admin.bug-reports.ts:22 - Route
@@ -352,6 +493,7 @@ apps/core/.react-router/types/app/routes/+types/chat.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/courses.$courseId.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/courses.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/dashboard.ts:22 - Route
+apps/core/.react-router/types/app/routes/+types/help.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/login.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/onboarding.student-id.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/settings.ts:22 - Route
@@ -359,10 +501,14 @@ apps/core/.react-router/types/app/routes/+types/team.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/unit-admin.invitations.ts:22 - Route
 apps/core/.react-router/types/app/routes/+types/units.$department.chats.ts:22 - Route
 apps/core/app/hooks/api/fixtures/courses/enrollments.ts:4 - FIXTURE_ENROLLMENTS
+apps/core/app/lib/ai/routing/fleet/probe-stream.ts:7 - StreamStartupHooks (used in module)
+apps/core/app/lib/ai/routing/fleet/registry.ts:110 - getServersForFeature
+apps/core/app/lib/ai/routing/fleet/resolve-fleet.ts:17 - ResolveFleetInput (used in module)
 apps/core/.react-router/types/app/routes/api/+types/admin.bug-reports.ts:28 - Route
 apps/core/.react-router/types/app/routes/api/+types/admin.cron-jobs.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/ai-models.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/ai-providers.$.ts:22 - Route
+apps/core/.react-router/types/app/routes/api/+types/ai-status.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/assistive-events.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/auth.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/bug-reports.ts:22 - Route
@@ -371,6 +517,7 @@ apps/core/.react-router/types/app/routes/api/+types/chat.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/chats.$chatId.messages.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/chats.$chatId.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/chats.ts:22 - Route
+apps/core/.react-router/types/app/routes/api/+types/completion.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.canvas-materials.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.canvas-materials.exclusions.$.ts:22 - Route
@@ -380,6 +527,7 @@ apps/core/.react-router/types/app/routes/api/+types/courses.enrollments.$enrollm
 apps/core/.react-router/types/app/routes/api/+types/courses.enrollments.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.id.publish.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.id.rag-settings.ts:22 - Route
+apps/core/.react-router/types/app/routes/api/+types/courses.id.response-style.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.id.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.id.unpublish.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.materials.$.ts:28 - Route
@@ -387,6 +535,7 @@ apps/core/.react-router/types/app/routes/api/+types/courses.re-embed.$.ts:22 - R
 apps/core/.react-router/types/app/routes/api/+types/courses.re-embed.$jobId.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.tas.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/courses.topics.$.ts:28 - Route
+apps/core/.react-router/types/app/routes/api/+types/cron.notify-api-key-expiry.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/dashboard.stats.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/disciplines.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/e2e.promote.ts:22 - Route
@@ -401,6 +550,7 @@ apps/core/.react-router/types/app/routes/api/+types/questions.$id.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/questions.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/sessions.validate.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/units.chats.$.ts:22 - Route
+apps/core/.react-router/types/app/routes/api/+types/user-provider-settings.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/users.$.ts:22 - Route
 apps/core/.react-router/types/app/routes/api/+types/vllm-models.ts:22 - Route
 apps/core/.react-router/types/app/routes/auth/+types/accept-invitation.ts:22 - Route

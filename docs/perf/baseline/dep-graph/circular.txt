@@ -1,38 +1,46 @@
-madge circular-dependency check — 2026-07-10T21:24:29.033Z
+madge circular-dependency check — 2026-07-31T10:34:45.016Z
 Tool: madge 8.0.0.  Command per app: madge --circular --extensions <ext> <path>
 
 === core (apps/core/app) ===
 - Finding files
-Processed 514 files (1.5s) (287 warnings)
+Processed 676 files (1.6s) (364 warnings)
 
-✔ No circular dependency found!
+✖ Found 1 circular dependency!
+
+1) lib/ai/routing/local-vllm.ts > lib/ai/routing/tiers.ts
 
 === aitutor-server (apps/extensions/ai-tutor/server/src) ===
 - Finding files
-Processed 40 files (283ms) 
+Processed 45 files (253ms) 
 
 ✔ No circular dependency found!
 
 === aitutor-frontend (apps/extensions/ai-tutor/app) ===
 - Finding files
-Processed 94 files (504ms) (61 warnings)
+Processed 122 files (535ms) (87 warnings)
 
 ✔ No circular dependency found!
 
 === qm-backend (apps/extensions/question-maker/app/backend/src) ===
 - Finding files
-Processed 57 files (311ms) 
+Processed 49 files (246ms) 
 
 ✔ No circular dependency found!
 
 === qm-frontend (apps/extensions/question-maker/app/frontend/src) ===
 - Finding files
-Processed 129 files (645ms) (61 warnings)
+Processed 141 files (648ms) (62 warnings)
+
+✔ No circular dependency found!
+
+=== shared-ui (packages/ui/src) ===
+- Finding files
+Processed 180 files (476ms) 
 
 ✔ No circular dependency found!
 
 ------------------------------------------------------------
-RESULT: 0 circular dependencies across all 5 module graphs.
+RESULT: 1 graph(s) with cycles — see above.
 Orphan/graph JSON: graph-*.json. Orphan lists are noisy for entry-point-heavy trees
 (RR route modules / Express route files load via config, not static import) — use
 ts-prune + knip (dead-code/) for real unused-export signal, not orphans.

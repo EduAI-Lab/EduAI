@@ -1,6 +1,7 @@
 {
+  "../../../../../../packages/ui/src/styles/base.css": [],
+  "../../backend/src/utils/modelSizeRanks.js": [],
   "App.tsx": [
-    "components/ThemeSyncInitializer.tsx",
     "components/auth/QmAppGate.tsx",
     "components/layout/QmAppLayout.tsx",
     "contexts/AuthContext.tsx",
@@ -18,7 +19,6 @@
     "pages/QuestionComposerPage.tsx",
     "pages/SettingsPage.tsx"
   ],
-  "components/ThemeSyncInitializer.tsx": [],
   "components/assessments/AssessmentBuilder.tsx": [
     "components/assessments/AssessmentQuestionPicker.tsx",
     "components/assessments/AssessmentSectionCard.tsx",
@@ -33,6 +33,7 @@
     "types/question.ts"
   ],
   "components/assessments/AssessmentSectionCard.tsx": [
+    "lib/review-status.ts",
     "types/question.ts"
   ],
   "components/assessments/GenerateAssessmentModal.tsx": [
@@ -56,6 +57,7 @@
     "types/topic.ts"
   ],
   "components/command/CommandPalette.tsx": [],
+  "components/common/PaginationControls.tsx": [],
   "components/composer/ComposerMetadataFields.tsx": [
     "components/composer/DifficultySlider.tsx",
     "components/composer/ReasoningSelector.tsx",
@@ -78,10 +80,7 @@
   ],
   "components/courses/CourseAccessBadge.tsx": [],
   "components/courses/CoursesGrid.tsx": [],
-  "components/courses/courses-admin-view.tsx": [
-    "components/courses/CoursesGrid.tsx"
-  ],
-  "components/courses/courses-instructor-view.tsx": [
+  "components/courses/courses-role-view.tsx": [
     "components/courses/CoursesGrid.tsx"
   ],
   "components/courses/courses-unit-admin-view.tsx": [
@@ -89,7 +88,8 @@
   ],
   "components/dashboard/QmDashboardView.tsx": [],
   "components/eduai/AIServiceIndicators.tsx": [
-    "hooks/useEduAIStatus.ts"
+    "hooks/useEduAIStatus.ts",
+    "services/apiKeyStorage.ts"
   ],
   "components/home/QmHomeShell.tsx": [],
   "components/layout/CourseSwitcher.tsx": [],
@@ -110,8 +110,7 @@
     "services/assessmentService.ts",
     "services/courseService.ts",
     "services/eduaiService.ts",
-    "types/class.ts",
-    "utils/courseDisplay.ts"
+    "types/class.ts"
   ],
   "components/question-bank/QuestionBank.tsx": [
     "components/question-bank/QuestionCard.tsx",
@@ -137,7 +136,8 @@
     "services/questionService.ts",
     "types/ocr.ts",
     "types/question.ts",
-    "types/topic.ts"
+    "types/topic.ts",
+    "utils/aiModels.ts"
   ],
   "components/questions/AddQuestionDialog.tsx": [
     "components/questions/MCQChoicesField.tsx",
@@ -146,6 +146,7 @@
     "components/questions/QuestionOutputPanel.tsx",
     "hooks/useEduAIStatus.ts",
     "lib/difficulty.ts",
+    "lib/review-status.ts",
     "services/apiKeyStorage.ts",
     "services/assessmentService.ts",
     "services/courseService.ts",
@@ -153,6 +154,7 @@
     "services/questionService.ts",
     "types/question.ts",
     "types/topic.ts",
+    "utils/aiModels.ts",
     "utils/courseDisplay.ts",
     "utils/questionMetadataEdit.ts"
   ],
@@ -163,7 +165,8 @@
     "components/eduai/AIServiceIndicators.tsx",
     "hooks/useEduAIStatus.ts",
     "services/apiKeyStorage.ts",
-    "services/eduaiService.ts"
+    "services/eduaiService.ts",
+    "utils/aiModels.ts"
   ],
   "components/questions/QuestionMetadataPanel.tsx": [
     "types/question.ts",
@@ -177,13 +180,10 @@
     "types/question.ts"
   ],
   "components/rbac/CourseNoAccessAlert.tsx": [],
-  "components/rbac/PermissionGate.tsx": [],
   "components/rbac/QmRoleBanner.tsx": [],
-  "components/shared/EmptyState.tsx": [],
+  "components/shared/ListPaginationBar.tsx": [],
   "components/shared/Skeletons.tsx": [],
-  "components/ui/DeleteConfirmationModal.tsx": [],
   "components/ui/tooltip.tsx": [],
-  "components/ui/use-toast.ts": [],
   "contexts/AuthContext.tsx": [
     "services/authService.ts",
     "types/auth.ts"
@@ -200,6 +200,10 @@
   ],
   "hooks/use-ocr-history.ts": [
     "types/ocr.ts"
+  ],
+  "hooks/useAiServicesStatus.ts": [
+    "services/apiKeyStorage.ts",
+    "services/eduaiService.ts"
   ],
   "hooks/useAllAssessments.ts": [
     "services/assessmentService.ts",
@@ -236,7 +240,9 @@
     "services/questionService.ts",
     "types/question.ts"
   ],
-  "index.css": [],
+  "index.css": [
+    "../../../../../../packages/ui/src/styles/base.css"
+  ],
   "lib/apps.tsx": [
     "lib/coreUrl.ts"
   ],
@@ -272,6 +278,7 @@
   ],
   "lib/rbac/roles.ts": [],
   "lib/rbac/types.ts": [],
+  "lib/review-status.ts": [],
   "lib/units.ts": [],
   "lib/utils.ts": [],
   "main.tsx": [
@@ -310,6 +317,7 @@
     "services/eduaiService.ts",
     "types/question.ts",
     "types/topic.ts",
+    "utils/aiModels.ts",
     "utils/aiReviewExportDocx.ts"
   ],
   "pages/BugReportsAdminPage.tsx": [
@@ -325,14 +333,13 @@
     "components/question-bank/QuestionUploadDialog.tsx",
     "components/questions/QuestionModal.tsx",
     "components/rbac/CourseNoAccessAlert.tsx",
-    "components/ui/DeleteConfirmationModal.tsx",
-    "components/ui/use-toast.ts",
+    "components/shared/ListPaginationBar.tsx",
     "contexts/GuidedTourContext.tsx",
     "hooks/useCourseFromRoute.ts",
     "hooks/useQmPermissions.ts",
     "pages/course-detail/CourseCanvasTab.tsx",
     "pages/course-detail/CourseOverviewTab.tsx",
-    "pages/course-detail/CourseTopicsTab.tsx",
+    "pages/course-detail/CourseTopicsHeroAction.tsx",
     "services/assessmentService.ts",
     "services/courseService.ts",
     "services/questionService.ts",
@@ -351,9 +358,10 @@
     "contexts/GuidedTourContext.tsx"
   ],
   "pages/QuestionBankPage.tsx": [],
-  "pages/QuestionComposerPage.tsx": [],
+  "pages/QuestionComposerPage.tsx": [
+    "utils/aiModels.ts"
+  ],
   "pages/SettingsPage.tsx": [
-    "components/ui/use-toast.ts",
     "contexts/AuthContext.tsx",
     "services/apiKeyStorage.ts",
     "services/canvasService.ts",
@@ -364,19 +372,14 @@
   ],
   "pages/course-detail/CourseCanvasTab.tsx": [],
   "pages/course-detail/CourseOverviewTab.tsx": [],
-  "pages/course-detail/CourseTopicsTab.tsx": [
-    "components/shared/EmptyState.tsx",
-    "components/shared/Skeletons.tsx",
-    "components/ui/use-toast.ts",
-    "hooks/useQmPermissions.ts",
-    "services/courseService.ts",
-    "services/topicsService.ts",
-    "types/question.ts"
+  "pages/course-detail/CourseTopicsHeroAction.tsx": [
+    "services/courseService.ts"
   ],
   "services/api.ts": [],
   "services/apiKeyStorage.ts": [],
   "services/assessmentService.ts": [
     "services/api.ts",
+    "services/pagination.ts",
     "types/question.ts"
   ],
   "services/assessmentVariantService.ts": [
@@ -395,12 +398,16 @@
   ],
   "services/courseService.ts": [
     "services/api.ts",
+    "services/pagination.ts",
     "types/question.ts",
     "types/topic.ts"
   ],
   "services/eduaiService.ts": [
     "services/api.ts",
     "services/apiKeyStorage.ts"
+  ],
+  "services/pagination.ts": [
+    "services/api.ts"
   ],
   "services/questionService.ts": [
     "services/api.ts",
@@ -409,13 +416,32 @@
   "services/topicsService.ts": [
     "services/api.ts"
   ],
+  "tests/unit/AddQuestionDialogReviewConfirm.test.tsx": [],
+  "tests/unit/AssessmentSectionCardReviewConfirm.test.tsx": [],
+  "tests/unit/ListPaginationBar.test.tsx": [
+    "components/shared/ListPaginationBar.tsx"
+  ],
+  "tests/unit/PaginationControls.test.tsx": [],
+  "tests/unit/bugReportApiMapping.test.ts": [
+    "services/bugReportApi.ts"
+  ],
   "tests/unit/courseDisplay.test.ts": [],
+  "tests/unit/eduaiServiceCourses.test.ts": [
+    "services/api.ts",
+    "services/eduaiService.ts"
+  ],
+  "tests/unit/fetchAllPages.test.ts": [],
+  "tests/unit/listPaginationClient.test.ts": [
+    "services/assessmentService.ts",
+    "services/questionService.ts"
+  ],
   "tests/unit/mcqChoiceDisplay.test.ts": [],
   "tests/unit/questionMetadataEdit.test.ts": [],
   "tests/unit/rbac-course-labels.test.ts": [],
   "tests/unit/rbac-nav.test.ts": [],
   "tests/unit/rbac-permissions.test.ts": [],
   "tests/unit/rbac-roles.test.ts": [],
+  "tests/unit/reviewStatusConfirm.test.ts": [],
   "tests/vitest.setup.ts": [],
   "tour/tourSteps.tsx": [
     "tour/tourTypes.ts"
@@ -431,6 +457,10 @@
     "types/topic.ts"
   ],
   "types/topic.ts": [],
+  "utils/aiModels.ts": [
+    "services/eduaiService.ts",
+    "utils/modelSizeRanks.ts"
+  ],
   "utils/aiReviewExportDocx.ts": [
     "services/assessmentVariantService.ts"
   ],
@@ -442,6 +472,9 @@
     "types/question.ts"
   ],
   "utils/mcqChoiceDisplay.ts": [],
+  "utils/modelSizeRanks.ts": [
+    "../../backend/src/utils/modelSizeRanks.js"
+  ],
   "utils/questionMetadataEdit.ts": [
     "types/question.ts"
   ],

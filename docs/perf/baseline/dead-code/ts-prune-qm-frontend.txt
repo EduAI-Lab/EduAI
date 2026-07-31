@@ -1,90 +1,175 @@
-packages/ui/src/app-launcher.tsx:49 - visibleAppsForRole (used in module)
-packages/ui/src/course-color-bar.tsx:24 - courseHeroGradientStyle
-packages/ui/src/course-color-bar.tsx:28 - CourseCardHeroProps (used in module)
+packages/ui/src/course-color-bar.tsx:37 - courseHeroGradientStyle
+packages/ui/src/course-color-bar.tsx:41 - CourseCardHeroProps (used in module)
 packages/ui/src/index.ts:2 - getInitials
+packages/ui/src/index.ts:6 - initThemeSync
+packages/ui/src/index.ts:6 - broadcastThemeChange
+packages/ui/src/index.ts:6 - closeThemeSync
 packages/ui/src/index.ts:7 - ThemeType
-packages/ui/src/index.ts:11 - BugReportType
-packages/ui/src/index.ts:14 - RoleBadge
-packages/ui/src/index.ts:15 - RoleBadgeProps
-packages/ui/src/index.ts:16 - CourseColorBar
-packages/ui/src/index.ts:17 - CourseColorBarProps
-packages/ui/src/index.ts:19 - COURSE_COLOR_PRESETS
-packages/ui/src/index.ts:20 - DEFAULT_COURSE_PALETTE
-packages/ui/src/index.ts:21 - courseThemeVars
-packages/ui/src/index.ts:22 - courseHeroBackgroundStyle
-packages/ui/src/index.ts:24 - defaultColorIndexForCourse
-packages/ui/src/index.ts:25 - paletteColorAtIndex
-packages/ui/src/index.ts:27 - CourseAccentColor
-packages/ui/src/index.ts:29 - StatCardProps
-packages/ui/src/index.ts:31 - AvatarProps
-packages/ui/src/index.ts:33 - PageHeadingProps
-packages/ui/src/index.ts:35 - CourseHeroCardProps
-packages/ui/src/index.ts:37 - CourseCardProps
-packages/ui/src/index.ts:37 - CourseCardAction
-packages/ui/src/index.ts:40 - QuestionCardProps
-packages/ui/src/index.ts:42 - QuestionCardStatus
-packages/ui/src/index.ts:45 - StatusBadge
-packages/ui/src/index.ts:46 - StatusBadgeProps
-packages/ui/src/index.ts:48 - QuestionStatusBadgeProps
-packages/ui/src/index.ts:48 - QuestionStatus
-packages/ui/src/index.ts:48 - QuestionStatusVariant
-packages/ui/src/index.ts:50 - VariantBadgeProps
-packages/ui/src/index.ts:50 - VariantIdentity
-packages/ui/src/index.ts:52 - PageTabsProps
-packages/ui/src/index.ts:52 - PageTabsListProps
-packages/ui/src/index.ts:52 - PageTabsTriggerProps
-packages/ui/src/index.ts:52 - PageTabsContentProps
-packages/ui/src/index.ts:53 - SegmentedControl
-packages/ui/src/index.ts:54 - SegmentedControlProps
-packages/ui/src/index.ts:54 - SegmentedControlOption
-packages/ui/src/index.ts:56 - ThemeToggleProps
-packages/ui/src/index.ts:57 - NavUser
-packages/ui/src/index.ts:58 - NavUserProps
-packages/ui/src/index.ts:58 - NavUserItem
-packages/ui/src/index.ts:59 - NavMain
-packages/ui/src/index.ts:60 - NavMainProps
-packages/ui/src/index.ts:60 - NavMainItem
-packages/ui/src/index.ts:60 - NavGroupItem
-packages/ui/src/index.ts:61 - NavSecondary
-packages/ui/src/index.ts:62 - NavSecondaryProps
-packages/ui/src/index.ts:62 - NavSecondaryItem
-packages/ui/src/index.ts:64 - AppSidebarProps
-packages/ui/src/index.ts:65 - BrandSwitcher
-packages/ui/src/index.ts:66 - BrandSwitcherProps
-packages/ui/src/index.ts:68 - SiteHeaderProps
-packages/ui/src/index.ts:70 - AccessibilitySettingsProps
-packages/ui/src/index.ts:70 - AccessibilityUiDensity
-packages/ui/src/index.ts:70 - AccessibilityUiTheme
-packages/ui/src/index.ts:71 - ProvidersTable
-packages/ui/src/index.ts:72 - ProvidersTableProps
-packages/ui/src/index.ts:72 - AIProviderRow
-packages/ui/src/index.ts:73 - ProviderFormDialog
-packages/ui/src/index.ts:74 - ProviderFormDialogProps
-packages/ui/src/index.ts:74 - ProviderFormData
-packages/ui/src/index.ts:74 - AIProviderRecord
-packages/ui/src/index.ts:77 - DonutChart
-packages/ui/src/index.ts:78 - DonutChartProps
-packages/ui/src/index.ts:79 - MeterBar
-packages/ui/src/index.ts:80 - MeterBarProps
-packages/ui/src/index.ts:82 - StackedBarProps
-packages/ui/src/index.ts:82 - StackedSegment
-packages/ui/src/index.ts:84 - PanelCardProps
-packages/ui/src/index.ts:89 - buttonVariants
-packages/ui/src/index.ts:90 - CardFooter
-packages/ui/src/index.ts:90 - CardAction
-packages/ui/src/index.ts:91 - badgeVariants
-packages/ui/src/index.ts:100 - AvatarImage
-packages/ui/src/index.ts:100 - AvatarFallback
-packages/ui/src/index.ts:120 - LazyStreamdown
-packages/ui/src/index.ts:149 - useIsMobile
-packages/ui/src/index.ts:151 - ComboboxOption
-packages/ui/src/index.ts:151 - ComboboxProps
-packages/ui/src/index.ts:151 - MultiSelectProps
+packages/ui/src/index.ts:12 - BugReportType
+packages/ui/src/index.ts:15 - RoleBadge
+packages/ui/src/index.ts:16 - RoleBadgeProps
+packages/ui/src/index.ts:17 - CourseColorBar
+packages/ui/src/index.ts:18 - CourseColorBarProps
+packages/ui/src/index.ts:20 - COURSE_COLOR_PRESETS
+packages/ui/src/index.ts:21 - DEFAULT_COURSE_PALETTE
+packages/ui/src/index.ts:22 - courseThemeVars
+packages/ui/src/index.ts:23 - courseHeroBackgroundStyle
+packages/ui/src/index.ts:26 - paletteColorAtIndex
+packages/ui/src/index.ts:28 - CourseAccentColor
+packages/ui/src/index.ts:30 - StatCardProps
+packages/ui/src/index.ts:32 - EmptyStateProps
+packages/ui/src/index.ts:33 - MaterialList
+packages/ui/src/index.ts:34 - MaterialListProps
+packages/ui/src/index.ts:34 - MaterialListItem
+packages/ui/src/index.ts:36 - QuickActionsPanelProps
+packages/ui/src/index.ts:37 - SortableProvider
+packages/ui/src/index.ts:37 - SortableItem
+packages/ui/src/index.ts:37 - DragHandle
+packages/ui/src/index.ts:38 - SortableProviderProps
+packages/ui/src/index.ts:38 - SortableItemProps
+packages/ui/src/index.ts:38 - DragHandleProps
+packages/ui/src/index.ts:40 - AvatarProps
+packages/ui/src/index.ts:42 - PageHeadingProps
+packages/ui/src/index.ts:44 - SpinnerProps
+packages/ui/src/index.ts:46 - PageLoaderProps
+packages/ui/src/index.ts:48 - SignOutCardProps
+packages/ui/src/index.ts:50 - PermissionGateProps
+packages/ui/src/index.ts:52 - CourseHeroCardProps
+packages/ui/src/index.ts:54 - CourseTopicsHeroActionProps
+packages/ui/src/index.ts:55 - HeroShell
+packages/ui/src/index.ts:55 - HERO_GLASS_STYLE
+packages/ui/src/index.ts:56 - HeroShellProps
+packages/ui/src/index.ts:58 - CourseCardProps
+packages/ui/src/index.ts:58 - CourseCardAction
+packages/ui/src/index.ts:61 - buildStatusFilterGroup
+packages/ui/src/index.ts:66 - CourseListViewProps
+packages/ui/src/index.ts:67 - CourseListSection
+packages/ui/src/index.ts:69 - CourseFilterOption
+packages/ui/src/index.ts:73 - QuestionCardProps
+packages/ui/src/index.ts:75 - QuestionCardStatus
+packages/ui/src/index.ts:78 - AnswerOption
+packages/ui/src/index.ts:79 - AnswerOptionProps
+packages/ui/src/index.ts:79 - AnswerOptionState
+packages/ui/src/index.ts:80 - MaterialStatusIcon
+packages/ui/src/index.ts:80 - MaterialStatusChip
+packages/ui/src/index.ts:82 - MaterialStatus
+packages/ui/src/index.ts:83 - MaterialStatusIconProps
+packages/ui/src/index.ts:84 - MaterialStatusChipProps
+packages/ui/src/index.ts:86 - StatusBadge
+packages/ui/src/index.ts:87 - StatusBadgeProps
+packages/ui/src/index.ts:89 - QuestionStatusBadgeProps
+packages/ui/src/index.ts:89 - QuestionStatus
+packages/ui/src/index.ts:89 - QuestionStatusVariant
+packages/ui/src/index.ts:91 - VariantBadgeProps
+packages/ui/src/index.ts:91 - VariantIdentity
+packages/ui/src/index.ts:93 - PageTabsProps
+packages/ui/src/index.ts:93 - PageTabsListProps
+packages/ui/src/index.ts:93 - PageTabsTriggerProps
+packages/ui/src/index.ts:93 - PageTabsContentProps
+packages/ui/src/index.ts:95 - ConfirmDialogProps
+packages/ui/src/index.ts:96 - SegmentedControl
+packages/ui/src/index.ts:97 - SegmentedControlProps
+packages/ui/src/index.ts:97 - SegmentedControlOption
+packages/ui/src/index.ts:99 - ThemeToggleProps
+packages/ui/src/index.ts:100 - NavUser
+packages/ui/src/index.ts:101 - NavUserProps
+packages/ui/src/index.ts:101 - NavUserItem
+packages/ui/src/index.ts:102 - NavMain
+packages/ui/src/index.ts:103 - NavMainProps
+packages/ui/src/index.ts:103 - NavMainItem
+packages/ui/src/index.ts:103 - NavGroupItem
+packages/ui/src/index.ts:104 - NavSecondary
+packages/ui/src/index.ts:105 - NavSecondaryProps
+packages/ui/src/index.ts:105 - NavSecondaryItem
+packages/ui/src/index.ts:106 - AppSidebar
+packages/ui/src/index.ts:107 - AppSidebarProps
+packages/ui/src/index.ts:108 - BrandSwitcher
+packages/ui/src/index.ts:108 - AppSwitcher
+packages/ui/src/index.ts:108 - QUESTION_MAKER_ROLES
+packages/ui/src/index.ts:109 - BrandSwitcherProps
+packages/ui/src/index.ts:109 - AppSwitcherProps
+packages/ui/src/index.ts:111 - LauncherAppId
+packages/ui/src/index.ts:111 - LauncherAppUrls
+packages/ui/src/index.ts:111 - GetLauncherAppsOptions
+packages/ui/src/index.ts:112 - SiteHeader
+packages/ui/src/index.ts:113 - SiteHeaderProps
+packages/ui/src/index.ts:115 - AppShellProps
+packages/ui/src/index.ts:118 - CommandPaletteProps
+packages/ui/src/index.ts:120 - CommandPaletteItem
+packages/ui/src/index.ts:121 - CommandSearchButtonProps
+packages/ui/src/index.ts:124 - CourseSwitcherProps
+packages/ui/src/index.ts:124 - CourseSwitcherId
+packages/ui/src/index.ts:126 - AIServiceIndicatorsProps
+packages/ui/src/index.ts:126 - ServiceState
+packages/ui/src/index.ts:127 - useAiServiceStatus
+packages/ui/src/index.ts:128 - AiServiceStatusPair
+packages/ui/src/index.ts:128 - UseAiServiceStatusOptions
+packages/ui/src/index.ts:128 - UseAiServiceStatusResult
+packages/ui/src/index.ts:130 - AccessibilitySettingsProps
+packages/ui/src/index.ts:130 - AccessibilityUiDensity
+packages/ui/src/index.ts:130 - AccessibilityUiTheme
+packages/ui/src/index.ts:132 - BugReportsAdminViewProps
+packages/ui/src/index.ts:136 - BugReportContext
+packages/ui/src/index.ts:139 - BUG_TYPE_LABELS
+packages/ui/src/index.ts:140 - STATUS_LABELS
+packages/ui/src/index.ts:141 - STATUS_OPTIONS
+packages/ui/src/index.ts:142 - buildBugReportCopyText
+packages/ui/src/index.ts:143 - getReporterLabel
+packages/ui/src/index.ts:144 - getContextLabel
+packages/ui/src/index.ts:145 - sortReports
+packages/ui/src/index.ts:146 - CORE_STATUS_TO_UI
+packages/ui/src/index.ts:148 - toUiStatus
+packages/ui/src/index.ts:153 - SettingsPageScaffoldProps
+packages/ui/src/index.ts:153 - SettingsTab
+packages/ui/src/index.ts:154 - ProvidersTable
+packages/ui/src/index.ts:155 - ProvidersTableProps
+packages/ui/src/index.ts:155 - AIProviderRow
+packages/ui/src/index.ts:156 - ProviderFormDialog
+packages/ui/src/index.ts:157 - ProviderFormDialogProps
+packages/ui/src/index.ts:157 - ProviderFormData
+packages/ui/src/index.ts:157 - AIProviderRecord
+packages/ui/src/index.ts:161 - TERM_CODES
+packages/ui/src/index.ts:162 - isTermCode
+packages/ui/src/index.ts:163 - termFromMonth
+packages/ui/src/index.ts:164 - termFromDate
+packages/ui/src/index.ts:165 - termInfoFromDate
+packages/ui/src/index.ts:166 - normalizeTerm
+packages/ui/src/index.ts:167 - termName
+packages/ui/src/index.ts:170 - termSortKey
+packages/ui/src/index.ts:171 - compareByTerm
+packages/ui/src/index.ts:172 - groupCoursesByTerm
+packages/ui/src/index.ts:174 - TermCode
+packages/ui/src/index.ts:174 - TermInfo
+packages/ui/src/index.ts:174 - CourseTermGroup
+packages/ui/src/index.ts:177 - DonutChart
+packages/ui/src/index.ts:178 - DonutChartProps
+packages/ui/src/index.ts:179 - MeterBar
+packages/ui/src/index.ts:180 - MeterBarProps
+packages/ui/src/index.ts:182 - StackedBarProps
+packages/ui/src/index.ts:182 - StackedSegment
+packages/ui/src/index.ts:184 - PanelCardProps
+packages/ui/src/index.ts:189 - buttonVariants
+packages/ui/src/index.ts:190 - CardFooter
+packages/ui/src/index.ts:190 - CardAction
+packages/ui/src/index.ts:191 - badgeVariants
+packages/ui/src/index.ts:200 - AvatarImage
+packages/ui/src/index.ts:200 - AvatarFallback
+packages/ui/src/index.ts:222 - LazyStreamdown
+packages/ui/src/index.ts:251 - useIsMobile
+packages/ui/src/index.ts:253 - ComboboxOption
+packages/ui/src/index.ts:253 - ComboboxProps
+packages/ui/src/index.ts:253 - MultiSelectProps
+packages/ui/src/index.ts:255 - DetailPageScaffoldProps
+packages/ui/src/index.ts:66 - AlertTitle
 packages/ui/src/index.ts:148 - AlertDialogPortal
 packages/ui/src/index.ts:149 - AlertDialogOverlay
 packages/ui/src/index.ts:150 - AlertDialogTrigger
 packages/ui/src/index.ts:9 - AspectRatio
 packages/ui/src/index.ts:108 - BreadcrumbEllipsis
+packages/ui/src/index.ts:79 - ButtonGroup
+packages/ui/src/index.ts:79 - ButtonGroupSeparator
+packages/ui/src/index.ts:79 - ButtonGroupText
+packages/ui/src/index.ts:79 - buttonGroupVariants
 packages/ui/src/index.ts:211 - Calendar
 packages/ui/src/index.ts:211 - CalendarDayButton
 packages/ui/src/index.ts:235 - CarouselApi
@@ -115,7 +200,15 @@ packages/ui/src/index.ts:92 - CodeBlock
 packages/ui/src/index.ts:33 - Collapsible
 packages/ui/src/index.ts:33 - CollapsibleTrigger
 packages/ui/src/index.ts:33 - CollapsibleContent
-packages/ui/src/index.ts:175 - Command
+packages/ui/src/index.ts:182 - Command
+packages/ui/src/index.ts:183 - CommandDialog
+packages/ui/src/index.ts:184 - CommandInput
+packages/ui/src/index.ts:185 - CommandList
+packages/ui/src/index.ts:186 - CommandEmpty
+packages/ui/src/index.ts:187 - CommandGroup
+packages/ui/src/index.ts:188 - CommandItem
+packages/ui/src/index.ts:189 - CommandShortcut
+packages/ui/src/index.ts:190 - CommandSeparator
 packages/ui/src/index.ts:249 - ContextMenu
 packages/ui/src/index.ts:250 - ContextMenuTrigger
 packages/ui/src/index.ts:251 - ContextMenuContent
@@ -147,6 +240,7 @@ packages/ui/src/index.ts:131 - DrawerTitle
 packages/ui/src/index.ts:132 - DrawerDescription
 packages/ui/src/index.ts:255 - DropdownMenuPortal
 packages/ui/src/index.ts:258 - DropdownMenuGroup
+packages/ui/src/index.ts:259 - DropdownMenuLabel
 packages/ui/src/index.ts:261 - DropdownMenuCheckboxItem
 packages/ui/src/index.ts:262 - DropdownMenuRadioGroup
 packages/ui/src/index.ts:263 - DropdownMenuRadioItem
@@ -165,6 +259,12 @@ packages/ui/src/index.ts:164 - FormField
 packages/ui/src/index.ts:42 - HoverCard
 packages/ui/src/index.ts:42 - HoverCardTrigger
 packages/ui/src/index.ts:42 - HoverCardContent
+packages/ui/src/index.ts:150 - InputGroup
+packages/ui/src/index.ts:151 - InputGroupAddon
+packages/ui/src/index.ts:152 - InputGroupButton
+packages/ui/src/index.ts:153 - InputGroupText
+packages/ui/src/index.ts:154 - InputGroupInput
+packages/ui/src/index.ts:155 - InputGroupTextarea
 packages/ui/src/index.ts:77 - InputOTP
 packages/ui/src/index.ts:77 - InputOTPGroup
 packages/ui/src/index.ts:77 - InputOTPSlot
@@ -183,8 +283,8 @@ packages/ui/src/index.ts:394 - TextShimmerLoader
 packages/ui/src/index.ts:424 - TextDotsLoader
 packages/ui/src/index.ts:4 - LoaderProps
 packages/ui/src/index.ts:497 - Loader
-packages/ui/src/index.ts:6 - MarkdownProps
-packages/ui/src/index.ts:82 - Markdown
+packages/ui/src/index.ts:5 - MarkdownProps
+packages/ui/src/index.ts:117 - Markdown
 packages/ui/src/index.ts:258 - Menubar
 packages/ui/src/index.ts:259 - MenubarPortal
 packages/ui/src/index.ts:260 - MenubarMenu
@@ -210,10 +310,7 @@ packages/ui/src/index.ts:164 - NavigationMenuLink
 packages/ui/src/index.ts:165 - NavigationMenuIndicator
 packages/ui/src/index.ts:166 - NavigationMenuViewport
 packages/ui/src/index.ts:167 - navigationMenuTriggerStyle
-packages/ui/src/index.ts:120 - Pagination
-packages/ui/src/index.ts:121 - PaginationContent
 packages/ui/src/index.ts:122 - PaginationLink
-packages/ui/src/index.ts:123 - PaginationItem
 packages/ui/src/index.ts:124 - PaginationPrevious
 packages/ui/src/index.ts:125 - PaginationNext
 packages/ui/src/index.ts:126 - PaginationEllipsis
@@ -268,28 +365,30 @@ packages/ui/src/index.ts:59 - Tooltip
 packages/ui/src/index.ts:59 - TooltipTrigger
 packages/ui/src/index.ts:59 - TooltipContent
 packages/ui/src/index.ts:59 - TooltipProvider
-packages/ui/src/index.ts:701 - Sidebar
-packages/ui/src/index.ts:702 - SidebarContent
-packages/ui/src/index.ts:703 - SidebarFooter
-packages/ui/src/index.ts:704 - SidebarGroup
-packages/ui/src/index.ts:705 - SidebarGroupAction
-packages/ui/src/index.ts:706 - SidebarGroupContent
-packages/ui/src/index.ts:707 - SidebarGroupLabel
-packages/ui/src/index.ts:708 - SidebarHeader
-packages/ui/src/index.ts:709 - SidebarInput
-packages/ui/src/index.ts:711 - SidebarMenu
-packages/ui/src/index.ts:712 - SidebarMenuAction
-packages/ui/src/index.ts:713 - SidebarMenuBadge
-packages/ui/src/index.ts:714 - SidebarMenuButton
-packages/ui/src/index.ts:715 - SidebarMenuItem
-packages/ui/src/index.ts:716 - SidebarMenuSkeleton
-packages/ui/src/index.ts:717 - SidebarMenuSub
-packages/ui/src/index.ts:718 - SidebarMenuSubButton
-packages/ui/src/index.ts:719 - SidebarMenuSubItem
-packages/ui/src/index.ts:721 - SidebarRail
-packages/ui/src/index.ts:722 - SidebarSeparator
-packages/ui/src/index.ts:723 - SidebarTrigger
-packages/ui/src/index.ts:724 - useSidebar
+packages/ui/src/index.ts:707 - Sidebar
+packages/ui/src/index.ts:708 - SidebarContent
+packages/ui/src/index.ts:709 - SidebarFooter
+packages/ui/src/index.ts:710 - SidebarGroup
+packages/ui/src/index.ts:711 - SidebarGroupAction
+packages/ui/src/index.ts:712 - SidebarGroupContent
+packages/ui/src/index.ts:713 - SidebarGroupLabel
+packages/ui/src/index.ts:714 - SidebarHeader
+packages/ui/src/index.ts:715 - SidebarInput
+packages/ui/src/index.ts:716 - SidebarInset
+packages/ui/src/index.ts:717 - SidebarMenu
+packages/ui/src/index.ts:718 - SidebarMenuAction
+packages/ui/src/index.ts:719 - SidebarMenuBadge
+packages/ui/src/index.ts:720 - SidebarMenuButton
+packages/ui/src/index.ts:721 - SidebarMenuItem
+packages/ui/src/index.ts:722 - SidebarMenuSkeleton
+packages/ui/src/index.ts:723 - SidebarMenuSub
+packages/ui/src/index.ts:724 - SidebarMenuSubButton
+packages/ui/src/index.ts:725 - SidebarMenuSubItem
+packages/ui/src/index.ts:726 - SidebarProvider
+packages/ui/src/index.ts:727 - SidebarRail
+packages/ui/src/index.ts:728 - SidebarSeparator
+packages/ui/src/index.ts:729 - SidebarTrigger
+packages/ui/src/index.ts:730 - useSidebar
 packages/ui/src/index.ts:12 - MessageProps
 packages/ui/src/index.ts:23 - MessageAvatarProps
 packages/ui/src/index.ts:48 - MessageContentProps
@@ -300,20 +399,36 @@ packages/ui/src/index.ts:125 - MessageAvatar
 packages/ui/src/index.ts:125 - MessageContent
 packages/ui/src/index.ts:125 - MessageActions
 packages/ui/src/index.ts:125 - MessageAction
+packages/types/src/index.ts:6 - UserRole (used in module)
+packages/types/src/index.ts:8 - EnrollmentRole (used in module)
+packages/types/src/index.ts:11 - USER_ROLE_VALUES
+packages/types/src/index.ts:17 - satisfies (used in module)
+packages/types/src/index.ts:17 - readonly (used in module)
+packages/types/src/index.ts:19 - ENROLLMENT_ROLE_VALUES
+packages/types/src/index.ts:37 - CanvasMaterialImportStatus (used in module)
+packages/types/src/index.ts:39 - CanvasMaterialDiscoverItem
+packages/types/src/index.ts:51 - CanvasMaterialSkipReason (used in module)
+packages/types/src/index.ts:53 - SyncCanvasMaterialsResult
+packages/ui/src/lib/term.ts:71 - UBC_TIME_ZONE (used in module)
 apps/extensions/question-maker/app/frontend/src/contexts/BugReportContext.tsx:12 - BugReportContext (used in module)
 apps/extensions/question-maker/app/frontend/src/hooks/use-ocr-history.ts:14 - UseOCRHistoryReturn (used in module)
-apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:124 - setQuestionGenerationPhase (used in module)
-apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:130 - refreshEduAIStatus (used in module)
-apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:164 - default
+apps/extensions/question-maker/app/frontend/src/hooks/useAiServicesStatus.ts:95 - default
+apps/extensions/question-maker/app/frontend/src/hooks/useAllQuestions.ts:16 - UseAllQuestionsOptions (used in module)
+apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:123 - setQuestionGenerationPhase (used in module)
+apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:129 - refreshEduAIStatus (used in module)
+apps/extensions/question-maker/app/frontend/src/hooks/useEduAIStatus.ts:163 - default
 apps/extensions/question-maker/app/frontend/src/hooks/useQmPermissions.ts:15 - useQmPermissions (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/difficulty.ts:16 - DifficultyMeta (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/difficulty.ts:52 - difficultyBorderClass
+apps/extensions/question-maker/app/frontend/src/lib/review-status.ts:11 - ReviewStatusConfirmCopy (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/units.ts:1 - UNITS (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/units.ts:84 - Unit (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/units.ts:86 - UNIT_LABELS (used in module)
 apps/extensions/question-maker/app/frontend/src/lib/units.ts:173 - UNIT_OPTIONS
-apps/extensions/question-maker/app/frontend/src/pages/ApiTestPage.tsx:975 - default
-apps/extensions/question-maker/app/frontend/src/services/api.ts:5 - api (used in module)
+apps/extensions/question-maker/app/frontend/src/pages/ApiTestPage.tsx:886 - default
+apps/extensions/question-maker/app/frontend/src/services/api.ts:20 - api (used in module)
+apps/extensions/question-maker/app/frontend/src/services/apiKeyStorage.ts:15 - CLOUD_PROVIDERS (used in module)
+apps/extensions/question-maker/app/frontend/src/services/assessmentService.ts:22 - PaginatedList (used in module)
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:8 - StudyRole (used in module)
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:10 - BlueprintSlot (used in module)
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:20 - BlueprintSnapshot (used in module)
@@ -321,48 +436,56 @@ apps/extensions/question-maker/app/frontend/src/services/assessmentVariantServic
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:73 - VariantReadinessSlot (used in module)
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:90 - VariantAiReviewRow (used in module)
 apps/extensions/question-maker/app/frontend/src/services/assessmentVariantService.ts:148 - assessmentVariantService (used in module)
-apps/extensions/question-maker/app/frontend/src/services/bugReportApi.ts:30 - SubmitBugReportPayload (used in module)
+apps/extensions/question-maker/app/frontend/src/services/bugReportApi.ts:8 - BugReportType (used in module)
+apps/extensions/question-maker/app/frontend/src/services/bugReportApi.ts:20 - BugReportRow (used in module)
+apps/extensions/question-maker/app/frontend/src/services/bugReportApi.ts:22 - SubmitBugReportPayload (used in module)
 apps/extensions/question-maker/app/frontend/src/services/canvasService.ts:19 - CanvasExportResult (used in module)
 apps/extensions/question-maker/app/frontend/src/services/canvasService.ts:34 - CanvasQuestion (used in module)
 apps/extensions/question-maker/app/frontend/src/services/canvasService.ts:54 - CanvasImportResult (used in module)
-apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:8 - EduAIMessage (used in module)
-apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:13 - EduAIChatRequest (used in module)
-apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:21 - EduAIChatResponse (used in module)
-apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:31 - EduAIQuestionGenerationRequest (used in module)
-apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:51 - EduAIQuestionGenerationResponse (used in module)
+apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:9 - EduAIMessage (used in module)
+apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:14 - EduAIChatRequest (used in module)
+apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:22 - EduAIChatResponse (used in module)
+apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:32 - EduAIQuestionGenerationRequest (used in module)
+apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:52 - EduAIQuestionGenerationResponse (used in module)
 apps/extensions/question-maker/app/frontend/src/services/eduaiService.ts:125 - EduAITestResponse (used in module)
+apps/extensions/question-maker/app/frontend/src/services/questionService.ts:73 - PaginatedList (used in module)
+apps/extensions/question-maker/app/frontend/src/services/topicsService.ts:10 - TopicSyncStatus (used in module)
+apps/extensions/question-maker/app/frontend/src/services/topicsService.ts:21 - topicsService (used in module)
 apps/extensions/question-maker/app/frontend/src/services/topicsService.ts:32 - default
 apps/extensions/question-maker/app/frontend/src/tour/tourTypes.ts:3 - TourPlacement (used in module)
-apps/extensions/question-maker/app/frontend/src/types/question.ts:114 - User (used in module)
-apps/extensions/question-maker/app/frontend/src/types/question.ts:190 - ReasoningProfile (used in module)
+apps/extensions/question-maker/app/frontend/src/types/question.ts:120 - User (used in module)
+apps/extensions/question-maker/app/frontend/src/types/question.ts:196 - ReasoningProfile (used in module)
+apps/extensions/question-maker/app/frontend/src/utils/aiModels.ts:33 - pickCampusProbeModel
+apps/extensions/question-maker/app/frontend/src/utils/aiModels.ts:8 - CAMPUS_PROVIDERS (used in module)
+apps/extensions/question-maker/app/frontend/src/utils/aiModels.ts:12 - FALLBACK_PROBE_MODEL
 apps/extensions/question-maker/app/frontend/src/utils/assessmentExport.ts:7 - AssessmentExportBlock (used in module)
-apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:15 - formatCourseTermYear (used in module)
-apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:27 - formatCourseNavLabel
-apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:89 - dedupeCoursesByCode (used in module)
-apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:8 - SANDBOX_COURSE_CODE (used in module)
+apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:19 - formatCourseTermYear (used in module)
+apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:28 - formatCourseNavLabel
+apps/extensions/question-maker/app/frontend/src/utils/courseDisplay.ts:43 - dedupeCoursesByCoreId (used in module)
 apps/extensions/question-maker/app/frontend/src/utils/mcqChoiceDisplay.ts:2 - getMcqChoiceRowClasses
 apps/extensions/question-maker/app/frontend/src/utils/mcqChoiceDisplay.ts:8 - getMcqChoiceLetterClasses
 apps/extensions/question-maker/app/frontend/src/utils/mcqChoiceDisplay.ts:14 - CORRECT_ANSWER_SUMMARY_CLASSES
+apps/extensions/question-maker/app/frontend/src/utils/modelSizeRanks.ts:7 - MODEL_SIZE_RANK_PATTERNS
 apps/extensions/question-maker/app/frontend/src/utils/questionMetadataEdit.ts:3 - VariantMetadataUpdateInput (used in module)
-apps/extensions/question-maker/app/frontend/src/components/assessments/AssessmentSection.tsx:458 - default
-apps/extensions/question-maker/app/frontend/src/components/assessments/GenerateAssessmentModal.tsx:50 - GenerateAssessmentModal (used in module)
-apps/extensions/question-maker/app/frontend/src/components/assessments/GeneratedVariantsReviewDialog.tsx:389 - default
-apps/extensions/question-maker/app/frontend/src/components/canvas/CanvasExportDialog.tsx:273 - default
-apps/extensions/question-maker/app/frontend/src/components/canvas/CanvasImportDialog.tsx:572 - default
+apps/extensions/question-maker/app/frontend/src/components/assessments/AssessmentSection.tsx:466 - default
+apps/extensions/question-maker/app/frontend/src/components/assessments/GenerateAssessmentModal.tsx:36 - GenerateAssessmentModal (used in module)
+apps/extensions/question-maker/app/frontend/src/components/assessments/GeneratedVariantsReviewDialog.tsx:386 - default
+apps/extensions/question-maker/app/frontend/src/components/canvas/CanvasExportDialog.tsx:252 - default
+apps/extensions/question-maker/app/frontend/src/components/canvas/CanvasImportDialog.tsx:514 - default
+apps/extensions/question-maker/app/frontend/src/components/common/PaginationControls.tsx:41 - PaginationControls
+apps/extensions/question-maker/app/frontend/src/components/common/PaginationControls.tsx:23 - PaginationControlsProps (used in module)
+apps/extensions/question-maker/app/frontend/src/components/composer/ComposerPreview.tsx:36 - ComposerPreview
 apps/extensions/question-maker/app/frontend/src/components/courses/CourseAccessBadge.tsx:18 - CourseAccessBadge
-apps/extensions/question-maker/app/frontend/src/components/dashboard/QmDashboardView.tsx:54 - QmDashboardViewProps (used in module)
-apps/extensions/question-maker/app/frontend/src/components/eduai/AIServiceIndicators.tsx:131 - default
+apps/extensions/question-maker/app/frontend/src/components/dashboard/QmDashboardView.tsx:48 - QmDashboardViewProps (used in module)
+apps/extensions/question-maker/app/frontend/src/components/eduai/AIServiceIndicators.tsx:132 - default
 apps/extensions/question-maker/app/frontend/src/components/home/QmHomeShell.tsx:17 - QmHomeShell
-apps/extensions/question-maker/app/frontend/src/components/question-bank/QuestionFilterToolbar.tsx:63 - countActiveFilters (used in module)
-apps/extensions/question-maker/app/frontend/src/components/question-bank/QuestionUploadDialog.tsx:107 - OnExtractionComplete (used in module)
-apps/extensions/question-maker/app/frontend/src/components/question-bank/QuestionUploadDialog.tsx:113 - BackgroundExtractionParams (used in module)
-apps/extensions/question-maker/app/frontend/src/components/questions/AddQuestionDialog.tsx:140 - AddQuestionDialogProps (used in module)
+apps/extensions/question-maker/app/frontend/src/components/question-bank/QuestionUploadDialog.tsx:109 - OnExtractionComplete (used in module)
+apps/extensions/question-maker/app/frontend/src/components/question-bank/QuestionUploadDialog.tsx:115 - BackgroundExtractionParams (used in module)
+apps/extensions/question-maker/app/frontend/src/components/questions/AddQuestionDialog.tsx:142 - AddQuestionDialogProps (used in module)
 apps/extensions/question-maker/app/frontend/src/components/questions/MCQChoicesField.tsx:21 - MCQChoicesFieldProps (used in module)
-apps/extensions/question-maker/app/frontend/src/components/questions/QuestionAIControls.tsx:15 - QuestionAIControlsValue (used in module)
+apps/extensions/question-maker/app/frontend/src/components/questions/QuestionAIControls.tsx:16 - QuestionAIControlsValue (used in module)
 apps/extensions/question-maker/app/frontend/src/components/questions/QuestionMetadataPanel.tsx:18 - QuestionMetadataPanelValue (used in module)
 apps/extensions/question-maker/app/frontend/src/components/questions/QuestionModal.tsx:8 - QuestionModalProps (used in module)
-apps/extensions/question-maker/app/frontend/src/components/shared/EmptyState.tsx:11 - EmptyStateAction (used in module)
-apps/extensions/question-maker/app/frontend/src/components/shared/EmptyState.tsx:19 - EmptyStateProps (used in module)
 apps/extensions/question-maker/app/frontend/src/components/shared/Skeletons.tsx:8 - CardSkeleton (used in module)
 apps/extensions/question-maker/app/frontend/src/components/shared/Skeletons.tsx:66 - StatRowSkeleton
 apps/extensions/question-maker/app/frontend/src/lib/rbac/course-labels.ts:19 - CourseRelationship (used in module)
@@ -389,15 +512,16 @@ apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:14 - canRunAiR
 apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:15 - canTriageBugReports
 apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:16 - canUseVariantWorkflow
 apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:17 - canViewAssessment
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:19 - getFooterNavForUser
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:19 - getNavForUser
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:19 - getRoleViewLabel
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:21 - formatCourseAccessLevel
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:22 - formatCourseRelationship
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:23 - getCourseRelationship
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:24 - shouldShowAccessBadge
-apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:25 - shouldShowRelationshipBadge
-apps/extensions/question-maker/app/frontend/src/lib/rbac/nav.ts:98 - canShowAssessmentWriteNav
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:20 - canShowAssessmentWriteNav
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:21 - getFooterNavForUser
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:22 - getNavForUser
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:23 - getNavSecondaryForUser
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:24 - getRoleViewLabel
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:27 - formatCourseAccessLevel
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:28 - formatCourseRelationship
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:29 - getCourseRelationship
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:30 - shouldShowAccessBadge
+apps/extensions/question-maker/app/frontend/src/lib/rbac/index.ts:31 - shouldShowRelationshipBadge
 apps/extensions/question-maker/app/frontend/src/lib/rbac/roles.ts:3 - QmAuthorizedRole
 apps/extensions/question-maker/app/frontend/src/pages/assessments/assessmentViewTypes.ts:6 - QuestionSearchFilters
 apps/extensions/question-maker/app/frontend/src/pages/assessments/assessmentViewTypes.ts:15 - DeleteActionType

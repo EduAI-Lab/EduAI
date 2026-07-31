@@ -1,6 +1,11 @@
 {
   "../../../../packages/types/dist/index.d.ts": [],
-  "app.css": [],
+  "../../../../packages/ui/src/styles/assistive-reading.css": [],
+  "../../../../packages/ui/src/styles/base.css": [],
+  "app.css": [
+    "../../../../packages/ui/src/styles/assistive-reading.css",
+    "../../../../packages/ui/src/styles/base.css"
+  ],
   "components/ActivityDetailsCard.tsx": [
     "lib/types.ts"
   ],
@@ -16,54 +21,88 @@
     "lib/types.ts"
   ],
   "components/ProgressBar.tsx": [],
-  "components/PublishStatusButton.tsx": [],
+  "components/PublishMenu.tsx": [],
   "components/StudentActivityFeedbackCard.tsx": [],
   "components/StudentAiChat.tsx": [
     "lib/api.ts",
     "lib/types.ts"
   ],
   "components/StudentChatHistoryPanel.tsx": [],
-  "components/TopicSyncMappingDialog.tsx": [],
   "components/TourButton.tsx": [
     "components/TourProvider.tsx"
   ],
   "components/TourProvider.tsx": [],
   "components/admin/AdminSettingsPanel.tsx": [],
+  "components/admin/AiOversightPanel.tsx": [],
   "components/admin/BugReportsTab.tsx": [],
-  "components/ai-elements/conversation.tsx": [],
-  "components/ai-elements/message.tsx": [],
-  "components/ai-elements/prompt-input.tsx": [],
   "components/bug-report/BugReportProvider.tsx": [],
   "components/bug-report/useBugReport.ts": [
     "components/bug-report/BugReportProvider.tsx"
   ],
+  "components/chat/knowledge-level-chips.tsx": [],
+  "components/command/CommandPalette.tsx": [],
+  "components/common/PaginationControls.tsx": [],
   "components/courses/CourseAnalyticsPanel.tsx": [],
-  "components/courses/CourseEnrollmentsPanel.tsx": [],
-  "components/courses/CourseStudentMetricsPanel.tsx": [],
-  "components/courses/CourseSubmissionsPanel.tsx": [],
-  "components/dashboard/DashboardStatGrid.tsx": [],
-  "components/dashboard/RoleDashboard.tsx": [],
-  "components/layout/AiTutorNavMain.tsx": [],
-  "components/layout/AiTutorSidebar.tsx": [
-    "components/TourButton.tsx",
-    "components/layout/AiTutorNavMain.tsx",
-    "components/layout/AiTutorSidebarUser.tsx"
+  "components/courses/CourseFeedbackPanel.tsx": [],
+  "components/courses/CourseSubmissionsPanel.tsx": [
+    "components/courses/SubmissionCard.tsx"
   ],
-  "components/layout/AiTutorSidebarUser.tsx": [],
-  "components/layout/AppShell.tsx": [
-    "components/layout/AiTutorSidebar.tsx",
-    "components/layout/AppSiteHeader.tsx"
+  "components/courses/CourseTopicsHeroAction.tsx": [],
+  "components/courses/ModuleCard.tsx": [
+    "components/ProgressBar.tsx"
   ],
-  "components/layout/AppSiteHeader.tsx": [
-    "components/bug-report/useBugReport.ts"
+  "components/courses/SubmissionCard.tsx": [],
+  "components/dashboard/BugReportTriagePanel.tsx": [
+    "components/dashboard/dashboard-helpers.ts"
   ],
+  "components/dashboard/ContinueLearningPanel.tsx": [
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardAdminView.tsx": [
+    "components/dashboard/BugReportTriagePanel.tsx",
+    "components/dashboard/DashboardView.tsx",
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardInstructorView.tsx": [
+    "components/dashboard/DashboardView.tsx",
+    "components/dashboard/NeedsAttentionPanel.tsx",
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardStudentView.tsx": [
+    "components/dashboard/ContinueLearningPanel.tsx",
+    "components/dashboard/DashboardView.tsx",
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardTaView.tsx": [
+    "components/dashboard/ContinueLearningPanel.tsx",
+    "components/dashboard/DashboardView.tsx",
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardUnitAdminView.tsx": [
+    "components/dashboard/DashboardView.tsx",
+    "components/dashboard/NeedsAttentionPanel.tsx",
+    "components/dashboard/dashboard-helpers.ts"
+  ],
+  "components/dashboard/DashboardView.tsx": [],
+  "components/dashboard/NeedsAttentionPanel.tsx": [],
+  "components/dashboard/dashboard-helpers.ts": [
+    "components/dashboard/DashboardView.tsx"
+  ],
+  "components/help/HelpView.tsx": [],
+  "components/layout/CourseSwitcher.tsx": [],
+  "components/layout/ShellBreadcrumbContext.tsx": [],
   "components/layout/ShellBreadcrumbs.tsx": [],
+  "components/lessons/LessonActivityView.tsx": [],
+  "components/lessons/LessonCard.tsx": [
+    "components/ProgressBar.tsx",
+    "lib/types.ts"
+  ],
+  "components/lessons/ModuleHero.tsx": [],
   "components/rbac/AtRoleBanner.tsx": [],
-  "components/rbac/PermissionGate.tsx": [],
-  "components/theme-provider.tsx": [],
-  "components/theme-sync-initializer.tsx": [],
-  "components/ui/button-group.tsx": [],
-  "components/ui/input-group.tsx": [],
+  "components/settings/assistive-mode.tsx": [],
+  "components/settings/providers-settings.tsx": [],
+  "components/settings/settings-view.tsx": [],
+  "hooks/use-api-keys.ts": [],
   "hooks/useAtPermissions.ts": [],
   "hooks/useBugReportCapture.ts": [],
   "hooks/useCourseTopics.tsx": [
@@ -76,14 +115,22 @@
   ],
   "lib/admin-settings.ts": [],
   "lib/api.ts": [
+    "lib/coreUrl.ts",
     "lib/types.ts"
   ],
   "lib/apps.tsx": [
     "lib/extension-urls.ts"
   ],
   "lib/client-auth.ts": [],
-  "lib/dashboard-stats.ts": [],
+  "lib/coreUrl.ts": [],
+  "lib/course-display.ts": [
+    "lib/course-title.ts",
+    "lib/types.ts"
+  ],
+  "lib/course-title.ts": [],
   "lib/extension-urls.ts": [],
+  "lib/knowledge-levels.ts": [],
+  "lib/provider-keys.ts": [],
   "lib/rbac/index.ts": [
     "lib/rbac/nav.ts",
     "lib/rbac/permissions.ts",
@@ -128,70 +175,79 @@
     "app.css"
   ],
   "routes.ts": [],
+  "routes/_app.tsx": [],
   "routes/admin.tsx": [],
+  "routes/dashboard.tsx": [],
+  "routes/help.tsx": [],
   "routes/home.tsx": [
     "hooks/useLocalUser.tsx",
+    "lib/coreUrl.ts",
     "lib/role-routing.ts"
   ],
   "routes/instructor.course.tsx": [
-    "components/PublishStatusButton.tsx",
+    "components/PublishMenu.tsx",
     "components/courses/CourseAnalyticsPanel.tsx",
-    "components/courses/CourseEnrollmentsPanel.tsx",
-    "components/courses/CourseStudentMetricsPanel.tsx",
+    "components/courses/CourseFeedbackPanel.tsx",
     "components/courses/CourseSubmissionsPanel.tsx",
-    "components/rbac/PermissionGate.tsx",
+    "components/courses/CourseTopicsHeroAction.tsx",
+    "components/courses/ModuleCard.tsx",
     "hooks/useAtPermissions.ts",
+    "hooks/useCourseTopics.tsx",
     "hooks/useLocalUser.tsx",
     "lib/api.ts",
+    "lib/course-display.ts",
     "lib/types.ts"
   ],
-  "routes/instructor.list.tsx": [
+  "routes/instructor.lesson.tsx": [
     "components/ActivityDetailsCard.tsx",
     "components/AddActivityPanel.tsx",
-    "components/AddCourseTopicsButton.tsx",
     "components/EditActivityPanel.tsx",
+    "components/lessons/LessonCard.tsx",
+    "components/lessons/ModuleHero.tsx",
     "hooks/useCourseTopics.tsx",
     "lib/activityForm.ts",
     "lib/api.ts",
     "lib/types.ts"
   ],
-  "routes/instructor.topic.tsx": [
-    "components/PublishStatusButton.tsx",
-    "components/rbac/PermissionGate.tsx",
+  "routes/instructor.module.tsx": [
+    "components/PublishMenu.tsx",
+    "components/lessons/LessonCard.tsx",
+    "components/lessons/ModuleHero.tsx",
     "hooks/useAtPermissions.ts",
     "lib/api.ts",
+    "lib/course-display.ts",
     "lib/types.ts"
   ],
   "routes/instructor.tsx": [
-    "components/PublishStatusButton.tsx",
-    "components/rbac/AtRoleBanner.tsx",
-    "components/rbac/PermissionGate.tsx",
-    "hooks/useAtPermissions.ts",
-    "hooks/useLocalUser.tsx",
     "lib/api.ts",
+    "lib/course-display.ts",
     "lib/extension-urls.ts",
     "lib/types.ts"
   ],
   "routes/settings.tsx": [],
   "routes/student.course.tsx": [
-    "components/ProgressBar.tsx",
+    "components/courses/ModuleCard.tsx",
+    "hooks/useCourseTopics.tsx",
+    "lib/course-display.ts",
     "lib/types.ts"
   ],
-  "routes/student.list.tsx": [
-    "components/ProgressBar.tsx",
-    "components/StudentActivityFeedbackCard.tsx",
+  "routes/student.lesson.tsx": [
     "components/StudentAiChat.tsx",
+    "components/lessons/LessonActivityView.tsx",
+    "components/lessons/LessonCard.tsx",
+    "components/lessons/ModuleHero.tsx",
     "lib/api.ts",
     "lib/types.ts"
   ],
-  "routes/student.topic.tsx": [
-    "components/ProgressBar.tsx",
+  "routes/student.module.tsx": [
+    "components/lessons/LessonCard.tsx",
+    "components/lessons/ModuleHero.tsx",
+    "lib/course-display.ts",
     "lib/types.ts"
   ],
   "routes/student.tsx": [
-    "components/ProgressBar.tsx",
-    "components/rbac/AtRoleBanner.tsx",
     "hooks/useLocalUser.tsx",
+    "lib/course-display.ts",
     "lib/types.ts"
   ],
   "routes/unsupported-role.tsx": [
@@ -199,19 +255,28 @@
     "lib/role-routing.ts"
   ],
   "tests/setup.ts": [],
-  "tests/unit/AppSiteHeader.test.tsx": [],
+  "tests/unit/AddActivityPanel.empty-topics.test.tsx": [],
   "tests/unit/AtRoleBanner.test.tsx": [],
   "tests/unit/BugReportProvider.test.tsx": [],
   "tests/unit/BugReportsTab.test.tsx": [],
-  "tests/unit/PermissionGate.test.tsx": [],
-  "tests/unit/RoleDashboard.test.tsx": [],
+  "tests/unit/CourseFeedbackPanel.test.tsx": [],
+  "tests/unit/DashboardAdminView.test.tsx": [],
+  "tests/unit/DashboardView.test.tsx": [],
+  "tests/unit/PaginationControls.test.tsx": [],
+  "tests/unit/StudentAiChat.test.tsx": [],
+  "tests/unit/StudentChatHistoryPanel.test.tsx": [],
+  "tests/unit/TourButton.test.tsx": [],
   "tests/unit/api.test.ts": [],
-  "tests/unit/dashboard-stats.test.ts": [],
+  "tests/unit/dashboard-helpers.test.ts": [],
   "tests/unit/extension-urls.test.ts": [],
+  "tests/unit/instructor.course.publish-confirm.test.tsx": [],
+  "tests/unit/instructor.lesson.delete-confirm.test.tsx": [],
+  "tests/unit/instructor.module.publish-confirm.test.tsx": [],
   "tests/unit/nav.test.ts": [],
   "tests/unit/rbac-permissions.test.ts": [],
   "tests/unit/student-chat-history.test.ts": [],
   "tests/unit/student.route.test.tsx": [],
   "tests/unit/tour-engine.test.ts": [],
+  "tests/unit/tour-storage.test.ts": [],
   "tests/unit/useLocalUser.test.tsx": []
 }
