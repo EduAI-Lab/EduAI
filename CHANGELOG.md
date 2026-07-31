@@ -6,6 +6,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 13 — July 27 – August 2, 2026]
 
+### Changed
+
+- [monorepo] css: Consolidate the three near-identical app stylesheets (993 lines) into a single shared `packages/ui/src/styles/base.css`, and unify every other place colour values were defined. Drops the 35 `.dark` entries that repeated their `:root` value verbatim, makes `course-theme.ts` the sole owner of the course palette, names the values used by more than one token as primitives (the brand navy had been written out five times), and gives the 54 duplicated colour literals in TS/TSX shared tokens. Adds `scripts/token-parity.mjs`, which replays the `@import` cascade and resolves `var()` chains to assert every resolved token value is unchanged, and adds `packages/ui/src` to the duplication scan so moving code into the shared package cannot flatter the metric. CSS duplication 48.60% -> 0.00% (17 clones -> 0). Closes #1272, #1301. (#1272, @yta3216, 2026-07-31)
+
+### Fixed
+
+- [monorepo] css: Give `--primary-text` a real light-mode value instead of `var(--primary)`. It had resolved to the same colour as the fill it was meant to contrast against — 1.03:1 against body text — so the "use `text-primary-text` for accents" convention did nothing until dark mode. Also swaps the 22 call sites that used the `--primary` fill token as a foreground and rendered at 1.08:1 on `--background` in dark mode, eight of them in shared primitives. Closes #1300. (#1272, @yta3216, 2026-07-31)
+
 ### Fixed
 
 - [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates, and align the supported Question Maker deployment image with the monorepo workspace context. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
