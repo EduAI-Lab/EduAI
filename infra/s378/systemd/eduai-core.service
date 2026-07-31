@@ -15,6 +15,11 @@ Group=eduai-dev
 UMask=0002
 
 WorkingDirectory=/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/apps/core
+# Defaults first, so an absent or unreadable env file cannot silently change
+# behaviour: @react-router/serve does `NODE_ENV ??= "production"`, which would
+# flip on Core's isProd gates and start pinning a 1-year HSTS header on the dev
+# host. The EnvironmentFile below still wins when it is present.
+Environment=NODE_ENV=development
 EnvironmentFile=-/etc/eduai/eduai-dev.env
 Environment=HOME=/home/ssaada08
 Environment=PATH=/usr/local/bin:/usr/bin:/bin

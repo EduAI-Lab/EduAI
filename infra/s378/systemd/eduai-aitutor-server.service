@@ -19,9 +19,9 @@ Environment=PORT=4000
 
 # Plain node, not nodemon: nothing edits source on this box at runtime.
 # prisma generate is deliberately NOT run here. This schema pins its own output
-# (apps/extensions/ai-tutor/server/node_modules/@prisma/client), so the on-disk
-# client is already correct; regenerating every restart would only add latency.
-# Generation happens once, in go-live-build.sh.
+# (apps/extensions/ai-tutor/server/node_modules/@eduai/ai-tutor-prisma-client),
+# so the on-disk client is already correct; regenerating every restart would only
+# add latency. Generation happens once, in go-live-build.sh.
 ExecStart=/usr/local/bin/node src/index.js
 
 Restart=always

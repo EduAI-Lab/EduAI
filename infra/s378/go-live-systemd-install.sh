@@ -46,8 +46,31 @@ echo "  react-router-serve ok"
 
 echo
 echo "=== retiring the old --user units ==="
-# Best-effort: only the owning account can actually do this. Anyone else just
-# gets a notice, and the old units are inert once the system units take the ports.
+# This has to be enforced, not suggested. The old units live in
+# ~ssaada08/.config/systemd/user/ with Linger=yes, so they come back at every
+# boot running `npm run dev`. Whichever copy loses the race for :3000/:4000/:8000
+# gets EADDRINUSE and, with Restart=always, crash-loops forever — while
+# `systemctl status eduai-core` looks healthy because the OTHER copy won.
+OLD_OWNER="${EDUAI_OLD_UNIT_OWNER:-ssaada08}"
+if [ "$(id -un)" != "$OLD_OWNER" ]; then
+  STALE_USER_UNITS=$(sudo find "$(getent passwd "$OLD_OWNER" | cut -d: -f6)/.config/systemd/user" \
+    -maxdepth 1 -name 'eduai-*' -print -quit 2>/dev/null || true)
+  LINGER=$(loginctl show-user "$OLD_OWNER" -p Linger --value 2>/dev/null || echo unknown)
+  if [ -n "$STALE_USER_UNITS" ] || [ "$LINGER" = "yes" ]; then
+    echo "ERROR: $OLD_OWNER still owns the old --user units (linger=$LINGER)."
+    echo "       They will restart at boot and fight these system units for"
+    echo "       :3000/:4000/:8000. Have $OLD_OWNER run, or run as root:"
+    echo "         sudo -u $OLD_OWNER XDG_RUNTIME_DIR=/run/user/\$(id -u $OLD_OWNER) \\"
+    echo "           systemctl --user disable --now eduai-dev.target eduai-core.service \\"
+    echo "           eduai-aitutor-server.service eduai-aitutor-fe.service \\"
+    echo "           eduai-qm-backend.service eduai-qm-frontend.service"
+    echo "         sudo rm -f ~$OLD_OWNER/.config/systemd/user/eduai-*"
+    echo "         sudo loginctl disable-linger $OLD_OWNER"
+    echo "       Then re-run this script."
+    exit 1
+  fi
+  echo "  no leftover --user units for $OLD_OWNER (linger=$LINGER)"
+fi
 if systemctl --user list-unit-files 'eduai-*' >/dev/null 2>&1; then
   systemctl --user disable --now eduai-dev.target 2>/dev/null || true
   systemctl --user disable --now eduai-core.service eduai-aitutor-server.service \
@@ -60,9 +83,12 @@ if systemctl --user list-unit-files 'eduai-*' >/dev/null 2>&1; then
 else
   echo "  no --user units visible from this account"
 fi
-echo "  NOTE: if the old units were installed under a different account, that user"
-echo "        must run:  systemctl --user disable --now eduai-dev.target"
-echo "        and:       sudo loginctl disable-linger <that-user>"
+if [ "$(id -un)" = "$OLD_OWNER" ]; then
+  # Same reason as the preflight above: without this the units come back at boot.
+  loginctl disable-linger "$OLD_OWNER" 2>/dev/null \
+    || sudo loginctl disable-linger "$OLD_OWNER"
+  echo "  linger disabled for $OLD_OWNER"
+fi
 
 echo
 echo "=== installing environment file ==="
