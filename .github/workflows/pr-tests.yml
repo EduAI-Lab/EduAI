@@ -140,10 +140,15 @@ jobs:
           npm run db:generate -w edu-ai
           npm run typecheck -w edu-ai
 
-      - name: Generate Prisma client for core
+      - name: Generate Prisma clients
         run: |
           set -euo pipefail
           npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+
+      - name: Verify Prisma client isolation
+        run: npm run test:prisma-client-isolation
 
       - name: Restore Turborepo cache
         uses: actions/cache@v4
@@ -156,15 +161,12 @@ jobs:
       # --env-mode=loose: the suites read their config from process env / .env files
       # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
       #
-      # ai-tutor-server and question-maker-backend both leave `output` unset in
-      # their Prisma schemas, and neither has its own @prisma/client, so both
-      # generate into the single hoisted <repo>/node_modules/@prisma/client.
-      # Generating both up front left whichever ran last as the only app with
-      # its models on the client; question-maker gained a schema in #1168, and
-      # that made ai-tutor's suite fail with `Cannot read properties of
-      # undefined (reading 'deleteMany')`. So generate and test one app at a
-      # time. `status` keeps a first-batch failure from masking the second
-      # batch, matching what --continue does within a single run.
+      # Each extension schema now generates a distinct workspace-local client
+      # package. Regenerate each package before its corresponding test batch so
+      # the inputs are explicit; the isolation check above proves both packages
+      # coexist without overwriting either model set. `status` keeps a
+      # first-batch failure from masking the second batch, matching what
+      # --continue does within a single run.
       - name: Run tests
         env:
           NODE_ENV: test
@@ -263,3 +265,35 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  pict-drift:
+    name: PICT Case Drift Check
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Generation runs pict inside the pinned docker/pict image (Docker is preinstalled on
+      # GitHub-hosted runners) rather than a natively-installed pict — see scripts/pict-gen.mjs
+      # for why a host install can't be trusted to reproduce the committed output.
+      - name: Regenerate PICT case tables
+        run: npm run test:pict:gen
+
+      # Modified rows (stale .cases.json) and untracked rows (new .pict committed without
+      # its generated sibling) both count as drift.
+      - name: Fail if regeneration produced a diff
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- tests/models)" ]; then
+            echo "::error::tests/models/*.cases.json is stale relative to its .pict source. Run 'npm run test:pict:gen' and commit the result."
+            git status --porcelain -- tests/models
+            git diff -- tests/models
+            exit 1
+          fi

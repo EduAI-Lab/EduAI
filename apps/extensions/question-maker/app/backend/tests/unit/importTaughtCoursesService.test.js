@@ -2,7 +2,7 @@
  * Unit tests for importTaughtCoursesFromCore (QM backend).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 
 const courseFindMany = vi.fn();
 const courseFindUnique = vi.fn();

@@ -36,6 +36,8 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isCourseAdmin } from '../middleware/auth.js';
+import { mapTopic } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { syncExternalCourseTopics, AUTO_SYNC_TTL_MS, AUTO_SYNC_TIMEOUT_MS } from '../services/topicSync.js';
 
 const router = express.Router();
@@ -96,31 +98,41 @@ router.get('/courses/:courseId/topics', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    let topics;
+    // Structure-bounded list. Topic <Select> dropdowns `.find()` the saved
+    // value and validate with `.some()`, so the picker needs the whole set;
+    // callers request one bounded page (pageSize=200). Pagination optional.
+    const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+
+    // For imported courses, run sync for its upsert side-effect (it keeps the
+    // local mirror current); its returned list is intentionally ignored so the
+    // response always comes from one paginated local read below — the sync
+    // return is unpaginated and would break the envelope's count/skip/take.
     if (course.coreOfferingId) {
       try {
-        const synced = await syncExternalCourseTopics(courseId, {
+        await syncExternalCourseTopics(courseId, {
           ttlMs: AUTO_SYNC_TTL_MS,
           signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
         });
-        topics = synced?.topics;
       } catch (e) {
         const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
         console.warn(`[topics] Auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
       }
     }
 
-    // Native courses skip the sync branch above; a failed/aborted sync
-    // leaves `topics` unset — either way, fall back to a fresh local read
-    // instead of double-querying when the sync already returned the list.
-    if (!topics) {
-      topics = await prisma.topic.findMany({
+    const [total, topics] = await prisma.$transaction([
+      prisma.topic.count({ where: { courseOfferingId: courseId } }),
+      prisma.topic.findMany({
         where: { courseOfferingId: courseId },
-        orderBy: { name: 'asc' },
-      });
-    }
-    res.json(topics);
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
+    res.json(paginated(topics.map(mapTopic), total, pageParams));
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });

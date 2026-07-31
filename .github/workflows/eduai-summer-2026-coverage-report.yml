@@ -107,6 +107,9 @@ jobs:
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
           ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
 
+      - name: Verify Prisma client isolation
+        run: npm run test:prisma-client-isolation
+
       - name: Coverage — core
         continue-on-error: true
         env:
