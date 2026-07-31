@@ -20,8 +20,14 @@ Before changing the server, `deploy-branch.sh`:
 3. Refuses to proceed if the shared checkout has tracked or untracked changes.
 4. Fetches `origin` and requires the exact remote branch to exist.
 5. Checks out the remote commit, runs `npm ci`, starts the Core database, runs
-   Prisma generation and migrations, restarts `eduai-dev.target`, and waits for
-   the Core health endpoint.
+   Prisma generation and migrations, restarts the system-level `eduai-core`,
+   `eduai-aitutor-server`, and `eduai-qm-backend` services via a scoped
+   passwordless `sudo systemctl restart`, and waits for the Core health
+   endpoint.
+
+The deploy user needs a `sudoers.d` rule limited to restarting and checking
+the status of those three units — nothing broader. See
+`infra/s378/discord-dev-bot/sudoers-eduai-dev-bot` for the exact rule.
 
 Database migrations are not automatically reversible. A feature branch with a
 destructive or dimension-changing migration still requires team coordination and
