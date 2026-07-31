@@ -2,7 +2,7 @@
  * DB-backed tests covering cross-user isolation, extract/save persistence,
  * and assessment variant assembly.
  * Auth is handled by stubbing global fetch for Core session validation.
- * User + course data is seeded directly via Sequelize models.
+ * User + course data is seeded directly via Prisma.
  * Requires TEST_DATABASE_URL — see docs/TEST_PLAN.md. Run: npm run test:integration
  */
 import { vi, describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
@@ -44,19 +44,16 @@ const extractFirstSectionVariantId = (assessment) =>
   assessment?.sections?.[0]?.sectionVariants?.[0]?.variant?.id ?? null;
 
 describeDb('Plan coverage (integration)', () => {
-  let connectTestDatabase, truncateTestDatabase, sequelize;
-  let User, Course, Topics;
+  let connectTestDatabase, truncateTestDatabase, prisma;
   let seedCoursesForNewUser;
 
   beforeAll(async () => {
     const testDb = await import('../helpers/testDb.js');
     connectTestDatabase = testDb.connectTestDatabase;
     truncateTestDatabase = testDb.truncateTestDatabase;
-    sequelize = testDb.sequelize;
+    prisma = testDb.prisma;
     await connectTestDatabase();
 
-    const schema = await import('../../src/schema/index.js');
-    ({ User, Course, Topics } = schema);
     ({ seedCoursesForNewUser } = await import('../helpers/seedCoursesFixture.js'));
   });
 
@@ -67,21 +64,21 @@ describeDb('Plan coverage (integration)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   afterAll(async () => {
-    if (sequelize) await sequelize.close();
+    if (prisma) await prisma.$disconnect();
   });
 
   // Helper: seed a user with default courses and return their first course + topic.
   async function seedUser(user) {
-    await User.create({ id: user.id, email: user.email, name: user.name });
+    await prisma.user.create({ data: { id: user.id, email: user.email, name: user.name } });
     await seedCoursesForNewUser(user.id);
-    const course = await Course.findOne({ where: { userId: user.id } });
-    const topic = await Topics.findOne({ where: { courseId: course.id } });
+    const course = await prisma.course.findFirst({ where: { userId: user.id } });
+    const topic = await prisma.topics.findFirst({ where: { courseId: course.id } });
     return { courseId: course.id, topicId: topic.id };
   }
 
   it('returns 404 when fetching another user course by id', async () => {
     const { courseId: courseIdA } = await seedUser(USER_A);
-    await User.create({ id: USER_B.id, email: USER_B.email, name: USER_B.name });
+    await prisma.user.create({ data: { id: USER_B.id, email: USER_B.email, name: USER_B.name } });
 
     vi.stubGlobal('fetch', twoUserFetch());
 
@@ -122,7 +119,7 @@ describeDb('Plan coverage (integration)', () => {
     const qid = createQ.body.data.id;
 
     const alist = await request(app).get('/api/assessments').set(cookieA()).query({ courseId });
-    const practice = alist.body.data.find((a) => a.name === 'Practice Exam');
+    const practice = alist.body.data.items.find((a) => a.name === 'Practice Exam');
     expect(practice).toBeTruthy();
 
     // The assemble flow reads questions from the reference assessment's sections,

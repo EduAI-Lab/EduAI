@@ -122,10 +122,8 @@ export function CanvasMaterialSyncDialog({
               .map((f) => f.canvasFileId),
           ),
         );
-      } catch (e) {
-        setError(
-          e instanceof Error ? e.message : "Failed to load Canvas files",
-        );
+      } catch {
+        setError("Could not load Canvas files. Please try again.");
         setFiles([]);
         setSelectedIds(new Set());
       } finally {
@@ -168,10 +166,10 @@ export function CanvasMaterialSyncDialog({
         });
       }
       await loadFiles({ clearResult: false, silent: true });
-    } catch (e) {
+    } catch {
       toast.error(
         file.isExcluded ? "Failed to un-exclude file" : "Failed to exclude file",
-        { description: e instanceof Error ? e.message : undefined },
+        { description: "Please try again." },
       );
     } finally {
       setExcludingId(null);
@@ -197,9 +195,8 @@ export function CanvasMaterialSyncDialog({
       } else {
         toast.message("Canvas sync finished", { description: summary });
       }
-    } catch (e) {
-      const message =
-        e instanceof Error ? e.message : "Failed to sync materials";
+    } catch {
+      const message = "Could not sync materials. Please try again.";
       setError(message);
       toast.error("Canvas sync failed", { description: message });
     } finally {

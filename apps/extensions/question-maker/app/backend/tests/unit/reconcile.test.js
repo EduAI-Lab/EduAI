@@ -1,6 +1,6 @@
 /**
  * Unit tests for the QM daily reconciliation job.
- * Mocks Sequelize models and coreApiService — no DB or live Core required.
+ * Mocks the Prisma client and coreApiService — no DB or live Core required.
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -11,25 +11,27 @@ vi.mock('../../src/config/settings.js', () => {
 });
 
 // Track model calls via shared spies
-const mockCourseFindAll = vi.fn();
-const mockCourseUpdate = vi.fn();
-const mockTopicsFindAll = vi.fn();
+const mockCourseFindMany = vi.fn();
+const mockCourseDelete = vi.fn();
+const mockTopicsFindMany = vi.fn();
 const mockTopicsUpdate = vi.fn();
-const mockVariantsFindAll = vi.fn();
+const mockVariantsFindMany = vi.fn();
 const mockVariantsUpdate = vi.fn();
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findAll: (...a) => mockCourseFindAll(...a) },
-  Topics: { findAll: (...a) => mockTopicsFindAll(...a) },
-  Variants: { findAll: (...a) => mockVariantsFindAll(...a) },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findMany: (...a) => mockCourseFindMany(...a), delete: (...a) => mockCourseDelete(...a) },
+    topics: { findMany: (...a) => mockTopicsFindMany(...a), update: (...a) => mockTopicsUpdate(...a) },
+    variants: { findMany: (...a) => mockVariantsFindMany(...a), update: (...a) => mockVariantsUpdate(...a) },
+  },
 }));
 
 const { runReconciliation } = await import('../../src/jobs/reconcile.js');
 
 beforeEach(() => {
-  mockCourseFindAll.mockResolvedValue([]);
-  mockTopicsFindAll.mockResolvedValue([]);
-  mockVariantsFindAll.mockResolvedValue([]);
+  mockCourseFindMany.mockResolvedValue([]);
+  mockTopicsFindMany.mockResolvedValue([]);
+  mockVariantsFindMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -41,11 +43,8 @@ afterEach(() => {
 // Phase 1 — courses.core_course_id
 // ---------------------------------------------------------------------------
 describe('runReconciliation — Course', () => {
-  it('destroys the course (cascading to its topics/questions/assessments) when Core returns 404', async () => {
-    const mockDestroy = vi.fn();
-    mockCourseFindAll.mockResolvedValue([
-      { id: 1, coreCourseId: 'core-cuid-1', destroy: mockDestroy },
-    ]);
+  it('deletes the course (cascading to its topics/questions/assessments) when Core returns 404', async () => {
+    mockCourseFindMany.mockResolvedValue([{ id: 1, coreCourseId: 'core-cuid-1' }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
@@ -54,14 +53,11 @@ describe('runReconciliation — Course', () => {
 
     await runReconciliation();
 
-    expect(mockDestroy).toHaveBeenCalledOnce();
+    expect(mockCourseDelete).toHaveBeenCalledWith({ where: { id: 1 } });
   });
 
-  it('does not destroy when Core returns the course (200)', async () => {
-    const mockDestroy = vi.fn();
-    mockCourseFindAll.mockResolvedValue([
-      { id: 1, coreCourseId: 'core-cuid-1', destroy: mockDestroy },
-    ]);
+  it('does not delete when Core returns the course (200)', async () => {
+    mockCourseFindMany.mockResolvedValue([{ id: 1, coreCourseId: 'core-cuid-1' }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -70,14 +66,11 @@ describe('runReconciliation — Course', () => {
 
     await runReconciliation();
 
-    expect(mockDestroy).not.toHaveBeenCalled();
+    expect(mockCourseDelete).not.toHaveBeenCalled();
   });
 
-  it('skips the row without destroying when Core returns 5xx', async () => {
-    const mockDestroy = vi.fn();
-    mockCourseFindAll.mockResolvedValue([
-      { id: 1, coreCourseId: 'core-cuid-1', destroy: mockDestroy },
-    ]);
+  it('skips the row without deleting when Core returns 5xx', async () => {
+    mockCourseFindMany.mockResolvedValue([{ id: 1, coreCourseId: 'core-cuid-1' }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 503,
@@ -86,15 +79,13 @@ describe('runReconciliation — Course', () => {
 
     await runReconciliation();
 
-    expect(mockDestroy).not.toHaveBeenCalled();
+    expect(mockCourseDelete).not.toHaveBeenCalled();
   });
 
   it('continues to the next row when one throws', async () => {
-    const mockDestroy1 = vi.fn();
-    const mockDestroy2 = vi.fn();
-    mockCourseFindAll.mockResolvedValue([
-      { id: 1, coreCourseId: 'core-cuid-1', destroy: mockDestroy1 },
-      { id: 2, coreCourseId: 'core-cuid-2', destroy: mockDestroy2 },
+    mockCourseFindMany.mockResolvedValue([
+      { id: 1, coreCourseId: 'core-cuid-1' },
+      { id: 2, coreCourseId: 'core-cuid-2' },
     ]);
     vi.stubGlobal(
       'fetch',
@@ -105,8 +96,8 @@ describe('runReconciliation — Course', () => {
 
     await runReconciliation();
 
-    expect(mockDestroy1).not.toHaveBeenCalled();
-    expect(mockDestroy2).toHaveBeenCalledOnce();
+    expect(mockCourseDelete).not.toHaveBeenCalledWith({ where: { id: 1 } });
+    expect(mockCourseDelete).toHaveBeenCalledWith({ where: { id: 2 } });
   });
 });
 
@@ -115,9 +106,8 @@ describe('runReconciliation — Course', () => {
 // ---------------------------------------------------------------------------
 describe('runReconciliation — Topics', () => {
   it('nullifies coreTopicId when Core returns 404', async () => {
-    const mockUpdate = vi.fn();
-    mockTopicsFindAll.mockResolvedValue([
-      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: 'core-cuid-1' }, update: mockUpdate },
+    mockTopicsFindMany.mockResolvedValue([
+      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: 'core-cuid-1' } },
     ]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
@@ -127,27 +117,25 @@ describe('runReconciliation — Topics', () => {
 
     await runReconciliation();
 
-    expect(mockUpdate).toHaveBeenCalledWith({ coreTopicId: null });
+    expect(mockTopicsUpdate).toHaveBeenCalledWith({ where: { id: 'topic-1' }, data: { coreTopicId: null } });
   });
 
   it('skips a topic whose course has no coreCourseId', async () => {
-    const mockUpdate = vi.fn();
     const mockFetch = vi.fn();
-    mockTopicsFindAll.mockResolvedValue([
-      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: null }, update: mockUpdate },
+    mockTopicsFindMany.mockResolvedValue([
+      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: null } },
     ]);
     vi.stubGlobal('fetch', mockFetch);
 
     await runReconciliation();
 
     expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockTopicsUpdate).not.toHaveBeenCalled();
   });
 
   it('skips the topic row without updating when Core returns 5xx', async () => {
-    const mockUpdate = vi.fn();
-    mockTopicsFindAll.mockResolvedValue([
-      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: 'core-cuid-1' }, update: mockUpdate },
+    mockTopicsFindMany.mockResolvedValue([
+      { id: 'topic-1', coreTopicId: 'core-topic-1', course: { coreCourseId: 'core-cuid-1' } },
     ]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
@@ -157,7 +145,7 @@ describe('runReconciliation — Topics', () => {
 
     await runReconciliation();
 
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockTopicsUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -166,10 +154,7 @@ describe('runReconciliation — Topics', () => {
 // ---------------------------------------------------------------------------
 describe('runReconciliation — Variants', () => {
   it('nullifies coreQuestionId when Core returns 404', async () => {
-    const mockUpdate = vi.fn();
-    mockVariantsFindAll.mockResolvedValue([
-      { id: 10, coreQuestionId: 'core-q-1', update: mockUpdate },
-    ]);
+    mockVariantsFindMany.mockResolvedValue([{ id: 10, coreQuestionId: 'core-q-1' }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
@@ -178,14 +163,11 @@ describe('runReconciliation — Variants', () => {
 
     await runReconciliation();
 
-    expect(mockUpdate).toHaveBeenCalledWith({ coreQuestionId: null });
+    expect(mockVariantsUpdate).toHaveBeenCalledWith({ where: { id: 10 }, data: { coreQuestionId: null } });
   });
 
   it('skips the row without updating when Core returns 5xx', async () => {
-    const mockUpdate = vi.fn();
-    mockVariantsFindAll.mockResolvedValue([
-      { id: 10, coreQuestionId: 'core-q-1', update: mockUpdate },
-    ]);
+    mockVariantsFindMany.mockResolvedValue([{ id: 10, coreQuestionId: 'core-q-1' }]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -194,7 +176,7 @@ describe('runReconciliation — Variants', () => {
 
     await runReconciliation();
 
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockVariantsUpdate).not.toHaveBeenCalled();
   });
 });
 

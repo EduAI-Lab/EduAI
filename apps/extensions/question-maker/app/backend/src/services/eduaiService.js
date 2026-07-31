@@ -8,6 +8,9 @@ import { logger } from "../utils/logger.js";
 import { campusProbeParams } from "./modelCatalog.js";
 
 // Debug prefix for EduAI troubleshooting (grep for this to see all EduAI logs)
+/** Core caps `pageSize` at 200 (#1041). */
+const CORE_PAGE_SIZE = 200;
+
 const DEBUG_PREFIX = "[EduAI]";
 
 /**
@@ -136,20 +139,19 @@ class EduAIService {
   }
 
   /**
-   * Builds auth headers for Core /api/chat.
-   *
-   * Prefer the caller's Core session cookie so generation runs as that user
-   * (course access, audit, RBAC). Fall back to `Authorization: Bearer
-   * <EDUAI_API_KEY>` only when no cookie is available (e.g. background jobs).
-   * Do not send x-api-key — Core's chat route ignores it.
+   * Builds auth headers for Core /api/completion. The service key is the primary
+   * credential for server-to-server proxying — Core's requireServiceKey guard
+   * expects `Authorization: Bearer <EDUAI_API_KEY>` (NOT x-api-key, which Core's
+   * completion route ignores → MISSING_SERVICE_KEY/401). Falls back to a forwarded
+   * session cookie only when no service key is configured.
    */
   buildChatAuthHeaders(cookie) {
+    if (this.apiKey) {
+      return { Authorization: `Bearer ${this.apiKey}` };
+    }
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
       return { cookie: trimmedCookie };
-    }
-    if (this.apiKey) {
-      return { Authorization: `Bearer ${this.apiKey}` };
     }
     return null;
   }
@@ -209,47 +211,52 @@ class EduAIService {
     return merged;
   }
 
-  /** Sends a chat payload to EduAI, handling logging, timeouts, and API error translation. */
+  /**
+   * Hoists a system prompt from params or the first system message so Core's
+   * stateless /api/completion endpoint receives an explicit systemPrompt field.
+   */
+  buildCompletionPayload(params) {
+    const rawMessages = Array.isArray(params.messages) ? params.messages : [];
+    const systemFromMessages = rawMessages.find((m) => m?.role === "system");
+    const systemPrompt =
+      typeof params.systemPrompt === "string" && params.systemPrompt.trim()
+        ? params.systemPrompt.trim()
+        : typeof systemFromMessages?.content === "string"
+          ? systemFromMessages.content.trim()
+          : null;
+    const messages = rawMessages.filter(
+      (m) => m?.role === "user" || m?.role === "assistant",
+    );
+    return { systemPrompt, messages };
+  }
+
+  /** Sends a completion payload to EduAI (#858 — no chat/RAG/tool overhead). */
   async chat(params) {
     const authHeaders = this.buildChatAuthHeaders(params.cookie);
     if (!authHeaders) {
       throw new Error(
-        "EduAI chat requires a Core session. Sign in via Core, or set EDUAI_API_KEY for server-only calls."
+        "EduAI service is not configured. Set EDUAI_API_KEY or sign in via Core."
       );
     }
 
     let chatStartMs;
     try {
       const model = params.model || "google:gemini-2.5-flash";
-      // Prefer Core's courseId (CUID) when QM has linked the course — Core's
-      // courseCode lookup is exact-match and rejects space-stripped codes
-      // (e.g. "COSC121" vs "COSC 121") with COURSE_REQUIRED (#657).
-      // Core strips non-user roles from `messages` (ALLOWED_CLIENT_MESSAGE_ROLES).
-      // System instructions must go in top-level `systemPrompt` or they are discarded
-      // and Core falls back to the course-tutor persona (markdown prose, not JSON).
-      const incoming = Array.isArray(params.messages) ? params.messages : [];
-      const systemParts = incoming
-        .filter((m) => m?.role === "system" && typeof m.content === "string" && m.content.trim())
-        .map((m) => m.content.trim());
-      const userMessages = incoming.filter((m) => m?.role === "user");
-      const systemPrompt =
-        (typeof params.systemPrompt === "string" && params.systemPrompt.trim()) ||
-        systemParts.join("\n\n") ||
-        undefined;
-
+      const { systemPrompt, messages } = this.buildCompletionPayload(params);
       const requestPayload = {
-        messages: userMessages.length > 0 ? userMessages : incoming.filter((m) => m?.role !== "system"),
+        systemPrompt,
+        messages,
         model,
         apiKeys: this.mergeApiKeysForModel(model, params.apiKeys || {}),
         // Background pool (#878) — QM generation/chat maps to VLLM_FLEET_HEAVY_URL when set.
-        // Explicit false — `|| false` is fine, but avoid dropping a hard false later.
         streaming: params.streaming === true,
         routingContext: {
           feature: "question-maker",
           jobType: "background",
           ...(params.routingContext || {}),
         },
-        ...(systemPrompt ? { systemPrompt } : {}),
+        ...(params.temperature != null ? { temperature: params.temperature } : {}),
+        ...(params.maxTokens != null ? { maxTokens: params.maxTokens } : {}),
       };
       if (params.courseId) {
         requestPayload.courseId = params.courseId;
@@ -261,20 +268,20 @@ class EduAIService {
       // Allow caller to override (e.g. extraction needs longer than default 60s)
       const timeoutMs = params.timeoutMs != null && params.timeoutMs > 0 ? params.timeoutMs : 60000;
       chatStartMs = Date.now();
-      console.log(`${DEBUG_PREFIX} chat request starting`, {
-        url: `${this.baseURL}/api/chat`,
+      console.log(`${DEBUG_PREFIX} completion request starting`, {
+        url: `${this.baseURL}/api/completion`,
         timeoutMs,
         model: requestPayload.model,
         courseId: requestPayload.courseId ?? null,
         courseCode: requestPayload.courseCode ?? null,
         messageCount: (requestPayload.messages || []).length,
-        hasSystemPrompt: Boolean(systemPrompt),
-        systemPromptLength: systemPrompt?.length ?? 0,
+        hasSystemPrompt: Boolean(requestPayload.systemPrompt),
+        systemPromptLength: requestPayload.systemPrompt?.length ?? 0,
         userPromptLength: (requestPayload.messages || []).find((m) => m.role === "user")?.content?.length ?? 0,
       });
 
       const response = await axios.post(
-        `${this.baseURL}/api/chat`,
+        `${this.baseURL}/api/completion`,
         requestPayload,
         {
           headers: {
@@ -315,7 +322,7 @@ class EduAIService {
           status: statusCode,
           statusText: error.response.statusText,
           data: error.response.data,
-          url: `${this.baseURL}/api/chat`,
+          url: `${this.baseURL}/api/completion`,
           headers: error.response.headers,
         });
         throw new Error(`EduAI API error (${statusCode}): ${errorMessage}`);
@@ -787,7 +794,9 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       );
     }
 
-    const url = `${this.baseURL}/api/courses`;
+    // #1041: Core requires paging and answers `{ data, total, page, pageSize }`.
+    // The picker only needs a browsable page, so take the API's maximum.
+    const url = `${this.baseURL}/api/courses?page=1&pageSize=${CORE_PAGE_SIZE}`;
 
     try {
       const response = await axios.get(url, {
@@ -798,28 +807,20 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
         timeout: 60000, // 60 second timeout
       });
 
-      const data = response.data;
+      const courses = Array.isArray(response.data?.data) ? response.data.data : [];
       const ignored = (config.eduaiIgnoredCourseCodes || []).map((c) =>
         String(c).replace(/\s+/g, "").toLowerCase()
       );
       if (ignored.length === 0) {
-        return data;
+        return courses;
       }
 
       const normalize = (v) => (v == null ? "" : String(v).replace(/\s+/g, "").toLowerCase());
-      const filterCourse = (course) => {
+      return courses.filter((course) => {
         const code = normalize(course.code);
         const id = normalize(course.id);
         return !ignored.some((k) => code === k || id === k);
-      };
-
-      if (Array.isArray(data)) {
-        return data.filter(filterCourse);
-      }
-      if (data && Array.isArray(data.courses)) {
-        return { ...data, courses: data.courses.filter(filterCourse) };
-      }
-      return data;
+      });
     } catch (error) {
       if (error.response) {
         const errorMessage =
@@ -900,7 +901,8 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
       );
     }
 
-    const url = `${this.baseURL}/api/ai-models`;
+    // #1041: paged upstream; one max-size page is plenty for a model picker.
+    const url = `${this.baseURL}/api/ai-models?page=1&pageSize=${CORE_PAGE_SIZE}`;
     const headerVariants = [];
     const trimmedCookie = typeof cookie === "string" ? cookie.trim() : "";
     if (trimmedCookie) {
@@ -921,7 +923,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
           },
           timeout: 60000,
         });
-        return response.data;
+        return Array.isArray(response.data?.data) ? response.data.data : [];
       } catch (error) {
         lastError = error;
       }
@@ -1007,6 +1009,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
     const probeCourse = this.getConnectivityProbeCourse();
     try {
       const response = await this.chat({
+        systemPrompt: "Reply briefly.",
         messages: [{ role: "user", content: "test" }],
         model,
         apiKeys,
@@ -1019,7 +1022,7 @@ CRITICAL: Your previous reply was not valid JSON. Reply with ONLY a JSON array o
 
       return {
         success: true,
-        message: cookie?.trim() ? "Core session can reach AI" : "Service key can reach AI",
+        message: this.apiKey ? "Service key can reach AI" : "Core session can reach AI",
         provider,
         response: response,
       };

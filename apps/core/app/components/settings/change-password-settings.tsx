@@ -35,13 +35,16 @@ export function ChangePasswordSettings() {
         newPassword: next,
         revokeOtherSessions: false,
       });
-      if (res.error) throw new Error(res.error.message ?? "Failed to change password");
+      if (res.error) {
+        setError(res.error.message ?? "Could not change your password. Please try again.");
+        return;
+      }
       setSuccess(true);
       setCurrent("");
       setNext("");
       setConfirm("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to change password");
+    } catch {
+      setError("Could not change your password. Please try again.");
     } finally {
       setSaving(false);
     }

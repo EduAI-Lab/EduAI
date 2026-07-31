@@ -58,8 +58,8 @@ export function StudentNumberSettings({
           ? `Student number saved. ${result.enrollmentsLinked} course enrollment(s) linked.`
           : "Student number saved. Course enrollments will appear after your instructor syncs Canvas.",
       );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save student number");
+    } catch {
+      setError("Could not save your student number. Please check it and try again.");
     } finally {
       setSaving(false);
     }

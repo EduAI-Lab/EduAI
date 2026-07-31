@@ -182,6 +182,37 @@ model CourseReEmbedJob {
   @@map("course_re_embed_jobs")
 }
 
+/// Source of truth for async AI-job status/result. Redis/BullMQ is transport;
+/// this row survives a Redis flush and drives the client status/ETA endpoints.
+/// Producer (#914) writes PENDING; the dispatch worker (#168) owns terminal state.
+/// Mirrors CourseReEmbedJob. Contract: docs/implementations/async-ai-job-queue-contract.md §5.
+model AiJob {
+  id           String      @id @default(cuid())
+  kind         String // JobKind (contract §3); string for forward-compat
+  type         AiJobType
+  source       String // origin app — telemetry, free-form (contract §3)
+  status       AiJobStatus @default(PENDING)
+  payload      Json // validated JobPayload
+  result       Json? // worker-written result (contract §7)
+  errorMessage String?
+  userId       String
+  courseId     String?
+  queueName    String? // BullMQ queue the job was pushed onto (pool, contract §4)
+  bullJobId    String? // link back to the BullMQ job — only unique within `queueName`
+  attempts     Int         @default(0)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // BullMQ auto-generated ids are per-queue counters, so `bullJobId` alone is not
+  // globally unique — `ai-jobs:chat` and `ai-jobs:heavy` both hand out "1".
+  @@unique([queueName, bullJobId])
+  @@index([userId, status])
+  @@index([status, type])
+  @@map("ai_jobs")
+}
+
 model Enrollment {
   id             String         @id @default(cuid())
   courseId       String
@@ -752,6 +783,21 @@ enum ReEmbedJobStatus {
   COMPLETED
   PARTIAL
   FAILED
+}
+
+// Reused from the fleet — describes how long the user can wait, maps to pool + priority.
+// Contract: docs/implementations/async-ai-job-queue-contract.md §2.
+enum AiJobType {
+  interactive
+  background
+}
+
+enum AiJobStatus {
+  PENDING // enqueued, not yet picked up
+  RUNNING // worker dequeued and is executing
+  COMPLETED // finished, result written
+  FAILED // terminal failure after retries exhausted
+  CANCELLED // cancelled by user/system before completion
 }
 
 // ─── Logging / Observability ──────────────────────────────────────────────

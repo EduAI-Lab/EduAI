@@ -6,7 +6,7 @@
  * sync-status report. Routes are per-course access gated (rbac-matrix §8, TA+).
  */
 import express from 'express';
-import { Topics } from '../schema/index.js';
+import { prisma } from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireCourseAccess } from '../middleware/courseAccess.js';
 import { getCourseTopicsFromCore } from '../services/coreApiService.js';
@@ -33,7 +33,7 @@ router.get(
     try {
       const course = req.qmCourse;
 
-      const localTopics = await Topics.findAll({ where: { courseId: course.id } });
+      const localTopics = await prisma.topics.findMany({ where: { courseId: course.id } });
       const localCount = localTopics.length;
       const linkedTopics = localTopics.filter((t) => t.coreTopicId);
       const allLinked = localCount > 0 && linkedTopics.length === localCount;
