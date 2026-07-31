@@ -9,7 +9,8 @@
  * orchestration (detail view, variant CRUD, Canvas + upload dialogs, exports)
  * lives here, keyed off the route course instead of local state.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router';
 import { IconLoader2 } from '@tabler/icons-react';
 import {
@@ -37,11 +38,16 @@ import { courseService } from '../services/courseService';
 import assessmentService from '../services/assessmentService';
 import { QuestionBank } from '../components/question-bank/QuestionBank';
 import { AssessmentSection } from '../components/assessments/AssessmentSection';
+import {
+  DEFAULT_LIST_PAGE_SIZE,
+  ListPaginationBar,
+} from '../components/shared/ListPaginationBar';
 import { QuestionModal } from '../components/questions/QuestionModal';
 import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
 import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
 import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
 import type { QuestionAnalyticsProps } from '@eduai/ui';
+import { ConfirmDialog } from '@eduai/ui';
 import {
   Question,
   Assessment,
@@ -54,10 +60,7 @@ import { Topic } from '../types/topic';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
 import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
-import { ToastAction } from '../components/ui/use-toast';
-import { useToast } from '../components/ui/use-toast';
 import {
   assessmentBlocksToDocxBlob,
   assessmentBlocksToPlainText,
@@ -86,7 +89,6 @@ export const CourseDetailPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
   const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(courseId);
-  const { toast } = useToast();
   const { setGuidedTourHandler } = useQmLayout();
   const {
     startTour,
@@ -113,17 +115,39 @@ export const CourseDetailPage = () => {
 
   // ── Question state ──────────────────────────────────────────────────────────
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionsTotal, setQuestionsTotal] = useState(0);
+  const [questionsOffset, setQuestionsOffset] = useState(0);
   const [isQuestionsLoading, setIsQuestionsLoading] = useState(false);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
+  /** Course-scoped aggregates for Overview (not the current page slice — #1040). */
+  const [courseQuestionStats, setCourseQuestionStats] = useState<{
+    totalQuestions: number;
+    totalVariants: number;
+    typeStats: Array<{ type: string; count: number }>;
+    difficultyStats: Array<{ difficulty: string; count: number }>;
+    aiCount: number;
+    humanCount: number;
+    reviewedCount: number;
+    usedTopicIds: string[];
+  } | null>(null);
+  /** True only when stats failed and we have no last-good payload for this course. */
+  const [courseQuestionStatsUnavailable, setCourseQuestionStatsUnavailable] = useState(false);
+  const courseQuestionStatsRef = useRef(courseQuestionStats);
+  courseQuestionStatsRef.current = courseQuestionStats;
+  const assessmentsRequestIdRef = useRef(0);
   const [selectedVariant, setSelectedVariant] = useState<QuestionVariantEntry | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [pendingExtractionDrafts, setPendingExtractionDrafts] = useState<ReturnType<typeof mapExtractedToDraftQuestions> | null>(null);
   const [topicsByCourse, setTopicsByCourse] = useState<Record<number, Topic[]>>({});
+  const questionsPageSize = DEFAULT_LIST_PAGE_SIZE;
 
   // ── Assessment state ────────────────────────────────────────────────────────
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [assessmentsTotal, setAssessmentsTotal] = useState(0);
+  const [assessmentsOffset, setAssessmentsOffset] = useState(0);
   const [isAssessmentsLoading, setIsAssessmentsLoading] = useState(false);
   const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
+  const assessmentsPageSize = DEFAULT_LIST_PAGE_SIZE;
   const [isCanvasExportOpen, setIsCanvasExportOpen] = useState(false);
   const [selectedAssessmentForExport, setSelectedAssessmentForExport] = useState<{ id: number; name: string } | null>(null);
   const [isCanvasImportOpen, setIsCanvasImportOpen] = useState(false);
@@ -153,23 +177,32 @@ export const CourseDetailPage = () => {
     [topicsByCourse],
   );
 
-  // Load questions whenever the route course changes.
+  // Load questions whenever the route course or page offset changes.
   useEffect(() => {
     let cancelled = false;
     const fetchQuestions = async () => {
       if (!courseId) {
         setQuestions([]);
+        setQuestionsTotal(0);
         setSelectedVariant(null);
         return;
       }
       setIsQuestionsLoading(true);
       setQuestionsError(null);
       try {
-        const data = await questionService.getQuestions({ courseId });
-        if (!cancelled) setQuestions(data);
+        const page = await questionService.getQuestionsPage({
+          courseId,
+          limit: questionsPageSize,
+          offset: questionsOffset,
+        });
+        if (!cancelled) {
+          setQuestions(page.items);
+          setQuestionsTotal(page.total);
+        }
       } catch (error: any) {
         if (!cancelled) {
           setQuestions([]);
+          setQuestionsTotal(0);
           setQuestionsError(error?.response?.data?.error || 'Failed to load questions');
         }
       } finally {
@@ -178,26 +211,90 @@ export const CourseDetailPage = () => {
     };
     void fetchQuestions();
     return () => { cancelled = true; };
+  }, [courseId, questionsOffset, questionsPageSize]);
+
+  // Course-wide aggregates for Overview meters (independent of the questions page).
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStats = async () => {
+      if (!courseId) {
+        setCourseQuestionStats(null);
+        setCourseQuestionStatsUnavailable(false);
+        return;
+      }
+      try {
+        const stats = await questionService.getQuestionStats({ courseId });
+        if (cancelled) return;
+        setCourseQuestionStats({
+          totalQuestions: Number(stats.totalQuestions) || 0,
+          totalVariants: Number(stats.totalVariants) || 0,
+          typeStats: (stats.typeStats ?? []).map((row) => ({
+            type: String(row.type),
+            count: Number(row.count) || 0,
+          })),
+          difficultyStats: (stats.difficultyStats ?? []).map((row) => ({
+            difficulty: String(row.difficulty),
+            count: Number(row.count) || 0,
+          })),
+          aiCount: Number(stats.aiCount) || 0,
+          humanCount: Number(stats.humanCount) || 0,
+          reviewedCount: Number(stats.reviewedCount) || 0,
+          usedTopicIds: stats.usedTopicIds ?? [],
+        });
+        setCourseQuestionStatsUnavailable(false);
+      } catch (error) {
+        console.error('Failed to load course question stats', error);
+        if (!cancelled) {
+          // Keep last complete stats; only mark unavailable when we have none.
+          if (courseQuestionStatsRef.current == null) {
+            setCourseQuestionStatsUnavailable(true);
+          }
+        }
+      }
+    };
+    void fetchStats();
+    return () => { cancelled = true; };
+  }, [courseId, questionsTotal]);
+
+  // Reset paging / course-scoped stats when the course changes.
+  useEffect(() => {
+    setQuestionsOffset(0);
+    setAssessmentsOffset(0);
+    setCourseQuestionStats(null);
+    setCourseQuestionStatsUnavailable(false);
   }, [courseId]);
 
-  // Load assessments for the route course.
+  // Load assessments for the route course. Ignore stale responses from rapid
+  // paging / course switches (same generation pattern as questions).
   const fetchAssessments = useCallback(async () => {
+    const requestId = ++assessmentsRequestIdRef.current;
     if (!courseId) {
       setAssessments([]);
+      setAssessmentsTotal(0);
       return;
     }
     try {
       setIsAssessmentsLoading(true);
       setAssessmentsError(null);
-      const data = await assessmentService.getAssessments();
-      setAssessments(data.filter((a) => a.courseId === courseId));
+      const page = await assessmentService.getAssessmentsPage({
+        courseId,
+        limit: assessmentsPageSize,
+        offset: assessmentsOffset,
+      });
+      if (requestId !== assessmentsRequestIdRef.current) return;
+      setAssessments(page.items);
+      setAssessmentsTotal(page.total);
     } catch (error: any) {
+      if (requestId !== assessmentsRequestIdRef.current) return;
       setAssessments([]);
+      setAssessmentsTotal(0);
       setAssessmentsError(error?.response?.data?.error || 'Failed to load assessments');
     } finally {
-      setIsAssessmentsLoading(false);
+      if (requestId === assessmentsRequestIdRef.current) {
+        setIsAssessmentsLoading(false);
+      }
     }
-  }, [courseId]);
+  }, [courseId, assessmentsOffset, assessmentsPageSize]);
 
   useEffect(() => {
     void fetchAssessments();
@@ -265,58 +362,65 @@ export const CourseDetailPage = () => {
     return variantEntries.filter((entry) => entry.questionId === selectedVariant.questionId);
   }, [variantEntries, selectedVariant]);
 
-  // Course-scoped analytics for the Overview tab (type/difficulty/authoring/coverage).
+  // Course-scoped analytics for the Overview tab — server aggregates only.
+  // Never mix the full `questionsTotal` with page-slice pie/meter counts (#1040).
   const courseAnalytics = useMemo<QuestionAnalyticsProps>(() => {
-    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
-    for (const q of questions) typeCounts[q.type] = (typeCounts[q.type] ?? 0) + 1;
-
-    let easy = 0;
-    let medium = 0;
-    let hard = 0;
-    let ai = 0;
-    let human = 0;
-    let reviewed = 0;
-    let totalVariants = 0;
-    const usedTopicIds = new Set<string>();
-
-    for (const q of questions) {
-      if (q.primaryTopicId) usedTopicIds.add(String(q.primaryTopicId));
-    }
-    for (const e of variantEntries) {
-      totalVariants += 1;
-      const d = String(e.variant.difficulty ?? 'medium').toLowerCase();
-      if (d === 'easy') easy += 1;
-      else if (d === 'hard') hard += 1;
-      else medium += 1;
-      if (e.isAiGenerated) ai += 1;
-      else human += 1;
-      if (!e.isDraft) reviewed += 1;
-      const sec = e.variant.secondaryTopicsId;
-      if (Array.isArray(sec)) sec.forEach((id) => usedTopicIds.add(String(id)));
-    }
-
     const courseTopics = courseId ? (topicsByCourse[courseId] ?? []) : [];
-    const topicsCovered = courseTopics.filter((t) => usedTopicIds.has(String(t.id))).length;
+    const empty: QuestionAnalyticsProps = {
+      typeComposition: [],
+      difficulty: [
+        { label: 'Easy', value: 0, color: DIFF_COLORS.easy },
+        { label: 'Medium', value: 0, color: DIFF_COLORS.medium },
+        { label: 'Hard', value: 0, color: DIFF_COLORS.hard },
+      ],
+      totalQuestions: questionsTotal,
+      totalVariants: 0,
+      aiCount: 0,
+      humanCount: 0,
+      reviewedCount: 0,
+      topicCoverage: { covered: 0, total: courseTopics.length },
+    };
 
+    if (!courseQuestionStats) return empty;
+
+    const typeCounts: Record<string, number> = { MCQ: 0, SA: 0, LA: 0 };
+    for (const row of courseQuestionStats.typeStats) {
+      typeCounts[row.type] = row.count;
+    }
+    const diffMap = Object.fromEntries(
+      courseQuestionStats.difficultyStats.map((d) => [d.difficulty, d.count]),
+    );
+    const used = new Set(courseQuestionStats.usedTopicIds);
+    const topicsCovered = courseTopics.filter((t) => used.has(String(t.id))).length;
     const typeComposition = (['MCQ', 'SA', 'LA'] as const)
-      .map((t) => ({ label: questionTypeLabels[t], value: typeCounts[t] ?? 0, color: TYPE_COLORS[t] }))
+      .map((t) => ({
+        label: questionTypeLabels[t],
+        value: typeCounts[t] ?? 0,
+        color: TYPE_COLORS[t],
+      }))
       .filter((s) => s.value > 0);
 
     return {
       typeComposition,
       difficulty: [
-        { label: 'Easy', value: easy, color: DIFF_COLORS.easy },
-        { label: 'Medium', value: medium, color: DIFF_COLORS.medium },
-        { label: 'Hard', value: hard, color: DIFF_COLORS.hard },
+        { label: 'Easy', value: diffMap.easy ?? 0, color: DIFF_COLORS.easy },
+        { label: 'Medium', value: diffMap.medium ?? 0, color: DIFF_COLORS.medium },
+        { label: 'Hard', value: diffMap.hard ?? 0, color: DIFF_COLORS.hard },
       ],
-      totalQuestions: questions.length,
-      totalVariants,
-      aiCount: ai,
-      humanCount: human,
-      reviewedCount: reviewed,
+      totalQuestions: courseQuestionStats.totalQuestions || questionsTotal,
+      totalVariants: courseQuestionStats.totalVariants,
+      aiCount: courseQuestionStats.aiCount,
+      humanCount: courseQuestionStats.humanCount,
+      reviewedCount: courseQuestionStats.reviewedCount,
       topicCoverage: { covered: topicsCovered, total: courseTopics.length },
     };
-  }, [questions, variantEntries, topicsByCourse, courseId]);
+  }, [courseQuestionStats, questionsTotal, topicsByCourse, courseId]);
+
+  const analyticsStatus: 'loading' | 'ready' | 'unavailable' = courseQuestionStats
+    ? 'ready'
+    : courseQuestionStatsUnavailable
+      ? 'unavailable'
+      : 'loading';
 
   const emptyStateMessage =
     questionsError || 'No questions found for this course yet. Try adding or uploading questions.';
@@ -495,7 +599,7 @@ export const CourseDetailPage = () => {
       setSelectedVariant(null);
     } catch (error) {
       console.error('Failed to delete variant', error);
-      toast({ title: 'Failed to delete question', description: 'Please try again.', variant: 'destructive' });
+      toast.error('Failed to delete question', { description: 'Please try again.' });
     } finally {
       setIsDeletingVariant(false);
       setVariantToDelete(null);
@@ -531,12 +635,11 @@ export const CourseDetailPage = () => {
       onExtractionComplete?: (status: 'success' | 'error', extras?: { error?: string; questionsCount?: number }) => void;
     }) => {
       setIsUploadOpen(false);
-      const processingToast = toast({
-        title: 'Extraction in progress',
-        description: 'Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.',
-        duration: Number.POSITIVE_INFINITY,
+      const processingToast = toast('Extraction in progress', {
+          description: 'Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.',
+          duration: Infinity,
       });
-      const dismissProcessing = () => { try { processingToast.dismiss(); } catch { /* noop */ } };
+      const dismissProcessing = () => { try { toast.dismiss(processingToast); } catch { /* noop */ } };
       questionService
         .extractQuestionsFromText({
           text: params.text,
@@ -549,32 +652,25 @@ export const CourseDetailPage = () => {
           const drafts = mapExtractedToDraftQuestions(response || []);
           if (drafts.length === 0) {
             params.onExtractionComplete?.('error', { error: 'No questions extracted' });
-            toast({
-              variant: 'destructive',
-              title: 'No questions extracted',
-              description: 'The content could not be parsed into questions. Try adjusting the file or try again.',
-              duration: Number.POSITIVE_INFINITY,
+            toast.error('No questions extracted', {
+                description: 'The content could not be parsed into questions. Try adjusting the file or try again.',
+                duration: Infinity,
             });
             return;
           }
           params.onExtractionComplete?.('success', { questionsCount: drafts.length });
           setPendingExtractionDrafts(drafts);
-          toast({
-            title: 'Your extraction is ready',
+          toast('Your extraction is ready', {
             description: `${drafts.length} question${drafts.length === 1 ? '' : 's'} extracted. Open the upload dialog to review and save.`,
-            action: (
-              <ToastAction altText="Open and review" onClick={() => setIsUploadOpen(true)}>
-                Review questions
-              </ToastAction>
-            ),
-            duration: Number.POSITIVE_INFINITY,
+            action: { label: 'Review questions', onClick: () => setIsUploadOpen(true) },
+            duration: Infinity,
           });
         })
         .catch((err: any) => {
           dismissProcessing();
           const message = err?.response?.data?.error || err?.message || 'Extraction failed.';
           params.onExtractionComplete?.('error', { error: message });
-          toast({ variant: 'destructive', title: 'Extraction failed', description: message, duration: Number.POSITIVE_INFINITY });
+          toast.error('Extraction failed', { description: message, duration: Infinity });
         });
     },
     [toast],
@@ -588,7 +684,7 @@ export const CourseDetailPage = () => {
       setAssessments((prev) => [created, ...prev]);
     } catch (error) {
       console.error('Failed to create assessment', error);
-      toast({ title: 'Error', description: 'Failed to create assessment.', variant: 'destructive' });
+      toast.error('Error', { description: 'Failed to create assessment.' });
     }
   }, [courseId, toast]);
 
@@ -603,10 +699,10 @@ export const CourseDetailPage = () => {
       setIsDeletingAssessment(true);
       await assessmentService.deleteAssessment(assessmentToDelete.id);
       setAssessments((prev) => prev.filter((item) => item.id !== assessmentToDelete.id));
-      toast({ title: 'Assessment deleted', description: `"${assessmentToDelete.name}" has been removed.` });
+      toast('Assessment deleted', { description: `"${assessmentToDelete.name}" has been removed.` });
       setAssessmentToDelete(null);
     } catch {
-      toast({ title: 'Failed to delete assessment', description: 'Please try again.', variant: 'destructive' });
+      toast.error('Failed to delete assessment', { description: 'Please try again.' });
     } finally {
       setIsDeletingAssessment(false);
     }
@@ -616,23 +712,21 @@ export const CourseDetailPage = () => {
     (assessmentId: number): Assessment | null => {
       const assessment = assessments.find((a) => a.id === assessmentId);
       if (!assessment) {
-        toast({ title: 'Export failed', description: 'Assessment not found.', variant: 'destructive' });
+        toast.error('Export failed', { description: 'Assessment not found.' });
         return null;
       }
       const hasDrafts = assessment.sections?.some((section) =>
         section.sectionVariants?.some((link) => link.variant?.isDraft === true),
       );
       if (hasDrafts) {
-        toast({
-          title: 'Cannot export',
-          description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
-          variant: 'destructive',
+        toast.error('Cannot export', {
+            description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
         });
         return null;
       }
       const blocks = collectAssessmentExportBlocks(assessment);
       if (blocks.length === 0) {
-        toast({ title: 'Cannot export', description: 'No questions to export for this assessment.', variant: 'destructive' });
+        toast.error('Cannot export', { description: 'No questions to export for this assessment.' });
         return null;
       }
       return assessment;
@@ -656,7 +750,7 @@ export const CourseDetailPage = () => {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      toast({ title: 'Export started', description: 'Questions downloaded as a TXT file.' });
+      toast('Export started', { description: 'Questions downloaded as a TXT file.' });
     },
     [exportGuard, toast],
   );
@@ -677,9 +771,9 @@ export const CourseDetailPage = () => {
         linkEl.click();
         linkEl.remove();
         URL.revokeObjectURL(url);
-        toast({ title: 'Export started', description: 'Questions downloaded as a Word document.' });
+        toast('Export started', { description: 'Questions downloaded as a Word document.' });
       } catch {
-        toast({ title: 'Export failed', description: 'Could not build the Word file. Please try again.', variant: 'destructive' });
+        toast.error('Export failed', { description: 'Could not build the Word file. Please try again.' });
       }
     },
     [exportGuard, toast],
@@ -770,10 +864,11 @@ export const CourseDetailPage = () => {
 
         <PageTabsContent value="overview" className="space-y-6">
           <CourseOverviewTab
-            questionsCount={questions.length}
-            assessmentsCount={assessments.length}
+            questionsCount={questionsTotal}
+            assessmentsCount={assessmentsTotal}
             topicsCount={topicsByCourse[course.id]?.length ?? 0}
             analytics={courseAnalytics}
+            analyticsStatus={analyticsStatus}
             canWrite={!writesDisabled}
             onAddQuestion={handleAddQuestion}
             onNewAssessment={() => setActiveTab('assessments')}
@@ -800,6 +895,13 @@ export const CourseDetailPage = () => {
             disableUpload={writesDisabled}
             onOpenProfile={() => startTour('main')}
           />
+          <ListPaginationBar
+            total={questionsTotal}
+            limit={questionsPageSize}
+            offset={questionsOffset}
+            onPageChange={setQuestionsOffset}
+            itemLabel="questions"
+          />
         </PageTabsContent>
 
         <PageTabsContent value="assessments" className="space-y-6">
@@ -810,6 +912,7 @@ export const CourseDetailPage = () => {
           )}
           <AssessmentSection
             assessments={assessments}
+            totalCount={assessmentsTotal}
             onAddAssessment={handleCreateAssessment}
             isLoading={isAssessmentsLoading}
             loadError={assessmentsError}
@@ -819,6 +922,13 @@ export const CourseDetailPage = () => {
             onExportToWord={handleExportAssessmentToWord}
             onDeleteAssessment={handleDeleteAssessment}
             onImportFromCanvas={() => setIsCanvasImportOpen(true)}
+          />
+          <ListPaginationBar
+            total={assessmentsTotal}
+            limit={assessmentsPageSize}
+            offset={assessmentsOffset}
+            onPageChange={setAssessmentsOffset}
+            itemLabel="assessments"
           />
         </PageTabsContent>
 
@@ -869,7 +979,9 @@ export const CourseDetailPage = () => {
               assessmentName={selectedAssessmentForExport.name}
               courseId={courseId}
               onExportSuccess={(result) => {
-                toast({ title: 'Export successful!', description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}` });
+                toast('Export successful!', {
+                    description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}`,
+                });
               }}
             />
           )}
@@ -880,13 +992,13 @@ export const CourseDetailPage = () => {
             courseId={courseId}
             onImportSuccess={async () => {
               await fetchAssessments();
-              toast({ title: 'Import successful', description: 'Assessment imported from Canvas.' });
+              toast('Import successful', { description: 'Assessment imported from Canvas.' });
             }}
           />
         </>
       )}
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteVariantModalOpen}
         onOpenChange={setDeleteVariantModalOpen}
         onConfirm={confirmDeleteVariant}
@@ -896,7 +1008,7 @@ export const CourseDetailPage = () => {
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
           return isLastVariant ? 'Delete question?' : 'Delete question variant?';
         })()}
-        message={(() => {
+        description={(() => {
           if (!variantToDelete) return 'This action cannot be undone.';
           const question = questions.find((item) => item.id === variantToDelete.questionId);
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
@@ -906,16 +1018,18 @@ export const CourseDetailPage = () => {
         })()}
         confirmLabel="Delete"
         isLoading={isDeletingVariant}
+        closeOnConfirm={false}
       />
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteAssessmentModalOpen}
         onOpenChange={setDeleteAssessmentModalOpen}
         onConfirm={confirmDeleteAssessment}
         title={assessmentToDelete ? `Delete assessment "${assessmentToDelete.name}"?` : 'Delete assessment?'}
-        message="This action cannot be undone. All sections and questions in this assessment will be removed."
+        description="This action cannot be undone. All sections and questions in this assessment will be removed."
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
+        closeOnConfirm={false}
       />
     </DetailPageScaffold>
   );

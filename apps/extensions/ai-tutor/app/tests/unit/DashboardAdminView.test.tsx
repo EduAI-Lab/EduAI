@@ -106,7 +106,10 @@ describe('DashboardAdminView', () => {
       } as never,
     });
 
-    expect(screen.getByText('42')).toBeInTheDocument();
+    // #1043: the rollup feeds both the "Total courses" stat card and the
+    // publish-status donut center (which used to count the courses array), so
+    // 42 legitimately renders twice now — pin both rather than a single match.
+    expect(screen.getAllByText('42')).toHaveLength(2);
     expect(screen.getByText('999')).toBeInTheDocument();
   });
 });

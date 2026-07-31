@@ -21,7 +21,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   const [course, modules] = await Promise.all([
     api.courseById(courseId) as Promise<Course>,
-    api.modulesForCourse(courseId) as Promise<Module[]>,
+    // #1043: modules endpoint returns the pagination envelope; a course's
+    // module tree fits one bounded page (client default 200). Unwrap to keep
+    // the module grid rendering the full ordered set.
+    api.modulesForCourse(courseId).then((r) => r.data),
   ]);
 
   return { course, modules };

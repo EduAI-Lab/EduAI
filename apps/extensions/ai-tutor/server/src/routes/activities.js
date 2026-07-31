@@ -27,7 +27,8 @@ import { randomUUID } from 'crypto';
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapActivity } from '../utils/mappers.js';
+import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
 import { cloneActivityIntoLesson } from '../services/activityCloning.js';
@@ -405,17 +406,27 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    const activities = await prisma.activity.findMany({
-      where: { lessonId },
-      orderBy: { position: 'asc' },
-      include: {
-        promptTemplate: { select: { id: true, name: true } },
-        mainTopic: true,
-        secondaryTopics: {
-          include: { topic: true },
+    // Structure-bounded list (a lesson has a handful of activities). The
+    // instructor grid + drag-and-drop reorder and the student lesson player
+    // (which index-walks this array) need the whole set, so callers request one
+    // bounded page (pageSize=200); pagination is optional here.
+    const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const [total, activities] = await prisma.$transaction([
+      prisma.activity.count({ where: { lessonId } }),
+      prisma.activity.findMany({
+        where: { lessonId },
+        orderBy: [{ position: 'asc' }, { id: 'asc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+        include: {
+          promptTemplate: { select: { id: true, name: true } },
+          mainTopic: true,
+          secondaryTopics: {
+            include: { topic: true },
+          },
         },
-      },
-    });
+      }),
+    ]);
 
     // For students, add completion status to each activity
     if (isStudent && !hasElevatedAccess) {
@@ -427,11 +438,14 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
         return mapActivity({ ...activity, completionStatus: status });
       });
 
-      res.json(activitiesWithStatus);
+      res.json(paginated(activitiesWithStatus, total, pageParams));
     } else {
-      res.json(activities.map(mapActivity));
+      res.json(paginated(activities.map(mapActivity), total, pageParams));
     }
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });
@@ -1066,8 +1080,20 @@ router.get(
     if (!Number.isFinite(courseId)) {
       return res.status(400).json({ error: 'courseId is required' });
     }
+    // #1043: the picker previously filtered out the current lesson client-side
+    // over the full result set; under pagination that could empty a page, so
+    // push it into the query as an optional exclusion.
+    let excludeLessonId = null;
+    if (req.query.excludeLessonId !== undefined) {
+      excludeLessonId = Number(req.query.excludeLessonId);
+      if (!Number.isFinite(excludeLessonId)) {
+        return res.status(400).json({ error: 'excludeLessonId must be a number' });
+      }
+    }
 
     try {
+      // #1043: unbounded list — require explicit paging (Group A contract).
+      const pageParams = parsePaginationParams(req);
       const course = await prisma.courseOffering.findUnique({
         where: { id: courseId },
         include: { instructors: { select: { userId: true } } },
@@ -1116,28 +1142,28 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
-      const activities = await prisma.activity.findMany({
-        where: { lesson: { module: { courseOfferingId: { in: manageableCourseIds } } } },
-        orderBy: [{ lessonId: 'asc' }, { position: 'asc' }],
-        include: {
-          lesson: { select: { title: true, module: { select: { title: true } } } },
-        },
-      });
+      const importableWhere = {
+        lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
+        ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
+      };
+      const [total, activities] = await prisma.$transaction([
+        prisma.activity.count({ where: importableWhere }),
+        prisma.activity.findMany({
+          where: importableWhere,
+          orderBy: [{ lessonId: 'asc' }, { position: 'asc' }, { id: 'asc' }],
+          skip: pageParams.skip,
+          take: pageParams.take,
+          include: {
+            lesson: { select: { title: true, module: { select: { title: true } } } },
+          },
+        }),
+      ]);
 
-      const importable = activities.map((activity) => {
-        const config = activity.config ?? {};
-        return {
-          id: activity.id,
-          title: activity.title ?? config.question ?? activity.instructionsMd,
-          type: config.questionType ?? 'MCQ',
-          lessonId: activity.lessonId,
-          lessonTitle: activity.lesson?.title ?? null,
-          moduleTitle: activity.lesson?.module?.title ?? null,
-        };
-      });
-
-      res.json(importable);
+      res.json(paginated(activities.map(mapImportableActivity), total, pageParams));
     } catch (e) {
+      if (e instanceof PaginationError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
       console.error('Error listing importable activities:', e);
       res.status(500).json({ error: String(e) });
     }
@@ -1181,7 +1207,7 @@ router.post('/questions/:id/answer', async (req, res) => {
                   select: {
                     id: true,
                     coreOfferingId: true,
-                    enrollments: { select: { userId: true } },
+                    enrollments: { select: { userId: true, role: true } },
                   },
                 },
               },
@@ -1196,10 +1222,10 @@ router.post('/questions/:id/answer', async (req, res) => {
     const course = activity.lesson?.module?.courseOffering;
     if (!course) return res.status(500).json({ error: 'Activity course context missing' });
 
-    if (authUser.role !== 'STUDENT' && authUser.role !== 'TA') {
-      return res.status(403).json({ error: 'Only students and TAs can submit answers' });
+    if (authUser.role !== 'STUDENT') {
+      return res.status(403).json({ error: 'Only students can submit answers' });
     }
-    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id);
+    const isEnrolled = course.enrollments.some((e) => e.userId === authUser.id && e.role === 'STUDENT');
     if (!isEnrolled) {
       return res.status(403).json({ error: 'Not enrolled in this course' });
     }

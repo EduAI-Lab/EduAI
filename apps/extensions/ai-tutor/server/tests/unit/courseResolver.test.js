@@ -114,6 +114,23 @@ describe('resolveCoreCourseById', () => {
 
     expect(result).toEqual({ course: null, coreUnavailable: true });
   });
+
+  it('forwards options.signal to fetchCoreCourseSafe so a hung Core lookup can be bounded (#1173 review)', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: 'core-1', name: 'Algorithms' });
+    const signal = AbortSignal.timeout(3_000);
+
+    await resolveCoreCourseById('core-1', { signal });
+
+    expect(fetchCoreCourseSafe).toHaveBeenCalledWith('core-1', { signal });
+  });
+
+  it('degrades to null course + coreUnavailable:true when the signal aborts (hung Core)', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'));
+
+    const result = await resolveCoreCourseById('core-1', { signal: AbortSignal.timeout(3_000) });
+
+    expect(result).toEqual({ course: null, coreUnavailable: true });
+  });
 });
 
 // #1072 step 4: CourseOffering has no local `isPublished` column anymore —

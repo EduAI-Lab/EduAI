@@ -23,7 +23,7 @@ import {
   cn,
   EmptyState,
 } from '@eduai/ui';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { PermissionGate } from '@eduai/ui';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { difficultySolidClass } from '@/lib/difficulty';
@@ -50,6 +50,8 @@ import GenerateAssessmentModal from './GenerateAssessmentModal';
 
 interface AssessmentSectionProps {
   assessments: Assessment[];
+  /** Server-reported total when the list is paginated (#1040). Falls back to assessments.length. */
+  totalCount?: number;
   onAddAssessment: (params: AssessmentGenerationParams) => Promise<void> | void;
   selectedCourseId?: number | null;
   isLoading?: boolean;
@@ -120,6 +122,7 @@ function DifficultyBar({ easy, medium, hard }: { easy: number; medium: number; h
 
 export const AssessmentSection = ({
   assessments,
+  totalCount,
   onAddAssessment,
   selectedCourseId,
   isLoading = false,
@@ -139,6 +142,7 @@ export const AssessmentSection = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [exportDialogAssessment, setExportDialogAssessment] = useState<Assessment | null>(null);
 
+  const listedTotal = totalCount ?? assessments.length;
   const hasAssessments = assessments.length > 0;
   const hasAnyExportHandler = Boolean(onExportToCanvas || onExportToTxt || onExportToWord);
   const canManage = canManageAssessment && canWriteInCourse;
@@ -184,8 +188,8 @@ export const AssessmentSection = ({
     ? 'Loading assessments…'
     : !selectedCourseId
       ? 'Select a course to manage assessments.'
-      : hasAssessments
-        ? `${assessments.length} assessment${assessments.length === 1 ? '' : 's'} · quizzes, labs, midterms & finals`
+      : listedTotal > 0
+        ? `${listedTotal} assessment${listedTotal === 1 ? '' : 's'} · quizzes, labs, midterms & finals`
         : 'Build quizzes, labs, midterms and finals from your question bank.';
 
   return (
