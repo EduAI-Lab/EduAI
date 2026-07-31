@@ -1,9 +1,15 @@
 import { prisma } from '../config/database.js';
 import { fetchCoreCourseSafe, fetchCoreTopicSafe } from '../services/eduaiClient.js';
+import {
+  syncCourseEnrollments,
+  clearEnrollmentSyncThrottle,
+  AUTO_SYNC_TIMEOUT_MS,
+} from '../services/enrollmentSync.js';
 
 /**
  * Daily reconciliation job: iterates all CourseOffering and Topic rows that
- * hold a Core reference and cleans up any that return 404 from Core.
+ * hold a Core reference and cleans up any that return 404 from Core, then
+ * reconciles the CourseEnrollment mirror as a backstop.
  *
  * Skips individual rows on 5xx or network errors — they will be retried on
  * the next run. Only a strict 404 triggers cleanup.
@@ -23,12 +29,17 @@ export async function runReconciliation() {
   const offerings = await prisma.courseOffering.findMany({
     select: { id: true, coreOfferingId: true },
   });
+  const deletedOfferingIds = new Set();
 
   for (const offering of offerings) {
     try {
-      const result = await fetchCoreCourseSafe(offering.coreOfferingId);
+      const result = await fetchCoreCourseSafe(offering.coreOfferingId, {
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
       if (result === null) {
         await prisma.courseOffering.delete({ where: { id: offering.id } });
+        deletedOfferingIds.add(offering.id);
+        clearEnrollmentSyncThrottle(offering.id);
         console.log(`[reconcile] Deleted CourseOffering ${offering.id} (Core 404, cascades to modules/lessons/activities)`);
       }
     } catch (err) {
@@ -47,7 +58,9 @@ export async function runReconciliation() {
     if (!courseCorId) continue; // Course link already lost; topic will be caught when re-linked
 
     try {
-      const result = await fetchCoreTopicSafe(courseCorId, topic.coreTopicId);
+      const result = await fetchCoreTopicSafe(courseCorId, topic.coreTopicId, {
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
       if (result === null) {
         await prisma.topic.update({
           where: { id: topic.id },
@@ -57,6 +70,31 @@ export async function runReconciliation() {
       }
     } catch (err) {
       console.warn(`[reconcile] Skipping Topic ${topic.id}: ${err.message}`);
+    }
+  }
+
+  // Phase 3 — reconcile the CourseEnrollment mirror against Core as a
+  // backstop independent of read-time auto-sync (#1065). The GET
+  // sync-before-read routes only fire on actual traffic; a course nobody
+  // reads (or one whose only readers hit the TTL window every time) would
+  // otherwise drift forever, so this walks every remaining Core-linked
+  // offering unconditionally once a day. Reuses `syncCourseEnrollments`
+  // directly (no `ttlMs`) so this always hits Core, same as its other
+  // explicit (non-read-path) callers.
+  for (const offering of offerings) {
+    if (deletedOfferingIds.has(offering.id)) continue;
+    try {
+      const result = await syncCourseEnrollments(offering.id, {
+        course: offering,
+        signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+      });
+      if (result.created || result.updated || result.deleted) {
+        console.log(
+          `[reconcile] Enrollment sync for CourseOffering ${offering.id}: +${result.created} ~${result.updated} -${result.deleted}`,
+        );
+      }
+    } catch (err) {
+      console.warn(`[reconcile] Skipping enrollment sync for CourseOffering ${offering.id}: ${err.message}`);
     }
   }
 
