@@ -39,4 +39,14 @@ describe('QM nav RBAC', () => {
   it('puts Help in the secondary nav', () => {
     expect(getNavSecondaryForUser(admin).map((item) => item.key)).toEqual(['help']);
   });
+
+  it('re-exports every nav helper from the rbac barrel', async () => {
+    // Today's consumers import from `lib/rbac/nav` directly, so a helper missing
+    // from the barrel fails only for the next caller that reaches for the index.
+    const barrel = await import('@/lib/rbac');
+    const nav = await import('@/lib/rbac/nav');
+    for (const name of Object.keys(nav)) {
+      expect(barrel, `${name} is missing from lib/rbac/index.ts`).toHaveProperty(name);
+    }
+  });
 });
