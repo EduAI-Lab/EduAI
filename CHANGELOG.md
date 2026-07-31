@@ -6,6 +6,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 13 — July 27 – August 2, 2026]
 
+### Removed
+
+- [question-maker] chore: Drop 16 unused UI dependencies from `question-maker-frontend` (`@radix-ui/*`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `next-themes`, `react-markdown`, `react-dropzone`) — the frontend already consumes those primitives via `@eduai/ui`, so the direct declarations were dead weight. Closes #1247. (#1247, @Ayyhab, 2026-07-30) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ### Fixed
 
 - [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates, and align the supported Question Maker deployment image with the monorepo workspace context. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
