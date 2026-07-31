@@ -28,8 +28,14 @@ export type PickSpec =
 
 const CACHE_TTL_MS = 10 * 1000;
 
+type TierModelLoad = {
+  generation: number;
+  promise: Promise<TierModelRow[]>;
+};
+
 let cache: { rows: TierModelRow[]; expiresAt: number } | null = null;
-let loading: Promise<TierModelRow[]> | null = null;
+let cacheGeneration = 0;
+let loading: TierModelLoad | null = null;
 
 export function routerTierToNum(t: RouterTier): 1 | 2 | 3 {
   if (t === "TIER_1") return 1;
@@ -96,17 +102,36 @@ export async function getCachedTierModels(): Promise<TierModelRow[]> {
   if (cache && Date.now() < cache.expiresAt) {
     return cache.rows;
   }
-  if (!loading) {
-    loading = loadTierRows().then((rows) => {
-      cache = { rows, expiresAt: Date.now() + CACHE_TTL_MS };
-      loading = null;
-      return rows;
-    });
+
+  const generation = cacheGeneration;
+  if (!loading || loading.generation !== generation) {
+    const promise = loadTierRows()
+      .then((rows) => {
+        if (
+          generation === cacheGeneration &&
+          loading?.generation === generation
+        ) {
+          cache = { rows, expiresAt: Date.now() + CACHE_TTL_MS };
+          loading = null;
+        }
+        return rows;
+      })
+      .catch((error: unknown) => {
+        if (
+          generation === cacheGeneration &&
+          loading?.generation === generation
+        ) {
+          loading = null;
+        }
+        throw error;
+      });
+    loading = { generation, promise };
   }
-  return loading;
+  return loading.promise;
 }
 
 export function invalidateTierModelCache(): void {
+  cacheGeneration += 1;
   cache = null;
   loading = null;
 }
