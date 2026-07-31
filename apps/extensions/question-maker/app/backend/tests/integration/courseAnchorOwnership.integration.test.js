@@ -74,11 +74,14 @@ function makeFetch({ scopedIds = [], teachingByUserId = {}, enrollmentsFail = fa
       if (enrollmentsFail) {
         return Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'down' }) });
       }
+      // Service-key roster is unscoped — return every stubbed teaching enrollment
+      // for this Core course (not the caller's cookie identity).
       const coreId = path.match(/\/api\/courses\/([^/]+)\/enrollments$/)?.[1];
-      const taught = teachingByUserId[user.id] ?? [];
-      const enrollments = taught.includes(coreId)
-        ? [{ studentId: user.id, role: 'INSTRUCTOR', isActive: true }]
-        : [];
+      const enrollments = Object.entries(teachingByUserId).flatMap(([userId, taught]) =>
+        taught.includes(coreId)
+          ? [{ studentId: userId, role: 'INSTRUCTOR', isActive: true }]
+          : [],
+      );
       return Promise.resolve({ ok: true, json: async () => ({ enrollments }) });
     }
 
@@ -241,6 +244,102 @@ describeDb('course anchor ownership (#1114)', () => {
       expect(row).toBeTruthy();
       expect(row.userId).toBe(a.body.data.userId);
       expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
+    });
+
+    it('stays idempotent when POST races auto-import for the same coreCourseId', async () => {
+      const coreCourseId = 'core-race-import';
+      vi.stubGlobal(
+        'fetch',
+        makeFetch({
+          scopedIds: [coreCourseId],
+          teachingByUserId: { [INSTRUCTOR.id]: [coreCourseId] },
+        }),
+      );
+
+      const { importTaughtCoursesFromCore } = await import(
+        '../../src/services/importTaughtCoursesService.js'
+      );
+
+      const [postRes, importResult] = await Promise.all([
+        request(app).post('/api/course').set(cookieFor('inst')).send({ coreCourseId }),
+        importTaughtCoursesFromCore(INSTRUCTOR.id, 'INSTRUCTOR', 'session=inst'),
+      ]);
+
+      expect([200, 201]).toContain(postRes.status);
+      expect(postRes.body.success).toBe(true);
+      expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
+      expect((importResult.imported ?? 0) + (postRes.status === 201 ? 1 : 0)).toBeGreaterThanOrEqual(1);
+      expect(postRes.body.data.id).toBe(
+        (await prisma.course.findUnique({ where: { coreCourseId } })).id,
+      );
+    });
+
+    it('stays idempotent when POST races ADMIN catalog materialization', async () => {
+      const coreCourseId = 'core-race-admin';
+      vi.stubGlobal(
+        'fetch',
+        makeFetch({
+          scopedIds: [coreCourseId],
+          teachingByUserId: { [INSTRUCTOR.id]: [coreCourseId] },
+        }),
+      );
+
+      // ADMIN list materialization now calls ensureCourseAnchor per missing id
+      // (#1074 / #1270) — race that path directly against POST.
+      const { ensureCourseAnchor } = await import('../../src/services/ensureCourseAnchor.js');
+
+      const [postRes] = await Promise.all([
+        request(app).post('/api/course').set(cookieFor('inst')).send({ coreCourseId }),
+        ensureCourseAnchor(ADMIN.id, coreCourseId),
+      ]);
+
+      expect([200, 201]).toContain(postRes.status);
+      expect(postRes.body.success).toBe(true);
+      expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
+      expect(postRes.body.data.id).toBe(
+        (await prisma.course.findUnique({ where: { coreCourseId } })).id,
+      );
+    });
+
+    it('recovers when an unlocked writer inserts between lookup and create (P2002 outside txn)', async () => {
+      // Deterministic stand-in for a legacy unlocked createMany/bare-create path:
+      // after the locked transaction sees no row, an unlocked insert wins the
+      // unique index. Recovery must reread outside the aborted txn (#1270).
+      const coreCourseId = 'core-race-unlocked';
+      const { ensureCourseAnchor } = await import('../../src/services/ensureCourseAnchor.js');
+      const { prisma: db } = await import('../../src/config/database.js');
+
+      const originalTransaction = db.$transaction.bind(db);
+      let injected = false;
+      db.$transaction = async (fn) =>
+        originalTransaction(async (tx) => {
+          const wrapped = {
+            $executeRaw: (...args) => tx.$executeRaw(...args),
+            course: {
+              findUnique: async (...args) => {
+                const existing = await tx.course.findUnique(...args);
+                if (!existing && !injected) {
+                  injected = true;
+                  await db.course.create({
+                    data: { userId: ADMIN.id, coreCourseId },
+                  });
+                }
+                return existing;
+              },
+              create: (...args) => tx.course.create(...args),
+            },
+          };
+          return fn(wrapped);
+        });
+
+      try {
+        const result = await ensureCourseAnchor(INSTRUCTOR.id, coreCourseId);
+        expect(result.created).toBe(false);
+        expect(result.course.userId).toBe(ADMIN.id);
+        expect(await prisma.course.count({ where: { coreCourseId } })).toBe(1);
+      } finally {
+        db.$transaction = originalTransaction;
+      }
     });
   });
 });

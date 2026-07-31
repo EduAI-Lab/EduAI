@@ -4,7 +4,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mockFindMany = vi.fn();
-const mockCreateMany = vi.fn();
+const mockEnsureCourseAnchor = vi.fn();
 const mockGetAllCoursesFromCore = vi.fn();
 const mockGetCoursesByIdsFromCore = vi.fn();
 const mockSearchCoursesFromCore = vi.fn();
@@ -16,9 +16,12 @@ vi.mock('../../src/config/database.js', () => ({
   prisma: {
     course: {
       findMany: (...args) => mockFindMany(...args),
-      createMany: (...args) => mockCreateMany(...args),
     },
   },
+}));
+
+vi.mock('../../src/services/ensureCourseAnchor.js', () => ({
+  ensureCourseAnchor: (...args) => mockEnsureCourseAnchor(...args),
 }));
 
 vi.mock('../../src/middleware/courseAccess.js', () => ({
@@ -102,7 +105,7 @@ describe('listCoursesForUser', () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.accessLevel === 'admin')).toBe(true);
     expect(rows.map((r) => r.department).sort()).toEqual(['COSC', 'MATH']);
-    expect(mockCreateMany).not.toHaveBeenCalled();
+    expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
     expect(mockFindMany).toHaveBeenCalledTimes(1);
     // ADMIN's branch never touches the cookie-scoped roles call.
     expect(mockListCoursesFromCore).not.toHaveBeenCalled();
@@ -133,28 +136,26 @@ describe('listCoursesForUser', () => {
   });
 
   describe('ADMIN catalog materialization (#1074)', () => {
-    it('materializes an anchor for every Core course missing one, batched (one findMany + one createMany + one re-findMany)', async () => {
+    it('materializes an anchor for every Core course missing one via ensureCourseAnchor', async () => {
       mockFindMany
         .mockResolvedValueOnce([{ id: 1, coreCourseId: 'core-1' }])
         .mockResolvedValueOnce([
           { id: 1, coreCourseId: 'core-1' },
           { id: 2, coreCourseId: 'core-2' },
         ]);
-      mockCreateMany.mockResolvedValue({ count: 1 });
+      mockEnsureCourseAnchor.mockResolvedValue({
+        course: { id: 2, userId: 'admin-7', coreCourseId: 'core-2' },
+        created: true,
+      });
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      // Only the missing id (core-2) is inserted — core-1 already has a local
-      // anchor, so it's excluded from the batch — and it's materialized
-      // owned by the requesting admin.
-      expect(mockCreateMany).toHaveBeenCalledTimes(1);
-      expect(mockCreateMany).toHaveBeenCalledWith({
-        data: [{ userId: 'admin-7', coreCourseId: 'core-2' }],
-        skipDuplicates: true,
-      });
+      // Only the missing id (core-2) is ensured — core-1 already has a local
+      // anchor — and it's materialized owned by the requesting admin.
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledTimes(1);
+      expect(mockEnsureCourseAnchor).toHaveBeenCalledWith('admin-7', 'core-2');
       // First findMany supplies the "existing anchors" read for free (no extra
-      // query); the second is the post-materialize re-fetch — never a
-      // per-course loop.
+      // query); the second is the post-materialize re-fetch.
       expect(mockFindMany).toHaveBeenCalledTimes(2);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.name).sort()).toEqual(['Core Course One', 'Core Course Two']);
@@ -168,7 +169,7 @@ describe('listCoursesForUser', () => {
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      expect(mockCreateMany).not.toHaveBeenCalled();
+      expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
       expect(mockFindMany).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(2);
     });
@@ -179,7 +180,7 @@ describe('listCoursesForUser', () => {
 
       const rows = await listCoursesForUser({ id: 'admin-7', role: 'ADMIN' });
 
-      expect(mockCreateMany).not.toHaveBeenCalled();
+      expect(mockEnsureCourseAnchor).not.toHaveBeenCalled();
       expect(mockFindMany).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
       expect(rows[0].coreUnavailable).toBe(true);

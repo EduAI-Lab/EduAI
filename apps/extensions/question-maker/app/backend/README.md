@@ -45,7 +45,8 @@ src/
 ├── routes/                  # course, questions, variants, assessments, assessmentVariant,
 │                             # eduai, canvas, topics, auth, bug-reports, internal
 ├── services/                 # Business logic — one service per domain (questionService,
-│                              # assessmentService, canvasService, coreWiringService, etc.)
+│                              # assessmentService, canvasService, coreWiringService,
+│                              # ensureCourseAnchor (locked create shared by POST/import/ADMIN list), etc.)
 ├── jobs/
 │   └── reconcile.js          # Daily cron: cleans up stale Core references (course/topic/question)
 └── utils/                    # encryption, Canvas URL SSRF guard, logger, model-size ranks

@@ -15,6 +15,7 @@ import {
   searchCoursesFromCore,
 } from './coreApiService.js';
 import { dedupeCoursesByCoreId, normalizeCourseCode } from './courseCodeUtils.js';
+import { ensureCourseAnchor } from './ensureCourseAnchor.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 
@@ -233,14 +234,11 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     // rows — materialize an anchor for every Core course that doesn't have
     // one yet, so the client always has a real local id to route by (mirrors
     // ai-tutor's `ensureOfferingAnchors`, apps/extensions/ai-tutor/server/src/
-    // services/importTaughtCoursesService.js). Batched: `allCourses` above is
-    // already every local row unfiltered, so the "existing ids" read is free
-    // — no extra findMany. One createMany for the missing set, idempotent via
-    // `ignoreDuplicates` (Postgres ON CONFLICT DO NOTHING on the unique
-    // `core_course_id` index) so concurrent admin requests racing to
-    // materialize the same course never error. Core unreachable ⇒ coreById is
-    // empty ⇒ nothing to materialize ⇒ falls through to the existing local
-    // rows with placeholder projection (degrade, not error).
+    // services/importTaughtCoursesService.js). Batched across missing ids via
+    // shared `ensureCourseAnchor` (#1114 / #1270) so POST/import races serialize
+    // on the same advisory lock. Core unreachable ⇒ coreById is empty ⇒
+    // nothing to materialize ⇒ falls through to the existing local rows with
+    // placeholder projection (degrade, not error).
     const existingCoreCourseIds = new Set(
       allCourses.map((c) => c.coreCourseId).filter(Boolean),
     );
@@ -250,13 +248,17 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
 
     let adminCourses = allCourses;
     if (missingCoreCourseIds.length > 0) {
-      await prisma.course.createMany({
-        data: missingCoreCourseIds.map((coreCourseId) => ({ userId: reqUser.id, coreCourseId })),
-        skipDuplicates: true,
-      });
-      // Re-fetch: createMany doesn't return the created rows, and a racing
-      // request may have inserted some of these rows first — read back the
-      // ground truth.
+      // Same locked ensure as POST /api/course and auto-import (#1114 / #1270).
+      // Parallel across distinct coreCourseIds; each id serializes on its own
+      // advisory lock (createMany+skipDuplicates could race an unlocked insert
+      // into a POST transaction and abort that writer's recovery).
+      await Promise.all(
+        missingCoreCourseIds.map((coreCourseId) =>
+          ensureCourseAnchor(reqUser.id, coreCourseId),
+        ),
+      );
+      // Re-fetch: ensure does not return every row, and a racing request may
+      // have inserted some of these first — read back the ground truth.
       adminCourses = await prisma.course.findMany({ orderBy: { createdAt: 'desc' } });
     }
 

@@ -8,6 +8,7 @@ import { prisma } from '../config/database.js';
 import { listCoursesFromCore, getCourseEnrollmentsFromCore } from './coreApiService.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
 import { createAssessment } from './assessmentService.js';
+import { ensureCourseAnchor } from './ensureCourseAnchor.js';
 import { logger } from '../utils/logger.js';
 
 const AUTO_IMPORT_ROLES = new Set(['INSTRUCTOR']);
@@ -171,17 +172,15 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
     if (!anchor) {
       try {
-        anchor = await prisma.course.create({ data: { userId, coreCourseId: coreCourse.id } });
-        imported++;
+        // Same locked ensure as POST /api/course and ADMIN materialization
+        // (#1114 / #1270) — never a bare create that can abort a racing POST.
+        const ensured = await ensureCourseAnchor(userId, coreCourse.id);
+        anchor = ensured.course;
+        if (ensured.created) imported++;
       } catch (err) {
-        // Unique `core_course_id` race: a concurrent request (or an ADMIN list
-        // visit) created the anchor between our read and this insert. Adopt it.
-        anchor = await prisma.course.findUnique({ where: { coreCourseId: coreCourse.id } });
-        if (!anchor) {
-          logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
-          skipped++;
-          continue;
-        }
+        logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
+        skipped++;
+        continue;
       }
     }
 

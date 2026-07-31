@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [question-maker] fix: Enforce trusted QM course-anchor ownership and fail closed — `POST /api/course` requires ADMIN/UNIT_ADMIN/INSTRUCTOR plus a teaching enrollment for instructors; concurrent creates are advisory-locked; `resolveAccessForCourse` / list access no longer elevate local owners when Core is down. (#1114, @Ayyhab, 2026-07-29) — [#1270](https://github.com/EduAI-Lab/EduAI/pull/1270)
+- [question-maker] fix: Enforce trusted QM course-anchor ownership and fail closed — `POST /api/course` requires ADMIN/UNIT_ADMIN/INSTRUCTOR plus a teaching enrollment for instructors; concurrent creates share `ensureCourseAnchor` (advisory lock + outside-txn P2002 recovery) with auto-import and ADMIN catalog materialization; `resolveAccessForCourse` / list access no longer elevate local owners when Core is down. (#1114, @Ayyhab, 2026-07-29) — [#1270](https://github.com/EduAI-Lab/EduAI/pull/1270)
 
 ## [Week 12 — July 20–26, 2026]
 
