@@ -103,43 +103,57 @@ body {
 }
 
 :root {
-  --background: oklch(1.0000 0 0);
-  --foreground: oklch(0.2046 0 0);
-  --card: oklch(1.0000 0 0);
-  --card-foreground: oklch(0.2046 0 0);
-  --popover: oklch(1.0000 0 0);
+  /* ── Primitives ─────────────────────────────────────────────
+   * Raw values that more than one semantic token needs. Naming them once
+   * means the brand navy (previously written out five times) has a single
+   * definition. Values used by exactly one token stay inline below — naming
+   * those would move them, not deduplicate them.
+   * These do not flip; the semantic layer picks a different step per mode. */
+  --color-neutral-0: oklch(1.0000 0 0);
+  --color-neutral-150: oklch(0.929 0.013 256);
+  --color-neutral-900: oklch(0.2046 0 0);
+  --color-blue-900: oklch(0.192 0.055 259);
+  --color-blue-600: oklch(0.418 0.171 257);
+  --color-blue-400: oklch(0.640 0.155 252);
+  --color-cyan-500: oklch(0.684 0.140 232);
+
+  --background: var(--color-neutral-0);
+  --foreground: var(--color-neutral-900);
+  --card: var(--color-neutral-0);
+  --card-foreground: var(--color-neutral-900);
+  --popover: var(--color-neutral-0);
   --popover-foreground: oklch(0.4386 0 0);
-  --primary: oklch(0.192 0.055 259);
-  --primary-foreground: oklch(1.0000 0 0);
+  --primary: var(--color-blue-900);
+  --primary-foreground: var(--color-neutral-0);
   --primary-text: var(--primary);
-  --secondary: oklch(0.418 0.171 257);
-  --secondary-foreground: oklch(1.0000 0 0);
+  --secondary: var(--color-blue-600);
+  --secondary-foreground: var(--color-neutral-0);
   --muted: oklch(0.9219 0 0);
   --muted-foreground: oklch(0.545 0 0);
-  --accent: oklch(0.684 0.140 232);
-  --accent-foreground: oklch(1.0000 0 0);
-  --destructive: oklch(0.545 0.230 27);
-  --destructive-hover: oklch(0.480 0.225 27);
-  --destructive-foreground: oklch(1.0000 0 0);
+  --accent: var(--color-cyan-500);
+  --accent-foreground: var(--color-neutral-0);
+  --destructive: var(--color-error-500);
+  --destructive-hover: var(--color-error-600);
+  --destructive-foreground: var(--color-neutral-0);
   --border: oklch(0.904 0 0);
   --input: oklch(0.967 0 0);
-  --ring: oklch(0.192 0.055 259);
-  --chart-1: oklch(0.192 0.055 259);
-  --chart-2: oklch(0.418 0.171 257);
-  --chart-3: oklch(0.684 0.140 232);
-  --chart-4: oklch(0.882 0.188 89);
-  --chart-5: oklch(0.554 0.155 145);
+  --ring: var(--color-blue-900);
+  --chart-1: var(--color-blue-900);
+  --chart-2: var(--color-blue-600);
+  --chart-3: var(--color-cyan-500);
+  --chart-4: var(--color-gold-500);
+  --chart-5: var(--color-success-500);
   /* ── Sidebar — dark navy (UBC Blue) ─────────────────────── */
-  --sidebar: oklch(0.192 0.055 259);
+  --sidebar: var(--color-blue-900);
   --sidebar-foreground: oklch(0.870 0.012 256);
-  --sidebar-primary: oklch(0.192 0.055 259);
-  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-primary: var(--color-blue-900);
+  --sidebar-primary-foreground: var(--color-neutral-0);
   --sidebar-accent: oklch(0.248 0.055 259);
-  --sidebar-accent-foreground: oklch(1.0000 0 0);
+  --sidebar-accent-foreground: var(--color-neutral-0);
   --sidebar-border: oklch(0.248 0.048 259);
-  --sidebar-ring: oklch(0.684 0.140 232);
+  --sidebar-ring: var(--color-cyan-500);
   /* ── Brand accent ──────────────────────────────────────── */
-  --gold: oklch(0.882 0.188 89);
+  --gold: var(--color-gold-500);
   /* ── Gold scale (decorative — gold Button/Badge variants) ── */
   --color-gold-700: oklch(0.740 0.162 82);
   --color-gold-600: oklch(0.810 0.175 86);
@@ -206,12 +220,12 @@ body {
 
 .dark {
   --background: oklch(0.142 0.008 259);
-  --foreground: oklch(0.929 0.013 256);
+  --foreground: var(--color-neutral-150);
   --card: oklch(0.190 0.012 259);
-  --card-foreground: oklch(0.929 0.013 256);
+  --card-foreground: var(--color-neutral-150);
   --popover: oklch(0.220 0.015 259);
   --popover-foreground: oklch(0.735 0 0);
-  --primary-text: oklch(0.640 0.155 252);
+  --primary-text: var(--color-blue-400);
   --muted: oklch(0.228 0.012 259);
   --muted-foreground: oklch(0.680 0 0);
   /* Error palette — flips for dark bg legibility */
@@ -228,11 +242,11 @@ body {
   --color-warning-700: oklch(0.880 0.070 85);
   --destructive: var(--color-error-500);
   --destructive-hover: var(--color-error-600);
-  --destructive-foreground: oklch(1.000 0 0);
+  --destructive-foreground: var(--color-neutral-0);
   --shadow-focus-error: 0 0 0 3px oklch(0.625 0.240 25 / 0.45);
   --border: oklch(0.265 0.020 259);
   --input: oklch(0.220 0.012 259);
-  --ring: oklch(0.418 0.171 257);
+  --ring: var(--color-blue-600);
   /* ── Sidebar — deepened dark navy ────────────────────────── */
   --sidebar: oklch(0.115 0.018 262);
   --sidebar-foreground: oklch(0.780 0.015 256);
