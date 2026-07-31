@@ -27,6 +27,12 @@ async function getJson(request, url) {
   }
 }
 
+/**
+ * All three APIs reject an unpaged list with `400 PAGINATION_REQUIRED`, so every
+ * list URL carries explicit paging. A resolver only ever needs the first row.
+ */
+const paged = (url) => `${url}${url.includes('?') ? '&' : '?'}page=1&pageSize=5`;
+
 /** Unwrap the common list envelopes these three APIs use. */
 function toArray(payload, ...keys) {
   if (!payload) return [];
@@ -50,10 +56,10 @@ function firstId(list, ...idKeys) {
 async function resolveCore(request, baseUrl) {
   const params = {};
 
-  const courses = toArray(await getJson(request, `${baseUrl}/api/courses`), 'courses');
+  const courses = toArray(await getJson(request, paged(`${baseUrl}/api/courses`)), 'courses');
   params.courseId = firstId(courses, 'courseId');
 
-  const chats = toArray(await getJson(request, `${baseUrl}/api/chats`), 'chats');
+  const chats = toArray(await getJson(request, paged(`${baseUrl}/api/chats`)), 'chats');
   params.chatId = firstId(chats, 'chatId');
 
   const disciplines = toArray(await getJson(request, `${baseUrl}/api/disciplines`), 'disciplines');
@@ -72,25 +78,49 @@ async function resolveCore(request, baseUrl) {
   return params;
 }
 
+/**
+ * AI Tutor nests its content endpoints (`/courses/:id/modules`,
+ * `/modules/:id/lessons`) — there is no flat `/modules` or `/lessons` list, and
+ * a course's detail payload carries no `modules` array. Content is sparse
+ * (plenty of courses have no modules, plenty of modules no lessons), so walk
+ * down until a course→module→lesson chain that actually exists is found rather
+ * than trusting the first of each.
+ */
 async function resolveAiTutor(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, `${AI_TUTOR_API}/api/courses`), 'courses', 'offerings');
+  const courses = toArray(await getJson(request, paged(`${AI_TUTOR_API}/api/courses`)), 'courses', 'offerings');
+  if (!courses.length) return params;
   params.courseId = firstId(courses, 'courseId', 'offeringId');
-  if (!params.courseId) return params;
 
-  const detail = await getJson(request, `${AI_TUTOR_API}/api/courses/${params.courseId}`);
-  const modules = toArray(detail?.modules ?? detail, 'modules');
-  params.moduleId =
-    firstId(modules, 'moduleId') ??
-    firstId(toArray(await getJson(request, `${AI_TUTOR_API}/api/modules?courseId=${params.courseId}`), 'modules'), 'moduleId');
-  if (!params.moduleId) return params;
+  for (const course of courses) {
+    const courseId = firstId([course], 'courseId', 'offeringId');
+    if (!courseId) continue;
 
-  const moduleDetail = await getJson(request, `${AI_TUTOR_API}/api/modules/${params.moduleId}`);
-  const lessons = toArray(moduleDetail?.lessons ?? moduleDetail, 'lessons');
-  params.lessonId =
-    firstId(lessons, 'lessonId') ??
-    firstId(toArray(await getJson(request, `${AI_TUTOR_API}/api/lessons?moduleId=${params.moduleId}`), 'lessons'), 'lessonId');
+    const modules = toArray(
+      await getJson(request, paged(`${AI_TUTOR_API}/api/courses/${courseId}/modules`)),
+      'modules'
+    );
+    if (!modules.length) continue;
+
+    // A module id is only usable once we know the course it hangs off renders.
+    params.courseId = courseId;
+    params.moduleId ??= firstId(modules, 'moduleId');
+
+    for (const mod of modules) {
+      const moduleId = firstId([mod], 'moduleId');
+      if (!moduleId) continue;
+      const lessons = toArray(
+        await getJson(request, paged(`${AI_TUTOR_API}/api/modules/${moduleId}/lessons`)),
+        'lessons'
+      );
+      const lessonId = firstId(lessons, 'lessonId');
+      if (!lessonId) continue;
+      params.moduleId = moduleId;
+      params.lessonId = lessonId;
+      return params;
+    }
+  }
 
   return params;
 }
@@ -98,21 +128,33 @@ async function resolveAiTutor(request) {
 async function resolveQuestionMaker(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, `${QM_API}/api/course`), 'courses');
+  const courses = toArray(await getJson(request, paged(`${QM_API}/api/course`)), 'courses');
+  if (!courses.length) return params;
   params.courseId = firstId(courses, 'courseId');
-  if (!params.courseId) return params;
 
-  const questions = toArray(
-    await getJson(request, `${QM_API}/api/questions?courseId=${params.courseId}`),
-    'questions'
-  );
-  params.questionId = firstId(questions, 'questionId');
+  // The first course is not guaranteed to own any questions or assessments —
+  // seeded content clusters on a few courses — so walk the page until one does.
+  // /courses/:courseId itself only needs the first id, which is already set.
+  for (const course of courses) {
+    const courseId = firstId([course], 'courseId');
+    if (!courseId) continue;
 
-  const assessments = toArray(
-    await getJson(request, `${QM_API}/api/assessments?courseId=${params.courseId}`),
-    'assessments'
-  );
-  params.assessmentId = firstId(assessments, 'assessmentId');
+    const questions = toArray(await getJson(request, paged(`${QM_API}/api/questions?courseId=${courseId}`)), 'questions');
+    const assessments = toArray(
+      await getJson(request, paged(`${QM_API}/api/assessments?courseId=${courseId}`)),
+      'assessments'
+    );
+    const questionId = firstId(questions, 'questionId');
+    const assessmentId = firstId(assessments, 'assessmentId');
+    if (!questionId && !assessmentId) continue;
+
+    // Keep the ids self-consistent: a question/assessment id is only valid in
+    // the URL of the course it belongs to.
+    params.courseId = courseId;
+    params.questionId = questionId;
+    params.assessmentId = assessmentId;
+    if (questionId && assessmentId) break;
+  }
 
   return params;
 }
