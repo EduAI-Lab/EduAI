@@ -75,6 +75,10 @@ export default [
   route("/admin/cron-jobs", "routes/admin.cron-jobs.tsx"),
   route("/api/ai-providers/*", "routes/api/ai-providers.$.ts"),
   route("/api/ai-models/*", "routes/api/ai-models.$.ts"),
+  route(
+    "/api/routing-model-settings",
+    "routes/api/routing-model-settings.ts",
+  ),
   route("/api/me", "routes/api/me.ts"),
   route("/api/preferences", "routes/api/preferences.ts"),
   route("/api/users/*", "routes/api/users.$.ts"),

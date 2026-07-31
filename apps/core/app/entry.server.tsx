@@ -56,9 +56,13 @@ export default function handleRequest(
 
     const { pipe, abort } = renderToPipeableStream(
       <NonceProvider value={nonce}>
-        <ServerRouter context={routerContext} url={request.url} />
+        {/* Nonces the SSR data-stream scripts (`streamController.enqueue`/
+            `.close()`); `<Scripts nonce>` does not cover them. */}
+        <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceProvider>,
       {
+        // Nonces React's own `$RC`/`$RV`/`$RB` Suspense-reveal scripts.
+        nonce,
         [readyOption]() {
           shellRendered = true;
           const body = new PassThrough({
