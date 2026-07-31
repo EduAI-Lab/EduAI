@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Removed
 
-- [ui] chore: Delete `packages/ui/src/ui/chart.tsx`, the shadcn-style `ChartContainer`/`ChartTooltip` wrapper around `recharts` — zero consumers across Core, ai-tutor, and question-maker-frontend. Remove its barrel re-export and `recharts` from Core's package.json. `packages/ui/src/charts/*` (`DonutChart`, `MeterBar`, `StackedBar`, `PanelCard`, `QuestionAnalytics`) is untouched — contrary to the issue's premise, all five are actively used and none of them depend on `recharts`. Closes #1250. (#1250, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ui] chore: Delete `packages/ui/src/ui/chart.tsx`, the shadcn-style `ChartContainer`/`ChartTooltip` wrapper around `recharts` — zero consumers across Core, ai-tutor, and question-maker-frontend. Remove its barrel re-export and `recharts` from Core's package.json. `packages/ui/src/charts/*` (`DonutChart`, `MeterBar`, `StackedBar`, `PanelCard`, `QuestionAnalytics`) is untouched — contrary to the issue's premise, all five are actively used and none of them depend on `recharts`. Closes #1250. (#1250, @Ayyhab, 2026-07-31) — [#1295](https://github.com/EduAI-Lab/EduAI/pull/1295)
 
 ## [Week 13 — July 27 – August 2, 2026]
 
