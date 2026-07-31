@@ -1,0 +1,153 @@
+{
+  "n": 9,
+  "n_label_file": 9,
+  "n_raw_records": 23,
+  "n_after_finished_and_group_filter": 11,
+  "n_dropped_incomplete_or_no_group": 12,
+  "n_dropped_data_quality": 2,
+  "excluded_response_ids": [
+    "R_2Cgk3tzIPPPemYU",
+    "R_62F6naaHk7ItKgb"
+  ],
+  "metrics": [
+    {
+      "metric": "SUS",
+      "n": 9,
+      "n_dropped_missing": 0,
+      "assistive_mean": 75.0,
+      "assistive_sd": 18.615256586407227,
+      "assistive_ci_lo": 60.69104711128612,
+      "assistive_ci_hi": 89.30895288871389,
+      "baseline_mean": 58.888888888888886,
+      "baseline_sd": 19.596626693841408,
+      "baseline_ci_lo": 43.82558815820534,
+      "baseline_ci_hi": 73.95218961957242,
+      "delta_assistive_minus_baseline": 16.111111111111114,
+      "wilcoxon_W": 7.0,
+      "p_value": 0.07421875,
+      "effect_r": 0.5950874968117744,
+      "effect_r_ci_lo": -0.11414585395408458,
+      "effect_r_ci_hi": 0.9025227249955987,
+      "below_bonferroni_alpha_.01": false,
+      "note": ""
+    },
+    {
+      "metric": "TLX_Load",
+      "n": 9,
+      "n_dropped_missing": 0,
+      "assistive_mean": 2.5277777777777777,
+      "assistive_sd": 1.0785149254620654,
+      "assistive_ci_lo": 1.6987578184461325,
+      "assistive_ci_hi": 3.3567977371094226,
+      "baseline_mean": 3.8055555555555554,
+      "baseline_sd": 1.6619725562649275,
+      "baseline_ci_lo": 2.5280503597746353,
+      "baseline_ci_hi": 5.083060751336475,
+      "delta_assistive_minus_baseline": -1.2777777777777777,
+      "wilcoxon_W": 3.0,
+      "p_value": 0.078125,
+      "effect_r": -0.5872234701210224,
+      "effect_r_ci_lo": -0.9002561961433627,
+      "effect_r_ci_hi": 0.12606017486513382,
+      "below_bonferroni_alpha_.01": false,
+      "note": ""
+    },
+    {
+      "metric": "TLX_Perf",
+      "n": 9,
+      "n_dropped_missing": 0,
+      "assistive_mean": 5.111111111111111,
+      "assistive_sd": 1.3642254619787415,
+      "assistive_ci_lo": 4.062474592219846,
+      "assistive_ci_hi": 6.159747630002375,
+      "baseline_mean": 4.666666666666667,
+      "baseline_sd": 1.6583123951776997,
+      "baseline_ci_lo": 3.3919749197533005,
+      "baseline_ci_hi": 5.9413584135800335,
+      "delta_assistive_minus_baseline": 0.44444444444444375,
+      "wilcoxon_W": 1.5,
+      "p_value": 0.375,
+      "effect_r": 0.29571551967295867,
+      "effect_r_ci_lo": -0.458439654430792,
+      "effect_r_ci_hi": 0.8022771406610804,
+      "below_bonferroni_alpha_.01": false,
+      "note": ""
+    },
+    {
+      "metric": "UX",
+      "n": 9,
+      "n_dropped_missing": 0,
+      "assistive_mean": 5.511111111111111,
+      "assistive_sd": 0.831330927555995,
+      "assistive_ci_lo": 4.872093592222031,
+      "assistive_ci_hi": 6.150128630000191,
+      "baseline_mean": 4.622222222222223,
+      "baseline_sd": 1.491457154746473,
+      "baseline_ci_lo": 3.4757867667804874,
+      "baseline_ci_hi": 5.768657677663958,
+      "delta_assistive_minus_baseline": 0.8888888888888884,
+      "wilcoxon_W": 1.5,
+      "p_value": 0.09375,
+      "effect_r": 0.5586465742578146,
+      "effect_r_ci_lo": -0.1676895008521656,
+      "effect_r_ci_hi": 0.8918745241201046,
+      "below_bonferroni_alpha_.01": false,
+      "note": ""
+    },
+    {
+      "metric": "Comp",
+      "n": 9,
+      "n_dropped_missing": 0,
+      "assistive_mean": 3.5555555555555554,
+      "assistive_sd": 0.5833333333333334,
+      "assistive_ci_lo": 3.1071658625991896,
+      "assistive_ci_hi": 4.003945248511921,
+      "baseline_mean": 3.0555555555555554,
+      "baseline_sd": 0.6821127309893709,
+      "baseline_ci_lo": 2.531237296109923,
+      "baseline_ci_hi": 3.5798738150011875,
+      "delta_assistive_minus_baseline": 0.5,
+      "wilcoxon_W": 3.0,
+      "p_value": 0.09375,
+      "effect_r": 0.5586465742578146,
+      "effect_r_ci_lo": -0.1676895008521656,
+      "effect_r_ci_hi": 0.8918745241201046,
+      "below_bonferroni_alpha_.01": false,
+      "note": ""
+    }
+  ],
+  "preferences": {
+    "Overall preference": {
+      "Assistive Mode On": {
+        "n": 7,
+        "pct": 77.8
+      },
+      "No preference": {
+        "n": 2,
+        "pct": 22.2
+      }
+    },
+    "Back-on-task preference": {
+      "Assistive Mode On": {
+        "n": 8,
+        "pct": 88.9
+      },
+      "Baseline (Assistive Mode Off)": {
+        "n": 1,
+        "pct": 11.1
+      }
+    },
+    "Read/Scan preference": {
+      "Assistive Mode On": {
+        "n": 9,
+        "pct": 100.0
+      }
+    }
+  },
+  "versions": {
+    "pandas": "3.0.5",
+    "numpy": "2.5.1",
+    "scipy": "1.18.0",
+    "matplotlib": "3.11.1"
+  }
+}
