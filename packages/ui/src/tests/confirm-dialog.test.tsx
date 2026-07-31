@@ -111,4 +111,77 @@ describe("ConfirmDialog", () => {
 
     expect(screen.queryByText('Unpublish "undefined"?')).not.toBeInTheDocument()
   })
+
+  it("disables both buttons and marks the confirm label while loading", () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        title="Delete assessment?"
+        description="This cannot be undone."
+        confirmLabel="Delete"
+        isLoading={true}
+        onConfirm={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Delete…" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled()
+  })
+
+  it("does not fire onConfirm a second time while loading", () => {
+    const onConfirm = vi.fn()
+    render(
+      <ConfirmDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        title="Delete assessment?"
+        description="This cannot be undone."
+        confirmLabel="Delete"
+        isLoading={true}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete…" }))
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it("keeps the dialog mounted after confirming when closeOnConfirm is false", () => {
+    const onConfirm = vi.fn()
+    const onOpenChange = vi.fn()
+    render(
+      <ConfirmDialog
+        open={true}
+        onOpenChange={onOpenChange}
+        title="Delete assessment?"
+        description="This cannot be undone."
+        confirmLabel="Delete"
+        closeOnConfirm={false}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    // Caller owns closing, so the primitive must not request it itself.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument()
+  })
+
+  it("renders a custom cancel label", () => {
+    render(
+      <ConfirmDialog
+        open={true}
+        onOpenChange={vi.fn()}
+        title="Discard draft?"
+        description="Your edits will be lost."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Keep editing" })).toBeInTheDocument()
+  })
 })
