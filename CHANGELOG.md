@@ -29,12 +29,9 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 - [core] fix: Pass the CSP nonce to `ServerRouter` and the theme provider so React Router's SSR data-stream scripts are no longer blocked, and allow `data:` in `font-src` for Vite-inlined fonts. (#1219, @mochi_21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 - [core] fix: Nonce the SSR data-stream and theme scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 
-### Fixed
 
+### Fixed
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
-
-### Fixed
-
 - [core] fix: Harden routing and deployment diagnostics — Auto-routed replies no longer expose the internal vLLM model label; Admin Settings warns when required authentication, service, or embedding environment keys are missing without exposing values; direct browser navigation to React Router `.data` payloads returns 404 while internal loader fetches continue working; extension completion responses expose `X-Fleet-Server`; and `npm run fleet:extensions:smoke` verifies AI Tutor interactive and Question Maker background routing against a deployed fleet. Closes #272, #675, #681, #829, #884, #885. (@superbolt08, 2026-07-30) — [#1280](https://github.com/EduAI-Lab/EduAI/pull/1280)
 
 ## [Week 12 — July 20–26, 2026]
