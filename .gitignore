@@ -88,3 +88,6 @@ apps/core/scripts/research/research-api-keys.openrouter.json
 .gstack/
 # jscpd html viewer — regenerable from jscpd-report.json (perf:quality)
 docs/perf/**/jscpd-report.html
+
+# #1272 token-parity working snapshots (regenerable from git)
+.token-parity/
