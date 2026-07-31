@@ -190,6 +190,44 @@ body {
   --diff-hard-fg: oklch(0.460 0.205 25);
   --diff-hard-border: oklch(0.620 0.220 25);
   --diff-hard-solid: oklch(0.610 0.225 25);
+  /* ── Chart / metric series ──────────────────────────────────
+   * Categorical slots for donuts, meters and dashboard breakdowns. Named by
+   * slot rather than meaning because the same value carries different labels
+   * per surface (series-3 is "progress", "MCQ" and "coverage" depending on the
+   * chart). Previously copy-pasted across the ai-tutor dashboards, QM's pages
+   * and @eduai/ui's charts.
+   *
+   * These deliberately have no `.dark` override, preserving the behaviour of
+   * the literals they replace. That is a known gap, not an endorsement:
+   * Core's dashboard-analytics.tsx documents that a hardcoded hue keeps its
+   * light-mode value after a theme flip, and routes its own donuts through the
+   * semantic --color-success/warning/error/role tokens instead. Unifying these
+   * with those tokens changes what renders, so it is not part of this pass. */
+  --color-series-1: oklch(0.60 0.15 150);
+  --color-series-2: oklch(0.75 0.15 80);
+  --color-series-3: oklch(0.55 0.16 255);
+  --color-series-4: oklch(0.55 0.14 255);
+  --color-series-5: oklch(0.62 0.17 295);
+  --color-series-6: oklch(0.70 0.03 255);
+  --color-series-7: oklch(0.64 0.15 190);
+  --color-series-8: oklch(0.66 0.16 300);
+  /* ── Sidebar interaction states ─────────────────────────────
+   * Pinned to their light values in both modes on purpose: the sidebar is dark
+   * chrome in either theme, and following --sidebar-accent into dark mode would
+   * cut the active item's separation from the sidebar (0.133 lightness gap
+   * against 0.060). Do not repoint these at --sidebar-accent. */
+  --color-sidebar-hover: oklch(0.218 0.050 259);
+  --color-sidebar-active: oklch(0.248 0.055 259);
+  /* ── Material file-type accents (Core course detail) ─────── */
+  --color-file-pdf: oklch(0.63 0.22 25);
+  --color-file-slides: oklch(0.55 0.18 48);
+  --color-file-doc: oklch(0.52 0.18 230);
+  --color-file-generic: oklch(0.55 0.12 260);
+  /* ── Sidebar badge dots ─────────────────────────────────────
+   * Left as hex to stay byte-exact; converting to OKLCH would round. */
+  --color-badge-green: #22c55e;
+  --color-badge-orange: #f97316;
+  --color-badge-red: #ef4444;
   --font-sans: Outfit, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: monospace;
