@@ -83,12 +83,10 @@ jobs:
             fi
           fi
 
-          selected=0
-          [ "$core" = true ] && selected=$((selected + 1))
-          [ "$ai_tutor" = true ] && selected=$((selected + 1))
-          [ "$question_maker" = true ] && selected=$((selected + 1))
           cross_service=false
-          if [ "$shared" = true ] || [ "$core" = true ] || [ "$selected" -gt 1 ]; then
+          # Cross-service specs exercise contracts from every application, so an
+          # application-only change still needs the full stack.
+          if [ "$core" = true ] || [ "$ai_tutor" = true ] || [ "$question_maker" = true ]; then
             cross_service=true
           fi
 
@@ -142,6 +140,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ matrix.db_password }}
           POSTGRES_DB: ${{ matrix.db_name }}
         ports:
+          # Core's test configuration assumes the database is on the default port.
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U ${{ matrix.db_user }}"
@@ -167,21 +166,29 @@ jobs:
       - name: Configure test environment
         run: |
           set -euo pipefail
-          rm -f apps/core/.env
-          cat > apps/core/.env.test <<'EOF'
-          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/eduai_test?schema=public"
+          case "${{ matrix.scope }}" in
+            core)
+              rm -f apps/core/.env
+              cat > apps/core/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres?schema=public"
           BETTER_AUTH_SECRET="test-secret-not-for-production"
           BETTER_AUTH_URL="http://localhost:3000"
           COOKIE_DOMAIN="localhost"
           PORT=4001
           EOF
-          cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
+              ;;
+            ai_tutor)
+              cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
           DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/aitutor_test"
           BETTER_AUTH_SECRET="test-secret-not-for-production"
           BETTER_AUTH_URL="http://localhost:4000/api/auth"
           COOKIE_DOMAIN="localhost"
           PORT=4001
           EOF
+              ;;
+            question_maker)
+              ;;
+          esac
 
       - name: Generate Prisma client
         run: |
@@ -204,6 +211,8 @@ jobs:
 
       - name: Restore Turborepo cache
         id: turbo-cache
+        # Restore before testing, then save in a separate post-test step so a
+        # failed run never publishes incomplete task artifacts.
         uses: actions/cache/restore@v4
         with:
           path: .turbo/cache
@@ -215,7 +224,6 @@ jobs:
         env:
           NODE_ENV: test
           GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
-          TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/question_maker_test
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
         run: |
@@ -237,6 +245,7 @@ jobs:
                 --filter=ai-tutor --filter=ai-tutor-server
               ;;
             question_maker)
+              export TEST_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/question_maker_test
               npx turbo run test --continue --env-mode=loose \
                 --filter=question-maker-frontend --filter=question-maker-backend
               ;;
@@ -252,7 +261,8 @@ jobs:
       - name: Write timing summary
         if: always()
         run: |
-          elapsed=$(($(date +%s) - CI_JOB_STARTED))
+          started_at=${CI_JOB_STARTED:-$(date +%s)}
+          elapsed=$(($(date +%s) - started_at))
           matched='${{ steps.turbo-cache.outputs.cache-matched-key }}'
           [ -n "$matched" ] || matched='none'
           {
@@ -267,7 +277,7 @@ jobs:
     name: Prisma Client Isolation
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.shared == 'true'
+    if: needs.changes.outputs.shared == 'true' || needs.changes.outputs.ai_tutor == 'true' || needs.changes.outputs.question_maker == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -288,15 +298,22 @@ jobs:
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
+    # The aggregate job must always run so required checks stay present on
+    # docs-only pull requests and still propagate upstream failures.
     if: always()
     needs: [changes, unit, prisma-isolation]
     steps:
       - name: Preserve required-check result
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PRISMA_RESULT: ${{ needs.prisma-isolation.result }}
         run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Affected-application detection failed or was cancelled."
+            exit 1
+          fi
           if [ "$CODE_CHANGED" != "true" ]; then
             echo "Docs-only change; unit tests were not required."
             exit 0
@@ -399,6 +416,8 @@ jobs:
         run: bash scripts/e2e-in-docker.sh
 
       - name: Warm affected E2E caches
+        # Cache export is intentionally separate from the loaded test build:
+        # exporting inline makes the critical path wait for a mode=max upload.
         continue-on-error: true
         env:
           TARGETS: ${{ steps.select.outputs.targets }}
@@ -426,7 +445,8 @@ jobs:
       - name: Write timing summary
         if: always()
         run: |
-          elapsed=$(($(date +%s) - CI_JOB_STARTED))
+          started_at=${CI_JOB_STARTED:-$(date +%s)}
+          elapsed=$(($(date +%s) - started_at))
           {
             echo "### Affected E2E"
             echo
@@ -439,14 +459,21 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    # Keep the required check present for docs-only pull requests while
+    # propagating failures from classification and the affected E2E run.
     if: always()
     needs: [changes, e2e-run]
     steps:
       - name: Preserve required-check result
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           E2E_RESULT: ${{ needs.e2e-run.result }}
         run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Affected-application detection failed or was cancelled."
+            exit 1
+          fi
           if [ "$CODE_CHANGED" != "true" ]; then
             echo "Docs-only change; E2E was not required."
             exit 0
