@@ -10,6 +10,12 @@ export function isSafeBranchInput(branch) {
   if (branch.startsWith("-") || branch.includes("..") || branch.includes("@{")) {
     return false;
   }
+  if (branch.includes("//") || branch.endsWith("/") || branch.endsWith(".")) {
+    return false;
+  }
+  if (branch.split("/").some((segment) => segment.endsWith(".lock"))) {
+    return false;
+  }
   return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch);
 }
 

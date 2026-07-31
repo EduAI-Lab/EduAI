@@ -169,37 +169,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   deploymentInProgress = true;
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const actor = `${interaction.user.tag} (${interaction.user.id})`;
-
   try {
-    await runDeployment(branch, actor);
-  } catch (error) {
-    const output = error.output || error.stack || error.message;
-    console.error(output);
-    await interaction.editReply(
-      `The deployment failed. No success was reported. Check the bot service logs for details.`,
-    ).catch((replyError) => {
-      console.error("Could not send the failed-deployment interaction reply:", replyError);
-    });
-    await announce({ ok: false, branch, actor, output }).catch(console.error);
-    deploymentInProgress = false;
-    return;
-  }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const actor = `${interaction.user.tag} (${interaction.user.id})`;
 
-  const status = await getRepoStatus(config.repo).catch(() => ({
-    branch,
-    sha: "unknown",
-  }));
-  await interaction.editReply(
-    `Dev server updated to \`${status.branch}\` at \`${status.sha}\`.`,
-  ).catch((error) => {
-    console.error("Deployment succeeded, but the interaction reply failed:", error);
-  });
-  await announce({ ok: true, branch, actor }).catch((error) => {
-    console.error("Deployment succeeded, but the channel announcement failed:", error);
-  });
-  deploymentInProgress = false;
+    try {
+      await runDeployment(branch, actor);
+    } catch (error) {
+      const output = error.output || error.stack || error.message;
+      console.error(output);
+      await interaction.editReply(
+        `The deployment failed. No success was reported. Check the bot service logs for details.`,
+      ).catch((replyError) => {
+        console.error("Could not send the failed-deployment interaction reply:", replyError);
+      });
+      await announce({ ok: false, branch, actor, output }).catch(console.error);
+      return;
+    }
+
+    const status = await getRepoStatus(config.repo).catch(() => ({
+      branch,
+      sha: "unknown",
+    }));
+    await interaction.editReply(
+      `Dev server updated to \`${status.branch}\` at \`${status.sha}\`.`,
+    ).catch((error) => {
+      console.error("Deployment succeeded, but the interaction reply failed:", error);
+    });
+    await announce({ ok: true, branch, actor }).catch((error) => {
+      console.error("Deployment succeeded, but the channel announcement failed:", error);
+    });
+  } finally {
+    deploymentInProgress = false;
+  }
 });
 
 process.on("SIGTERM", () => {

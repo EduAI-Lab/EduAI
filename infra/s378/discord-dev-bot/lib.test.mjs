@@ -21,6 +21,11 @@ test("rejects unsafe or malformed branch input", () => {
     "main@{0}",
     "main;shutdown",
     " main",
+    "a//b",
+    "main/",
+    "main.",
+    "refs/heads/main.lock",
+    "feature/branch.lock/rest",
   ]) {
     assert.equal(isSafeBranchInput(branch), false, branch);
   }
