@@ -32,40 +32,12 @@ const hasCloudKey = async (): Promise<boolean> => {
 };
 const listeners = new Set<() => void>();
 let inflight: Promise<void> | null = null;
-let heartbeatTimeout: number | null = null;
-let backoffStep = 0; // 0 → 1s, 1 → 2s, 2 → 4s, 3+ → 8s
 
 const notify = () => listeners.forEach((l) => l());
 
 const setState = (next: Partial<EduAIState>) => {
     state = { ...state, ...next };
     notify();
-};
-
-const clearHeartbeat = () => {
-    if (typeof window !== 'undefined' && heartbeatTimeout !== null) {
-        window.clearTimeout(heartbeatTimeout);
-    }
-    heartbeatTimeout = null;
-    backoffStep = 0;
-};
-
-const scheduleHeartbeatIfNeeded = () => {
-    if (typeof window === 'undefined') return;
-    if (heartbeatTimeout !== null) return;
-
-    const seconds = Math.min(8, Math.pow(2, backoffStep));
-    const delayMs = seconds * 1000;
-
-    heartbeatTimeout = window.setTimeout(() => {
-        heartbeatTimeout = null;
-        // Silent re-check: keep the current status visible so the badge/banner
-        // don't flicker to "Checking…" on every background poll.
-        void refreshEduAIStatus({ silent: true });
-        if (backoffStep < 3) {
-            backoffStep += 1;
-        }
-    }, delayMs);
 };
 
 const fetchStatus = async () => {
@@ -86,14 +58,12 @@ const fetchStatus = async () => {
                     ? 'AI online via your cloud provider key.'
                     : 'AI online via the UBC-hosted model.',
             });
-            clearHeartbeat();
         } else if (result?.configured === false) {
             setState({
                 status: 'error',
                 provider: undefined,
                 message: 'AI needs a Core sign-in (shared session cookie). Sign in via Core and retry.'
             });
-            clearHeartbeat();
         } else {
             // Service unreachable. Tailor the guidance: if the user has a cloud key
             // saved it failed (bad key / network); if not, point them to Settings —
@@ -105,7 +75,6 @@ const fetchStatus = async () => {
                   'Your cloud provider key could not be validated. Check the key in Settings or your network.'
                 : 'UBC-hosted AI is unavailable (needs UBC wifi/VPN). Add a cloud provider API key in Settings to use AI off-network.';
             setState({ status: 'error', provider, message });
-            scheduleHeartbeatIfNeeded();
         }
     } catch {
         const cloudKey = await hasCloudKey();
@@ -116,7 +85,6 @@ const fetchStatus = async () => {
                 ? 'Could not reach the AI service. Check your network and try again.'
                 : 'AI service unavailable. Connect to UBC wifi/VPN, or add a cloud provider API key in Settings.',
         });
-        scheduleHeartbeatIfNeeded();
     }
 };
 
@@ -126,12 +94,9 @@ export const setQuestionGenerationPhase = (phase: QuestionGenerationPhase) => {
     notify();
 };
 
-export const refreshEduAIStatus = async (opts?: { silent?: boolean }) => {
+export const refreshEduAIStatus = async () => {
     if (inflight) return inflight;
-    // Background polls pass { silent } to avoid flipping the UI back to "loading".
-    if (!opts?.silent) {
-        setState({ status: 'loading', message: 'Checking AI service status. Connect to UBC wifi or VPN.' });
-    }
+    setState({ status: 'loading', message: 'Checking AI service status. Connect to UBC wifi or VPN.' });
     inflight = fetchStatus().finally(() => {
         inflight = null;
     });
