@@ -1,7 +1,8 @@
 # Performance & Code-Quality Baselines
 
-Snapshots of API response times and code-quality metrics, captured **before** the
-#940–#949 / #921 fixes so those fixes can be measured as a concrete before/after delta.
+Snapshots of API response times, per-page browser vitals, and code-quality metrics, captured
+**before** the #940–#949 / #921 fixes so those fixes can be measured as a concrete
+before/after delta.
 
 > **Scope.** The normal CRUD API surface (~46 Core + ~77 Question Maker + ~71 AI Tutor
 > route defs), **not** AI-chat/model latency (see `apps/core/scripts/chat-latency-bench.mjs`)
@@ -18,17 +19,24 @@ Snapshots of API response times and code-quality metrics, captured **before** th
 ```
 docs/perf/
   README.md                    <- this file
-  baseline/                    the pinned BEFORE snapshot (issue #961)
+  backend/baseline/            the pinned BEFORE snapshot — API + code quality (issue #961)
     endpoints.md               inventory: app / method / path / auth / handler
     response-times.json        p50/p95/p99 + payload bytes + status per route (machine-readable)
     SUMMARY.md                 headline numbers + full environment fingerprint
     duplication/               jscpd report (json + html)
     dead-code/                 knip + ts-prune output
     dep-graph/                 madge circular-dep + module graph (json + svg)
+  frontend/baseline/           the pinned BEFORE snapshot — per-page browser vitals
+    page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS chunk breakdown per page
+    errors.json / errors.log   pages that produced no trustworthy number, and why
 ```
 
-`baseline/` is the pinned BEFORE run. Don't edit it in place after the fixes land —
-capture the AFTER run into a sibling folder (e.g. `after-<date>/`) and compare.
+Both `baseline/` folders are pinned BEFORE runs. Don't edit them in place after the fixes
+land — capture the AFTER run into a sibling folder (e.g. `after-<date>/`) and compare.
+
+`backend/` measures the server (response times per endpoint, plus the static code-quality
+reports); `frontend/` measures what a real browser experiences per page. They are separate
+because a fast API can still render slowly, and the fix lists don't overlap.
 
 ## Regenerate
 
@@ -63,7 +71,7 @@ scope (see the per-app `*-measurement-spec.md` SKIP lists).
 3. Configure targets (env): `CORE_URL`, `AITUTOR_URL`, `QM_URL` — point at local or UBC dev.
 4. Run:
    ```bash
-   npm run perf:endpoints -- --out=docs/perf/baseline       # or --out=docs/perf/after-<date> for the AFTER run
+   npm run perf:endpoints -- --out=docs/perf/backend/baseline   # or --out=docs/perf/backend/after-<date>
    ```
    (Output dir is the `--out` flag; note the npm `--` that forwards it. Errors land in
    `<out>/errors.log` + `<out>/errors.json`.)
@@ -73,14 +81,36 @@ scope (see the per-app `*-measurement-spec.md` SKIP lists).
    and mutations (create/update/delete). A client-side governor paces cookie-validate traffic under
    Core's IP rate limit. Tune with `PERF_SAMPLES`, `PERF_MUT_SAMPLES`, `PERF_VALIDATE_LIMIT`.
 
+### Page vitals (needs the full stack running + seeded)
+
+Covers **every UI route** in all three apps (~52 pages), each loaded in a real headless
+Chromium under the lowest seeded role that can render it. Dynamic segments
+(`:courseId`, `:moduleId`, …) are resolved at runtime from each app's own API.
+
+```bash
+cd scripts/page-profile && npm install && npx playwright install chromium && cd ../..
+CORE_URL=... AI_TUTOR_URL=... AI_TUTOR_API_URL=... QM_URL=... QM_API_URL=... \
+  npm run perf:pages -- --runs=3 --target=dev-remote
+```
+
+Defaults to `docs/perf/frontend/baseline`. Run it from a workstation rather than on the
+server — measuring over the loopback interface drops the RTT the numbers are meant to
+include. A page that bounces to login, fails to load, or whose ids can't be resolved is
+reported in `errors.json` instead of contributing a misleading number, and the run exits
+non-zero so a partial sweep can't be mistaken for full coverage.
+
+> On a Vite **dev** server the JS byte counts and request counts reflect unbundled ESM
+> modules, not a production build — treat those two columns as relative only. TTFB, the
+> LCP-after-FCP gap, CLS and blocking time are meaningful either way.
+
 ## Compare a later run
 
 Both `response-times.json` files share a stable schema keyed by `app+method+path`. To compute
 a delta:
 
 ```bash
-node scripts/perf-compare.mjs docs/perf/baseline/response-times.json \
-                              docs/perf/after-<date>/response-times.json
+node scripts/perf-compare.mjs docs/perf/backend/baseline/response-times.json \
+                              docs/perf/backend/after-<date>/response-times.json
 ```
 
 Compare like-for-like only: **same target environment + same seed**. The `env` block in each
