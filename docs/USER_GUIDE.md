@@ -43,7 +43,11 @@ applications.
   you were trying to do and, when appropriate, allow the app to attach its
   screenshot and diagnostic context.
 - Use the theme control in the header to change the color theme. Accessibility
-  preferences are managed in Core and shared across the applications.
+  preferences are not shared between applications today: Core saves yours to
+  your account and reapplies them on every device, AI Tutor keeps its setting
+  in this browser only (`localStorage`), and Question Maker's setting lasts
+  only for the current session. Set accessibility preferences in each
+  application separately.
 
 ## Sign in and account setup
 
@@ -56,8 +60,10 @@ applications.
 Core Settings contains:
 
 - **Account** — profile and password-related settings.
-- **Accessibility** — assistive and display preferences shared across the
-  platform.
+- **Accessibility** — assistive and display preferences for Core. AI Tutor and
+  Question Maker have their own accessibility controls and must be configured
+  separately (see [Navigation shared across the
+  platform](#navigation-shared-across-the-platform)).
 - **API Keys** — available when your role is allowed to configure personal AI
   provider keys.
 - **Providers** — enable or configure supported AI providers.
