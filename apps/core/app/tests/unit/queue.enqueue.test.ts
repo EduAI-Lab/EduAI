@@ -26,7 +26,13 @@ const PrismaClientKnownRequestErrorMock = vi.hoisted(
 );
 
 const prismaMock = vi.hoisted(() => ({
-  aiJob: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+  aiJob: {
+    create: vi.fn(),
+    update: vi.fn(),
+    findUnique: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+  },
 }));
 
 const queueAdd = vi.hoisted(() => vi.fn());
@@ -61,6 +67,7 @@ beforeEach(() => {
   prismaMock.aiJob.update.mockResolvedValue({});
   prismaMock.aiJob.findUnique.mockResolvedValue(null);
   prismaMock.aiJob.delete.mockResolvedValue({});
+  prismaMock.aiJob.deleteMany.mockResolvedValue({ count: 1 });
   queueAdd.mockResolvedValue({ id: "bull_1" });
 });
 
@@ -182,23 +189,55 @@ describe("enqueue", () => {
     }
   });
 
-  it("returns the winning row on a same-queue bullJobId race and drops its own", async () => {
+  it("returns the winning row on a same-queue bullJobId race and drops its own when our row is still PENDING", async () => {
     const conflict = new Prisma.PrismaClientKnownRequestError("dup", {
       code: "P2002",
       clientVersion: "6",
       meta: { target: ["queueName", "bullJobId"] },
     });
     prismaMock.aiJob.update.mockRejectedValueOnce(conflict);
-    prismaMock.aiJob.findUnique.mockResolvedValueOnce({ id: "aijob_winner" });
+    // Conflict handler: [ownRow, otherRow] lookup, then (own row PENDING) the
+    // standard delete-and-return-winner path's own findUnique.
+    prismaMock.aiJob.findUnique
+      .mockResolvedValueOnce({ status: "PENDING" }) // ownRow
+      .mockResolvedValueOnce({ id: "aijob_winner", status: "PENDING" }) // otherRow
+      .mockResolvedValueOnce({ id: "aijob_winner" }); // winner lookup
 
     const result = await enqueue(job);
 
     expect(result).toEqual({ jobId: "aijob_winner" });
     expect(prismaMock.aiJob.delete).toHaveBeenCalledWith({ where: { id: "aijob_1" } });
+    expect(prismaMock.aiJob.deleteMany).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { queueName_bullJobId: { queueName: "ai-jobs-chat", bullJobId: "bull_1" } },
       }),
     );
+  });
+
+  it("keeps a row a worker already claimed and drops the spurious duplicate instead", async () => {
+    // Simulates: a worker claimed our row (via the embedded aiJobId fast path)
+    // before this bullJobId update ran, so our row is RUNNING while another
+    // enqueue call's row won the (queueName, bullJobId) race first.
+    const conflict = new Prisma.PrismaClientKnownRequestError("dup", {
+      code: "P2002",
+      clientVersion: "6",
+      meta: { target: ["queueName", "bullJobId"] },
+    });
+    prismaMock.aiJob.update
+      .mockRejectedValueOnce(conflict) // first attempt: loses to the spurious row
+      .mockResolvedValueOnce({}); // retry after dropping the spurious row: succeeds
+    prismaMock.aiJob.findUnique
+      .mockResolvedValueOnce({ status: "RUNNING" }) // ownRow: already claimed by a worker
+      .mockResolvedValueOnce({ id: "aijob_spurious", status: "PENDING" }); // otherRow: untouched
+
+    const result = await enqueue(job);
+
+    expect(result).toEqual({ jobId: "aijob_1" });
+    expect(prismaMock.aiJob.deleteMany).toHaveBeenCalledWith({
+      where: { id: "aijob_spurious", status: "PENDING" },
+    });
+    expect(prismaMock.aiJob.delete).not.toHaveBeenCalled();
+    expect(prismaMock.aiJob.update).toHaveBeenCalledTimes(2);
   });
 });
