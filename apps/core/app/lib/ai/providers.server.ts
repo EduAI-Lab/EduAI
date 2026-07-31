@@ -52,7 +52,7 @@ export function resolveModelContextWindow(
   providerId?: SupportedProvider,
 ): number {
   if (providerId === 'vllm') {
-    // Admin rows sometimes store 8192; cmps01 qwen2.5-32b is 16384 total.
+    // Admin rows can be stale; the fleet Qwen3.5 profile is capped at 16384 total.
     if (!dbMaxTokens || dbMaxTokens <= 8192) {
       return 16384;
     }

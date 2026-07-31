@@ -137,7 +137,7 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
       const apiKey =
         userSettings.vllm?.apiKey ||
         process.env.VLLM_API_KEY ||
-        'vllm-local';
+        'not-configured';
 
       providers.vllm = createOpenAI({
         apiKey,

@@ -1,4 +1,4 @@
-name: eduai-cmps01
+name: eduai-cmps02
 
 services:
   qwen35-2b:

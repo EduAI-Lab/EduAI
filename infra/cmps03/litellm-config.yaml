@@ -1,9 +1,15 @@
 model_list:
-  - model_name: gpt-oss-120b
+  - model_name: qwen3.5-4b
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/qwen3.5-4b
       api_base: http://127.0.0.1:18001/v1
-      api_key: vllm-local
+      api_key: os.environ/VLLM_API_KEY
+
+  - model_name: qwen3.5-9b
+    litellm_params:
+      model: openai/qwen3.5-9b
+      api_base: http://127.0.0.1:18002/v1
+      api_key: os.environ/VLLM_API_KEY
 
 general_settings:
-  master_key: vllm-local
+  master_key: os.environ/VLLM_API_KEY

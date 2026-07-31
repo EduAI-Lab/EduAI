@@ -9,10 +9,10 @@
 
 ## What problem are we solving?
 
-Right now, almost all local AI chat goes to **one machine** (`cmps01`). That machine runs two models on two GPUs:
+The interactive local AI fleet uses **cmps01 and cmps02**. Each machine runs the same two models on two GPUs:
 
-- **Qwen 7B** — faster, good for everyday chat  
-- **Qwen 32B** — slower, used for harder tasks and tools
+- **Qwen3.5 2B** — small-tier candidate for everyday chat
+- **Qwen3.5 27B FP8** — large-tier candidate for harder tasks and tools
 
 When several people use the chat **at the same time**, wait times climb quickly. CTL tested this on a similar setup: with 3 people at once, responses took about **6–13 seconds**; with 5 people, up to **~19 seconds**. We want EduAI in classrooms with **10–100 students** across many courses — one server will not be enough.
 
@@ -43,7 +43,7 @@ User / Extension
        ▼
    EduAI Core
        │
-       ├──► Pick server (cmps01, cmps02, cmps03, or cloud later)
+       ├──► Pick server (cmps01 or cmps02; cloud overflow later)
        │
        └──► Send request to that server's API (port 8001)
                  │
@@ -76,14 +76,14 @@ type JobType = "interactive" | "background";
 | `interactive` (default) | EduAI chat, AI Tutor | `VLLM_FLEET_CHAT_URLS` |
 | `background` | Question Maker | `VLLM_FLEET_HEAVY_URL` (falls back to chat pool) |
 
-Harder live chat (tools, 32B) is still **`interactive`** — the model id (7B vs 32B) is chosen by Auto routing before the fleet step.
+Harder live chat is still **`interactive`** — the model ID (2B vs 27B) is chosen by Auto routing before the fleet step.
 
 ### Route by job type, not just model size
 
 | Job type | Who uses it | How fast should it feel? | Send to |
 |----------|-------------|--------------------------|---------|
 | **`interactive`** | EduAI chat, AI Tutor, tool-heavy chat | Seconds | cmps01 + cmps02 (chat pool) |
-| **`background`** | Question Maker (`jobType: "background"`) | Minutes OK (60–180 s timeouts) | cmps03 when configured; else chat pool |
+| **`background`** | Question Maker (`jobType: "background"`) | Minutes OK (60–180 s timeouts) | chat pool until a model-compatible heavy pool exists |
 | *(not fleet)* | Embeddings / RAG index | Not user-visible | Ollama on cmps01 |
 
 **Why this matters:** Background jobs must not block interactive traffic on the same GPU host.
@@ -96,9 +96,9 @@ All three are expected to have **two NVIDIA RTX 6000 Ada GPUs**. Each host runs 
 
 | Server | Status | Models | Main job |
 |--------|--------|--------|----------|
-| **cmps01** | Running | 7B + 32B | Dev, research, interactive |
-| **cmps02** | Infra in repo | 7B + 32B | Extra **interactive** capacity |
-| **cmps03** | Planned | TBD (likely 32B) | **Background** (explicit job type) |
+| **cmps01** | Deployment profile | Qwen3.5 2B + 27B FP8 | Dev, research, interactive |
+| **cmps02** | Deployment profile | Qwen3.5 2B + 27B FP8 | Mirrored **interactive** capacity |
+| **cmps03** | Research profile | Qwen3.5 4B + 9B | v3 adequacy ladder; not a fleet pool |
 
 When `VLLM_FLEET_CHAT_URLS` is set, fleet routing is **on**; otherwise the app uses single-host `VLLM_BASE_URL` only.
 
@@ -136,8 +136,8 @@ Server pick happens **after** the model id is known. Hosts that do not serve tha
 
 ```env
 VLLM_FLEET_CHAT_URLS=http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001
-VLLM_FLEET_HEAVY_URL=http://cmps03.ok.ubc.ca:8001
-VLLM_FLEET_DEFAULT_MODELS=qwen2.5-7b-instruct,qwen2.5-32b-instruct
+VLLM_FLEET_DEFAULT_MODELS=qwen3.5-2b,qwen3.5-27b
+# VLLM_FLEET_HEAVY_URL intentionally unset: cmps03 serves different model IDs
 VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 ```
 
@@ -146,7 +146,7 @@ VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001   # fallback when fleet env empty
 ```json
 {
   "messages": [ ... ],
-  "model": "vllm:qwen2.5-32b-instruct",
+  "model": "vllm:qwen3.5-27b",
   "routingContext": { "jobType": "interactive" }
 }
 ```
@@ -235,7 +235,7 @@ Single-host check (legacy): `npm run vllm:smoke` with `VLLM_BASE_URL` set.
 ```env
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<shared non-committed cmps01/cmps02 key>"
 ```
 
 Restart the app after env changes — the fleet registry is cached at process start.

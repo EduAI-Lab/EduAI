@@ -101,7 +101,7 @@ function defaultFallbackModelId(): string {
     return localVllmFallbackModelId();
   }
   if (process.env.VLLM_BASE_URL?.trim()) {
-    return "vllm:qwen2.5-7b-instruct";
+    return "vllm:qwen3.5-2b";
   }
   return FALLBACK_MODEL;
 }

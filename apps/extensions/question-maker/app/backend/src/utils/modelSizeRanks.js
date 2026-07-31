@@ -6,9 +6,13 @@
 export const MODEL_SIZE_RANK_PATTERNS = Object.freeze([
   [/\b70b\b/, 70],
   [/\b32b\b/, 32],
+  [/\b27b\b/, 27],
   [/\b14b\b/, 14],
+  [/\b9b\b/, 9],
   [/\b7b\b/, 7],
+  [/\b4b\b/, 4],
   [/\b3b\b/, 3],
+  [/\b2b\b/, 2],
 ]);
 
 /** Rank a model id/label string by parameter-size token (higher = larger). */

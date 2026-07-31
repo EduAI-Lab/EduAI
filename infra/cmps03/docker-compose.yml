@@ -1,13 +1,120 @@
-# cmps03 public :8001 edge. The vLLM backend is started by deploy.sh.
+name: eduai-cmps03
+
 services:
+  qwen35-4b:
+    image: vllm/vllm-openai:v0.26.0
+    container_name: eduai-vllm-4b
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/vllm:/root/.cache/vllm
+    command:
+      - Qwen/Qwen3.5-4B
+      - --revision
+      - 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
+      - --served-model-name
+      - qwen3.5-4b
+      - --host
+      - 127.0.0.1
+      - --port
+      - "18001"
+      - --max-model-len
+      - "16384"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --default-chat-template-kwargs
+      - '{"enable_thinking":false}'
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:18001/health', timeout=5)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 120
+      start_period: 2m
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+  qwen35-9b:
+    image: vllm/vllm-openai:v0.26.0
+    container_name: eduai-vllm-9b
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/vllm:/root/.cache/vllm
+    command:
+      - Qwen/Qwen3.5-9B
+      - --revision
+      - c202236235762e1c871ad0ccb60c8ee5ba337b9a
+      - --served-model-name
+      - qwen3.5-9b
+      - --host
+      - 127.0.0.1
+      - --port
+      - "18002"
+      - --max-model-len
+      - "16384"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --default-chat-template-kwargs
+      - '{"enable_thinking":false}'
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:18002/health', timeout=5)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 120
+      start_period: 3m
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+
+  eduai-energy-meter:
+    build:
+      context: ../../tools/energy-meter
+    container_name: eduai-energy-meter
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      ENERGY_METER_HOST: "127.0.0.1"
+      ENERGY_METER_PORT: "9100"
+      ENERGY_GPU_INDICES: "0,1"
+      ENERGY_SAMPLE_MS: "1000"
+      LOCAL_GRID_GCO2_PER_KWH: "12"
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+
   eduai-vllm-proxy:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm:v1.92.0
     container_name: eduai-vllm-proxy
     restart: unless-stopped
     network_mode: host
+    env_file: .env
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "18091", "--host", "127.0.0.1"]
+    depends_on:
+      qwen35-4b:
+        condition: service_healthy
+      qwen35-9b:
+        condition: service_healthy
 
   eduai-edge-proxy:
     image: nginx:1.27-alpine
@@ -16,5 +123,7 @@ services:
     network_mode: host
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./internal-allow.conf:/etc/nginx/conf.d/internal-allow.conf:ro
     depends_on:
       - eduai-vllm-proxy
+      - eduai-energy-meter

@@ -2,13 +2,13 @@
 
 Run **vLLM** on the shared GPU host (**cmps01**) for fast, multi-user chat inference. EduAI talks to it through the **`vllm`** provider (`POST /v1/chat/completions`, OpenAI-compatible).
 
-**Not Ollama:** vLLM loads **Hugging Face** weights (e.g. `Qwen/Qwen2.5-7B-Instruct`), not Ollama GGUF blobs.
+**Not Ollama:** vLLM loads pinned **Hugging Face** weights (currently `Qwen/Qwen3.5-*`), not Ollama GGUF blobs.
 
 | | |
 | --- | --- |
 | **Host port (public)** | **8001** — LiteLLM proxy (`network_mode: host`) → backends `127.0.0.1:18001` / `:18002` |
 | **Dev app** | `dev.eduai.ok.ubc.ca` (s378) → `http://cmps01.ok.ubc.ca:8001` |
-| **Example model ids** | `vllm:qwen2.5-7b-instruct`, `vllm:qwen2.5-32b-instruct` (register in Admin) |
+| **Current model IDs** | `vllm:qwen3.5-2b`, `vllm:qwen3.5-27b` |
 | **Issues** | [#435](https://github.com/EduAI-Lab/EduAI/issues/435) install/wire · [#394](https://github.com/EduAI-Lab/EduAI/issues/394) tiered memory spike |
 
 ---
@@ -33,7 +33,7 @@ Session **vLLM-S1** (Jun 2026, dev → cmps01): warm direct **~57 ms**; EduAI fu
 
 ```env
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<generated secret shared by cmps01, cmps02, and s378>"
 ```
 
 Restart the dev server (tmux). Then:
@@ -43,7 +43,7 @@ cd apps/core
 npm run vllm:smoke
 ```
 
-**In the app:** pick chat model **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`**. Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host.
+**In the app:** pick chat model **`vllm:qwen3.5-2b`** or **`vllm:qwen3.5-27b`**. Local inference is **server-managed** — no Settings toggle when `VLLM_BASE_URL` is set on the app host.
 
 **Admins:** vLLM **models are not seeded** (same pattern as Ollama). Run `npx prisma db seed` once to register the `vllm` provider, then **Admin → AI Models → Create Model** → provider **vLLM** → **Refresh list** → pick each served name from cmps01 → save. Re-registering the same `modelId` returns **409 Conflict**.
 
@@ -87,8 +87,8 @@ LiteLLM uses **`network_mode: host`** so it can reach backends on host loopback.
 
 | Name | Bind | Model id |
 | --- | --- | --- |
-| `eduai-vllm` | `127.0.0.1:18001` | `qwen2.5-7b-instruct` |
-| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen2.5-32b-instruct` |
+| `eduai-vllm` | `127.0.0.1:18001` | `qwen3.5-2b` |
+| `eduai-vllm-t3` | `127.0.0.1:18002` | `qwen3.5-27b` |
 | `eduai-vllm-proxy` | host `:8001` | both (via LiteLLM) |
 
 Copy `infra/cmps01` to cmps01 (`~/cmps01`), then `docker compose up -d` after backends are on `18001`/`18002`.
@@ -111,8 +111,8 @@ docker run -d --name eduai-vllm --gpus all \
 export VLLM_PORT=8001
 python3 -m venv ~/vllm-venv && source ~/vllm-venv/bin/activate
 pip install -U pip vllm
-vllm serve Qwen/Qwen2.5-7B-Instruct --host 0.0.0.0 --port ${VLLM_PORT} \
-  --served-model-name qwen2.5-7b-instruct --gpu-memory-utilization 0.85 --max-model-len 8192
+vllm serve Qwen/Qwen3.5-2B --host 0.0.0.0 --port ${VLLM_PORT} \
+  --served-model-name qwen3.5-2b --gpu-memory-utilization 0.90 --max-model-len 16384
 ```
 </details>
 
@@ -144,16 +144,16 @@ Permissions: prefer **Docker** over large venv; **docker group** for deployers; 
 cd apps/core
 npm run vllm:smoke
 # 32B (slower first token):
-VLLM_MODEL=qwen2.5-32b-instruct npm run vllm:smoke
+VLLM_MODEL=qwen3.5-27b npm run vllm:smoke
 ```
 
 Reads `apps/core/.env` automatically. On cmps01 (proxy + auth):
 
 ```bash
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq '.data[].id'
+curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer ${VLLM_API_KEY}" | jq '.data[].id'
 curl -s http://127.0.0.1:8001/v1/chat/completions \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5-7b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
+  -H "Authorization: Bearer ${VLLM_API_KEY}" -H "Content-Type: application/json" \
+  -d '{"model":"qwen3.5-2b","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
 
 ### EduAI bench (full stack)
@@ -163,7 +163,7 @@ Use **`CHAT_BENCH_X_API_KEY`** from `.env` (admin API key), not a browser cookie
 ```bash
 cd apps/core
 CHAT_BENCH_LABEL=vllm-eduai-seq \
-CHAT_BENCH_MODEL=vllm:qwen2.5-7b-instruct \
+CHAT_BENCH_MODEL=vllm:qwen3.5-2b \
 CHAT_BENCH_API_KEYS='{"vllm":{"isEnabled":true}}' \
 CHAT_BENCH_COUNT=10 CHAT_BENCH_WARMUP=1 \
 npm run bench:chat
@@ -175,7 +175,7 @@ Ensure `CHAT_BENCH_URL=https://dev.eduai.ok.ubc.ca/api/chat` is set in `.env`.
 
 ## Stress test results (Session vLLM-S1, Jun 2026)
 
-**Environment:** dev (s378) → `cmps01:8001`, model **`qwen2.5-7b-instruct`**, container **`eduai-vllm`**. Direct tests: `POST /v1/chat/completions`, non-streaming, short prompts.
+**Historical Qwen2.5 environment:** the latency figures below predate the Qwen3.5 upgrade and must not be reused as Qwen3.5 performance. Direct tests used `POST /v1/chat/completions`, non-streaming, short prompts.
 
 ### Summary
 
@@ -208,26 +208,26 @@ Ensure `CHAT_BENCH_URL=https://dev.eduai.ok.ubc.ca/api/chat` is set in `.env`.
 
 ```bash
 export VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001
-export VLLM_MODEL=qwen2.5-7b-instruct
+export VLLM_MODEL=qwen3.5-2b
 
 # Warm sequential
 for i in 1 2 3 4 5; do
   curl -s -o /dev/null -w "run $i %{time_total}s\n" \
     "$VLLM_BASE_URL/v1/chat/completions" \
-    -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${VLLM_API_KEY}" -H "Content-Type: application/json" \
     -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with one word: ok.\"}],\"max_tokens\":16,\"stream\":false}"
 done
 
 # 10 parallel
 seq 1 10 | xargs -P10 -I{} curl -s -o /dev/null -w "req {} %{http_code} %{time_total}s\n" \
   "$VLLM_BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${VLLM_API_KEY}" -H "Content-Type: application/json" \
   -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi.\"}],\"max_tokens\":32,\"stream\":false}"
 
 # After docker restart (cmps01), when logs show ready:
 time curl -s -o /dev/null -w "HTTP %{http_code} %{time_total}s\n" \
   "$VLLM_BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer vllm-local" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${VLLM_API_KEY}" -H "Content-Type: application/json" \
   -d "{\"model\":\"$VLLM_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}],\"max_tokens\":8,\"stream\":false}"
 ```
 
@@ -332,7 +332,7 @@ EduAI always uses one `VLLM_BASE_URL`; chat picks the model via `vllm:<served-mo
 | Connection refused from dev | `VLLM_BASE_URL` in server `.env`; firewall **8001**; `curl http://cmps01:8001/v1/models` from s378 |
 | SSL / wrong version number | Use **`http://`** not `https://` for vLLM |
 | `/models` OK, chat **500** “Connection error” | LiteLLM cannot reach backends — use **`network_mode: host`** on proxy + `127.0.0.1:18001` in config ([`infra/cmps01/README.md`](../../infra/cmps01/README.md)) |
-| 404 model | `curl /v1/models` — use exact `id` in chat (`qwen2.5-7b-instruct`) |
+| 404 model | `curl /v1/models` — use the exact current ID, such as `qwen3.5-2b` |
 | EduAI “provider not configured” | Set `VLLM_BASE_URL` in server `.env`; restart dev (tmux); pick a `vllm:` model |
 | Admin **409** adding model | Model already registered — use existing row, don’t duplicate |
 | Chat empty / no reply | Run `npm run vllm:smoke`; check Network tab on `POST /api/chat` |

@@ -425,7 +425,7 @@ function formatStreamError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message || error.name;
     if (message.includes("Invalid arguments for tool")) {
-      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen2.5-32b-instruct).`;
+      return `${message} — The model passed invalid tool parameters. Retry or pick a tool-capable model (e.g. vllm:qwen3.5-27b).`;
     }
     return message;
   }
@@ -1047,7 +1047,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error:
-            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+            'Invalid model id. Use provider:modelId (e.g. vllm:qwen3.5-2b). Check Admin → AI Models.',
         }),
         {
           status: 400,

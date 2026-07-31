@@ -116,7 +116,7 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 
 # vLLM — LiteLLM proxy on cmps01 (TCP 8001 open dev → cmps01)
 VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-VLLM_API_KEY="vllm-local"
+VLLM_API_KEY="<same generated secret as the fleet hosts>"
 ```
 
 Restart after editing `.env`: `systemctl --user restart eduai-core`.
@@ -124,13 +124,13 @@ Restart after editing `.env`: `systemctl --user restart eduai-core`.
 | Check | Command (on s378) |
 | ----- | ----------------- |
 | Ollama reachable | `curl -s http://cmps01.ok.ubc.ca:11434/api/tags \| head` |
-| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer vllm-local" \| jq '.data[].id'` |
+| vLLM models | `curl -s http://cmps01.ok.ubc.ca:8001/v1/models -H "Authorization: Bearer ${VLLM_API_KEY}" \| jq '.data[].id'` |
 | vLLM chat smoke | `cd apps/core && npm run vllm:smoke` |
 | SSH s378 → cmps01 | **Fails** (port 22 timeout) — **do not** use an SSH tunnel from s378 |
 
 **vLLM ops on cmps01:** [`VLLM.md`](./VLLM.md) · [`infra/cmps01/README.md`](../../infra/cmps01/README.md)
 
-In the app: pick **`vllm:qwen2.5-7b-instruct`** or **`vllm:qwen2.5-32b-instruct`** in chat. Register models in **Admin → AI Models** (vLLM provider → **Refresh list**); `npx prisma db seed` only adds the `vllm` provider row.
+In the app: pick **`vllm:qwen3.5-2b`** or **`vllm:qwen3.5-27b`** in chat. Register models in **Admin → AI Models** (vLLM provider → **Refresh list**) or run the provider sync.
 
 ## Auth / login troubleshooting
 

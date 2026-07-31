@@ -851,21 +851,21 @@ const COURSES: SeedCourse[] = [
 
 // ---------------------------------------------------------------------------
 
-/** Research routing pool — vLLM tier 1 (7B) + tier 3 (32B) only; no cloud tier in Auto. */
+/** Qwen3.5 fleet candidates. Energy constants remain unset until v3 meter validation. */
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: 'vllm',
-    modelId: 'qwen2.5-7b-instruct',
+    modelId: 'qwen3.5-2b',
     routerTier: 'TIER_1' as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: null,
+    averageCarbonGramsPerToken: null,
   },
   {
     providerName: 'vllm',
-    modelId: 'qwen2.5-32b-instruct',
+    modelId: 'qwen3.5-27b',
     routerTier: 'TIER_3' as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
+    estEnergyJoulesPerToken: null,
+    averageCarbonGramsPerToken: null,
   },
 ];
 
@@ -988,17 +988,17 @@ async function seedAIProvidersAndModels() {
 
   const vllmModels = [
     {
-      modelId: 'qwen2.5-7b-instruct',
-      name: 'Qwen 2.5 7B (vLLM)',
-      description: 'House chat — tier 1, hybrid RAG',
-      maxTokens: 8192,
+      modelId: 'qwen3.5-2b',
+      name: 'Qwen 3.5 2B (vLLM)',
+      description: 'Qwen3.5 fleet small-tier candidate',
+      maxTokens: 16384,
       supportsTools: false,
     },
     {
-      modelId: 'qwen2.5-32b-instruct',
-      name: 'Qwen 2.5 32B AWQ (vLLM)',
-      description: 'Large tier — tools via Hermes parser',
-      maxTokens: 8192,
+      modelId: 'qwen3.5-27b',
+      name: 'Qwen 3.5 27B FP8 (vLLM)',
+      description: 'Qwen3.5 fleet large-tier candidate with Qwen tool parsing',
+      maxTokens: 16384,
       supportsTools: true,
     },
   ];
@@ -1016,6 +1016,14 @@ async function seedAIProvidersAndModels() {
       },
     });
   }
+
+  await prisma.aIModel.updateMany({
+    where: {
+      providerId: vllm.id,
+      modelId: { in: ['qwen2.5-7b-instruct', 'qwen2.5-32b-instruct'] },
+    },
+    data: { isActive: false, routerTier: null },
+  });
 
   await applyRoutingTierAssignments();
 }

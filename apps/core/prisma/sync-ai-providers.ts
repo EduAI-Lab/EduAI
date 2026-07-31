@@ -9,17 +9,17 @@ const prisma = new PrismaClient();
 const ROUTING_TIER_ASSIGNMENTS = [
   {
     providerName: "vllm",
-    modelId: "qwen2.5-7b-instruct",
+    modelId: "qwen3.5-2b",
     routerTier: "TIER_1" as const,
-    estEnergyJoulesPerToken: 0.08,
-    averageCarbonGramsPerToken: 1.78e-6,
+    estEnergyJoulesPerToken: null,
+    averageCarbonGramsPerToken: null,
   },
   {
     providerName: "vllm",
-    modelId: "qwen2.5-32b-instruct",
+    modelId: "qwen3.5-27b",
     routerTier: "TIER_3" as const,
-    estEnergyJoulesPerToken: 0.5,
-    averageCarbonGramsPerToken: 1.11e-5,
+    estEnergyJoulesPerToken: null,
+    averageCarbonGramsPerToken: null,
   },
 ];
 
@@ -101,14 +101,14 @@ async function main() {
     update: {
       isActive: true,
       displayName: "vLLM",
-      description: "Local OpenAI-compatible inference (cmps01)",
+      description: "Local OpenAI-compatible Qwen3.5 fleet inference",
       requiresApiKey: false,
       envVarName: "VLLM_BASE_URL",
     },
     create: {
       name: "vllm",
       displayName: "vLLM",
-      description: "Local OpenAI-compatible inference (cmps01)",
+      description: "Local OpenAI-compatible Qwen3.5 fleet inference",
       requiresApiKey: false,
       defaultBaseUrl: "http://localhost:8001/v1",
       envVarName: "VLLM_BASE_URL",
@@ -145,17 +145,17 @@ async function main() {
 
   const vllmModels = [
     {
-      modelId: "qwen2.5-7b-instruct",
-      name: "Qwen 2.5 7B (vLLM)",
-      description: "House chat — tier 1, hybrid RAG",
-      maxTokens: 8192,
+      modelId: "qwen3.5-2b",
+      name: "Qwen 3.5 2B (vLLM)",
+      description: "Qwen3.5 fleet small-tier candidate",
+      maxTokens: 16384,
       supportsTools: false,
     },
     {
-      modelId: "qwen2.5-32b-instruct",
-      name: "Qwen 2.5 32B AWQ (vLLM)",
-      description: "Large tier — tools via Hermes parser",
-      maxTokens: 8192,
+      modelId: "qwen3.5-27b",
+      name: "Qwen 3.5 27B FP8 (vLLM)",
+      description: "Qwen3.5 fleet large-tier candidate with Qwen tool parsing",
+      maxTokens: 16384,
       supportsTools: true,
     },
   ];
@@ -173,6 +173,14 @@ async function main() {
       },
     });
   }
+
+  await prisma.aIModel.updateMany({
+    where: {
+      providerId: vllm.id,
+      modelId: { in: ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct"] },
+    },
+    data: { isActive: false, routerTier: null },
+  });
 
   await applyRoutingTierAssignments();
   console.log("[sync-ai-providers] Done (vLLM provider + models synced)");

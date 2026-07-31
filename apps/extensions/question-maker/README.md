@@ -121,8 +121,8 @@ Question Maker’s EduAI chat / OCR / generation UIs default to the **campus vLL
 
 | Use case | Fallback model id | Notes |
 | -------- | ----------------- | ----- |
-| Generation / OCR / variants | `vllm:qwen2.5-32b-instruct` | Prefer the largest active campus model from Core’s `/api/ai-models` catalog when available |
-| Connectivity probes (status chips) | `vllm:qwen2.5-7b-instruct` | Prefer the smallest active campus model; 20s timeout |
+| Generation / OCR / variants | `vllm:qwen3.5-27b` | Prefer the largest active campus model from Core’s `/api/ai-models` catalog when available |
+| Connectivity probes (status chips) | `vllm:qwen3.5-2b` | Prefer the smallest active campus model; 20s timeout |
 | Provider | `vllm` | Server-managed — no client API key. Legacy `forceProvider=ollama` still pins the campus path |
 
 **Probe course context:** `testApiKey` no longer hardcodes `COSC 121`. Set `EDUAI_PROBE_COURSE_ID` (preferred) or `EDUAI_PROBE_COURSE_CODE` for cookie/session probes. When unset, service-key probes omit course context (Core allows course-free chat for API keys).

@@ -8,7 +8,7 @@
  *   node ./scripts/latency-sprint-smoke.mjs
  *
  * Optional:
- *   CHAT_SMOKE_TOOL_MODEL=vllm:qwen2.5-32b-instruct
+ *   CHAT_SMOKE_TOOL_MODEL=vllm:qwen3.5-27b
  *   CHAT_SMOKE_COURSE_CODE="COSC 121"
  */
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,7 @@ import { performance } from "node:perf_hooks";
 const BASE = (process.env.CHAT_SMOKE_URL || "https://dev.eduai.ok.ubc.ca").replace(/\/$/, "");
 const EMAIL = process.env.CHAT_SMOKE_EMAIL || "admin@eduai.local";
 const PASSWORD = process.env.CHAT_SMOKE_PASSWORD;
-const TOOL_MODEL = process.env.CHAT_SMOKE_TOOL_MODEL || "vllm:qwen2.5-32b-instruct";
+const TOOL_MODEL = process.env.CHAT_SMOKE_TOOL_MODEL || "vllm:qwen3.5-27b";
 const COURSE_CODE = process.env.CHAT_SMOKE_COURSE_CODE || "COSC 121";
 
 const MAGIC_PHRASES = [

@@ -8,7 +8,7 @@ type CacheEntry = FleetHealthResult;
 const healthCache = new Map<string, CacheEntry>();
 
 function vllmAuthHeader(): string {
-  return process.env.VLLM_API_KEY?.trim() || "vllm-local";
+  return process.env.VLLM_API_KEY?.trim() || "not-configured";
 }
 
 /**

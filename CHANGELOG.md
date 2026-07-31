@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
-- [infra] feat: Provision `cmps03` as the heavy/background vLLM fleet host, serving `gpt-oss-120b` with tensor parallelism across two RTX 6000 Ada GPUs behind the standard LiteLLM/nginx `:8001` edge; add reproducible deployment, persistent model caches, authentication, restart policies, and operational verification instructions. Closes #883. (#883, @superbolt08, 2026-07-28) — [#1236](https://github.com/EduAI-Lab/EduAI/pull/1236)
+- [infra, core, question-maker] feat: Upgrade local inference to the pinned dense Qwen3.5 ladder: mirror 2B BF16 + official 27B FP8 on the cmps01/cmps02 interactive fleet, host 4B + 9B on cmps03 for v3 ladder evaluation, update application/provider defaults, and add protected non-committed credentials, backend-gated model discovery, pinned LiteLLM/vLLM images, per-host energy sidecars, deployment verification, and rollback guidance. cmps03 is deliberately not configured as a heavy pool because it serves different model IDs. Closes #883. (#883, @superbolt08, 2026-07-30) — [#1236](https://github.com/EduAI-Lab/EduAI/pull/1236)
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added

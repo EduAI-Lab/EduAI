@@ -641,18 +641,18 @@ describe('getConnectivityTestParams', () => {
     config.googleGenerativeAiApiKey = undefined;
     const params = eduaiService.getConnectivityTestParams({});
     expect(params.provider).toBe('vllm');
-    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(params.model).toBe('vllm:qwen3.5-2b');
   });
 
   it('forceProvider "ollama" uses the smallest campus model from the live catalog', () => {
     config.googleGenerativeAiApiKey = 'server-google';
     const catalog = [
-      { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
-      { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+      { provider: 'vllm', modelId: 'qwen3.5-27b', name: '27B', isActive: true },
+      { provider: 'vllm', modelId: 'qwen3.5-2b', name: '2B', isActive: true },
     ];
     const params = eduaiService.getConnectivityTestParams({}, 'ollama', catalog);
     expect(params.provider).toBe('vllm');
-    expect(params.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(params.model).toBe('vllm:qwen3.5-2b');
     expect(params.apiKeys.vllm.isEnabled).toBe(true);
     expect(params.apiKeys.google).toBeUndefined();
   });
@@ -682,8 +682,8 @@ describe('testApiKey forceProvider', () => {
     axios.get.mockResolvedValue({
       status: 200,
       data: [
-        { provider: 'vllm', modelId: 'qwen2.5-32b-instruct', name: '32B', isActive: true },
-        { provider: 'vllm', modelId: 'qwen2.5-7b-instruct', name: '7B', isActive: true },
+        { provider: 'vllm', modelId: 'qwen3.5-27b', name: '27B', isActive: true },
+        { provider: 'vllm', modelId: 'qwen3.5-2b', name: '2B', isActive: true },
       ],
     });
     axios.post.mockResolvedValue({ status: 200, data: { content: 'pong' } });
@@ -691,7 +691,7 @@ describe('testApiKey forceProvider', () => {
     expect(out.success).toBe(true);
     expect(out.provider).toBe('vllm');
     const [, body, opts] = axios.post.mock.calls.at(-1);
-    expect(body.model).toBe('vllm:qwen2.5-7b-instruct');
+    expect(body.model).toBe('vllm:qwen3.5-2b');
     expect(body.apiKeys.vllm.isEnabled).toBe(true);
     expect(body.apiKeys.google).toBeUndefined();
     expect(opts.timeout).toBe(20000);

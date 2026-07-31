@@ -5,8 +5,8 @@
 import { modelSizeRankFromText } from '../utils/modelSizeRanks.js';
 
 const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
-export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';
-export const FALLBACK_GENERATION_MODEL = 'vllm:qwen2.5-32b-instruct';
+export const FALLBACK_PROBE_MODEL = 'vllm:qwen3.5-2b';
+export const FALLBACK_GENERATION_MODEL = 'vllm:qwen3.5-27b';
 
 function providerName(raw) {
   if (!raw) return 'unknown';

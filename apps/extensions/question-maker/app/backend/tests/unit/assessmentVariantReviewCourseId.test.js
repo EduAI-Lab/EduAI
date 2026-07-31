@@ -94,7 +94,7 @@ describe('reviewVariantExamWithAi (#1072 course code read-through)', () => {
       baselineAssessmentId: 10,
       variantAssessmentId: 11,
       courseId: 3,
-      model: 'vllm:qwen2.5-32b-instruct',
+      model: 'vllm:qwen3.5-27b',
       apiKeys: { vllm: { isEnabled: true } },
       cookie: 'session=abc',
     });

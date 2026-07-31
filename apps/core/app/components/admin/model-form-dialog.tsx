@@ -366,7 +366,7 @@ export function ModelFormDialog({
               {!model && (
                 <Alert>
                   <AlertDescription>
-                    Qwen 7B and 32B are usually pre-seeded via{" "}
+                    Qwen3.5 2B and 27B are usually pre-seeded via{" "}
                     <code className="text-xs">npm run db:sync-ai-providers</code>. If Create returns
                     409 Conflict, the model already exists — check Admin → Models and ensure it is
                     Active.

@@ -39,7 +39,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rawBase =
     process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = process.env.VLLM_API_KEY || "not-configured";
 
   try {
     const modelsUrl = `${baseUrl}/models`;

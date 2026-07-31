@@ -8,8 +8,8 @@ import { modelSizeRankFromText } from './modelSizeRanks';
 export const CAMPUS_PROVIDERS = new Set(['vllm', 'ollama']);
 
 /** Soft last-resort ids when the catalog is empty (offline Core). */
-export const FALLBACK_GENERATION_MODEL = 'vllm:qwen2.5-32b-instruct';
-export const FALLBACK_PROBE_MODEL = 'vllm:qwen2.5-7b-instruct';
+export const FALLBACK_GENERATION_MODEL = 'vllm:qwen3.5-27b';
+export const FALLBACK_PROBE_MODEL = 'vllm:qwen3.5-2b';
 
 export function isCampusModel(model: Pick<EduAIModelOption, 'provider' | 'id'>): boolean {
   if (CAMPUS_PROVIDERS.has(model.provider)) return true;

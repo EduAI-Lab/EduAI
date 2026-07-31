@@ -63,7 +63,7 @@ export function parseClassifierJson(text: string): LlmRouteClassification {
 
 function classifierModelId(): string {
   return (
-    process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen2.5-7b-instruct"
+    process.env.ROUTING_LLM_CLASSIFIER_MODEL?.trim() || "qwen3.5-2b"
   );
 }
 
@@ -85,7 +85,7 @@ function createClassifierClient() {
   if (!baseURL.endsWith("/v1")) {
     baseURL = `${baseURL}/v1`;
   }
-  const apiKey = process.env.VLLM_API_KEY?.trim() || "vllm-local";
+  const apiKey = process.env.VLLM_API_KEY?.trim() || "not-configured";
   return createOpenAI({ baseURL, apiKey, compatibility: "strict" });
 }
 

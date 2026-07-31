@@ -874,7 +874,7 @@ export async function listAdminVllmModels(actor: RbacUser) {
   const vllmPort = process.env.VLLM_PORT || "8001";
   const rawBase = process.env.VLLM_BASE_URL || `http://localhost:${vllmPort}`;
   const baseUrl = resolveVllmBaseUrl(rawBase);
-  const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+  const apiKey = process.env.VLLM_API_KEY || "not-configured";
 
   try {
     const modelsUrl = `${baseUrl}/models`;

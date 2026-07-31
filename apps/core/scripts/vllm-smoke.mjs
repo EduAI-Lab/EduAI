@@ -4,7 +4,7 @@
  *
  * Reads apps/core/.env (same as prisma seed). Or pass inline:
  *   VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001 npm run vllm:smoke
- *   VLLM_MODEL=qwen2.5-32b-instruct npm run vllm:smoke
+ *   VLLM_MODEL=qwen3.5-27b npm run vllm:smoke
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -36,16 +36,20 @@ const port = process.env.VLLM_PORT || "8001";
 const base = (
   process.env.VLLM_BASE_URL || `http://127.0.0.1:${port}`
 ).replace(/\/$/, "");
-const apiKey = process.env.VLLM_API_KEY || "vllm-local";
-const model = process.env.VLLM_MODEL || "qwen2.5-7b-instruct";
+const apiKey = process.env.VLLM_API_KEY?.trim();
+const model = process.env.VLLM_MODEL || "qwen3.5-2b";
 
 async function main() {
   if (!process.env.VLLM_BASE_URL) {
     console.error(
       "VLLM_BASE_URL not set. Add to apps/core/.env:\n" +
         '  VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"\n' +
-        '  VLLM_API_KEY="vllm-local"'
+        '  VLLM_API_KEY="<same generated secret as the fleet hosts>"'
     );
+    process.exit(1);
+  }
+  if (!apiKey) {
+    console.error("VLLM_API_KEY not set; refusing to probe a protected vLLM edge.");
     process.exit(1);
   }
 

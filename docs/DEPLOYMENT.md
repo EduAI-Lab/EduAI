@@ -173,11 +173,11 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 # vLLM — after IT opens TCP 8001 (+ host firewall on cmps01)
 # VLLM_PORT=8001
 # VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
-# VLLM_API_KEY="vllm-local"
+# VLLM_API_KEY="<same generated secret as the fleet hosts>"
 # Multi-server fleet — round-robin vllm:* chat across healthy hosts (see docs/DEPLOYMENT.md)
 # VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
 # VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
-# VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"
+# VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b,qwen3.5-27b"
 
 GOOGLE_GENERATIVE_AI_API_KEY=""   # set if using Gemini
 FIRECRAWL_API_KEY=""              # set if using Firecrawl web search
@@ -197,7 +197,7 @@ When `VLLM_FLEET_CHAT_URLS` is set, Core load-balances **`vllm:*`** chat request
 | -------- | ------- |
 | `VLLM_FLEET_CHAT_URLS` | Comma-separated chat/interactive pool (e.g. cmps01 + cmps02 `:8001`) |
 | `VLLM_FLEET_HEAVY_URL` | Optional background pool for Question Maker (`routingContext.jobType: background`); falls back to chat pool when unset |
-| `VLLM_FLEET_DEFAULT_MODELS` | Expected model ids for health checks and smoke script (default: `qwen2.5-7b-instruct,qwen2.5-32b-instruct`) |
+| `VLLM_FLEET_DEFAULT_MODELS` | Expected model IDs for health checks and smoke script (default: `qwen3.5-2b,qwen3.5-27b`) |
 | `VLLM_BASE_URL` | Fallback single-host URL when fleet env is empty; still required as a baseline on dev |
 | `AI_MAX_INFLIGHT` | Max concurrent local-GPU chat slots in this Core process (default `8`; `0` = off) |
 | `AI_ADMISSION_WAIT_MS` | Max wait for an admission slot before **503** `AI_ADMISSION_TIMEOUT` (default `15000`) |

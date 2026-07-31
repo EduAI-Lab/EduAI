@@ -1,85 +1,63 @@
 #!/usr/bin/env bash
-# cmps01 — migrate eduai-vllm + eduai-vllm-t3 behind LiteLLM on :8001
-# Run on cmps01 after copying this infra/cmps01 folder to the host.
-#
-# Downtime: both models offline until backends reload + proxy starts.
-# 32B AWQ may take 10–30+ minutes to become ready.
-
+# Replace cmps01's Qwen2.5 pair with the pinned Qwen3.5 fleet candidate pair.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
 
-echo "=== Step 1: stop old containers ==="
-docker stop eduai-vllm eduai-vllm-t3 2>/dev/null || true
-docker rm eduai-vllm eduai-vllm-t3 2>/dev/null || true
-# Remove proxy if re-running migration
-docker compose down 2>/dev/null || true
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
 
-echo "=== Step 2: recreate backends (localhost only) ==="
+: "${VLLM_API_KEY:?Copy .env.example to .env and set a random VLLM_API_KEY}"
+: "${EDUAI_INTERNAL_KEY:?Set EDUAI_INTERNAL_KEY in .env}"
+: "${INTERNAL_ALLOW_IPS:?Set INTERNAL_ALLOW_IPS to the s378 address only}"
 
-docker run -d --name eduai-vllm --gpus '"device=0"' \
-  -p 127.0.0.1:18001:8000 \
-  --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --served-model-name qwen2.5-7b-instruct \
-  --host 0.0.0.0 \
-  --port 8000
+case "$VLLM_API_KEY $EDUAI_INTERNAL_KEY" in
+  *change-me*) echo "ERROR: replace all placeholder secrets in .env"; exit 1 ;;
+esac
 
-docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
-  -p 127.0.0.1:18002:8000 \
-  --restart unless-stopped \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-32B-Instruct-AWQ \
-  --served-model-name qwen2.5-32b-instruct \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --gpu-memory-utilization 0.88 \
-  --max-model-len 16384 \
-  --enable-auto-tool-choice \
-  --tool-call-parser hermes
+echo "=== Preflight ==="
+nvidia-smi -L
+docker compose config --quiet
 
-wait_for_model() {
-  local url="$1"
-  local label="$2"
-  echo "Waiting for $label at $url ..."
-  for i in $(seq 1 120); do
-    if curl -sf "$url/v1/models" >/dev/null 2>&1; then
-      echo "  OK: $label ready"
-      curl -s "$url/v1/models" | jq -r '.data[].id' | sed "s/^/    /"
-      return 0
+echo "=== Render protected nginx edge ==="
+./deploy-edge-proxy.sh --render-only
+
+echo "=== Remove legacy standalone containers ==="
+docker rm -f \
+  eduai-vllm \
+  eduai-vllm-t3 \
+  eduai-vllm-proxy \
+  eduai-edge-proxy \
+  eduai-energy-meter \
+  2>/dev/null || true
+
+echo "=== Pull/build and start Qwen3.5 stack ==="
+docker compose pull
+docker compose build eduai-energy-meter
+docker compose up -d
+
+echo "=== Wait for both model backends ==="
+for spec in "18001:qwen3.5-2b" "18002:qwen3.5-27b"; do
+  port="${spec%%:*}"
+  model="${spec#*:}"
+  for _ in $(seq 1 160); do
+    if curl -fsS "http://127.0.0.1:${port}/v1/models" | grep -q "\"${model}\""; then
+      echo "OK ${model}"
+      break
     fi
     sleep 15
   done
-  echo "  TIMEOUT: $label not ready after 30 min — check: docker logs $label"
-  return 1
-}
-
-wait_for_model "http://127.0.0.1:18001" "eduai-vllm"
-wait_for_model "http://127.0.0.1:18002" "eduai-vllm-t3"
-
-echo "=== Step 3: start LiteLLM proxy on :8001 ==="
-docker compose up -d
-
-echo "Waiting for proxy ..."
-for i in $(seq 1 20); do
-  if curl -sf http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 3
+  curl -fsS "http://127.0.0.1:${port}/v1/models" | grep -q "\"${model}\""
 done
 
-echo "=== Step 4: verify ==="
-echo "Backends:"
-curl -s http://127.0.0.1:18001/v1/models | jq -r '.data[].id' | sed 's/^/  7B: /'
-curl -s http://127.0.0.1:18002/v1/models | jq -r '.data[].id' | sed 's/^/  32B: /'
-
-echo "Proxy (both models):"
-curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq -r '.data[].id' | sed 's/^/  /'
-
-echo ""
-echo "Done. Next on s378:"
-echo '  VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"'
-echo '  VLLM_API_KEY="vllm-local"'
-echo "  restart dev server, npm run vllm:smoke, register models in Admin → AI Models"
+echo "=== Verify protected edge and energy meter ==="
+./verify-edge-security.sh
+curl -fsS http://127.0.0.1:8001/v1/models \
+  -H "Authorization: Bearer ${VLLM_API_KEY}"
+echo
+echo "cmps01 Qwen3.5 fleet profile ready"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Deploy the non-fleet Qwen3.5 ladder pair (4B + 9B) on cmps03.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,13 +11,14 @@ if [ -f .env ]; then
   set +a
 fi
 
-: "${VLLM_API_KEY:?Copy .env.example to .env and set VLLM_API_KEY}"
+: "${VLLM_API_KEY:?Copy .env.example to .env and set a random VLLM_API_KEY}"
 : "${EDUAI_INTERNAL_KEY:?Set EDUAI_INTERNAL_KEY in .env}"
 : "${INTERNAL_ALLOW_IPS:?Set INTERNAL_ALLOW_IPS to the s378 address only}"
 case "$VLLM_API_KEY $EDUAI_INTERNAL_KEY" in
   *change-me*) echo "ERROR: replace all placeholder secrets in .env"; exit 1 ;;
 esac
 
+echo "=== Preflight ==="
 nvidia-smi -L
 docker compose config --quiet
 
@@ -33,21 +33,23 @@ docker compose config --quiet
 export EDUAI_INTERNAL_KEY
 envsubst '${EDUAI_INTERNAL_KEY}' < nginx.conf.template > nginx.conf
 
-echo "=== Remove superseded gpt-oss and legacy model containers ==="
+echo "=== Remove legacy standalone containers ==="
 docker rm -f \
-  eduai-vllm-120b \
-  eduai-vllm-4b \
-  eduai-vllm-9b \
+  eduai-vllm \
+  eduai-vllm-t3 \
+  eduai-vllm-mid \
+  eduai-vllm-xl \
   eduai-vllm-proxy \
   eduai-edge-proxy \
   eduai-energy-meter \
   2>/dev/null || true
 
+echo "=== Pull/build and start Qwen3.5 mirror ==="
 docker compose pull
 docker compose build eduai-energy-meter
 docker compose up -d
 
-for spec in "18001:qwen3.5-4b" "18002:qwen3.5-9b"; do
+for spec in "18001:qwen3.5-2b" "18002:qwen3.5-27b"; do
   port="${spec%%:*}"
   model="${spec#*:}"
   for _ in $(seq 1 160); do
@@ -60,4 +62,5 @@ for spec in "18001:qwen3.5-4b" "18002:qwen3.5-9b"; do
   curl -fsS "http://127.0.0.1:${port}/v1/models" | grep -q "\"${model}\""
 done
 
-./start-edge.sh
+./verify.sh
+echo "cmps02 Qwen3.5 fleet mirror ready"

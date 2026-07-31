@@ -107,10 +107,11 @@ OLLAMA_BASE_URL="http://localhost:11434/"  # dev server: http://cmps01.ok.ubc.ca
 # CMPS01_INTERNAL_KEY=""  # required for nginx /energy and /ollama on :8001 (s378 dev server)
 # ROUTER_AUTO_DEFAULT="true"  # show Auto (rules) + Auto (LLM) in model picker when routing is configured
 # ROUTER_MODE=rules|knn|hybrid|llm  # default Auto behaviour (rules); see apps/core/.env.example
-# ROUTING_LLM_CLASSIFIER_MODEL=qwen2.5-7b-instruct
+# ROUTING_LLM_CLASSIFIER_MODEL=qwen3.5-2b
 # Multi-server fleet (optional) — see docs/DEPLOYMENT.md:
 # VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"
-# VLLM_FLEET_HEAVY_URL="http://cmps03.ok.ubc.ca:8001"
+# VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b,qwen3.5-27b"
+# Leave VLLM_FLEET_HEAVY_URL unset while cmps03 hosts the research-only 4B/9B pair.
 # AI_MAX_INFLIGHT=8              # process-local chat admission (0 = off)
 # AI_ADMISSION_WAIT_MS=15000     # wait before 503 AI_ADMISSION_TIMEOUT
 # FLEET_STREAM_PROBE_MS=10000    # soft-timeout waiting for first stream chunk before treating host as ready

@@ -340,7 +340,7 @@ The worker consumes each pool queue and is the **only** writer of terminal state
 ```jsonc
 {
   "kind": "question-generation",   // echoes the job kind
-  "model": "vllm:qwen2.5-32b-instruct", // host/model actually used
+  "model": "vllm:qwen3.5-27b", // host/model actually used
   "output": { /* kind-specific; QM: generated questions */ },
   "usage": { "inputTokens": 0, "outputTokens": 0 }, // optional telemetry
   "fleetHost": "http://cmps03…:8001"  // which GPU host served it (debug)

@@ -5,7 +5,7 @@ import {
   type WorkloadFeature,
 } from "./types";
 
-const DEFAULT_CHAT_MODELS = ["qwen2.5-7b-instruct", "qwen2.5-32b-instruct"];
+const DEFAULT_CHAT_MODELS = ["qwen3.5-2b", "qwen3.5-27b"];
 
 function parseCommaUrls(raw: string | undefined): string[] {
   if (!raw?.trim()) return [];

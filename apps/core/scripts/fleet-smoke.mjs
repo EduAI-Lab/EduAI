@@ -48,10 +48,10 @@ function serverIdFromUrl(url) {
 
 loadEnvFile();
 
-const apiKey = process.env.VLLM_API_KEY || "vllm-local";
+const apiKey = process.env.VLLM_API_KEY?.trim();
 const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
 const expectedModels = parseCommaList(
-  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen2.5-7b-instruct,qwen2.5-32b-instruct",
+  process.env.VLLM_FLEET_DEFAULT_MODELS || "qwen3.5-2b,qwen3.5-27b",
 );
 
 const chatUrls = parseCommaList(process.env.VLLM_FLEET_CHAT_URLS);
@@ -104,9 +104,13 @@ async function main() {
     console.error(
       "VLLM_FLEET_CHAT_URLS not set. Add to apps/core/.env:\n" +
         '  VLLM_FLEET_CHAT_URLS="http://cmps01.ok.ubc.ca:8001,http://cmps02.ok.ubc.ca:8001"\n' +
-        '  VLLM_API_KEY="vllm-local"\n' +
-        '  VLLM_FLEET_DEFAULT_MODELS="qwen2.5-7b-instruct,qwen2.5-32b-instruct"',
+        '  VLLM_API_KEY="<same generated secret as the fleet hosts>"\n' +
+        '  VLLM_FLEET_DEFAULT_MODELS="qwen3.5-2b,qwen3.5-27b"',
     );
+    process.exit(1);
+  }
+  if (!apiKey) {
+    console.error("VLLM_API_KEY not set; refusing to probe protected fleet hosts.");
     process.exit(1);
   }
 

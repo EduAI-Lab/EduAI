@@ -13,9 +13,6 @@ server {
     proxy_connect_timeout 60s;
     proxy_send_timeout 600s;
 
-    # Core uses /v1/models as the fleet admission probe. Require the slower
-    # 27B backend to be live so LiteLLM's static model list cannot report a
-    # healthy host while weights are still loading.
     location = /_large_model_health {
         internal;
         proxy_pass http://127.0.0.1:18002/health;
@@ -30,12 +27,6 @@ server {
         proxy_set_header Authorization $http_authorization;
     }
 
-    location = /health {
-        include /etc/nginx/conf.d/internal-allow.conf;
-        proxy_pass http://127.0.0.1:18002/health;
-        proxy_http_version 1.1;
-    }
-
     location /energy/ {
         include /etc/nginx/conf.d/internal-allow.conf;
         if ($eduai_internal_key_ok = 0) {
@@ -43,17 +34,6 @@ server {
         }
         proxy_pass http://127.0.0.1:9100/;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-
-    location /ollama/ {
-        include /etc/nginx/conf.d/internal-allow.conf;
-        if ($eduai_internal_key_ok = 0) {
-            return 403;
-        }
-        proxy_pass http://127.0.0.1:11434/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
     }
 
     location / {

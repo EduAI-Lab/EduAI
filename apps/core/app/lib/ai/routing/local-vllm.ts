@@ -35,7 +35,7 @@ export function normalizePickForLocalVllm(pick: PickSpec): PickSpec {
 }
 
 export function localVllmFallbackModelId(): string {
-  return "vllm:qwen2.5-32b-instruct";
+  return "vllm:qwen3.5-27b";
 }
 
 export function isVllmRegistryId(registryId: string): boolean {

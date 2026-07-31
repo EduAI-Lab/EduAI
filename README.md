@@ -23,8 +23,9 @@ EduAI/
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
 ├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
 ├── infra/
-│   ├── cmps01/                      # Primary interactive vLLM inference host
-│   ├── cmps03/                      # Heavy/background vLLM inference host
+│   ├── cmps01/                      # Qwen3.5 2B/27B interactive fleet host
+│   ├── cmps02/                      # Mirror Qwen3.5 2B/27B fleet host
+│   ├── cmps03/                      # Qwen3.5 4B/9B research ladder host
 │   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── tools/
 │   └── energy-meter/                # GPU/CPU energy sidecar for URA research telemetry (cmps01)
@@ -55,7 +56,7 @@ AI tutoring platform with a two-agent supervisor system (primary tutor + pedagog
 
 Full-stack tool for building course question banks and assessments. Supports AI-assisted question authoring, OCR upload, Canvas import/export, and assessment variant workflows.
 
-Campus AI defaults (as of the ollama→vLLM cutover): generation/OCR prefer `vllm:qwen2.5-32b-instruct`, connectivity probes prefer `vllm:qwen2.5-7b-instruct`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
+Campus AI defaults: generation/OCR prefer `vllm:qwen3.5-27b`, connectivity probes prefer `vllm:qwen3.5-2b`, and both resolve from Core’s live model catalog when available. `vllm` is server-managed (no client API key); legacy `forceProvider=ollama` still maps to campus vLLM. See [Question Maker README](apps/extensions/question-maker/README.md#campus-vllm-defaults).
 
 ## Docs
 
@@ -76,7 +77,9 @@ System-wide architecture and planning documents live in [`docs/`](docs/). App-sp
 | [`implementations/schema-design.md`](docs/implementations/schema-design.md) | Unified schema design across apps |
 | [`CRON_JOBS.md`](docs/CRON_JOBS.md) | Registered cron jobs, their schedules, trigger behavior, and local dry-run testing steps |
 | [`DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Instructions on how to deploy the system (production and development) |
-| [`infra/cmps03/README.md`](infra/cmps03/README.md) | cmps03 heavy/background vLLM fleet deployment and verification runbook |
+| [`infra/cmps01/README.md`](infra/cmps01/README.md) | cmps01 Qwen3.5 fleet deployment and verification runbook |
+| [`infra/cmps02/README.md`](infra/cmps02/README.md) | cmps02 mirrored Qwen3.5 fleet deployment and verification runbook |
+| [`infra/cmps03/README.md`](infra/cmps03/README.md) | cmps03 Qwen3.5 ladder deployment and verification runbook |
 | [`CANVAS.md`](docs/CANVAS.md) | Local Canvas LMS setup — WSL, Docker, ports, seed script |
 | [`TEAM_PHASE_0_AND_1_GUIDE.md`](docs/rag-ai/routing/eduai-summer-2026/TEAM_PHASE_0_AND_1_GUIDE.md) | Phase 0 model routing and sustainability telemetry (Prisma schema, router, seeds) |
 | [`tools/energy-meter/README.md`](tools/energy-meter/README.md) | GPU/CPU energy sidecar — deploy on cmps01, `ENERGY_SIDECAR_URL` / `CMPS01_INTERNAL_KEY`, verify with `npm run research:verify-energy` |
