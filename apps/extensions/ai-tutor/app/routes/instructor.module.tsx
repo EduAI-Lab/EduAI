@@ -55,7 +55,7 @@ import { accentForCourse } from '../lib/course-display';
 import api from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.module';
-import { PermissionGate } from '../components/rbac/PermissionGate';
+import { PermissionGate } from '@eduai/ui';
 import { useAtPermissions } from '../hooks/useAtPermissions';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';

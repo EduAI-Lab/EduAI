@@ -13,22 +13,12 @@
  */
 
 import { useState } from 'react';
-import { Badge, Button, SegmentedControl } from '@eduai/ui';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@eduai/ui';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@eduai/ui';
-import type { AdminBugReportRow } from '~/lib/types';
+import { SegmentedControl } from '../segmented-control';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import type { AdminBugReportRow } from './types';
 import {
   CONSOLE_LEVELS,
   CONSOLE_LEVEL_BADGE_VARIANT,
@@ -41,7 +31,7 @@ import {
   type ConsoleLogEntry,
   type NetworkLogEntry,
   type ViewerType,
-} from '~/components/admin/bug-reports/bug-reports-utils';
+} from './bug-reports-utils';
 
 function DescriptionViewer({ report }: { report: AdminBugReportRow }) {
   return (
