@@ -227,33 +227,29 @@ export type WithIdempotencyOptions = {
 };
 
 /**
- * React Router action wrapper: optional idempotency for retry-safe POST creates.
- * When no key is present, runs the handler directly.
+ * Same-process coalescing for overlapping identical idempotent requests
+ * (#1110): concurrent twins await the first execution and replay its
+ * Response instead of racing a second mutation or returning 409 while
+ * PROCESSING. Key includes requestHash so a body mismatch cannot join.
  */
-export async function withIdempotency(
+const inFlightIdempotentRequests = new Map<string, Promise<Response>>();
+
+function inFlightKey(
+  key: string,
+  route: string,
+  actorId: string,
+  requestHash: string,
+): string {
+  return `${key}\0${route}\0${actorId}\0${requestHash}`;
+}
+
+async function executeIdempotentRequest(
   opts: WithIdempotencyOptions,
+  body: Record<string, unknown> | null,
+  key: string,
+  requestHash: string,
   handler: (body: Record<string, unknown> | null) => Promise<Response>,
 ): Promise<Response> {
-  let body: Record<string, unknown> | null;
-  if (opts.body !== undefined) {
-    body = opts.body;
-  } else {
-    const rawBody = await opts.request
-      .clone()
-      .json()
-      .catch(() => null);
-    body =
-      rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
-        ? (rawBody as Record<string, unknown>)
-        : null;
-  }
-
-  const key = extractIdempotencyKey(opts.request, body);
-  if (!key) {
-    return handler(body);
-  }
-
-  const requestHash = hashRequestBody(bodyForIdempotencyHash(body));
   const claim = await claimIdempotency({
     key,
     route: opts.route,
@@ -266,6 +262,9 @@ export async function withIdempotency(
     return apiError(422, "IDEMPOTENCY_KEY_MISMATCH");
   }
   if (claim.kind === "in_progress") {
+    // Cross-process (or after this process's in-flight entry cleared): no
+    // sibling to await. 409 tells the client to retry; a later retry hits
+    // COMPLETED replay. Same-process overlap is handled by the coalesce map.
     return apiError(409, "IDEMPOTENCY_IN_PROGRESS");
   }
   if (claim.kind === "replay") {
@@ -303,4 +302,55 @@ export async function withIdempotency(
   }
 
   return response;
+}
+
+/**
+ * React Router action wrapper: optional idempotency for retry-safe POST creates.
+ * When no key is present, runs the handler directly.
+ */
+export async function withIdempotency(
+  opts: WithIdempotencyOptions,
+  handler: (body: Record<string, unknown> | null) => Promise<Response>,
+): Promise<Response> {
+  let body: Record<string, unknown> | null;
+  if (opts.body !== undefined) {
+    body = opts.body;
+  } else {
+    const rawBody = await opts.request
+      .clone()
+      .json()
+      .catch(() => null);
+    body =
+      rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : null;
+  }
+
+  const key = extractIdempotencyKey(opts.request, body);
+  if (!key) {
+    return handler(body);
+  }
+
+  const requestHash = hashRequestBody(bodyForIdempotencyHash(body));
+  const mapKey = inFlightKey(key, opts.route, opts.actorId, requestHash);
+
+  // Register before any await so overlapping same-process callers join this
+  // promise instead of each claiming / returning IDEMPOTENCY_IN_PROGRESS.
+  let shared = inFlightIdempotentRequests.get(mapKey);
+  if (!shared) {
+    shared = executeIdempotentRequest(opts, body, key, requestHash, handler);
+    inFlightIdempotentRequests.set(mapKey, shared);
+    // Cleanup only — callers awaiting `shared` still observe rejections.
+    void shared
+      .finally(() => {
+        if (inFlightIdempotentRequests.get(mapKey) === shared) {
+          inFlightIdempotentRequests.delete(mapKey);
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  const response = await shared;
+  // Each waiter needs its own body stream.
+  return response.clone();
 }
