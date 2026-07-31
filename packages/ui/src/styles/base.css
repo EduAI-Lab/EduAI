@@ -146,7 +146,6 @@ body {
   --color-gold-500: oklch(0.882 0.188 89);
   --color-gold-400: oklch(0.918 0.160 89);
   --color-gold-100: oklch(0.968 0.062 89);
-  --color-gold-50: oklch(0.985 0.025 89);
   /* ── Status tokens ─────────────────────────────────────── */
   --color-success-700: oklch(0.420 0.120 145);
   --color-success-500: oklch(0.554 0.155 145);
@@ -219,15 +218,9 @@ body {
   --card-foreground: oklch(0.929 0.013 256);
   --popover: oklch(0.220 0.015 259);
   --popover-foreground: oklch(0.735 0 0);
-  --primary: oklch(0.192 0.055 259);
-  --primary-foreground: oklch(1.0000 0 0);
   --primary-text: oklch(0.640 0.155 252);
-  --secondary: oklch(0.418 0.171 257);
-  --secondary-foreground: oklch(1.0000 0 0);
   --muted: oklch(0.228 0.012 259);
   --muted-foreground: oklch(0.680 0 0);
-  --accent: oklch(0.684 0.140 232);
-  --accent-foreground: oklch(1.0000 0 0);
   /* Error palette — flips for dark bg legibility */
   --color-error-100: oklch(0.230 0.060 27);
   --color-error-500: oklch(0.625 0.240 25);
@@ -235,7 +228,6 @@ body {
   --color-error-700: oklch(0.875 0.065 25);
   /* Success palette — flips for dark bg legibility */
   --color-success-100: oklch(0.230 0.060 145);
-  --color-success-500: oklch(0.554 0.155 145);
   --color-success-700: oklch(0.875 0.065 145);
   /* Warning palette — flips for dark bg legibility (previously missing → pale chips) */
   --color-warning-100: oklch(0.250 0.055 80);
@@ -248,20 +240,11 @@ body {
   --border: oklch(0.265 0.020 259);
   --input: oklch(0.220 0.012 259);
   --ring: oklch(0.418 0.171 257);
-  --chart-1: oklch(0.192 0.055 259);
-  --chart-2: oklch(0.418 0.171 257);
-  --chart-3: oklch(0.684 0.140 232);
-  --chart-4: oklch(0.882 0.188 89);
-  --chart-5: oklch(0.554 0.155 145);
   /* ── Sidebar — deepened dark navy ────────────────────────── */
   --sidebar: oklch(0.115 0.018 262);
   --sidebar-foreground: oklch(0.780 0.015 256);
-  --sidebar-primary: oklch(0.192 0.055 259);
-  --sidebar-primary-foreground: oklch(1.0000 0 0);
   --sidebar-accent: oklch(0.175 0.022 260);
-  --sidebar-accent-foreground: oklch(1.0000 0 0);
   --sidebar-border: oklch(0.200 0.020 260);
-  --sidebar-ring: oklch(0.684 0.140 232);
   /* ── Question difficulty chips — flip for dark bg ────────── */
   --diff-easy-bg: oklch(0.270 0.060 152);
   --diff-easy-fg: oklch(0.840 0.130 152);
@@ -275,26 +258,7 @@ body {
   --diff-hard-fg: oklch(0.845 0.150 25);
   --diff-hard-border: oklch(0.560 0.200 25);
   --diff-hard-solid: oklch(0.665 0.225 25);
-  --font-sans: Outfit, sans-serif;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: monospace;
-  --radius: 0.5rem;
   --shadow-2xs: 0px 1px 3px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 3px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 3px 0px hsl(0 0% 0% / 0.17), 0px 1px 2px -1px hsl(0 0% 0% / 0.17);
-  --shadow: 0px 1px 3px 0px hsl(0 0% 0% / 0.17), 0px 2px 4px -1px hsl(0 0% 0% / 0.12);
-  --shadow-md: 0px 1px 3px 0px hsl(0 0% 0% / 0.17), 0px 4px 6px -1px hsl(0 0% 0% / 0.14);
-  --shadow-lg: 0px 1px 3px 0px hsl(0 0% 0% / 0.17), 0px 8px 16px -2px hsl(0 0% 0% / 0.14);
-  --shadow-xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.17), 0px 16px 24px -4px hsl(0 0% 0% / 0.14);
-  --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.43);
-  --shadow-color: #000000;
-  --shadow-opacity: 0.17;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0.025em;
-  --spacing: 0.25rem;
 }
 
 @layer base {
