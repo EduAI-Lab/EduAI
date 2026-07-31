@@ -16,6 +16,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
+### Removed
+
+- [ui] chore: Delete `packages/ui/src/ui/chart.tsx`, the shadcn-style `ChartContainer`/`ChartTooltip` wrapper around `recharts` — zero consumers across Core, ai-tutor, and question-maker-frontend. Remove its barrel re-export and `recharts` from Core's package.json. `packages/ui/src/charts/*` (`DonutChart`, `MeterBar`, `StackedBar`, `PanelCard`, `QuestionAnalytics`) is untouched — contrary to the issue's premise, all five are actively used and none of them depend on `recharts`. Closes #1250. (#1250, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
