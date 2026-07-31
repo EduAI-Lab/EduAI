@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconAlertCircle, IconCircleCheck, IconLoader, IconRefresh } from "@tabler/icons-react";
+import { Spinner } from "@eduai/ui";
+import { IconAlertCircle, IconCircleCheck, IconRefresh } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@eduai/ui";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
@@ -188,7 +189,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
     return (
       <Card>
         <CardContent className="flex items-center gap-2 py-8 text-muted-foreground">
-          <IconLoader className="h-4 w-4 animate-spin" />
+          <Spinner />
           Loading search settings…
         </CardContent>
       </Card>
@@ -297,7 +298,7 @@ export function CourseEmbeddingSettings({ courseId, onSettingsSaved }: CourseEmb
         <Button onClick={handleSave} disabled={saving}>
           {saving ? (
             <>
-              <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+              <Spinner className="mr-2" />
               {reEmbedProgress ?? "Saving…"}
             </>
           ) : (

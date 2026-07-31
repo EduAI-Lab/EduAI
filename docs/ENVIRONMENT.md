@@ -83,10 +83,12 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `BETTER_AUTH_URL` | required | dev | Base URL of the Core app |
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) |
 | `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
+| `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
 | `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |
 | `VLLM_BASE_URL`, `VLLM_API_KEY` | optional | dev/prod | vLLM proxy on cmps01 |
+| `ENERGY_SIDECAR_URL`, `RESEARCH_MEASURE_ENERGY` | optional | research scripts only | Hardware energy collection for controlled experiments; live `/api/chat` does not contact the sidecar |
 | `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`, `CHAT_MAX_CONTEXT_MESSAGES`, `CHAT_SESSION_MAX_CHARS`, `CHAT_SESSION_RECENT_MESSAGES`, `CHAT_SESSION_DIGEST_MAX_CHARS` | optional | dev/prod | Chat context size tuning — code defaults shown in comments |
 | `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` | optional | dev/prod | Chat latency tuning |
 | `ADHD_ASSIST_OVERSIGHT` | optional | dev/prod | Set `false`/`0`/`off` to disable the second-pass structural audit |
@@ -96,6 +98,30 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `ENCRYPTION_KEY` | required for Canvas | dev/prod | AES-256-GCM key for stored Canvas instructor credentials — same format as QM's `ENCRYPTION_KEY` (separate key, same purpose) |
 | `VITE_QUESTION_MAKER_URL` | optional | dev | QM dashboard card link |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`, `INVITE_EXPIRY_HOURS` | optional | dev/prod | Invitation emails — unset `SMTP_HOST` logs the accept link instead of emailing |
+
+### Operating `QUEUE_MAX_DEPTH`
+
+**A Redis outage can present as `429 queue full` rather than `502`.** When the BullMQ
+add fails, an enqueue with no `idempotencyKey` deliberately leaves its `PENDING`
+row behind for the (not-yet-shipped) reaper, and depth reads count those rows for
+a 5-minute grace window — they may still be in Redis. So while Redis is down,
+client retries accumulate rows that consume the cap: the first callers get a
+truthful `502`, and once accumulated rows reach `QUEUE_MAX_DEPTH` later callers
+get `429` instead. `/api/chat` requests carry no `idempotencyKey` unless the
+caller supplies one, so this is the common shape of the failure.
+
+Operator guidance when the cap is enabled:
+
+- Treat a `429` spike with no matching rise in *completed* jobs as a suspected
+  queue-transport outage, not real saturation. Check Redis reachability and the
+  `ai_job_enqueue_failed` system log before assuming the cap was hit honestly.
+- Rows age out after 5 minutes, so the condition self-clears once Redis recovers;
+  no manual cleanup of `ai_jobs` is needed.
+- Set the cap generously above expected steady-state depth. A tight cap makes an
+  outage reach the 429 threshold faster and hides the real fault for longer.
+- Client copy for a `429` should stay neutral ("the queue is busy, retry shortly")
+  rather than asserting a specific queue length, since the number can reflect
+  failed-transport rows.
 
 ## `apps/core/.env.test.example`
 

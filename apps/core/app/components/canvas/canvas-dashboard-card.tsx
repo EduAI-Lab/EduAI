@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
-import { IconLoader, IconRefresh } from "@tabler/icons-react";
+import { IconRefresh } from "@tabler/icons-react";
 
 import { CanvasFetchDialog } from "~/components/canvas/canvas-fetch-dialog";
 import { Button } from "@eduai/ui";
@@ -64,7 +65,7 @@ export function CanvasDashboardCard({ disabled = false }: CanvasDashboardCardPro
         <CardContent className="space-y-4">
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <IconLoader className="h-4 w-4 animate-spin" />
+              <Spinner />
               Checking Canvas connection…
             </div>
           ) : integration ? (

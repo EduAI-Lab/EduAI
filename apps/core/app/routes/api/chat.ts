@@ -18,10 +18,6 @@ import {
   type RouterMode,
 } from "~/lib/ai/routing/router";
 import {
-  startSidecarMeasurement,
-  stopSidecarMeasurement,
-} from "~/lib/ai/energy/measurement.server";
-import {
   AdmissionTimeoutError,
   acquireAiAdmission,
   withAdmissionRelease,
@@ -102,6 +98,7 @@ import {
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
+import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
@@ -125,7 +122,7 @@ import {
   HYBRID_RAG_MAX_CONTEXT_CHARS,
   type HybridRagHit,
 } from "~/lib/chat-rag";
-import { routerAutoDefaultEnabled } from "~/lib/router-env.server";
+import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import { withResolvedModelMetadata } from "~/lib/chat/chat-message-metadata";
 
 function autoRoutingHeaders(
@@ -171,13 +168,6 @@ function resolveAutoRouting(
       routeWithAuto: true,
       modeOverride: "llm",
       requestedAuto: "auto-llm",
-    };
-  }
-  if (model === "auto-hybrid") {
-    return {
-      routeWithAuto: true,
-      modeOverride: "hybrid",
-      requestedAuto: "auto-hybrid",
     };
   }
   return { routeWithAuto: false, requestedAuto: null };
@@ -498,12 +488,55 @@ export async function action({ request }: ActionFunctionArgs) {
       model = undefined;
     }
 
-    if (!routerAutoDefaultEnabled() && model === undefined) {
+    if (model === "auto-hybrid") {
+      return new Response(
+        JSON.stringify({
+          error: "Unsupported routing model",
+          details:
+            'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const routingModelSettings =
+      model === undefined || model === "auto" || model === "auto-llm"
+        ? await getRoutingModelSettings()
+        : null;
+    if (model === undefined && routingModelSettings) {
+      model = routingModelSettings.autoLlmEnabled
+        ? "auto-llm"
+        : routingModelSettings.autoRulesEnabled
+          ? "auto"
+          : undefined;
+    }
+
+    if (
+      (model === "auto-llm" && !routingModelSettings?.autoLlmEnabled) ||
+      (model === "auto" && !routingModelSettings?.autoRulesEnabled)
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Routing model disabled",
+          details:
+            "The selected Auto routing mode is disabled in Admin → AI Models.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (model === undefined) {
       return new Response(
         JSON.stringify({
           error: "Missing model",
           details:
-            'ROUTER_AUTO_DEFAULT disables implicit Auto; send model "auto", "auto-llm", "auto-hybrid", or a concrete registry id.',
+            "Enable an Auto routing mode in Admin → AI Models or send a concrete provider:modelId.",
         }),
         {
           status: 400,
@@ -761,18 +794,34 @@ export async function action({ request }: ActionFunctionArgs) {
     // skips this entirely; the dispatch worker (#168) drains it later.
     if (isEnqueueRequested(body)) {
       try {
-        const { jobId } = await enqueueQuestionGeneration({
+        const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
           body,
           messages: rawMessages,
           userId: actingUser.id,
           courseId: effectiveCourseId ?? undefined,
           requestedModel: model,
         });
-        return new Response(JSON.stringify({ jobId }), {
+        // 202 carries a live position/depth snapshot (#915); the client polls
+        // the status endpoint (#917) for fresher values.
+        return new Response(JSON.stringify({ jobId, queuePosition, queueDepth }), {
           status: 202,
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
+        // Queue saturated (#915): an honest rate signal, not a failure — 429
+        // with Retry-After so the client backs off and retries.
+        if (error instanceof QueueFullError) {
+          return chatApiReject(
+            429,
+            {
+              error: "AI job queue is full",
+              details: error.message,
+              retryAfterSeconds: error.retryAfterSeconds,
+            },
+            { chatMode, userId: actingUser.id },
+            { "Retry-After": String(error.retryAfterSeconds) },
+          );
+        }
         // Invalid payload is the caller's fault (400); a queue/Redis failure is
         // ours (502) — never mask an infra outage as a client error.
         const isValidationError = error instanceof ZodError;
@@ -1689,9 +1738,6 @@ ${buildEmptyCourseRagBlock()}`;
       providerId: parsedModel.providerId,
     };
 
-    let energySidecarBaseUrl = fleetPick?.energySidecarUrl ?? null;
-    let sidecarTag: string | null = null;
-
     const needsAdmission =
       parsedModel.providerId === "vllm" || parsedModel.providerId === "ollama";
     let admissionRelease: (() => void) | null = null;
@@ -1729,16 +1775,6 @@ ${buildEmptyCourseRagBlock()}`;
     const admissionHeaders = (): Record<string, string> =>
       admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
 
-    // Start energy measurement only after admission so timeout 503 cannot leak sessions.
-    sidecarTag = await startSidecarMeasurement(`chat-${chat.id}-${randomUUID()}`, {
-      sidecarBaseUrl: energySidecarBaseUrl,
-    });
-
-    const abandonSidecar = (baseUrl: string | null, tag: string | null) => {
-      if (!tag || !baseUrl) return;
-      void stopSidecarMeasurement(tag, { sidecarBaseUrl: baseUrl }).catch(() => undefined);
-    };
-
     const persistTurnTelemetry = async (params: {
       responseText: string;
       usage:
@@ -1763,8 +1799,6 @@ ${buildEmptyCourseRagBlock()}`;
         routingTier,
         routerVersion: wasAuto ? resolvedRouterVersion : null,
         routerFeatures: routerContext,
-        sidecarTag,
-        energySidecarBaseUrl,
       });
     };
 
@@ -1846,7 +1880,6 @@ ${buildEmptyCourseRagBlock()}`;
       result = await runStreamText();
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
-        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         return clientAbortResponse();
       }
@@ -1861,13 +1894,7 @@ ${buildEmptyCourseRagBlock()}`;
             jobType,
           });
           if (nextPick) {
-            abandonSidecar(failedPick.energySidecarUrl, sidecarTag);
             fleetPick = nextPick;
-            energySidecarBaseUrl = nextPick.energySidecarUrl;
-            sidecarTag = await startSidecarMeasurement(
-              `chat-${chat.id}-${randomUUID()}`,
-              { sidecarBaseUrl: energySidecarBaseUrl },
-            );
             validatedApiKeys = mergeLocalInferenceFromEnv(
               providerSettingsBase,
               resolvedModelId,
@@ -1904,7 +1931,6 @@ ${buildEmptyCourseRagBlock()}`;
             throw error;
           }
         } catch (retryError) {
-          abandonSidecar(energySidecarBaseUrl, sidecarTag);
           releaseAdmission();
           if (isClientAbort(retryError, request.signal)) {
             return clientAbortResponse();
@@ -1928,7 +1954,6 @@ ${buildEmptyCourseRagBlock()}`;
           throw retryError;
         }
       } else {
-        abandonSidecar(energySidecarBaseUrl, sidecarTag);
         releaseAdmission();
         if (chatMode === "admin") {
           logStreamError(error, streamTrace);

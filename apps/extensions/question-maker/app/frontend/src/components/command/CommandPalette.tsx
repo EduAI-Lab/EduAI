@@ -12,6 +12,7 @@ import {
   type CommandPaletteGroup,
 } from '@eduai/ui';
 import {
+  IconBug,
   IconDashboard,
   IconBooks,
   IconLibrary,
@@ -28,8 +29,29 @@ import {
 import { useDisplayCourses } from '@/hooks/useDisplayCourses';
 import { useAuth } from '@/contexts/AuthContext';
 import { CURRENT_APP_ID, getLauncherApps } from '@/lib/apps';
+import { getNavForUser, getNavSecondaryForUser } from '@/lib/rbac/nav';
+import type { QmNavItemKey } from '@/lib/rbac/types';
 
 const iconClass = 'size-4';
+
+const PALETTE_NAV_ICONS: Record<QmNavItemKey, typeof IconDashboard> = {
+  dashboard: IconDashboard,
+  courses: IconBooks,
+  library: IconLibrary,
+  help: IconHelpCircle,
+  'bug-reports': IconBug,
+  'back-to-eduai': IconBooks,
+};
+
+function PaletteNavIcon({ navKey }: { navKey: QmNavItemKey }) {
+  const Icon = PALETTE_NAV_ICONS[navKey];
+  return <Icon className={iconClass} />;
+}
+
+/** Sidebar nav + secondary nav, flattened for the palette (mirrors Core). */
+function paletteNavItems(user: Parameters<typeof getNavForUser>[0]) {
+  return [...getNavForUser(user), ...getNavSecondaryForUser(user)];
+}
 
 export function CommandPalette() {
   const navigate = useNavigate();
@@ -45,11 +67,15 @@ export function CommandPalette() {
     {
       heading: 'Go to',
       items: [
-        { label: 'Dashboard', icon: <IconDashboard className={iconClass} />, onSelect: () => navigate('/dashboard') },
-        { label: 'Courses', icon: <IconBooks className={iconClass} />, onSelect: () => navigate('/courses') },
-        { label: 'Question Library', icon: <IconLibrary className={iconClass} />, onSelect: () => navigate('/library') },
+        // Driven by the same lib/rbac/nav the sidebar uses, so role-gated entries
+        // (Bug reports) cannot appear in one surface and not the other. Settings
+        // is appended here because it lives in the navUser dropdown, not the nav.
+        ...paletteNavItems(user).map((item) => ({
+          label: item.title,
+          icon: <PaletteNavIcon navKey={item.key} />,
+          onSelect: () => navigate(item.href),
+        })),
         { label: 'Settings', icon: <IconSettings className={iconClass} />, onSelect: () => navigate('/settings') },
-        { label: 'Help', icon: <IconHelpCircle className={iconClass} />, onSelect: () => navigate('/help') },
       ],
     },
     {
