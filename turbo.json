@@ -23,6 +23,36 @@
         "tsconfig*.json"
       ]
     },
+    "test:unit": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
     "test:all": {
       "dependsOn": ["^build"],
       "inputs": [

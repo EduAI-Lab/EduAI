@@ -221,8 +221,16 @@ jobs:
         run: |
           case "${{ matrix.scope }}" in
             core)
+              status=0
               npx turbo run test --continue --env-mode=loose \
-                --filter=edu-ai --filter=@eduai/ui
+                --filter=@eduai/ui &
+              ui_pid=$!
+              npx turbo run test:unit test:integration --continue --env-mode=loose \
+                --filter=edu-ai &
+              core_pid=$!
+              wait "$ui_pid" || status=1
+              wait "$core_pid" || status=1
+              exit "$status"
               ;;
             ai_tutor)
               npx turbo run test --continue --env-mode=loose \
