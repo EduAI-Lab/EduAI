@@ -21,7 +21,7 @@ EduAI/
 ├── packages/
 │   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
-├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
+├── eduai-design-system/             # Design system bundle (typography, guidelines, Figma exports). Colour tokens here are superseded by packages/ui/src/styles/base.css
 ├── infra/
 │   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── tools/
