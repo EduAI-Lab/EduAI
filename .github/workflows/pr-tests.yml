@@ -147,10 +147,15 @@ jobs:
           npm run db:generate -w edu-ai
           npm run typecheck -w edu-ai
 
-      - name: Generate Prisma client for core
+      - name: Generate Prisma clients
         run: |
           set -euo pipefail
           npm run db:generate -w edu-ai
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+
+      - name: Verify Prisma client isolation
+        run: npm run test:prisma-client-isolation
 
       - name: Restore Turborepo cache
         uses: actions/cache@v4
@@ -163,15 +168,12 @@ jobs:
       # --env-mode=loose: the suites read their config from process env / .env files
       # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
       #
-      # ai-tutor-server and question-maker-backend both leave `output` unset in
-      # their Prisma schemas, and neither has its own @prisma/client, so both
-      # generate into the single hoisted <repo>/node_modules/@prisma/client.
-      # Generating both up front left whichever ran last as the only app with
-      # its models on the client; question-maker gained a schema in #1168, and
-      # that made ai-tutor's suite fail with `Cannot read properties of
-      # undefined (reading 'deleteMany')`. So generate and test one app at a
-      # time. `status` keeps a first-batch failure from masking the second
-      # batch, matching what --continue does within a single run.
+      # Each extension schema now generates a distinct workspace-local client
+      # package. Regenerate each package before its corresponding test batch so
+      # the inputs are explicit; the isolation check above proves both packages
+      # coexist without overwriting either model set. `status` keeps a
+      # first-batch failure from masking the second batch, matching what
+      # --continue does within a single run.
       - name: Run tests
         env:
           NODE_ENV: test
