@@ -5,6 +5,7 @@ import { CreateAIProviderSchema, UpdateAIProviderSchema } from "~/lib/ai/schemas
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import { paginatedResponse, parsePaginationParams } from "~/lib/pagination.server";
 
 export async function handleAiProvidersApiRequest(request: Request) {
@@ -82,6 +83,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         const provider = await prisma.aIProvider.create({
           data: result.data,
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -133,6 +135,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
           where: { id: providerId },
           data: result.data,
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -179,6 +182,7 @@ export async function handleAiProvidersApiRequest(request: Request) {
         const provider = await prisma.aIProvider.delete({
           where: { id: providerId },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
