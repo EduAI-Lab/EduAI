@@ -16,6 +16,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
+### Changed
+
+- [question-maker] chore: Align qm-frontend's `@eduai/ui` dependency range from a pinned `0.1.0` to `*`, matching Core and ai-tutor, so the workspace doesn't break on the next `@eduai/ui` version bump. Three of the four manifest issues this ticket named were already stale by the time of this PR — verified and left untouched (see PR description). Closes #1252. (#1252, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
