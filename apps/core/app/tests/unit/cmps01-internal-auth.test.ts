@@ -52,4 +52,15 @@ describe("cmps01 internal auth", () => {
       false,
     );
   });
+
+  it("does not treat the research energy URL as an application auth target", () => {
+    process.env = {
+      ...env,
+      OLLAMA_BASE_URL: undefined,
+      ENERGY_SIDECAR_URL: "http://cmps01.ok.ubc.ca:8001/energy",
+    };
+    expect(isTrustedCmps01EdgeUrl("http://cmps01.ok.ubc.ca:8001/energy")).toBe(
+      false,
+    );
+  });
 });
