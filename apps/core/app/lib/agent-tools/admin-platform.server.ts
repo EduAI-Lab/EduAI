@@ -10,6 +10,7 @@ import {
   validateEmbeddingSettingsUpdate,
 } from "~/lib/ai/embedding-config";
 import { clearCourseEmbeddingSettingsCache } from "~/lib/ai/embedding";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
 import {
   InvalidOllamaBaseUrlError,
   ollamaTagsUrl,
@@ -625,6 +626,7 @@ export async function createAdminAiProvider(actor: RbacUser, input: Record<strin
 
   try {
     const provider = await prisma.aIProvider.create({ data: parsed.data });
+    invalidateTierModelCache();
     return { ok: true, provider };
   } catch (error: unknown) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -656,6 +658,7 @@ export async function updateAdminAiProvider(
     where: { id: providerId },
     data: parsed.data,
   });
+  invalidateTierModelCache();
   return { ok: true, provider };
 }
 
@@ -664,6 +667,7 @@ export async function deleteAdminAiProvider(actor: RbacUser, providerId: string)
   if (denied) return denied;
 
   await prisma.aIProvider.delete({ where: { id: providerId } });
+  invalidateTierModelCache();
   return { ok: true, providerId };
 }
 
@@ -682,6 +686,7 @@ export async function createAdminAiModel(actor: RbacUser, input: Record<string, 
   }
 
   const model = await prisma.aIModel.create({ data: parsed.data });
+  invalidateTierModelCache();
   return { ok: true, model };
 }
 
@@ -704,6 +709,7 @@ export async function updateAdminAiModel(
   }
 
   const model = await prisma.aIModel.update({ where: { id: modelId }, data: parsed.data });
+  invalidateTierModelCache();
   return { ok: true, model };
 }
 
@@ -712,6 +718,7 @@ export async function deleteAdminAiModel(actor: RbacUser, modelId: string) {
   if (denied) return denied;
 
   await prisma.aIModel.delete({ where: { id: modelId } });
+  invalidateTierModelCache();
   return { ok: true, modelId };
 }
 
