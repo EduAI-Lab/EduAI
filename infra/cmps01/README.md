@@ -28,7 +28,7 @@ Backends stay on **localhost** (`:9100`, `:11434`). Nginx on `:8001` path-routes
 
 ### Key validation (#1115)
 
-`deploy-edge-proxy.sh` exits **before** starting Docker services if `CMPS01_INTERNAL_KEY` is unset, empty, or equal to a known example value (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`). The fatal message never prints the supplied secret.
+`deploy-edge-proxy.sh` and `migrate.sh` exit **before** any Docker stop/start if `CMPS01_INTERNAL_KEY` is unset, empty, or equal to a known example value (`vllm-local`, `changeme-run-deploy-edge-proxy`, `change-me-use-openssl-rand-hex-32`). The fatal message never prints the supplied secret. Migration validates at the top of the script so a bad key cannot tear down running vLLM containers before rejection.
 
 On s378 set **both** to the same value:
 

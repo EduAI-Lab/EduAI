@@ -83,6 +83,18 @@ else
   pass=$((pass + 1))
 fi
 
+# migrate.sh must validate before any docker stop/run (static order check).
+migrate="${DIR}/migrate.sh"
+check_line="$(grep -n 'check_cmps01_internal_key' "${migrate}" | head -1 | cut -d: -f1)"
+docker_line="$(grep -nE '^docker stop ' "${migrate}" | head -1 | cut -d: -f1)"
+if [ -n "${check_line}" ] && [ -n "${docker_line}" ] && [ "${check_line}" -lt "${docker_line}" ]; then
+  echo "ok: migrate.sh validates before docker stop"
+  pass=$((pass + 1))
+else
+  echo "FAIL: migrate.sh must call check_cmps01_internal_key before docker stop (check=${check_line:-missing} docker=${docker_line:-missing})"
+  fail=$((fail + 1))
+fi
+
 echo "---"
 echo "passed=${pass} failed=${fail}"
 [ "${fail}" -eq 0 ]

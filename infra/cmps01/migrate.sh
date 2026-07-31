@@ -10,6 +10,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# shellcheck source=lib/check-example-secrets.sh
+source "${SCRIPT_DIR}/lib/check-example-secrets.sh"
+
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+# Reject unset/empty/example secrets before any docker stop/run (#1115).
+# Otherwise a bad CMPS01_INTERNAL_KEY still tears down and recreates vLLM before
+# deploy-edge-proxy.sh fails closed.
+check_cmps01_internal_key || exit 1
+
 echo "=== Step 1: stop old containers ==="
 docker stop eduai-vllm eduai-vllm-t3 2>/dev/null || true
 docker rm eduai-vllm eduai-vllm-t3 2>/dev/null || true
