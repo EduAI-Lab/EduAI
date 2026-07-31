@@ -4,7 +4,6 @@ set -euo pipefail
 branch="${1:-}"
 actor="${2:-unknown Discord user}"
 repo="${EDUAI_REPO:-/srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore}"
-health_url="${EDUAI_HEALTH_URL:-http://127.0.0.1:3000/}"
 
 if [[ -z "$branch" ]]; then
   echo "Usage: deploy-branch.sh <branch> [actor]" >&2
@@ -51,30 +50,20 @@ npm ci
 echo "Starting the Core development database..."
 npm run docker:dev:db:eduai
 
-echo "Generating the Prisma client and applying migrations..."
-(
-  cd apps/core
-  npx prisma generate
-  npx prisma migrate deploy
-)
-
-echo "Restarting the shared development services..."
-sudo -n systemctl restart eduai-core.service eduai-aitutor-server.service eduai-qm-backend.service
-
-echo "Waiting for Core health check: $health_url"
-healthy=0
-for _ in {1..30}; do
-  if curl --fail --silent --show-error --max-time 5 "$health_url" >/dev/null; then
-    healthy=1
-    break
-  fi
-  sleep 2
-done
-
-if [[ "$healthy" -ne 1 ]]; then
-  echo "Branch changed, but the Core health check did not pass within 60 seconds." >&2
-  sudo -n systemctl --no-pager status eduai-core.service >&2 || true
-  exit 6
+# s378 serves pre-built bundles from group-owned system units (see PR #1285) —
+# `npm run dev` is no longer what's running. go-live-build.sh is the source of
+# truth for env/generate/migrate/seed/build/restart order; branches that predate
+# that migration have no way to serve correctly under the units already
+# installed on this box, so fail loudly instead of limping through a stale build.
+if [[ ! -f infra/s378/go-live-build.sh ]]; then
+  echo "Refusing to deploy: infra/s378/go-live-build.sh is missing on $branch." >&2
+  echo "The live systemd units serve a pre-built bundle, not 'npm run dev', so" >&2
+  echo "branches without the s378 build-serve migration (see PR #1285) cannot" >&2
+  echo "be deployed correctly on this box yet." >&2
+  exit 7
 fi
+
+echo "Building and restarting via go-live-build.sh..."
+bash infra/s378/go-live-build.sh
 
 echo "Deployment complete: $branch@$(git rev-parse --short=8 HEAD)"

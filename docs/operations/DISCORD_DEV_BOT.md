@@ -19,15 +19,17 @@ Before changing the server, `deploy-branch.sh`:
    interpolated into a shell command.
 3. Refuses to proceed if the shared checkout has tracked or untracked changes.
 4. Fetches `origin` and requires the exact remote branch to exist.
-5. Checks out the remote commit, runs `npm ci`, starts the Core database, runs
-   Prisma generation and migrations, restarts the system-level `eduai-core`,
-   `eduai-aitutor-server`, and `eduai-qm-backend` services via a scoped
-   passwordless `sudo systemctl restart`, and waits for the Core health
-   endpoint.
+5. Checks out the remote commit, runs `npm ci`, starts the Core database, then
+   hands off to `infra/s378/go-live-build.sh` (env, Prisma generate/migrate/seed
+   for all three apps, build, restart, and its own port-based health check).
 
-The deploy user needs a `sudoers.d` rule limited to restarting and checking
-the status of those three units — nothing broader. See
-`infra/s378/discord-dev-bot/sudoers-eduai-dev-bot` for the exact rule.
+`go-live-build.sh` ships with PR #1285 (moving s378 to group-owned system
+units serving pre-built bundles instead of `npm run dev`). Branches that
+predate that migration have no `infra/s378/go-live-build.sh` and
+`deploy-branch.sh` refuses to deploy them rather than limp along with a stale
+build under units that no longer run a dev server. No `sudo` is involved:
+restarting `eduai-*` units is authorized for members of the `eduai-dev` group
+via the polkit rule PR #1285 installs at `/etc/polkit-1/rules.d/49-eduai-dev.rules`.
 
 Database migrations are not automatically reversible. A feature branch with a
 destructive or dimension-changing migration still requires team coordination and
