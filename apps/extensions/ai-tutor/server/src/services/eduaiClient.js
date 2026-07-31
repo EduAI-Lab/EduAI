@@ -269,6 +269,9 @@ export async function getCoreAdminBugReport(cookie, bugReportId) {
  * them would be strictly worse.
  *
  * Returns the raw envelope so callers can read `total` without a second call.
+ *
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)`
+ *   so a hung Core can't hold this open past a caller's fallback (#1173 review).
  */
 export async function listCoreAdminUsers(cookie, options = {}) {
   if (!cookie) {
@@ -291,7 +294,7 @@ export async function listCoreAdminUsers(cookie, options = {}) {
       const chunk = unique.slice(start, start + CORE_PAGE_SIZE);
       const params = new URLSearchParams();
       params.set('ids', chunk.join(','));
-      const envelope = await fetchCoreUsers(cookie, params);
+      const envelope = await fetchCoreUsers(cookie, params, options.signal);
       data.push(...(envelope?.data ?? []));
     }
     return { data, total: data.length, page: 1, pageSize: data.length };
@@ -302,14 +305,15 @@ export async function listCoreAdminUsers(cookie, options = {}) {
   params.set('pageSize', String(options.pageSize ?? CORE_PAGE_SIZE));
   if (options.role) params.set('role', options.role);
   if (options.search) params.set('search', options.search);
-  return fetchCoreUsers(cookie, params);
+  return fetchCoreUsers(cookie, params, options.signal);
 }
 
 /** Single `GET /api/users` request with the ADMIN session cookie. */
-async function fetchCoreUsers(cookie, params) {
+async function fetchCoreUsers(cookie, params, signal) {
   const url = `${getCoreBaseUrl()}/api/users?${params}`;
   const response = await fetch(url, {
     headers: { cookie },
+    signal,
   });
 
   if (!response.ok) {
