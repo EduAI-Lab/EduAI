@@ -13,10 +13,9 @@ export type QmUser = {
 export type QmRoleView = 'admin' | 'unit-admin' | 'instructor';
 
 export type QmNavItemKey =
+  | 'dashboard'
   | 'courses'
-  | 'questions'
-  | 'assessments'
-  | 'variants'
+  | 'library'
   | 'help'
   | 'bug-reports'
   | 'back-to-eduai';
