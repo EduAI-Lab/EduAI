@@ -10,10 +10,3 @@
 
 /* Design tokens, base layer and scrollbars live in @eduai/ui's base.css above.
  * Only AI Tutor-specific rules belong below. */
-
-:root {
-  /* Light-mode accent that is actually distinct from --primary (1a8d9c57).
-   * Promoted to the shared stylesheet in #1300; override kept until then so
-   * this commit stays value-preserving. */
-  --primary-text: oklch(0.55 0.16 252);
-}
