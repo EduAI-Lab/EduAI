@@ -5,6 +5,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const routingSettingsMock = vi.hoisted(() => ({
+  getRoutingModelSettings: vi.fn(),
+}));
+
 vi.mock("~/lib/auth/server", () => ({
   auth: { api: { getSession: vi.fn() } },
 }));
@@ -22,6 +26,8 @@ vi.mock("~/lib/auth/guards.server", () => ({
 vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
+
+vi.mock("~/lib/routing-model-settings.server", () => routingSettingsMock);
 
 vi.mock("~/lib/prisma.server", () => ({
   default: {
@@ -73,6 +79,10 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "u1", role: "STUDENT" },
   } as never);
+  routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
+    autoLlmEnabled: true,
+    autoRulesEnabled: false,
+  });
 });
 
 describe("POST /api/chat — §10 course gate (#302)", () => {
@@ -80,6 +90,46 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue(null);
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));
     expect(res.status).toBe(401);
+  });
+
+  it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
+    const res = await action(
+      makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Unsupported routing model",
+      details:
+        'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects Auto when the administrator disables LLM routing", async () => {
+    routingSettingsMock.getRoutingModelSettings.mockResolvedValue({
+      autoLlmEnabled: false,
+      autoRulesEnabled: false,
+    });
+
+    const res = await action(
+      makeArgs({ messages: [], model: "auto-llm", courseId: "c1" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: "Routing model disabled",
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
+  it("rejects Auto (rules) when the administrator disables rule routing", async () => {
+    const res = await action(
+      makeArgs({ messages: [], model: "auto", courseId: "c1" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: "Routing model disabled",
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the course does not exist", async () => {
