@@ -1,4 +1,4 @@
-import { IconLoader2 } from '@tabler/icons-react';
+import { Spinner } from '@eduai/ui';
 import {
   Button,
   Card,
@@ -109,7 +109,7 @@ export default function StudentActivityFeedbackCard({
         <Button type="button" variant="primary" onClick={onSubmit} disabled={!rating || saving}>
           {saving ? (
             <>
-              <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
+              <Spinner className="mr-1" />
               Saving...
             </>
           ) : (
