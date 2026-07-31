@@ -1,70 +1,87 @@
 # s378 extension hosting (dev)
 
-Public hosts (Apache → local Vite/Node):
+s378 serves **built** assets. It does not run `npm run dev`.
 
-| Host | Proxies to |
-|------|------------|
-| `https://dev.eduai.ok.ubc.ca` | Core `:3000` |
-| `https://dev.aitutor.eduai.ok.ubc.ca` | AI Tutor FE `:3001`, `/api/` → `:4000` |
-| `https://dev.questionmaker.eduai.ok.ubc.ca` | QM FE `:5173`, `/api/` → `:8000` |
+| Host | Served by |
+|------|-----------|
+| `https://dev.eduai.ok.ubc.ca` | Core `:3000` (node, SSR) |
+| `https://dev.aitutor.eduai.ok.ubc.ca` | **Apache, static** from `apps/extensions/ai-tutor/build/client`; `/api/` → `:4000` |
+| `https://dev.questionmaker.eduai.ok.ubc.ca` | **Apache, static** from `apps/extensions/question-maker/app/frontend/dist`; `/api/` → `:8000` |
 
-## Process management (prefer systemd over tmux)
+Both extension frontends are `ssr: false`, so a build emits plain static files and
+Apache serves them directly — there is no Vite process on `:3001` or `:5173` any
+more. Core stays a node process because it is SSR.
 
-tmux is fine for a quick smoke test; it is **not** reliable long-term (logout, reboot, crash, partial restarts). Use **systemd user units** instead:
+> **A `git pull` no longer changes what dev serves, and neither does restarting a
+> unit.** Every deploy is `git pull` → `go-live-build.sh`. See **Rebuilding** below.
+
+## Process management
+
+Three **system** units, owned by the `eduai-dev` group:
 
 | Unit | Port |
 |------|------|
 | `eduai-core.service` | `:3000` |
 | `eduai-aitutor-server.service` | `:4000` |
-| `eduai-aitutor-fe.service` | `:3001` |
 | `eduai-qm-backend.service` | `:8000` |
-| `eduai-qm-frontend.service` | `:5173` |
-| `eduai-dev.target` | starts/stops all of the above |
+| `eduai-dev.target` | starts/stops all three |
+
+These are system units, not `systemctl --user` units, so **any** `eduai-dev`
+member can restart the stack — no `loginctl enable-linger`, no being locked to
+one account, and no sudo (a polkit rule in `systemd/49-eduai-dev.rules` grants
+the group lifecycle control over `eduai-*` units).
 
 ### One-time install on s378
 
 ```bash
-# From repo (or copy infra/s378 → ~/dev-vhosts including systemd/)
-bash infra/s378/go-live-systemd-install.sh
-
-# Required once so units survive SSH logout / reboot:
-sudo loginctl enable-linger "$USER"
-loginctl show-user "$USER" -p Linger   # Linger=yes
-
-# Stop tmux sessions and start the systemd stack:
-bash infra/s378/go-live-systemd-start.sh
+bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
+bash infra/s378/go-live-build.sh             # build + start
 ```
 
 ### Day-to-day
 
 ```bash
-systemctl --user status eduai-dev.target
-systemctl --user restart eduai-dev.target          # all five
-systemctl --user restart eduai-aitutor-fe          # one app
-journalctl --user -u eduai-core -f                 # logs
+systemctl status eduai-dev.target
+systemctl restart eduai-dev.target       # all three — no sudo, no --user
+systemctl restart eduai-aitutor-server   # one app
+journalctl -u eduai-core -f              # logs
 ```
 
-After env/code changes: `bash ~/dev-vhosts/go-live-env.sh` then `systemctl --user restart eduai-dev.target`.
+Restarting picks up **server-side** `.env` changes. A `VITE_`-prefixed value is
+baked into the bundle at build time, so changing one needs a rebuild, not a
+restart.
 
-The older `go-live-reset.sh` (tmux) remains as a fallback only.
+## Rebuilding
 
-## Scripts (copy to `~/dev-vhosts/` on s378)
+> **Order matters: `env` → `build` → `restart`.** Never `env` → `restart`.
+> `go-live-env.sh` rewrites the public `VITE_*` URLs, and those are now compiled
+> into the bundle. Skip the build and the sites keep serving the previous run's
+> URLs. `go-live-build.sh` enforces this order for you.
+
+```bash
+git pull
+bash infra/s378/go-live-build.sh              # env, migrate, generate, build, restart
+bash infra/s378/go-live-build.sh --install    # after a branch switch (adds npm install)
+bash infra/s378/go-live-build.sh --only qm    # core | aitutor | qm
+```
+
+A full build takes roughly 1–3 minutes. `vite build` empties the output directory
+first, so the two extension sites return 404 briefly mid-build. That is expected.
+
+There is no HMR on s378 — nobody develops on this box, and the tree-shaken build
+is the entire point (the dev server shipped ~12MB of unbundled JS per page).
+
+## Scripts
 
 | Script | Purpose |
 |--------|---------|
+| `go-live-build.sh` | **The deploy command.** env → migrate → generate → build → restart |
 | `go-live-env.sh` | Public URLs + **sync `EDUAI_API_KEY` from Core → AI Tutor + QM** |
-| `go-live-apache.sh` | Install/reload Apache vhosts |
-| `go-live-systemd-install.sh` | Install/enable systemd user units |
-| `go-live-systemd-start.sh` | Stop tmux, start `eduai-dev.target` |
-| `go-live-reset.sh` | **Legacy:** kill ports + restart all **tmux** apps |
-| `go-live-restart.sh` / `go-live-start.sh` | Lighter tmux restarts |
+| `go-live-apache.sh` | Install/reload the Apache vhosts **from this repo** (needs sudo; rare) |
+| `go-live-systemd-install.sh` | Install/enable the system units + polkit rule (needs sudo; once) |
 
-Typical order after a code/env change (systemd):
-
-```bash
-bash ~/dev-vhosts/go-live-env.sh
-systemctl --user restart eduai-dev.target
-```
+> `~/dev-vhosts/` is **legacy and no longer a source of truth.** The vhosts and
+> units tracked in `infra/s378/` are what get installed; edit them here.
 
 ## Shared `EDUAI_API_KEY` (required for extension APIs)
 
@@ -109,12 +126,24 @@ Core and both extension backends must share the **same** service key.
 ## Smoke checks
 
 ```bash
-# Ports (on s378)
-curl -s -o /dev/null -w 'core:%{http_code} at:%{http_code} qm:%{http_code}\n' \
-  http://127.0.0.1:3000/ http://127.0.0.1:3001/ http://127.0.0.1:5173/
+# Public hosts (all three should be 200)
+for h in dev.eduai dev.aitutor.eduai dev.questionmaker.eduai; do
+  printf '%s -> ' "$h"; curl -sk -o /dev/null -w '%{http_code}\n' "https://$h.ok.ubc.ca/"
+done
 
-# systemd
-systemctl --user is-active eduai-core eduai-aitutor-fe eduai-qm-frontend
+# systemd — three units, and nothing left under --user
+systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
+systemctl --user list-units 'eduai*'        # expect empty
+pgrep -af 'nodemon|vite|react-router dev'   # expect empty
+
+# Built assets, not a dev server
+curl -sk https://dev.questionmaker.eduai.ok.ubc.ca/ | grep -o 'src="[^"]*"'
+#   expect src="/assets/index-<hash>.js", NOT src="/src/main.tsx"
+curl -sk https://dev.aitutor.eduai.ok.ubc.ca/ | grep -c '@vite/client'   # expect 0
+
+# Dev semantics survived the build (NODE_ENV=development reached the bundler)
+grep -rls 'localhost:8080' apps/extensions/question-maker/app/frontend/dist/assets | head -1
+#   present => import.meta.env.DEV baked true
 
 # Key presence only (never print the value)
 grep -c '^EDUAI_API_KEY=.\+' apps/core/.env \
