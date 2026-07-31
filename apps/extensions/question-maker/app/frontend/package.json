@@ -22,7 +22,6 @@
     "clsx": "^2.1.1",
     "docx": "^9.6.1",
     "html2canvas": "^1.4.1",
-    "lucide-react": "^0.554.0",
     "pdfjs-dist": "^4.6.82",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
