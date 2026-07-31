@@ -23,6 +23,13 @@ vi.mock("~/lib/auth/course-access.server", () => ({
   resolveCourseAccessWithCourse: vi.fn(),
 }));
 
+vi.mock("~/lib/routing-model-settings.server", () => ({
+  getRoutingModelSettings: vi.fn().mockResolvedValue({
+    autoLlmEnabled: true,
+    autoRulesEnabled: false,
+  }),
+}));
+
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     chat: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
