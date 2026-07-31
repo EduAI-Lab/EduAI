@@ -278,9 +278,10 @@ describe('canViewCourseChats', () => {
   })
 
   it('the "never" gate short-circuits before consulting the policy map', () => {
-    // A malformed/legacy policy map could carry a truthy "never" entry (not a
-    // real PolicyKey); the short-circuit at gate === 'never' must return
-    // false without ever falling through to `policies[gate] ?? false`.
+    // Mutant-killer for the `gate === 'never'` short-circuit: force a truthy
+    // `never` entry (not a real PolicyKey — typed policies never carry one)
+    // so a broken short-circuit would fall through to `policies[gate] ?? false`
+    // and incorrectly return true.
     const policiesWithNeverSet = { never: true } as Partial<Record<PolicyKey, boolean>>
     expect(canViewCourseChats('ta', policiesWithNeverSet)).toBe(false)
   })
