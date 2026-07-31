@@ -145,6 +145,14 @@ curl -sk https://dev.aitutor.eduai.ok.ubc.ca/ | grep -c '@vite/client'   # expec
 grep -rls 'localhost:8080' apps/extensions/question-maker/app/frontend/dist/assets | head -1
 #   present => import.meta.env.DEV baked true
 
+# Server-side NODE_ENV, i.e. Core's isProd gates are off
+systemctl show eduai-core -p Environment --value | tr ' ' '\n' | grep NODE_ENV
+curl -sI http://127.0.0.1:3000/ | grep -i strict-transport   # expect NOTHING from Core
+#   Check Core DIRECTLY on :3000. Do NOT check the public URL for this — Apache
+#   sets Strict-Transport-Security on every vhost on this box, including the two
+#   static extension sites that have no node process at all, so the public header
+#   is always present and tells you nothing about NODE_ENV.
+
 # Key presence only (never print the value)
 grep -c '^EDUAI_API_KEY=.\+' apps/core/.env \
   apps/extensions/ai-tutor/server/.env \
