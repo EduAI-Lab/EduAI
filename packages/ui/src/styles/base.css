@@ -114,6 +114,7 @@ body {
   --color-neutral-900: oklch(0.2046 0 0);
   --color-blue-900: oklch(0.192 0.055 259);
   --color-blue-600: oklch(0.418 0.171 257);
+  --color-blue-500: oklch(0.55 0.16 252);
   --color-blue-400: oklch(0.640 0.155 252);
   --color-cyan-500: oklch(0.684 0.140 232);
 
@@ -125,7 +126,11 @@ body {
   --popover-foreground: oklch(0.4386 0 0);
   --primary: var(--color-blue-900);
   --primary-foreground: var(--color-neutral-0);
-  --primary-text: var(--primary);
+  /* A real accent, distinct from the --primary fill. Was var(--primary), which
+   * made it 1.03:1 against body text and 1.00:1 on bg-primary in light mode --
+   * the "use text-primary-text for accents" convention did nothing until dark
+   * mode. Value proven in ai-tutor since 1a8d9c57. */
+  --primary-text: var(--color-blue-500);
   --secondary: var(--color-blue-600);
   --secondary-foreground: var(--color-neutral-0);
   --muted: oklch(0.9219 0 0);
