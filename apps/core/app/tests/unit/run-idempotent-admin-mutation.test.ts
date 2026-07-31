@@ -198,35 +198,51 @@ describe("runIdempotentAdminMutation (#1110)", () => {
     expect(mutation).toHaveBeenCalledOnce();
   });
 
-  it("does not run the mutation when a concurrent twin is still PROCESSING", async () => {
-    prismaMock.idempotencyRecord.create.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("dup", {
-        code: "P2002",
-        clientVersion: "test",
-      }),
-    );
-    const { hashRequestBody, bodyForIdempotencyHash } = await import(
-      "~/lib/idempotency.server"
-    );
-    const body = { jobName: "cleanup" };
-    prismaMock.idempotencyRecord.findUnique.mockResolvedValue({
-      requestHash: hashRequestBody(bodyForIdempotencyHash(body)),
-      status: "PROCESSING",
-      statusCode: null,
-      responseBody: null,
-      expiresAt: new Date(Date.now() + 60_000),
+  it("overlapping concurrent calls run the mutation once and both replay the result", async () => {
+    // #1110: second overlapping request must replay the first result, not
+    // return IDEMPOTENCY_IN_PROGRESS. Process-local coalesce in withIdempotency
+    // joins twins onto one execution before claim.
+    let resolveMutation!: (value: { ok: true; runId: string }) => void;
+    const mutationGate = new Promise<{ ok: true; runId: string }>((resolve) => {
+      resolveMutation = resolve;
+    });
+    let mutationEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      mutationEntered = resolve;
+    });
+    const mutation = vi.fn().mockImplementation(() => {
+      mutationEntered();
+      return mutationGate;
     });
 
-    const mutation = vi.fn().mockResolvedValue({ shouldNot: "run" });
-    // Wrapper surfaces the 409 envelope as JSON (same as REST), not a thrown error.
-    const result = await runIdempotentAdminMutation(
+    prismaMock.idempotencyRecord.create.mockResolvedValue({});
+    prismaMock.idempotencyRecord.update.mockResolvedValue({});
+
+    const body = { jobName: "cleanup" };
+    const first = runIdempotentAdminMutation(
       "admin-1",
       "POST /api/admin/cron-jobs",
       "concurrent-key",
       body,
       mutation,
     );
-    expect(result).toMatchObject({ error: "IDEMPOTENCY_IN_PROGRESS" });
-    expect(mutation).not.toHaveBeenCalled();
+    const second = runIdempotentAdminMutation(
+      "admin-1",
+      "POST /api/admin/cron-jobs",
+      "concurrent-key",
+      body,
+      mutation,
+    );
+
+    await entered;
+    expect(mutation).toHaveBeenCalledOnce();
+
+    resolveMutation({ ok: true, runId: "r1" });
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(a).toEqual({ ok: true, runId: "r1" });
+    expect(b).toEqual({ ok: true, runId: "r1" });
+    expect(mutation).toHaveBeenCalledOnce();
+    expect(prismaMock.idempotencyRecord.create).toHaveBeenCalledOnce();
   });
 });

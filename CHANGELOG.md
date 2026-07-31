@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
-- [core] fix: Admin chat idempotent mutations build a valid absolute `Request` URL by stripping the HTTP method from composite route keys like `POST /api/users` (was `http://localhostPOST /api/users`, which threw `TypeError: Invalid URL`). (#1110, @Ayyhab, 2026-07-29) — [#1265](https://github.com/EduAI-Lab/EduAI/pull/1265)
+- [core] fix: Admin chat idempotent mutations build a valid absolute `Request` URL by stripping the HTTP method from composite route keys like `POST /api/users` (was `http://localhostPOST /api/users`, which threw `TypeError: Invalid URL`); overlapping same-process requests with the same key now coalesce onto one mutation and replay its result instead of returning `IDEMPOTENCY_IN_PROGRESS`. (#1110, @Ayyhab, 2026-07-29) — [#1265](https://github.com/EduAI-Lab/EduAI/pull/1265)
 
 ### Added
 
