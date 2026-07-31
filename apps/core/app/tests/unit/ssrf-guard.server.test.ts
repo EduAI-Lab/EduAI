@@ -121,6 +121,50 @@ describe("assertPublicHostname", () => {
     await expect(assertPublicHostname("v6-nat64.example")).rejects.toThrow(UnsafeHostError);
   });
 
+  it("blocks IPv6 loopback and mapped-private addresses in uncompressed form", async () => {
+    // The same address has many spellings. Matching the textual form only
+    // catches whichever one the author thought of, so these are expanded to
+    // numeric hextets before the range checks run.
+    for (const address of [
+      "0:0:0:0:0:0:0:1", // ::1
+      "0000:0000:0000:0000:0000:0000:0000:0001", // ::1, zero-padded
+      "0:0:0:0:0:0:0:0", // ::
+      "0:0:0:0:0:ffff:7f00:1", // ::ffff:127.0.0.1
+      "0:0:0:0:0:ffff:a00:1", // ::ffff:10.0.0.1
+      "2001:0db8:0:0:0:0:0:1", // 2001:db8::1
+      "::127.0.0.1", // deprecated IPv4-compatible form
+      "fe80::1%eth0", // zone index must not defeat the check
+      "FE80::1", // case must not defeat the check
+    ]) {
+      lookupMock.mockResolvedValueOnce([{ address, family: 6 }]);
+      await expect(assertPublicHostname(`v6-${address}.example`), address).rejects.toThrow(
+        UnsafeHostError,
+      );
+    }
+  });
+
+  it("still allows public IPv6 addresses", async () => {
+    for (const address of [
+      "2606:2800:220:1:248:1893:25c8:1946",
+      "2001:4860:4860::8888",
+      "64:ff9c::1", // adjacent to NAT64 but not in it
+      "2001:db9::1", // adjacent to the documentation range but not in it
+    ]) {
+      lookupMock.mockResolvedValueOnce([{ address, family: 6 }]);
+      await expect(assertPublicHostname(`v6-ok-${address}.example`), address).resolves
+        .toBeUndefined();
+    }
+  });
+
+  it("fails closed on malformed IPv6 rather than treating it as public", async () => {
+    for (const address of ["gggg::1", "1:2:3:4:5:6:7", "1::2::3", "1:2:3:4:5:6:7:8:9"]) {
+      lookupMock.mockResolvedValueOnce([{ address, family: 6 }]);
+      await expect(assertPublicHostname(`v6-bad-${address}.example`), address).rejects.toThrow(
+        UnsafeHostError,
+      );
+    }
+  });
+
   it("fails closed on a malformed address rather than treating it as public", async () => {
     lookupMock.mockResolvedValueOnce([{ address: "not-an-ip", family: 4 }]);
     await expect(assertPublicHostname("malformed.example")).rejects.toThrow(UnsafeHostError);
