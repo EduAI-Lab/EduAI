@@ -63,6 +63,9 @@ tests/
 
 ## Installation
 
+Platform onboarding (install all workspaces, start Docker DBs + all apps) lives in the
+[monorepo root README](../../../../../README.md). The steps below are package-local.
+
 1. **Install dependencies** (from the repo root, so workspace packages link correctly)
    ```bash
    npm install
@@ -78,11 +81,13 @@ tests/
    ```bash
    npm run db:migrate:deploy
    ```
-   (`npm run dev` already does this automatically on every start — see below.)
+   (`npm run dev` — from `app/backend`, or via root `npm run dev` / turbo filter `question-maker-*` —
+   already does this automatically on every start — see below.)
 
 ## Running the Application
 
 ### Development
+From `app/backend`, or via root `npm run dev` / turbo filter `question-maker-*`:
 ```bash
 npm run dev
 ```

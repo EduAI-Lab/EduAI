@@ -23,7 +23,6 @@ import {
 } from "./llm-classifier";
 import {
   isLocalVllmRouting,
-  localVllmFallbackModelId,
   normalizePickForLocalVllm,
 } from "./local-vllm";
 
@@ -93,18 +92,6 @@ export type RouterDecision = {
   tier: 1 | 2 | 3;
   features: Record<string, unknown>;
 };
-
-const FALLBACK_MODEL = "google:gemini-2.5-flash";
-
-function defaultFallbackModelId(): string {
-  if (isLocalVllmRouting()) {
-    return localVllmFallbackModelId();
-  }
-  if (process.env.VLLM_BASE_URL?.trim()) {
-    return "vllm:qwen2.5-7b-instruct";
-  }
-  return FALLBACK_MODEL;
-}
 
 const carbonByCourse = () =>
   parseCarbonPolicyByCourse(process.env.ROUTING_CARBON_MODE_BY_COURSE);
@@ -190,9 +177,9 @@ async function finalizePick(
       normalizedPick.kind === "exactTier" ? normalizedPick.tier : isLocalVllmRouting() ? 3 : 2,
     );
   } else {
-    fallbackUsed = true;
-    modelId = defaultFallbackModelId();
-    tier = modelId.includes("32b") ? 3 : modelId.startsWith("vllm:") ? 1 : 2;
+    throw new Error(
+      "Auto routing has no active model in its routing tiers. Enable a tiered model in Admin → AI Models.",
+    );
   }
 
   const features: Record<string, unknown> = {
