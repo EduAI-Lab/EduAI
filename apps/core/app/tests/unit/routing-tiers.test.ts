@@ -35,6 +35,7 @@ describe("routing tier model cache", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.VLLM_BASE_URL;
   });
 
@@ -61,5 +62,22 @@ describe("routing tier model cache", () => {
         }),
       }),
     );
+  });
+
+  it("reloads tier models after the cache TTL expires", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([
+      tierRow("qwen2.5-7b-instruct", "TIER_1"),
+    ]);
+    expect((await getCachedTierModels())[0].registryId).toContain("7b");
+
+    now.mockReturnValue(11_001);
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([
+      tierRow("qwen2.5-32b-instruct", "TIER_3"),
+    ]);
+
+    expect((await getCachedTierModels())[0].registryId).toContain("32b");
+    expect(prismaMock.aIModel.findMany).toHaveBeenCalledTimes(2);
+    now.mockRestore();
   });
 });
