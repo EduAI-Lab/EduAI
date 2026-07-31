@@ -17,6 +17,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [monorepo] feat: PICT combinatorial-testing infra — `tests/models/` directory, `scripts/pict-gen.mjs` generator (writes deterministic `<name>.cases.json`; supports `/o:N` order and `/e:<seed>` seed rows via a per-model sidecar config), `npm run test:pict:gen`, and a CI drift check (`pict-drift` job) that fails the PR if a committed case table goes stale relative to its model. Generation always runs `pict` inside a pinned `docker/pict` image rather than a host install — PICT's greedy solver breaks ties via hash-container iteration order, so a macOS/Homebrew build and a Linux build produce a *different row count* for the identical model (19 vs 18 for the pilot model here), not just a reordering; pinning to one Docker image is the only way the committed JSON stays byte-identical across every contributor's machine and CI. TESTS.md documents this, plus install/add-a-model/regen and the model→oracle→world-builder split. Ships with one pilot model (`material-visibility`, census § S1) to prove the path end to end — oracle and world-builder tests land in a separate issue. (#1179, @evanbones, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/1210)
 
+### Fixed
+
+- [core] fix: Automatic routing now immediately excludes inactive models and providers instead of retaining stale cached eligibility or falling back to hardcoded local model IDs. Explicit user model choices survive chat-route remounts, and administrators can independently enable `Auto` or `Auto (rules)` from AI Management with accessible explanatory tooltips; `Auto (rules)` defaults off. (@superbolt08, 2026-07-30) — [#1282](https://github.com/EduAI-Lab/EduAI/pull/1282)
+
 ## [Week 12 — July 20–26, 2026]
 
 ### Changed
