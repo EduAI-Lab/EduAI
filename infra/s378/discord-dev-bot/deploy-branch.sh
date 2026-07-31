@@ -59,7 +59,7 @@ echo "Generating the Prisma client and applying migrations..."
 )
 
 echo "Restarting the shared development services..."
-systemctl --user restart eduai-dev.target
+sudo -n systemctl restart eduai-core.service eduai-aitutor-server.service eduai-qm-backend.service
 
 echo "Waiting for Core health check: $health_url"
 healthy=0
@@ -73,7 +73,7 @@ done
 
 if [[ "$healthy" -ne 1 ]]; then
   echo "Branch changed, but the Core health check did not pass within 60 seconds." >&2
-  systemctl --user --no-pager status eduai-core.service >&2 || true
+  sudo -n systemctl --no-pager status eduai-core.service >&2 || true
   exit 6
 fi
 
