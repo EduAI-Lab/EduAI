@@ -251,3 +251,40 @@ export function mapProgressData(progressResult) {
     percentage: progressResult.percentage ?? 0,
   };
 }
+
+/**
+ * Map an Activity row (with `lesson.title` + `lesson.module.title` included)
+ * to the compact "importable activity" DTO the cross-lesson import picker
+ * consumes. Distinct from `mapActivity` — the picker only needs identity and
+ * provenance labels, not the full normalized activity payload.
+ *
+ * Related: `app/lib/api.ts` `ImportableActivity`.
+ */
+export function mapImportableActivity(activity) {
+  const config = activity.config ?? {};
+  return {
+    id: activity.id,
+    title: activity.title ?? config.question ?? activity.instructionsMd,
+    type: config.questionType ?? 'MCQ',
+    lessonId: activity.lessonId,
+    lessonTitle: activity.lesson?.title ?? null,
+    moduleTitle: activity.lesson?.module?.title ?? null,
+  };
+}
+
+/**
+ * Map a Topic row to its public DTO.
+ *
+ * Why: topics were historically serialized as raw Prisma rows (the only
+ * entity without a mapper). As of #1043 the topics endpoint paginates and
+ * both the sync and local-read paths funnel through here so the wire shape
+ * is stable. The client contract (`app/lib/types.ts` `Topic`) is only
+ * `{ id, name }`; `id` is a cuid string and the client coerces it with
+ * `String(...)` at every read site.
+ */
+export function mapTopic(topic) {
+  return {
+    id: topic.id,
+    name: topic.name,
+  };
+}
