@@ -95,6 +95,141 @@ describe("logging.server", () => {
     );
   });
 
+  it("redacts secret-bearing key names missed by the pre-#973 deny-list", async () => {
+    await logAuditAction({
+      actionCode: "PROVIDER_CONFIG_SAVED",
+      category: "AI_CONFIG",
+      entityType: "Provider",
+      details: {
+        jwt: "eyJ...",
+        encryptionKey: "ek-1",
+        databaseUrl: "postgres://u:secret@host/db",
+        connectionString: "Server=x;Password=y",
+        dsn: "https://key@sentry.io/1",
+        passwd: "p1",
+        pwd: "p2",
+        passcode: "pc-1",
+        passphrase: "pp-1",
+        dbUrl: "postgres://u:secret@host/db",
+        databaseUri: "postgres://u:secret@host/db",
+        otp: "123456",
+        totp: "654321",
+        mfa: "enabled",
+        mfaSecret: "mfa-secret",
+        mfaCode: "123456",
+        mfaRecoveryCode: "rec-1",
+        pin: "0000",
+        userPin: "1111",
+        auth: "Bearer xyz",
+        authToken: "tok",
+        authorization: "Bearer xyz",
+        bearer: "xyz",
+        signature: "sig-abc",
+        sessionId: "sess-123",
+        canvasUrl: "https://canvas.example.com",
+      },
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: {
+          jwt: "[REDACTED]",
+          encryptionKey: "[REDACTED]",
+          databaseUrl: "[REDACTED]",
+          connectionString: "[REDACTED]",
+          dsn: "[REDACTED]",
+          passwd: "[REDACTED]",
+          pwd: "[REDACTED]",
+          passcode: "[REDACTED]",
+          passphrase: "[REDACTED]",
+          dbUrl: "[REDACTED]",
+          databaseUri: "[REDACTED]",
+          otp: "[REDACTED]",
+          totp: "[REDACTED]",
+          mfa: "[REDACTED]",
+          mfaSecret: "[REDACTED]",
+          mfaCode: "[REDACTED]",
+          mfaRecoveryCode: "[REDACTED]",
+          pin: "[REDACTED]",
+          userPin: "[REDACTED]",
+          auth: "[REDACTED]",
+          authToken: "[REDACTED]",
+          authorization: "[REDACTED]",
+          bearer: "[REDACTED]",
+          signature: "[REDACTED]",
+          sessionId: "[REDACTED]",
+          canvasUrl: "https://canvas.example.com",
+        },
+      }),
+    );
+  });
+
+  it("uses segment-exact matching for short tokens and keeps ordinary fields visible", async () => {
+    // Table-driven positive / negative cases: short needles (auth/pin/otp/dsn/totp/mfa) use
+    // segment match; MFA status flags stay visible via the safe-key allowlist.
+    const cases: Array<{ key: string; value: string; redact: boolean }> = [
+      // positive — exact segment or longer unique substring
+      { key: "auth", value: "secret", redact: true },
+      { key: "auth_header", value: "secret", redact: true },
+      { key: "userPin", value: "0000", redact: true },
+      { key: "pin_code", value: "0000", redact: true },
+      { key: "mfa", value: "on", redact: true },
+      { key: "mfaCode", value: "123456", redact: true },
+      { key: "mfaRecoveryCode", value: "rec-1", redact: true },
+      { key: "mfa_secret", value: "s", redact: true },
+      { key: "otp", value: "123456", redact: true },
+      { key: "userOtp", value: "123456", redact: true },
+      { key: "otp_code", value: "123456", redact: true },
+      { key: "totp", value: "654321", redact: true },
+      { key: "userTotp", value: "654321", redact: true },
+      { key: "dsn", value: "https://key@sentry.io/1", redact: true },
+      { key: "sentryDsn", value: "https://key@sentry.io/1", redact: true },
+      { key: "database_dsn", value: "postgres://x", redact: true },
+      { key: "passcode", value: "pc", redact: true },
+      { key: "passphrase", value: "pp", redact: true },
+      { key: "dbUrl", value: "postgres://x", redact: true },
+      { key: "databaseUri", value: "postgres://x", redact: true },
+      { key: "authorization", value: "Bearer x", redact: true },
+      // negative — ordinary fields that previously false-positived on short substrings
+      { key: "mfaEnabled", value: "true", redact: false },
+      { key: "mfaRequired", value: "false", redact: false },
+      { key: "mfaEnrolled", value: "true", redact: false },
+      { key: "mfaStatus", value: "active", redact: false },
+      { key: "authorId", value: "a-1", redact: false },
+      { key: "authorName", value: "Ada", redact: false },
+      { key: "mapping", value: "course-map", redact: false },
+      { key: "shippingAddress", value: "1 Main St", redact: false },
+      { key: "pinningPolicy", value: "none", redact: false },
+      { key: "forceReauth", value: "false", redact: false },
+      { key: "authorizedUnits", value: "3", redact: false },
+      // otp/dsn substring collisions (must stay visible with segment matching)
+      { key: "hotPath", value: "/api/hot", redact: false },
+      { key: "footprint", value: "12kb", redact: false },
+      { key: "fieldsName", value: "title", redact: false },
+      { key: "needsNormalization", value: "true", redact: false },
+      { key: "canvasUrl", value: "https://canvas.example.com", redact: false },
+      { key: "role", value: "ADMIN", redact: false },
+    ];
+
+    const details: Record<string, unknown> = {};
+    const expected: Record<string, unknown> = {};
+    for (const c of cases) {
+      details[c.key] = c.value;
+      expected[c.key] = c.redact ? "[REDACTED]" : c.value;
+    }
+
+    await logAuditAction({
+      actionCode: "PROVIDER_CONFIG_SAVED",
+      category: "AI_CONFIG",
+      entityType: "Provider",
+      details,
+    });
+
+    expect(auditDb.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ details: expected }),
+    );
+  });
+
   it("does not overflow on circular details and still redacts the rest", async () => {
     const details: Record<string, unknown> = { password: "nope", note: "ok" };
     details.self = details;

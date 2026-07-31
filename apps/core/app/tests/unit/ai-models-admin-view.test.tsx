@@ -10,6 +10,10 @@ import { MemoryRouter } from "react-router";
 
 import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
+import {
+  defaultRoutingModelSettings,
+  routingModelSettingDefinitions,
+} from "~/lib/routing-model-settings";
 
 const provider = {
   id: "prov-1",
@@ -59,6 +63,9 @@ function renderView(overrides: Partial<React.ComponentProps<typeof AiModelsAdmin
         onUpdateModel={vi.fn()}
         onDeleteModel={vi.fn()}
         onToggleModelActive={vi.fn()}
+        routingModelSettings={defaultRoutingModelSettings()}
+        routingModelDefinitions={routingModelSettingDefinitions()}
+        onToggleRoutingModel={vi.fn()}
         {...overrides}
       />
     </MemoryRouter>,

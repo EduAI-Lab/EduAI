@@ -28,8 +28,11 @@ export function CourseSwitcher({
     let cancelled = false;
     void (async () => {
       try {
-        const list = (await api.listCourses()) as Course[];
-        if (!cancelled) setCourses(Array.isArray(list) ? list : []);
+        // #1043: /courses is paginated; the switcher takes one bounded page.
+        // The trigger always seeds with the current course below, so a course
+        // beyond the page still labels correctly even if it's not listed.
+        const page = await api.listCourses();
+        if (!cancelled) setCourses(Array.isArray(page.data) ? page.data : []);
       } catch {
         // Non-fatal: the switcher still shows the current course.
       }

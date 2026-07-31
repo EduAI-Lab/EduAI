@@ -12,6 +12,46 @@ All endpoints require an authenticated session (Better Auth cookie) unless noted
 
 ---
 
+## Pagination
+
+List endpoints return the platform pagination envelope (#1043), matching EduAI Core's contract (#1041), rather than a bare array:
+
+```json
+{
+  "data": [],
+  "total": 0,
+  "page": 1,
+  "pageSize": 25
+}
+```
+
+`total` is the full count matching the query, **not** the length of `data`. Clients must treat a short `data` as one page — not the whole set — and read `total` for counts, "select all", or any tree/ordinal derivation.
+
+**Query params:** `page` (1-based) and `pageSize`.
+
+- `page` clamps to `1..1000000` (`MAX_PAGE`).
+- `pageSize` clamps to `1..200` (`MAX_PAGE_SIZE`).
+- Fractional values are floored.
+
+**Two parsing modes.** They differ only on *absent* params; a param that is present but unparseable is a `400` in both, so the same malformed input never gets two different answers depending on the endpoint.
+
+| Mode | Endpoints | Params absent |
+| --- | --- | --- |
+| **Required** | `GET /api/courses`, `GET /api/admin/courses`, `GET /api/activities/importable` | `400 PAGINATION_REQUIRED` |
+| **Optional** | `GET /api/courses/:courseId/modules`, `GET /api/modules/:moduleId/lessons`, `GET /api/lessons/:lessonId/activities`, `GET /api/courses/:courseId/topics` | Defaults to page 1, `pageSize` 200 |
+
+The optional-mode ("tree") endpoints default to a single bounded page of 200 because their readers need the whole set — drag-and-drop reorder, ordinal derivation, the lesson player — rather than a real pager.
+
+**Pagination errors:**
+- `400 PAGINATION_REQUIRED` — a required-mode endpoint was called without both `page` and `pageSize`.
+- `400 PAGINATION_INVALID` — `page` or `pageSize` was supplied but is not a finite number.
+
+Both are shaped `{ error: string, code: string }`.
+
+**Ordering.** Every paginated query carries a unique tie-break (`id`) as its final sort key, so tied rows can't shift between pages and be duplicated or skipped.
+
+---
+
 ## System
 
 ### `GET /api/health`
@@ -61,7 +101,9 @@ List courses for the current user.
 - Professors see all courses where they are an instructor.
 - Students see published courses where they are enrolled, with progress data.
 
-**Response:** `Course[]`
+**Pagination:** Required — see [Pagination](#pagination). `page` and `pageSize` are both mandatory; omitting either returns `400 PAGINATION_REQUIRED`.
+
+**Response:** `Paginated<Course>` — `{ data: Course[], total, page, pageSize }`
 
 ---
 
@@ -181,7 +223,9 @@ List modules for a course.
 
 **Behavior:** Students see published modules only, with progress data.
 
-**Response:** `Module[]`
+**Pagination:** Optional — see [Pagination](#pagination). Defaults to page 1 at `pageSize` 200 when omitted.
+
+**Response:** `Paginated<Module>` — `{ data: Module[], total, page, pageSize }`
 
 ---
 
@@ -244,7 +288,9 @@ List lessons for a module.
 
 **Behavior:** Students see published lessons only, with progress data.
 
-**Response:** `Lesson[]`
+**Pagination:** Optional — see [Pagination](#pagination). Defaults to page 1 at `pageSize` 200 when omitted.
+
+**Response:** `Paginated<Lesson>` — `{ data: Lesson[], total, page, pageSize }`
 
 ---
 
@@ -307,7 +353,9 @@ List activities for a lesson.
 
 **Behavior:** Students receive completion status (`correct`, `incorrect`, `not_attempted`) per activity.
 
-**Response:** `Activity[]`
+**Pagination:** Optional — see [Pagination](#pagination). Defaults to page 1 at `pageSize` 200 when omitted.
+
+**Response:** `Paginated<Activity>` — `{ data: Activity[], total, page, pageSize }`
 
 ---
 
@@ -370,7 +418,7 @@ Delete an activity.
 
 Submit an answer attempt for an activity.
 
-**Auth:** Course member.
+**Auth:** Enrolled student only — platform role must be STUDENT and course enrollment role must be STUDENT. The server uses the authenticated user for identity; any client-supplied `userId` in the request body is ignored.
 
 **Body:**
 ```json
@@ -478,7 +526,9 @@ List topics for a course.
 
 **Auth:** Course member (enrolled student or instructor).
 
-**Response:** `Topic[]`
+**Pagination:** Optional — see [Pagination](#pagination). Defaults to page 1 at `pageSize` 200 when omitted.
+
+**Response:** `Paginated<Topic>` — `{ data: Topic[], total, page, pageSize }`
 
 ---
 
@@ -645,7 +695,9 @@ List all users in the system.
 
 List all course offerings.
 
-**Response:** `Course[]`
+**Pagination:** Required — see [Pagination](#pagination). `page` and `pageSize` are both mandatory; omitting either returns `400 PAGINATION_REQUIRED`.
+
+**Response:** `Paginated<Course>` — `{ data: Course[], total, page, pageSize }`
 
 ---
 

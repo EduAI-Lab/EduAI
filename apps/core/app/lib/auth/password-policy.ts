@@ -14,24 +14,44 @@ export const PASSWORD_POLICY_MESSAGE =
   "Password must be at least 8 characters with upper and lower case letters, " +
   "numbers, and symbols — or a passphrase of at least 16 characters.";
 
+export type PasswordRequirementStatus = {
+  minimumLength: boolean;
+  lowercase: boolean;
+  uppercase: boolean;
+  number: boolean;
+  symbol: boolean;
+  passphrase: boolean;
+  complex: boolean;
+};
+
+/** Return each policy check so forms can explain unmet requirements live. */
+export function getPasswordRequirementStatus(
+  password: string,
+): PasswordRequirementStatus {
+  const minimumLength = password.length >= MIN_COMPLEX_PASSWORD_LENGTH;
+  const lowercase = /[a-z]/.test(password);
+  const uppercase = /[A-Z]/.test(password);
+  const number = /[0-9]/.test(password);
+  const symbol = /[^A-Za-z0-9\s]/.test(password);
+  const passphrase = password.length >= MIN_PASSPHRASE_LENGTH;
+
+  return {
+    minimumLength,
+    lowercase,
+    uppercase,
+    number,
+    symbol,
+    passphrase,
+    complex: minimumLength && lowercase && uppercase && number && symbol,
+  };
+}
+
 /**
  * Returns whether a password satisfies the UBC password policy.
  */
 export function isStrongPassword(password: string): boolean {
-  if (password.length >= MIN_PASSPHRASE_LENGTH) {
-    return true;
-  }
-
-  if (password.length < MIN_COMPLEX_PASSWORD_LENGTH) {
-    return false;
-  }
-
-  const hasLower = /[a-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasDigit = /[0-9]/.test(password);
-  const hasSymbol = /[^A-Za-z0-9\s]/.test(password);
-
-  return hasLower && hasUpper && hasDigit && hasSymbol;
+  const status = getPasswordRequirementStatus(password);
+  return status.passphrase || status.complex;
 }
 
 /**
