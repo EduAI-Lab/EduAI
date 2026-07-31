@@ -74,10 +74,14 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid module id', { status: 400 });
   }
 
-  const [module, lessons] = await Promise.all([
+  const [module, lessonsPage] = await Promise.all([
     api.moduleById(moduleId) as Promise<ModuleDetail>,
-    api.lessonsForModule(moduleId) as Promise<Lesson[]>,
+    // #1043: lessons endpoint returns the pagination envelope. Reorder host —
+    // keep `total` to refuse a partial-order persist past the page.
+    api.lessonsForModule(moduleId),
   ]);
+  const lessons = lessonsPage.data;
+  const lessonsTotal = lessonsPage.total;
 
   // Fetch the course + its ordered module list in parallel. The sibling list
   // gives the module's true 1-based ordinal (matching the course-view chip),
@@ -85,11 +89,11 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   // 0-based via UI create.
   const [course, siblingModules] = await Promise.all([
     api.courseById(module.courseOfferingId) as Promise<Course>,
-    api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
+    api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
   ]);
   const moduleOrder = siblingModules.findIndex((m) => m.id === module.id) + 1;
 
-  return { course, module, lessons, moduleOrder };
+  return { course, module, lessons, lessonsTotal, moduleOrder };
 }
 
 /**
@@ -102,9 +106,23 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const { moduleId } = useParams();
   const numericModuleId = moduleId ? Number(moduleId) : null;
   const perms = useAtPermissions();
-  const { course, module, lessons: initialLessons, moduleOrder } = loaderData;
+  const {
+    course,
+    module,
+    lessons: initialLessons,
+    lessonsTotal: initialLessonsTotal,
+    moduleOrder,
+  } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
+  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
+  // replace `lessons`, so the truncation flag has to move with them or it goes
+  // stale and re-enables reorder once the list crosses the page bound.
+  const [lessonsTotal, setLessonsTotal] = useState(initialLessonsTotal);
+  // More lessons than the bounded page we loaded — reorder disabled all the way
+  // down (provider, item, drag handle) so a partial-order persist can't orphan
+  // the unseen tail, and the UI never advertises a drag it will reject.
+  const lessonsTruncated = lessonsTotal > lessons.length;
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [creating, setCreating] = useState(false);
@@ -148,13 +166,15 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   if (initialLessons !== prevInitialLessons) {
     setPrevInitialLessons(initialLessons);
     setLessons(initialLessons);
+    setLessonsTotal(initialLessonsTotal);
   }
 
   const refreshLessons = async () => {
     if (!numericModuleId) return;
     try {
       const lessonData = await api.lessonsForModule(numericModuleId);
-      setLessons(lessonData);
+      setLessons(lessonData.data);
+      setLessonsTotal(lessonData.total);
     } catch (error) {
       console.error('Failed to refresh lessons', error);
     }
@@ -165,7 +185,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     setLoadingSourceCourses(true);
     api
       .listCourses()
-      .then((data: Course[]) => {
+      .then((page) => {
+        const data = page.data;
         const nextCourses = module?.courseOfferingId
           ? data.filter((course: Course) => course.id !== module.courseOfferingId)
           : data;
@@ -198,7 +219,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       const modulesData = await api.modulesForCourse(nextCourseId);
       if (sourceModulesRequestIdRef.current === courseRequestId) {
-        setSourceModules(modulesData);
+        setSourceModules(modulesData.data);
       }
     } catch (error) {
       if (sourceModulesRequestIdRef.current === courseRequestId) {
@@ -228,7 +249,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     try {
       const lessonData = await api.lessonsForModule(nextModuleId);
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
-        setSourceLessons(lessonData);
+        setSourceLessons(lessonData.data);
       }
     } catch (error) {
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
@@ -324,6 +345,10 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderLessonsList = async (orderedIds: number[]) => {
     if (!numericModuleId) return;
+    if (lessonsTruncated) {
+      toast.error('This module has more lessons than can be reordered at once.');
+      return;
+    }
     const current = lessons;
     const byId = new Map(current.map((l) => [l.id, l]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Lesson[];
@@ -725,6 +750,13 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
         </Dialog>
       </PermissionGate>
 
+      {lessonsTruncated && perms.canManageContent ? (
+        <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          Showing {lessons.length} of {lessonsTotal} lessons. Reordering is unavailable until the
+          full list fits on one page, so a partial order can&apos;t be saved over the rest.
+        </p>
+      ) : null}
+
       {oLessons.length === 0 ? (
         <Card>
           <EmptyState
@@ -738,7 +770,12 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
           ids={oLessons.map((l) => l.id)}
           onReorder={reorderLessonsList}
           strategy="grid"
-          disabled={!perms.canManageContent || oLessons.length < 2 || reorderingLessons}
+          disabled={
+            !perms.canManageContent ||
+            oLessons.length < 2 ||
+            reorderingLessons ||
+            lessonsTruncated
+          }
         >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {oLessons.map((lesson, idx) => {
@@ -754,7 +791,8 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
                 ? `${parentName} is unpublished, so you can't publish ${lesson.title}.`
                 : null;
             const busy = publishingId === lesson.id;
-            const canReorder = perms.canManageContent && oLessons.length > 1;
+            const canReorder =
+              perms.canManageContent && oLessons.length > 1 && !lessonsTruncated;
             return (
               <SortableItem key={lesson.id} id={lesson.id} disabled={!canReorder}>
                 {({ handleProps }) => (

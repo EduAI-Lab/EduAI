@@ -129,11 +129,16 @@ export function indexCoreCoursesById(coreCourses) {
  * `coreOfferingId` is absent, e.g. a legacy unlinked offering) — so the
  * caller can tell "Core is down" from "nothing to resolve" and render a
  * placeholder instead of a hard error either way.
+ *
+ * @param {number} coreOfferingId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)`
+ *   to bound the call — otherwise a hung Core hangs this read indefinitely
+ *   (#1173 review).
  */
-export async function resolveCoreCourseById(coreOfferingId) {
+export async function resolveCoreCourseById(coreOfferingId, options = {}) {
   if (!coreOfferingId) return { course: null, coreUnavailable: false };
   try {
-    const course = await fetchCoreCourseSafe(coreOfferingId);
+    const course = await fetchCoreCourseSafe(coreOfferingId, { signal: options.signal });
     return { course, coreUnavailable: false };
   } catch (err) {
     console.error('[courseResolver] Core course fetch failed', coreOfferingId, err);

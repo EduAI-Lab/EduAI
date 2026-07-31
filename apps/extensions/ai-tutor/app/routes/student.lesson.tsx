@@ -106,7 +106,11 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   const [lesson, activities] = await Promise.all([
     api.lessonById(lessonId) as Promise<Lesson>,
-    api.activitiesForLesson(lessonId) as Promise<Activity[]>,
+    // #1043: activities endpoint returns the pagination envelope. The lesson
+    // player index-walks this array, so it must be the complete ordered set —
+    // unwrap the bounded page (client default 200, well above any lesson's
+    // activity count).
+    api.activitiesForLesson(lessonId).then((r) => r.data),
   ]);
 
   let module: ModuleDetail | null = null;
@@ -119,8 +123,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     if (module?.courseOfferingId) {
       const [courseData, siblingModules, siblingLessons] = await Promise.all([
         api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
-        api.lessonsForModule(lesson.moduleId) as Promise<Lesson[]>,
+        api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+        api.lessonsForModule(lesson.moduleId).then((r) => r.data),
       ]);
       course = courseData;
       const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
