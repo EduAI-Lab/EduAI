@@ -28,7 +28,7 @@ docs/perf/
     dep-graph/                 madge circular-dep + module graph (json + svg)
   frontend/baseline/           the pinned BEFORE snapshot — per-page browser vitals
     page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS totals per page
-    errors.json / errors.log   pages that produced no trustworthy number, and why
+    errors.json                pages that produced no trustworthy number, and why
 ```
 
 Both `baseline/` folders are pinned BEFORE runs. Don't edit them in place after the fixes
@@ -97,7 +97,9 @@ Defaults to `docs/perf/frontend/baseline`. Run it from a workstation rather than
 server — measuring over the loopback interface drops the RTT the numbers are meant to
 include. A page that bounces to login, fails to load, or whose ids can't be resolved is
 reported in `errors.json` instead of contributing a misleading number, and the run exits
-non-zero so a partial sweep can't be mistaken for full coverage.
+non-zero so a partial sweep can't be mistaken for full coverage. Both runs also write a
+human-readable `errors.log` beside it, which stays local — the repo's blanket `*.log`
+ignore keeps it out of the pinned snapshot.
 
 > On a Vite **dev** server the JS byte counts and request counts reflect unbundled ESM
 > modules, not a production build — treat those two columns as relative only. TTFB, the
