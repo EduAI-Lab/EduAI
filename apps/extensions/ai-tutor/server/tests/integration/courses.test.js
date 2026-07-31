@@ -49,6 +49,8 @@ vi.mock('../../src/services/topicSync.js', () => ({
 }));
 
 vi.mock('../../src/services/enrollmentSync.js', () => ({
+  AUTO_SYNC_TTL_MS: 30_000,
+  AUTO_SYNC_TIMEOUT_MS: 3_000,
   syncCourseEnrollments: vi.fn().mockResolvedValue({ synced: 2, created: 1, deleted: 0, errors: [] }),
 }));
 
@@ -124,26 +126,28 @@ describe('Courses routes', () => {
 
   describe('GET /api/courses', () => {
     it('professor sees their courses', async () => {
-      const res = await request(profApp).get('/api/courses');
+      const res = await request(profApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.course.id);
-      expect(res.body[0].title).toBe('Test Course');
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe(seed.course.id);
+      expect(res.body.data[0].title).toBe('Test Course');
       // Professor courses have no progress object
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('student sees published+enrolled courses with progress object', async () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses');
+      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.course.id);
-      expect(res.body[0].progress).toEqual(
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe(seed.course.id);
+      expect(res.body.data[0].progress).toEqual(
         expect.objectContaining({
           completed: expect.any(Number),
           total: expect.any(Number),
@@ -159,32 +163,34 @@ describe('Courses routes', () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses');
+      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.course.id);
-      expect(res.body[0].progress).toBeUndefined();
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe(seed.course.id);
+      expect(res.body.data[0].progress).toBeUndefined();
     });
 
     it('TA sees zero courses when not enrolled in any', async () => {
       const ta = makeTA();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses');
+      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(0);
+      expect(res.body.data).toHaveLength(0);
+      expect(res.body.total).toBe(0);
     });
 
     it('ADMIN sees every course offering, including ones they do not own (#781)', async () => {
       const admin = makeAdmin();
       const adminApp = await createApp({ mockUser: admin });
 
-      const res = await request(adminApp).get('/api/courses');
+      const res = await request(adminApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body.map((c) => c.id)).toContain(seed.course.id);
+      expect(res.body.data.map((c) => c.id)).toContain(seed.course.id);
     });
 
     // #1082: AT and Core enrollment are independent tracks. A STUDENT/TA can
@@ -200,13 +206,14 @@ describe('Courses routes', () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses');
+      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.course.id);
-      expect(res.body[0].title).toBe('Test Course');
-      expect(res.body[0].isPublished).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe(seed.course.id);
+      expect(res.body.data[0].title).toBe('Test Course');
+      expect(res.body.data[0].isPublished).toBe(true);
       expect(listEduAiCoursesServiceKey).toHaveBeenCalledTimes(1);
     });
 
@@ -218,10 +225,11 @@ describe('Courses routes', () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses');
+      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(0);
+      expect(res.body.data).toHaveLength(0);
+      expect(res.body.total).toBe(0);
     });
 
     it('STUDENT sees no courses when the fallback catalog also has no match (both-miss stays hidden)', async () => {
@@ -230,10 +238,11 @@ describe('Courses routes', () => {
       const student = await enrollStudent();
       const studentApp = await createApp({ mockUser: student });
 
-      const res = await request(studentApp).get('/api/courses');
+      const res = await request(studentApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(0);
+      expect(res.body.data).toHaveLength(0);
+      expect(res.body.total).toBe(0);
     });
 
     it('TA sees an AT-enrolled course via the service-key fallback when not Core-enrolled (#1082)', async () => {
@@ -244,12 +253,13 @@ describe('Courses routes', () => {
       const ta = await enrollTa();
       const taApp = await createApp({ mockUser: ta });
 
-      const res = await request(taApp).get('/api/courses');
+      const res = await request(taApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe(seed.course.id);
-      expect(res.body[0].title).toBe('Test Course');
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe(seed.course.id);
+      expect(res.body.data[0].title).toBe('Test Course');
     });
 
     it('ADMIN sees Core courses with no local anchor yet — create-on-open (#1072 step 3 / #1074)', async () => {
@@ -265,16 +275,23 @@ describe('Courses routes', () => {
       });
       expect(before).toBeNull();
 
-      const res = await request(adminApp).get('/api/courses');
+      const res = await request(adminApp).get('/api/courses?page=1&pageSize=200');
 
       expect(res.status).toBe(200);
-      expect(res.body.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
+      expect(res.body.data.map((c) => c.coreOfferingId)).toContain(UNANCHORED_CORE_ID);
 
       // The anchor was materialized as a side effect of the list request.
       const after = await prisma.courseOffering.findFirst({
         where: { coreOfferingId: UNANCHORED_CORE_ID },
       });
       expect(after).not.toBeNull();
+    });
+
+    it('returns 400 PAGINATION_REQUIRED when page/pageSize are omitted', async () => {
+      const res = await request(profApp).get('/api/courses');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PAGINATION_REQUIRED');
     });
   });
 
@@ -328,6 +345,50 @@ describe('Courses routes', () => {
       const res = await request(profApp).get('/api/courses/999999');
 
       expect(res.status).toBe(404);
+    });
+
+    it('auto-syncs enrollments from Core before checking membership (#1065)', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(syncCourseEnrollments).toHaveBeenCalledWith(
+        seed.course.id,
+        expect.objectContaining({ ttlMs: expect.any(Number), signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the enrollment auto-sync fails', async () => {
+      vi.mocked(syncCourseEnrollments).mockRejectedValueOnce(new Error('Core unavailable'));
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.course.id);
+    });
+
+    it('bounds the Core course-field lookup with a signal, not just the enrollment sync (#1173 review)', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(fetchCoreCourseSafe).toHaveBeenCalledWith(
+        seed.course.coreOfferingId,
+        expect.objectContaining({ signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the Core course-field lookup hangs, instead of hanging the request', async () => {
+      vi.mocked(fetchCoreCourseSafe).mockRejectedValueOnce(
+        new DOMException('The operation was aborted', 'TimeoutError'),
+      );
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(seed.course.id);
+      expect(res.body.title).toBeNull();
+      expect(res.headers['x-core-status']).toBe('unavailable');
     });
   });
 

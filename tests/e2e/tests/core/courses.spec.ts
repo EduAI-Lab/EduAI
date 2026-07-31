@@ -14,6 +14,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { CORE_URL } from '../../playwright.config';
 import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
+import { canSeeCoreCourse, listCoreCoursePage } from '../helpers/core-courses';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,11 +85,11 @@ test.describe('Core course lifecycle (ADMIN)', () => {
       expect(createRes.status()).toBe(201);
       const { id } = await createRes.json();
 
-      const listRes = await adminCtx.get(`${CORE_URL}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const body = await listRes.json();
-      const courses: any[] = Array.isArray(body) ? body : (body.courses ?? []);
-      expect(courses.some((c) => c.id === id)).toBe(true);
+      const { status, body } = await listCoreCoursePage(adminCtx);
+      expect(status).toBe(200);
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.total).toBeGreaterThanOrEqual(body.data.length);
+      expect(await canSeeCoreCourse(adminCtx, id)).toBe(true);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
@@ -247,11 +248,7 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
       expect(enrollRes.status()).toBe(201);
 
       // Unpublished: student's course list is empty
-      const unpubListRes = await studentCtx.get(`${CORE_URL}/api/courses`);
-      expect(unpubListRes.status()).toBe(200);
-      const unpubBody = await unpubListRes.json();
-      const unpubCourses: any[] = Array.isArray(unpubBody) ? unpubBody : (unpubBody.courses ?? []);
-      expect(unpubCourses.some((c) => c.id === courseId)).toBe(false);
+      expect(await canSeeCoreCourse(studentCtx, courseId)).toBe(false);
 
       // Unpublished: direct GET by student returns 403
       const unpubGetRes = await studentCtx.get(`${CORE_URL}/api/courses/${courseId}`);
@@ -262,11 +259,7 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
       expect(pubRes.status()).toBe(200);
 
       // Published: student sees it in their list
-      const pubListRes = await studentCtx.get(`${CORE_URL}/api/courses`);
-      expect(pubListRes.status()).toBe(200);
-      const pubBody = await pubListRes.json();
-      const pubCourses: any[] = Array.isArray(pubBody) ? pubBody : (pubBody.courses ?? []);
-      expect(pubCourses.some((c) => c.id === courseId)).toBe(true);
+      expect(await canSeeCoreCourse(studentCtx, courseId)).toBe(true);
 
       // Published: direct GET by student returns 200
       const pubGetRes = await studentCtx.get(`${CORE_URL}/api/courses/${courseId}`);
@@ -277,10 +270,7 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
       expect(unpubRes.status()).toBe(200);
 
       // Unpublished again: student no longer sees it
-      const unpubListRes2 = await studentCtx.get(`${CORE_URL}/api/courses`);
-      const unpubBody2 = await unpubListRes2.json();
-      const unpubCourses2: any[] = Array.isArray(unpubBody2) ? unpubBody2 : (unpubBody2.courses ?? []);
-      expect(unpubCourses2.some((c) => c.id === courseId)).toBe(false);
+      expect(await canSeeCoreCourse(studentCtx, courseId)).toBe(false);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
@@ -309,11 +299,7 @@ test.describe('Course publish-state controls STUDENT visibility', () => {
 
       await adminCtx.patch(`${CORE_URL}/api/courses/${courseId}/publish`);
 
-      const listRes = await studentCtx.get(`${CORE_URL}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const body = await listRes.json();
-      const courses: any[] = Array.isArray(body) ? body : (body.courses ?? []);
-      expect(courses.some((c) => c.id === courseId)).toBe(false);
+      expect(await canSeeCoreCourse(studentCtx, courseId)).toBe(false);
 
       const getRes = await studentCtx.get(`${CORE_URL}/api/courses/${courseId}`);
       expect([403, 404]).toContain(getRes.status());

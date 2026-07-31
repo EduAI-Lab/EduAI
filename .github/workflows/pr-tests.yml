@@ -140,12 +140,15 @@ jobs:
           npm run db:generate -w edu-ai
           npm run typecheck -w edu-ai
 
-      - name: Generate Prisma clients for tests
+      - name: Generate Prisma clients
         run: |
           set -euo pipefail
           npm run db:generate -w edu-ai
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
           ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+
+      - name: Verify Prisma client isolation
+        run: npm run test:prisma-client-isolation
 
       - name: Restore Turborepo cache
         uses: actions/cache@v4
@@ -157,6 +160,13 @@ jobs:
 
       # --env-mode=loose: the suites read their config from process env / .env files
       # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
+      #
+      # Each extension schema now generates a distinct workspace-local client
+      # package. Regenerate each package before its corresponding test batch so
+      # the inputs are explicit; the isolation check above proves both packages
+      # coexist without overwriting either model set. `status` keeps a
+      # first-batch failure from masking the second batch, matching what
+      # --continue does within a single run.
       - name: Run tests
         env:
           NODE_ENV: test
@@ -164,7 +174,19 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
-        run: npx turbo run test --continue --env-mode=loose
+        run: |
+          set -uo pipefail
+          status=0
+
+          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+          npx turbo run test --continue --env-mode=loose \
+            --filter='!question-maker-backend' || status=1
+
+          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+          npx turbo run test --continue --env-mode=loose \
+            --filter=question-maker-backend || status=1
+
+          exit $status
 
   e2e:
     name: E2E Tests
@@ -243,3 +265,35 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  pict-drift:
+    name: PICT Case Drift Check
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Generation runs pict inside the pinned docker/pict image (Docker is preinstalled on
+      # GitHub-hosted runners) rather than a natively-installed pict — see scripts/pict-gen.mjs
+      # for why a host install can't be trusted to reproduce the committed output.
+      - name: Regenerate PICT case tables
+        run: npm run test:pict:gen
+
+      # Modified rows (stale .cases.json) and untracked rows (new .pict committed without
+      # its generated sibling) both count as drift.
+      - name: Fail if regeneration produced a diff
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- tests/models)" ]; then
+            echo "::error::tests/models/*.cases.json is stale relative to its .pict source. Run 'npm run test:pict:gen' and commit the result."
+            git status --porcelain -- tests/models
+            git diff -- tests/models
+            exit 1
+          fi

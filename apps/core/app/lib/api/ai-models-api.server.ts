@@ -1,10 +1,17 @@
 import prisma from "~/lib/prisma.server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "~/lib/auth/server";
 import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
 import { CreateAIModelSchema, UpdateAIModelSchema } from "~/lib/ai/schemas";
 import { apiError, validationErrorFromZod } from "~/lib/api-error.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { invalidateTierModelCache } from "~/lib/ai/routing/tiers";
+import {
+  paginatedResponse,
+  parsePaginationParams,
+  parseSearchParam,
+} from "~/lib/pagination.server";
 
 export async function handleAiModelsApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -45,16 +52,36 @@ export async function handleAiModelsApiRequest(request: Request) {
         });
       }
 
-      const models = await prisma.aIModel.findMany({
-        include: {
-          provider: true,
-        },
-        orderBy: { name: "asc" },
-      });
-      return new Response(JSON.stringify(models), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      // #1041: pagination is required — no full-list fallback. Search and the
+      // provider filter are resolved here too, so the admin table's controls
+      // apply across all models rather than the page it happens to hold.
+      const paginationResult = parsePaginationParams(url.searchParams);
+      if ("response" in paginationResult) return paginationResult.response;
+      const { pagination } = paginationResult;
+
+      const search = parseSearchParam(url.searchParams);
+      const providerId = url.searchParams.get("providerId")?.trim() || null;
+
+      const where: Prisma.AIModelWhereInput = {};
+      if (providerId) where.providerId = providerId;
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: "insensitive" } },
+          { modelId: { contains: search, mode: "insensitive" } },
+        ];
+      }
+
+      const [total, models] = await prisma.$transaction([
+        prisma.aIModel.count({ where }),
+        prisma.aIModel.findMany({
+          where,
+          include: { provider: true },
+          orderBy: { name: "asc" },
+          skip: pagination.skip,
+          take: pagination.take,
+        }),
+      ]);
+      return paginatedResponse(models, total, pagination);
     }
 
     case "POST": {
@@ -85,6 +112,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -157,6 +185,7 @@ export async function handleAiModelsApiRequest(request: Request) {
             provider: true,
           },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({
@@ -206,6 +235,7 @@ export async function handleAiModelsApiRequest(request: Request) {
         const model = await prisma.aIModel.delete({
           where: { id: modelId },
         });
+        invalidateTierModelCache();
 
         fireAndForget(
           logAuditAction({

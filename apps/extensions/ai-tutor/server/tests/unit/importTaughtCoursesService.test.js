@@ -271,10 +271,56 @@ describe('importEnrolledCoursesFromCore (AI Tutor)', () => {
     expect(courseEnrollmentDeleteMany).toHaveBeenCalledWith({
       where: {
         userId: 'student-1',
-        role: 'STUDENT',
+        role: { in: ['STUDENT', 'TA'] },
         courseOfferingId: { in: [30] },
       },
     });
+  });
+
+  // #1173 review: this mirror ran on every /api/me and GET /courses request
+  // but only pruned STUDENT rows, so a revoked TA kept a stale local TA row
+  // (and TA-gated access) until the nightly reconciliation or a targeted
+  // course-detail read via syncCourseEnrollments.
+  it('removes stale TA enrollments no longer in Core, not just STUDENT ones', async () => {
+    listEduAiCourses.mockResolvedValue([
+      { id: 'core-current-student', code: 'COSC 111', name: 'Computing', callerEnrollmentRole: 'STUDENT' },
+      { id: 'core-current-ta', code: 'COSC 211', name: 'Data Structures', callerEnrollmentRole: 'TA' },
+    ]);
+    courseEnrollmentFindMany.mockResolvedValue([
+      { courseOfferingId: 30, role: 'STUDENT', courseOffering: { coreOfferingId: 'core-old-student' } },
+      { courseOfferingId: 31, role: 'STUDENT', courseOffering: { coreOfferingId: 'core-current-student' } },
+      { courseOfferingId: 40, role: 'TA', courseOffering: { coreOfferingId: 'core-old-ta' } },
+      { courseOfferingId: 41, role: 'TA', courseOffering: { coreOfferingId: 'core-current-ta' } },
+    ]);
+    courseEnrollmentDeleteMany.mockResolvedValue({ count: 2 });
+
+    const result = await importEnrolledCoursesFromCore(student, 'session=abc');
+
+    expect(result.removed).toBe(2);
+    expect(courseEnrollmentDeleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'student-1',
+        role: { in: ['STUDENT', 'TA'] },
+        courseOfferingId: { in: [30, 40] },
+      },
+    });
+  });
+
+  it('does not prune TA enrollments when Core reports no TA courses but does report student courses', async () => {
+    // A pure STUDENT caller has no TA courses at all — activeTaCoreIds is
+    // legitimately empty here, which must not trip the "Core returned
+    // nothing" guard (that guard only fires when BOTH sets are empty).
+    listEduAiCourses.mockResolvedValue([
+      { id: 'core-current-student', code: 'COSC 111', name: 'Computing', callerEnrollmentRole: 'STUDENT' },
+    ]);
+    courseEnrollmentFindMany.mockResolvedValue([
+      { courseOfferingId: 31, role: 'STUDENT', courseOffering: { coreOfferingId: 'core-current-student' } },
+    ]);
+
+    const result = await importEnrolledCoursesFromCore(student, 'session=abc');
+
+    expect(result.removed).toBe(0);
+    expect(courseEnrollmentDeleteMany).not.toHaveBeenCalled();
   });
 });
 
@@ -308,7 +354,7 @@ describe('userHasCoreTaEnrollment (AI Tutor)', () => {
     ]);
 
     await expect(userHasCoreTaEnrollment('session=abc')).resolves.toBe(true);
-    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
+    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc', all: true });
   });
 
   it('uses a pre-fetched course list without calling Core again', async () => {

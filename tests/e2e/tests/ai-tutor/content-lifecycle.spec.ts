@@ -14,6 +14,7 @@ import { test, expect } from '@playwright/test';
 import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
 import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
 import { importAtCourseForInstructor } from '../helpers/at-courses';
+import { atListData, atListResponse } from '../helpers/at-pagination';
 
 const AT = AI_TUTOR_API_URL;
 
@@ -83,11 +84,8 @@ test.describe('AI Tutor INSTRUCTOR content authoring', () => {
       name: 'Unlisted Draft Course',
     });
 
-    const listRes = await request.get(`${AT}/api/courses`);
-    expect(listRes.status()).toBe(200);
-    const courses = await listRes.json();
-    expect(Array.isArray(courses)).toBe(true);
-    expect(courses.some((c: any) => c.id === courseId)).toBe(true);
+    const courses = await atListData<{ id: number }>(request, `${AT}/api/courses`);
+    expect(courses.some((c) => c.id === courseId)).toBe(true);
   });
 
   test('STUDENT cannot create a course (403)', async ({ request }) => {
@@ -169,10 +167,8 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
         data: { userId: studentId, role: 'STUDENT' },
       });
 
-      const listRes = await studentCtx.get(`${AT}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const courses = await listRes.json();
-      expect(courses.some((c: any) => c.id === courseId)).toBe(false);
+      const courses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(courses.some((c) => c.id === courseId)).toBe(false);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -201,10 +197,8 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
       expect(pubRes.status()).toBe(200);
       expect((await pubRes.json()).isPublished).toBe(true);
 
-      const listRes = await studentCtx.get(`${AT}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const courses = await listRes.json();
-      expect(courses.some((c: any) => c.id === courseId)).toBe(true);
+      const courses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(courses.some((c) => c.id === courseId)).toBe(true);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -242,19 +236,20 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
       await instrCtx.patch(`${AT}/api/modules/${moduleId}/publish`);
       await instrCtx.patch(`${AT}/api/lessons/${lessonId}/publish`);
 
-      const coursesRes = await studentCtx.get(`${AT}/api/courses`);
-      const courses = await coursesRes.json();
-      expect(courses.some((c: any) => c.id === courseId)).toBe(true);
+      const courses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(courses.some((c) => c.id === courseId)).toBe(true);
 
-      const modulesRes = await studentCtx.get(`${AT}/api/courses/${courseId}/modules`);
-      expect(modulesRes.status()).toBe(200);
-      const modules = await modulesRes.json();
-      expect(modules.some((m: any) => m.id === moduleId)).toBe(true);
+      const modules = await atListData<{ id: number }>(
+        studentCtx,
+        `${AT}/api/courses/${courseId}/modules`,
+      );
+      expect(modules.some((m) => m.id === moduleId)).toBe(true);
 
-      const lessonsRes = await studentCtx.get(`${AT}/api/modules/${moduleId}/lessons`);
-      expect(lessonsRes.status()).toBe(200);
-      const lessons = await lessonsRes.json();
-      expect(lessons.some((l: any) => l.id === lessonId)).toBe(true);
+      const lessons = await atListData<{ id: number }>(
+        studentCtx,
+        `${AT}/api/modules/${moduleId}/lessons`,
+      );
+      expect(lessons.some((l) => l.id === lessonId)).toBe(true);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -286,14 +281,18 @@ test.describe('AI Tutor publish-state controls STUDENT visibility', () => {
       await instrCtx.patch(`${AT}/api/courses/${courseId}/publish`);
 
       // INSTRUCTOR sees unpublished module
-      const instrModules = await instrCtx.get(`${AT}/api/courses/${courseId}/modules`);
-      expect((await instrModules.json()).some((m: any) => m.id === moduleId)).toBe(true);
+      const instrModules = await atListData<{ id: number }>(
+        instrCtx,
+        `${AT}/api/courses/${courseId}/modules`,
+      );
+      expect(instrModules.some((m) => m.id === moduleId)).toBe(true);
 
       // STUDENT sees no modules (module is unpublished)
-      const studentModules = await studentCtx.get(`${AT}/api/courses/${courseId}/modules`);
-      expect(studentModules.status()).toBe(200);
-      const mods = await studentModules.json();
-      expect(mods.some((m: any) => m.id === moduleId)).toBe(false);
+      const mods = await atListData<{ id: number }>(
+        studentCtx,
+        `${AT}/api/courses/${courseId}/modules`,
+      );
+      expect(mods.some((m) => m.id === moduleId)).toBe(false);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -367,20 +366,30 @@ test.describe('AI Tutor cascade unpublish', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('AI Tutor admin endpoints', () => {
-  test('ADMIN GET /api/admin/users returns 200 with an array', async ({ request }) => {
+  // #1041: this proxies Core's paginated user list, so it answers with the
+  // `{ data, total, page, pageSize, stats }` envelope rather than a bare array.
+  test('ADMIN GET /api/admin/users returns 200 with a page envelope', async ({ request }) => {
     await createAdmin(request, { prefix: 'at-admin-users' });
 
-    const res = await request.get(`${AT}/api/admin/users`);
+    const res = await request.get(`${AT}/api/admin/users?page=1&pageSize=25`);
     expect(res.status()).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
+
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(25);
+    expect(typeof body.total).toBe('number');
+    expect(typeof body.stats.total).toBe('number');
   });
 
-  test('ADMIN GET /api/admin/courses returns 200 with an array', async ({ request }) => {
+  test('ADMIN GET /api/admin/courses returns 200 with a page of courses', async ({ request }) => {
     await createAdmin(request, { prefix: 'at-admin-courses' });
 
-    const res = await request.get(`${AT}/api/admin/courses`);
+    const res = await atListResponse(request, `${AT}/api/admin/courses`);
     expect(res.status()).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
+    const body = await res.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(typeof body.total).toBe('number');
   });
 
   test('PATCH /api/admin/users/:userId/role returns 410 (roles are managed by EduAI)', async ({

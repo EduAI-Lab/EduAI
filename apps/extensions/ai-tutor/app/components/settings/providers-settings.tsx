@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
   Badge,
   Button,
@@ -10,7 +11,7 @@ import {
   Input,
   Label,
 } from '@eduai/ui';
-import { IconCheck, IconExternalLink, IconLoader2, IconTrash } from '@tabler/icons-react';
+import { IconCheck, IconExternalLink, IconTrash } from '@tabler/icons-react';
 import { useApiKeys } from '~/hooks/use-api-keys';
 import { PROVIDERS, maskApiKey, type ProviderId } from '~/lib/provider-keys';
 
@@ -113,7 +114,7 @@ export function ProvidersSettings() {
                     >
                       {busy ? (
                         <>
-                          <IconLoader2 className="h-4 w-4 animate-spin" /> Checking…
+                          <Spinner /> Checking…
                         </>
                       ) : (
                         'Save'

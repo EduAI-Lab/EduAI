@@ -53,9 +53,13 @@ export function useCourseTopics(courseOfferingId: number | null): CourseTopicsSt
     setLoading(true);
     setError(null);
     try {
+      // #1043: topics endpoint now returns the pagination envelope; this hook
+      // requests one bounded page (client default pageSize=200) and consumes
+      // the page rows. Server already sorts by name; sortTopics stays as a
+      // stable tiebreak and to keep optimistic inserts ordered.
       const fetched = await api.topicsForCourse(courseOfferingId);
       if (requestId === requestIdRef.current) {
-        setTopics(sortTopics(fetched));
+        setTopics(sortTopics(fetched.data));
       }
     } catch (err) {
       if (requestId === requestIdRef.current) {

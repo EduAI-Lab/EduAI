@@ -13,6 +13,11 @@
  *     by writing to local user rows — that would silently diverge from EduAI.
  *   - Manual enrollment endpoints work for any course, but the dedicated
  *     `sync-enrollments` only accepts EduAI-imported courses.
+ *   - `GET /admin/courses/:courseId/enrollments` auto-syncs the local mirror
+ *     from Core before reading it (#1065) — same throttled sync-before-read
+ *     pattern as `routes/topics.js` for #1031. The manual POST
+ *     `sync-enrollments` below is now dead code kept for API compatibility,
+ *     same treatment as the old `POST .../topics/sync`.
  *   - System settings (`EDUAI_API_KEY`, `AI_MODEL_POLICY`) live in the
  *     `SystemSetting` key/value table, not env vars — admin updates take
  *     effect immediately for subsequent requests.
@@ -31,11 +36,13 @@ import {
 } from '../services/systemSettings.js';
 import { getAiModelPolicyState, setAiModelPolicy } from '../services/aiModelPolicy.js';
 import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
-import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { AUTO_SYNC_TIMEOUT_MS, AUTO_SYNC_TTL_MS, syncCourseEnrollments } from '../services/enrollmentSync.js';
 import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
+  CORE_PAGE_SIZE,
   deleteCoreEnrollment,
   listCoreAdminUsers,
   listEduAiCourseEnrollmentsServiceKey,
@@ -47,10 +54,27 @@ const router = express.Router();
 
 router.get('/admin/users', requireRole('ADMIN'), async (req, res) => {
   try {
+    // #1041: Core requires paging here, so this route pages too rather than
+    // proxying a full table. Paging params pass straight through.
     const cookie = req.headers.cookie ?? '';
-    const users = await listCoreAdminUsers(cookie);
-    const rows = Array.isArray(users) ? users : [];
-    res.json(rows.map(mapCoreAdminUser));
+    const page = Number(req.query.page) || 1;
+    const pageSize = Number(req.query.pageSize) || 25;
+    const envelope = await listCoreAdminUsers(cookie, {
+      page,
+      pageSize,
+      ...(req.query.search ? { search: String(req.query.search) } : {}),
+      ...(req.query.role ? { role: String(req.query.role) } : {}),
+    });
+    const rows = Array.isArray(envelope?.data) ? envelope.data : [];
+    res.json({
+      data: rows.map(mapCoreAdminUser),
+      total: envelope?.total ?? rows.length,
+      page: envelope?.page ?? page,
+      pageSize: envelope?.pageSize ?? pageSize,
+      // Platform-wide counts from Core (#1041) — the dashboard's role breakdown
+      // used to be derived by counting a full user list.
+      stats: envelope?.stats ?? { total: 0, active: 0, byRole: {} },
+    });
   } catch (e) {
     const status = typeof e?.status === 'number' ? e.status : 500;
     res.status(status).json({ error: String(e.message ?? e) });
@@ -71,6 +95,9 @@ router.patch('/admin/users/:userId/role', requireRole('ADMIN'), async (req, res)
 
 router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
   try {
+    // #1043: unbounded admin list — require explicit paging (Group A contract).
+    const pageParams = parsePaginationParams(req);
+
     // Unified contract (#1072): fields come from ONE service-key catalog
     // fetch, joined against the local anchors — same read-through shape as
     // `GET /courses`'s ADMIN branch. No cookie-scoped call: nothing here
@@ -82,15 +109,30 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
     }
     // Create-on-open (#1072 step 3 / #1074): materialize an anchor for every
     // Core course before listing, so this shows Core's full catalog rather
-    // than whatever happened to already have a local row.
+    // than whatever happened to already have a local row. Anchor creation
+    // stays full-set (bounded by the Core catalog); only the response paginates.
     if (!coreUnavailable && catalogCourses.length > 0) {
       await ensureOfferingAnchors(catalogCourses.map((c) => c.id));
     }
-    const courses = await prisma.courseOffering.findMany({
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    });
-    res.json(courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))));
+    const [total, courses] = await prisma.$transaction([
+      prisma.courseOffering.count(),
+      prisma.courseOffering.findMany({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: pageParams.skip,
+        take: pageParams.take,
+      }),
+    ]);
+    res.json(
+      paginated(
+        courses.map((c) => mapCourseOffering(c, coreCoursesById.get(c.coreOfferingId))),
+        total,
+        pageParams,
+      ),
+    );
   } catch (e) {
+    if (e instanceof PaginationError) {
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
     res.status(500).json({ error: String(e) });
   }
 });
@@ -99,11 +141,23 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
  * GET /admin/courses/:courseId/enrollments — list enrolled + addable students.
  *
  * Auth: ADMIN.
- * Returns: `{ courseId, enrolledStudents, availableStudents }`.
+ * Returns: `{ courseId, enrolledStudents, availableStudents, availableStudentsPage }`.
  *
  * Why: bundles both lists in one response so the admin enrollment editor can
  * render add/remove pickers without a second roundtrip; `availableStudents`
- * excludes anyone already enrolled.
+ * excludes anyone already enrolled. Auto-syncs the local `CourseEnrollment`
+ * mirror from Core before reading it (#1065, same sync-before-read pattern as
+ * `GET /courses/:courseId/topics` for #1031) — this read path previously
+ * served the local mirror directly with no sync, so it could show a student
+ * Core had already removed. Throttled to `AUTO_SYNC_TTL_MS` and bounded to
+ * `AUTO_SYNC_TIMEOUT_MS`; a failed or timed-out sync falls back to the local
+ * mirror rather than failing the request.
+ *
+ * `availableStudents` is a page of Core's STUDENT list, driven by `?search=`,
+ * `?page=`, and `?pageSize=` (#1041). Before pagination the picker read Core's
+ * whole user table and filtered client-side, so it must stay reachable past the
+ * first page — the caller narrows with `search` or walks `page`, and
+ * `availableStudentsPage.total` says how many students matched.
  */
 router.get(
   '/admin/courses/:courseId/enrollments',
@@ -115,11 +169,19 @@ router.get(
       return res.status(400).json({ error: 'Invalid course id' });
     }
 
+    const studentSearch = (req.query.search ?? '').toString().trim() || undefined;
+    const requestedPage = Number.parseInt(req.query.page, 10);
+    const studentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const requestedPageSize = Number.parseInt(req.query.pageSize, 10);
+    const studentPageSize =
+      Number.isFinite(requestedPageSize) && requestedPageSize > 0
+        ? Math.min(requestedPageSize, CORE_PAGE_SIZE)
+        : CORE_PAGE_SIZE;
+
     try {
       const course = await prisma.courseOffering.findUnique({
         where: { id: courseId },
         include: {
-          enrollments: true,
           instructors: { select: { userId: true } },
         },
       });
@@ -132,11 +194,30 @@ router.get(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
+      if (course.coreOfferingId) {
+        try {
+          await syncCourseEnrollments(courseId, {
+            course,
+            ttlMs: AUTO_SYNC_TTL_MS,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
+        } catch (e) {
+          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+          console.warn(`[admin] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+        }
+      }
+
+      const enrollments = await prisma.courseEnrollment.findMany({
+        where: { courseOfferingId: courseId },
+      });
+
       // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
       let coreEnrollmentMap = new Map();
       if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId, {
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
@@ -145,28 +226,49 @@ router.get(
         }
       }
 
-      const enrolledUserIds = new Set(course.enrollments.map((e) => e.userId));
+      const enrolledUserIds = new Set(enrollments.map((e) => e.userId));
       let coreUserMap = new Map();
       let availableStudents = [];
+      let availableStudentsPage = { total: 0, page: studentPage, pageSize: studentPageSize };
 
       try {
         const cookie = req.headers.cookie ?? '';
-        const coreUsers = await listCoreAdminUsers(cookie);
-        const rows = Array.isArray(coreUsers) ? coreUsers : [];
-        for (const user of rows.map(mapCoreAdminUser)) {
+        // #1041/#1125: two targeted reads instead of one full-table fetch —
+        // an `?ids=` lookup for the enrolled users' display names, and a
+        // searchable, role-scoped page for the "add a student" picker.
+        const enrolledIds = [...enrolledUserIds];
+        const [enrolledEnvelope, studentEnvelope] = await Promise.all([
+          listCoreAdminUsers(cookie, { ids: enrolledIds, signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS) }),
+          listCoreAdminUsers(cookie, {
+            role: 'STUDENT',
+            search: studentSearch,
+            page: studentPage,
+            pageSize: studentPageSize,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          }),
+        ]);
+        for (const user of (enrolledEnvelope?.data ?? []).map(mapCoreAdminUser)) {
           coreUserMap.set(user.id, { name: user.name, email: user.email });
         }
-        availableStudents = rows
+        availableStudents = (studentEnvelope?.data ?? [])
           .map(mapCoreAdminUser)
-          .filter((user) => user.role === 'STUDENT' && !enrolledUserIds.has(user.id))
+          .filter((user) => !enrolledUserIds.has(user.id))
           .toSorted((a, b) => a.name.localeCompare(b.name));
+        // `total` counts Core's STUDENT matches before the already-enrolled
+        // filter above, so the caller can tell "no more pages" from "this page
+        // was all enrolled already".
+        availableStudentsPage = {
+          total: studentEnvelope?.total ?? availableStudents.length,
+          page: studentEnvelope?.page ?? studentPage,
+          pageSize: studentEnvelope?.pageSize ?? studentPageSize,
+        };
       } catch (err) {
         console.warn('[admin] Could not fetch Core users for enrollment display', courseId, err.message);
       }
 
       res.json({
         courseId,
-        enrolledStudents: course.enrollments
+        enrolledStudents: enrollments
           .toSorted((a, b) => a.userId.localeCompare(b.userId))
           .map((e) => {
             const userInfo = coreUserMap.get(e.userId) ?? coreEnrollmentMap.get(e.userId);
@@ -180,6 +282,7 @@ router.get(
             };
           }),
         availableStudents,
+        availableStudentsPage,
       });
     } catch (e) {
       res.status(500).json({ error: String(e) });
@@ -578,9 +681,11 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
     let userNameMap = new Map();
     try {
       const cookie = req.headers.cookie ?? '';
-      const coreUsers = await listCoreAdminUsers(cookie);
-      const rows = Array.isArray(coreUsers) ? coreUsers : [];
-      for (const u of rows) {
+      // #1125: resolve only the users these traces reference. Fetching the whole
+      // table to build this map would mean page-looping it under #1041.
+      const traceUserIds = [...new Set(traces.map((t) => t.userId).filter(Boolean))];
+      const envelope = await listCoreAdminUsers(cookie, { ids: traceUserIds });
+      for (const u of envelope?.data ?? []) {
         userNameMap.set(u.id, u.name ?? '');
       }
     } catch (err) {
@@ -609,6 +714,14 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   }
 });
 
+/**
+ * POST /admin/courses/:courseId/sync-enrollments — force-refresh enrollments from Core.
+ *
+ * Deprecated (#1065): `GET /admin/courses/:courseId/enrollments` now
+ * auto-syncs on every read, and the admin enrollments tab that called this
+ * has zero remaining callers. Kept unreachable-from-UI for API compatibility,
+ * same treatment as `POST /courses/:courseId/topics/sync` (#1031).
+ */
 router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), async (req, res) => {
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
