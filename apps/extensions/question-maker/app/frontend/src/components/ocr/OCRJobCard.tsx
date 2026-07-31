@@ -4,10 +4,10 @@ import {
   IconFileText,
   IconCircleCheck,
   IconCircleX,
-  IconLoader2,
   IconClock,
   IconTrash,
   IconAlertCircle,
+  IconLoader2,
 } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 import type { OCRJob, OCRJobStatus } from '../../types/ocr';
