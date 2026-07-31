@@ -125,10 +125,15 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
-  const [lesson, activities] = await Promise.all([
+  const [lesson, activitiesPage] = await Promise.all([
     api.lessonById(lessonId) as Promise<Lesson>,
-    api.activitiesForLesson(lessonId) as Promise<Activity[]>,
+    // #1043: activities endpoint returns the pagination envelope. This is a
+    // reorder host — keep `total` so the UI can refuse to persist a partial
+    // order if a lesson ever exceeds the bounded page.
+    api.activitiesForLesson(lessonId),
   ]);
+  const activities = activitiesPage.data;
+  const activitiesTotal = activitiesPage.total;
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
@@ -141,8 +146,8 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     if (module.courseOfferingId) {
       const [courseData, siblingModules, siblingLessons] = await Promise.all([
         api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.modulesForCourse(module.courseOfferingId) as Promise<Module[]>,
-        api.lessonsForModule(lesson.moduleId) as Promise<Lesson[]>,
+        api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
+        api.lessonsForModule(lesson.moduleId).then((r) => r.data),
       ]);
       course = courseData;
       const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
@@ -153,16 +158,31 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     }
   }
 
-  return { course, module, lesson, activities, orderText };
+  return { course, module, lesson, activities, activitiesTotal, orderText };
 }
 
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
-  const { course, module, lesson, activities: initialActivities, orderText } = loaderData;
+  const {
+    course,
+    module,
+    lesson,
+    activities: initialActivities,
+    activitiesTotal: initialActivitiesTotal,
+    orderText,
+  } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  // #1043/#1162: `total` is state, not a loader constant — refresh, delete, and
+  // duplicate all change the list, so the truncation flag has to move with them
+  // or it goes stale and re-enables reorder once the list crosses the bound.
+  const [activitiesTotal, setActivitiesTotal] = useState(initialActivitiesTotal);
+  // True when the lesson has more activities than the bounded page we loaded.
+  // Reorder is disabled all the way down (provider, item, drag handle) — a
+  // partial page would persist positions that orphan the unseen tail.
+  const activitiesTruncated = activitiesTotal > activities.length;
   const [oActivities, addActivityOpt] = useOptimistic(
     activities,
     (state, patch: (items: Activity[]) => Activity[]) => patch(state),
@@ -266,6 +286,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   if (initialActivities !== prevInitialActivities) {
     setPrevInitialActivities(initialActivities);
     setActivities(initialActivities);
+    setActivitiesTotal(initialActivitiesTotal);
   }
 
   const beginEditingActivity = (activity: Activity) => {
@@ -310,7 +331,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     if (!numericLessonId) return;
     try {
       const activityData = await api.activitiesForLesson(numericLessonId);
-      setActivities(activityData);
+      setActivities(activityData.data);
+      setActivitiesTotal(activityData.total);
     } catch (error) {
       console.error('Failed to refresh activities', error);
     }
@@ -321,6 +343,12 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // a failure rolls back to the prior order.
   const reorderActivitiesList = async (orderedIds: number[]) => {
     if (!numericLessonId) return;
+    if (activitiesTruncated) {
+      // The loaded page is a subset of the lesson's activities; persisting this
+      // order would reassign positions 0..n-1 and orphan the unseen tail.
+      toast.error('This lesson has more activities than can be reordered at once.');
+      return;
+    }
     const current = activities;
     const byId = new Map(current.map((a) => [a.id, a]));
     const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
@@ -364,6 +392,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       await api.deleteActivity(activityId);
       setActivities((prev) => prev.filter((activity) => activity.id !== activityId));
+      // Keep `total` in step with the local removal so `activitiesTruncated`
+      // stays accurate without a refetch.
+      setActivitiesTotal((prev) => Math.max(0, prev - 1));
       if (editingActivityId === activityId) {
         cancelEditingActivity();
       }
@@ -380,6 +411,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       const duplicated = await api.duplicateActivity(activityId);
       setActivities((prev) => [...prev, duplicated]);
+      setActivitiesTotal((prev) => prev + 1);
     } catch (error) {
       console.error('Failed to duplicate activity', error);
       alert('Failed to duplicate activity. Please try again.');
@@ -394,10 +426,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setImportableError(null);
     setLoadingImportable(true);
     try {
-      const results = await api.listImportableActivities(courseOfferingId ?? undefined);
-      // Importing an activity that already lives in this lesson is a no-op —
-      // the per-activity "Duplicate" action covers that case instead.
-      setImportableActivities(results.filter((item) => item.lessonId !== numericLessonId));
+      // #1043: importing an activity that already lives in this lesson is a
+      // no-op (the per-activity "Duplicate" action covers that), so exclude the
+      // current lesson server-side — a client-side filter over one paginated
+      // page could otherwise render an empty picker.
+      const page = await api.listImportableActivities(courseOfferingId ?? undefined, {
+        excludeLessonId: numericLessonId ?? undefined,
+      });
+      setImportableActivities(page.data);
     } catch (error) {
       console.error('Failed to load importable activities', error);
       setImportableError('Could not load activities to import. Please try again.');
@@ -744,6 +780,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </Dialog>
             </PermissionGate>
 
+            {activitiesTruncated && perms.canManageContent ? (
+              <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+                Showing {activities.length} of {activitiesTotal} activities. Reordering is
+                unavailable until the full list fits on one page, so a partial order can&apos;t be
+                saved over the rest.
+              </p>
+            ) : null}
+
             {oActivities.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -759,7 +803,10 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 onReorder={reorderActivitiesList}
                 strategy="list"
                 disabled={
-                  !perms.canManageContent || oActivities.length < 2 || reorderingActivities
+                  !perms.canManageContent ||
+                  oActivities.length < 2 ||
+                  reorderingActivities ||
+                  activitiesTruncated
                 }
               >
               <div className="space-y-4">
@@ -778,7 +825,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     promptSaved[activity.id] ??
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
-                  const canReorderActivity = perms.canManageContent && oActivities.length > 1;
+                  const canReorderActivity =
+                    perms.canManageContent && oActivities.length > 1 && !activitiesTruncated;
                   return (
                     <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
                       {({ handleProps }) => (

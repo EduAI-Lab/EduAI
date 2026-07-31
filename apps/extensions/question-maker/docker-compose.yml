@@ -39,8 +39,8 @@ services:
   # Backend API
   backend:
     build:
-      context: ./app/backend
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: apps/extensions/question-maker/app/backend/Dockerfile
     container_name: eduquery-backend
     env_file:
       - .env

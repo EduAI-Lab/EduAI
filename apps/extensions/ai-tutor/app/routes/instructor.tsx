@@ -13,8 +13,7 @@
  *     is no in-app import — they appear here automatically.
  * Related: routes/instructor.course.tsx (drilldown)
  */
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, redirect, useNavigation, useSearchParams } from 'react-router';
 import type { ReactNode } from 'react';
 import { IconSchool, IconSearch } from '@tabler/icons-react';
 import {
@@ -33,15 +32,34 @@ import type { Course } from '../lib/types';
 import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { PaginationControls } from '~/components/common/PaginationControls';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
  * authenticated user's role, so this is the full set the instructor can act on.
  */
-export async function clientLoader(_: Route.ClientLoaderArgs) {
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
-  const courses = (await api.listCourses()) as Course[];
-  return { courses };
+  // #1043: /courses is paginated. The page comes from the URL (?page=), so the
+  // pager is bookmarkable and survives reload. CourseListView still searches/
+  // filters within the loaded page; `total` drives whether a pager shows.
+  const url = new URL(request.url);
+  const requestedPage = Number(url.searchParams.get('page'));
+  const safePage =
+    Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+  const page = await api.listCourses({ page: safePage });
+
+  // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
+  // hand-edited `?page=` past the end would otherwise render an empty list
+  // while the pager reports a non-zero total. Redirect (rather than silently
+  // clamp) so the URL and the rendered page can't disagree.
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  if (safePage > lastPage) {
+    url.searchParams.set('page', String(lastPage));
+    throw redirect(`${url.pathname}${url.search}`);
+  }
+
+  return { courses: page.data, total: page.total, page: page.page, pageSize: page.pageSize };
 }
 
 /** Shared centered empty/no-results card used by the course list. */
@@ -62,9 +80,25 @@ function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string
 }
 
 export default function InstructorHome({ loaderData }: Route.ComponentProps) {
-  const [courses] = useState<Course[]>(loaderData.courses ?? []);
+  // Read straight from loaderData (not local state) so navigating pages via the
+  // URL re-renders with the new page rather than freezing the first one.
+  const courses = loaderData.courses ?? [];
+  const { total, page, pageSize } = loaderData;
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
+
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('page', String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -127,6 +161,14 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
             LinkComponent={Link}
           />
         )}
+      />
+
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={goToPage}
+        disabled={navigation.state === 'loading'}
       />
     </div>
   );
