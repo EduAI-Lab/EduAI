@@ -21,6 +21,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+- [question-maker] test: Raise `src/routes` + `src/config` statement coverage from 60.5% to 89.4% (target was 80%) with new route tests for `questions.js`, `course.js`, `canvas.js`, `eduai.js`, `assessments.js`, `assessmentVariant.js`, `topics.js`, `bug-reports.js`, and `auth.js`, plus a dedicated unit test for `database.js`'s connection-retry/failure/`allowFailure` branches, which were previously only exercised via the happy path. Closes #1217. (#1217, @evanbones, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
