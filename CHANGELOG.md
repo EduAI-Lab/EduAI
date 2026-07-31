@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Removed
 
-- [question-maker] chore: Drop 16 unused UI dependencies from `question-maker-frontend` (`@radix-ui/*`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `next-themes`, `react-markdown`, `react-dropzone`) — the frontend already consumes those primitives via `@eduai/ui`, so the direct declarations were dead weight. Closes #1247. (#1247, @Ayyhab, 2026-07-30) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [question-maker] chore: Drop 16 unused UI dependencies from `question-maker-frontend` (`@radix-ui/*`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `next-themes`, `react-markdown`, `react-dropzone`) — the frontend already consumes those primitives via `@eduai/ui`, so the direct declarations were dead weight. Closes #1247. (#1247, @Ayyhab, 2026-07-30) — [#1292](https://github.com/EduAI-Lab/EduAI/pull/1292)
 
 ### Fixed
 
