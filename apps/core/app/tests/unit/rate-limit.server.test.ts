@@ -23,6 +23,13 @@ describe("parseEnvInt", () => {
     expect(parseEnvInt("", 20)).toBe(20);
   });
 
+  it("returns the fallback — not 0 — when the value is whitespace-only", () => {
+    // Number("   ") === 0 and is finite, so dropping `.trim()` before the
+    // empty check (value.trim() === "" → value === "") would return 0.
+    expect(parseEnvInt("   ", 20)).toBe(20);
+    expect(parseEnvInt("\t\n", 20)).toBe(20);
+  });
+
   it("returns the fallback when the value is not a finite number", () => {
     expect(parseEnvInt("not-a-number", 20)).toBe(20);
   });
@@ -151,6 +158,18 @@ describe("isRateLimited — bounded store (#990)", () => {
     expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
   });
 
+  it("does not treat RATE_LIMIT_MAX_KEYS='   ' (whitespace) as a cap of 0", async () => {
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "   ");
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    isRateLimitedBounded("k1", 5, 60_000);
+    isRateLimitedBounded("k2", 5, 60_000);
+    expect(isRateLimitedBounded("k1", 1, 60_000)).toBe(true);
+  });
+
   it("evicts below the cap (not just back to it) so a sweep isn't re-triggered on the very next insert", async () => {
     vi.resetModules();
     vi.stubEnv("RATE_LIMIT_MAX_KEYS", "10");
@@ -243,10 +262,28 @@ describe("isRateLimited — bounded store (#990)", () => {
     expect(isRateLimitedBounded("hot-2", 1, 60_000)).toBe(true);
   });
 
-  // #1101 surviving equivalent (verified by applying the mutant): an empty
-  // `hits` array left in the Map (`store.set(key, [])`) is observationally
-  // identical to a missing key for every subsequent `isRateLimited` / sweep
-  // call — both start from `[]` via `store.get(key) ?? []`, and both make
-  // `evictStaleEntries` see `lastHit === undefined`. No assertion can
-  // distinguish them, so the mutant is left as a documented equivalent.
+  it("sweeps an empty hits entry (limit=0) so the oldest-key fallback does not over-trim a later hot key", async () => {
+    // limit=0 stores an empty hits array (`hits.length >= 0`). That entry's
+    // lastHit is undefined, so the sweep must delete it via the
+    // `lastHit === undefined` arm. Placing it last in insertion order means
+    // the oldest-key fallback would not reach it when the sweep already
+    // brought size down — but without the undefined arm the fallback has to
+    // delete one extra key and would take keeper-b with it.
+    vi.resetModules();
+    vi.stubEnv("RATE_LIMIT_MAX_KEYS", "3"); // EVICTION_TARGET_KEYS = 2
+    const { isRateLimited: isRateLimitedBounded } = await import(
+      "~/lib/auth/rate-limit.server"
+    );
+
+    isRateLimitedBounded("keeper-a", 5, 60_000);
+    isRateLimitedBounded("keeper-b", 5, 60_000);
+    expect(isRateLimitedBounded("empty", 0, 60_000)).toBe(true); // stores []
+
+    isRateLimitedBounded("trigger", 5, 60_000);
+
+    // keeper-b must survive: only keeper-a is oldest-key trimmed after the
+    // empty entry is swept. If the undefined-arm were a no-op, fallback
+    // would also drop keeper-b.
+    expect(isRateLimitedBounded("keeper-b", 1, 60_000)).toBe(true);
+  });
 });
