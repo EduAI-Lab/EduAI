@@ -163,7 +163,9 @@ describe('BugReportsTab', () => {
     fireEvent.click(screen.getByText(baseReport.description));
     expect(await screen.findByText('Report Description')).toBeInTheDocument();
     expect(screen.getByText(/Reported by/)).toBeInTheDocument();
-    expect(mockGetAdminBugReport).toHaveBeenCalledWith(baseReport.id);
+    // This row already carries the blobs, so the shared view skips the detail
+    // fetch (#979) — see the flag-only case below for the fetching path.
+    expect(mockGetAdminBugReport).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
@@ -181,6 +183,28 @@ describe('BugReportsTab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Screenshot' }));
     expect(await screen.findByRole('link', { name: 'Open in new tab' })).toBeInTheDocument();
+  });
+
+  it('fetches the detail payload when the list row only carries has* flags', async () => {
+    // The list endpoint omits the diagnostic bodies (#979); the row advertises
+    // them through the flags and the viewer pulls them on open.
+    const listRow: AdminBugReportRow = {
+      ...baseReport,
+      consoleLogs: null,
+      networkLogs: null,
+      screenshot: null,
+    };
+    mockGetAdminBugReport.mockResolvedValue(baseReport);
+
+    render(<BugReportsTab initialReports={[listRow]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Console' }));
+
+    await waitFor(() => {
+      expect(mockGetAdminBugReport).toHaveBeenCalledWith(baseReport.id);
+    });
+    expect(await screen.findByText('Console Logs')).toBeInTheDocument();
+    expect(screen.getByText('Show stack trace')).toBeInTheDocument();
   });
 
   it('copies a full bug report template and shows temporary copied feedback', async () => {
