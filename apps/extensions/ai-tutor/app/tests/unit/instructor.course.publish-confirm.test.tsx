@@ -49,7 +49,10 @@ vi.mock('~/hooks/useCourseTopics', () => ({
 }));
 vi.mock('~/components/courses/CourseTopicsHeroAction', () => ({ CourseTopicsHeroAction: () => null }));
 
-vi.mock('~/components/rbac/PermissionGate', () => ({
+// PermissionGate now ships from @eduai/ui — partial-mock so the other primitives
+// this route imports keep their real implementations.
+vi.mock('@eduai/ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@eduai/ui')>()),
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
