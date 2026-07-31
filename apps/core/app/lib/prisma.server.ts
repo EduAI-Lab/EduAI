@@ -24,11 +24,12 @@ const prisma = getPrismaClient();
 // not pay Prisma's lazy connect (TCP/TLS handshake + query-engine spawn) — that
 // cold start was the multi-second stall on the first navigation. Fire-and-forget:
 // queries still connect lazily if this races, so a failure here is non-fatal.
-if (process.env.PRISMA_SKIP_EAGER_CONNECT !== "1") {
+// This test-only switch is set by vitest.config.ts to keep isolated unit-test
+// imports from opening hundreds of redundant database connections.
+if (process.env.VITEST_SKIP_PRISMA_EAGER_CONNECT !== "1") {
   void prisma.$connect().catch((err) => {
     console.error("[prisma] initial $connect failed (will retry lazily)", err);
   });
 }
 
 export default prisma;
-
