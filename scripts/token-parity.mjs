@@ -21,6 +21,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 
 const REPO = path.resolve(import.meta.dirname, "..");
@@ -221,29 +222,40 @@ function diff(baseline, current, allow) {
   return problems;
 }
 
-const [cmd, file, ...rest] = process.argv.slice(2);
+export { stripComments, blocks, decls, normalise, tokensFor, capture, diff };
 
-if (cmd === "capture") {
-  if (!file) throw new Error("usage: token-parity.mjs capture <out.json>");
-  const snap = capture();
-  fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(snap, null, 2) + "\n");
-  for (const [app, modes] of Object.entries(snap))
-    console.log(`  ${app.padEnd(16)} ${Object.keys(modes.light).length} light / ${Object.keys(modes.dark).length} dark`);
-  console.log(`baseline written to ${file}`);
-} else if (cmd === "check") {
-  if (!file) throw new Error("usage: token-parity.mjs check <baseline.json> [--allow --a,--b]");
-  const idx = rest.indexOf("--allow");
-  const allow = new Set(idx === -1 ? [] : (rest[idx + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean));
-  const problems = diff(JSON.parse(fs.readFileSync(file, "utf8")), capture(), allow);
-  if (allow.size) console.log(`allowing expected deltas: ${[...allow].join(", ")}`);
-  if (problems.length) {
-    console.error(`\n✗ token parity FAILED — ${problems.length} unexpected difference(s):\n`);
-    for (const p of problems) console.error("  " + p);
-    process.exit(1);
+function main() {
+  const [cmd, file, ...rest] = process.argv.slice(2);
+
+  if (cmd === "capture") {
+    if (!file) throw new Error("usage: token-parity.mjs capture <out.json>");
+    const snap = capture();
+    fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(snap, null, 2) + "\n");
+    for (const [app, modes] of Object.entries(snap))
+      console.log(`  ${app.padEnd(16)} ${Object.keys(modes.light).length} light / ${Object.keys(modes.dark).length} dark`);
+    console.log(`baseline written to ${file}`);
+    return;
   }
-  console.log("✓ token parity holds — every resolved value is unchanged");
-} else {
+
+  if (cmd === "check") {
+    if (!file) throw new Error("usage: token-parity.mjs check <baseline.json> [--allow --a,--b]");
+    const idx = rest.indexOf("--allow");
+    const allow = new Set(idx === -1 ? [] : (rest[idx + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+    const problems = diff(JSON.parse(fs.readFileSync(file, "utf8")), capture(), allow);
+    if (allow.size) console.log(`allowing expected deltas: ${[...allow].join(", ")}`);
+    if (problems.length) {
+      console.error(`\n\u2717 token parity FAILED \u2014 ${problems.length} unexpected difference(s):\n`);
+      for (const p of problems) console.error("  " + p);
+      process.exit(1);
+    }
+    console.log("\u2713 token parity holds \u2014 every resolved value is unchanged");
+    return;
+  }
+
   console.error("usage: token-parity.mjs capture <out.json> | check <baseline.json> [--allow --a,--b]");
   process.exit(2);
 }
+
+// Importable for tests; the CLI runs only when this file is executed directly.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
