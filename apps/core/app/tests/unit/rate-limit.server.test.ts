@@ -8,6 +8,11 @@ afterEach(() => {
 });
 
 describe("parseEnvInt", () => {
+  // #1101: these cases must stay direct calls on the exported helper. The
+  // store-cap path used to invoke parseEnvInt at module import with an unset
+  // RATE_LIMIT_MAX_KEYS; mutants that only diverge on `undefined` then crashed
+  // the whole file on load, which Stryker could not attribute to a killing test.
+  // Caps are now lazy-read so this suite can kill those mutants cleanly.
   it("returns the fallback when the value is undefined", () => {
     expect(parseEnvInt(undefined, 20)).toBe(20);
   });
@@ -237,4 +242,11 @@ describe("isRateLimited — bounded store (#990)", () => {
     expect(isRateLimitedBounded("hot-0", 1, 60_000)).toBe(false);
     expect(isRateLimitedBounded("hot-2", 1, 60_000)).toBe(true);
   });
+
+  // #1101 surviving equivalent (verified by applying the mutant): an empty
+  // `hits` array left in the Map (`store.set(key, [])`) is observationally
+  // identical to a missing key for every subsequent `isRateLimited` / sweep
+  // call — both start from `[]` via `store.get(key) ?? []`, and both make
+  // `evictStaleEntries` see `lastHit === undefined`. No assertion can
+  // distinguish them, so the mutant is left as a documented equivalent.
 });

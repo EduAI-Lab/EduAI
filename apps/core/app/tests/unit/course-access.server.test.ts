@@ -134,7 +134,7 @@ describe("resolveCourseAccess", () => {
     expect(access).toBeNull();
   });
 
-  it("skips the unit-department fetch entirely when department is null (§19 unit lock)", async () => {
+  it("does not call user.findUnique when UNIT_ADMIN course department is null (§19 unit lock)", async () => {
     prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, department: null });
     const access = await resolveCourseAccess({ id: "u1", role: "UNIT_ADMIN" }, "c1");
     expect(access).toBeNull();
