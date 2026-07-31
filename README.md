@@ -47,7 +47,7 @@ Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/a
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
-AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.
+AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
 
 ### [Question Maker](apps/extensions/question-maker/)
 
