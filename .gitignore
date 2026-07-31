@@ -79,3 +79,7 @@ docs/research/data/runs/
 
 .claude/memory
 .gstack/
+
+# Python venvs (research/analysis scripts under eduai-summer-2026/reports/)
+.venv/
+__pycache__/
