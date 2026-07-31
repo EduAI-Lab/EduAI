@@ -20,6 +20,7 @@
 #   bash infra/s378/go-live-build.sh --no-env        # skip go-live-env.sh
 #   bash infra/s378/go-live-build.sh --no-restart    # build only, leave units alone
 #   bash infra/s378/go-live-build.sh --only aitutor  # core | aitutor | qm
+#                                                    # (ai-tutor / question-maker also accepted)
 #
 # Env:
 #   EDUAI_SKIP_QM_TSC=1   bypass Question Maker's `tsc` gate (see below)
@@ -66,6 +67,14 @@ done
 # want() silently matches nothing on a typo, so an unvalidated --only would skip
 # every build, restart the stack, and still print BUILD_OK — a deploy that
 # reports success while the sites keep serving the previous branch's bundle.
+#
+# `ai-tutor` and `question-maker` are accepted as aliases because those are the
+# directory names on disk, so they are what people type. The canonical values
+# match the unit names (eduai-aitutor-server, eduai-qm-backend).
+case "$ONLY" in
+  ai-tutor)       ONLY=aitutor ;;
+  question-maker) ONLY=qm ;;
+esac
 case "$ONLY" in
   ""|core|aitutor|qm) ;;
   *) echo "unknown --only target: $ONLY (expected: core | aitutor | qm)" >&2; exit 2 ;;

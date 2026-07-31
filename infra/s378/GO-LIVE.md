@@ -63,6 +63,7 @@ git pull
 bash infra/s378/go-live-build.sh              # env, generate, migrate, seed, build, restart
 bash infra/s378/go-live-build.sh --install    # after a branch switch (adds npm install)
 bash infra/s378/go-live-build.sh --only qm    # core | aitutor | qm
+                                              # (ai-tutor / question-maker also accepted)
 ```
 
 A full build takes roughly 1–3 minutes. `vite build` empties the output directory
