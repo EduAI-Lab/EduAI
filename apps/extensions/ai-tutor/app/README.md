@@ -2,26 +2,38 @@
 
 React 19 + React Router v7 client application running in SPA mode (`ssr: false`). Styled with Tailwind CSS v4 and shadcn/ui components (Radix-based, new-york style).
 
+## Develop from the monorepo root
+
+```bash
+npx turbo run dev --filter=ai-tutor
+```
+
+Frontend: http://localhost:3001 — API expected at `VITE_API_URL` (default `http://localhost:4000`). Platform onboarding: [root README](../../../../README.md), [AI Tutor README](../README.md).
+
 ## Directory Structure
 
 ```
 app/
   root.tsx                          # HTML shell, providers (Auth, BugReport, Tour)
-  routes.ts                         # Route configuration (flat, no nested layouts)
+  routes.ts                         # Route configuration (_app layout for authenticated routes)
   app.css                           # Global CSS, design system tokens, custom components
 
   routes/
     home.tsx                        # Landing page + EduAI OAuth sign-in
+    unsupported-role.tsx            # Legacy redirect helper → routeForRole
+    _app.tsx                        # Authenticated shell layout (AppShell, nav, outlet)
+    dashboard.tsx                   # Role landing (redirects to role-appropriate home)
+    settings.tsx                    # User settings (authenticated)
+    help.tsx                        # Help page (authenticated)
     student.tsx                     # Student dashboard (enrolled courses + progress)
     student.course.tsx              # Student course view (modules list)
-    student.module.tsx               # Student module view (lessons list)
-    student.lesson.tsx                # Student lesson player (activities, Q&A, AI chat)
+    student.module.tsx              # Student module view (lessons list)
+    student.lesson.tsx              # Student lesson player (activities, Q&A, AI chat)
     instructor.tsx                  # Instructor dashboard (courses + EduAI import)
     instructor.course.tsx           # Instructor course editor (modules, import, topics)
-    instructor.module.tsx            # Instructor module editor (lessons)
+    instructor.module.tsx           # Instructor module editor (lessons)
     instructor.lesson.tsx             # Instructor lesson builder (activity CRUD)
     admin.tsx                       # Admin panel (users, enrollments, settings, bugs)
-    unsupported-role.tsx            # TA role rejection page
 
   components/
     Nav.tsx                         # Global navigation bar
@@ -82,21 +94,18 @@ app/
 
 ## Routing
 
-All routes are flat (no nested layouts). Each route module renders `<Nav />` independently and uses a `clientLoader` function for data fetching via `requireClientUser(role)`.
+Public routes render standalone; authenticated routes share the `_app.tsx` layout. Each route module uses a `clientLoader` function for data fetching via `requireClientUser(role)`.
 
-| Path | Module | Role |
-|------|--------|------|
-| `/` | `home.tsx` | Public |
-| `/admin` | `admin.tsx` | ADMIN |
-| `/student` | `student.tsx` | STUDENT |
-| `/student/courses/:courseId` | `student.course.tsx` | STUDENT |
-| `/student/module/:moduleId` | `student.module.tsx` | STUDENT |
-| `/student/lesson/:lessonId` | `student.lesson.tsx` | STUDENT |
-| `/instructor` | `instructor.tsx` | PROFESSOR |
-| `/instructor/courses/:courseId` | `instructor.course.tsx` | PROFESSOR |
-| `/instructor/module/:moduleId` | `instructor.module.tsx` | PROFESSOR |
-| `/instructor/lesson/:lessonId` | `instructor.lesson.tsx` | PROFESSOR |
-| `/unsupported-role` | `unsupported-role.tsx` | Any |
+| Path | Module | Notes |
+|------|--------|-------|
+| `/` | `home.tsx` | Public sign-in |
+| `/unsupported-role` | `unsupported-role.tsx` | Legacy redirect helper → `routeForRole` |
+| `/dashboard` | `dashboard.tsx` | Role landing (layout) |
+| `/admin` | `admin.tsx` | ADMIN / UNIT_ADMIN as gated |
+| `/settings` | `settings.tsx` | Authenticated |
+| `/help` | `help.tsx` | Authenticated |
+| `/student` … | `student*.tsx` | STUDENT / TA |
+| `/instructor` … | `instructor*.tsx` | INSTRUCTOR / TA (read-only where gated) |
 
 ## State Management
 
@@ -116,11 +125,11 @@ Additional patterns:
 
 ## Authentication Flow
 
-1. `AuthProvider` calls `GET /api/me` on mount to check for an existing session.
+1. `AuthProvider` calls `GET /api/me` on mount to check for an existing Core/EduAI session cookie.
 2. If unauthenticated, the home page shows "Sign in with EduAI".
-3. `signInWithEduAi()` (from `auth-client.ts`) triggers an OAuth 2.0 redirect to EduAI.
+3. `signInWithEduAi()` (from `auth-client.ts`) triggers an OAuth 2.0 redirect to EduAI (Core).
 4. On callback, Better Auth sets a session cookie and redirects to `/`.
-5. `AuthProvider` picks up the session, redirects to the role-appropriate dashboard.
+5. `AuthProvider` picks up the session and redirects to the role-appropriate dashboard via `routeForRole`.
 6. Any 401/403 from the API client redirects back to `/`.
 
 ## API Client (`lib/api.ts`)
@@ -134,14 +143,9 @@ Central HTTP client for all backend communication. Key patterns:
 
 See [docs/api-reference.md](../docs/api-reference.md) for the full endpoint inventory.
 
-## Design System
+## Design system
 
-Custom "Neo-Academic" theme defined in `app.css`:
-
-- **Fonts**: Satoshi (body), Fraunces (display headings), JetBrains Mono (code)
-- **Colors**: Warm/earthy light palette with full dark mode support
-- **Dark mode**: Class-based (`.dark` on `<html>`), reads from `localStorage` or system preference
-- **Custom classes**: `.card-editorial`, `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.input-field`, `.tag`, `.panel-glass`, `.dots-pattern`, `.grid-lines`
+Uses shared `@eduai/ui` and tokens in `app.css` (Outfit, UBC-aligned palette, class-based dark mode). See [eduai-design-system/project/SKILL.md](../../../../eduai-design-system/project/SKILL.md) for brand rules.
 
 ## Key Libraries
 
