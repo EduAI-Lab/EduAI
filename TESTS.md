@@ -153,19 +153,26 @@ a minimal table of input combinations covering every pair of parameter values, f
 independent inputs decide a forked outcome. See [`docs/PICT_CENSUS.md`](docs/PICT_CENSUS.md) for which
 surfaces qualify and why.
 
-A model is four pieces, only the first two of which live in this repo today:
+A model is four pieces:
 
-| File | What it is | Who writes it |
-|---|---|---|
-| `<name>.pict` | Parameters, values, constraints (~20 lines) | Author, by hand |
-| `<name>.cases.json` | Generated rows — **committed**, never hand-edited | `npm run test:pict:gen` |
-| `<name>.oracle.ts` | Pure function `(row) => expected outcome`, derived from the spec | Author, by hand |
-| `<name>.test.ts` | World-builder `(row) => seeded state` + `describe.each` over the rows | Author, by hand |
+| File | What it is | Who writes it | Lives in |
+|---|---|---|---|
+| `<name>.pict` | Parameters, values, constraints (~20 lines) | Author, by hand | `tests/models/` |
+| `<name>.cases.json` | Generated rows — **committed**, never hand-edited | `npm run test:pict:gen` | `tests/models/` |
+| `<name>.oracle.ts` | Pure function `(row) => expected outcome`, derived from the spec | Author, by hand | `tests/models/` |
+| `<name>.test.ts` | World-builder `(row) => seeded state` + `describe.each` over the rows, one adapter per `Path` value | Author, by hand | the consuming app's own integration suite (e.g. `apps/core/app/tests/integration/`) |
+
+The oracle is deliberately app-agnostic (no imports from any app) so a model that spans several
+codebases — like the S2 flagship RBAC model — can single-source it; only the world-builder differs
+per app, since it needs that app's auth mocks, factories, and route handlers. The world-builder test
+file imports the oracle and the generated cases by relative path from `tests/models/`.
 
 The oracle must be derived from the spec, never read off the handler under test — copying the
 handler's branch logic makes the test tautological (it asserts the code does what the code does).
-This document only covers the first two files; the oracle/test pair is written per-model as each
-census candidate is picked up.
+Where the spec is genuinely silent on a presentational detail (e.g. which of several "denied" HTTP
+status codes a REST adapter returns), it's legitimate for the adapter to defer to a documented
+platform-wide convention (e.g. the 404-vs-403 split in `docs/implementations/rbac-matrix.md` §3) —
+that's a shared contract, not the handler under test.
 
 ### Generation runs in Docker, not a host install
 
@@ -230,7 +237,7 @@ table silently tests the old row set, which is worse than no coverage because it
 
 | Model | Dims | What it covers |
 |---|---|---|
-| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route and both RAG retrieval branches — census § S1 pilot. Oracle and world-builder not yet written; this model exists to prove the generator path end to end. |
+| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route (`routes/api/courses.materials.$.ts`) and both RAG retrieval branches (`lib/ai/embedding.ts` — hybrid BM25 and pure vector) — census § S1 pilot, the first model to land end to end: [`material-visibility.oracle.ts`](tests/models/material-visibility.oracle.ts) (pure verdict function) and the world-builder + REST/RAG adapters in [`apps/core/app/tests/integration/material-visibility.integration.test.ts`](apps/core/app/tests/integration/material-visibility.integration.test.ts). One caveat: this model's 18-row pairwise reduction never isolates `AvailableAt=future` as the sole reason for denial (every row combining it with a `STUDENT` role also sets `Deleted=yes` or `VisibleToStudents=false`) — a real limit of pairwise-vs-exhaustive coverage, not a gap in the oracle or adapters. |
 
 ---
 
