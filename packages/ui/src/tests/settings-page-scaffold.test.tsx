@@ -1,3 +1,4 @@
+import type { ReactElement } from "react"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 
@@ -39,6 +40,24 @@ describe("SettingsPageScaffold", () => {
     const panels = container.querySelectorAll('[role="tabpanel"]')
     expect(panels.length).toBeGreaterThan(0)
     panels.forEach((panel) => expect(panel).toHaveClass("space-y-6"))
+  })
+
+  it("defaults to the unpadded wrapper and applies the named padding variants", () => {
+    // Nothing asserted on the outer wrapper before, so Core's Settings shipped
+    // without a padding prop and rendered flush against the viewport edge — the
+    // page-level padding its own shell does not supply.
+    const outer = (markup: ReactElement) =>
+      render(markup).container.firstElementChild as HTMLElement
+
+    expect(outer(<SettingsPageScaffold tabs={TABS} />).className).toBe(
+      "flex flex-col gap-8",
+    )
+
+    const app = outer(<SettingsPageScaffold tabs={TABS} padding="app" />)
+    expect(app).toHaveClass("@container/main", "flex-1", "px-4", "lg:px-6")
+
+    const qm = outer(<SettingsPageScaffold tabs={TABS} padding="qm" />)
+    expect(qm).toHaveClass("@container/main", "flex-1", "px-4", "lg:px-6")
   })
 
   it("renders beforeTabs above the strip and footer below it", () => {
