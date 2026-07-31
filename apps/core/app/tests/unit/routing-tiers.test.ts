@@ -80,4 +80,27 @@ describe("routing tier model cache", () => {
     expect(prismaMock.aIModel.findMany).toHaveBeenCalledTimes(2);
     now.mockRestore();
   });
+
+  it("does not repopulate the cache from a load started before invalidation", async () => {
+    let resolveStale!: (rows: ReturnType<typeof tierRow>[]) => void;
+    const staleLoad = new Promise<ReturnType<typeof tierRow>[]>((resolve) => {
+      resolveStale = resolve;
+    });
+    prismaMock.aIModel.findMany.mockReturnValueOnce(staleLoad);
+
+    const firstRead = getCachedTierModels();
+    invalidateTierModelCache();
+    resolveStale([tierRow("qwen2.5-7b-instruct", "TIER_1")]);
+    await firstRead;
+
+    prismaMock.aIModel.findMany.mockResolvedValueOnce([
+      tierRow("qwen2.5-32b-instruct", "TIER_3"),
+    ]);
+
+    const refreshed = await getCachedTierModels();
+    expect(refreshed.map((row) => row.registryId)).toEqual([
+      "vllm:qwen2.5-32b-instruct",
+    ]);
+    expect(prismaMock.aIModel.findMany).toHaveBeenCalledTimes(2);
+  });
 });
