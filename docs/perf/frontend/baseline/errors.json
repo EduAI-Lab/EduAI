@@ -1,0 +1,21 @@
+{
+  "env": {
+    "captured_at": "2026-07-30T10:23:47.016Z",
+    "target_label": "dev-remote",
+    "targets": {
+      "core": "https://dev.eduai.ok.ubc.ca",
+      "aiTutor": "https://dev.aitutor.eduai.ok.ubc.ca",
+      "questionMaker": "https://dev.questionmaker.eduai.ok.ubc.ca"
+    },
+    "git_sha": "b0fc6057",
+    "git_branch": "feat/page-perf-profiler",
+    "node": "v23.11.0",
+    "platform": "darwin-arm64",
+    "runs": 3,
+    "cache": "cold",
+    "cpu_throttle": 0,
+    "network": "off",
+    "seed_note": "Run `npm run dbseed` before measuring; unresolved dynamic ids are reported as skipped."
+  },
+  "errors": []
+}
