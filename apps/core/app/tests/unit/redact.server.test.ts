@@ -71,6 +71,18 @@ describe("redactSecretValuesInString", () => {
     ).toBe(`https://api.example.com/x?access_token=${REDACTED_VALUE}&ok=1`);
   });
 
+  it("redacts an OAuth client_secret query param", () => {
+    expect(redactSecretValuesInString("POST /token?client_secret=s3kr3t&grant_type=code")).toBe(
+      `POST /token?client_secret=${REDACTED_VALUE}&grant_type=code`,
+    );
+  });
+
+  // `code` is deliberately NOT on the query-param deny-list: course codes are logged as
+  // `?code=CPSC110` throughout the app and redacting them would destroy triage value.
+  it("leaves a non-secret code query param intact", () => {
+    expect(redactSecretValuesInString("/courses?code=CPSC110")).toBe("/courses?code=CPSC110");
+  });
+
   it("redacts URL userinfo", () => {
     expect(redactSecretValuesInString("postgres://user:pass@host/db")).toBe(
       `postgres://${REDACTED_VALUE}@host/db`,

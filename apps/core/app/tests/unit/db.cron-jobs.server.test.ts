@@ -136,6 +136,31 @@ describe("finishCronRun", () => {
     await finishCronRun("run-abc", "ERROR", "failed", 1);
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
   });
+
+  // Cron scripts are spawned with the full process.env, so their stdout/stderr tail — which
+  // becomes this message — can carry DATABASE_URL credentials or a token-bearing callback URL.
+  it("redacts secret values out of the persisted message", async () => {
+    await finishCronRun(
+      "run-abc",
+      "ERROR",
+      "connect failed for postgresql://admin:hunter2@db:5432/eduai and https://lms/api?access_token=abc123",
+      1,
+    );
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("hunter2");
+    expect(persistedMessage).not.toContain("abc123");
+    expect(persistedMessage).toContain("[REDACTED]");
+    // Non-secret diagnostic text must survive so admins can still triage the failure.
+    expect(persistedMessage).toContain("connect failed for");
+  });
+
+  it("leaves a message with no secrets untouched", async () => {
+    await finishCronRun("run-abc", "SUCCESS", "Processed 42 rows in 3.1s", 0);
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).toBe("Processed 42 rows in 3.1s");
+  });
 });
 
 describe("getRecentCronJobRuns", () => {

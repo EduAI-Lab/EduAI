@@ -91,7 +91,7 @@ const COOKIE_HEADER_RE = /\b(?:Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
 /** Common API-key header lines (HAR / fetch dumps). */
 const X_API_KEY_HEADER_RE = /\bX-Api-Key\s*:\s*[^\r\n]*/gi;
 const TOKEN_QUERY_PARAM_RE =
-  /([?&](?:access_token|id_token|refresh_token|api_key|apikey|token)=)[^&\s"']+/gi;
+  /([?&](?:access_token|id_token|refresh_token|client_secret|api_key|apikey|token)=)[^&\s"']+/gi;
 /** Matches `://user:pass@` (scheme already scanned past). Linear in input length. */
 const URL_USERINFO_RE = /\/\/[^/@\s"']+:[^@\s"']+@/g;
 
