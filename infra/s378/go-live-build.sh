@@ -213,9 +213,21 @@ if [ "$DO_RESTART" = "1" ]; then
   # members lifecycle control over every eduai-* unit individually, so this does
   # not have to go through eduai-dev.target. Core is skipped when it was already
   # restarted right after its own build, above.
-  RESTART_UNITS=(eduai-aitutor-server.service eduai-qm-backend.service)
-  [ "$CORE_RESTARTED" = "1" ] || RESTART_UNITS=(eduai-core.service "${RESTART_UNITS[@]}")
-  systemctl restart "${RESTART_UNITS[@]}"
+  # Restart only what this invocation actually rebuilt. `--only aitutor` must not
+  # bounce Core: the flag exists to limit blast radius, and restarting a service
+  # whose bundle did not change is a pointless outage on a shared box.
+  RESTART_UNITS=()
+  if want core && [ "$CORE_RESTARTED" != "1" ]; then RESTART_UNITS+=(eduai-core.service); fi
+  if want aitutor; then RESTART_UNITS+=(eduai-aitutor-server.service); fi
+  if want qm;      then RESTART_UNITS+=(eduai-qm-backend.service); fi
+
+  # Empty is legitimate: `--only core` already restarted Core above. Guard anyway,
+  # because `systemctl restart` with no arguments is an error, not a no-op.
+  if [ "${#RESTART_UNITS[@]}" -gt 0 ]; then
+    systemctl restart "${RESTART_UNITS[@]}"
+  else
+    echo "  nothing left to restart"
+  fi
 
   step "verify the stack is actually up"
   # `sleep 3` + `systemctl is-active` is not a health check: a unit that starts,
@@ -241,10 +253,13 @@ if [ "$DO_RESTART" = "1" ]; then
     return 1
   }
 
+  # Same scoping as the restart above. Under `--only qm` the other two units are
+  # untouched, and failing the deploy because someone has Core deliberately
+  # stopped would be a false alarm.
   UNHEALTHY=()
-  wait_port eduai-core            3000 || UNHEALTHY+=(eduai-core)
-  wait_port eduai-aitutor-server  4000 || UNHEALTHY+=(eduai-aitutor-server)
-  wait_port eduai-qm-backend      8000 || UNHEALTHY+=(eduai-qm-backend)
+  if want core;    then wait_port eduai-core           3000 || UNHEALTHY+=(eduai-core); fi
+  if want aitutor; then wait_port eduai-aitutor-server 4000 || UNHEALTHY+=(eduai-aitutor-server); fi
+  if want qm;      then wait_port eduai-qm-backend     8000 || UNHEALTHY+=(eduai-qm-backend); fi
 
   if [ "${#UNHEALTHY[@]}" -gt 0 ]; then
     echo
