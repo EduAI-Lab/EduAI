@@ -82,6 +82,19 @@ describe("POST /api/chat — §10 course gate (#302)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects the legacy auto-hybrid mode before course or model routing", async () => {
+    const res = await action(
+      makeArgs({ messages: [], model: "auto-hybrid", courseId: "c1" }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "Unsupported routing model",
+      details:
+        'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+    });
+    expect(resolveCourseAccessWithCourse).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when the course does not exist", async () => {
     mockAccess(null, null);
     const res = await action(makeArgs({ messages: [], courseId: "c1" }));

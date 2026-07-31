@@ -61,6 +61,7 @@ describe("isAutoRoutingModelId", () => {
   it("recognizes auto and auto-llm", () => {
     expect(isAutoRoutingModelId("auto")).toBe(true);
     expect(isAutoRoutingModelId("auto-llm")).toBe(true);
+    expect(isAutoRoutingModelId("auto-hybrid")).toBe(false);
     expect(isAutoRoutingModelId("vllm:qwen2.5-7b-instruct")).toBe(false);
   });
 });

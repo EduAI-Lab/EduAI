@@ -173,13 +173,6 @@ function resolveAutoRouting(
       requestedAuto: "auto-llm",
     };
   }
-  if (model === "auto-hybrid") {
-    return {
-      routeWithAuto: true,
-      modeOverride: "hybrid",
-      requestedAuto: "auto-hybrid",
-    };
-  }
   return { routeWithAuto: false, requestedAuto: null };
 }
 
@@ -496,6 +489,20 @@ export async function action({ request }: ActionFunctionArgs) {
     let model = typeof body.model === "string" ? body.model.trim() : undefined;
     if (model === "") {
       model = undefined;
+    }
+
+    if (model === "auto-hybrid") {
+      return new Response(
+        JSON.stringify({
+          error: "Unsupported routing model",
+          details:
+            'The legacy "auto-hybrid" mode is disabled. Select Auto or Auto (rules) in chat.',
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     const routingModelSettings =
