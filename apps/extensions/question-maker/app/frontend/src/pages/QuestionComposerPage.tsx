@@ -33,7 +33,6 @@ import {
   IconTags,
 } from '@tabler/icons-react';
 
-import { ToastAction, useToast } from '@/components/ui/use-toast';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { useEduAIStatus } from '@/hooks/useEduAIStatus';
 import { questionService } from '@/services/questionService';
@@ -71,6 +70,7 @@ const DEFAULT_CHOICES: MCQChoice[] = [
 ];
 
 import { FALLBACK_GENERATION_MODEL, pickPreferredGenerationModel } from '../utils/aiModels';
+import { toast } from 'sonner';
 
 const DEFAULT_MODEL = FALLBACK_GENERATION_MODEL;
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -125,7 +125,6 @@ const padChoices = (choices: MCQChoice[] | null | undefined): MCQChoice[] => {
 
 export function QuestionComposerPage() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const { courseId: courseIdParam, questionId: questionIdParam } = useParams<{
     courseId: string;
     questionId?: string;
@@ -403,14 +402,13 @@ export function QuestionComposerPage() {
       setError('Enter a topic or prompt before asking the AI service to generate a question.');
       return;
     }
-    let processingToast: { dismiss: () => void } | null = null;
+    let processingToast: string | number | undefined;
     try {
       setIsGenerating(true);
       setError(null);
       setQuestionGenerationPhase('generating');
-      processingToast = toast({
-        title: mode === 'variant' ? 'Variant generation in progress' : 'Question generation in progress',
-        description: 'Your request is being processed. This may take 30–60 seconds.',
+      processingToast = toast(mode === 'variant' ? 'Variant generation in progress' : 'Question generation in progress', {
+          description: 'Your request is being processed. This may take 30–60 seconds.',
       });
 
       const difficultyDistribution = {
@@ -573,10 +571,9 @@ export function QuestionComposerPage() {
       setIsAiGenerated(true);
       if (mountedRef.current) setQuestionGenerationPhase('review');
       else setQuestionGenerationPhase(null);
-      processingToast?.dismiss();
-      toast({
-        title: mode === 'variant' ? 'Variant generated' : 'Question generated',
-        description: 'Review the generated text and adjust any details before saving.',
+      if (processingToast !== undefined) toast.dismiss(processingToast);
+      toast(mode === 'variant' ? 'Variant generated' : 'Question generated', {
+          description: 'Review the generated text and adjust any details before saving.',
       });
     } catch (generateError: unknown) {
       const err = generateError as {
@@ -592,20 +589,14 @@ export function QuestionComposerPage() {
       setError(message);
       setErrorModalMessage(message);
       setQuestionGenerationPhase(null);
-      processingToast?.dismiss();
-      toast({
-        variant: 'destructive',
-        title: 'AI service has thrown an error',
+      if (processingToast !== undefined) toast.dismiss(processingToast);
+      toast.error('AI service has thrown an error', {
         description: 'Click to see why',
         duration: Infinity,
-        action: (
-          <ToastAction altText="View error details" onClick={() => setShowErrorDetails(true)}>
-            View Details
-          </ToastAction>
-        ),
+        action: { label: 'View Details', onClick: () => setShowErrorDetails(true) },
       });
     } finally {
-      processingToast?.dismiss();
+      if (processingToast !== undefined) toast.dismiss(processingToast);
       if (mountedRef.current) setIsGenerating(false);
     }
   };
@@ -678,14 +669,14 @@ export function QuestionComposerPage() {
           ...(primaryTopicChanged && { primaryTopicId: form.primaryTopicId.trim() }),
           ...(typeChanged && { type: form.questionType }),
         });
-        toast(
-          wasApproved
-            ? {
-                title: 'Saved — reopened for review',
-                description: 'Editing an approved question reopens it as a draft. Mark it reviewed again to publish.',
-              }
-            : { title: 'Question updated', description: 'Your changes have been saved.' },
-        );
+        if (wasApproved) {
+          toast('Saved — reopened for review', {
+            description:
+              'Editing an approved question reopens it as a draft. Mark it reviewed again to publish.',
+          });
+        } else {
+          toast('Question updated', { description: 'Your changes have been saved.' });
+        }
         navigateBackToQuestions();
         return;
       }
@@ -704,7 +695,7 @@ export function QuestionComposerPage() {
           isAiGenerated,
           isDraft: !markAsReviewed,
         });
-        toast({ title: 'Variant added', description: 'The new variant has been saved.' });
+        toast('Variant added', { description: 'The new variant has been saved.' });
         navigateBackToQuestions();
         return;
       }
@@ -727,7 +718,7 @@ export function QuestionComposerPage() {
         isAiGenerated,
         isDraft: !markAsReviewed,
       });
-      toast({ title: 'Question created', description: 'The question has been added to the bank.' });
+      toast('Question created', { description: 'The question has been added to the bank.' });
       navigateBackToQuestions();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -738,7 +729,7 @@ export function QuestionComposerPage() {
           ? 'This question is approved and locked. Only an instructor can reopen it for editing.'
           : raw;
       setError(message);
-      toast({ variant: 'destructive', title: 'Save failed', description: message });
+      toast.error('Save failed', { description: message });
     } finally {
       if (mountedRef.current) setIsSubmitting(false);
     }
@@ -962,10 +953,14 @@ export function QuestionComposerPage() {
               try {
                 await apiKeyStorage.setApiKey(provider, providerApiKey.trim());
                 setApiKeySaveState('saved');
-                toast({ title: 'API key saved', description: 'Stored locally in your browser for this provider.' });
+                toast('API key saved', {
+                    description: 'Stored locally in your browser for this provider.',
+                });
               } catch {
                 setApiKeySaveState('error');
-                toast({ variant: 'destructive', title: 'Failed to save API key', description: 'Could not store the key locally. Try again.' });
+                toast.error('Failed to save API key', {
+                    description: 'Could not store the key locally. Try again.',
+                });
               }
             }}
             apiKeySaveState={apiKeySaveState}

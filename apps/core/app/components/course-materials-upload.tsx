@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Spinner } from '@eduai/ui';
 import { cn } from '@eduai/ui'
 import { Alert, AlertDescription } from '@eduai/ui'
 import {
@@ -6,7 +7,6 @@ import {
   IconFile,
   IconAlertCircle,
   IconCircleCheck,
-  IconLoader,
   IconX,
 } from '@tabler/icons-react'
 
@@ -158,7 +158,7 @@ export function CourseMaterialsUpload({
       {/* Upload states */}
       {isUploading && (
         <Alert>
-          <IconLoader className="h-4 w-4 animate-spin" />
+          <Spinner />
           <AlertDescription>
             Uploading{selectedFile ? ` "${selectedFile.name}"` : ''}…
           </AlertDescription>

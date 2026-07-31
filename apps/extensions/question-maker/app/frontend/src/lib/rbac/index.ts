@@ -16,7 +16,13 @@ export {
   canUseVariantWorkflow,
   canViewAssessment,
 } from './permissions';
-export { getFooterNavForUser, getNavForUser, getRoleViewLabel } from './nav';
+export {
+  canShowAssessmentWriteNav,
+  getFooterNavForUser,
+  getNavForUser,
+  getNavSecondaryForUser,
+  getRoleViewLabel,
+} from './nav';
 export {
   formatCourseAccessLevel,
   formatCourseRelationship,
