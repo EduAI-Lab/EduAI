@@ -94,7 +94,12 @@ step "migrate"
 # step a branch carrying a schema change deploys as a runtime crash.
 ( cd apps/core                                  && npx prisma migrate deploy )
 ( cd apps/extensions/ai-tutor/server            && npx prisma migrate deploy )
-( cd apps/extensions/question-maker/app/backend && npx prisma migrate deploy )
+# Question Maker keeps its .env at the EXTENSION root, not next to its schema, so
+# the Prisma CLI's own dotenv resolution (schema dir / cwd only) never finds
+# DATABASE_URL — a bare `npx prisma migrate deploy` here dies with P1012. Its
+# scripts/withPrismaEnv.js wrapper loads that file first; go through the npm
+# script so the baseline step (scripts/baselineExistingDatabase.js) runs too.
+( cd apps/extensions/question-maker/app/backend && npm run db:migrate:deploy )
 
 step "prisma generate"
 # Each schema pins its own generator `output` (#1218 / PR #1243), so these three
@@ -104,7 +109,9 @@ step "prisma generate"
 # at runtime, which was live on s378.
 ( cd apps/core                                  && npx prisma generate )
 ( cd apps/extensions/ai-tutor/server            && npx prisma generate )
-( cd apps/extensions/question-maker/app/backend && npx prisma generate )
+# Same wrapper reason as the migrate step above — `generate` validates the
+# datasource block, so it needs DATABASE_URL resolvable as well.
+( cd apps/extensions/question-maker/app/backend && npm run db:generate )
 
 step "assert each app resolves its OWN prisma client"
 # Regression guard for the collision above. Ships with #1243; skipped with a
