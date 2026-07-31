@@ -27,7 +27,7 @@ docs/perf/
     dead-code/                 knip + ts-prune output
     dep-graph/                 madge circular-dep + module graph (json + svg)
   frontend/baseline/           the pinned BEFORE snapshot — per-page browser vitals
-    page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS chunk breakdown per page
+    page-vitals.json           TTFB/FCP/LCP/DCL/load/CLS/blocking + JS totals per page
     errors.json / errors.log   pages that produced no trustworthy number, and why
 ```
 
@@ -102,6 +102,13 @@ non-zero so a partial sweep can't be mistaken for full coverage.
 > On a Vite **dev** server the JS byte counts and request counts reflect unbundled ESM
 > modules, not a production build — treat those two columns as relative only. TTFB, the
 > LCP-after-FCP gap, CLS and blocking time are meaningful either way.
+
+Per-page JS **totals** (`jsCount`, `jsTransferBytes`, `jsDecodedBytes`, `totalTransferBytes`)
+are committed in full, but the per-chunk list is truncated to the 5 heaviest by transfer
+size, with `chunkCount` kept alongside. Unbundled ESM means a full sweep otherwise carries
+~12k chunk rows — 100k lines of JSON nobody reads, when it's rank 1 (a 3.8MB
+`@tabler/icons-react` barrel, say) that names the fix. Pass `--full-chunks` for the
+untruncated lists; they go to a separate `page-chunks.json`, which is git-ignored.
 
 ## Compare a later run
 

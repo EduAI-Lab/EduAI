@@ -88,3 +88,6 @@ apps/core/scripts/research/research-api-keys.openrouter.json
 .gstack/
 # jscpd html viewer — regenerable from jscpd-report.json (perf:quality)
 docs/perf/**/jscpd-report.html
+# untruncated per-chunk lists (perf:pages --full-chunks) — ~12k rows a sweep,
+# a local deep-dive artifact; page-vitals.json keeps the totals + top 5
+docs/perf/**/page-chunks.json

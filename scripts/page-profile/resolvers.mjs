@@ -29,16 +29,34 @@ async function getJson(request, url) {
 
 /**
  * All three APIs reject an unpaged list with `400 PAGINATION_REQUIRED`, so every
- * list URL carries explicit paging. A resolver only ever needs the first row.
+ * list URL carries explicit paging. A leaf lookup only needs the first row, but a
+ * list the resolver *walks* (courses, modules) is searching for the first entry
+ * that actually owns children, and seeded content clusters — so give those a
+ * wide window rather than letting coverage depend on which rows sort first.
  */
-const paged = (url) => `${url}${url.includes('?') ? '&' : '?'}page=1&pageSize=5`;
+const paged = (url, pageSize = 5) => `${url}${url.includes('?') ? '&' : '?'}page=1&pageSize=${pageSize}`;
+const WALK = 50;
 
-/** Unwrap the common list envelopes these three APIs use. */
+/**
+ * Unwrap the common list envelopes these three APIs use. Question Maker nests
+ * twice — `{ success, data: { items: [...] } }` — so a single-level lookup finds
+ * `data`, sees an object rather than an array, and silently yields nothing;
+ * that alone was enough to report every question/assessment page as skipped.
+ * Descend through object-valued candidates instead of only checking the top.
+ */
 function toArray(payload, ...keys) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
-  for (const k of [...keys, 'data', 'items', 'results', 'rows']) {
+  const candidates = [...keys, 'data', 'items', 'results', 'rows'];
+  for (const k of candidates) {
     if (Array.isArray(payload?.[k])) return payload[k];
+  }
+  for (const k of candidates) {
+    const nested = payload?.[k];
+    if (nested && typeof nested === 'object') {
+      const found = toArray(nested, ...keys);
+      if (found.length) return found;
+    }
   }
   return [];
 }
@@ -89,7 +107,7 @@ async function resolveCore(request, baseUrl) {
 async function resolveAiTutor(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, paged(`${AI_TUTOR_API}/api/courses`)), 'courses', 'offerings');
+  const courses = toArray(await getJson(request, paged(`${AI_TUTOR_API}/api/courses`, WALK)), 'courses', 'offerings');
   if (!courses.length) return params;
   params.courseId = firstId(courses, 'courseId', 'offeringId');
 
@@ -98,7 +116,7 @@ async function resolveAiTutor(request) {
     if (!courseId) continue;
 
     const modules = toArray(
-      await getJson(request, paged(`${AI_TUTOR_API}/api/courses/${courseId}/modules`)),
+      await getJson(request, paged(`${AI_TUTOR_API}/api/courses/${courseId}/modules`, WALK)),
       'modules'
     );
     if (!modules.length) continue;
@@ -128,7 +146,7 @@ async function resolveAiTutor(request) {
 async function resolveQuestionMaker(request) {
   const params = {};
 
-  const courses = toArray(await getJson(request, paged(`${QM_API}/api/course`)), 'courses');
+  const courses = toArray(await getJson(request, paged(`${QM_API}/api/course`, WALK)), 'courses');
   if (!courses.length) return params;
   params.courseId = firstId(courses, 'courseId');
 
