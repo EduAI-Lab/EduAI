@@ -14,6 +14,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [monorepo] perf: Headless page profiler (`npm run perf:pages`) that drives real Chromium over every UI route in all three apps under the lowest seeded role that can render it and pins the browser-side before-snapshot to `docs/perf/frontend/baseline/`, with #961's endpoint baseline moved to `docs/perf/backend/baseline/` to sit beside it. Closes #1288. (#1288, @abdullahmoh21, 2026-07-30) — [#1289](https://github.com/EduAI-Lab/EduAI/pull/1289)
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 ## [Week 13 — July 27 – August 2, 2026]
