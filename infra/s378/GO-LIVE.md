@@ -60,7 +60,7 @@ restart.
 
 ```bash
 git pull
-bash infra/s378/go-live-build.sh              # env, migrate, generate, build, restart
+bash infra/s378/go-live-build.sh              # env, generate, migrate, build, restart
 bash infra/s378/go-live-build.sh --install    # after a branch switch (adds npm install)
 bash infra/s378/go-live-build.sh --only qm    # core | aitutor | qm
 ```
@@ -75,7 +75,7 @@ is the entire point (the dev server shipped ~12MB of unbundled JS per page).
 
 | Script | Purpose |
 |--------|---------|
-| `go-live-build.sh` | **The deploy command.** env → migrate → generate → build → restart |
+| `go-live-build.sh` | **The deploy command.** env → generate → migrate → build → restart |
 | `go-live-env.sh` | Public URLs + **sync `EDUAI_API_KEY` from Core → AI Tutor + QM** |
 | `go-live-apache.sh` | Install/reload the Apache vhosts **from this repo** (needs sudo; rare) |
 | `go-live-systemd-install.sh` | Install/enable the system units + polkit rule (needs sudo; once) |

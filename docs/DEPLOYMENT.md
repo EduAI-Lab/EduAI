@@ -10,13 +10,16 @@ is wired.
 
 ## Service map
 
-| Service | Local port | Shared development URL |
-|---|---:|---|
-| Core | `3000` | `https://dev.eduai.ok.ubc.ca` |
-| AI Tutor frontend | `3001` | `https://dev.aitutor.eduai.ok.ubc.ca` |
-| AI Tutor API | `4000` | `https://dev.aitutor.eduai.ok.ubc.ca/api/` |
-| Question Maker frontend | `5173` | `https://dev.questionmaker.eduai.ok.ubc.ca` |
-| Question Maker API | `8000` | `https://dev.questionmaker.eduai.ok.ubc.ca/api/` |
+| Service | Local port | Shared development URL | Served on s378 by |
+|---|---:|---|---|
+| Core | `3000` | `https://dev.eduai.ok.ubc.ca` | node (SSR), proxied |
+| AI Tutor frontend | `3001` | `https://dev.aitutor.eduai.ok.ubc.ca` | Apache, static build output |
+| AI Tutor API | `4000` | `https://dev.aitutor.eduai.ok.ubc.ca/api/` | node, proxied |
+| Question Maker frontend | `5173` | `https://dev.questionmaker.eduai.ok.ubc.ca` | Apache, static build output |
+| Question Maker API | `8000` | `https://dev.questionmaker.eduai.ok.ubc.ca/api/` | node, proxied |
+
+The two frontend ports are local-development only. On s378 both extensions are built to static
+files and served straight from disk, so nothing listens on `3001` or `5173` there.
 
 Core owns the browser session. AI Tutor and Question Maker forward the incoming cookie to Core's
 `POST /api/sessions/validate`; their server-to-server requests use the shared `EDUAI_API_KEY`.
@@ -90,7 +93,8 @@ Canvas credentials are stored encrypted in the database rather than in these env
 
 ## Shared development server (s378)
 
-The shared host runs the full five-process stack and the local data services. It is also the normal
+The shared host runs three node processes plus the local data services, and serves both extension
+frontends as static files from Apache. It is also the normal
 place to test campus inference because cmps01 is reachable from s378, while it may not be reachable
 from a developer laptop.
 
@@ -137,7 +141,7 @@ git fetch origin && git switch <branch>
 bash infra/s378/go-live-build.sh --install     # drop --install if dependencies are unchanged
 ```
 
-The script enforces the one ordering that matters: **env → migrate → generate → build → restart**.
+The script enforces the one ordering that matters: **env → generate → migrate → build → restart**.
 `go-live-env.sh` writes the `VITE_*` public URLs, and those are baked into the bundle at build time
 rather than read at startup, so running it after a build ships the previous run's URLs.
 

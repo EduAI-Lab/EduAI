@@ -57,7 +57,17 @@ if ! sudo httpd -t; then
   echo
   echo "CONFIG TEST FAILED — restoring backups, not reloading."
   for f in "${VHOSTS[@]}"; do
-    [ -f "$DEST/$f.bak.$STAMP" ] && sudo cp -p "$DEST/$f.bak.$STAMP" "$DEST/$f"
+    if [ -f "$DEST/$f.bak.$STAMP" ]; then
+      sudo cp -p "$DEST/$f.bak.$STAMP" "$DEST/$f"
+      echo "  restored $f"
+    else
+      # No backup means this vhost is new. Leaving the broken copy in conf.d is
+      # worse than a failed install: httpd keeps serving its old in-memory config
+      # so nothing looks wrong, and the next reload or reboot — on a box hosting
+      # several other teams' sites — refuses to start at all.
+      sudo rm -f "$DEST/$f"
+      echo "  removed newly installed $f (no backup to restore)"
+    fi
   done
   exit 1
 fi
