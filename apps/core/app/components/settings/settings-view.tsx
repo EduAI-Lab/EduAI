@@ -19,6 +19,7 @@ import { StudentNumberSettings } from "~/components/settings/student-number-sett
 
 import { Badge } from "@eduai/ui";
 import { Button } from "@eduai/ui";
+import { SignOutCard } from "@eduai/ui";
 import {
   Card,
   CardContent,
@@ -35,8 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@eduai/ui";
-import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
-import { PageHeading } from "@eduai/ui";
+import { SettingsPageScaffold } from "@eduai/ui";
 import { ScrollReveal } from "~/components/motion/scroll-reveal";
 import { useApiKeys } from "~/hooks/use-api-keys";
 import {
@@ -66,6 +66,16 @@ type ServerApiKey = {
 const FIXED_PREFIX = "eduai";
 const CANVAS_SETTINGS_ROLES = new Set(["INSTRUCTOR", "ADMIN"]);
 
+/**
+ * Cloud providers that take a user-supplied key. Ollama is deliberately absent —
+ * it is local inference with no key, so it keeps its own enable/disable block
+ * below rather than being forced through this shape.
+ */
+const KEY_PROVIDERS = [
+  { id: "openai", label: "OpenAI", placeholder: "sk-..." },
+  { id: "google", label: "Google AI (Gemini)", placeholder: "AIza-..." },
+] as const;
+
 interface SettingsViewProps {
   role?: string;
   studentNumber?: string | null;
@@ -91,7 +101,6 @@ export function SettingsView({
     removeProviderSettings,
     isProviderConfigured,
   } = useApiKeys();
-  const [activeTab, setActiveTab] = useState("account");
   const [serverKeys, setServerKeys] = useState<ServerApiKey[]>([]);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -202,76 +211,72 @@ export function SettingsView({
   }
 
   const today = new Date().toISOString().split("T")[0];
-
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="@container/main flex flex-1 flex-col gap-2">
-        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <div className="px-4 lg:px-6">
-            <PageHeading
-              heading="Settings"
-              subheading="Manage your account, API keys, accessibility preferences, and model provider configuration."
-            />
-          </div>
-
-          {passwordExpired && (
-            <div className="px-4 lg:px-6">
-              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-                <div className="text-sm">
-                  <p className="font-medium">Your password has expired</p>
-                  <p className="mt-0.5 text-amber-800 dark:text-amber-300">
-                    UBC policy requires passwords to be changed annually. Please
-                    update your password below before continuing.
-                  </p>
-                </div>
-              </div>
+    <SettingsPageScaffold
+      padding="app"
+      subheading="Manage your account, API keys, accessibility preferences, and model provider configuration."
+      beforeTabs={
+        passwordExpired ? (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div className="text-sm">
+              <p className="font-medium">Your password has expired</p>
+              <p className="mt-0.5 text-amber-800 dark:text-amber-300">
+                UBC policy requires passwords to be changed annually. Please
+                update your password below before continuing.
+              </p>
             </div>
-          )}
-
-          <div className="px-4 lg:px-6">
-            <PageTabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <PageTabsList>
-                <PageTabsTrigger value="account">
-                  <IconUser className="h-4 w-4" /> Account
-                </PageTabsTrigger>
-                <PageTabsTrigger value="accessibility">
-                  <IconAccessible className="h-4 w-4" /> Accessibility
-                </PageTabsTrigger>
-                {showApiKeySettings && (
-                  <PageTabsTrigger value="api-keys">
-                    <IconKey className="h-4 w-4" /> API Keys
-                  </PageTabsTrigger>
-                )}
-                <PageTabsTrigger value="providers">
-                  <IconWorld className="h-4 w-4" /> Providers
-                </PageTabsTrigger>
-                {roleHasCanvas && (
-                  <DisabledTooltip disabled={!canvasEnabled}>
-                    <PageTabsTrigger value="canvas">
-                      <IconLink className="h-4 w-4" /> Canvas
-                    </PageTabsTrigger>
-                  </DisabledTooltip>
-                )}
-              </PageTabsList>
-
-              <PageTabsContent value="account" className="space-y-6">
-                <ScrollReveal index={0} parallax={false}>
-                  <ChangePasswordSettings />
-                  {showStudentNumberSettings && (
-                    <StudentNumberSettings initialStudentNumber={studentNumber} />
-                  )}
-                </ScrollReveal>
-              </PageTabsContent>
-
-              <PageTabsContent value="accessibility">
-                <ScrollReveal index={0} parallax={false}>
-                  <AccessibilitySettingsTab />
-                </ScrollReveal>
-              </PageTabsContent>
-
-              {showApiKeySettings && (
-                <PageTabsContent value="api-keys" className="space-y-6">
+          </div>
+        ) : null
+      }
+      renderTabBody={(content) => (
+        <ScrollReveal index={0} parallax={false}>
+          {content}
+        </ScrollReveal>
+      )}
+      footer={
+        <ScrollReveal index={1} parallax={false}>
+          <SignOutCard
+            action={
+              <Form method="post" action="/auth/logout" replace>
+                <Button type="submit" variant="outline">
+                  Log out
+                </Button>
+              </Form>
+            }
+          />
+        </ScrollReveal>
+      }
+      tabs={[
+        {
+          value: "account",
+          label: "Account",
+          icon: <IconUser className="h-4 w-4" />,
+          content: (
+            <>
+              <ChangePasswordSettings />
+              {showStudentNumberSettings && (
+                <StudentNumberSettings initialStudentNumber={studentNumber} />
+              )}
+            </>
+          ),
+        },
+        {
+          value: "accessibility",
+          label: "Accessibility",
+          icon: <IconAccessible className="h-4 w-4" />,
+          content: (
+            <AccessibilitySettingsTab />
+          ),
+        },
+        ...(showApiKeySettings
+          ? [
+              {
+                value: "api-keys",
+                label: "API Keys",
+                icon: <IconKey className="h-4 w-4" />,
+                content: (
+                  <>
                   <Card>
                     <CardHeader>
                       <CardTitle>Server API Keys</CardTitle>
@@ -418,204 +423,150 @@ export function SettingsView({
                     </CardHeader>
                     <CardContent>
                       <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-words">{`curl -N -X POST "http://localhost:5173/api/chat" \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-key: YOUR_API_KEY" \\
-  -d '{"messages":[{"role":"user","content":"hello"}],"chatMode":"admin","model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
+                    -H "Content-Type: application/json" \\
+                    -H "x-api-key: YOUR_API_KEY" \\
+                    -d '{"messages":[{"role":"user","content":"hello"}],"chatMode":"admin","model":"google:gemini-2.0-flash","apiKeys":{"google":{"apiKey":"AIza-***","isEnabled":true}}}'`}</pre>
                     </CardContent>
                   </Card>
-                </PageTabsContent>
-              )}
-
-              {showCanvasSettings && (
-                <PageTabsContent value="canvas">
-                  <ScrollReveal index={0} parallax={false}>
-                    <CanvasIntegrationSettings />
-                  </ScrollReveal>
-                </PageTabsContent>
-              )}
-
-              <PageTabsContent value="providers" className="space-y-6">
-                <ScrollReveal index={0} parallax={false}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Model Providers</CardTitle>
-                    <CardDescription>
-                      Local, browser-stored settings used when calling models.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-2">
-                      <Label className="mb-1">OpenAI</Label>
-                      {isProviderConfigured("openai") ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Configured</Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRemoveProvider("openai")}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-sm text-muted-foreground shrink-0 w-16">
-                              Expires
-                            </Label>
-                            <Input
-                              type="date"
-                              className="w-44"
-                              min={today}
-                              value={localExpiries["openai"] ?? ""}
-                              onChange={(e) => handleExpiryChange("openai", e.target.value)}
-                              aria-label="OpenAI key expiry date"
-                            />
-                            {localExpiries["openai"] && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleExpiryChange("openai", "")}
-                                className="text-muted-foreground"
-                              >
-                                Clear
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <Input
-                          placeholder="sk-..."
-                          value={keyDrafts["openai"] ?? ""}
-                          onChange={(e) =>
-                            setKeyDrafts((prev) => ({ ...prev, openai: e.target.value }))
-                          }
-                          onBlur={() => commitProviderKey("openai")}
-                        />
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="mb-1">Google AI (Gemini)</Label>
-                      {isProviderConfigured("google") ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">Configured</Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRemoveProvider("google")}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-sm text-muted-foreground shrink-0 w-16">
-                              Expires
-                            </Label>
-                            <Input
-                              type="date"
-                              className="w-44"
-                              min={today}
-                              value={localExpiries["google"] ?? ""}
-                              onChange={(e) => handleExpiryChange("google", e.target.value)}
-                              aria-label="Google AI key expiry date"
-                            />
-                            {localExpiries["google"] && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleExpiryChange("google", "")}
-                                className="text-muted-foreground"
-                              >
-                                Clear
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <Input
-                          placeholder="AIza-..."
-                          value={keyDrafts["google"] ?? ""}
-                          onChange={(e) =>
-                            setKeyDrafts((prev) => ({ ...prev, google: e.target.value }))
-                          }
-                          onBlur={() => commitProviderKey("google")}
-                        />
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="mb-1">Ollama (Local)</Label>
-                      {isProviderConfigured("ollama") ? (
+                  </>
+                ),
+              },
+            ]
+          : []),
+        {
+          value: "providers",
+          label: "Providers",
+          icon: <IconWorld className="h-4 w-4" />,
+          content: (
+            <Card>
+              <CardHeader>
+                <CardTitle>Model Providers</CardTitle>
+                <CardDescription>
+                  Keys are saved to your EduAI account and used server-side when
+                  calling models, so they follow you across devices.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {KEY_PROVIDERS.map((provider) => (
+                  <div key={provider.id} className="space-y-2">
+                    <Label className="mb-1">{provider.label}</Label>
+                    {isProviderConfigured(provider.id) ? (
+                      <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary">Enabled</Badge>
+                          <Badge variant="secondary">Configured</Badge>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => removeProviderSettings("ollama")}
+                            onClick={() => handleRemoveProvider(provider.id)}
                             className="text-red-600 hover:text-red-700"
                           >
-                            Disable
+                            Remove
                           </Button>
                         </div>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            updateProviderSettings("ollama", { isEnabled: true })
-                          }
-                        >
-                          Enable Ollama
-                        </Button>
-                      )}
-                    </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-sm text-muted-foreground shrink-0 w-16">
+                            Expires
+                          </Label>
+                          <Input
+                            type="date"
+                            className="w-44"
+                            min={today}
+                            value={localExpiries[provider.id] ?? ""}
+                            onChange={(e) => handleExpiryChange(provider.id, e.target.value)}
+                            aria-label={`${provider.label} key expiry date`}
+                          />
+                          {localExpiries[provider.id] && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleExpiryChange(provider.id, "")}
+                              className="text-muted-foreground"
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        placeholder={provider.placeholder}
+                        value={keyDrafts[provider.id] ?? ""}
+                        onChange={(e) =>
+                          setKeyDrafts((prev) => ({ ...prev, [provider.id]: e.target.value }))
+                        }
+                        onBlur={() => commitProviderKey(provider.id)}
+                        aria-label={`${provider.label} API key`}
+                      />
+                    )}
+                  </div>
+                ))}
 
-                    <div className="rounded-lg border bg-muted/30 p-4">
-                      <p className="text-sm text-muted-foreground">
-                        Local inference managed on the server via{" "}
-                        <code className="text-xs">OLLAMA_BASE_URL</code> and{" "}
-                        <code className="text-xs">VLLM_BASE_URL</code> in{" "}
-                        <code className="text-xs">apps/core/.env</code>. No browser
-                        toggle — pick <code className="text-xs">ollama:</code> or{" "}
-                        <code className="text-xs">vllm:</code> models in chat when
-                        configured.
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        See repo docs:{" "}
-                        <code className="text-xs">docs/rag-ai/VLLM.md</code>,{" "}
-                        <code className="text-xs">
-                          docs/rag-ai/HOW_TO_USE_DEV_SERVER.md
-                        </code>
-                      </p>
+                <div className="space-y-2">
+                  <Label className="mb-1">Ollama (Local)</Label>
+                  {isProviderConfigured("ollama") ? (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">Enabled</Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => removeProviderSettings("ollama")}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        Disable
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-                </ScrollReveal>
-              </PageTabsContent>
-            </PageTabs>
-          </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        updateProviderSettings("ollama", { isEnabled: true })
+                      }
+                    >
+                      Enable Ollama
+                    </Button>
+                  )}
+                </div>
 
-          <div className="px-4 lg:px-6">
-            <ScrollReveal index={1} parallax={false}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Account</CardTitle>
-                <CardDescription>Sign out of EduAI on this browser.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form method="post" action="/auth/logout" replace>
-                  <Button type="submit" variant="outline">
-                    Log out
-                  </Button>
-                </Form>
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Local inference managed on the server via{" "}
+                    <code className="text-xs">OLLAMA_BASE_URL</code> and{" "}
+                    <code className="text-xs">VLLM_BASE_URL</code> in{" "}
+                    <code className="text-xs">apps/core/.env</code>. No browser
+                    toggle — pick <code className="text-xs">ollama:</code> or{" "}
+                    <code className="text-xs">vllm:</code> models in chat when
+                    configured.
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    See repo docs:{" "}
+                    <code className="text-xs">docs/rag-ai/VLLM.md</code>,{" "}
+                    <code className="text-xs">
+                      docs/rag-ai/HOW_TO_USE_DEV_SERVER.md
+                    </code>
+                  </p>
+                </div>
               </CardContent>
             </Card>
-            </ScrollReveal>
-          </div>
-        </div>
-      </div>
-    </div>
+          ),
+        },
+        ...(roleHasCanvas && showCanvasSettings
+          ? [
+              {
+                value: "canvas",
+                label: "Canvas",
+                icon: <IconLink className="h-4 w-4" />,
+                wrapTrigger: (trigger: React.ReactElement) => (
+                  <DisabledTooltip disabled={!canvasEnabled}>{trigger}</DisabledTooltip>
+                ),
+                content: (
+                  <CanvasIntegrationSettings />
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }

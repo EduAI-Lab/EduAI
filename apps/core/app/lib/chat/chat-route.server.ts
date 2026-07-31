@@ -9,10 +9,7 @@ import { parsePreferenceUpdates } from "~/lib/user-preferences";
 import { resolveChatReadAccess, getChatMessages } from "~/lib/chat-history/server";
 import { reviveStoredMessage } from "~/lib/chat/revive-message.server";
 import { withAutoChatModel } from "~/lib/chat-auto-model";
-import {
-  routerAutoDefaultEnabled,
-  routingPickerEnabled,
-} from "~/lib/router-env.server";
+import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
 import type { ChatModelOption } from "~/components/chat/chat-view-types";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 import type { User } from "~/lib/auth/types";
@@ -45,11 +42,14 @@ export async function loadChatBaseData(
     throw redirect("/auth/login");
   }
 
-  const routerAutoEnabled = routerAutoDefaultEnabled();
-  const showRoutingModels = routingPickerEnabled();
+  const routingModelSettings = await getRoutingModelSettings();
+  const routerAutoEnabled =
+    routingModelSettings.autoLlmEnabled ||
+    routingModelSettings.autoRulesEnabled;
+  const showRoutingModels = routerAutoEnabled;
 
   const dbModels = await prisma.aIModel.findMany({
-    where: { isActive: true },
+    where: { isActive: true, provider: { isActive: true } },
     include: { provider: true },
     orderBy: [{ provider: { name: "asc" } }, { name: "asc" }],
   });
@@ -64,7 +64,7 @@ export async function loadChatBaseData(
     supportsTools: model.supportsTools,
   }));
 
-  const chatModels = withAutoChatModel(registryModels, showRoutingModels);
+  const chatModels = withAutoChatModel(registryModels, routingModelSettings);
 
   const availableCourseCodes = await getAccessibleCourseCodes(session.user);
   const preferences = await getUserPreference(session.user.id, availableCourseCodes);

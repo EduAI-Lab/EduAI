@@ -45,8 +45,6 @@ interface QuestionBankProps {
 const timeValue = (entry: QuestionVariantEntry) =>
   new Date(entry.variant.createdAt || entry.variant.updatedAt || 0).getTime();
 
-const DIFFICULTY_RANK: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
-
 export const QuestionBank = ({
   variants,
   onViewVariant,
@@ -128,12 +126,6 @@ export const QuestionBank = ({
         break;
       case 'type':
         filtered.sort((a, b) => a.questionType.localeCompare(b.questionType));
-        break;
-      case 'difficulty':
-        filtered.sort(
-          (a, b) =>
-            (DIFFICULTY_RANK[a.variant.difficulty] ?? 1) - (DIFFICULTY_RANK[b.variant.difficulty] ?? 1),
-        );
         break;
     }
     return filtered;
