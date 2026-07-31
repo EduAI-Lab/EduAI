@@ -16,6 +16,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
+### Removed
+
+- [monorepo] chore: Delete 15 dependencies with zero references anywhere in the repo (audited against every import/require) — Core drops `date-fns`, `jsdom`, `@dnd-kit/core`, `@dnd-kit/modifiers`, `@dnd-kit/sortable`, `@dnd-kit/utilities`, `@hookform/resolvers`, `remark-breaks`, `@types/nodemailer`, `@testing-library/dom`; ai-tutor drops `@hookform/resolvers`, `nanoid`, `@testing-library/dom`; question-maker-backend drops `joi`, `jsonwebtoken`, `bcryptjs`, `morgan`, `multer`; `@eduai/ui` drops `@testing-library/dom`. Kept per the issue's carve-outs: `bullmq`/`ioredis` (Core, brought in by the async job queue on another branch), `pino-pretty`/`pg` (qm-backend, referenced as a string/used indirectly via Sequelize's driver resolution). `eslint-plugin-react` and `@typescript-eslint/eslint-plugin` were left in question-maker-frontend's devDeps — despite the issue's claim, `.eslintrc.cjs` actually references both (`plugins: ['@typescript-eslint', 'react']`, `plugin:react/recommended`) and removing them breaks `npm run lint` there. The qm-backend README's JWT/bcrypt claim the issue flagged was already corrected on `development` by an earlier PR (#815) — verified current text is accurate, no doc change needed. Closes #1248. (#1248, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
