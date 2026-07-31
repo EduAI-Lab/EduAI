@@ -22,7 +22,6 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
 // whole file on import, which Stryker could not attribute to a killing test.
 const STALE_ENTRY_MS = 60 * 60_000;
 let cachedMaxStoreKeys: number | null = null;
-let cachedEvictionTargetKeys: number | null = null;
 
 function getMaxStoreKeys(): number {
   if (cachedMaxStoreKeys === null) {
@@ -33,12 +32,11 @@ function getMaxStoreKeys(): number {
 
 // Eviction below targets 90% of the cap rather than exactly MAX_STORE_KEYS,
 // so a sweep isn't immediately re-triggered by the next insert once the
-// store is sitting right at the cap under sustained load.
+// store is sitting right at the cap under sustained load. Derived from the
+// cached max on each call — caching the floor() result separately only
+// added an equivalent-to-always-recompute branch for mutation testing.
 function getEvictionTargetKeys(): number {
-  if (cachedEvictionTargetKeys === null) {
-    cachedEvictionTargetKeys = Math.floor(getMaxStoreKeys() * 0.9);
-  }
-  return cachedEvictionTargetKeys;
+  return Math.floor(getMaxStoreKeys() * 0.9);
 }
 
 function evictStaleEntries(now: number): void {
