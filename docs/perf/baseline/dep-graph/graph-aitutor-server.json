@@ -7,7 +7,6 @@
     "routes/activities.js",
     "routes/admin.js",
     "routes/ai-models.js",
-    "routes/ai-status.js",
     "routes/authentication.js",
     "routes/bug-reports.js",
     "routes/courses.js",
@@ -26,14 +25,12 @@
   ],
   "jobs/reconcile.js": [
     "config/database.js",
-    "services/eduaiClient.js",
-    "services/enrollmentSync.js"
+    "services/eduaiClient.js"
   ],
   "jobs/scheduler.js": [
     "jobs/reconcile.js"
   ],
   "middleware/auth.js": [
-    "services/courseResolver.js",
     "services/policyService.js"
   ],
   "middleware/serviceAuth.js": [],
@@ -43,35 +40,27 @@
     "config/database.js",
     "middleware/auth.js",
     "services/activityAnalytics.js",
-    "services/activityCloning.js",
     "services/activityEvaluation.js",
     "services/aiGuidance.js",
     "services/aiModelPolicy.js",
-    "services/courseResolver.js",
     "services/eduaiAuth.js",
     "services/eduaiClient.js",
     "services/progressCalculation.js",
-    "utils/coreCourseId.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "utils/mappers.js"
   ],
   "routes/admin.js": [
     "config/database.js",
     "middleware/auth.js",
     "services/aiModelPolicy.js",
-    "services/courseResolver.js",
     "services/eduaiAuth.js",
     "services/eduaiClient.js",
     "services/enrollmentSync.js",
-    "services/importTaughtCoursesService.js",
     "services/systemSettings.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "utils/mappers.js"
   ],
   "routes/ai-models.js": [
     "services/aiModelPolicy.js"
   ],
-  "routes/ai-status.js": [],
   "routes/authentication.js": [
     "services/eduaiClient.js",
     "services/importTaughtCoursesService.js",
@@ -85,38 +74,30 @@
   "routes/courses.js": [
     "config/database.js",
     "middleware/auth.js",
-    "services/bugReports.js",
     "services/courseCloning.js",
-    "services/courseResolver.js",
     "services/eduaiAuth.js",
     "services/eduaiClient.js",
     "services/eduaiServiceKeyErrors.js",
     "services/enrollmentSync.js",
     "services/importTaughtCoursesService.js",
     "services/progressCalculation.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "utils/mappers.js"
   ],
   "routes/internal.js": [
     "config/database.js",
-    "middleware/serviceAuth.js",
-    "services/enrollmentSync.js"
+    "middleware/serviceAuth.js"
   ],
   "routes/lessons.js": [
     "config/database.js",
     "middleware/auth.js",
-    "services/courseResolver.js",
     "services/progressCalculation.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "utils/mappers.js"
   ],
   "routes/modules.js": [
     "config/database.js",
     "middleware/auth.js",
-    "services/courseResolver.js",
     "services/progressCalculation.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "utils/mappers.js"
   ],
   "routes/prompts.js": [
     "config/database.js",
@@ -128,23 +109,16 @@
   "routes/topics.js": [
     "config/database.js",
     "middleware/auth.js",
-    "services/topicSync.js",
-    "utils/mappers.js",
-    "utils/pagination.js"
+    "services/topicSync.js"
   ],
   "schemas/eduai.js": [],
   "services/activityAnalytics.js": [
     "config/database.js"
   ],
-  "services/activityCloning.js": [
-    "config/database.js"
-  ],
   "services/activityEvaluation.js": [],
   "services/aiGuidance.js": [
     "config/database.js",
-    "services/aiModelPolicy.js",
-    "services/eduaiClient.js",
-    "utils/coreCourseId.js"
+    "services/eduaiClient.js"
   ],
   "services/aiModelPolicy.js": [
     "services/eduaiClient.js",
@@ -157,9 +131,6 @@
   ],
   "services/courseCloning.js": [
     "config/database.js"
-  ],
-  "services/courseResolver.js": [
-    "services/eduaiClient.js"
   ],
   "services/eduaiAuth.js": [],
   "services/eduaiClient.js": [
@@ -192,7 +163,5 @@
     "services/eduaiClient.js"
   ],
   "utils/bugReportMappers.js": [],
-  "utils/coreCourseId.js": [],
-  "utils/mappers.js": [],
-  "utils/pagination.js": []
+  "utils/mappers.js": []
 }

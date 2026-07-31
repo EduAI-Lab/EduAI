@@ -1,40 +1,27 @@
-[93m[4mUnused files[24m[39m (1)
-app/components/AddCourseTopicsButton.tsx
-[93m[4mUnused dependencies[24m[39m (28)
-@dnd-kit/core                  package.json:23:6
-@dnd-kit/modifiers             package.json:24:6
-@dnd-kit/sortable              package.json:25:6
-@dnd-kit/utilities             package.json:26:6
-@eduai/types                   package.json:27:6
-@eduai/ui                      package.json:28:6
-@hookform/resolvers            package.json:29:6
-@radix-ui/react-avatar         package.json:30:6
-@radix-ui/react-dialog         package.json:31:6
-@radix-ui/react-dropdown-menu  package.json:32:6
-@radix-ui/react-hover-card     package.json:33:6
-@radix-ui/react-scroll-area    package.json:34:6
-@radix-ui/react-select         package.json:35:6
-@radix-ui/react-separator      package.json:36:6
-@radix-ui/react-slot           package.json:37:6
-@radix-ui/react-switch         package.json:38:6
-@radix-ui/react-tooltip        package.json:39:6
-@react-router/serve            package.json:41:6
-ai                             package.json:42:6
-class-variance-authority       package.json:43:6
-cmdk                           package.json:45:6
-nanoid                         package.json:49:6
-next-themes                    package.json:50:6
-react-dom                      package.json:54:6
-react-hook-form                package.json:55:6
-streamdown                     package.json:57:6
-use-stick-to-bottom            package.json:59:6
-zod                            package.json:60:6
+[93m[4mUnused dependencies[24m[39m (17)
+@eduai/types                   package.json:22:6
+@eduai/ui                      package.json:23:6
+@hookform/resolvers            package.json:24:6
+@radix-ui/react-avatar         package.json:25:6
+@radix-ui/react-dialog         package.json:26:6
+@radix-ui/react-dropdown-menu  package.json:27:6
+@radix-ui/react-hover-card     package.json:28:6
+@radix-ui/react-scroll-area    package.json:29:6
+@radix-ui/react-select         package.json:30:6
+@radix-ui/react-separator      package.json:31:6
+@radix-ui/react-switch         package.json:33:6
+@radix-ui/react-tooltip        package.json:34:6
+@react-router/serve            package.json:36:6
+cmdk                           package.json:40:6
+react-dom                      package.json:50:6
+react-hook-form                package.json:51:6
+zod                            package.json:56:6
 [93m[4mUnused devDependencies[24m[39m (5)
-@testing-library/dom  package.json:65:6
-@types/react-dom      package.json:69:6
-oxfmt                 package.json:75:6
-oxlint                package.json:76:6
-tailwindcss           package.json:77:6
+@testing-library/dom  package.json:61:6
+@types/react-dom      package.json:65:6
+oxfmt                 package.json:70:6
+oxlint                package.json:71:6
+tailwindcss           package.json:72:6
 [93m[4mUnlisted binaries[24m[39m (7)
 react-router  package.json
 tsc           package.json
@@ -43,24 +30,60 @@ oxlint        package.json
 oxfmt         package.json
 knip          package.json
 tsgo          package.json
-[93m[4mUnused exports[24m[39m (10)
-default                                        app/components/admin/AiOversightPanel.tsx:239:16    
-default                                        app/components/lessons/LessonActivityView.tsx:343:16
-groupCoursesByTerm                   function  app/lib/course-display.ts:83:17                     
-titleNumber                          function  app/lib/course-title.ts:36:17                       
-isPlatformAdmin         permissions  function  app/lib/rbac/permissions.ts:6:17                    
-isUnitAdmin             permissions  function  app/lib/rbac/permissions.ts:10:17                   
-isInstructorRole        permissions  function  app/lib/rbac/permissions.ts:14:17                   
-isTaPlatformRole        permissions  function  app/lib/rbac/permissions.ts:18:17                   
-isStudentRole           permissions  function  app/lib/rbac/permissions.ts:22:17                   
-canViewTeachingContent  permissions  function  app/lib/rbac/permissions.ts:51:17                   
-[93m[4mUnused exported types[24m[39m (2)
+[93m[4mUnused exports[24m[39m (47)
+ConversationEmptyState                                  app/components/ai-elements/conversation.tsx:34:14  
+MessageActions                                          app/components/ai-elements/message.tsx:46:14       
+MessageAction                                           app/components/ai-elements/message.tsx:57:14       
+MessageBranch                                           app/components/ai-elements/message.tsx:114:14      
+MessageBranchContent                                    app/components/ai-elements/message.tsx:156:14      
+MessageBranchSelector                                   app/components/ai-elements/message.tsx:185:14      
+MessageBranchPrevious                                   app/components/ai-elements/message.tsx:208:14      
+MessageBranchNext                                       app/components/ai-elements/message.tsx:228:14      
+MessageBranchPage                                       app/components/ai-elements/message.tsx:248:14      
+MessageAttachment                             function  app/components/ai-elements/message.tsx:281:17      
+MessageAttachments                            function  app/components/ai-elements/message.tsx:349:17      
+MessageToolbar                                          app/components/ai-elements/message.tsx:363:14      
+usePromptInputController                                app/components/ai-elements/prompt-input.tsx:99:14  
+useProviderAttachments                                  app/components/ai-elements/prompt-input.tsx:112:14 
+PromptInputProvider                           function  app/components/ai-elements/prompt-input.tsx:132:17 
+PromptInputAttachment                         function  app/components/ai-elements/prompt-input.tsx:247:17 
+PromptInputAttachments                        function  app/components/ai-elements/prompt-input.tsx:308:17 
+PromptInputActionAddAttachments                         app/components/ai-elements/prompt-input.tsx:375:14 
+PromptInputHeader                                       app/components/ai-elements/prompt-input.tsx:827:14 
+PromptInputActionMenu                                   app/components/ai-elements/prompt-input.tsx:869:14 
+PromptInputActionMenuTrigger                            app/components/ai-elements/prompt-input.tsx:875:14 
+PromptInputActionMenuContent                            app/components/ai-elements/prompt-input.tsx:888:14 
+PromptInputActionMenuItem                               app/components/ai-elements/prompt-input.tsx:896:14 
+PromptInputSpeechButton                                 app/components/ai-elements/prompt-input.tsx:994:14 
+PromptInputHoverCard                                    app/components/ai-elements/prompt-input.tsx:1133:14
+PromptInputHoverCardTrigger                             app/components/ai-elements/prompt-input.tsx:1143:14
+PromptInputHoverCardContent                             app/components/ai-elements/prompt-input.tsx:1149:14
+PromptInputTabsList                                     app/components/ai-elements/prompt-input.tsx:1156:14
+PromptInputTab                                          app/components/ai-elements/prompt-input.tsx:1162:14
+PromptInputTabLabel                                     app/components/ai-elements/prompt-input.tsx:1168:14
+PromptInputTabBody                                      app/components/ai-elements/prompt-input.tsx:1174:14
+PromptInputTabItem                                      app/components/ai-elements/prompt-input.tsx:1180:14
+PromptInputCommand                                      app/components/ai-elements/prompt-input.tsx:1189:14
+PromptInputCommandInput                                 app/components/ai-elements/prompt-input.tsx:1195:14
+PromptInputCommandList                                  app/components/ai-elements/prompt-input.tsx:1201:14
+PromptInputCommandEmpty                                 app/components/ai-elements/prompt-input.tsx:1207:14
+PromptInputCommandGroup                                 app/components/ai-elements/prompt-input.tsx:1213:14
+PromptInputCommandItem                                  app/components/ai-elements/prompt-input.tsx:1219:14
+PromptInputCommandSeparator                             app/components/ai-elements/prompt-input.tsx:1225:14
+ButtonGroupSeparator                                    app/components/ui/button-group.tsx:78:23           
+InputGroupText                                          app/components/ui/input-group.tsx:153:3            
+InputGroupInput                                         app/components/ui/input-group.tsx:154:3            
+isPlatformAdmin                  permissions  function  app/lib/rbac/permissions.ts:6:17                   
+isUnitAdmin                      permissions  function  app/lib/rbac/permissions.ts:10:17                  
+isInstructorRole                 permissions  function  app/lib/rbac/permissions.ts:14:17                  
+isTaPlatformRole                 permissions  function  app/lib/rbac/permissions.ts:18:17                  
+isStudentRole                    permissions  function  app/lib/rbac/permissions.ts:22:17                  
+[93m[4mUnused exported types[24m[39m (3)
 EnrollmentRole  permissions  type  app/lib/rbac/permissions.ts:4:13
-PromptTemplate               type  app/lib/types.ts:274:13         
-[93m[4mDuplicate exports[24m[39m (3)
-AiOversightPanel|default    app/components/admin/AiOversightPanel.tsx    
-LessonActivityView|default  app/components/lessons/LessonActivityView.tsx
-api|default                 app/lib/api.ts                               
+EduAiCourse                  type  app/lib/types.ts:177:13         
+PromptTemplate               type  app/lib/types.ts:238:13         
+[93m[4mDuplicate exports[24m[39m (1)
+api|default  app/lib/api.ts
 [33m[4mConfiguration hints[24m (4)[39m
 server/**           knip.json  [90mRemove from [97mignore[90m[39m
 shared/**           knip.json  [90mRemove from [97mignore[90m[39m

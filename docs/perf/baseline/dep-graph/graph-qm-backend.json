@@ -1,4 +1,5 @@
 {
+  "../scripts/seedData.js": [],
   "app.js": [
     "config/settings.js",
     "middleware/errorHandler.js",
@@ -13,6 +14,7 @@
     "routes/questions.js",
     "routes/topics.js",
     "routes/variants.js",
+    "schema/index.js",
     "utils/logger.js"
   ],
   "config/database.js": [
@@ -27,7 +29,7 @@
     "utils/logger.js"
   ],
   "jobs/reconcile.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/coreApiService.js",
     "utils/logger.js"
   ],
@@ -36,21 +38,19 @@
     "utils/logger.js"
   ],
   "middleware/auth.js": [
-    "config/settings.js",
     "middleware/roles.js",
     "services/authService.js"
   ],
   "middleware/courseAccess.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/coreApiService.js"
   ],
   "middleware/errorHandler.js": [
-    "utils/logger.js",
-    "utils/pagination.js"
+    "utils/logger.js"
   ],
   "middleware/resourceAccess.js": [
-    "config/database.js",
-    "middleware/courseAccess.js"
+    "middleware/courseAccess.js",
+    "schema/index.js"
   ],
   "middleware/roles.js": [],
   "middleware/serviceAuth.js": [
@@ -69,9 +69,7 @@
     "middleware/resourceAccess.js",
     "middleware/roles.js",
     "services/assessmentSectionService.js",
-    "services/assessmentService.js",
-    "utils/listPagination.js",
-    "utils/pagination.js"
+    "services/assessmentService.js"
   ],
   "routes/auth.js": [
     "config/settings.js",
@@ -83,155 +81,191 @@
     "middleware/auth.js"
   ],
   "routes/canvas.js": [
-    "config/database.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
     "middleware/resourceAccess.js",
     "middleware/roles.js",
-    "services/canvasService.js",
-    "utils/canvasUrlGuard.js"
+    "schema/index.js",
+    "services/canvasService.js"
   ],
   "routes/course.js": [
-    "config/database.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
+    "schema/index.js",
     "services/coreApiService.js",
+    "services/coreCourseLinkService.js",
     "services/courseListService.js",
     "services/importTaughtCoursesService.js",
     "services/topicSyncService.js",
-    "utils/logger.js",
-    "utils/pagination.js"
+    "utils/logger.js"
   ],
   "routes/eduai.js": [
-    "config/settings.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
     "middleware/roles.js",
-    "services/courseListService.js",
+    "schema/Course.js",
+    "services/courseCodeUtils.js",
     "services/eduaiService.js"
   ],
   "routes/internal.js": [
-    "config/database.js",
     "middleware/serviceAuth.js",
+    "schema/index.js",
     "utils/logger.js"
   ],
   "routes/questions.js": [
-    "config/database.js",
-    "config/settings.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
     "middleware/resourceAccess.js",
     "middleware/roles.js",
+    "schema/index.js",
     "services/aiService.js",
-    "services/questionService.js",
-    "utils/listPagination.js",
-    "utils/questionListQuery.js"
+    "services/questionService.js"
   ],
   "routes/topics.js": [
-    "config/database.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
+    "schema/index.js",
     "services/coreApiService.js"
   ],
   "routes/variants.js": [
-    "config/database.js",
     "middleware/auth.js",
     "middleware/courseAccess.js",
     "middleware/resourceAccess.js",
     "middleware/roles.js",
+    "schema/index.js",
     "services/coreApiService.js",
     "services/coreWiringService.js",
     "services/questionService.js",
-    "utils/logger.js",
-    "utils/pagination.js"
+    "utils/logger.js"
+  ],
+  "schema/AssessmentSections.js": [
+    "config/database.js"
+  ],
+  "schema/Assessments.js": [
+    "config/database.js"
+  ],
+  "schema/CanvasCourseMapping.js": [
+    "config/database.js"
+  ],
+  "schema/CanvasIntegration.js": [
+    "config/database.js",
+    "utils/encryption.js"
+  ],
+  "schema/Course.js": [
+    "config/database.js"
+  ],
+  "schema/Question_Metadata.js": [
+    "config/database.js"
+  ],
+  "schema/SectionVariants.js": [
+    "config/database.js"
+  ],
+  "schema/Topics.js": [
+    "config/database.js"
+  ],
+  "schema/User.js": [
+    "config/database.js"
+  ],
+  "schema/VariantSelectionCursor.js": [
+    "config/database.js"
+  ],
+  "schema/Variants.js": [
+    "config/database.js"
+  ],
+  "schema/index.js": [
+    "config/database.js",
+    "schema/AssessmentSections.js",
+    "schema/Assessments.js",
+    "schema/CanvasCourseMapping.js",
+    "schema/CanvasIntegration.js",
+    "schema/Course.js",
+    "schema/Question_Metadata.js",
+    "schema/SectionVariants.js",
+    "schema/Topics.js",
+    "schema/User.js",
+    "schema/VariantSelectionCursor.js",
+    "schema/Variants.js"
   ],
   "services/aiService.js": [
-    "config/database.js",
     "config/settings.js",
-    "services/courseListService.js",
+    "schema/index.js",
     "services/eduaiService.js",
     "services/extractionUtils.js"
   ],
   "services/assessmentSectionService.js": [
-    "config/database.js"
+    "schema/index.js"
   ],
   "services/assessmentService.js": [
-    "config/database.js",
-    "services/courseListService.js"
+    "schema/index.js"
   ],
   "services/assessmentVariantMetadataScoring.js": [],
   "services/assessmentVariantService.js": [
     "config/database.js",
+    "schema/index.js",
     "services/assessmentVariantMetadataScoring.js",
     "services/assessmentVariantUtils.js",
-    "services/courseListService.js",
     "services/eduaiService.js"
   ],
   "services/assessmentVariantUtils.js": [
-    "config/database.js"
+    "schema/index.js"
   ],
   "services/authService.js": [
-    "config/database.js"
+    "schema/index.js",
+    "services/seedNewUserService.js"
   ],
   "services/canvasService.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/assessmentSectionService.js",
     "services/assessmentService.js",
-    "services/questionService.js",
-    "utils/canvasUrlGuard.js",
-    "utils/encryption.js"
+    "services/questionService.js"
   ],
   "services/coreApiService.js": [
-    "config/settings.js"
+    "config/settings.js",
+    "services/courseCodeUtils.js"
+  ],
+  "services/coreCourseLinkService.js": [
+    "services/coreApiService.js",
+    "utils/logger.js"
   ],
   "services/coreWiringService.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/coreApiService.js"
   ],
   "services/courseCodeUtils.js": [],
   "services/courseListService.js": [
-    "config/database.js",
     "middleware/courseAccess.js",
+    "schema/index.js",
     "services/coreApiService.js",
     "services/courseCodeUtils.js"
   ],
   "services/eduaiService.js": [
     "config/settings.js",
-    "services/modelCatalog.js",
     "utils/logger.js"
   ],
   "services/extractionUtils.js": [],
   "services/importTaughtCoursesService.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/assessmentService.js",
     "services/coreApiService.js",
+    "services/courseCodeUtils.js",
     "services/topicSyncService.js",
     "utils/logger.js"
   ],
-  "services/modelCatalog.js": [
-    "utils/modelSizeRanks.js"
-  ],
   "services/questionService.js": [
-    "config/database.js",
-    "config/settings.js",
-    "services/courseListService.js",
-    "utils/questionListQuery.js"
+    "schema/Course.js",
+    "schema/index.js"
+  ],
+  "services/seedNewUserService.js": [
+    "../scripts/seedData.js",
+    "schema/index.js"
   ],
   "services/topicSyncService.js": [
-    "config/database.js",
+    "schema/index.js",
     "services/coreApiService.js",
     "utils/logger.js"
   ],
-  "utils/canvasUrlGuard.js": [],
   "utils/encryption.js": [
     "config/settings.js"
   ],
-  "utils/listPagination.js": [],
-  "utils/logger.js": [],
-  "utils/modelSizeRanks.js": [],
-  "utils/pagination.js": [],
-  "utils/questionListQuery.js": [
-    "utils/listPagination.js"
-  ],
-  "utils/truncateAllTables.js": []
+  "utils/logger.js": []
 }
