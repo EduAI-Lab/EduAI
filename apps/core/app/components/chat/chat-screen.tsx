@@ -417,6 +417,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     ],
   );
 
+  // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
+  // Clear the latch here or the next turn keeps the aborted turn's model.
+  const handleStop = useCallback(() => {
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
+
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       if (!chatId) {
@@ -559,7 +567,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     webToolsEnabled,
     onInputChange: handleInputChange,
     onSubmit,
-    onStop: stop,
+    onStop: handleStop,
     onSelectPrompt: handlePromptSelect,
     isStudentWithCourseChat,
     disabledReason,

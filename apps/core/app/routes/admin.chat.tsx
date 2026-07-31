@@ -153,12 +153,21 @@ export default function AdminChatPage() {
     },
     onError: (error) => {
       logChatUseChatError(error, "admin-chat");
-      // Match learning ChatScreen: clear routed-model latch on error/abort so
-      // the next turn does not skip Routing… or estimate against a dead model.
+      // Clear routed-model latch on error so the next turn does not skip
+      // Routing… or estimate against a dead model. Stop/abort is separate:
+      // AI SDK v4 swallows AbortError and skips onError/onFinish.
       pendingRoutedRegistryIdRef.current = null;
       setStreamingRoutedRegistryId(null);
     },
   });
+
+  // AI SDK v4 swallows AbortError from stop(), so onError/onFinish never run.
+  // Clear the latch here or the next turn keeps the aborted turn's model.
+  const handleStop = useCallback(() => {
+    pendingRoutedRegistryIdRef.current = null;
+    setStreamingRoutedRegistryId(null);
+    stop();
+  }, [stop]);
 
   const selectedModelInfo = chatModels.find((model) => model.id === selectedModel);
 
@@ -246,7 +255,7 @@ export default function AdminChatPage() {
         onSystemPromptSave={handleSystemPromptSave}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}
-        onStop={stop}
+        onStop={handleStop}
         onSelectPrompt={handlePromptSelect}
         routedModelByMessageId={routedModelByMessageId}
         streamingRoutedRegistryId={streamingRoutedRegistryId}
