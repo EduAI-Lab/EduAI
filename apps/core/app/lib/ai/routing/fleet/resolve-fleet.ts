@@ -103,7 +103,6 @@ export async function resolveFleetHost(input: ResolveFleetInput): Promise<FleetP
   return {
     serverId: server.id,
     baseUrl: server.baseUrl,
-    energySidecarUrl: server.energySidecarUrl,
     reason: excluded.size > 0 ? `${pickReason(jobType)}-retry` : pickReason(jobType),
   };
 }
