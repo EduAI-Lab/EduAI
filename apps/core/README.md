@@ -22,6 +22,7 @@ Core listens at **http://localhost:3000**. Do not treat this package as a standa
 - Course / enrollment / materials / Canvas sync APIs
 - Chat + RAG (`POST /api/chat`), embeddings (pgvector), AI provider catalog
 - Policy registry (`GET /api/policies`) and admin tooling
+- Administrator-managed automatic routing: AI Management controls separate `Auto` (LLM-classified) and `Auto (rules)` (fixed-rule) modes. Both select only active tiered models on active providers, while explicit model selections remain unchanged.
 - Service-key and session APIs consumed by extensions
 
 ## Essential environment
@@ -57,6 +58,8 @@ Prefer root scripts for multi-app work: `npm run test:eduai`, etc. Inventory: [`
 Route handlers under `app/routes/` (API under `app/routes/api/`). Auth guards: `app/lib/auth/`. Course access: `app/lib/auth/course-access.server.ts`.
 
 Do not maintain a curl cookbook — use ARCHITECTURE §6 and §7 plus route modules.
+
+Sustainability-aware tier routing lives under `app/lib/ai/routing/`. Administrators control the chat picker's **Auto** (LLM classifier) and **Auto (rules)** entries from **Administration → AI Management**. `Auto` is enabled by default; `Auto (rules)` is disabled by default. Configure routing algorithms via `ROUTER_MODE`, carbon policy via `ROUTING_CARBON_MODE`, and the classifier via `ROUTING_LLM_CLASSIFIER_MODEL`.
 
 ## Related docs
 
