@@ -65,6 +65,13 @@ describe('Admin routes', () => {
     stubCoreUsers([]);
     admin = makeAdmin();
     adminApp = await createApp({ mockUser: admin });
+    // GET .../enrollments now auto-syncs from Core before reading the local
+    // mirror (#1065) — default to an empty active list so a leftover
+    // `.mockResolvedValue` from another describe block can't leak a phantom
+    // enrollment into this test's course via a real DB write. Individual
+    // tests override this per-course via mockResolvedValue/mockResolvedValueOnce.
+    listEduAiCourseEnrollmentsServiceKey.mockReset();
+    listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
   });
 
   // ── GET /api/admin/users ──────────────────────────────────────────
@@ -321,7 +328,7 @@ describe('Admin routes', () => {
       expect(rows.map((r) => r.userId).sort()).toEqual(['user-existing', 'user-new']);
     });
 
-    it('does not wipe local rows when Core returns an empty active list', async () => {
+    it('prunes local rows when Core returns a schema-validated empty active list (#1173)', async () => {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: externalCourse.id, userId: 'user-local' },
       });
@@ -332,15 +339,15 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 1, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
       });
-      expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(0);
     });
 
-    it('does not wipe local rows when all Core enrollments are inactive', async () => {
+    it('prunes local rows when all Core enrollments are inactive (#1173)', async () => {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: externalCourse.id, userId: 'user-local' },
       });
@@ -353,12 +360,12 @@ describe('Admin routes', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 0, errors: [] });
+      expect(res.body).toEqual({ synced: 0, created: 0, updated: 0, deleted: 1, errors: [] });
 
       const rows = await prisma.courseEnrollment.findMany({
         where: { courseOfferingId: externalCourse.id },
       });
-      expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(0);
     });
 
     it('returns 502 when the Core client throws with status 502', async () => {
@@ -434,6 +441,19 @@ describe('Admin routes', () => {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
       });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: student.email,
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
 
       const res = await request(unitAdminApp).get(
         `/api/admin/courses/${coscCourse.id}/enrollments`,
@@ -451,6 +471,19 @@ describe('Admin routes', () => {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: coscCourse.id, userId: enrolledStudent.id, role: 'STUDENT' },
       });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: enrolledStudent.id,
+          studentEmail: enrolledStudent.email,
+          studentName: enrolledStudent.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
 
       stubCoreUsers([
         {
@@ -494,6 +527,10 @@ describe('Admin routes', () => {
         `/api/admin/courses/${coscCourse.id}/enrollments/${enrolledStudent.id}`,
       );
 
+      // Core no longer reports the removed student as enrolled, matching the
+      // DELETE above so the next sync-before-read doesn't re-import them.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([]);
+
       stubCoreUsers([
         {
           id: enrolledStudent.id,
@@ -528,6 +565,19 @@ describe('Admin routes', () => {
       await prisma.courseEnrollment.create({
         data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
       });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before either GET below reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: 'alex.patel@eduai.local',
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
 
       stubCoreUsers([
         {
@@ -551,12 +601,129 @@ describe('Admin routes', () => {
       });
 
       stubCoreUsers([]);
+      // Drop the name/email from the enrollment-list fallback source too, so
+      // this exercises "no source has a name" rather than falling back to
+      // coreEnrollmentMap from the mock above.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: undefined,
+          studentName: undefined,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
 
       const fallback = await request(unitAdminApp).get(
         `/api/admin/courses/${coscCourse.id}/enrollments`,
       );
 
       expect(fallback.body.enrolledStudents[0].name).toBe(student.id);
+    });
+
+    it('auto-syncs the local CourseEnrollment mirror from Core before listing (#1065)', async () => {
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: 'core-only-student',
+          studentEmail: 'core-only@test.com',
+          studentName: 'Core Only Student',
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain('core-only-student');
+
+      const row = await prisma.courseEnrollment.findUnique({
+        where: {
+          courseOfferingId_userId: { courseOfferingId: coscCourse.id, userId: 'core-only-student' },
+        },
+      });
+      expect(row).not.toBeNull();
+    });
+
+    it('falls back to the local mirror when the Core enrollment sync fails (#1065)', async () => {
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: 'local-only-student', role: 'STUDENT' },
+      });
+      listEduAiCourseEnrollmentsServiceKey.mockRejectedValue(new Error('Core unavailable'));
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain('local-only-student');
+    });
+
+    it('bounds the enrolled/available Core user lookups with a signal, not just the enrollment sync (#1173 review)', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: student.email,
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ ids: expect.any(Array), signal: expect.anything() }),
+      );
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ role: 'STUDENT', signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the Core user lookups hang, instead of hanging the request', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: student.email,
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+      listCoreAdminUsers.mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'));
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain(student.id);
+      expect(res.body.availableStudents).toEqual([]);
     });
 
     it('UNIT_ADMIN gets 403 for a course outside their department', async () => {

@@ -13,6 +13,11 @@
  *     by writing to local user rows — that would silently diverge from EduAI.
  *   - Manual enrollment endpoints work for any course, but the dedicated
  *     `sync-enrollments` only accepts EduAI-imported courses.
+ *   - `GET /admin/courses/:courseId/enrollments` auto-syncs the local mirror
+ *     from Core before reading it (#1065) — same throttled sync-before-read
+ *     pattern as `routes/topics.js` for #1031. The manual POST
+ *     `sync-enrollments` below is now dead code kept for API compatibility,
+ *     same treatment as the old `POST .../topics/sync`.
  *   - System settings (`EDUAI_API_KEY`, `AI_MODEL_POLICY`) live in the
  *     `SystemSetting` key/value table, not env vars — admin updates take
  *     effect immediately for subsequent requests.
@@ -34,7 +39,7 @@ import { mapCoreAdminUser, mapCourseOffering } from '../utils/mappers.js';
 import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
 import { indexCoreCoursesById, resolveCoreCourseCatalog } from '../services/courseResolver.js';
-import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { AUTO_SYNC_TIMEOUT_MS, AUTO_SYNC_TTL_MS, syncCourseEnrollments } from '../services/enrollmentSync.js';
 import { ensureOfferingAnchors } from '../services/importTaughtCoursesService.js';
 import {
   CORE_PAGE_SIZE,
@@ -140,7 +145,13 @@ router.get('/admin/courses', requireRole('ADMIN'), async (req, res) => {
  *
  * Why: bundles both lists in one response so the admin enrollment editor can
  * render add/remove pickers without a second roundtrip; `availableStudents`
- * excludes anyone already enrolled.
+ * excludes anyone already enrolled. Auto-syncs the local `CourseEnrollment`
+ * mirror from Core before reading it (#1065, same sync-before-read pattern as
+ * `GET /courses/:courseId/topics` for #1031) — this read path previously
+ * served the local mirror directly with no sync, so it could show a student
+ * Core had already removed. Throttled to `AUTO_SYNC_TTL_MS` and bounded to
+ * `AUTO_SYNC_TIMEOUT_MS`; a failed or timed-out sync falls back to the local
+ * mirror rather than failing the request.
  *
  * `availableStudents` is a page of Core's STUDENT list, driven by `?search=`,
  * `?page=`, and `?pageSize=` (#1041). Before pagination the picker read Core's
@@ -171,7 +182,6 @@ router.get(
       const course = await prisma.courseOffering.findUnique({
         where: { id: courseId },
         include: {
-          enrollments: true,
           instructors: { select: { userId: true } },
         },
       });
@@ -184,11 +194,30 @@ router.get(
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
 
+      if (course.coreOfferingId) {
+        try {
+          await syncCourseEnrollments(courseId, {
+            course,
+            ttlMs: AUTO_SYNC_TTL_MS,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
+        } catch (e) {
+          const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+          console.warn(`[admin] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+        }
+      }
+
+      const enrollments = await prisma.courseEnrollment.findMany({
+        where: { courseOfferingId: courseId },
+      });
+
       // Fetch real names/emails from Core users (primary) and course enrollments (secondary).
       let coreEnrollmentMap = new Map();
       if (course.coreOfferingId) {
         try {
-          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId);
+          const coreEnrollments = await listEduAiCourseEnrollmentsServiceKey(course.coreOfferingId, {
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+          });
           for (const e of coreEnrollments) {
             coreEnrollmentMap.set(e.studentId, { name: e.studentName, email: e.studentEmail });
           }
@@ -197,7 +226,7 @@ router.get(
         }
       }
 
-      const enrolledUserIds = new Set(course.enrollments.map((e) => e.userId));
+      const enrolledUserIds = new Set(enrollments.map((e) => e.userId));
       let coreUserMap = new Map();
       let availableStudents = [];
       let availableStudentsPage = { total: 0, page: studentPage, pageSize: studentPageSize };
@@ -209,12 +238,13 @@ router.get(
         // searchable, role-scoped page for the "add a student" picker.
         const enrolledIds = [...enrolledUserIds];
         const [enrolledEnvelope, studentEnvelope] = await Promise.all([
-          listCoreAdminUsers(cookie, { ids: enrolledIds }),
+          listCoreAdminUsers(cookie, { ids: enrolledIds, signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS) }),
           listCoreAdminUsers(cookie, {
             role: 'STUDENT',
             search: studentSearch,
             page: studentPage,
             pageSize: studentPageSize,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
           }),
         ]);
         for (const user of (enrolledEnvelope?.data ?? []).map(mapCoreAdminUser)) {
@@ -238,7 +268,7 @@ router.get(
 
       res.json({
         courseId,
-        enrolledStudents: course.enrollments
+        enrolledStudents: enrollments
           .toSorted((a, b) => a.userId.localeCompare(b.userId))
           .map((e) => {
             const userInfo = coreUserMap.get(e.userId) ?? coreEnrollmentMap.get(e.userId);
@@ -684,6 +714,14 @@ router.get('/admin/ai-traces', requireRole(['UNIT_ADMIN', 'ADMIN']), async (req,
   }
 });
 
+/**
+ * POST /admin/courses/:courseId/sync-enrollments — force-refresh enrollments from Core.
+ *
+ * Deprecated (#1065): `GET /admin/courses/:courseId/enrollments` now
+ * auto-syncs on every read, and the admin enrollments tab that called this
+ * has zero remaining callers. Kept unreachable-from-UI for API compatibility,
+ * same treatment as `POST /courses/:courseId/topics/sync` (#1031).
+ */
 router.post('/admin/courses/:courseId/sync-enrollments', requireRole('ADMIN'), async (req, res) => {
   const courseId = Number(req.params.courseId);
   if (!Number.isFinite(courseId)) {
