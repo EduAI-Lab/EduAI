@@ -7,15 +7,15 @@
  * Only approved variants count toward assembly readiness.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
-  IconCircleCheck, IconCircleCheckFilled, IconLoader2, IconSparkles, IconTrash, IconCircleX,
+  IconCircleCheck, IconCircleCheckFilled, IconSparkles, IconTrash, IconCircleX,
 } from '@tabler/icons-react';
 import {
   Button, Badge, Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, cn,
 } from '@eduai/ui';
 import { questionService } from '../../services/questionService';
-import { useToast } from '@/components/ui/use-toast';
 import {
   DIFFICULTY_META,
   difficultyChipClass,
@@ -24,6 +24,7 @@ import {
 } from '../../lib/difficulty';
 import type { QuestionDifficulty } from '../../types/question';
 import type { GenerateBankVariantsResult, GeneratedVariantPreview } from '../../services/assessmentVariantService';
+import { toast } from 'sonner';
 
 type VariantStatus = 'pending' | 'approving' | 'approved' | 'discarding' | 'discarded';
 
@@ -62,7 +63,6 @@ const SectionLabel = ({ children }: { children: React.ReactNode }) => (
 );
 
 export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onReviewed }: Props) {
-  const { toast } = useToast();
   const [statuses, setStatuses] = useState<Record<number, VariantStatus>>({});
   const [hydrating, setHydrating] = useState(false);
 
@@ -151,11 +151,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         return;
       }
       setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not approve variant',
-        description:
-          err?.response?.status === 403
+      toast.error('Could not approve variant', {
+          description: err?.response?.status === 403
             ? 'Only instructors can approve. Try again.'
             : 'Could not approve this variant. Please try again.',
       });
@@ -170,11 +167,8 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
       onReviewed?.();
     } catch (e: unknown) {
       setStatus(id, 'pending');
-      toast({
-        variant: 'destructive',
-        title: 'Could not discard variant',
-        description:
-          (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
+      toast.error('Could not discard variant', {
+          description: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Try again.',
       });
     }
   };
@@ -304,7 +298,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   onClick={() => void approve(v.id)}
                                 >
                                   {status === 'approving' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                    <Spinner />
                                   ) : (
                                     <IconCircleCheck className="size-4" />
                                   )}
@@ -319,7 +313,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
                                   onClick={() => void discard(v.id)}
                                 >
                                   {status === 'discarding' ? (
-                                    <IconLoader2 className="size-4 animate-spin" />
+                                    <Spinner />
                                   ) : (
                                     <IconTrash className="size-4" />
                                   )}
@@ -365,7 +359,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         <DialogFooter className="flex-row items-center justify-between gap-2 border-t border-border px-6 py-4 sm:justify-between">
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             {hydrating ? (
-              <><IconLoader2 className="size-4 animate-spin" /> Checking current status…</>
+              <><Spinner /> Checking current status…</>
             ) : (
               <>
                 <span className="font-medium text-success-700">{approvedCount}</span> approved
@@ -379,7 +373,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
               Done
             </Button>
             <Button type="button" disabled={busy || hydrating || pendingVariants.length === 0} onClick={() => void approveAll()}>
-              {busy ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : <IconCircleCheck className="mr-2 size-4" />}
+              {busy ? <Spinner className="mr-2" /> : <IconCircleCheck className="mr-2 size-4" />}
               Approve all ({pendingVariants.length})
             </Button>
           </div>

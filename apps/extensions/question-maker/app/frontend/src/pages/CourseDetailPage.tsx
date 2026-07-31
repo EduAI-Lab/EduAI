@@ -10,6 +10,7 @@
  * lives here, keyed off the route course instead of local state.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate, useSearchParams } from 'react-router';
 import { IconLoader2 } from '@tabler/icons-react';
 import {
@@ -46,6 +47,7 @@ import { CourseOverviewTab } from './course-detail/CourseOverviewTab';
 import { CourseTopicsHeroAction } from './course-detail/CourseTopicsHeroAction';
 import { CourseCanvasTab } from './course-detail/CourseCanvasTab';
 import type { QuestionAnalyticsProps } from '@eduai/ui';
+import { ConfirmDialog } from '@eduai/ui';
 import {
   Question,
   Assessment,
@@ -58,10 +60,7 @@ import { Topic } from '../types/topic';
 import { QuestionUploadDialog, mapExtractedToDraftQuestions } from '../components/question-bank/QuestionUploadDialog';
 import { CanvasExportDialog } from '../components/canvas/CanvasExportDialog';
 import { CanvasImportDialog } from '../components/canvas/CanvasImportDialog';
-import { DeleteConfirmationModal } from '../components/ui/DeleteConfirmationModal';
 import { CourseNoAccessAlert } from '../components/rbac/CourseNoAccessAlert';
-import { ToastAction } from '../components/ui/use-toast';
-import { useToast } from '../components/ui/use-toast';
 import {
   assessmentBlocksToDocxBlob,
   assessmentBlocksToPlainText,
@@ -90,7 +89,6 @@ export const CourseDetailPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { course, courseId, isLoading: isCourseLoading, notFound } = useCourseFromRoute();
   const { canCreateQuestion, hasCourseAccess, accessLoading } = useQmPermissionsForCourse(courseId);
-  const { toast } = useToast();
   const { setGuidedTourHandler } = useQmLayout();
   const {
     startTour,
@@ -601,7 +599,7 @@ export const CourseDetailPage = () => {
       setSelectedVariant(null);
     } catch (error) {
       console.error('Failed to delete variant', error);
-      toast({ title: 'Failed to delete question', description: 'Please try again.', variant: 'destructive' });
+      toast.error('Failed to delete question', { description: 'Please try again.' });
     } finally {
       setIsDeletingVariant(false);
       setVariantToDelete(null);
@@ -637,12 +635,11 @@ export const CourseDetailPage = () => {
       onExtractionComplete?: (status: 'success' | 'error', extras?: { error?: string; questionsCount?: number }) => void;
     }) => {
       setIsUploadOpen(false);
-      const processingToast = toast({
-        title: 'Extraction in progress',
-        description: 'Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.',
-        duration: Number.POSITIVE_INFINITY,
+      const processingToast = toast('Extraction in progress', {
+          description: 'Your upload is being processed. Feel free to navigate the site—we’ll notify you when it’s ready.',
+          duration: Infinity,
       });
-      const dismissProcessing = () => { try { processingToast.dismiss(); } catch { /* noop */ } };
+      const dismissProcessing = () => { try { toast.dismiss(processingToast); } catch { /* noop */ } };
       questionService
         .extractQuestionsFromText({
           text: params.text,
@@ -655,32 +652,25 @@ export const CourseDetailPage = () => {
           const drafts = mapExtractedToDraftQuestions(response || []);
           if (drafts.length === 0) {
             params.onExtractionComplete?.('error', { error: 'No questions extracted' });
-            toast({
-              variant: 'destructive',
-              title: 'No questions extracted',
-              description: 'The content could not be parsed into questions. Try adjusting the file or try again.',
-              duration: Number.POSITIVE_INFINITY,
+            toast.error('No questions extracted', {
+                description: 'The content could not be parsed into questions. Try adjusting the file or try again.',
+                duration: Infinity,
             });
             return;
           }
           params.onExtractionComplete?.('success', { questionsCount: drafts.length });
           setPendingExtractionDrafts(drafts);
-          toast({
-            title: 'Your extraction is ready',
+          toast('Your extraction is ready', {
             description: `${drafts.length} question${drafts.length === 1 ? '' : 's'} extracted. Open the upload dialog to review and save.`,
-            action: (
-              <ToastAction altText="Open and review" onClick={() => setIsUploadOpen(true)}>
-                Review questions
-              </ToastAction>
-            ),
-            duration: Number.POSITIVE_INFINITY,
+            action: { label: 'Review questions', onClick: () => setIsUploadOpen(true) },
+            duration: Infinity,
           });
         })
         .catch((err: any) => {
           dismissProcessing();
           const message = err?.response?.data?.error || err?.message || 'Extraction failed.';
           params.onExtractionComplete?.('error', { error: message });
-          toast({ variant: 'destructive', title: 'Extraction failed', description: message, duration: Number.POSITIVE_INFINITY });
+          toast.error('Extraction failed', { description: message, duration: Infinity });
         });
     },
     [toast],
@@ -694,7 +684,7 @@ export const CourseDetailPage = () => {
       setAssessments((prev) => [created, ...prev]);
     } catch (error) {
       console.error('Failed to create assessment', error);
-      toast({ title: 'Error', description: 'Failed to create assessment.', variant: 'destructive' });
+      toast.error('Error', { description: 'Failed to create assessment.' });
     }
   }, [courseId, toast]);
 
@@ -709,10 +699,10 @@ export const CourseDetailPage = () => {
       setIsDeletingAssessment(true);
       await assessmentService.deleteAssessment(assessmentToDelete.id);
       setAssessments((prev) => prev.filter((item) => item.id !== assessmentToDelete.id));
-      toast({ title: 'Assessment deleted', description: `"${assessmentToDelete.name}" has been removed.` });
+      toast('Assessment deleted', { description: `"${assessmentToDelete.name}" has been removed.` });
       setAssessmentToDelete(null);
     } catch {
-      toast({ title: 'Failed to delete assessment', description: 'Please try again.', variant: 'destructive' });
+      toast.error('Failed to delete assessment', { description: 'Please try again.' });
     } finally {
       setIsDeletingAssessment(false);
     }
@@ -722,23 +712,21 @@ export const CourseDetailPage = () => {
     (assessmentId: number): Assessment | null => {
       const assessment = assessments.find((a) => a.id === assessmentId);
       if (!assessment) {
-        toast({ title: 'Export failed', description: 'Assessment not found.', variant: 'destructive' });
+        toast.error('Export failed', { description: 'Assessment not found.' });
         return null;
       }
       const hasDrafts = assessment.sections?.some((section) =>
         section.sectionVariants?.some((link) => link.variant?.isDraft === true),
       );
       if (hasDrafts) {
-        toast({
-          title: 'Cannot export',
-          description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
-          variant: 'destructive',
+        toast.error('Cannot export', {
+            description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
         });
         return null;
       }
       const blocks = collectAssessmentExportBlocks(assessment);
       if (blocks.length === 0) {
-        toast({ title: 'Cannot export', description: 'No questions to export for this assessment.', variant: 'destructive' });
+        toast.error('Cannot export', { description: 'No questions to export for this assessment.' });
         return null;
       }
       return assessment;
@@ -762,7 +750,7 @@ export const CourseDetailPage = () => {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      toast({ title: 'Export started', description: 'Questions downloaded as a TXT file.' });
+      toast('Export started', { description: 'Questions downloaded as a TXT file.' });
     },
     [exportGuard, toast],
   );
@@ -783,9 +771,9 @@ export const CourseDetailPage = () => {
         linkEl.click();
         linkEl.remove();
         URL.revokeObjectURL(url);
-        toast({ title: 'Export started', description: 'Questions downloaded as a Word document.' });
+        toast('Export started', { description: 'Questions downloaded as a Word document.' });
       } catch {
-        toast({ title: 'Export failed', description: 'Could not build the Word file. Please try again.', variant: 'destructive' });
+        toast.error('Export failed', { description: 'Could not build the Word file. Please try again.' });
       }
     },
     [exportGuard, toast],
@@ -991,7 +979,9 @@ export const CourseDetailPage = () => {
               assessmentName={selectedAssessmentForExport.name}
               courseId={courseId}
               onExportSuccess={(result) => {
-                toast({ title: 'Export successful!', description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}` });
+                toast('Export successful!', {
+                    description: `Assessment exported to Canvas. Quiz ID: ${result.quizId}`,
+                });
               }}
             />
           )}
@@ -1002,13 +992,13 @@ export const CourseDetailPage = () => {
             courseId={courseId}
             onImportSuccess={async () => {
               await fetchAssessments();
-              toast({ title: 'Import successful', description: 'Assessment imported from Canvas.' });
+              toast('Import successful', { description: 'Assessment imported from Canvas.' });
             }}
           />
         </>
       )}
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteVariantModalOpen}
         onOpenChange={setDeleteVariantModalOpen}
         onConfirm={confirmDeleteVariant}
@@ -1018,7 +1008,7 @@ export const CourseDetailPage = () => {
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
           return isLastVariant ? 'Delete question?' : 'Delete question variant?';
         })()}
-        message={(() => {
+        description={(() => {
           if (!variantToDelete) return 'This action cannot be undone.';
           const question = questions.find((item) => item.id === variantToDelete.questionId);
           const isLastVariant = question && (question.variants?.length ?? 0) <= 1;
@@ -1028,16 +1018,18 @@ export const CourseDetailPage = () => {
         })()}
         confirmLabel="Delete"
         isLoading={isDeletingVariant}
+        closeOnConfirm={false}
       />
 
-      <DeleteConfirmationModal
+      <ConfirmDialog
         open={deleteAssessmentModalOpen}
         onOpenChange={setDeleteAssessmentModalOpen}
         onConfirm={confirmDeleteAssessment}
         title={assessmentToDelete ? `Delete assessment "${assessmentToDelete.name}"?` : 'Delete assessment?'}
-        message="This action cannot be undone. All sections and questions in this assessment will be removed."
+        description="This action cannot be undone. All sections and questions in this assessment will be removed."
         confirmLabel="Delete"
         isLoading={isDeletingAssessment}
+        closeOnConfirm={false}
       />
     </DetailPageScaffold>
   );

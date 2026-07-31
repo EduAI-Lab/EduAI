@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconLink, IconLoader, IconTrash } from "@tabler/icons-react";
+import { Spinner } from "@eduai/ui";
+import { IconLink, IconTrash } from "@tabler/icons-react";
 
 import {
   connectCanvas,
@@ -115,7 +116,7 @@ export function CanvasIntegrationSettings() {
       <CardContent className="space-y-5">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <IconLoader className="h-4 w-4 animate-spin" />
+            <Spinner />
             Loading Canvas status…
           </div>
         ) : (
@@ -138,7 +139,7 @@ export function CanvasIntegrationSettings() {
                   aria-label="Disconnect Canvas"
                 >
                   {disconnecting ? (
-                    <IconLoader className="h-4 w-4 animate-spin" />
+                    <Spinner />
                   ) : (
                     <IconTrash className="h-4 w-4" />
                   )}
@@ -193,7 +194,7 @@ export function CanvasIntegrationSettings() {
             <Button onClick={() => void handleConnect()} disabled={!canConnect}>
               {connecting ? (
                 <>
-                  <IconLoader className="h-4 w-4 mr-2 animate-spin" />
+                  <Spinner className="mr-2" />
                   Connecting…
                 </>
               ) : integration ? (

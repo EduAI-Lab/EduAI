@@ -3,10 +3,10 @@
  * Lets users select courses from the AI service, skip ones already added, and persist them via courseService.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Spinner } from '@eduai/ui';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@eduai/ui';
 import { Button, Badge } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
 import { IconLoader2, IconLogout } from '@tabler/icons-react';
 import { Class } from '../../types/class';
 import { eduaiService, EduAICourseOption, EduAITopicOption } from '../../services/eduaiService';
@@ -15,6 +15,7 @@ import { assessmentService } from '../../services/assessmentService';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEduAIStatus } from '../../hooks/useEduAIStatus';
 import { AIServiceIndicators } from '../eduai/AIServiceIndicators';
+import { toast } from 'sonner';
 
 interface ProfileCoursesDialogProps {
     open: boolean;
@@ -36,7 +37,6 @@ export const ProfileCoursesDialog = ({
     const [isSaving, setIsSaving] = useState(false);
     const [resyncingCoreId, setResyncingCoreId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const { toast } = useToast();
     const { logout, user } = useAuth();
     const eduaiStatus = useEduAIStatus();
 
@@ -122,10 +122,8 @@ export const ProfileCoursesDialog = ({
     const handleResyncCourse = async (option: EduAICourseOption) => {
         const localCourse = findLocalCourseByCoreId(option.id);
         if (!localCourse?.id) {
-            toast({
-                title: 'Local course not found',
+            toast.error('Local course not found', {
                 description: 'Could not find the Question Maker course linked to this Core course.',
-                variant: 'destructive'
             });
             return;
         }
@@ -138,10 +136,7 @@ export const ProfileCoursesDialog = ({
             if (onCoursesAdded) {
                 await onCoursesAdded();
             }
-            toast({
-                title: 'Course re-synced',
-                description: `${option.code} topics are updated from Core.`
-            });
+            toast('Course re-synced', { description: `${option.code} topics are updated from Core.` });
         } catch (err) {
             console.error('Failed to re-sync course from Core', err);
             setError('Unable to re-sync this course. Please try again.');
@@ -164,9 +159,8 @@ export const ProfileCoursesDialog = ({
         );
 
         if (targetCourseIds.length === 0) {
-            toast({
-                title: 'No new courses selected',
-                description: 'Select at least one AI service course that is not already in your library.'
+            toast('No new courses selected', {
+                description: 'Select at least one AI service course that is not already in your library.',
             });
             return;
         }
@@ -205,14 +199,12 @@ export const ProfileCoursesDialog = ({
                 if (onCoursesAdded) {
                     await onCoursesAdded();
                 }
-                toast({
-                    title: `Added ${createdCount} course${createdCount > 1 ? 's' : ''}`,
-                    description: 'Courses linked to Core and topics synced.'
+                toast(`Added ${createdCount} course${createdCount > 1 ? 's' : ''}`, {
+                    description: 'Courses linked to Core and topics synced.',
                 });
             } else {
-                toast({
-                    title: 'Courses already linked',
-                    description: 'The selected courses were already in your library.'
+                toast('Courses already linked', {
+                    description: 'The selected courses were already in your library.',
                 });
             }
 
@@ -341,7 +333,7 @@ export const ProfileCoursesDialog = ({
                                                 >
                                                     {isResyncing ? (
                                                         <>
-                                                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            <Spinner className="mr-2" />
                                                             Syncing…
                                                         </>
                                                     ) : (
