@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   questionStatus,
+  ConfirmDialog,
 } from '@eduai/ui';
 import type { QuestionCardChoice, QuestionDifficulty } from '@eduai/ui';
 import React, { useState, useEffect } from 'react';
@@ -28,6 +29,7 @@ import {
   IconDots,
 } from '@tabler/icons-react';
 import type { AssessmentSection, SectionVariantLink, QuestionVariantEntry } from '../../types/question';
+import { reviewStatusConfirm } from '../../lib/review-status';
 
 interface AssessmentSectionCardProps {
   section: AssessmentSection;
@@ -80,6 +82,15 @@ export function AssessmentSectionCard({
   readOnly = false,
 }: AssessmentSectionCardProps) {
   const [localName, setLocalName] = useState(section.name);
+  /**
+   * Review-status toggle is confirmed before it fires (#1120). Held at card level rather
+   * than per-row because the dialog must live outside the DropdownMenu — Radix unmounts
+   * menu content on close, which would tear down a dialog nested inside it.
+   */
+  const [pendingDraftToggle, setPendingDraftToggle] = useState<{
+    entry: QuestionVariantEntry;
+    nextDraft: boolean;
+  } | null>(null);
 
   useEffect(() => {
     setLocalName(section.name);
@@ -182,7 +193,9 @@ export function AssessmentSectionCard({
                         </DropdownMenuItem>
                       )}
                       {onToggleDraft && !readOnly && (
-                        <DropdownMenuItem onSelect={() => onToggleDraft(entry, !isDraft)}>
+                        <DropdownMenuItem
+                          onSelect={() => setPendingDraftToggle({ entry, nextDraft: !isDraft })}
+                        >
                           <IconCircleCheck className="size-4" /> {isDraft ? 'Mark reviewed' : 'Mark as draft'}
                         </DropdownMenuItem>
                       )}
@@ -248,6 +261,21 @@ export function AssessmentSectionCard({
           </>
         )}
       </div>
+
+      {/* Rendered outside the kebab menu on purpose — see pendingDraftToggle above. */}
+      <ConfirmDialog
+        open={pendingDraftToggle !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDraftToggle(null);
+        }}
+        {...reviewStatusConfirm(!(pendingDraftToggle?.nextDraft ?? false))}
+        onConfirm={() => {
+          if (pendingDraftToggle) {
+            onToggleDraft?.(pendingDraftToggle.entry, pendingDraftToggle.nextDraft);
+          }
+          setPendingDraftToggle(null);
+        }}
+      />
     </div>
   );
 }
