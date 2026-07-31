@@ -1,13 +1,13 @@
 {
   "env": {
-    "captured_at": "2026-07-30T10:23:47.016Z",
+    "captured_at": "2026-07-31T07:02:17.228Z",
     "target_label": "dev-remote",
     "targets": {
       "core": "https://dev.eduai.ok.ubc.ca",
       "aiTutor": "https://dev.aitutor.eduai.ok.ubc.ca",
       "questionMaker": "https://dev.questionmaker.eduai.ok.ubc.ca"
     },
-    "git_sha": "b0fc6057",
+    "git_sha": "186b9a643",
     "git_branch": "feat/page-perf-profiler",
     "node": "v23.11.0",
     "platform": "darwin-arm64",
