@@ -11,7 +11,8 @@
  * current user is the owner of the chat (canEdit === true).
  */
 import { type Message } from "ai";
-import { IconEye, IconMessageCircle, IconLoader2, IconArrowRight } from "@tabler/icons-react";
+import { Spinner } from "@eduai/ui";
+import { IconEye, IconMessageCircle, IconArrowRight } from "@tabler/icons-react";
 import { Link } from "react-router";
 import { Button } from "@eduai/ui";
 import { ChatMessage } from "~/components/chat/chat-message";
@@ -64,7 +65,7 @@ export function ChatTranscriptViewer({
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <IconLoader2 size={20} className="animate-spin" />
+          <Spinner size="md" />
         </div>
       ) : messages.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">

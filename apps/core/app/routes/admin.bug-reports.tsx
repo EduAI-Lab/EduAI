@@ -1,7 +1,6 @@
 import { Link, redirect, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 
-import { BugReportsAdminView } from "~/components/admin/bug-reports-admin-view";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useBugReports } from "~/hooks/api/use-bug-reports";
 import {
@@ -11,6 +10,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  BugReportsAdminView,
 } from "@eduai/ui";
 import { auth } from "~/lib/auth/server";
 
@@ -32,7 +32,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export default function BugReportsPage() {
   const { user } = useLoaderData<typeof loader>();
-  const { reports, isLoading, updateReportStatus } = useBugReports();
+  const { reports, total, isLoading, updateReportStatus, loadReportDetail } = useBugReports();
+  const truncated = total !== null && total > reports.length;
 
   return (
     <CoreAppShell
@@ -59,6 +60,14 @@ export default function BugReportsPage() {
         reports={reports}
         isLoading={isLoading}
         onUpdateStatus={updateReportStatus}
+        onLoadDetail={loadReportDetail}
+        showSourceColumn
+        description="Triage platform bug reports from every EduAI app."
+        notice={
+          truncated
+            ? `Showing the ${reports.length} most recent of ${total} reports.`
+            : undefined
+        }
       />
     </CoreAppShell>
   );

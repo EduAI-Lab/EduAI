@@ -7,24 +7,14 @@
  *   callbacks arrive via props from `BugReportsTab`.
  */
 
-import { Badge, Button, RoleBadge } from '@eduai/ui';
 import { hasAttachmentContent } from '@eduai/types';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@eduai/ui';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@eduai/ui';
-import type { AdminBugReportRow, BugReportStatus } from '~/lib/types';
+
+import { RoleBadge } from '../role-badge';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import type { AdminBugReportRow, BugReportStatus } from './types';
 import {
   BUG_TYPE_LABELS,
   STATUS_BADGE_VARIANT,
@@ -38,7 +28,7 @@ import {
   type SortDirection,
   type SortKey,
   type ViewerType,
-} from '~/components/admin/bug-reports/bug-reports-utils';
+} from './bug-reports-utils';
 
 function StatusSelect({
   reportId,
@@ -112,6 +102,7 @@ export function BugReportsTable({
   onStatusChange,
   onCopyReport,
   onOpenViewer,
+  showSourceColumn = false,
 }: {
   reports: AdminBugReportRow[];
   sortKey: SortKey;
@@ -123,6 +114,8 @@ export function BugReportsTable({
   onStatusChange: (reportId: string, status: BugReportStatus) => void;
   onCopyReport: (report: AdminBugReportRow) => void;
   onOpenViewer: (type: Exclude<ViewerType, null>, reportId: string) => void | Promise<void>;
+  /** Platform-wide (Core) view only — the extensions pin source via their fetch. */
+  showSourceColumn?: boolean;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -130,6 +123,7 @@ export function BugReportsTable({
         <colgroup>
           <col className="w-[150px]" />
           <col className="w-[130px]" />
+          {showSourceColumn ? <col className="w-[110px]" /> : null}
           <col className="w-[24%]" />
           <col className="w-[14%]" />
           <col className="w-[100px]" />
@@ -149,7 +143,26 @@ export function BugReportsTable({
                 onToggle={onToggleSort}
               />
             </TableHead>
-            <TableHead>Type</TableHead>
+            <TableHead>
+              <SortHeader
+                title="Type"
+                sortKey="bugType"
+                activeSortKey={sortKey}
+                direction={sortDirection}
+                onToggle={onToggleSort}
+              />
+            </TableHead>
+            {showSourceColumn ? (
+              <TableHead>
+                <SortHeader
+                  title="Source"
+                  sortKey="source"
+                  activeSortKey={sortKey}
+                  direction={sortDirection}
+                  onToggle={onToggleSort}
+                />
+              </TableHead>
+            ) : null}
             <TableHead>
               <SortHeader
                 title="Description"
@@ -210,7 +223,7 @@ export function BugReportsTable({
         <TableBody>
           {reports.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={9} className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={showSourceColumn ? 10 : 9} className="whitespace-normal px-4 py-8 text-center text-sm text-muted-foreground">
                 {hasActiveFilters
                   ? 'No reports match your filters. Try adjusting your search criteria.'
                   : 'No bug reports yet.'}
@@ -232,6 +245,11 @@ export function BugReportsTable({
                     {report.bugType ? BUG_TYPE_LABELS[report.bugType] : '—'}
                   </span>
                 </TableCell>
+                {showSourceColumn ? (
+                  <TableCell className="overflow-hidden px-3 py-3 text-xs text-muted-foreground">
+                    <span className="block truncate">{report.source ?? '—'}</span>
+                  </TableCell>
+                ) : null}
                 <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
                   <button
                     type="button"

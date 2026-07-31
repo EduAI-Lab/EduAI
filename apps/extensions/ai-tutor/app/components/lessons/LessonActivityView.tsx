@@ -18,7 +18,6 @@ import {
   IconChevronRight,
   IconCircleCheck,
   IconInfoCircle,
-  IconLoader2,
   IconSparkles,
 } from '@tabler/icons-react';
 import {
@@ -35,6 +34,7 @@ import {
   type CourseAccentColor,
 } from '@eduai/ui';
 import StudentActivityFeedbackCard from '~/components/StudentActivityFeedbackCard';
+import { Spinner } from '@eduai/ui';
 import type { Activity } from '~/lib/types';
 import { cn } from '~/lib/utils';
 
@@ -260,7 +260,7 @@ export function LessonActivityView({
             >
               {submitting ? (
                 <>
-                  <IconLoader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
+                  <Spinner className="mr-1" />
                   Submitting…
                 </>
               ) : (
