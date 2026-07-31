@@ -15,7 +15,7 @@ Before-snapshot for issue #961. Measures the normal CRUD API surface + code qual
 | Response-times target | `local` (CORE :3000 / AITUTOR :4000 / QM :8000) · warmup 3 · samples 30 · concurrency 1 |
 | Quality tools | jscpd 5.0.12 · madge 8.0.0 · ts-prune 0.10.3 · knip (ai-tutor) |
 
-Regenerate: `PERF_OUT=docs/perf/baseline npm run perf:quality` (code quality) and
+Regenerate: `PERF_OUT=docs/perf/backend/baseline npm run perf:quality` (code quality) and
 `npm run perf:endpoints` (response times, needs a running seeded stack). See `docs/perf/README.md`.
 
 ---
