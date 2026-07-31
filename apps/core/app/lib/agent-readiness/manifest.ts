@@ -706,6 +706,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
   }),
   entry({
     method: "GET",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "GET",
     path: "/api/ollama-models",
     readiness: "ready",
     adminChatTool: "listOllamaModels",
