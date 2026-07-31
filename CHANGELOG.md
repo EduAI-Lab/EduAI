@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Fixed
+
+- [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates, and align the supported Question Maker deployment image with the monorepo workspace context. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
+- [core] ux: Show a live, accessible password-requirements checklist on both sign-up and invitation acceptance, keep invitation validation aligned with the shared backend policy, and replace generic weak-password failures with specific inline guidance. Closes #1240. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
+
+### Added
+
+- [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
