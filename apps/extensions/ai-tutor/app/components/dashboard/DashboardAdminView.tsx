@@ -38,16 +38,23 @@ export function DashboardAdminView({
   const instructorCount = (byRole.INSTRUCTOR ?? 0) + (byRole.UNIT_ADMIN ?? 0);
   const otherCount = Math.max(0, userStats.total - studentCount - instructorCount);
 
+  // #1043: GET /courses is paged, so `courses` is one page. Course COUNTS come
+  // from `dashboardStats` (whole-set, server-computed); the array fallbacks only
+  // apply before the rollup resolves and stay correct at small scale.
+  const totalCourses = dashboardStats?.totalCourses ?? courses.length;
+  const publishedCount = dashboardStats?.publishedCourses ?? published.length;
+  const draftCount = dashboardStats?.draftCourses ?? totalCourses - publishedCount;
+
   const stats = [
-    { label: 'Total courses', value: dashboardStats?.totalCourses ?? courses.length },
-    { label: 'Published', value: dashboardStats?.publishedCourses ?? published.length },
+    { label: 'Total courses', value: totalCourses },
+    { label: 'Published', value: publishedCount },
     { label: 'Platform users', value: dashboardStats?.totalUsers ?? userStats.total },
     { label: 'Open bug reports', value: dashboardStats?.openBugReports ?? openReports.length },
   ];
 
   const statusSegments: DonutSegment[] = [
-    { label: 'Published', value: published.length, color: PUBLISHED_COLOR },
-    { label: 'Draft', value: courses.length - published.length, color: DRAFT_COLOR },
+    { label: 'Published', value: publishedCount, color: PUBLISHED_COLOR },
+    { label: 'Draft', value: draftCount, color: DRAFT_COLOR },
   ];
 
   const roleSegments: DonutSegment[] = [
@@ -59,10 +66,10 @@ export function DashboardAdminView({
   const analytics = (
     <div className="grid gap-4 md:grid-cols-2">
       <PanelCard title="Publish status">
-        {courses.length === 0 ? (
+        {totalCourses === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No courses yet.</p>
         ) : (
-          <DonutChart data={statusSegments} centerValue={courses.length} centerLabel="Courses" />
+          <DonutChart data={statusSegments} centerValue={totalCourses} centerLabel="Courses" />
         )}
       </PanelCard>
       <PanelCard title="Users by role">

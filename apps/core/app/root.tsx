@@ -159,7 +159,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
       </head>
       <body>
-        <ThemeProvider>
+        {/* next-themes injects its own inline no-flash script; without the
+            nonce our `script-src` blocks it. */}
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster />
         </ThemeProvider>
