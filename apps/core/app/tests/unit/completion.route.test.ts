@@ -147,7 +147,6 @@ describe("POST /api/completion review regressions", () => {
     vi.mocked(resolveFleetHost).mockResolvedValue({
       serverId: "cmps03",
       baseUrl: "http://cmps03.ok.ubc.ca:8001",
-      energySidecarUrl: "http://cmps03.ok.ubc.ca:8001/energy",
       reason: "background-round-robin",
     });
     mockStream();
