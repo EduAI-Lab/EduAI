@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  isStrongPassword,
+  PASSWORD_POLICY_MESSAGE,
+} from "~/lib/auth/password-policy";
 import { isUbcEmail, UBC_EMAIL_MESSAGE } from "~/lib/auth/ubc-email";
 
 /**
@@ -67,7 +71,9 @@ export const acceptInvitationSchema = z
   .object({
     token: z.string().min(1, "Missing invitation token"),
     name: z.string().min(2, "Name must be at least 2 characters"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    password: z
+      .string()
+      .refine(isStrongPassword, { message: PASSWORD_POLICY_MESSAGE }),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {

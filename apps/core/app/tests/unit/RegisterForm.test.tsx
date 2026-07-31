@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { RegisterForm } from "~/components/register-form";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,24 @@ describe("RegisterForm — rendering", () => {
   it("renders a password input with type=\"password\"", () => {
     render(<RegisterForm />);
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "aria-describedby",
+      "register-password-requirements",
+    );
+  });
+
+  it("updates password guidance while the user types", () => {
+    render(<RegisterForm />);
+    const password = screen.getByLabelText("Password");
+
+    fireEvent.change(password, { target: { value: "abcdefgh" } });
+    expect(screen.getByText("One uppercase letter").closest("li")).toHaveAttribute(
+      "data-state",
+      "unmet",
+    );
+
+    fireEvent.change(password, { target: { value: "StrongPass1!" } });
+    expect(screen.getByText("Password meets requirements.")).toBeInTheDocument();
   });
 
   it("renders a confirm-password input with type=\"password\"", () => {

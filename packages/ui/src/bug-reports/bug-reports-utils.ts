@@ -16,13 +16,20 @@
  *     from the raw appendix when `report.isAnonymous` is true.
  */
 
-import type { AdminBugReportRow, BugReportStatus, BugReportType } from '~/lib/types';
+import { hasAttachmentContent } from '@eduai/types';
+
+import type {
+  AdminBugReportRow,
+  BugReportContext,
+  BugReportStatus,
+  BugReportType,
+} from './types';
 
 export type StatusFilter = BugReportStatus | 'all';
 export type TypeFilter = BugReportType | 'all';
 export type ReporterFilter = 'all' | 'named' | 'anonymous';
 
-export type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page';
+export type SortKey = 'status' | 'description' | 'reporter' | 'role' | 'createdAt' | 'context' | 'page' | 'bugType' | 'source';
 export type SortDirection = 'asc' | 'desc';
 export type ViewerType = 'description' | 'console' | 'network' | 'screenshot' | null;
 
@@ -280,7 +287,11 @@ export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: 
                 ? getContextLabel(a)
                 : key === 'page'
                   ? getPathLabel(a.pageUrl)
-                  : a.createdAt;
+                  : key === 'bugType'
+                    ? (a.bugType ?? '')
+                    : key === 'source'
+                      ? (a.source ?? '')
+                      : a.createdAt;
     const bv =
       key === 'status'
         ? b.status
@@ -294,7 +305,11 @@ export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: 
                 ? getContextLabel(b)
                 : key === 'page'
                   ? getPathLabel(b.pageUrl)
-                  : b.createdAt;
+                  : key === 'bugType'
+                    ? (b.bugType ?? '')
+                    : key === 'source'
+                      ? (b.source ?? '')
+                      : b.createdAt;
 
     if (key === 'createdAt') {
       const at = new Date(av).getTime();
@@ -305,4 +320,157 @@ export function sortReports(rows: AdminBugReportRow[], key: SortKey, direction: 
 
     return String(av).localeCompare(String(bv)) * dir;
   });
+}
+
+/**
+ * Core stores and returns the Prisma enum form; the UI renders the lowercase
+ * form (note the space in 'in progress'). QM and AI Tutor each carried their
+ * own copy of this mapping — this is the single shared one.
+ *
+ * The deeper fix is to put Core's enum on the wire everywhere and do casing
+ * only in STATUS_LABELS, which would delete this map entirely; that requires
+ * changing AI Tutor's server-side mapper and is deliberately not done here.
+ */
+export const CORE_STATUS_TO_UI: Record<string, BugReportStatus> = {
+  UNHANDLED: 'unhandled',
+  IN_PROGRESS: 'in progress',
+  RESOLVED: 'resolved',
+};
+
+export const UI_STATUS_TO_CORE: Record<BugReportStatus, string> = {
+  unhandled: 'UNHANDLED',
+  'in progress': 'IN_PROGRESS',
+  resolved: 'RESOLVED',
+};
+
+/** Tolerates either casing, so callers can pass raw API payloads. */
+export function toUiStatus(status: string): BugReportStatus {
+  return CORE_STATUS_TO_UI[status] ?? (status as BugReportStatus);
+}
+
+/**
+ * Core's admin payload, as it comes off the wire. Every field is optional
+ * because the list endpoint omits the diagnostic blobs (#979) and the extension
+ * proxies pass the body through untouched.
+ */
+export type RawAdminBugReport = {
+  id?: unknown;
+  description?: unknown;
+  bugType?: unknown;
+  status?: unknown;
+  source?: unknown;
+  consoleLogs?: unknown;
+  networkLogs?: unknown;
+  screenshot?: unknown;
+  hasConsoleLogs?: unknown;
+  hasNetworkLogs?: unknown;
+  hasScreenshot?: unknown;
+  pageUrl?: unknown;
+  userAgent?: unknown;
+  isAnonymous?: unknown;
+  userId?: unknown;
+  userName?: unknown;
+  userEmail?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  context?: unknown;
+};
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function optionalInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/** Core stores per-app context as a `Json?` column; non-objects mean "no context". */
+function readContext(value: unknown): BugReportContext {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as BugReportContext;
+}
+
+/**
+ * Turn Core's raw admin payload into an `AdminBugReportRow`.
+ *
+ * Two things the shared view needs that the wire format does not provide
+ * directly, and which every app therefore got wrong in its own way:
+ *
+ *  - **Reporter identity.** Core names it `userName`/`userEmail`;
+ *    `getReporterLabel` reads `reporterName`/`reporterEmail` first and falls
+ *    back to `userId`, so an unmapped row copies `Internal User ID: undefined`
+ *    into the clipboard dossier.
+ *  - **Context.** The course/module/lesson/activity ids live *inside* the
+ *    `context` JSON blob, but `getContextLabel` reads them flattened onto the
+ *    row — an unmapped row always renders context as `-`.
+ *
+ * AI Tutor's equivalent lives in its Express layer
+ * (`server/src/utils/bugReportMappers.js`) because that mapping happens before
+ * the browser sees the payload and cannot import this React package.
+ */
+export function normalizeAdminBugReportRow(raw: RawAdminBugReport): AdminBugReportRow {
+  const context = readContext(raw.context);
+  const isAnonymous = Boolean(raw.isAnonymous);
+  // Core masks identity server-side for anonymous reports; re-assert it here so
+  // a proxy that forgot to mask cannot leak a name through the shared view.
+  const userName = isAnonymous ? null : optionalString(raw.userName);
+  const userEmail = isAnonymous ? null : optionalString(raw.userEmail);
+  const userId = optionalString(raw.userId) ?? 'unknown';
+  const consoleLogs = optionalString(raw.consoleLogs);
+  const networkLogs = optionalString(raw.networkLogs);
+  const screenshot = optionalString(raw.screenshot);
+
+  return {
+    id: String(raw.id ?? ''),
+    description: typeof raw.description === 'string' ? raw.description : '',
+    bugType: (raw.bugType as BugReportType | null) ?? null,
+    status: toUiStatus(String(raw.status ?? 'UNHANDLED')),
+    source: optionalString(raw.source),
+    consoleLogs,
+    networkLogs,
+    screenshot,
+    hasConsoleLogs: hasAttachmentContent(consoleLogs, optionalBoolean(raw.hasConsoleLogs)),
+    hasNetworkLogs: hasAttachmentContent(networkLogs, optionalBoolean(raw.hasNetworkLogs)),
+    hasScreenshot: hasAttachmentContent(screenshot, optionalBoolean(raw.hasScreenshot)),
+    pageUrl: optionalString(raw.pageUrl),
+    userAgent: optionalString(raw.userAgent),
+    isAnonymous,
+    userId,
+    reporterName: isAnonymous ? 'Anonymous' : userName,
+    reporterEmail: userEmail,
+    reporterRole: null,
+    user: { id: userId, name: userName, email: userEmail, role: null },
+    userName,
+    userEmail,
+    createdAt:
+      typeof raw.createdAt === 'string'
+        ? raw.createdAt
+        : raw.createdAt instanceof Date
+          ? raw.createdAt.toISOString()
+          : '',
+    updatedAt:
+      typeof raw.updatedAt === 'string'
+        ? raw.updatedAt
+        : raw.updatedAt instanceof Date
+          ? raw.updatedAt.toISOString()
+          : undefined,
+    context,
+    courseOfferingId: optionalInt(context.courseOfferingId),
+    moduleId: optionalInt(context.moduleId),
+    lessonId: optionalInt(context.lessonId),
+    activityId: optionalInt(context.activityId),
+    courseTitle: optionalString(context.courseTitle),
+    moduleTitle: optionalString(context.moduleTitle),
+    lessonTitle: optionalString(context.lessonTitle),
+    activityTitle: optionalString(context.activityTitle),
+  };
 }
