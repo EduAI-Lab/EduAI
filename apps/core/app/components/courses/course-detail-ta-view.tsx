@@ -71,10 +71,10 @@ interface Props {
 }
 
 function fileTypeColor(mime: string): string {
-  if (mime.includes('pdf')) return 'oklch(0.63 0.22 25)'
-  if (mime.includes('pptx') || mime.includes('presentation')) return 'oklch(0.55 0.18 48)'
-  if (mime.includes('docx') || mime.includes('word')) return 'oklch(0.52 0.18 230)'
-  return 'oklch(0.55 0.12 260)'
+  if (mime.includes('pdf')) return 'var(--color-file-pdf)'
+  if (mime.includes('pptx') || mime.includes('presentation')) return 'var(--color-file-slides)'
+  if (mime.includes('docx') || mime.includes('word')) return 'var(--color-file-doc)'
+  return 'var(--color-file-generic)'
 }
 
 function formatSize(bytes: number): string {
