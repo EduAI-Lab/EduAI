@@ -31,7 +31,7 @@
  *   node profile.mjs --app=core --role=admin        # one role
  *   node profile.mjs --page=dashboard-student,chat-thread
  *   node profile.mjs --runs=5 --cpu=4 --net=fast3g  # throttled
- *   node profile.mjs --chunks --out=perf.json
+ *   node profile.mjs --chunks --out=docs/perf/frontend/baseline --target=dev-remote
  *
  * Flags:
  *   --app=<key[,key]>   core | aiTutor | questionMaker      (default: all)
@@ -42,14 +42,25 @@
  *   --cpu=N             CPU throttle multiplier, e.g. 4      (default: off)
  *   --net=<profile>     fast3g | slow3g | off                (default: off)
  *   --chunks            print per-chunk JS table per page
- *   --out=<file>        write full JSON report               (default: none)
+ *   --out=<dir>         output dir (default docs/perf/frontend/baseline)
+ *   --target=<label>    fingerprint label, e.g. dev-remote   (default local)
  *   --headed            show the browser
  *
+ * Output (same shape as `npm run perf:endpoints`, so both baselines are read the
+ * same way): <out>/page-vitals.json with every measurement, plus <out>/errors.log
+ * and <out>/errors.json listing every page that did NOT produce a trustworthy
+ * number — load failure, login bounce, unresolved dynamic id, or a role whose
+ * login never succeeded. A failed login degrades that role's pages to errors
+ * instead of aborting the run, so one broken session still yields a full report
+ * of what to fix.
+ *
  * Env: CORE_URL, AI_TUTOR_URL, QM_URL (page origins), AI_TUTOR_API_URL,
- *      QM_API_URL (id resolution), SEED_PASSWORD (overrides every account).
+ *      QM_API_URL (id resolution), SEED_PASSWORD (overrides every account),
+ *      TARGET_LABEL (same as --target).
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { chromium, request as apiRequest } from 'playwright';
 import { loginToCore } from '../mobile-audit/lib.mjs';
 import { APPS, ACCOUNTS } from './pages.mjs';
@@ -74,7 +85,8 @@ const COLD = !flag('warm');
 const CPU_THROTTLE = Number(flag('cpu') ?? 0);
 const NET_PROFILE = typeof flag('net') === 'string' ? flag('net') : 'off';
 const SHOW_CHUNKS = Boolean(flag('chunks'));
-const OUT_FILE = typeof flag('out') === 'string' ? flag('out') : undefined;
+const OUT_DIR = (typeof flag('out') === 'string' ? flag('out') : 'docs/perf/frontend/baseline').replace(/\/$/, '');
+const TARGET_LABEL = (typeof flag('target') === 'string' ? flag('target') : process.env.TARGET_LABEL) ?? 'local';
 const HEADED = Boolean(flag('headed'));
 const APP_FILTER = list('app');
 const PAGE_FILTER = list('page');
@@ -223,7 +235,20 @@ async function profilePage(browser, storageState, entry) {
       runs.push({ error: String(err?.message ?? err) });
     }
   }
-  const ok = runs.filter((r) => !r.error);
+  let ok = runs.filter((r) => !r.error);
+  // Every run failing is usually transient (a DNS blip or a dev-server restart
+  // takes out the whole burst at once), so pay for one backed-off retry before
+  // writing the page off — otherwise a two-second hiccup costs a 50-page run.
+  if (!ok.length) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const retry = await profileOnce(browser, storageState, entry);
+      runs.push(retry);
+      ok = [retry];
+    } catch (err) {
+      runs.push({ error: String(err?.message ?? err) });
+    }
+  }
   if (!ok.length) return { ...entry, error: runs[0]?.error ?? 'all runs failed' };
 
   const pick = (k) => median(ok.map((r) => r[k]));
@@ -276,7 +301,7 @@ function table(rows, cols) {
   return [line(head), width.map((w) => '-'.repeat(w)).join('  '), ...body.map(line)].join('\n');
 }
 
-function report(results, skipped) {
+function report(results, skipped, loginFailures) {
   const good = results.filter((r) => !r.error);
   console.log(
     `\n=== page profile — ${good.length} page(s), ${RUNS} run(s) each, ${COLD ? 'cold' : 'warm'} cache` +
@@ -333,11 +358,116 @@ function report(results, skipped) {
     console.log(`\n--- redirected (${redirected.length}) — numbers describe the redirect target, not the page ---`);
     for (const r of redirected) console.log(`${r.app}/${r.name}  as ${r.role}  ${r.url} -> ${r.finalUrl}`);
   }
+  if (loginFailures.length) {
+    console.log(`\n--- login failed (${loginFailures.length} role(s)) — their pages were not measured ---`);
+    for (const l of loginFailures) console.log(`${l.role} (${l.email})  ${l.reason}`);
+  }
   console.log(
     `\ncoverage: ${good.length} measured, ${redirected.length} redirected, ` +
       `${skipped.length} skipped, ${failed.length} failed`
   );
   return { failed: failed.length, redirected: redirected.length, skipped: skipped.length };
+}
+
+/**
+ * Run provenance, mirroring perf-baseline.mjs's fingerprint so a page run and an
+ * endpoint run can be attributed to the same target and commit.
+ */
+function fingerprint() {
+  const g = (c) => {
+    try {
+      return execSync(c).toString().trim();
+    } catch {
+      return 'unknown';
+    }
+  };
+  return {
+    captured_at: new Date().toISOString(),
+    target_label: TARGET_LABEL,
+    targets: Object.fromEntries(Object.entries(APPS).map(([k, v]) => [k, v.baseUrl])),
+    git_sha: g('git rev-parse --short HEAD'),
+    git_branch: g('git branch --show-current'),
+    node: process.version,
+    platform: `${process.platform}-${process.arch}`,
+    runs: RUNS,
+    cache: COLD ? 'cold' : 'warm',
+    cpu_throttle: CPU_THROTTLE,
+    network: NET_PROFILE,
+    seed_note: 'Run `npm run dbseed` before measuring; unresolved dynamic ids are reported as skipped.',
+  };
+}
+
+/**
+ * Every page that did NOT yield a trustworthy number, in one list. `redirected`
+ * rows are the important ones: they carry timings, but for the login page the
+ * session bounced to — not for the route that was asked for.
+ */
+function collectErrors(results, skipped, loginFailures) {
+  const errors = [];
+  for (const l of loginFailures) {
+    errors.push({
+      app: 'core',
+      page: `(login as ${l.role})`,
+      role: l.role,
+      path: '/auth/login',
+      url: `${APPS.core.baseUrl}/auth/login`,
+      kind: 'login-failed',
+      reason: l.reason,
+      affected_pages: l.affected,
+    });
+  }
+  for (const r of results.filter((r) => r.error)) {
+    errors.push({ app: r.app, page: r.name, role: r.role, path: r.path, url: r.url, kind: 'load-failed', reason: r.error });
+  }
+  for (const r of results.filter((r) => !r.error && !r.authOk)) {
+    errors.push({
+      app: r.app,
+      page: r.name,
+      role: r.role,
+      path: r.path,
+      url: r.url,
+      kind: 'redirected',
+      reason: `landed on ${r.finalUrl} instead — session not accepted for this route`,
+      final_url: r.finalUrl,
+    });
+  }
+  for (const s of skipped) {
+    errors.push({ app: s.app, page: s.name, role: s.role, path: s.path, url: null, kind: 'skipped', reason: s.reason });
+  }
+  return errors;
+}
+
+function writeArtifacts(results, skipped, loginFailures) {
+  const dir = path.resolve(OUT_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const env = fingerprint();
+  const measured = results.filter((r) => !r.error && r.authOk);
+
+  const vitalsPath = path.join(dir, 'page-vitals.json');
+  fs.writeFileSync(vitalsPath, JSON.stringify({ env, measured_count: measured.length, results, skipped }, null, 2));
+
+  const errors = collectErrors(results, skipped, loginFailures);
+  const errPath = path.join(dir, 'errors.json');
+  const logPath = path.join(dir, 'errors.log');
+  fs.writeFileSync(errPath, JSON.stringify({ env, errors }, null, 2));
+
+  if (!errors.length) {
+    fs.writeFileSync(logPath, `no errored pages — clean run (${measured.length} measured)\n`);
+  } else {
+    const lines = [`=== errored pages (${errors.length}; ${measured.length} measured cleanly) ===`, ''];
+    for (const e of errors) {
+      lines.push(`[${e.app}] ${e.page}  (role=${e.role}, kind=${e.kind})`);
+      lines.push(`  path: ${e.path}`);
+      if (e.url) lines.push(`  url:  ${e.url}`);
+      if (e.final_url) lines.push(`  landed: ${e.final_url}`);
+      if (e.affected_pages) lines.push(`  affected pages: ${e.affected_pages.join(', ')}`);
+      lines.push(`  reason: ${e.reason}`);
+      lines.push('');
+    }
+    fs.writeFileSync(logPath, lines.join('\n'));
+  }
+  console.log(`\nwrote ${vitalsPath}`);
+  console.log(`wrote ${logPath} + ${errPath} (${errors.length} errored page(s))`);
 }
 
 // ---------------------------------------------------------------------------
@@ -362,13 +492,22 @@ let exitCode = 0;
 try {
   // One login per role that is actually needed, reused as storageState so every
   // measured load starts from a fresh context without paying for the login nav.
+  // A role whose login fails is recorded and its pages are reported as errors —
+  // aborting here would throw away the measurements every other role can still
+  // produce, and the whole point of the errors file is to name what to fix.
   const states = new Map([['anon', undefined]]);
+  const loginFailures = [];
   for (const role of new Set(selected.map((p) => p.role))) {
     if (role === 'anon') continue;
     const creds = credentialsFor(role);
     if (!creds) {
-      console.error(`no seeded account configured for role "${role}"`);
-      process.exit(2);
+      loginFailures.push({
+        role,
+        email: '(none)',
+        reason: `no seeded account configured for role "${role}" in pages.mjs ACCOUNTS`,
+        affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
+      });
+      continue;
     }
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
@@ -377,11 +516,18 @@ try {
       states.set(role, await ctx.storageState());
       process.stderr.write(`logged in as ${role} (${creds.email})\n`);
     } catch (err) {
-      console.error(
-        `login failed for role "${role}" (${creds.email}): ${err.message}\n` +
-          `is Core up and seeded? (npm run db:seed in apps/core)`
-      );
-      process.exit(1);
+      const bodyText = await page
+        .locator('body')
+        .innerText()
+        .then((t) => t.replace(/\s+/g, ' ').slice(0, 300))
+        .catch(() => '(page text unavailable)');
+      loginFailures.push({
+        role,
+        email: creds.email,
+        reason: `${err.message} — landed on ${page.url()}; page said: ${bodyText}`,
+        affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
+      });
+      process.stderr.write(`login FAILED as ${role} (${creds.email}) — its pages will be reported as errors\n`);
     } finally {
       await ctx.close();
     }
@@ -407,7 +553,10 @@ try {
 
   const entries = [];
   const skipped = [];
+  const failedRoles = new Set(loginFailures.map((l) => l.role));
   for (const p of selected) {
+    // No session for this role — measuring would just time the login page.
+    if (failedRoles.has(p.role)) continue;
     let urlPath = p.path;
     if (p.params?.length) {
       const resolved = await paramsFor(p.app, p.role);
@@ -436,29 +585,9 @@ try {
     results.push(r);
   }
 
-  const counts = report(results, skipped);
-  if (OUT_FILE) {
-    const out = path.resolve(OUT_FILE);
-    fs.mkdirSync(path.dirname(out), { recursive: true });
-    fs.writeFileSync(
-      out,
-      JSON.stringify(
-        {
-          generatedAt: new Date().toISOString(),
-          runs: RUNS,
-          cache: COLD ? 'cold' : 'warm',
-          cpuThrottle: CPU_THROTTLE,
-          network: NET_PROFILE,
-          results,
-          skipped,
-        },
-        null,
-        2
-      )
-    );
-    console.log(`wrote ${out}`);
-  }
-  if (counts.failed || counts.redirected || counts.skipped) exitCode = 1;
+  const counts = report(results, skipped, loginFailures);
+  writeArtifacts(results, skipped, loginFailures);
+  if (counts.failed || counts.redirected || counts.skipped || loginFailures.length) exitCode = 1;
 } finally {
   await browser.close();
 }
