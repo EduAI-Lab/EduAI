@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Removed
 
-- [core] chore: Drop `lucide-react` in favor of `@tabler/icons-react`, the de-facto icon library across all four workspaces. Swaps 5 Core imports (`Shield`→`IconShield`, `Loader2`→`IconLoader2`, `Download`→`IconDownload`, `Check`/`Circle`→`IconCheck`/`IconCircle`, `GalleryVerticalEnd`→`IconStack2` as the closest visual match — no exact Tabler equivalent) and removes the package from Core, question-maker-frontend, and the root devDependencies. Closes #1249. (#1249, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] chore: Drop `lucide-react` in favor of `@tabler/icons-react`, the de-facto icon library across all four workspaces. Swaps 5 Core imports (`Shield`→`IconShield`, `Loader2`→`IconLoader2`, `Download`→`IconDownload`, `Check`/`Circle`→`IconCheck`/`IconCircle`, `GalleryVerticalEnd`→`IconStack2` as the closest visual match — no exact Tabler equivalent) and removes the package from Core, question-maker-frontend, and the root devDependencies. Closes #1249. (#1249, @Ayyhab, 2026-07-31) — [#1294](https://github.com/EduAI-Lab/EduAI/pull/1294)
 
 ## [Week 13 — July 27 – August 2, 2026]
 
