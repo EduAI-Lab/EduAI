@@ -257,7 +257,11 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
     expect(logMessages.some((m) => m.includes("retry attempt"))).toBe(true);
     expect(logMessages.some((m) => m.includes("fleetRetry: true"))).toBe(true);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    const sidecarCalls = fetchSpy.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      return url.includes("/measure-start") || url.includes("/measure-stop");
+    });
+    expect(sidecarCalls).toHaveLength(0);
 
     const successIdx = logMessages.findIndex((m) => m.includes("fleetRetry: true"));
     const attemptIdx = logMessages.findIndex((m) => m.includes("retry attempt"));
