@@ -71,6 +71,16 @@ The frontend/UI suites (`@eduai/ui`, AI Tutor client) run coverage through their
 
 The **Test Coverage Report** workflow (`.github/workflows/eduai-summer-2026-coverage-report.yml`) runs weekly (Mondays 09:00 UTC) and on manual dispatch. It runs `test:coverage` for all six suites — the three backends against Postgres service containers plus `@eduai/ui`, the AI Tutor client, and the Question Maker frontend — aggregates the `coverage-summary.json` outputs via `eduai-summer-2026/scripts/generate-coverage-report.js`, and commits a Markdown summary to `eduai-summer-2026/reports/coverage/coverage-report.md` on the `docs/coverage` branch. Only the report is committed — coverage build artifacts stay gitignored.
 
+### Prisma client isolation smoke check
+
+Run the repository-level smoke check after generating the AI Tutor server and Question Maker backend Prisma clients:
+
+```bash
+npm run test:prisma-client-isolation
+```
+
+The check resolves `@eduai/ai-tutor-prisma-client` from the AI Tutor server workspace and `@eduai/question-maker-prisma-client` from the Question Maker backend workspace. It fails if the two workspaces resolve the same generated package or if either package is missing a service-specific model delegate (`aiInteractionTrace` for AI Tutor and `user` for Question Maker). This verifies that generating one extension's Prisma client cannot silently replace the other extension's model set. The pull-request and scheduled coverage workflows run the same check after generating both clients.
+
 ## Structure
 
 Tests are organized into three locations across the monorepo:
