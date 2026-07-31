@@ -15,7 +15,7 @@ EduAI/
 │       │   └── server/              # AI Tutor Express/Prisma backend (session validated via Core)
 │       ├── question-maker/          # Question Maker — question bank authoring, Canvas integration
 │       │   └── app/
-│       │       ├── backend/         # Question Maker Express/Sequelize API
+│       │       ├── backend/         # Question Maker Express/Prisma API
 │       │       └── frontend/        # Question Maker Vite/React frontend
 │       └── example-extension/       # Minimal Express extension demonstrating Core auth patterns (dev reference)
 ├── packages/
@@ -43,9 +43,11 @@ EduAI/
 
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
+Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
-AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/professor/TA roles.
+AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
 
 ### [Question Maker](apps/extensions/question-maker/)
 
@@ -144,11 +146,13 @@ On first run (or after a database wipe), the Core and AI Tutor databases are see
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
 
+**Account password policy** — sign-up and invitation-acceptance forms show the requirements live. Use either a passphrase of at least 16 characters, or at least 8 characters containing uppercase and lowercase letters, a number, and a symbol.
+
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for a consolidated reference of every variable across the monorepo.
 
 **Service API key (`EDUAI_API_KEY`)**
 
-AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and Question Maker AI chat / question generation (proxied to Core's `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
+AI Tutor and Question Maker make server-to-server calls to Core for several features: bug report submission, enrollment sync, topic sync, question push, listing importable courses, and AI-assist LLM calls (Question Maker question generation and AI Tutor tutor/supervisor loops proxied to Core's stateless `/api/completion`; the interactive course chat UI continues to use `/api/chat`). Core also calls back out to both extensions to cascade a course delete (see below). These calls are authenticated with a shared secret called `EDUAI_API_KEY`.
 
 You must set the **same value** in all three services:
 
@@ -194,7 +198,7 @@ npm run build        # Build all apps (Turborepo caches outputs)
 npm run lint         # Lint all apps
 npm run test         # All tests across all apps (unit + integration)
 npm run test:all     # Unit + integration tests
-npm run test:coverage # Coverage for edu-ai, ai-tutor-server, and question-maker-backend
+npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
@@ -302,12 +306,20 @@ npm run test:e2e           # all e2e suites; WARNING: no e2e tests currently
 Each app exposes a `test:coverage` script (Vitest V8 coverage). From the monorepo root:
 
 ```bash
-npm run test:coverage   # Aggregates coverage for edu-ai, ai-tutor-server, and question-maker-backend via Turborepo
+npm run test:coverage   # Aggregates coverage for all six suites (backends + frontends) via Turborepo
 ```
 
-> **Note:** The root `test:coverage` command covers backend services only (Core, AI Tutor server, and Question Maker backend). Frontend coverage is not aggregated at the root level.
+> **Note:** The root `test:coverage` command covers the three backends (Core, AI Tutor server, Question Maker backend) and the three frontend/UI suites (`@eduai/ui`, AI Tutor client, Question Maker frontend).
 
-Run a single app's coverage from its own directory with `npm run test:coverage` (available for core, the AI Tutor server, and the Question Maker frontend and backend). Generated coverage report directories are gitignored.
+Run a single app's coverage from its own directory with `npm run test:coverage`. Generated coverage report directories are gitignored.
+
+### PICT combinatorial models
+
+```bash
+npm run test:pict:gen   # Regenerate tests/models/*.cases.json from their .pict sources
+```
+
+Runs `pict` inside a pinned Docker image (built on first use) rather than a host install — a native `pict` build isn't reproducible across platforms. See [TESTS.md](TESTS.md#pict-combinatorial-tests) for why, how to add a model, and the model/oracle/world-builder split.
 
 ### Integration tests
 

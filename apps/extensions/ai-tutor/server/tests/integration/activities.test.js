@@ -86,15 +86,16 @@ describe('Activities routes', () => {
       const res = await request(profApp).get(`/api/lessons/${seed.lesson.id}/activities`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBe(1);
-      expect(res.body[0]).toMatchObject({
+      expect(res.body.total).toBe(1);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0]).toMatchObject({
         question: 'What is 2+2?',
         type: 'MCQ',
         mainTopic: { id: seed.topic.id, name: 'Test Topic' },
       });
       // professor response should NOT have completionStatus
-      expect(res.body[0].completionStatus).toBeUndefined();
+      expect(res.body.data[0].completionStatus).toBeUndefined();
     });
 
     it('student gets completionStatus field', async () => {
@@ -105,9 +106,10 @@ describe('Activities routes', () => {
       const res = await request(studentApp).get(`/api/lessons/${seed.lesson.id}/activities`);
 
       expect(res.status).toBe(200);
-      expect(res.body.length).toBe(1);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data.length).toBe(1);
       // Should have completionStatus (defaults to not_attempted)
-      expect(res.body[0].completionStatus).toBe('not_attempted');
+      expect(res.body.data[0].completionStatus).toBe('not_attempted');
     });
 
     it('returns 403 for unpublished lesson (student)', async () => {
@@ -134,8 +136,9 @@ describe('Activities routes', () => {
       const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}/activities`);
 
       expect(res.status).toBe(200);
-      expect(res.body.length).toBe(1);
-      expect(res.body[0].completionStatus).toBeUndefined();
+      expect(res.body.total).toBe(1);
+      expect(res.body.data.length).toBe(1);
+      expect(res.body.data[0].completionStatus).toBeUndefined();
     });
 
     it('returns 403 for non-member', async () => {
@@ -630,7 +633,8 @@ describe('Activities routes', () => {
 
       const res = await request(taApp).get(`/api/lessons/${seed.lesson.id}/activities`);
       expect(res.status).toBe(200);
-      expect(res.body.some((a) => a.id === activity.id)).toBe(true);
+      expect(res.body.total).toBe(1);
+      expect(res.body.data.some((a) => a.id === activity.id)).toBe(true);
     });
   });
 
@@ -976,7 +980,8 @@ describe('Activities routes', () => {
         expect(res.body.map((x) => x.position)).toEqual([0, 1, 2]);
 
         const list = await request(profApp).get(`/api/lessons/${seed.lesson.id}/activities`);
-        expect(list.body.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
+        expect(list.body.total).toBe(3);
+        expect(list.body.data.map((x) => x.id)).toEqual([c.id, a.id, b.id]);
       });
 
       it('rejects an id set that does not match the lesson activities', async () => {
@@ -1106,7 +1111,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     // Question bank content appears in at least one EduAI chat call (supervisor hidden context)
     const chatCalls = fetchCalls.filter(
       ([url, opts]) =>
-        typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+        typeof url === 'string' && url.includes('/completion') && opts?.method === 'POST',
     );
     const bankInjected = chatCalls.some(([, opts]) => {
       const body = JSON.parse(opts.body);
@@ -1124,7 +1129,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
 
   // #1021 review: assert the activities → EduAI wiring layer, not only
   // generate*Response with an explicitly passed courseId.
-  it('/teach and /guide EduAI chat bodies include linked coreOfferingId as courseId (#1021)', async () => {
+  it('/teach and /guide EduAI completion bodies include linked coreOfferingId as courseId (#1021)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn()
@@ -1145,14 +1150,16 @@ describe('Tutoring-flow: question consumption via Core', () => {
       .send({ message: 'Explain sorting', knowledgeLevel: 'beginner', apiKey: 'test-key' });
     expect(teachRes.status).toBe(200);
 
-    const teachChatBodies = fetch.mock.calls
+    const teachCompletionBodies = fetch.mock.calls
       .filter(
         ([url, opts]) =>
-          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+          typeof url === 'string' &&
+          url.includes('/api/completion') &&
+          opts?.method === 'POST',
       )
       .map(([, opts]) => JSON.parse(opts.body));
-    expect(teachChatBodies.length).toBeGreaterThan(0);
-    for (const body of teachChatBodies) {
+    expect(teachCompletionBodies.length).toBeGreaterThan(0);
+    for (const body of teachCompletionBodies) {
       expect(body.courseId).toBe('cuid-core-offering');
     }
 
@@ -1177,14 +1184,16 @@ describe('Tutoring-flow: question consumption via Core', () => {
       .send({ message: 'Need a hint', knowledgeLevel: 'beginner', apiKey: 'test-key' });
     expect(guideRes.status).toBe(200);
 
-    const guideChatBodies = fetch.mock.calls
+    const guideCompletionBodies = fetch.mock.calls
       .filter(
         ([url, opts]) =>
-          typeof url === 'string' && url.includes('/chat') && opts?.method === 'POST',
+          typeof url === 'string' &&
+          url.includes('/api/completion') &&
+          opts?.method === 'POST',
       )
       .map(([, opts]) => JSON.parse(opts.body));
-    expect(guideChatBodies.length).toBeGreaterThan(0);
-    for (const body of guideChatBodies) {
+    expect(guideCompletionBodies.length).toBeGreaterThan(0);
+    for (const body of guideCompletionBodies) {
       expect(body.courseId).toBe('cuid-core-offering');
     }
   });
@@ -1231,7 +1240,7 @@ describe('Tutoring-flow: question consumption via Core', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url, opts) => {
-        if (typeof url === 'string' && url.includes('/chat')) {
+        if (typeof url === 'string' && url.includes('/completion')) {
           onFetchCalled();
           return new Promise((_resolve, reject) => {
             opts.signal.addEventListener('abort', () => {

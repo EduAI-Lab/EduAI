@@ -28,6 +28,7 @@ import type {
   AdminEnrollmentData,
   AdminAiModelPolicy,
   AdminUser,
+  AdminUserPage,
   Activity,
   ActivityAnswerResult,
   ActivityAnalyticsRow,
@@ -39,9 +40,12 @@ import type {
   Course,
   EduAiApiKeyStatus,
   EnrollmentRole,
+  Lesson,
+  Module,
   StudentMetricRow,
   SubmissionRow,
   SuggestedPrompt,
+  Topic,
   User,
 } from './types';
 import { getCoreLoginUrl } from './coreUrl';
@@ -57,6 +61,60 @@ import { getCoreLoginUrl } from './coreUrl';
 const CORE_STATUS_HEADER = 'X-Core-Status';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+/**
+ * The platform pagination envelope (#1043), matching the AI-Tutor server's
+ * `paginated()` helper and EduAI Core's contract (#1041). Every list endpoint
+ * that was previously a bare array now returns this shape.
+ *
+ * `total` is the full count matching the query (not the page length) — reader
+ * code that used to rely on `array.length` for a total, drive "select all", or
+ * derive a tree/ordinal from a complete list MUST read `total` and treat a
+ * short `data` as a page, not the whole set.
+ */
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Default page size for the structure-bounded "tree" endpoints (modules,
+ * lessons, activities, topics). Their readers need the whole set (reorder,
+ * ordinals, the lesson player), so they request one bounded page this large
+ * rather than rendering a pager. See #1043 Group B. A course whose tree
+ * exceeds this silently truncates — tracked as a follow-up.
+ */
+const TREE_PAGE_SIZE = 200;
+
+/**
+ * Default page size for course lists (#1043 Group A). The server now REQUIRES
+ * page/pageSize, so callers that don't drive an explicit pager (dashboards,
+ * the course switcher, the command palette, import-source dropdowns) send this
+ * bounded page instead of an unbounded read. Views with a real pager pass their
+ * own page/pageSize. A deployment with more courses than this in one of those
+ * non-pager surfaces truncates — those surfaces are tracked for a follow-up
+ * server-search UX (mirrors #1041's landed course-picker decision).
+ */
+export const COURSE_LIST_PAGE_SIZE = 200;
+
+/**
+ * Serialize pagination params into a query string. Returns '' when empty so
+ * callers can append unconditionally.
+ *
+ * Callers must pass BOTH `page` and `pageSize` for endpoints that parse in
+ * required mode — the server 400s (`PAGINATION_REQUIRED`) on a half-supplied
+ * pair, so every call site below defaults `page: 1` alongside its page size.
+ */
+function pageQuery(params?: { page?: number; pageSize?: number }): string {
+  if (!params) return '';
+  const qs = new URLSearchParams();
+  if (params.page !== undefined) qs.set('page', String(params.page));
+  if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+  const s = qs.toString();
+  return s ? `?${s}` : '';
+}
 
 /**
  * Hard ceiling for the session probe `/api/me`. If the AT API is up but its
@@ -98,6 +156,7 @@ export interface DashboardStats {
   yourCourses?: number;
   publishedCourses?: number;
   draftCourses?: number;
+  syncedCourses?: number;
   totalUsers?: number;
   totalCourses?: number;
   openBugReports?: number;
@@ -267,7 +326,10 @@ export const api = {
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
       ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
     }>,
-  listCourses: () => http('/api/courses'),
+  listCourses: (params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Course>>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {
@@ -290,7 +352,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  modulesForCourse: (courseId: number) => http(`/api/courses/${courseId}/modules`),
+  modulesForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/courses/${courseId}/modules${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Module>>,
   moduleById: (moduleId: number) => http(`/api/modules/${moduleId}`),
   createModule: (
     courseId: number,
@@ -327,7 +392,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  lessonsForModule: (moduleId: number) => http(`/api/modules/${moduleId}/lessons`),
+  lessonsForModule: (moduleId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/modules/${moduleId}/lessons${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Lesson>>,
   createLesson: (
     moduleId: number,
     payload: { title: string; contentMd?: string; position?: number },
@@ -363,7 +431,10 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
   lessonById: (lessonId: number) => http(`/api/lessons/${lessonId}`),
-  activitiesForLesson: (lessonId: number) => http(`/api/lessons/${lessonId}/activities`),
+  activitiesForLesson: (lessonId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/lessons/${lessonId}/activities${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Activity>>,
   createActivity: (
     lessonId: number,
     payload: {
@@ -434,7 +505,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ orderedIds }),
     }),
-  topicsForCourse: (courseId: number) => http(`/api/courses/${courseId}/topics`),
+  topicsForCourse: (courseId: number, params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/courses/${courseId}/topics${pageQuery({ page: 1, pageSize: TREE_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Topic>>,
   createTopic: (courseId: number, payload: { name: string }) =>
     http(`/api/courses/${courseId}/topics`, {
       method: 'POST',
@@ -540,10 +614,35 @@ export const api = {
     });
     return (result?.policy ?? result) as AdminAiModelPolicy;
   },
-  listAdminUsers: () => http('/api/admin/users') as Promise<AdminUser[]>,
-  listAdminCourses: () => http('/api/admin/courses') as Promise<Course[]>,
-  getAdminCourseEnrollments: (courseId: number) =>
-    http(`/api/admin/courses/${courseId}/enrollments`) as Promise<AdminEnrollmentData>,
+  /**
+   * Paged platform users from Core (#1041). Returns the envelope, not an array —
+   * `stats` carries the platform-wide totals the dashboard needs.
+   */
+  listAdminUsers: (params: { page?: number; pageSize?: number } = {}) =>
+    http(
+      `/api/admin/users?page=${params.page ?? 1}&pageSize=${params.pageSize ?? 25}`,
+    ) as Promise<AdminUserPage>,
+  listAdminCourses: (params?: { page?: number; pageSize?: number }) =>
+    http(
+      `/api/admin/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
+    ) as Promise<Paginated<Course>>,
+  /**
+   * `availableStudents` is one page of Core's STUDENT list (#1041) — pass
+   * `search`/`page` to reach students past the first page.
+   */
+  getAdminCourseEnrollments: (
+    courseId: number,
+    params: { search?: string; page?: number; pageSize?: number } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    const suffix = query.size > 0 ? `?${query}` : '';
+    return http(
+      `/api/admin/courses/${courseId}/enrollments${suffix}`,
+    ) as Promise<AdminEnrollmentData>;
+  },
   removeStudentFromCourse: (courseId: number, userId: string) =>
     http(`/api/admin/courses/${courseId}/enrollments/${userId}`, {
       method: 'DELETE',
@@ -597,6 +696,8 @@ export const api = {
       body: JSON.stringify(payload),
     }) as Promise<{ id: string; status: BugReportStatus; createdAt: string }>,
   listAdminBugReports: () => http('/api/admin/bug-reports') as Promise<AdminBugReportRow[]>,
+  getAdminBugReport: (reportId: string) =>
+    http(`/api/admin/bug-reports/${reportId}`) as Promise<AdminBugReportRow>,
   updateAdminBugReportStatus: (reportId: string, payload: { status: BugReportStatus }) =>
     http(`/api/admin/bug-reports/${reportId}`, {
       method: 'PATCH',
@@ -641,11 +742,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ sourceActivityId }),
     }) as Promise<Activity>,
-  listImportableActivities: (courseId?: number) => {
+  listImportableActivities: (
+    courseId?: number,
+    params?: { excludeLessonId?: number; page?: number; pageSize?: number },
+  ) => {
     const search = new URLSearchParams();
     if (courseId != null) search.set('courseId', String(courseId));
-    const qs = search.toString();
-    return http(`/api/activities/importable${qs ? `?${qs}` : ''}`) as Promise<ImportableActivity[]>;
+    if (params?.excludeLessonId != null) {
+      search.set('excludeLessonId', String(params.excludeLessonId));
+    }
+    // Group A endpoint — server requires page/pageSize; the picker takes one
+    // bounded page (server-side excludeLessonId keeps it from emptying).
+    search.set('page', String(params?.page ?? 1));
+    search.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
+    return http(`/api/activities/importable?${search.toString()}`) as Promise<
+      Paginated<ImportableActivity>
+    >;
   },
   dashboardStats: () => http('/api/me/dashboard-stats') as Promise<DashboardStats>,
   adminAiTraces: (params?: { unit?: string; courseId?: string | number; limit?: number }) => {

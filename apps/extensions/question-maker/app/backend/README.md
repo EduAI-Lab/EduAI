@@ -1,184 +1,181 @@
-# EduQuery.ai Backend API
+# Question Maker Backend (EduQuery.ai)
 
-A modern Node.js/Express backend API for the EduQuery.ai question generation platform.
+Express/Prisma REST API for the Question Maker extension — question banks, assessments, AI-assisted
+question generation, and Canvas LMS import/export. Identity and session auth are delegated entirely to
+EduAI Core; this service holds only a local `User` FK row plus QM's own course/question/assessment data.
 
 ## Features
 
-- **Authentication**: JWT-based user authentication with bcrypt password hashing
-- **Question Management**: CRUD operations for questions with AI-powered generation
-- **Class Management**: Organize questions by classes/courses
-- **AI Integration**: Support for multiple AI providers (Groq, OpenAI, DeepSeek)
-- **File Upload**: Upload and process text files for question generation
-- **Database**: PostgreSQL with Sequelize ORM
-- **Security**: Rate limiting, CORS, helmet security headers
-- **Validation**: Input validation and error handling
+- **Question bank**: CRUD for questions and variants, AI-assisted generation and OCR extraction, MCQ/SA/LA
+  types with difficulty and reasoning-level tagging
+- **Assessments**: sections, ordered questions, and equivalent-form variant assembly (round-robin picks
+  from the question bank)
+- **Course sync**: courses/topics mirror EduAI Core (the source of truth) and stay linked via `coreCourseId`
+- **Canvas LMS integration**: connect a Canvas account, import quizzes as questions, export assessments as
+  Canvas quizzes
+- **Auth**: no local accounts — every request is authenticated by validating the caller's session cookie
+  against Core (`requireAuth` in `src/middleware/auth.js`); RBAC is course-scoped (owner, Core enrollment
+  role, or unit-admin department match)
 
 ## Tech Stack
 
-- **Runtime**: Node.js 18+
-- **Framework**: Express.js
-- **Database**: PostgreSQL with Sequelize ORM
-- **Authentication**: JWT + bcrypt
-- **File Upload**: Multer
-- **AI APIs**: Groq, OpenAI, DeepSeek
-- **Security**: Helmet, CORS, Rate Limiting
+- **Runtime**: Node.js 18+, Express (ESM)
+- **Database**: PostgreSQL via Prisma ORM (`prisma/schema.prisma`)
+- **Auth**: session cookie validated against EduAI Core (no local passwords/JWTs issued by this service)
+- **AI**: EduAI's hosted chat/generation API, with direct Groq/OpenAI/DeepSeek as optional fallbacks
+- **File upload**: Multer (OCR text extraction inputs)
+- **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys
 
 ## Project Structure
 
 ```
 src/
 ├── index.js                 # Application entry point
+├── app.js                   # Express app wiring (middleware + route mounts)
 ├── config/
-│   ├── database.js         # Database configuration
-│   └── settings.js         # Environment settings
-├── models/
-│   ├── index.js            # Model associations
-│   ├── User.js             # User model
-│   ├── Question.js         # Question model
-│   ├── Class.js            # Class model
-│   └── Draft.js            # Draft model
-├── services/
-│   ├── authService.js      # Authentication logic
-│   ├── questionService.js  # Question management
-│   └── aiService.js        # AI integration
-├── routes/
-│   ├── auth.js             # Authentication routes
-│   ├── questions.js        # Question routes
-│   ├── classes.js          # Class routes
-└── middleware/
-    ├── auth.js             # JWT authentication
-    └── errorHandler.js     # Error handling
+│   ├── database.js          # Prisma client singleton + connection retry
+│   └── settings.js          # Environment settings
+├── middleware/
+│   ├── auth.js               # Core session validation (requireAuth/authenticateToken), role gates
+│   ├── courseAccess.js        # Per-course access-level resolution (owner/Core enrollment/unit-admin)
+│   ├── resourceAccess.js       # Ownership guards for variant/question/assessment routes
+│   ├── errorHandler.js        # Maps Prisma error codes + generic errors to HTTP responses
+│   ├── roles.js                # Role/level rank helpers
+│   └── serviceAuth.js           # Service-key auth for Core → QM internal routes
+├── routes/                  # course, questions, variants, assessments, assessmentVariant,
+│                             # eduai, canvas, topics, auth, bug-reports, internal
+├── services/                 # Business logic — one service per domain (questionService,
+│                              # assessmentService, canvasService, coreWiringService, etc.)
+├── jobs/
+│   └── reconcile.js          # Daily cron: cleans up stale Core references (course/topic/question)
+└── utils/                    # encryption, Canvas URL SSRF guard, logger, model-size ranks
+
+prisma/
+├── schema.prisma            # Source of truth for the data model
+└── migrations/               # Applied via `prisma migrate deploy`/`dev`
+
+scripts/                     # Seed scripts (seedUnified, seedIfEmpty, seed-perf, seedProductionQuestions)
+                              # and the withPrismaEnv wrapper used by the db:* npm scripts
+tests/
+├── unit/                    # Mocked-collaborator unit tests
+└── integration/             # Route/service tests; real-DB suites need TEST_DATABASE_URL
 ```
 
 ## Installation
 
-1. **Install Dependencies**
+Platform onboarding (install all workspaces, start Docker DBs + all apps) lives in the
+[monorepo root README](../../../../../README.md). The steps below are package-local.
+
+1. **Install dependencies** (from the repo root, so workspace packages link correctly)
    ```bash
    npm install
    ```
 
-2. **Environment Setup**
+2. **Environment setup** — this backend reads its config from the extension-root `.env`, not a local one
    ```bash
-   # Copy the environment file from project root
-   cp ../../env.example ../../.env
-   # Edit .env with your configuration
+   cp ../../.env.example ../../.env
+   # Edit apps/extensions/question-maker/.env — see the Environment Variables section below
    ```
 
-3. **Database Setup**
-   - Install PostgreSQL
-   - Create a database named `eduquery`
-   - Update `DATABASE_URL` in the root `.env` file
-
-4. **API Keys**
-   - Get API keys from Groq, OpenAI, and/or DeepSeek
-   - Add them to the root `.env` file
+3. **Database** — point `DATABASE_URL` at a Postgres instance, then apply migrations
+   ```bash
+   npm run db:migrate:deploy
+   ```
+   (`npm run dev` — from `app/backend`, or via root `npm run dev` / turbo filter `question-maker-*` —
+   already does this automatically on every start — see below.)
 
 ## Running the Application
 
 ### Development
+From `app/backend`, or via root `npm run dev` / turbo filter `question-maker-*`:
 ```bash
 npm run dev
 ```
+Runs `db:migrate:deploy && prisma generate && seed:if-empty && nodemon src/index.js` — migrations are
+applied (baselining first if needed, see below), the Prisma client is (re)generated, the database is
+seeded only if it's empty, then the server starts with hot reload.
 
 ### Production
 ```bash
 npm start
 ```
+Runs `db:migrate:deploy && prisma generate && node src/index.js` — same migration/baseline step as `dev`,
+without seeding.
 
-The API will be available at `http://localhost:8000`
+### Adopting an existing deployment
+`db:migrate:deploy` (`npm run db:migrate:deploy`, also run by `dev`/`start`/the Docker `CMD`) begins with
+`scripts/baselineExistingDatabase.js`. QM's pre-Prisma backend booted via
+`sequelize.sync({ alter: true })` — no migrations table, but `users`, `courses`, etc. already exist. Running
+`prisma migrate deploy` straight against a database like that fails: it tries to `CREATE TABLE` things that
+are already there. The baseline script detects that case (no `_prisma_migrations` table, but `users` does
+exist) and marks the init migration as already applied (`prisma migrate resolve --applied`) without running
+its DDL, so it never touches those tables. Every migration after init still runs for real — that's what
+reconciles the data (e.g. deduping rows for constraints the old schema never enforced) with what a fresh
+`init` would have produced; see the migrations under `prisma/migrations/` newer than
+`20260723215902_init` for the current set. On a genuinely fresh database (no `users` table either), the
+script is a no-op and `migrate deploy` runs `init` and everything after it from scratch, as usual. The
+script is idempotent — once `_prisma_migrations` exists (baselined or fresh), it no-ops on every later
+deploy.
+
+The API is available at `http://localhost:8000` by default.
 
 ## API Endpoints
 
-### Authentication
-- `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user
+All routes except `/healthz`, `/`, and `/api/internal/*` (service-key auth) require a valid Core session
+cookie. See each route file under `src/routes/` for full request/response shapes.
 
-### Questions
-- `GET /api/questions` - Get all questions
-- `POST /api/questions` - Create a question
-- `GET /api/questions/:id` - Get specific question
-- `PUT /api/questions/:id` - Update question
-- `DELETE /api/questions/:id` - Delete question
-- `POST /api/questions/generate` - Generate questions with AI
-- `POST /api/questions/approve` - Approve generated questions
-
-### Classes
-- `GET /api/classes` - Get all classes
-- `POST /api/classes` - Create a class
-- `GET /api/classes/:id` - Get specific class
-- `PUT /api/classes/:id` - Update class
-- `DELETE /api/classes/:id` - Delete class
-
+| Domain | Base path | Examples |
+|---|---|---|
+| Courses & topics | `/api/course` | list/create/update/delete a course, `GET /:id/access`, `GET/POST /:id/topics`, `PATCH /:id/link-core`, `POST /:id/sync-topics` |
+| Topics | `/api/topics` | `GET /sync-status/:courseId` |
+| Questions | `/api/questions` | CRUD, `GET /stats`, `GET /export`, `POST /generate` (AI), `POST /extract` + `/extract/save` (OCR), `POST /approve` |
+| Variants | `/api/questions/:id/variants`, `/api/questions/variants/:variantId` | create/list/update/delete a variant, `PATCH /variants/:variantId/testable` |
+| Assessments | `/api/assessments` | CRUD, question ordering, sections, section-variant links |
+| Variant assembly | `/api/assessment-variant` | `POST /assemble-variants`, `/assemble-by-metadata`, `/generate-bank-variants`, `/review-variant-ai` |
+| EduAI proxy | `/api/eduai` | `POST /chat`, `POST /generate-questions`, course/topic lookups, `GET /ai-models` |
+| Canvas | `/api/canvas` | connect/disconnect integration, list Canvas courses/quizzes/questions |
+| Auth | `/api` | `GET /auth/me`, `POST /auth/logout` (proxies to Core) |
+| Bug reports | `/api` | `POST /bug-reports`, admin triage (`/admin/bug-reports`) |
+| Internal (service key) | `/api/internal` | `DELETE /courses/:coreCourseId` — cascade delete pushed from Core |
 
 ## Environment Variables
 
-| Variable | Description | Default |
+Full reference with comments: `apps/extensions/question-maker/.env.example`. Key variables:
+
+| Variable | Description | Required |
 |----------|-------------|---------|
-| `NODE_ENV` | Environment | `development` |
-| `PORT` | Server port | `8000` |
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `JWT_SECRET` | JWT secret key | Required |
-| `JWT_EXPIRES_IN` | JWT expiration time | `24h` |
-| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:5173` |
-| `GROQ_API_KEY` | Groq API key | Optional |
-| `OPENAI_API_KEY` | OpenAI API key | Optional |
-| `DEEPSEEK_API_KEY` | DeepSeek API key | Optional |
+| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `CORE_URL` | Base URL of EduAI Core (session validation, course/enrollment reads) | Yes |
+| `EXTENSION_URL` | This service's public URL (post-Core-login redirect target) | Yes |
+| `CORS_ORIGINS` | Comma-separated allowed browser origins | Yes |
+| `ENCRYPTION_KEY` | 32-byte hex key for encrypting stored Canvas API keys | Yes in production |
+| `EDUAI_API_URL` / `EDUAI_API_KEY` | EduAI hosted AI service (course/topic sync, question generation) | Yes for AI features |
+| `GROQ_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | Direct provider fallbacks for question generation | No |
+| `TEST_DATABASE_URL` | Postgres URL for the integration test suite | Only for `npm run test:integration` |
 
 ## Database Schema
 
-### Users
-- `id` (Primary Key)
-- `email` (Unique)
-- `password_hash`
-- `created_at`
-- `updated_at`
-
-### Questions
-- `id` (Primary Key)
-- `user_id` (Foreign Key)
-- `class_id` (Foreign Key, Optional)
-- `content`
-- `difficulty` (easy/medium/hard)
-- `bloom_level` (remember/understand/apply/analyze/evaluate/create)
-- `created_at`
-- `updated_at`
-
-### Classes
-- `id` (Primary Key)
-- `user_id` (Foreign Key)
-- `name`
-- `subject`
-- `course_code`
-- `semester`
-- `year`
-- `description`
-- `department`
-- `created_at`
-- `updated_at`
-
-### Drafts
-- `id` (Primary Key)
-- `user_id` (Foreign Key)
-- `class_id` (Foreign Key, Optional)
-- `content`
-- `status` (draft/published/archived)
-- `last_edited`
-- `created_at`
-- `updated_at`
+The schema (11 models: `User`, `Course`, `Topics`, `QuestionMetadata`, `Assessments`, `Variants`,
+`AssessmentSections`, `SectionVariants`, `CanvasIntegration`, `CanvasCourseMapping`,
+`VariantSelectionCursor`) is defined in [`prisma/schema.prisma`](prisma/schema.prisma) — read that file
+directly rather than a hand-copied summary here, since it's the actual source of truth and this doc will
+drift otherwise.
 
 ## Development
 
-### Adding New Features
-1. Create models in `src/models/`
-2. Add services in `src/services/`
-3. Create routes in `src/routes/`
-4. Update associations in `src/models/index.js`
+### Adding new features
+1. Add/extend models in `prisma/schema.prisma`, then `npx prisma migrate dev --name <change>`
+2. Add business logic in `src/services/`
+3. Add/extend routes in `src/routes/`
+4. Add or update tests in `tests/unit/` and `tests/integration/`, and document them in the repo-root
+   `TESTS.md`
 
 ### Testing
 ```bash
-npm test
+npm test              # unit + integration
+npm run test:coverage # coverage report
 ```
+Integration tests need `TEST_DATABASE_URL` set; without it they self-skip and only unit tests run.
 
 ### Linting
 ```bash
@@ -187,11 +184,11 @@ npm run lint
 
 ## Deployment
 
-The application is ready for deployment with:
-- Docker support
-- Environment-based configuration
-- Production-ready security settings
-- Database migrations
+- `Dockerfile` — production image; baselines (if needed) and runs `prisma migrate deploy` before starting
+  the server — see "Adopting an existing deployment" above
+- `Dockerfile.dev` — development image; runs `npm run dev` (migrate + seed:if-empty + nodemon)
+- Environment-based configuration (see Environment Variables above)
+- Rate limiting, Helmet, and CORS are enabled by default
 
 ## License
 
