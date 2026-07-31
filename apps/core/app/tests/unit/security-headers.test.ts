@@ -69,7 +69,8 @@ describe("applySecurityHeaders", () => {
     expect(csp).toContain(
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     );
-    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
+    // `data:` covers the woff2 fonts Vite inlines under `assetsInlineLimit`.
+    expect(csp).toContain("font-src 'self' data: https://fonts.gstatic.com");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 
