@@ -130,8 +130,8 @@ describe("acceptInvitationSchema", () => {
   const valid = {
     token: "abc",
     name: "New User",
-    password: "supersecret",
-    confirmPassword: "supersecret",
+    password: "StrongPass1!",
+    confirmPassword: "StrongPass1!",
   };
 
   it("accepts a valid payload", () => {
@@ -143,6 +143,30 @@ describe("acceptInvitationSchema", () => {
       acceptInvitationSchema.safeParse({ ...valid, password: "short", confirmPassword: "short" })
         .success,
     ).toBe(false);
+  });
+
+  it("rejects an 8+ character password that does not meet the strength policy", () => {
+    const r = acceptInvitationSchema.safeParse({
+      ...valid,
+      password: "supersecret",
+      confirmPassword: "supersecret",
+    });
+
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const passwordError = r.error.issues.find((issue) => issue.path[0] === "password");
+      expect(passwordError?.message).toContain("upper and lower case letters");
+    }
+  });
+
+  it("accepts a passphrase of at least 16 characters", () => {
+    expect(
+      acceptInvitationSchema.safeParse({
+        ...valid,
+        password: "a long passphrase",
+        confirmPassword: "a long passphrase",
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects mismatched passwords on the confirmPassword path", () => {
