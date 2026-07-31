@@ -1,72 +1,161 @@
 apps/extensions/ai-tutor/react-router.config.ts:3 - default
 apps/extensions/ai-tutor/vite.config.ts:6 - default
 apps/extensions/ai-tutor/vitest.config.ts:5 - default
-apps/extensions/ai-tutor/app/root.tsx:40 - HydrateFallback
-apps/extensions/ai-tutor/app/root.tsx:44 - Layout
-apps/extensions/ai-tutor/app/root.tsx:70 - default
-apps/extensions/ai-tutor/app/root.tsx:85 - ErrorBoundary
-apps/extensions/ai-tutor/app/root.tsx:27 - links
+apps/extensions/ai-tutor/app/root.tsx:32 - HydrateFallback
+apps/extensions/ai-tutor/app/root.tsx:40 - Layout
+apps/extensions/ai-tutor/app/root.tsx:66 - default
+apps/extensions/ai-tutor/app/root.tsx:79 - ErrorBoundary
+apps/extensions/ai-tutor/app/root.tsx:19 - links
 apps/extensions/ai-tutor/app/routes.ts:3 - default
-apps/extensions/ai-tutor/app/components/AddCourseTopicsButton.tsx:10 - default
-apps/extensions/ai-tutor/app/components/ProgressBar.tsx:28 - ProgressBar (used in module)
-apps/extensions/ai-tutor/app/hooks/use-api-keys.ts:5 - UseApiKeysResult (used in module)
+apps/extensions/ai-tutor/app/hooks/useCourseTopics.tsx:23 - CourseTopicsState (used in module)
 apps/extensions/ai-tutor/app/lib/activityForm.ts:49 - hintsToTextarea (used in module)
 apps/extensions/ai-tutor/app/lib/activityForm.ts:82 - parseHintsInput (used in module)
 apps/extensions/ai-tutor/app/lib/admin-settings.ts:197 - inferCostTier (used in module)
-apps/extensions/ai-tutor/app/lib/coreUrl.ts:2 - getCoreUrl (used in module)
-apps/extensions/ai-tutor/app/lib/course-display.ts:83 - groupCoursesByTerm (used in module)
-apps/extensions/ai-tutor/app/lib/course-display.ts:74 - CourseTermGroup (used in module)
-apps/extensions/ai-tutor/app/lib/course-title.ts:36 - titleNumber
-apps/extensions/ai-tutor/app/lib/knowledge-levels.ts:7 - KnowledgeLevel (used in module)
-apps/extensions/ai-tutor/app/lib/provider-keys.ts:26 - API_KEYS_STORAGE_KEY (used in module)
+apps/extensions/ai-tutor/app/lib/admin-settings.ts:4 - CostTier (used in module)
+apps/extensions/ai-tutor/app/lib/dashboard-stats.ts:4 - buildStudentDashboardStats (used in module)
+apps/extensions/ai-tutor/app/lib/dashboard-stats.ts:34 - buildAdminDashboardStats (used in module)
+apps/extensions/ai-tutor/app/lib/dashboard-stats.ts:50 - DashboardData (used in module)
 apps/extensions/ai-tutor/app/lib/student-chat-history.ts:11 - ChatTab (used in module)
 apps/extensions/ai-tutor/app/lib/student-chat-history.ts:11 - ChatMessage (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:15 - SubmissionResponse (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:93 - EnrolledStudent (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:108 - BugReportType (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:185 - CostTier (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:201 - CompletionStatus (used in module)
-apps/extensions/ai-tutor/app/lib/types.ts:274 - PromptTemplate
-apps/extensions/ai-tutor/app/routes/_app.tsx:197 - default
-apps/extensions/ai-tutor/app/routes/admin.tsx:60 - clientLoader
-apps/extensions/ai-tutor/app/routes/admin.tsx:77 - default
-apps/extensions/ai-tutor/app/routes/dashboard.tsx:52 - clientLoader
-apps/extensions/ai-tutor/app/routes/dashboard.tsx:117 - default
-apps/extensions/ai-tutor/app/routes/help.tsx:7 - clientLoader
-apps/extensions/ai-tutor/app/routes/help.tsx:11 - default
-apps/extensions/ai-tutor/app/routes/home.tsx:9 - meta
-apps/extensions/ai-tutor/app/routes/home.tsx:16 - default
-apps/extensions/ai-tutor/app/routes/instructor.course.tsx:78 - clientLoader
-apps/extensions/ai-tutor/app/routes/instructor.lesson.tsx:121 - clientLoader
-apps/extensions/ai-tutor/app/routes/instructor.module.tsx:70 - clientLoader
-apps/extensions/ai-tutor/app/routes/instructor.tsx:41 - clientLoader
-apps/extensions/ai-tutor/app/routes/instructor.tsx:82 - default
-apps/extensions/ai-tutor/app/routes/settings.tsx:6 - clientLoader
-apps/extensions/ai-tutor/app/routes/settings.tsx:14 - default
-apps/extensions/ai-tutor/app/routes/student.course.tsx:15 - clientLoader
-apps/extensions/ai-tutor/app/routes/student.course.tsx:33 - default
-apps/extensions/ai-tutor/app/routes/student.lesson.tsx:100 - clientLoader
-apps/extensions/ai-tutor/app/routes/student.lesson.tsx:147 - default
-apps/extensions/ai-tutor/app/routes/student.module.tsx:16 - clientLoader
-apps/extensions/ai-tutor/app/routes/student.module.tsx:47 - default
-apps/extensions/ai-tutor/app/routes/student.tsx:22 - clientLoader
-apps/extensions/ai-tutor/app/routes/unsupported-role.tsx:8 - default
-apps/extensions/ai-tutor/app/components/admin/AiOversightPanel.tsx:239 - default
-apps/extensions/ai-tutor/app/components/common/PaginationControls.tsx:20 - PaginationControlsProps (used in module)
-apps/extensions/ai-tutor/app/components/courses/CourseFeedbackPanel.tsx:195 - PAGE_SIZE (used in module)
-apps/extensions/ai-tutor/app/components/courses/ModuleCard.tsx:39 - ModuleCardProps (used in module)
-apps/extensions/ai-tutor/app/components/dashboard/DashboardView.tsx:33 - DashboardViewProps (used in module)
-apps/extensions/ai-tutor/app/components/layout/ShellBreadcrumbContext.tsx:3 - ShellBreadcrumbItem (used in module)
-apps/extensions/ai-tutor/app/components/lessons/LessonActivityView.tsx:41 - LessonActivityFeedbackState (used in module)
-apps/extensions/ai-tutor/app/components/lessons/LessonActivityView.tsx:343 - default
-apps/extensions/ai-tutor/app/components/lessons/LessonCard.tsx:50 - LessonCardProps (used in module)
-apps/extensions/ai-tutor/app/components/lessons/ModuleHero.tsx:34 - ModuleHeroStat (used in module)
-apps/extensions/ai-tutor/app/components/lessons/ModuleHero.tsx:44 - ModuleHeroProps (used in module)
+apps/extensions/ai-tutor/app/lib/types.ts:62 - EnrolledStudent (used in module)
+apps/extensions/ai-tutor/app/lib/types.ts:147 - CostTier (used in module)
+apps/extensions/ai-tutor/app/lib/types.ts:163 - CompletionStatus (used in module)
+apps/extensions/ai-tutor/app/lib/types.ts:165 - ExternalCourseMetadata (used in module)
+apps/extensions/ai-tutor/app/lib/types.ts:177 - EduAiCourse
+apps/extensions/ai-tutor/app/lib/types.ts:238 - PromptTemplate
+apps/extensions/ai-tutor/app/routes/admin.tsx:48 - clientLoader
+apps/extensions/ai-tutor/app/routes/admin.tsx:73 - default
+apps/extensions/ai-tutor/app/routes/home.tsx:8 - meta (used in module)
+apps/extensions/ai-tutor/app/routes/home.tsx:15 - default
+apps/extensions/ai-tutor/app/routes/instructor.course.tsx:45 - clientLoader
+apps/extensions/ai-tutor/app/routes/instructor.course.tsx:65 - default
+apps/extensions/ai-tutor/app/routes/instructor.list.tsx:107 - clientLoader
+apps/extensions/ai-tutor/app/routes/instructor.list.tsx:131 - default
+apps/extensions/ai-tutor/app/routes/instructor.topic.tsx:41 - clientLoader
+apps/extensions/ai-tutor/app/routes/instructor.topic.tsx:63 - default
+apps/extensions/ai-tutor/app/routes/instructor.tsx:40 - clientLoader
+apps/extensions/ai-tutor/app/routes/instructor.tsx:51 - default
+apps/extensions/ai-tutor/app/routes/settings.tsx:10 - clientLoader
+apps/extensions/ai-tutor/app/routes/settings.tsx:15 - default
+apps/extensions/ai-tutor/app/routes/student.course.tsx:12 - clientLoader
+apps/extensions/ai-tutor/app/routes/student.course.tsx:27 - default
+apps/extensions/ai-tutor/app/routes/student.list.tsx:75 - clientLoader
+apps/extensions/ai-tutor/app/routes/student.list.tsx:105 - default
+apps/extensions/ai-tutor/app/routes/student.topic.tsx:12 - clientLoader
+apps/extensions/ai-tutor/app/routes/student.topic.tsx:32 - default
+apps/extensions/ai-tutor/app/routes/student.tsx:15 - clientLoader
+apps/extensions/ai-tutor/app/routes/unsupported-role.tsx:6 - default
+apps/extensions/ai-tutor/app/components/ai-elements/conversation.tsx:10 - ConversationProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/conversation.tsx:22 - ConversationContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/conversation.tsx:28 - ConversationEmptyStateProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/conversation.tsx:34 - ConversationEmptyState
+apps/extensions/ai-tutor/app/components/ai-elements/conversation.tsx:61 - ConversationScrollButtonProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:281 - MessageAttachment
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:349 - MessageAttachments
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:13 - MessageProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:28 - MessageContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:44 - MessageActionsProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:46 - MessageActions
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:52 - MessageActionProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:57 - MessageAction
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:109 - MessageBranchProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:114 - MessageBranch
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:154 - MessageBranchContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:156 - MessageBranchContent
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:181 - MessageBranchSelectorProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:185 - MessageBranchSelector
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:206 - MessageBranchPreviousProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:208 - MessageBranchPrevious
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:226 - MessageBranchNextProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:228 - MessageBranchNext
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:246 - MessageBranchPageProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:248 - MessageBranchPage
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:261 - MessageResponseProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:275 - MessageAttachmentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:347 - MessageAttachmentsProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:361 - MessageToolbarProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/message.tsx:363 - MessageToolbar
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:132 - PromptInputProvider
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:247 - PromptInputAttachment
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:308 - PromptInputAttachments
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:74 - AttachmentsContext (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:83 - TextInputContext (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:89 - PromptInputControllerProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:99 - usePromptInputController
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:112 - useProviderAttachments
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:124 - PromptInputProviderProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:229 - usePromptInputAttachments (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:242 - PromptInputAttachmentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:304 - PromptInputAttachmentsProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:371 - PromptInputActionAddAttachmentsProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:375 - PromptInputActionAddAttachments
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:399 - PromptInputProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:734 - PromptInputBodyProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:740 - PromptInputTextareaProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:825 - PromptInputHeaderProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:827 - PromptInputHeader
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:831 - PromptInputFooterProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:841 - PromptInputToolsProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:847 - PromptInputButtonProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:849 - PromptInputButton (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:868 - PromptInputActionMenuProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:869 - PromptInputActionMenu
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:873 - PromptInputActionMenuTriggerProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:875 - PromptInputActionMenuTrigger
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:887 - PromptInputActionMenuContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:888 - PromptInputActionMenuContent
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:895 - PromptInputActionMenuItemProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:896 - PromptInputActionMenuItem
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:904 - PromptInputSubmitProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:989 - PromptInputSpeechButtonProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:994 - PromptInputSpeechButton
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1090 - PromptInputModelSelectProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1094 - PromptInputModelSelectTriggerProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1110 - PromptInputModelSelectContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1117 - PromptInputModelSelectItemProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1124 - PromptInputModelSelectValueProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1131 - PromptInputHoverCardProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1133 - PromptInputHoverCard
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1141 - PromptInputHoverCardTriggerProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1143 - PromptInputHoverCardTrigger
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1147 - PromptInputHoverCardContentProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1149 - PromptInputHoverCardContent
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1154 - PromptInputTabsListProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1156 - PromptInputTabsList
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1160 - PromptInputTabProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1162 - PromptInputTab
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1166 - PromptInputTabLabelProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1168 - PromptInputTabLabel
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1172 - PromptInputTabBodyProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1174 - PromptInputTabBody
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1178 - PromptInputTabItemProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1180 - PromptInputTabItem
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1187 - PromptInputCommandProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1189 - PromptInputCommand
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1193 - PromptInputCommandInputProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1195 - PromptInputCommandInput
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1199 - PromptInputCommandListProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1201 - PromptInputCommandList
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1205 - PromptInputCommandEmptyProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1207 - PromptInputCommandEmpty
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1211 - PromptInputCommandGroupProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1213 - PromptInputCommandGroup
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1217 - PromptInputCommandItemProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1219 - PromptInputCommandItem
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1223 - PromptInputCommandSeparatorProps (used in module)
+apps/extensions/ai-tutor/app/components/ai-elements/prompt-input.tsx:1225 - PromptInputCommandSeparator
+apps/extensions/ai-tutor/app/components/dashboard/RoleDashboard.tsx:12 - RoleDashboardProps (used in module)
+apps/extensions/ai-tutor/app/components/layout/AppShell.tsx:7 - AppShellProps (used in module)
+apps/extensions/ai-tutor/app/components/layout/AppSiteHeader.tsx:11 - AppSiteHeaderProps (used in module)
+apps/extensions/ai-tutor/app/components/ui/button-group.tsx:78 - ButtonGroupSeparator (used in module)
+apps/extensions/ai-tutor/app/components/ui/button-group.tsx:78 - buttonGroupVariants (used in module)
+apps/extensions/ai-tutor/app/components/ui/input-group.tsx:153 - InputGroupText (used in module)
+apps/extensions/ai-tutor/app/components/ui/input-group.tsx:154 - InputGroupInput (used in module)
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:4 - AtCourseAccess
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:6 - AtUser
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:12 - AtRoleView
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:14 - AtNavItemKey
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:23 - AtNavItem
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:22 - AtNavItem
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:6 - isPlatformAdmin
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:10 - isUnitAdmin
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:14 - isInstructorRole
@@ -82,18 +171,15 @@ apps/extensions/ai-tutor/app/lib/rbac/index.ts:64 - canManageTopics
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:68 - canManageEnrollments
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:77 - canAssignTaRole
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:81 - canViewCourseSubmissions
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:86 - canViewCourseFeedback
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:96 - canGradeSubmissions
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:103 - canViewCourseAnalytics
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:108 - canViewCourseStudentMetrics
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:112 - canAccessAdminConsole
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:116 - canSubmitBugReport
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:121 - getRoleViewLabel
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:86 - canViewCourseAnalytics
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:91 - canViewCourseStudentMetrics
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:95 - canAccessAdminConsole
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:99 - canSubmitBugReport
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:104 - getRoleViewLabel
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:4 - EnrollmentRole
 apps/extensions/ai-tutor/app/lib/rbac/index.ts:9 - getNavForUser
-apps/extensions/ai-tutor/app/lib/rbac/index.ts:51 - getCourseDetailTabs
+apps/extensions/ai-tutor/app/lib/rbac/index.ts:44 - getCourseDetailTabs
 apps/extensions/ai-tutor/app/lib/tours/tour-engine.ts:32 - getSessionStep (used in module)
 apps/extensions/ai-tutor/app/lib/tours/tour-engine.ts:53 - getStepRoute (used in module)
 apps/extensions/ai-tutor/app/lib/tours/tour-types.ts:5 - TourMemoryKey (used in module)
-apps/extensions/ai-tutor/.react-router/types/app/routes/+types/_app.ts:22 - Route
 apps/extensions/ai-tutor/.react-router/types/app/routes/+types/unsupported-role.ts:22 - Route
