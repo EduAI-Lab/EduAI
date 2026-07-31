@@ -80,4 +80,21 @@ describe('listCoreAdminUsers (ids)', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(result.total).toBe(200);
   });
+
+  // #1173 review: the admin enrollments route bounds its enrollment sync but
+  // used to call this unbounded, so a hung Core kept the promised local-mirror
+  // fallback from ever running. Both the `ids` lookup and the paged lookup
+  // must forward the caller's signal to the underlying fetch.
+  it('forwards options.signal to fetch so a hung Core lookup can be bounded', async () => {
+    const mockFetch = mockUsersResponse(() => []);
+    vi.stubGlobal('fetch', mockFetch);
+    const signal = AbortSignal.timeout(3_000);
+
+    await listCoreAdminUsers('cookie=abc', { ids: ['u1'], signal });
+    await listCoreAdminUsers('cookie=abc', { role: 'STUDENT', signal });
+
+    for (const [, options] of mockFetch.mock.calls) {
+      expect(options.signal).toBe(signal);
+    }
+  });
 });
