@@ -42,12 +42,17 @@
  *   --cpu=N             CPU throttle multiplier, e.g. 4      (default: off)
  *   --net=<profile>     fast3g | slow3g | off                (default: off)
  *   --chunks            print per-chunk JS table per page
+ *   --full-chunks       also write page-chunks.json with untruncated chunk lists
+ *   --pace=N            ms idled between loads, keeps Core's auth limiter happy
+ *                       (default 750; 0 disables)
  *   --out=<dir>         output dir (default docs/perf/frontend/baseline)
  *   --target=<label>    fingerprint label, e.g. dev-remote   (default local)
  *   --headed            show the browser
  *
  * Output (same shape as `npm run perf:endpoints`, so both baselines are read the
- * same way): <out>/page-vitals.json with every measurement, plus <out>/errors.log
+ * same way): <out>/page-vitals.json with every measurement — per-page JS totals
+ * in full, but only the CHUNK_LIMIT heaviest chunks each (see trimChunks; pass
+ * --full-chunks for the rest) — plus <out>/errors.log
  * and <out>/errors.json listing every page that did NOT produce a trustworthy
  * number — load failure, login bounce, unresolved dynamic id, or a role whose
  * login never succeeded. A failed login degrades that role's pages to errors
@@ -85,6 +90,15 @@ const COLD = !flag('warm');
 const CPU_THROTTLE = Number(flag('cpu') ?? 0);
 const NET_PROFILE = typeof flag('net') === 'string' ? flag('net') : 'off';
 const SHOW_CHUNKS = Boolean(flag('chunks'));
+const FULL_CHUNKS = Boolean(flag('full-chunks'));
+// Core's Better Auth limiter allows 100 requests per 60s per IP, and every
+// measured load costs it a few (session read on each app). An unpaced sweep of
+// ~50 pages x 3 runs sails past that and starts getting bounced to the login
+// page mid-run, which looks like a broken page rather than a throttled one.
+// Idle between loads so a full sweep stays under the limit by construction.
+const PACE_MS = Number(flag('pace') ?? 750);
+const RATE_LIMIT_HINT = /too many requests|rate ?limit|\b429\b/i;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT_DIR = (typeof flag('out') === 'string' ? flag('out') : 'docs/perf/frontend/baseline').replace(/\/$/, '');
 const TARGET_LABEL = (typeof flag('target') === 'string' ? flag('target') : process.env.TARGET_LABEL) ?? 'local';
 const HEADED = Boolean(flag('headed'));
@@ -229,6 +243,7 @@ async function profileOnce(browser, storageState, { url, requiresAuth }) {
 async function profilePage(browser, storageState, entry) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) {
+    if (i > 0 && PACE_MS) await sleep(PACE_MS);
     try {
       runs.push(await profileOnce(browser, storageState, entry));
     } catch (err) {
@@ -239,8 +254,13 @@ async function profilePage(browser, storageState, entry) {
   // Every run failing is usually transient (a DNS blip or a dev-server restart
   // takes out the whole burst at once), so pay for one backed-off retry before
   // writing the page off — otherwise a two-second hiccup costs a 50-page run.
+  // Core's auth limiter is the one predictable cause: it allows 100 requests per
+  // 60s per IP, and a page load costs several, so wait out the whole window
+  // rather than retrying into the same wall.
   if (!ok.length) {
-    await new Promise((r) => setTimeout(r, 3000));
+    const rateLimited = runs.some((r) => RATE_LIMIT_HINT.test(r.error ?? ''));
+    if (rateLimited) process.stderr.write('rate-limited, waiting out the 60s auth window ... ');
+    await sleep(rateLimited ? 65_000 : 3000);
     try {
       const retry = await profileOnce(browser, storageState, entry);
       runs.push(retry);
@@ -437,6 +457,23 @@ function collectErrors(results, skipped, loginFailures) {
   return errors;
 }
 
+/**
+ * A page on a Vite dev server pulls hundreds of unbundled ESM modules — the raw
+ * per-chunk list is ~12k entries across a full sweep, which is 100k lines of JSON
+ * nobody reviews. Only the heaviest few carry the actionable signal (a 3.8MB icon
+ * barrel shows up at rank 1), and the totals worth diffing are already their own
+ * fields, so the committed artifact keeps the top CHUNK_LIMIT by transfer size
+ * plus `chunkCount`. `--full-chunks` writes the untruncated list to a separate
+ * page-chunks.json for a local deep-dive.
+ */
+const CHUNK_LIMIT = 5;
+
+function trimChunks(r) {
+  if (!r.chunks) return r;
+  const byWeight = [...r.chunks].sort((a, b) => b.transferBytes - a.transferBytes);
+  return { ...r, chunkCount: r.chunks.length, chunks: byWeight.slice(0, CHUNK_LIMIT) };
+}
+
 function writeArtifacts(results, skipped, loginFailures) {
   const dir = path.resolve(OUT_DIR);
   fs.mkdirSync(dir, { recursive: true });
@@ -444,7 +481,23 @@ function writeArtifacts(results, skipped, loginFailures) {
   const measured = results.filter((r) => !r.error && r.authOk);
 
   const vitalsPath = path.join(dir, 'page-vitals.json');
-  fs.writeFileSync(vitalsPath, JSON.stringify({ env, measured_count: measured.length, results, skipped }, null, 2));
+  fs.writeFileSync(
+    vitalsPath,
+    JSON.stringify({ env, measured_count: measured.length, chunks_per_page: CHUNK_LIMIT, results: results.map(trimChunks), skipped }, null, 2)
+  );
+
+  if (FULL_CHUNKS) {
+    const chunksPath = path.join(dir, 'page-chunks.json');
+    fs.writeFileSync(
+      chunksPath,
+      JSON.stringify(
+        { env, results: results.filter((r) => r.chunks).map((r) => ({ app: r.app, name: r.name, role: r.role, chunks: r.chunks })) },
+        null,
+        2
+      )
+    );
+    console.log(`\nwrote ${chunksPath} (untruncated chunk lists)`);
+  }
 
   const errors = collectErrors(results, skipped, loginFailures);
   const errPath = path.join(dir, 'errors.json');
@@ -509,27 +562,43 @@ try {
       });
       continue;
     }
-    const ctx = await browser.newContext();
-    const page = await ctx.newPage();
-    try {
-      await loginToCore(page, APPS.core.baseUrl, creds);
-      states.set(role, await ctx.storageState());
-      process.stderr.write(`logged in as ${role} (${creds.email})\n`);
-    } catch (err) {
-      const bodyText = await page
-        .locator('body')
-        .innerText()
-        .then((t) => t.replace(/\s+/g, ' ').slice(0, 300))
-        .catch(() => '(page text unavailable)');
-      loginFailures.push({
-        role,
-        email: creds.email,
-        reason: `${err.message} — landed on ${page.url()}; page said: ${bodyText}`,
-        affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
-      });
-      process.stderr.write(`login FAILED as ${role} (${creds.email}) — its pages will be reported as errors\n`);
-    } finally {
-      await ctx.close();
+    // Sign-in is the most limiter-sensitive request in the run: the roles log in
+    // back to back before any measuring starts, so the last one in the burst is
+    // the first to be told "too many requests". Idle between them, and give a
+    // throttled login the full window before deciding the role is unusable —
+    // losing one role silently costs every page that only it can see.
+    if (states.size > 1 && PACE_MS) await sleep(PACE_MS);
+    for (let attempt = 0; ; attempt++) {
+      const ctx = await browser.newContext();
+      const page = await ctx.newPage();
+      try {
+        await loginToCore(page, APPS.core.baseUrl, creds);
+        states.set(role, await ctx.storageState());
+        process.stderr.write(`logged in as ${role} (${creds.email})\n`);
+        break;
+      } catch (err) {
+        const bodyText = await page
+          .locator('body')
+          .innerText()
+          .then((t) => t.replace(/\s+/g, ' ').slice(0, 300))
+          .catch(() => '(page text unavailable)');
+        const reason = `${err.message} — landed on ${page.url()}; page said: ${bodyText}`;
+        if (attempt < 1 && RATE_LIMIT_HINT.test(reason)) {
+          process.stderr.write(`login as ${role} rate-limited, waiting out the 60s auth window ...\n`);
+          await sleep(65_000);
+          continue;
+        }
+        loginFailures.push({
+          role,
+          email: creds.email,
+          reason,
+          affected: selected.filter((p) => p.role === role).map((p) => `${p.app}/${p.name}`),
+        });
+        process.stderr.write(`login FAILED as ${role} (${creds.email}) — its pages will be reported as errors\n`);
+        break;
+      } finally {
+        await ctx.close();
+      }
     }
   }
 
@@ -579,6 +648,7 @@ try {
 
   const results = [];
   for (const entry of entries) {
+    if (results.length && PACE_MS) await sleep(PACE_MS);
     process.stderr.write(`profiling ${entry.app}/${entry.name} (${entry.role}) ... `);
     const r = await profilePage(browser, states.get(entry.role), entry);
     process.stderr.write(r.error ? 'FAILED\n' : `LCP ${ms(r.lcp)}ms${r.authOk ? '' : ' REDIRECTED'}\n`);
