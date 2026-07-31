@@ -102,6 +102,7 @@ import {
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
 import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
+import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
 import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
@@ -797,18 +798,34 @@ export async function action({ request }: ActionFunctionArgs) {
     // skips this entirely; the dispatch worker (#168) drains it later.
     if (isEnqueueRequested(body)) {
       try {
-        const { jobId } = await enqueueQuestionGeneration({
+        const { jobId, queuePosition, queueDepth } = await enqueueQuestionGeneration({
           body,
           messages: rawMessages,
           userId: actingUser.id,
           courseId: effectiveCourseId ?? undefined,
           requestedModel: model,
         });
-        return new Response(JSON.stringify({ jobId }), {
+        // 202 carries a live position/depth snapshot (#915); the client polls
+        // the status endpoint (#917) for fresher values.
+        return new Response(JSON.stringify({ jobId, queuePosition, queueDepth }), {
           status: 202,
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
+        // Queue saturated (#915): an honest rate signal, not a failure — 429
+        // with Retry-After so the client backs off and retries.
+        if (error instanceof QueueFullError) {
+          return chatApiReject(
+            429,
+            {
+              error: "AI job queue is full",
+              details: error.message,
+              retryAfterSeconds: error.retryAfterSeconds,
+            },
+            { chatMode, userId: actingUser.id },
+            { "Retry-After": String(error.retryAfterSeconds) },
+          );
+        }
         // Invalid payload is the caller's fault (400); a queue/Redis failure is
         // ours (502) — never mask an infra outage as a client error.
         const isValidationError = error instanceof ZodError;
