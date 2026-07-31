@@ -21,6 +21,10 @@ fi
 
 git check-ref-format --branch "$branch" >/dev/null
 
+# package-lock.json is routinely rewritten by `npm ci` from the previous deploy;
+# discard drift here since the upcoming checkout + npm ci will overwrite it anyway.
+git checkout -- package-lock.json 2>/dev/null || true
+
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
   echo "Refusing to deploy: the shared checkout has uncommitted or untracked files." >&2
   git status --short >&2
