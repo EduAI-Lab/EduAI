@@ -113,44 +113,42 @@ npx prisma generate
 npx prisma migrate deploy
 ```
 
-#### Start the dev server (use tmux)
+#### Start the stack (systemd)
 
-The server process **dies when your SSH session ends**. Use `tmux` so it survives disconnects:
+The stack runs as three **system** units owned by the `eduai-dev` group, so it
+survives logout and reboot and any group member can manage it. There is no tmux
+and no `npm run dev` on this box — s378 serves **built** assets.
 
 ```bash
-tmux new -s eduai
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore
-npm run docker:dev:db:eduai
-npx turbo run dev --filter=edu-ai
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
+bash infra/s378/go-live-build.sh    # env, migrate, generate, build, restart
 ```
 
-Detach: `Ctrl+B`, then `D`. Reattach: `tmux attach -t eduai`.
+| Command | What it does |
+| ------- | ------------ |
+| `systemctl status eduai-dev.target` | Stack status |
+| `systemctl restart eduai-dev.target` | Restart all three units (no sudo) |
+| `journalctl -u eduai-core -f` | Follow Core's logs |
+| `bash infra/s378/go-live-build.sh` | Rebuild and restart — needed for any code or `VITE_*` change |
 
-| Command                      | What it does                         |
-| ---------------------------- | ------------------------------------ |
-| `tmux ls`                    | List active sessions                 |
-| `tmux attach -t eduai`       | Reattach to the `eduai` session      |
-| `tmux kill-session -t eduai` | Kill the session and stop the server |
-| `Ctrl+B` then `D`            | Detach (server keeps running)        |
-| `Ctrl+C` (inside tmux)       | Stop the dev process                 |
+Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`. The two
+extension hosts are served as static files straight from disk rather than proxied.
 
-Apache proxies `https://dev.eduai.ok.ubc.ca` → `http://127.0.0.1:3000`.
+Full details: [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
 
 #### When you're done
 
 Switch back to `development` (or `main`) so the server is in a known state for others:
 
 ```bash
-tmux attach -t eduai
-# Ctrl+C to stop, then:
+cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 git checkout development
 git pull origin development
-npm install
-npm run docker:dev:db:eduai
-npx turbo run dev --filter=edu-ai
+bash infra/s378/go-live-build.sh --install
 ```
 
-Detach again with `Ctrl+B`, `D`.
+The rebuild is required: without it the server keeps serving the compiled assets
+from whatever branch was built last, regardless of what is checked out.
 
 ### Server configuration reference
 
@@ -182,9 +180,10 @@ OLLAMA_BASE_URL="http://cmps01.ok.ubc.ca:11434"
 GOOGLE_GENERATIVE_AI_API_KEY=""   # set if using Gemini
 FIRECRAWL_API_KEY=""              # set if using Firecrawl web search
 
-# Optional: fix Vite HMR over HTTPS reverse proxy
-DEV_SERVER_HMR_HOST="dev.eduai.ok.ubc.ca"
-DEV_SERVER_HMR_CLIENT_PORT="443"
+# HMR vars are obsolete on s378 — it serves built assets, not a dev server.
+# Keep them only if you run `npm run dev` behind an HTTPS proxy elsewhere.
+# DEV_SERVER_HMR_HOST="dev.eduai.ok.ubc.ca"
+# DEV_SERVER_HMR_CLIENT_PORT="443"
 ```
 
 **Do not** commit real secrets. URL-encode special characters in `DATABASE_URL` passwords — see [encoding table](#database_url-encoding) below.
@@ -253,7 +252,17 @@ cd apps/core && npx prisma migrate deploy && npm run db:seed
 
 #### Apache reverse proxy
 
-Apache terminates HTTPS and forwards traffic to the Vite dev server on the host. The vhost file is:
+Apache terminates HTTPS for all three hosts, but they are not all served the same way:
+
+| Host | How Apache serves it |
+|------|----------------------|
+| `dev.eduai.ok.ubc.ca` | proxied to Core on `:3000` (node, SSR) |
+| `dev.aitutor.eduai.ok.ubc.ca` | **static** `DocumentRoot` on the build output; only `/api/` is proxied (`:4000`) |
+| `dev.questionmaker.eduai.ok.ubc.ca` | **static** `DocumentRoot` on the build output; only `/api/` is proxied (`:8000`) |
+
+The two extension vhosts are versioned in `infra/s378/` and installed with
+`bash infra/s378/go-live-apache.sh`. Core's vhost is **not** in the repo and exists
+only on the box:
 
 `/etc/httpd/conf.d/dev.eduai.ok.ubc.ca.conf`
 
@@ -287,7 +296,9 @@ ProxyPassReverse / http://127.0.0.1:3000/
 
 Save and exit (`nano`: `Ctrl+O`, Enter, `Ctrl+X`).
 
-Apache must allow WebSocket upgrades for Vite HMR if you use hot reload through the proxy. If HMR still fails after fixing the port, ask IT or check whether `mod_proxy_wstunnel` is enabled and that nothing else in the vhost blocks `Upgrade` headers.
+`mod_proxy_wstunnel` is **not** required. It was only ever needed to pass Vite's
+HMR WebSocket through the proxy, and nothing on this host runs a dev server any
+more. The extension vhosts serve static files, so there is no upgrade to forward.
 
 ##### Validate and apply
 
@@ -309,7 +320,7 @@ Confirm the dev app is listening before testing in a browser:
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/
 ```
 
-You should get a response (often `200`) while `npx turbo run dev --filter=edu-ai` is running in tmux.
+You should get a response (often `200`) while `eduai-core.service` is active.
 
 #### Prisma on RHEL 8
 
@@ -381,22 +392,22 @@ DATABASE_URL="postgresql://myuser:MyPa%24%26ss%40word@127.0.0.1:54320/eduai?sche
 3. Install Node 20 via Volta
 4. `npm install` at repo root (use `--ignore-scripts` if native build fails)
 5. `npm run docker:dev:db:eduai`
-6. Configure `apps/core/.env` (`DATABASE_URL`, `BETTER_AUTH_URL`, `OLLAMA_BASE_URL`, optional HMR vars)
+6. Configure `apps/core/.env` (`DATABASE_URL`, `BETTER_AUTH_URL`, `OLLAMA_BASE_URL`)
 7. `cd apps/core && npx prisma generate && npx prisma migrate deploy && npm run db:seed`
-8. Configure Apache vhost → **port 3000**; `sudo systemctl reload httpd`
-9. `tmux new -s eduai` → `npx turbo run dev --filter=edu-ai`
+8. Configure Apache vhosts; `bash infra/s378/go-live-apache.sh`
+9. `bash infra/s378/go-live-systemd-install.sh` then `bash infra/s378/go-live-build.sh`
 
 ### Branch switching checklist
 
 Avoid mixing old and new layouts when hopping branches:
 
-1. Stop dev server (`Ctrl+C` in tmux)
-2. `git fetch && git checkout <branch> && git pull`
-3. `npm install` (root)
-4. `npm run docker:dev:db:eduai`
-5. `cd apps/core && npx prisma migrate deploy`
-6. Confirm `apps/core/.env` still matches this doc (port **54320**, auth URL **https://dev.eduai.ok.ubc.ca**)
-7. Restart `npx turbo run dev --filter=edu-ai`
+1. `git fetch && git checkout <branch> && git pull`
+2. `npm run docker:dev:db:eduai`
+3. Confirm `apps/core/.env` still matches this doc (port **54320**, auth URL **https://dev.eduai.ok.ubc.ca**)
+4. `bash infra/s378/go-live-build.sh --install`
+
+Step 4 covers `npm install`, migrations, `prisma generate`, the builds and the
+restart. Rebuilding is mandatory — the served assets are compiled per branch.
 
 See also the [root README](../README.md) for local Turborepo workflow, all app ports, and database commands.
 
@@ -450,7 +461,7 @@ topology must hold this invariant:
 - The vhosts do **not** set `RemoteIP*` or rewrite `X-Forwarded-*` — we rely on Apache mod_proxy's
   default behavior, which **appends** the real socket-peer address as the last XFF entry. A spoofed
   `X-Forwarded-For: 1.2.3.4` therefore arrives as `1.2.3.4, <real-client>` and Core records the
-  real client (rightmost token). Process management (tmux → systemd user units) does not change this.
+  real client (rightmost token). Process management (systemd system units) does not change this.
 - `x-real-ip` / `cf-connecting-ip` are intentionally **not** honored, because Apache does not set them.
 
 **If a second proxy is ever added** (e.g. Cloudflare in front of Apache), the rightmost XFF entry

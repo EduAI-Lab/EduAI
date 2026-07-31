@@ -7,63 +7,79 @@
 
 ## Public URLs
 
-| App | URL | Proxies to |
-|-----|-----|------------|
-| Core | https://dev.eduai.ok.ubc.ca | `:3000` |
-| AI Tutor | https://dev.aitutor.eduai.ok.ubc.ca | FE `:3001`, `/api/` → `:4000` |
-| Question Maker | https://dev.questionmaker.eduai.ok.ubc.ca | FE `:5173`, `/api/` → `:8000` |
+| App | URL | Served by |
+|-----|-----|-----------|
+| Core | https://dev.eduai.ok.ubc.ca | `:3000` (node, SSR) |
+| AI Tutor | https://dev.aitutor.eduai.ok.ubc.ca | Apache, **static build**; `/api/` → `:4000` |
+| Question Maker | https://dev.questionmaker.eduai.ok.ubc.ca | Apache, **static build**; `/api/` → `:8000` |
+
+> s378 serves **built** assets — it does not run `npm run dev`. A `git pull` or a
+> unit restart no longer changes what the sites serve; you must rebuild. See
+> [Switch the shared server to your feature branch](#switch-the-shared-server-to-your-feature-branch).
 
 Shared session cookies use **`COOKIE_DOMAIN=.eduai.ok.ubc.ca`** so login on Core works across extension hosts. After that env is enabled (or changed), **sign in again** (extensions send `?force=1` on login to avoid a redirect loop).
 
 Ops details for extensions + env sync: [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md).
 
-## Process management (systemd — preferred)
+## Process management (systemd)
 
-The shared stack is meant to run under **systemd user units** (not long-lived tmux). Units live in `infra/s378/systemd/` and are installed for the app user (e.g. `ssaada08`).
+Three **system** units owned by the `eduai-dev` group. Units live in
+`infra/s378/systemd/`. Any group member can restart the stack — no `--user`, no
+`loginctl enable-linger`, no sudo.
 
 | Unit | Port |
 |------|------|
 | `eduai-core.service` | `:3000` |
 | `eduai-aitutor-server.service` | `:4000` |
-| `eduai-aitutor-fe.service` | `:3001` |
 | `eduai-qm-backend.service` | `:8000` |
-| `eduai-qm-frontend.service` | `:5173` |
-| `eduai-dev.target` | all of the above |
+| `eduai-dev.target` | all three |
+
+The two frontend units are gone. Both extension frontends are `ssr: false`, so
+their builds are static files that Apache serves directly.
 
 ### One-time setup
 
 ```bash
-# From the repo on s378 (or ~/dev-vhosts with systemd/ copied)
-bash infra/s378/go-live-systemd-install.sh
-
-# Required so units survive SSH logout / reboot:
-sudo loginctl enable-linger "$USER"
-loginctl show-user "$USER" -p Linger   # expect Linger=yes
-
-# Stop any old tmux sessions and start the stack:
-bash infra/s378/go-live-systemd-start.sh
+bash infra/s378/go-live-systemd-install.sh   # needs sudo; run once
+bash infra/s378/go-live-build.sh             # build + start
 ```
 
 ### Day-to-day
 
 ```bash
-systemctl --user status eduai-dev.target
-systemctl --user restart eduai-dev.target          # all five
-systemctl --user restart eduai-core                # Core only
-systemctl --user restart eduai-aitutor-fe          # AI Tutor FE only
-journalctl --user -u eduai-core -f                 # logs (if permitted)
+systemctl status eduai-dev.target
+systemctl restart eduai-dev.target          # all three
+systemctl restart eduai-core                # Core only
+journalctl -u eduai-core -f                 # logs
 
-# After apps/core/.env or extension .env changes:
-bash ~/dev-vhosts/go-live-env.sh                   # sync public URLs + EDUAI_API_KEY
-systemctl --user restart eduai-dev.target
+# After a server-side .env change (DATABASE_URL, API keys, …):
+bash infra/s378/go-live-env.sh
+systemctl restart eduai-dev.target
 ```
 
-**503 Service Unavailable** from Apache usually means the Node process on that port is down or still starting. Check:
+**A `VITE_`-prefixed value is different**: it is compiled into the bundle at build
+time, so changing one needs a full rebuild, not a restart:
 
 ```bash
-systemctl --user is-active eduai-core eduai-aitutor-fe eduai-qm-frontend
+bash infra/s378/go-live-build.sh
+```
+
+**503 Service Unavailable** from Apache means the node process behind `/api/` (or
+Core) is down or still starting:
+
+```bash
+systemctl is-active eduai-core eduai-aitutor-server eduai-qm-backend
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/
-systemctl --user restart --no-block eduai-core
+systemctl restart --no-block eduai-core
+```
+
+**403 or a blank page on an extension host** is a different failure — that side is
+static now, so it usually means the build output is missing or unreadable:
+
+```bash
+ls apps/extensions/ai-tutor/build/client/index.html
+ls apps/extensions/question-maker/app/frontend/dist/index.html
+bash infra/s378/go-live-build.sh    # rebuild if either is absent
 ```
 
 ## Switch the shared server to your feature branch
@@ -73,36 +89,32 @@ cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 git fetch origin
 git checkout [your-feature-branch]
 git pull origin [your-feature-branch]
-npm install   # if dependencies changed
-cd apps/core && npx prisma generate && npx prisma migrate deploy
-systemctl --user restart eduai-dev.target
+bash infra/s378/go-live-build.sh --install
 ```
+
+`--install` runs `npm install` first; drop it if dependencies did not change. The
+script handles migrations, `prisma generate`, the builds and the restart in the
+required order — you do not need to run those by hand.
 
 **Changing embedding dimension on the shared server:** if your branch uses a different `vector(N)` than the DB currently has, follow [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) before re-embedding.
 
-After switching branches, hard-refresh the browser. Vite HMR often picks up changes; if not, restart the relevant unit(s).
+After the build finishes, hard-refresh the browser.
 
-## Legacy: tmux (fallback only)
+## Why there's no HMR
 
-Prefer systemd. If you must use tmux for a quick one-off Core process:
+s378 serves compiled bundles, so nothing live-reloads and a restart alone will not
+show your changes — **you must rebuild.** This is deliberate. The old setup ran
+`npm run dev` for every app, which served unbundled ESM: roughly 12MB of JavaScript
+across ~250 requests per page, with the `@tabler/icons-react` barrel alone landing
+as a single 3.79MB module. Building serves the same routes in a fraction of that.
 
-```bash
-tmux new -s eduai
-cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
-npm run docker:dev:db:eduai
-npx turbo run dev --filter=edu-ai
-```
+Nobody develops on this box — it is shared staging — so there was no HMR worth
+keeping. Develop locally with `npm run dev`, which is unchanged.
 
-Detach: `Ctrl+B`, then `D`. Reattach: `tmux attach -t eduai`.
-
-| Command | What it does |
-| ------- | ------------ |
-| `tmux ls` | List sessions |
-| `tmux attach -t eduai` | Reattach |
-| `tmux kill-session -t eduai` | Stop that session |
-| `Ctrl+B` then `D` | Detach |
-
-Do **not** leave a tmux Core and a systemd `eduai-core` fighting for port `3000`. Stop one stack before starting the other (`bash ~/dev-vhosts/go-live-systemd-start.sh` kills the known tmux session names first).
+The build still runs with `NODE_ENV=development`, so s378 remains a development
+environment in every way the application code can observe: error boundaries still
+show stack traces, dev-only routes stay registered, and Core's HSTS and strict
+nonce CSP stay off.
 
 ## cmps01 inference (Ollama + vLLM)
 
@@ -119,7 +131,7 @@ VLLM_BASE_URL="http://cmps01.ok.ubc.ca:8001"
 VLLM_API_KEY="vllm-local"
 ```
 
-Restart after editing `.env`: `systemctl --user restart eduai-core`.
+Restart after editing `.env`: `systemctl restart eduai-core`.
 
 | Check | Command (on s378) |
 | ----- | ----------------- |
@@ -149,7 +161,7 @@ After a DB reset, **register a new account** — old passwords are gone. Demo ac
 
 **Silent login (page reloads, no error):** usually session cookies not stored. Check:
 
-1. Restart Core after `.env` changes: `systemctl --user restart eduai-core`.
+1. Restart Core after `.env` changes: `systemctl restart eduai-core`.
 2. Browser DevTools → Network → POST `/auth/login` → Response headers: expect **multiple** `Set-Cookie` with `Secure` and `Domain=.eduai.ok.ubc.ca`.
 3. From SSH, smoke-test the auth API:
 
@@ -170,7 +182,7 @@ curl -si -X POST "https://dev.eduai.ok.ubc.ca/api/auth/sign-out" \
 
 **Extension infinite “Loading…”:** usually a host-only Core cookie (issued before `COOKIE_DOMAIN` was set). Open the extension → Core login with `force=1` → sign in again.
 
-**Shared `EDUAI_API_KEY`:** Core and extension backends must match (topic sync / reconcile). Sync with `bash ~/dev-vhosts/go-live-env.sh`. Interactive QM AI chat prefers the session cookie; see [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md).
+**Shared `EDUAI_API_KEY`:** Core and extension backends must match (topic sync / reconcile). Sync with `bash infra/s378/go-live-env.sh`. Interactive QM AI chat prefers the session cookie; see [`infra/s378/GO-LIVE.md`](../../infra/s378/GO-LIVE.md).
 
 ## When you're done
 
@@ -180,9 +192,10 @@ Switch the shared tree back to `development` (or the agreed default) so others h
 cd /srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore
 git checkout development
 git pull origin development
-npm install
-cd apps/core && npx prisma generate && npx prisma migrate deploy
-systemctl --user restart eduai-dev.target
+bash infra/s378/go-live-build.sh --install
 ```
+
+Leaving the tree on `development` without rebuilding would keep serving **your
+branch's** compiled assets, so the rebuild is not optional here.
 
 If your branch changed embedding dimension, revert the shared DB and `.env` for the branch you return to — see [How to change vector dimensionality](./EMBEDDINGS.md#how-to-change-vector-dimensionality) (section **Switching back**).
