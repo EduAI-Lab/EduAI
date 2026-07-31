@@ -16,6 +16,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
+### Removed
+
+- [core] chore: Drop `lucide-react` in favor of `@tabler/icons-react`, the de-facto icon library across all four workspaces. Swaps 5 Core imports (`Shield`→`IconShield`, `Loader2`→`IconLoader2`, `Download`→`IconDownload`, `Check`/`Circle`→`IconCheck`/`IconCircle`, `GalleryVerticalEnd`→`IconStack2` as the closest visual match — no exact Tabler equivalent) and removes the package from Core, question-maker-frontend, and the root devDependencies. Closes #1249. (#1249, @Ayyhab, 2026-07-31) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Added
