@@ -6,16 +6,11 @@
  *   lives in `BugReportsTab`; this component only reads props and reports edits.
  */
 
-import { Button, Input } from '@eduai/ui';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { IconFilter, IconSearch, IconX } from '@tabler/icons-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@eduai/ui';
-import type { BugReportType } from '~/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import type { BugReportType } from './types';
 import {
   BUG_TYPE_LABELS,
   STATUS_LABELS,
@@ -23,7 +18,7 @@ import {
   type ReporterFilter,
   type StatusFilter,
   type TypeFilter,
-} from '~/components/admin/bug-reports/bug-reports-utils';
+} from './bug-reports-utils';
 
 export function BugReportsToolbar({
   statusFilter,
