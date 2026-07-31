@@ -663,6 +663,69 @@ describe('Admin routes', () => {
       expect(res.body.enrolledStudents.map((s) => s.id)).toContain('local-only-student');
     });
 
+    it('bounds the enrolled/available Core user lookups with a signal, not just the enrollment sync (#1173 review)', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: student.email,
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ ids: expect.any(Array), signal: expect.anything() }),
+      );
+      expect(listCoreAdminUsers).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ role: 'STUDENT', signal: expect.anything() }),
+      );
+    });
+
+    it('falls back to the local mirror when the Core user lookups hang, instead of hanging the request', async () => {
+      const student = makeStudent();
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: coscCourse.id, userId: student.id, role: 'STUDENT' },
+      });
+      // Auto-sync-before-read (#1065) trusts a schema-validated Core roster
+      // (#1173), so it must mirror the enrollment just created here or the
+      // sync will prune it before this GET ever reads it.
+      listEduAiCourseEnrollmentsServiceKey.mockResolvedValue([
+        {
+          studentId: student.id,
+          studentEmail: student.email,
+          studentName: student.name,
+          enrolledAt: new Date().toISOString(),
+          isActive: true,
+          role: 'STUDENT',
+        },
+      ]);
+      listCoreAdminUsers.mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'));
+
+      const res = await request(unitAdminApp).get(
+        `/api/admin/courses/${coscCourse.id}/enrollments`,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.enrolledStudents.map((s) => s.id)).toContain(student.id);
+      expect(res.body.availableStudents).toEqual([]);
+    });
+
     it('UNIT_ADMIN gets 403 for a course outside their department', async () => {
       const res = await request(unitAdminApp).get(
         `/api/admin/courses/${mathCourse.id}/enrollments`,

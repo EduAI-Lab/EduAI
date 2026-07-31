@@ -238,12 +238,13 @@ router.get(
         // searchable, role-scoped page for the "add a student" picker.
         const enrolledIds = [...enrolledUserIds];
         const [enrolledEnvelope, studentEnvelope] = await Promise.all([
-          listCoreAdminUsers(cookie, { ids: enrolledIds }),
+          listCoreAdminUsers(cookie, { ids: enrolledIds, signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS) }),
           listCoreAdminUsers(cookie, {
             role: 'STUDENT',
             search: studentSearch,
             page: studentPage,
             pageSize: studentPageSize,
+            signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
           }),
         ]);
         for (const user of (enrolledEnvelope?.data ?? []).map(mapCoreAdminUser)) {
