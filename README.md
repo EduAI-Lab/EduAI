@@ -146,8 +146,6 @@ On first run (or after a database wipe), the Core and AI Tutor databases are see
 | STUDENT | `student4@eduai.local` | Devon Singh |
 | STUDENT | `student5@eduai.local` | Erin Walsh |
 
-**Account password policy** — sign-up and invitation-acceptance forms show the requirements live. Use either a passphrase of at least 16 characters, or at least 8 characters containing uppercase and lowercase letters, a number, and a symbol.
-
 After `npm install`, each app gets a `.env` copied from its `.env.example` (only if one doesn't already exist). Fill in any secrets (auth keys, API keys) before the relevant features will work. See each app's `.env.example` for what is required, or [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for a consolidated reference of every variable across the monorepo.
 
 **Service API key (`EDUAI_API_KEY`)**
