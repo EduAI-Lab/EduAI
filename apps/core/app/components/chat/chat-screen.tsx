@@ -135,7 +135,17 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
     string | null
   >(null);
+  /**
+   * Whether each assistant message's request was sent with an auto mode
+   * selected, keyed by message id — captured at send time so switching the
+   * selector afterward doesn't retroactively change older messages' labels.
+   */
+  const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<
+    Record<string, boolean>
+  >({});
+  const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
+  const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
@@ -284,6 +294,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           routedHeader && routedHeader.length > 0 ? routedHeader : null;
         pendingRoutedRegistryIdRef.current = routed;
         setStreamingRoutedRegistryId(routed);
+        // The selector is disabled while a request is in flight, so this
+        // still reflects what was selected when the request was sent.
+        const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
+        pendingWasAutoRoutedRef.current = wasAutoRouted;
+        setStreamingWasAutoRouted(wasAutoRouted);
 
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
@@ -301,9 +316,15 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         const routed = pendingRoutedRegistryIdRef.current;
         if (message.role === "assistant" && routed) {
           setRoutedModelByMessageId((prev) => ({ ...prev, [message.id]: routed }));
+          setWasAutoRoutedByMessageId((prev) => ({
+            ...prev,
+            [message.id]: pendingWasAutoRoutedRef.current,
+          }));
         }
         pendingRoutedRegistryIdRef.current = null;
+        pendingWasAutoRoutedRef.current = false;
         setStreamingRoutedRegistryId(null);
+        setStreamingWasAutoRouted(false);
 
         const id = pendingNavigateChatId.current;
         if (id && location.pathname === "/chat") {
@@ -317,7 +338,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       onError: (error) => {
         logChatUseChatError(error, "learning-chat");
         pendingRoutedRegistryIdRef.current = null;
+        pendingWasAutoRoutedRef.current = false;
         setStreamingRoutedRegistryId(null);
+        setStreamingWasAutoRouted(false);
       },
     });
 
@@ -469,6 +492,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     disabledReason,
     routedModelByMessageId,
     streamingRoutedRegistryId,
+    wasAutoRoutedByMessageId,
+    streamingWasAutoRouted,
   };
 
   return (

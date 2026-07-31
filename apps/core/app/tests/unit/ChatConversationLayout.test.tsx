@@ -90,9 +90,50 @@ describe("ChatConversationLayout — routed model labels", () => {
         ]}
         isLoading
         streamingRoutedRegistryId="vllm:qwen2.5-7b-instruct"
+        streamingWasAutoRouted
       />,
     );
 
     expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps a persisted auto-routed message's label hidden after the picker is switched to an explicit model (#829)", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        selectedModel="vllm:qwen2.5-7b-instruct"
+        messages={[
+          { id: "assistant-1", role: "assistant", content: "Auto-routed answer" },
+        ]}
+        routedModelByMessageId={{ "assistant-1": "vllm:qwen2.5-7b-instruct" }}
+        wasAutoRoutedByMessageId={{ "assistant-1": true }}
+      />,
+    );
+
+    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
+  });
+
+  it("still shows a persisted explicit-model message's label after the picker is switched to auto", () => {
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        selectedModel="auto"
+        chatModels={[
+          {
+            id: "openai:gpt-4o",
+            name: "GPT-4o",
+            description: "OpenAI model",
+            provider: "openai",
+          },
+        ]}
+        messages={[
+          { id: "assistant-1", role: "assistant", content: "Explicit answer" },
+        ]}
+        routedModelByMessageId={{ "assistant-1": "openai:gpt-4o" }}
+        wasAutoRoutedByMessageId={{ "assistant-1": false }}
+      />,
+    );
+
+    expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
   });
 });
