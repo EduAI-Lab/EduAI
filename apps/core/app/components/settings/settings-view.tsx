@@ -213,6 +213,7 @@ export function SettingsView({
   const today = new Date().toISOString().split("T")[0];
   return (
     <SettingsPageScaffold
+      padding="app"
       subheading="Manage your account, API keys, accessibility preferences, and model provider configuration."
       beforeTabs={
         passwordExpired ? (
