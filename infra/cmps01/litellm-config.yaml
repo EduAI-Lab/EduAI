@@ -5,17 +5,25 @@
 # Do NOT use host.docker.internal here — Linux cannot reach 127.0.0.1 services that way.
 
 model_list:
-  - model_name: qwen2.5-7b-instruct
+  - model_name: qwen3.5-2b-instruct
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3.5-2b-instruct
       api_base: http://127.0.0.1:18001/v1
       api_key: vllm-local
 
-  - model_name: qwen2.5-32b-instruct
+  - model_name: qwen3.5-9b-instruct
     litellm_params:
-      model: openai/qwen2.5-32b-instruct
+      model: openai/qwen3.5-9b-instruct
       api_base: http://127.0.0.1:18002/v1
       api_key: vllm-local
+
+  - model_name: mxbai-embed-large
+    litellm_params:
+      model: openai/mxbai-embed-large
+      api_base: http://127.0.0.1:18003/v1
+      api_key: vllm-local
+    model_info:
+      mode: embedding
 
 general_settings:
   master_key: vllm-local

@@ -1,0 +1,11 @@
+# cmps03 — gpt-oss-120b config, superseded by litellm-config.yaml (Qwen3.5-35B-A3B).
+# Restore with: cp litellm-config.120b.yaml litellm-config.yaml && ./deploy.sh
+model_list:
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+general_settings:
+  master_key: vllm-local

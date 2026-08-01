@@ -1,47 +1,40 @@
 #!/usr/bin/env bash
-# cmps01 — migrate eduai-vllm + eduai-vllm-t3 to Qwen3.5 (2B + 9B) behind LiteLLM on :8001.
+# cmps01 — ROLLBACK to Qwen2.5 (7B + 32B AWQ). Superseded by ./migrate.sh (Qwen3.5).
 # Run on cmps01 after copying this infra/cmps01 folder to the host.
-# Does NOT touch eduai-vllm-embed (mxbai-embed-large, :18003) — left running as-is.
 #
-# Downtime: chat models offline until backends reload + proxy restarts.
-# Restore Qwen2.5 (7B/32B): ./migrate-qwen25-legacy.sh
+# Downtime: both models offline until backends reload + proxy starts.
+# 32B AWQ may take 10–30+ minutes to become ready.
+# NOTE: after rollback, litellm-config.yaml must also be reverted to the qwen2.5-* entries
+# (git show HEAD~1:infra/cmps01/litellm-config.yaml before the Qwen3.5 migration commit).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-VLLM_IMAGE="${VLLM_IMAGE:-vllm/vllm-openai:latest}"
 
-echo "=== Step 1: pull image ==="
-docker pull "$VLLM_IMAGE"
-
-echo "=== Step 2: stop old chat containers only (embed untouched) ==="
+echo "=== Step 1: stop old containers ==="
 docker stop eduai-vllm eduai-vllm-t3 2>/dev/null || true
 docker rm eduai-vllm eduai-vllm-t3 2>/dev/null || true
+# Remove proxy if re-running migration
 docker compose down 2>/dev/null || true
 
-echo "=== Step 3: recreate backends (localhost only) ==="
-mkdir -p "$HOME/.cache/huggingface"
+echo "=== Step 2: recreate backends (localhost only) ==="
 
 docker run -d --name eduai-vllm --gpus '"device=0"' \
   -p 127.0.0.1:18001:8000 \
-  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   --restart unless-stopped \
-  "$VLLM_IMAGE" \
-  --model Qwen/Qwen3.5-2B \
-  --served-model-name qwen3.5-2b-instruct \
+  vllm/vllm-openai:latest \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --served-model-name qwen2.5-7b-instruct \
   --host 0.0.0.0 \
-  --port 8000 \
-  --gpu-memory-utilization 0.80 \
-  --max-model-len 16384
+  --port 8000
 
 docker run -d --name eduai-vllm-t3 --gpus '"device=1"' \
   -p 127.0.0.1:18002:8000 \
-  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   --restart unless-stopped \
-  "$VLLM_IMAGE" \
-  --model Qwen/Qwen3.5-9B \
-  --served-model-name qwen3.5-9b-instruct \
+  vllm/vllm-openai:latest \
+  --model Qwen/Qwen2.5-32B-Instruct-AWQ \
+  --served-model-name qwen2.5-32b-instruct \
   --host 0.0.0.0 \
   --port 8000 \
   --gpu-memory-utilization 0.88 \
@@ -53,7 +46,7 @@ wait_for_model() {
   local url="$1"
   local label="$2"
   echo "Waiting for $label at $url ..."
-  for i in $(seq 1 180); do
+  for i in $(seq 1 120); do
     if curl -sf "$url/v1/models" >/dev/null 2>&1; then
       echo "  OK: $label ready"
       curl -s "$url/v1/models" | jq -r '.data[].id' | sed "s/^/    /"
@@ -61,16 +54,14 @@ wait_for_model() {
     fi
     sleep 15
   done
-  echo "  TIMEOUT: $label not ready after 45 min — check: docker logs $label"
-  echo "  If the log shows 'max_num_seqs (256) exceeds available Mamba cache blocks (N)',"
-  echo "  recreate the container with --max-num-seqs <N or lower> (Qwen3.5 hybrid Mamba/GDN constraint)."
+  echo "  TIMEOUT: $label not ready after 30 min — check: docker logs $label"
   return 1
 }
 
 wait_for_model "http://127.0.0.1:18001" "eduai-vllm"
 wait_for_model "http://127.0.0.1:18002" "eduai-vllm-t3"
 
-echo "=== Step 4: start LiteLLM proxy on :8001 ==="
+echo "=== Step 3: start LiteLLM proxy on :8001 ==="
 docker compose up -d
 
 echo "Waiting for proxy ..."
@@ -81,12 +72,12 @@ for i in $(seq 1 20); do
   sleep 3
 done
 
-echo "=== Step 5: verify ==="
+echo "=== Step 4: verify ==="
 echo "Backends:"
-curl -s http://127.0.0.1:18001/v1/models | jq -r '.data[].id' | sed 's/^/  2B: /'
-curl -s http://127.0.0.1:18002/v1/models | jq -r '.data[].id' | sed 's/^/  9B: /'
+curl -s http://127.0.0.1:18001/v1/models | jq -r '.data[].id' | sed 's/^/  7B: /'
+curl -s http://127.0.0.1:18002/v1/models | jq -r '.data[].id' | sed 's/^/  32B: /'
 
-echo "Proxy (all models incl. embed):"
+echo "Proxy (both models):"
 curl -s http://127.0.0.1:8001/v1/models -H "Authorization: Bearer vllm-local" | jq -r '.data[].id' | sed 's/^/  /'
 
 echo ""

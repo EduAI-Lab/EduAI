@@ -5,11 +5,14 @@
 ```text
 dev (s378) ──HTTP :8001──► cmps01 eduai-edge-proxy (nginx)
                                 ├── /v1/*     → LiteLLM 127.0.0.1:18091
-                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, 7B)
-                                │                 └──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, 32B AWQ)
+                                │                 ├──► 127.0.0.1:18001  eduai-vllm      (GPU 0, Qwen3.5-2B)
+                                │                 ├──► 127.0.0.1:18002  eduai-vllm-t3   (GPU 1, Qwen3.5-9B)
+                                │                 └──► 127.0.0.1:18003  eduai-vllm-embed (GPU 0, staged)
                                 └── /energy/* → energy-meter 127.0.0.1:9100
 Ollama :11434 — unchanged
 ```
+
+**Model family (2026-07-31):** upgraded from Qwen2.5 (7B/32B) to **Qwen3.5** (2B/9B) per `docs/research/v3/PREREG_v3.md` §2.1's model-family freeze. `mxbai-embed-large` on `eduai-vllm-embed` (:18003) is unaffected by this migration.
 
 EduAI uses **`VLLM_BASE_URL=http://cmps01.ok.ubc.ca:8001`** only. Research energy uses **`ENERGY_SIDECAR_URL=http://cmps01.ok.ubc.ca:8001/energy`** (same firewall port).
 
@@ -32,14 +35,22 @@ Backends stay on **localhost** (`:9100`, `:11434`). Nginx on `:8001` path-routes
 
 | Docker name | Host bind | Served model (`/v1/models` → `id`) | Notes |
 | --- | --- | --- | --- |
-| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen2.5-7b-instruct` | GPU 0, Qwen 7B Instruct |
-| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen2.5-32b-instruct` | GPU 1, 32B AWQ + tool-call flags |
-| **`eduai-vllm-proxy`** | `127.0.0.1:18091` (LiteLLM) | routes both ids | internal only |
+| **`eduai-vllm`** | `127.0.0.1:18001→8000` | `qwen3.5-2b-instruct` | GPU 0, Qwen3.5 2B |
+| **`eduai-vllm-t3`** | `127.0.0.1:18002→8000` | `qwen3.5-9b-instruct` | GPU 1, Qwen3.5 9B + tool-call flags |
+| **`eduai-vllm-proxy`** | `127.0.0.1:18091` (LiteLLM) | routes configured chat and embedding ids | internal only |
 | **`eduai-edge-proxy`** | host `:8001` (nginx) | `/v1/*` → LiteLLM, `/energy/*` → sidecar | public |
 
 Backends are **localhost only**; **nginx** is the only public listener on **`8001`**.
 
-**Why `network_mode: host`?** Backends bind `127.0.0.1:18001/18002`. Bridge-networked containers cannot reach those ports on Linux. Host networking lets LiteLLM and nginx use loopback backends.
+### Embedding migration target (not part of the current deployed inventory)
+
+`deploy-embedding.sh` stages `eduai-vllm-embed` on
+`127.0.0.1:18003` using `mixedbread-ai/mxbai-embed-large-v1`, served as
+`mxbai-embed-large`. It does not stop Ollama or switch Core traffic. Follow
+[`docs/rag-ai/VLLM-EMBEDDINGS.md`](../../docs/rag-ai/VLLM-EMBEDDINGS.md) for
+the compatibility, stress, canary, and rollback gates.
+
+**Why `network_mode: host`?** Backends bind `127.0.0.1:18001`–`:18003`. Bridge-networked containers cannot reach those ports on Linux. Host networking lets LiteLLM and nginx use loopback backends.
 
 ### Energy sidecar (research Joules)
 
@@ -201,8 +212,11 @@ See [`litellm-config.yaml`](./litellm-config.yaml). Backends:
 
 | `model_name` | Backend URL (proxy uses host network) |
 | --- | --- |
-| `qwen2.5-7b-instruct` | `http://127.0.0.1:18001/v1` |
-| `qwen2.5-32b-instruct` | `http://127.0.0.1:18002/v1` |
+| `qwen3.5-2b-instruct` | `http://127.0.0.1:18001/v1` |
+| `qwen3.5-9b-instruct` | `http://127.0.0.1:18002/v1` |
+| `mxbai-embed-large` (embedding mode) | `http://127.0.0.1:18003/v1` |
+
+**Qwen3.5 deploy note:** the hybrid Gated-DeltaNet/Mamba architecture caps concurrent sequences by available Mamba cache blocks, independent of `--gpu-memory-utilization`. If vLLM logs `max_num_seqs (256) exceeds available Mamba cache blocks (N)` on startup, add `--max-num-seqs <N or lower>` (224 worked at 0.90 utilization for 27B-FP8 on cmps02's 48GB card) and recreate the container.
 
 After editing config: `docker compose restart` in this directory.
 
@@ -217,7 +231,7 @@ One vLLM container = one loaded model. To expose another model through the **sam
 | Decide | Example |
 | --- | --- |
 | **GPU** | Free GPU, or stop/replace an existing backend |
-| **Host port** | Next free port: `18003`, `18004`, … (backends stay on `127.0.0.1`) |
+| **Host port** | Next free chat port: `18004`, `18005`, … (`18003` is reserved for embeddings) |
 | **HF weights** | e.g. `Qwen/Qwen2.5-14B-Instruct` |
 | **`--served-model-name`** | Short id for API — e.g. `qwen2.5-14b-instruct` (must match EduAI `modelId`) |
 | **Container name** | e.g. `eduai-vllm-14b` |
@@ -230,7 +244,7 @@ SSH to cmps01. Template (adjust GPU, model, flags):
 
 ```bash
 docker run -d --name eduai-vllm-14b --gpus '"device=0"' \
-  -p 127.0.0.1:18003:8000 \
+  -p 127.0.0.1:18004:8000 \
   --restart unless-stopped \
   vllm/vllm-openai:latest \
   --model Qwen/Qwen2.5-14B-Instruct \
@@ -242,14 +256,14 @@ docker run -d --name eduai-vllm-14b --gpus '"device=0"' \
 Wait until ready (`docker logs -f eduai-vllm-14b`), then:
 
 ```bash
-curl -s http://127.0.0.1:18003/v1/models | jq '.data[].id'
+curl -s http://127.0.0.1:18004/v1/models | jq '.data[].id'
 # expect: "qwen2.5-14b-instruct"
 ```
 
 Direct chat smoke:
 
 ```bash
-curl -s http://127.0.0.1:18003/v1/chat/completions \
+curl -s http://127.0.0.1:18004/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen2.5-14b-instruct","messages":[{"role":"user","content":"Say hi"}],"max_tokens":16}'
 ```
@@ -262,7 +276,7 @@ Edit `~/cmps01/litellm-config.yaml` — add a block (copy an existing entry, cha
   - model_name: qwen2.5-14b-instruct
     litellm_params:
       model: openai/qwen2.5-14b-instruct
-      api_base: http://127.0.0.1:18003/v1
+      api_base: http://127.0.0.1:18004/v1
       api_key: vllm-local
 ```
 
@@ -312,7 +326,7 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 
 | Goal | Action |
 | --- | --- |
-| **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
+| **Add** chat model (keep existing backends) | New GPU or enough VRAM; new port `18004+`; new LiteLLM row |
 | **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI Admin |
 | **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml`; `docker compose restart`; deactivate row in Admin |
 
@@ -322,7 +336,8 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 | --- | --- |
 | `18001` | `eduai-vllm` — 7B |
 | `18002` | `eduai-vllm-t3` — 32B AWQ |
-| `18003+` | Next backends |
+| `18003` | `eduai-vllm-embed` — staged embedding backend |
+| `18004+` | Next chat backends |
 | `8001` | LiteLLM proxy (public) — **never** bind a raw vLLM backend here |
 
 ---
