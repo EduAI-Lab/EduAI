@@ -20,6 +20,18 @@
  * time from each app's own API (see resolvers.mjs) — a route whose params
  * cannot be resolved is reported as SKIPPED with a reason, never measured
  * against a 404.
+ *
+ * `redirectsTo` marks a route that bounces by design (an index route pointing
+ * at the real landing page). The measurement is kept and counts as landing
+ * correctly, but only at that destination — any other target is still a
+ * REDIRECTED miss.
+ *
+ * `gated` marks a route that the seeded dev state cannot reach: a feature flag
+ * that defaults off, or a page that only exists for an account state the seed
+ * does not produce. Loading it measures whatever it bounces to — usually
+ * /dashboard, which is already in this list — so it is skipped as EXPECTED
+ * rather than measured. Pass --include-gated to profile it anyway once the
+ * blocking flag or seed state has been arranged.
  */
 
 /** Seeded accounts — apps/core/prisma/seed.ts, SEED_PASSWORD = 'EduAI2026!'. */
@@ -45,7 +57,15 @@ export const APPS = {
 
       // --- student-facing ---
       { name: 'dashboard-student', path: '/dashboard', role: 'student' },
-      { name: 'onboarding-student-id', path: '/onboarding/student-id', role: 'student' },
+      // The loader calls userNeedsStudentIdOnboarding() and sends an already
+      // onboarded user to /dashboard. Every seeded student has a student id, so
+      // this route is only reachable by an account the seed does not create.
+      {
+        name: 'onboarding-student-id',
+        path: '/onboarding/student-id',
+        role: 'student',
+        gated: 'seeded students already have a student id — loader redirects to /dashboard',
+      },
       { name: 'chat-student', path: '/chat', role: 'student' },
       { name: 'chat-thread', path: '/chat/:chatId', role: 'student', params: ['chatId'] },
       { name: 'courses-student', path: '/courses', role: 'student' },
@@ -60,7 +80,15 @@ export const APPS = {
 
       // --- unit admin ---
       { name: 'unit-chats', path: '/units/:department/chats', role: 'unitAdmin', params: ['department'] },
-      { name: 'unit-admin-invitations', path: '/unit-admin/invitations', role: 'unitAdmin' },
+      // Gated on the `unitAdmins.canInvite` policy flag, which defaults to false
+      // (opt-in). With it off the loader redirects to /dashboard regardless of
+      // role, so the route is unreachable until an admin turns it on.
+      {
+        name: 'unit-admin-invitations',
+        path: '/unit-admin/invitations',
+        role: 'unitAdmin',
+        gated: 'policy flag unitAdmins.canInvite defaults to false — loader redirects to /dashboard',
+      },
 
       // --- admin ---
       { name: 'admin-users', path: '/admin/users', role: 'admin' },
@@ -81,8 +109,16 @@ export const APPS = {
   aiTutor: {
     baseUrl: process.env.AI_TUTOR_URL || 'http://localhost:3001',
     pages: [
-      { name: 'home', path: '/', role: 'student' },
-      { name: 'unsupported-role', path: '/unsupported-role', role: 'student' },
+      { name: 'home', path: '/', role: 'student', redirectsTo: '/dashboard' },
+      // Renders, then immediately navigates to routeForRole(user.role) in a
+      // useEffect. Every seeded role IS supported, so the measurement is a blend
+      // of this page and the dashboard it leaves for — worse than no number.
+      {
+        name: 'unsupported-role',
+        path: '/unsupported-role',
+        role: 'student',
+        gated: 'student role is supported — the page client-redirects to /dashboard on mount',
+      },
       { name: 'dashboard', path: '/dashboard', role: 'student' },
       { name: 'settings', path: '/settings', role: 'student' },
       { name: 'help', path: '/help', role: 'student' },
