@@ -41,6 +41,7 @@ export function chatApiReject(
   status: number,
   body: Record<string, unknown>,
   trace?: ChatApiRejectTrace,
+  headers?: Record<string, string>,
 ): Response {
   // `trace` carries arbitrary request context (headers, provider payloads) supplied by callers,
   // and unlike the debug helpers above this one always logs — scrub before it reaches stdout.
@@ -51,6 +52,6 @@ export function chatApiReject(
   });
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }
