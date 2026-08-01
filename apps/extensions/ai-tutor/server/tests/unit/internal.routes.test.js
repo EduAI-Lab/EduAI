@@ -3,13 +3,20 @@ import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const mockDeleteManyOfferings = vi.fn();
+const mockFindManyOfferings = vi.fn();
+const mockClearEnrollmentSyncThrottle = vi.fn();
 
 vi.mock('../../src/config/database.js', () => ({
   prisma: {
     courseOffering: {
       deleteMany: (...args) => mockDeleteManyOfferings(...args),
+      findMany: (...args) => mockFindManyOfferings(...args),
     },
   },
+}));
+
+vi.mock('../../src/services/enrollmentSync.js', () => ({
+  clearEnrollmentSyncThrottle: (...args) => mockClearEnrollmentSyncThrottle(...args),
 }));
 
 const { default: internalRoutes } = await import('../../src/routes/internal.js');
@@ -27,6 +34,8 @@ const app = buildApp();
 beforeEach(() => {
   process.env.EDUAI_API_KEY = 'test-service-key';
   mockDeleteManyOfferings.mockReset();
+  mockFindManyOfferings.mockReset().mockResolvedValue([]);
+  mockClearEnrollmentSyncThrottle.mockReset();
 });
 
 afterEach(() => {
@@ -60,6 +69,7 @@ describe('DELETE /api/internal/courses/:coreOfferingId', () => {
   });
 
   it('deletes the linked CourseOffering and reports deleted: true', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 42 }]);
     mockDeleteManyOfferings.mockResolvedValue({ count: 1 });
 
     const res = await request(app)
@@ -82,6 +92,23 @@ describe('DELETE /api/internal/courses/:coreOfferingId', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, deleted: false });
+    expect(mockClearEnrollmentSyncThrottle).not.toHaveBeenCalled();
+  });
+
+  it('evicts the deleted offering\'s enrollment-sync throttle entry so it does not leak for the process lifetime', async () => {
+    mockFindManyOfferings.mockResolvedValue([{ id: 42 }]);
+    mockDeleteManyOfferings.mockResolvedValue({ count: 1 });
+
+    const res = await request(app)
+      .delete('/api/internal/courses/core-cuid-1')
+      .set('Authorization', 'Bearer test-service-key');
+
+    expect(res.status).toBe(200);
+    expect(mockFindManyOfferings).toHaveBeenCalledWith({
+      where: { coreOfferingId: 'core-cuid-1' },
+      select: { id: true },
+    });
+    expect(mockClearEnrollmentSyncThrottle).toHaveBeenCalledWith(42);
   });
 
   it('passes DB errors to the error handler', async () => {
