@@ -95,11 +95,18 @@ CORE_URL=... AI_TUTOR_URL=... AI_TUTOR_API_URL=... QM_URL=... QM_API_URL=... \
 
 Defaults to `docs/perf/frontend/baseline`. Run it from a workstation rather than on the
 server — measuring over the loopback interface drops the RTT the numbers are meant to
-include. A page that bounces to login, fails to load, or whose ids can't be resolved is
-reported in `errors.json` instead of contributing a misleading number, and the run exits
-non-zero so a partial sweep can't be mistaken for full coverage. Both runs also write a
-human-readable `errors.log` beside it, which stays local — the repo's blanket `*.log`
-ignore keeps it out of the pinned snapshot.
+include. A page that redirects anywhere other than the route asked for, fails to load, or
+whose ids can't be resolved is reported in `errors.json` instead of contributing a
+misleading number, and the run exits non-zero so a partial sweep can't be mistaken for
+full coverage. Both runs also write a human-readable `errors.log` beside it, which stays
+local — the repo's blanket `*.log` ignore keeps it out of the pinned snapshot.
+
+A handful of routes are unreachable in the seeded dev state — `unitAdmins.canInvite`
+defaults to off, every seeded student is already onboarded, and every seeded role is one
+AI Tutor supports. Those carry a `gated` reason in `pages.mjs` and are reported as
+**expected skips**: listed for the record, excluded from the measured count, and not a
+run failure. Arrange the missing flag or seed state and pass `--include-gated` to profile
+them.
 
 > On a Vite **dev** server the JS byte counts and request counts reflect unbundled ESM
 > modules, not a production build — treat those two columns as relative only. TTFB, the

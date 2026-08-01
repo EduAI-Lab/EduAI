@@ -11,13 +11,19 @@
  * actually needed and profiles each page under the right session, so admin and
  * unit-admin pages are measured as themselves rather than as a login bounce.
  * Routes with dynamic segments get real ids from ./resolvers.mjs — unresolvable
- * ones are reported SKIPPED, never measured against a 404.
+ * ones are reported SKIPPED, never measured against a 404. Routes the seeded
+ * dev state cannot reach at all (a feature flag defaulting off, a page that only
+ * exists for an account state the seed does not create) declare `gated` and are
+ * reported as EXPECTED SKIPS — measuring them would just time whatever they
+ * bounce to. --include-gated profiles them anyway.
  *
  * One Core login authenticates all three apps: the Better Auth dev cookie is
  * host-only on localhost and cookies ignore port (RFC 6265) — see the
  * isAuthenticatedNavigation() comment in ../mobile-audit/lib.mjs. Each result
- * carries `authOk`, so a broken assumption shows up as REDIRECTED instead of
- * silently profiling a login screen.
+ * carries `authOk`: it is true only when the load ended on the route that was
+ * asked for (or on the `redirectsTo` a route declares as by-design), so any
+ * bounce — login screen, role guard, access-denied — shows up as REDIRECTED
+ * rather than as a confident number for the wrong page.
  *
  * Each run of a page uses a FRESH browser context (cold cache, clean storage,
  * session restored from that role's storageState) so runs are comparable and
@@ -43,6 +49,7 @@
  *   --net=<profile>     fast3g | slow3g | off                (default: off)
  *   --chunks            print per-chunk JS table per page
  *   --full-chunks       also write page-chunks.json with untruncated chunk lists
+ *   --include-gated     also profile routes marked `gated` in pages.mjs
  *   --pace=N            ms idled between loads, keeps Core's auth limiter happy
  *                       (default 750; 0 disables)
  *   --out=<dir>         output dir (default docs/perf/frontend/baseline)
@@ -91,6 +98,9 @@ const CPU_THROTTLE = Number(flag('cpu') ?? 0);
 const NET_PROFILE = typeof flag('net') === 'string' ? flag('net') : 'off';
 const SHOW_CHUNKS = Boolean(flag('chunks'));
 const FULL_CHUNKS = Boolean(flag('full-chunks'));
+// Routes the seeded dev state cannot reach (see `gated` in pages.mjs) are
+// skipped as expected rather than measured against whatever they bounce to.
+const INCLUDE_GATED = Boolean(flag('include-gated'));
 // Core's Better Auth limiter allows 100 requests per 60s per IP, and every
 // measured load costs it a few (session read on each app). An unpaced sweep of
 // ~50 pages x 3 runs sails past that and starts getting bounced to the login
@@ -196,18 +206,27 @@ const basename = (u) => {
 };
 const isJs = (r) => r.type === 'script' || /\.m?js(\?|$)/.test(r.name);
 
+const normPath = (p) => p.replace(/\/+$/, '') || '/';
+
 /**
- * A navigation landed where it was told to. For an authenticated page that
- * means same origin and not a login route; for a public page it means the same
- * route (a server that normalises "/x" to "/x/" has not bounced us anywhere).
+ * A navigation landed where it was told to: same origin, same route.
+ *
+ * The check used to ask only "is this the login page?" for authenticated
+ * routes, which let every *other* redirect through as a good measurement — a
+ * role guard bouncing to /dashboard, a feature flag sending the page away, an
+ * access-denied bounce. Those pages were reported as measured while the numbers
+ * described somewhere else entirely, which is worse than a missing row.
+ *
+ * Trailing-slash normalisation is not a redirect. A route that redirects by
+ * design (an index route pointing at the real landing page) declares
+ * `redirectsTo` in pages.mjs and is accepted at that destination only.
  */
-function landedOk(requestedUrl, finalUrl, requiresAuth) {
+function landedOk(requestedUrl, finalUrl, { redirectsTo } = {}) {
   const req = new URL(requestedUrl);
   const fin = new URL(finalUrl);
   if (fin.origin !== req.origin) return false;
-  if (requiresAuth) return !/\/(auth\/)?login\b/i.test(fin.pathname);
-  const norm = (p) => p.replace(/\/+$/, '') || '/';
-  return norm(fin.pathname) === norm(req.pathname);
+  if (normPath(fin.pathname) === normPath(req.pathname)) return true;
+  return Boolean(redirectsTo) && normPath(fin.pathname) === normPath(redirectsTo);
 }
 
 async function applyThrottling(page) {
@@ -224,7 +243,8 @@ async function applyThrottling(page) {
 // ---------------------------------------------------------------------------
 // One measured load
 // ---------------------------------------------------------------------------
-async function profileOnce(browser, storageState, { url, requiresAuth }) {
+async function profileOnce(browser, storageState, entry) {
+  const { url } = entry;
   const context = await browser.newContext(storageState ? { storageState } : {});
   await context.addInitScript(installCollectors);
   const page = await context.newPage();
@@ -234,7 +254,7 @@ async function profileOnce(browser, storageState, { url, requiresAuth }) {
     // networkidle lets lazy chunks / deferred fetches land before the snapshot.
     await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
     const metrics = await page.evaluate(readMetrics);
-    return { ...metrics, finalUrl: page.url(), authOk: landedOk(url, page.url(), requiresAuth) };
+    return { ...metrics, finalUrl: page.url(), authOk: landedOk(url, page.url(), entry) };
   } finally {
     await context.close();
   }
@@ -364,9 +384,17 @@ function report(results, skipped, loginFailures) {
   }
 
   // Coverage accounting: a silent skip reads as "we measured everything".
-  if (skipped.length) {
-    console.log(`\n--- skipped (${skipped.length}) — not measured ---`);
-    for (const s of skipped) console.log(`${s.app}/${s.name}  ${s.path}  ${s.reason}`);
+  // Expected skips are declared unreachable in pages.mjs, so they are listed
+  // for the record but do not count against the run.
+  const expectedSkips = skipped.filter((s) => s.expected);
+  const realSkips = skipped.filter((s) => !s.expected);
+  if (realSkips.length) {
+    console.log(`\n--- skipped (${realSkips.length}) — not measured ---`);
+    for (const s of realSkips) console.log(`${s.app}/${s.name}  ${s.path}  ${s.reason}`);
+  }
+  if (expectedSkips.length) {
+    console.log(`\n--- expected skips (${expectedSkips.length}) — unreachable in this environment ---`);
+    for (const s of expectedSkips) console.log(`${s.app}/${s.name}  ${s.path}  ${s.reason}`);
   }
   const failed = results.filter((r) => r.error);
   if (failed.length) {
@@ -383,10 +411,10 @@ function report(results, skipped, loginFailures) {
     for (const l of loginFailures) console.log(`${l.role} (${l.email})  ${l.reason}`);
   }
   console.log(
-    `\ncoverage: ${good.length} measured, ${redirected.length} redirected, ` +
-      `${skipped.length} skipped, ${failed.length} failed`
+    `\ncoverage: ${good.length - redirected.length} measured, ${redirected.length} redirected, ` +
+      `${realSkips.length} skipped, ${expectedSkips.length} expected-skip, ${failed.length} failed`
   );
-  return { failed: failed.length, redirected: redirected.length, skipped: skipped.length };
+  return { failed: failed.length, redirected: redirected.length, skipped: realSkips.length };
 }
 
 /**
@@ -447,12 +475,22 @@ function collectErrors(results, skipped, loginFailures) {
       path: r.path,
       url: r.url,
       kind: 'redirected',
-      reason: `landed on ${r.finalUrl} instead — session not accepted for this route`,
+      reason:
+        `landed on ${r.finalUrl} instead — the route sent this session elsewhere ` +
+        `(login bounce, role guard, feature flag, or an access-denied redirect)`,
       final_url: r.finalUrl,
     });
   }
   for (const s of skipped) {
-    errors.push({ app: s.app, page: s.name, role: s.role, path: s.path, url: null, kind: 'skipped', reason: s.reason });
+    errors.push({
+      app: s.app,
+      page: s.name,
+      role: s.role,
+      path: s.path,
+      url: null,
+      kind: s.expected ? 'expected-skip' : 'skipped',
+      reason: s.reason,
+    });
   }
   return errors;
 }
@@ -626,6 +664,12 @@ try {
   for (const p of selected) {
     // No session for this role — measuring would just time the login page.
     if (failedRoles.has(p.role)) continue;
+    // Unreachable in this environment by construction, not by accident. Record
+    // it as an expected skip so coverage stays honest without failing the run.
+    if (p.gated && !INCLUDE_GATED) {
+      skipped.push({ ...p, expected: true, reason: p.gated });
+      continue;
+    }
     let urlPath = p.path;
     if (p.params?.length) {
       const resolved = await paramsFor(p.app, p.role);
@@ -643,6 +687,7 @@ try {
       path: urlPath,
       url: `${p.baseUrl}${urlPath}`,
       requiresAuth: p.role !== 'anon',
+      ...(p.redirectsTo ? { redirectsTo: p.redirectsTo } : {}),
     });
   }
 
