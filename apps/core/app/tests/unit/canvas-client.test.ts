@@ -326,6 +326,90 @@ describe("SSRF guard for real Canvas requests", () => {
     expect(assertPublicHostnameMock).toHaveBeenCalledWith("127.0.0.1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not let an https pagination Link header reach loopback under a local-dev canvasUrl", async () => {
+    // The local-dev allowance covers plain HTTP only. A Link header of
+    // https://127.0.0.1/... shares a hostname with the allow-list but is not
+    // the dev Canvas, so it must be guarded like any other request URL.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
+        status: 200,
+        headers: {
+          link: '<https://127.0.0.1:11434/api/v1/courses?page=2>; rel="next"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    assertPublicHostnameMock.mockRejectedValueOnce(
+      new Error('Host "127.0.0.1" resolves to a disallowed network address'),
+    );
+
+    await expect(
+      listTeacherCanvasCourses({
+        canvasUrl: "http://localhost:8080",
+        apiKey: "token",
+        isTestMode: false,
+      }),
+    ).rejects.toThrow(CanvasApiError);
+
+    // The first page (the local dev Canvas itself, over http) still skips the
+    // guard; only the https Link-header URL is checked.
+    expect(assertPublicHostnameMock).toHaveBeenCalledTimes(1);
+    expect(assertPublicHostnameMock).toHaveBeenCalledWith("127.0.0.1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still follows an http pagination Link header on the local dev Canvas without the guard", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
+          status: 200,
+          headers: {
+            link: '<http://localhost:8080/api/v1/courses?page=2>; rel="next"',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ id: 2, name: "Course 2" }]), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const courses = await listTeacherCanvasCourses({
+      canvasUrl: "http://localhost:8080",
+      apiKey: "token",
+      isTestMode: false,
+    });
+
+    expect(courses).toHaveLength(2);
+    expect(assertPublicHostnameMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("pins the connection for an https loopback request even when canvasUrl is local dev", async () => {
+    // Same asymmetry seen from the dispatcher side: the https request is not
+    // the dev-Canvas case, so it gets the pinned dispatcher rather than the
+    // unpinned local-dev path.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 1, name: "Course 1" }]), {
+        status: 200,
+        headers: {
+          link: '<https://canvas.ubc.ca/api/v1/courses?page=2>; rel="next"',
+        },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listTeacherCanvasCourses({
+      canvasUrl: "http://localhost:8080",
+      apiKey: "token",
+      isTestMode: false,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ dispatcher: undefined });
+    expect(fetchMock.mock.calls[1]?.[1]?.dispatcher).toBeDefined();
+  });
 });
 
 describe("resolveCanvasFileDownloadUrl", () => {

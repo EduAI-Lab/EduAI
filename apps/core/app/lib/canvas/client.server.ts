@@ -258,8 +258,18 @@ function buildCanvasProfileUrl(canvasUrl: string): string {
  * that window by pinning the connection to the address checked here.
  */
 function isLocalCanvasDevRequest(url: string, canvasUrl: string): boolean {
-  const hostname = new URL(url).hostname.toLowerCase();
-  return isLocalCanvasDev(canvasUrl) && HTTP_ALLOWED_HOSTNAMES.has(hostname);
+  const parsed = new URL(url);
+  // The request URL has to be plain HTTP itself, not merely point at an
+  // allow-listed hostname. The dev docker Canvas is served over http, so an
+  // https URL aimed at loopback is never that case — without this, a
+  // Canvas-controlled Link or Location header of the form https://127.0.0.1/…
+  // would inherit the local-dev free pass from the configured canvasUrl and
+  // skip the address check entirely.
+  return (
+    parsed.protocol === "http:" &&
+    isLocalCanvasDev(canvasUrl) &&
+    HTTP_ALLOWED_HOSTNAMES.has(parsed.hostname.toLowerCase())
+  );
 }
 
 /**
