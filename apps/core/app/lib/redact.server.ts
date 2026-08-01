@@ -3,7 +3,8 @@
  *
  * Key-level: object keys matching credential/PII substrings are replaced wholesale.
  * Value-level: string leaves are scrubbed for bearer tokens, token query params,
- * and URL/connection-string userinfo (#976 patterns; used by bug reports #979).
+ * URL/connection-string userinfo, and credential-named `key=value` / `"key": "value"` pairs
+ * serialized into the text (#976 patterns; used by bug reports #979).
  */
 
 export const REDACTED_VALUE = "[REDACTED]";
@@ -96,6 +97,107 @@ const TOKEN_QUERY_PARAM_RE =
 const URL_USERINFO_RE = /\/\/[^/@\s"']+:[^@\s"']+@/g;
 
 /**
+ * Structured `key = value` / `"key": "value"` pairs embedded in free-form text.
+ *
+ * The header/query patterns above only fire on a fixed set of shapes, so a serialized payload
+ * (`{"apiKey":"secret"}`) or an env/shell dump (`API_KEY=secret`) survived them intact — the
+ * exact gap flagged in review on #1291. Cron run output is the worst case: those scripts are
+ * spawned with the full `process.env`, so a `set -x` trace or crash dump prints credentials as
+ * bare assignments.
+ *
+ * Key matching is delegated to `shouldRedactKey`, so this pass and the object-level pass share
+ * one credential vocabulary and cannot drift apart.
+ *
+ * Matched in two steps — key+separator first, value only once the key is known to be a
+ * credential. A single combined pattern cannot work: it would consume the value of every
+ * ordinary key too, so `env dump: API_KEY=secret` would swallow the assignment as `dump`'s
+ * value and never see the real credential. Rescanning to compensate is quadratic (a 100k
+ * `a=a=a=…` blob took over a second), and cron stdout is exactly where such a blob shows up.
+ * Skipping the value scan for ordinary keys keeps both branches O(1) per key.
+ *
+ * Group 1 is the optional key quote (backreferenced so quoting must balance), group 2 the key.
+ * The lookbehind stops a key from starting mid-identifier, which also keeps the scan linear: a
+ * long non-matching run is rejected at one position instead of at every offset.
+ */
+const SENSITIVE_KEY_PREFIX_RE =
+  /(?<![A-Za-z0-9_.\-])(["']?)([A-Za-z_][A-Za-z0-9_.\-]{0,63})\1\s*[:=]\s*/g;
+
+/**
+ * The value half, matched sticky at the position the key pattern stopped.
+ *
+ * The bare branch excludes brackets and braces so a nested literal (`"tokens":["a","b"]`) is
+ * left alone rather than half-consumed and rewritten into malformed JSON. That also means an
+ * already-redacted `token=[REDACTED]` matches nothing, which is what makes reapplication safe.
+ */
+const SENSITIVE_VALUE_RE = /(["'])([^"'\r\n]*)\1|[^\s,;&?<>()[\]{}"']+/y;
+
+/** Auth scheme labels the header patterns above deliberately keep visible. */
+const AUTH_SCHEME_ONLY_RE = /^(?:Bearer|Basic)$/i;
+
+/**
+ * Replace the value of every credential-named `key=value` / `"key": "value"` pair.
+ *
+ * Only the value slice is rewritten, so the key, its quoting, and the separator survive
+ * byte-for-byte and stay readable in the log row.
+ */
+function redactSensitiveKeyValuePairs(text: string): string {
+  SENSITIVE_KEY_PREFIX_RE.lastIndex = 0;
+
+  let result = "";
+  let copiedUpTo = 0;
+  let keyMatch: RegExpExecArray | null;
+
+  while ((keyMatch = SENSITIVE_KEY_PREFIX_RE.exec(text)) !== null) {
+    // `lastIndex` already sits past the separator, so an ordinary key costs nothing and leaves
+    // whatever follows it available to be matched as a key in its own right.
+    if (!shouldRedactKey(keyMatch[2])) {
+      continue;
+    }
+
+    const valueStart = SENSITIVE_KEY_PREFIX_RE.lastIndex;
+    SENSITIVE_VALUE_RE.lastIndex = valueStart;
+    const valueMatch = SENSITIVE_VALUE_RE.exec(text);
+    if (!valueMatch) {
+      continue;
+    }
+
+    const valueEnd = SENSITIVE_VALUE_RE.lastIndex;
+    const quote = valueMatch[1] as string | undefined;
+    const value = quote === undefined ? valueMatch[0] : valueMatch[2];
+    SENSITIVE_KEY_PREFIX_RE.lastIndex = valueEnd;
+
+    if (!value) {
+      continue;
+    }
+
+    // An earlier pattern already scrubbed this pair (`Cookie: [REDACTED]`, `"Authorization":
+    // "Basic [REDACTED]"`). Leaving it alone keeps the richer upstream output.
+    if (value.includes("REDACTED")) {
+      continue;
+    }
+
+    // Same case, but the bare branch stopped at the `[` of an existing redaction, so only a
+    // harmless prefix matched: in `DATABASE_URL=postgres://[REDACTED]@host/db` the value reads
+    // as `postgres://`. Rewriting it would double-redact and discard the surviving host.
+    if (text.startsWith(REDACTED_VALUE, valueEnd)) {
+      continue;
+    }
+
+    // `Authorization: Bearer [REDACTED]` — the credential is gone and the scheme aids triage.
+    if (AUTH_SCHEME_ONLY_RE.test(value)) {
+      continue;
+    }
+
+    result +=
+      text.slice(copiedUpTo, valueStart) +
+      (quote ? `${quote}${REDACTED_VALUE}${quote}` : REDACTED_VALUE);
+    copiedUpTo = valueEnd;
+  }
+
+  return copiedUpTo === 0 ? text : result + text.slice(copiedUpTo);
+}
+
+/**
  * HAR / DevTools network captures often store headers as `{ name, value }` instead of
  * `{ Cookie: "…" }`. Key-level scrubbing only sees `name`/`value`, so we treat a sensitive
  * `name` as if the key itself were that header.
@@ -133,9 +235,19 @@ export function shouldRedactKey(key: string): boolean {
 
 /**
  * Scrub secret-shaped substrings from a free-form string (log lines, URLs, messages).
+ *
+ * Covers both unstructured shapes (headers, bearer tokens, URL query params and userinfo) and
+ * structured `key=value` / `"key": "value"` pairs serialized into the text.
+ *
+ * The structured pass runs last so the more specific header patterns win: they keep useful
+ * context such as the `Bearer` scheme that a generic key/value swap would erase.
+ *
+ * It errs toward over-redaction — once a key is credential-named, `token: expired` reads as
+ * `token: [REDACTED]`. For a log sink that is the right direction, and the code/source/level
+ * columns carry the triage signal that the value would have.
  */
 export function redactSecretValuesInString(text: string): string {
-  return text
+  const headerScrubbed = text
     .replace(AUTH_HEADER_CREDENTIAL_RE, `$1 ${REDACTED_VALUE}`)
     .replace(STANDALONE_AUTH_TOKEN_RE, `$1 ${REDACTED_VALUE}`)
     .replace(COOKIE_HEADER_RE, (match) => {
@@ -145,6 +257,8 @@ export function redactSecretValuesInString(text: string): string {
     .replace(X_API_KEY_HEADER_RE, `X-Api-Key: ${REDACTED_VALUE}`)
     .replace(TOKEN_QUERY_PARAM_RE, `$1${REDACTED_VALUE}`)
     .replace(URL_USERINFO_RE, `//${REDACTED_VALUE}@`);
+
+  return redactSensitiveKeyValuePairs(headerScrubbed);
 }
 
 /**

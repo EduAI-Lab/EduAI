@@ -89,11 +89,93 @@ describe("redactSecretValuesInString", () => {
     );
   });
 
+  // Review on #1291: the header/query patterns above only fire on a fixed set of shapes, so a
+  // serialized payload or an env dump reached the log rows untouched.
+  describe("structured key/value payloads", () => {
+    it("redacts a JSON-serialized credential", () => {
+      expect(redactSecretValuesInString('{"apiKey":"secret"}')).toBe(
+        `{"apiKey":"${REDACTED_VALUE}"}`,
+      );
+      expect(redactSecretValuesInString('{"password": "hunter2", "userId": "u-1"}')).toBe(
+        `{"password": "${REDACTED_VALUE}", "userId": "u-1"}`,
+      );
+    });
+
+    it("redacts env / shell assignment dumps", () => {
+      expect(redactSecretValuesInString("API_KEY=secret")).toBe(`API_KEY=${REDACTED_VALUE}`);
+      expect(redactSecretValuesInString("PGPASSWORD=xyz psql -h db")).toBe(
+        `PGPASSWORD=${REDACTED_VALUE} psql -h db`,
+      );
+      expect(redactSecretValuesInString("DATABASE_URL=postgres://u:p@host/db")).toBe(
+        `DATABASE_URL=postgres://${REDACTED_VALUE}@host/db`,
+      );
+    });
+
+    it("redacts unquoted object / YAML style pairs", () => {
+      expect(redactSecretValuesInString("clientSecret: sk-live-1")).toBe(
+        `clientSecret: ${REDACTED_VALUE}`,
+      );
+      expect(redactSecretValuesInString("sessionId='abc123'")).toBe(
+        `sessionId='${REDACTED_VALUE}'`,
+      );
+    });
+
+    it("leaves non-credential keys and prose alone", () => {
+      expect(redactSecretValuesInString("note: all good")).toBe("note: all good");
+      expect(redactSecretValuesInString("status=ok count=42")).toBe("status=ok count=42");
+      expect(redactSecretValuesInString("expires: 2026-12-01T00:00:00.000Z")).toBe(
+        "expires: 2026-12-01T00:00:00.000Z",
+      );
+      // Stack frames carry `file:line:col`, which must survive to stay useful.
+      expect(redactSecretValuesInString("at Object.run (/app/b.js:12:34)")).toBe(
+        "at Object.run (/app/b.js:12:34)",
+      );
+    });
+
+    it("does not mangle a nested literal under a credential key", () => {
+      // The bare-value branch must not half-consume the `[`, which would emit invalid JSON.
+      expect(redactSecretValuesInString('{"tokens":["a","b"]}')).toBe('{"tokens":["a","b"]}');
+    });
+
+    it("keeps the auth scheme that the header patterns preserve", () => {
+      expect(redactSecretValuesInString("Authorization: Bearer abc.def.ghi")).toBe(
+        `Authorization: Bearer ${REDACTED_VALUE}`,
+      );
+    });
+
+    it("is idempotent — re-running never double-redacts", () => {
+      const inputs = [
+        '{"apiKey":"secret"}',
+        "API_KEY=secret",
+        "DATABASE_URL=postgres://u:p@host/db",
+        "Authorization: Bearer abc.def.ghi",
+        "Cookie: session=abc",
+        "https://x.test/cb?access_token=abc123def456",
+      ];
+      for (const input of inputs) {
+        const once = redactSecretValuesInString(input);
+        expect(redactSecretValuesInString(once)).toBe(once);
+      }
+    });
+  });
+
   it("does not ReDoS on long non-URL strings", () => {
     const long = "y".repeat(100_000);
     const start = Date.now();
     expect(redactSecretValuesInString(long)).toBe(long);
     expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  // A dense separator blob is the worst case for the key/value pass: scanning each key's value
+  // and then backing up to re-expose what it swallowed is quadratic. Matching the value only
+  // after the key is known to be a credential keeps it linear. Cron stdout can be 1000 chars of
+  // exactly this shape, so guard the property rather than the implementation.
+  it("stays linear on a dense key/value blob", () => {
+    for (const blob of ["a=".repeat(50_000), "a:b:c:d:".repeat(12_000)]) {
+      const start = Date.now();
+      expect(redactSecretValuesInString(blob)).toBe(blob);
+      expect(Date.now() - start).toBeLessThan(500);
+    }
   });
 });
 
