@@ -155,6 +155,27 @@ describe("finishCronRun", () => {
     expect(persistedMessage).toContain("connect failed for");
   });
 
+  // Review on #1291: a `set -x` trace or crash dump prints env credentials as bare assignments
+  // rather than as a header or URL, so the value-level patterns alone missed them.
+  it("redacts structured key/value secrets in the persisted message", async () => {
+    await finishCronRun(
+      "run-abc",
+      "ERROR",
+      'env dump: API_KEY=sk-live-abcdef PGPASSWORD=hunter2 payload={"clientSecret":"s3kr3t"} rows=42',
+      1,
+    );
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("sk-live-abcdef");
+    expect(persistedMessage).not.toContain("hunter2");
+    expect(persistedMessage).not.toContain("s3kr3t");
+    expect(persistedMessage).toContain("API_KEY=[REDACTED]");
+    expect(persistedMessage).toContain("PGPASSWORD=[REDACTED]");
+    expect(persistedMessage).toContain('"clientSecret":"[REDACTED]"');
+    // Non-secret operational counters stay readable for triage.
+    expect(persistedMessage).toContain("rows=42");
+  });
+
   it("leaves a message with no secrets untouched", async () => {
     await finishCronRun("run-abc", "SUCCESS", "Processed 42 rows in 3.1s", 0);
 

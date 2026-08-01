@@ -121,6 +121,27 @@ describe("db.systemlog.server", () => {
       expect(data.stack).not.toContain("sk-live-abcdef123456");
     });
 
+    // Review on #1291: an upstream error whose body is echoed into the message carries the
+    // credential as a serialized pair, which none of the header/query patterns matched.
+    it("redacts structured key/value payloads in message and stack", async () => {
+      await createSystemLog({
+        level: "ERROR",
+        source: "API",
+        code: "UPSTREAM_REJECTED",
+        message: 'upstream rejected body {"apiKey":"sk-live-abcdef"}',
+        stack: "Error: spawn failed\n    at env (API_KEY=sk-live-abcdef PGPASSWORD=hunter2)",
+      });
+
+      const data = vi.mocked(prisma.systemLog.create).mock.calls[0]?.[0].data;
+      expect(data.message).toBe('upstream rejected body {"apiKey":"[REDACTED]"}');
+      expect(data.stack).not.toContain("sk-live-abcdef");
+      expect(data.stack).not.toContain("hunter2");
+      expect(data.stack).toContain("API_KEY=[REDACTED]");
+      expect(data.stack).toContain("PGPASSWORD=[REDACTED]");
+      // Frame context is what makes the stack worth storing — it must survive.
+      expect(data.stack).toContain("Error: spawn failed");
+    });
+
     it("redacts a string error, which normalizeErrorMetadata routes into stack", async () => {
       await createSystemError({
         source: "CANVAS",
