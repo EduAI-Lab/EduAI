@@ -106,6 +106,7 @@ function isBlockedIPv6(address: string): boolean {
 
   if ((g0 & 0xffc0) === 0xfe80) return true; // link-local fe80::/10
   if ((g0 & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+  if ((g0 & 0xff00) === 0xff00) return true; // multicast ff00::/8, mirrors 224/4
   if (g0 === 0x2001 && g1 === 0x0db8) return true; // documentation 2001:db8::/32
   if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
     return true; // NAT64 64:ff9b::/96

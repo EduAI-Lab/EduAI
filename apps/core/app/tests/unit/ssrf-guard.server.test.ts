@@ -119,6 +119,16 @@ describe("assertPublicHostname", () => {
 
     lookupMock.mockResolvedValueOnce([{ address: "64:ff9b::7f00:1", family: 6 }]);
     await expect(assertPublicHostname("v6-nat64.example")).rejects.toThrow(UnsafeHostError);
+
+    // ff00::/8 is the IPv6 counterpart of the 224/4 rule above; both sides of
+    // the range table should reject multicast, not just the IPv4 one.
+    for (const address of ["ff02::1", "ff05::1:3", "ff0e::1"]) {
+      lookupMock.mockResolvedValueOnce([{ address, family: 6 }]);
+      await expect(
+        assertPublicHostname(`v6-multicast-${address}.example`),
+        address,
+      ).rejects.toThrow(UnsafeHostError);
+    }
   });
 
   it("blocks IPv6 loopback and mapped-private addresses in uncompressed form", async () => {
