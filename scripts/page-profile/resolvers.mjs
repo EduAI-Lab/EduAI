@@ -80,17 +80,28 @@ async function resolveCore(request, baseUrl) {
   const chats = toArray(await getJson(request, paged(`${baseUrl}/api/chats`)), 'chats');
   params.chatId = firstId(chats, 'chatId');
 
-  const disciplines = toArray(await getJson(request, `${baseUrl}/api/disciplines`), 'disciplines');
-  // /units/:department/chats keys on the department CODE (e.g. COSC), not an id.
-  for (const d of disciplines) {
-    const code = d?.code ?? d?.department ?? d?.name;
-    if (code) {
-      params.department = String(code);
-      break;
+  // /units/:department/chats keys on the department CODE (e.g. COSC), not an id,
+  // and the loader rejects any code outside the caller's `authorizedUnits` with
+  // a redirect to /courses?access=denied. Taking disciplines[0] therefore picks
+  // AGRO for a COSC unit admin and profiles the access-denied page — so ask what
+  // this session is actually authorized for first, and only fall back to the
+  // global list for roles (ADMIN) that carry no per-unit restriction.
+  const me = await getJson(request, `${baseUrl}/api/me`);
+  const authorized = Array.isArray(me?.authorizedUnits) ? me.authorizedUnits.filter(Boolean) : [];
+  if (authorized.length) {
+    params.department = String(authorized[0]);
+  } else {
+    const disciplines = toArray(await getJson(request, `${baseUrl}/api/disciplines`), 'disciplines');
+    for (const d of disciplines) {
+      const code = d?.code ?? d?.department ?? d?.name;
+      if (code) {
+        params.department = String(code);
+        break;
+      }
     }
   }
   // The unit-admin seed account is authorized for COSC, so that is the only
-  // department it can actually open if the list endpoint is unavailable.
+  // department it can open if both endpoints are unavailable.
   params.department ??= 'COSC';
 
   return params;
