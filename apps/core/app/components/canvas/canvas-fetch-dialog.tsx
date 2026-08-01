@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link } from "react-router";
-import { IconLoader } from "@tabler/icons-react";
+import {} from "@tabler/icons-react";
 
 import { Button } from "@eduai/ui";
 import { Checkbox } from "@eduai/ui";
@@ -114,7 +115,7 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
 
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-            <IconLoader className="h-4 w-4 animate-spin" />
+            <Spinner />
             Loading your Canvas courses…
           </div>
         ) : courses.length === 0 ? (
@@ -193,7 +194,7 @@ export function CanvasFetchDialog({ open, onOpenChange }: CanvasFetchDialogProps
           >
             {syncing ? (
               <>
-                <IconLoader className="mr-2 h-4 w-4 animate-spin" />
+                <Spinner className="mr-2" />
                 Fetching…
               </>
             ) : (
