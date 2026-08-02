@@ -157,6 +157,19 @@ They are **unrelated**:
 
 If the model needed **more than 3** tool hops in one turn (rare), set e.g. `CHAT_TOOL_MAX_STEPS=5` in `.env` and restart.
 
+### Long-output response caps (#152)
+
+Long-output intent (for example, “summarise the whole chat”) uses a smaller output-token budget to bound completion latency and avoid an unstructured wall of text. This cap applies only when the server classifies the latest user turn as long-output intent; ordinary turns retain their existing model/provider limit.
+
+| Env var | Default | Scope |
+|---------|---------|-------|
+| `CHAT_LONG_OUTPUT_MAX_TOKENS` | `1200` | Long-output turns in standard chat mode |
+| `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS` | `600` | Long-output turns while ADHD Assist is enabled |
+
+Both overrides must be positive integers. Missing or invalid values use the defaults, and the effective limit is `min(existing model/provider max tokens, configured long-output cap)`, so these settings never increase output length. When generation finishes with `length` after the server applied this cap, the response is persisted with `metadata.hitLongOutputCap=true`; the UI exposes a durable **Continue** action for that response.
+
+When benchmarking a cap change, use the same long-output prompt, model, assistive-mode setting, and warm/cold path before and after. Record TTFT and total response time in separate session rows; do not treat the configured token ceiling as observed token usage.
+
 ### Gemini free tier quota (`generate_content_free_tier_requests`)
 
 If the error mentions **`generate_content_free_tier_requests`** with a small **limit (e.g. 20)**, you are on Google’s **free** quota for that model/metric. Waiting **one wall-clock minute** is not always enough: the limit may be **per rolling window** or you may still be **over the daily cap** until Google resets it.
@@ -219,7 +232,7 @@ Hybrid / tool RAG limits are tuned for **token safety** and latency; defaults we
 
 - Server restart after a code change that could affect TTFT
 - Model swap (different provider or different model id within a provider)
-- `.env` change (e.g. flipping `CHAT_TOOL_MAX_STEPS`, `CHAT_LLM_MAX_RETRIES`, `CHAT_DISABLE_BOOT_WARMUP`, `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE`, `CHAT_HYBRID_RAG_MAX_CHUNKS`, `CHAT_HYBRID_RAG_MAX_CONTEXT_CHARS`, `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`)
+- `.env` change (e.g. flipping `CHAT_TOOL_MAX_STEPS`, `CHAT_LLM_MAX_RETRIES`, `CHAT_DISABLE_BOOT_WARMUP`, `CHAT_LONG_OUTPUT_MAX_TOKENS`, `CHAT_LONG_OUTPUT_ADHD_MAX_TOKENS`, `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE`, `CHAT_HYBRID_RAG_MAX_CHUNKS`, `CHAT_HYBRID_RAG_MAX_CONTEXT_CHARS`, `CHAT_TOOL_RAG_MAX_CHARS_PER_CHUNK`)
 - Major prompt or tools-map change
 
 ## Open questions / ideas backlog
