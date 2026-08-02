@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ChatConversationLayout } from "~/components/chat/chat-conversation-layout";
+import {
+  resolvedModelIdFromMessage,
+  wasAutoRoutedFromMessage,
+} from "~/lib/chat/chat-message-metadata";
 
 const baseProps = {
   bannerTitle: "Chat",
@@ -135,5 +139,39 @@ describe("ChatConversationLayout — routed model labels", () => {
     );
 
     expect(screen.getByText("Answered by GPT-4o")).toBeInTheDocument();
+  });
+
+  it("keeps an auto-routed reply's label hidden after a reload with no live selector state (#829)", () => {
+    // Simulates ChatScreen's hydration path: a DB-loaded transcript, not a
+    // client session that ever saw the picker change.
+    const storedTranscript = [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        content: "Auto-routed answer",
+        metadata: { resolvedModelId: "vllm:qwen2.5-7b-instruct", wasAutoRouted: true },
+      },
+    ];
+    const routedModelByMessageId: Record<string, string> = {};
+    const wasAutoRoutedByMessageId: Record<string, boolean> = {};
+    for (const message of storedTranscript) {
+      const modelId = resolvedModelIdFromMessage(message);
+      if (modelId) {
+        routedModelByMessageId[message.id] = modelId;
+        wasAutoRoutedByMessageId[message.id] = wasAutoRoutedFromMessage(message);
+      }
+    }
+
+    render(
+      <ChatConversationLayout
+        {...baseProps}
+        selectedModel="vllm:qwen2.5-7b-instruct"
+        messages={storedTranscript}
+        routedModelByMessageId={routedModelByMessageId}
+        wasAutoRoutedByMessageId={wasAutoRoutedByMessageId}
+      />,
+    );
+
+    expect(screen.queryByText(/Answered by/i)).not.toBeInTheDocument();
   });
 });
