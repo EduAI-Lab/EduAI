@@ -1,0 +1,138 @@
+[
+  {
+    "Auth": "service-key",
+    "ProxyUser": "blocked",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "instructor",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "instructor",
+    "PersistedChat": "ok"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "student",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "none",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "instructor",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "student",
+    "PersistedChat": "pin-conflict"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "instructor",
+    "PersistedChat": "type-mismatch"
+  },
+  {
+    "Auth": "service-key",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "student",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "blocked",
+    "ChatMode": "user",
+    "CoursePublished": "yes",
+    "Enrollment": "instructor",
+    "PersistedChat": "pin-conflict"
+  },
+  {
+    "Auth": "none",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "instructor",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "service-key",
+    "ProxyUser": "none",
+    "ChatMode": "user",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "session",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "instructor",
+    "PersistedChat": "pin-conflict"
+  },
+  {
+    "Auth": "admin-api-key",
+    "ProxyUser": "valid",
+    "ChatMode": "admin",
+    "CoursePublished": "no",
+    "Enrollment": "none",
+    "PersistedChat": "none"
+  },
+  {
+    "Auth": "none",
+    "ProxyUser": "none",
+    "ChatMode": "admin",
+    "CoursePublished": "yes",
+    "Enrollment": "none",
+    "PersistedChat": "none"
+  }
+]
