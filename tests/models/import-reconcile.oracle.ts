@@ -18,6 +18,10 @@
  * Import is additive only — upstream Canvas deletion is not propagated; there is
  * no delete outcome.
  *
+ * The PICT model has six dimensions (census § S4); five map to distinguishable
+ * skip outcomes below. The sixth (`ExistingPresent`) decides import vs update when
+ * all gates pass — it is not itself a skip kind.
+ *
  * The SUT collapses three skip paths into one return string
  * (`skipped-not-modified`). This oracle splits them into distinguishable kinds so
  * the adapter can assert precedence even when the handler string is identical.
@@ -32,13 +36,13 @@ export type ImportReconcileRow = {
   ChecksumDup: "yes" | "no";
 };
 
+/** Five skip kinds — one per SUT skip cause (three share `skipped-not-modified`). */
 export type ImportReconcileSkipKind =
   | "excluded"
   | "unpublished"
   | "deleted"
   | "not-modified-fresh-ready"
-  | "checksum-dup"
-  | "not-modified-other";
+  | "checksum-dup";
 
 export type ImportReconcileVerdict =
   | { outcome: "imported" }
@@ -98,7 +102,6 @@ export function expectedSutOutcome(row: ImportReconcileRow): ImportReconcileSutO
         case "deleted":
         case "not-modified-fresh-ready":
         case "checksum-dup":
-        case "not-modified-other":
           return "skipped-not-modified";
       }
   }
