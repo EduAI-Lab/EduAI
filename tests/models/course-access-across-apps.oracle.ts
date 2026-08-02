@@ -40,8 +40,15 @@ export type CourseAccessVerdict =
       reason: "app-floor" | "no-course" | "no-access" | "unpublished-student";
     };
 
-/** Platform role the world-builder should seed for this row (drives app floor). */
-export function platformRoleForRow(row: CourseAccessRow): CourseAccessRow["Role"] | "STUDENT" {
+/**
+ * Platform role the world-builder should seed for this row (drives app floor).
+ * Never returns `"TA"` — Core's Prisma `UserRole` dropped TA (course TA =
+ * platform STUDENT + EnrollmentRole.TA); QM Role=TA also seeds STUDENT so the
+ * app floor denies.
+ */
+export function platformRoleForRow(
+  row: CourseAccessRow,
+): "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT" {
   if (row.App === "question-maker") {
     // Role=TA is seeded as platform STUDENT so QM_AUTHORIZED denies at the floor.
     if (row.Role === "TA") return "STUDENT";

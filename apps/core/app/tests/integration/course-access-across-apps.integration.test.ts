@@ -73,7 +73,7 @@ async function buildRow(row: CourseAccessRow) {
       : [];
 
   const user = await seedUser({
-    role: platformRole as "ADMIN" | "UNIT_ADMIN" | "STUDENT" | "INSTRUCTOR" | "TA",
+    role: platformRole,
     authorizedUnits,
   });
   seededUserIds.push(user.id);
