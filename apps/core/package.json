@@ -32,6 +32,7 @@
     "research:verify-energy": "node ./scripts/research/verify-energy-sidecar.mjs",
     "research:backfill-energy": "node ./scripts/research/backfill-interaction-energy.mjs",
     "fleet:smoke": "node ./scripts/fleet-smoke.mjs",
+    "fleet:extensions:smoke": "node ./scripts/extension-fleet-smoke.mjs",
     "test:embedding": "tsx scripts/test-embedding.ts",
     "re-embed:course": "tsx scripts/re-embed-course.ts",
     "eval:rag:seed": "tsx scripts/eval-rag-seed.ts",
