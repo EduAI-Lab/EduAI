@@ -44,7 +44,6 @@ import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
-import { isLongOutputIntent } from "~/lib/ai/long-output-intent";
 
 type LongOutputMessageMetadata = {
   hitLongOutputCap?: boolean;
@@ -134,7 +133,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
-  const pendingLongOutputIntentRef = useRef(false);
   const { getValidApiKeys } = useApiKeys();
   const prefsFetcher = useFetcher();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -321,14 +319,18 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           setWebToolsEnabled(webToolsHeader === "1");
         }
       },
-      onFinish: (message, { finishReason }) => {
-        // Persisted metadata is authoritative after route hydration. During the current
-        // stream, that metadata is not returned to useChat, so combine the matching
-        // request intent with the finish reason to expose Continue before a reload.
+      onFinish: (message) => {
+        // The server classifies the request and reports the result as a message
+        // annotation. Persisted messages expose the same flag through metadata.
         const hitLongOutputCap =
           message.role === "assistant" &&
-          finishReason === "length" &&
-          pendingLongOutputIntentRef.current;
+          message.annotations?.some(
+            (annotation) =>
+              annotation !== null &&
+              typeof annotation === "object" &&
+              !Array.isArray(annotation) &&
+              (annotation as Record<string, unknown>).hitLongOutputCap === true,
+          );
 
         if (hitLongOutputCap) {
           setCappedMessageIds((current) => {
@@ -337,8 +339,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             return next;
           });
         }
-
-        pendingLongOutputIntentRef.current = false;
 
         const id = pendingNavigateChatId.current;
 
@@ -355,10 +355,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     });
 
   const onSubmit = useCallback(
-    (
-      e: React.FormEvent<HTMLFormElement>,
-      explicitPrompt?: string,
-    ) => {
+    (e: React.FormEvent<HTMLFormElement>) => {
       if (!chatId) {
         postAssistiveClientEvent({
           eventType: "task_initiation",
@@ -380,12 +377,9 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           },
         });
       }
-      pendingLongOutputIntentRef.current =
-        isLongOutputIntent(explicitPrompt ?? input);
-
       handleSubmit(e);
     },
-    [adhdAssist, chatId, handleSubmit, input],
+    [adhdAssist, chatId, handleSubmit],
   );
 
   const handleContinue = useCallback(
@@ -396,21 +390,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         return next;
       });
 
-      // A continuation remains part of the original long-output request.
-      // If this chunk also ends because of the cap, onFinish should expose
-      // Continue for the new assistant message.
-      pendingLongOutputIntentRef.current = true;
-
-      try {
-        await append({
-          role: "user",
-          content:
-            "Continue the previous response from where it stopped. Do not repeat content already provided.",
-        });
-      } catch (error) {
-        pendingLongOutputIntentRef.current = false;
-        throw error;
-      }
+      await append({
+        role: "user",
+        content:
+          "Continue the previous response from where it stopped. Do not repeat content already provided.",
+      });
     },
     [append],
   );
@@ -502,7 +486,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         currentTarget: {} as HTMLFormElement,
       } as React.FormEvent<HTMLFormElement>;
 
-      onSubmit(formEvent, prompt);
+      onSubmit(formEvent);
     });
   };
 

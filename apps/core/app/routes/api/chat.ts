@@ -2,7 +2,12 @@ import type { Prisma, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { ZodError } from "zod";
-import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
+import {
+  createDataStreamResponse,
+  formatDataStreamPart,
+  StreamData,
+  streamText,
+} from "ai";
 import {
   createAIProviderRegistry,
   listEnabledRegistryProviders,
@@ -1801,6 +1806,7 @@ ${buildEmptyCourseRagBlock()}`;
       const probe = shouldProbeFleetStream
         ? createStreamStartupProbe({ timeoutMs: fleetStreamProbeMs })
         : null;
+      const streamData = streaming && !needsOversight ? new StreamData() : null;
 
       const result = streamText({
         ...(streamConfig as Parameters<typeof streamText>[0]),
@@ -1841,6 +1847,10 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
+              streamData?.appendMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(finishReason),
+              });
+              void streamData?.close();
               const assistantText = text || extractAssistantText(response?.messages);
               if (assistantText) {
                 await appendMessages([
@@ -1865,19 +1875,21 @@ ${buildEmptyCourseRagBlock()}`;
         onError: ({ error }) => {
           logStreamError(error, streamTrace);
           probe?.hooks.signalError(error);
+          void streamData?.close();
         },
       });
 
       if (probe) {
         await probe.wait();
       }
-      return result;
+      return { result, streamData };
     };
 
     let result;
+    let liveStreamData: StreamData | null = null;
     let fleetRetry = false;
     try {
-      result = await runStreamText();
+      ({ result, streamData: liveStreamData } = await runStreamText());
     } catch (error) {
       if (isClientAbort(error, request.signal)) {
         abandonSidecar(energySidecarBaseUrl, sidecarTag);
@@ -1921,7 +1933,7 @@ ${buildEmptyCourseRagBlock()}`;
               previousServerId: failedPick.serverId,
               fleetRetryAttempt: true,
             });
-            result = await runStreamText();
+            ({ result, streamData: liveStreamData } = await runStreamText());
             // #876 success marker — only after the alternate attempt succeeds.
             fleetRetry = true;
             routerContext = {
@@ -2103,6 +2115,10 @@ ${buildEmptyCourseRagBlock()}`;
                 );
               }
 
+              dataStream.writeMessageAnnotation({
+                hitLongOutputCap: didHitLongOutputCap(finishReason),
+              });
+
               dataStream.write(
                 formatDataStreamPart("finish_message", {
                   finishReason: finishReason ?? "stop",
@@ -2182,9 +2198,10 @@ ${buildEmptyCourseRagBlock()}`;
       return withAdmissionRelease(
         result.toDataStreamResponse({
           headers,
+          ...(liveStreamData ? { data: liveStreamData } : {}),
           ...(chatMode === "admin"
             ? {
-                getErrorMessage: (error) => {
+                getErrorMessage: (error: unknown) => {
                   logStreamError(error, streamTrace);
                   const base = formatStreamError(error);
                   if (parsedModel.providerId === "vllm") {

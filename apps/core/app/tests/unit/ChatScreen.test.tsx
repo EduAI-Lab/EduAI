@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { ChatScreen } from "~/components/chat/chat-screen";
@@ -15,23 +15,28 @@ const {
   handleInputChangeMock,
   postAssistiveClientEventMock,
   appendMock,
+  useChatOptionsMock,
 } = vi.hoisted(() => ({
   handleSubmitMock: vi.fn(),
   handleInputChangeMock: vi.fn(),
   postAssistiveClientEventMock: vi.fn(),
   appendMock: vi.fn(),
+  useChatOptionsMock: vi.fn(),
 }));
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: () => ({
-    messages: [],
-    input: "",
-    handleInputChange: handleInputChangeMock,
-    handleSubmit: handleSubmitMock,
-    isLoading: false,
-    stop: vi.fn(),
-    append: appendMock,
-  }),
+  useChat: (options: unknown) => {
+    useChatOptionsMock(options);
+    return {
+      messages: [],
+      input: "",
+      handleInputChange: handleInputChangeMock,
+      handleSubmit: handleSubmitMock,
+      isLoading: false,
+      stop: vi.fn(),
+      append: appendMock,
+    };
+  },
 }));
 
 vi.mock("~/lib/assistive-events.client", () => ({
@@ -265,6 +270,26 @@ describe("ChatScreen — header", () => {
     const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
 
     expect(latestProps?.cappedMessageIds).toEqual(new Set(["assistant-1"]));
+  });
+
+  it("shows Continue from the server's live-stream annotation", () => {
+    renderChatScreen();
+
+    const options = useChatOptionsMock.mock.calls.at(-1)?.[0] as {
+      onFinish: (message: Record<string, unknown>) => void;
+    };
+
+    act(() => {
+      options.onFinish({
+        id: "assistant-live",
+        role: "assistant",
+        content: "Partial answer",
+        annotations: [{ hitLongOutputCap: true }],
+      });
+    });
+
+    const latestProps = captureCourseViewProps.mock.calls.at(-1)?.[0];
+    expect(latestProps?.cappedMessageIds).toEqual(new Set(["assistant-live"]));
   });
 
   it("submits a continuation for a persisted capped response", async () => {
