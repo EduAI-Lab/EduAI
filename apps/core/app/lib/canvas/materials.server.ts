@@ -231,7 +231,7 @@ async function syncUnpublishedState(
 
 const MAX_CANVAS_FILE_SIZE = 50 * 1024 * 1024; // 50 MB — matches file-processing.ts cap
 
-async function importSingleCanvasFile(
+export async function importSingleCanvasFile(
   courseId: string,
   userId: string,
   file: CanvasFileApi,
