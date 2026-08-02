@@ -266,6 +266,25 @@ describe('updateBank / deleteBank / ensureDefaultBank / attachQuestionToBanks', 
     });
   });
 
+  it('ensureDefaultBank throws when Core has no isDefault bank', async () => {
+    listQuestionBanksFromCore.mockResolvedValue({
+      banks: [
+        {
+          id: 'bank_other',
+          name: 'Other',
+          description: null,
+          isDefault: false,
+          createdAt: 't',
+          updatedAt: 't',
+        },
+      ],
+    });
+    await expect(ensureDefaultBank(9, USER_ID)).rejects.toMatchObject({
+      status: 500,
+      message: expect.stringMatching(/Failed to ensure default/),
+    });
+  });
+
   it('attachQuestionToBanks uses explicit ids', async () => {
     questionFindUnique.mockResolvedValue({ id: 42, courseId: 9 });
     addQuestionBankMembershipOnCore.mockResolvedValue({ id: 'm1' });

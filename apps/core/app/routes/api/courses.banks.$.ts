@@ -9,6 +9,7 @@ import {
 import { canEditCourse } from "~/lib/rbac";
 import {
   addQuestionToBank,
+  addQuestionsToBank,
   createQuestionBank,
   deleteQuestionBank,
   listBankMemberships,
@@ -145,6 +146,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json(result.bank, 201);
   }
 
+  if (parts.length === 1 && parts[0] === "questions") {
+    return json({ error: "Not found" }, 404);
+  }
+
   if (parts.length === 1 && method === "PUT") {
     const body = await request.json();
     const result = await updateQuestionBank(courseId, parts[0], body);
@@ -172,6 +177,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (parts.length === 2 && parts[1] === "questions" && method === "POST") {
     const body = await request.json();
+    if (Array.isArray(body?.memberships)) {
+      const result = await addQuestionsToBank(courseId, parts[0], body);
+      if ("error" in result) {
+        const status = result.error === "Question bank not found" ? 404 : 400;
+        return json(result, status);
+      }
+      return json(result, 201);
+    }
     const result = await addQuestionToBank(courseId, parts[0], body);
     if ("error" in result) {
       const status = result.error === "Question bank not found" ? 404 : 400;

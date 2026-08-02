@@ -32,7 +32,7 @@ vi.mock('../../src/services/assessmentSectionService.js', () => ({
 vi.mock('../../src/services/questionBankService.js', () => ({
   listBanks: vi.fn(),
   createBank: vi.fn(),
-  addQuestionToBank: vi.fn(),
+  addQuestionsToBank: vi.fn(),
 }));
 
 vi.mock('../../src/config/database.js', () => ({
@@ -51,6 +51,11 @@ vi.mock('../../src/config/database.js', () => ({
     },
     questionMetadata: { findUnique: vi.fn(), update: vi.fn() },
     variants: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn(async (fn) => fn({
+      questionMetadata: { update: vi.fn() },
+      variants: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn(), create: vi.fn() },
+      canvasBankQuestionMapping: { update: vi.fn(), create: vi.fn() },
+    })),
   },
 }));
 
@@ -59,7 +64,7 @@ vi.mock('../../src/utils/logger.js', () => ({
 }));
 
 const { prisma } = await import('../../src/config/database.js');
-const { listBanks, createBank, addQuestionToBank } = await import(
+const { listBanks, createBank, addQuestionsToBank } = await import(
   '../../src/services/questionBankService.js'
 );
 const { createQuestion } = await import('../../src/services/questionService.js');
@@ -69,6 +74,20 @@ const { importQuestionBankFromCanvas } = await import(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prisma.$transaction.mockImplementation(async (fn) =>
+    fn({
+      questionMetadata: { update: prisma.questionMetadata.update },
+      variants: {
+        findMany: prisma.variants.findMany,
+        update: prisma.variants.update,
+        create: prisma.variants.create,
+      },
+      canvasBankQuestionMapping: {
+        update: prisma.canvasBankQuestionMapping.update,
+        create: prisma.canvasBankQuestionMapping.create,
+      },
+    }),
+  );
   prisma.canvasIntegration.findUnique.mockResolvedValue({
     userId: 'u1',
     canvasUrl: 'https://canvas.example.edu',
@@ -88,6 +107,7 @@ beforeEach(() => {
     lastSyncedAt: new Date('2026-07-29T00:00:00Z'),
   });
   createBank.mockResolvedValue({ id: 'bank_new', name: 'Chapter 1' });
+  addQuestionsToBank.mockResolvedValue({ added: 0 });
   axiosRequest.mockImplementation(async (config) => {
     if (String(config.url).includes('/questions')) {
       return { data: [] };
@@ -148,18 +168,34 @@ describe('importQuestionBankFromCanvas', () => {
     createQuestion.mockResolvedValue({ id: 55 });
     prisma.variants.create.mockResolvedValue({});
     prisma.canvasBankQuestionMapping.create.mockResolvedValue({});
-    addQuestionToBank.mockResolvedValue({});
+    addQuestionsToBank.mockResolvedValue({ added: 1 });
 
     const result = await importQuestionBankFromCanvas('u1', 1, 10, 9, {
       primaryTopicId: 'topic_1',
     });
 
     expect(createBank).toHaveBeenCalled();
-    expect(createQuestion).toHaveBeenCalled();
+    expect(createQuestion).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({ skipBankAttach: true }),
+    );
+    expect(addQuestionsToBank).toHaveBeenCalledWith(9, 'u1', 'bank_new', [55]);
+    expect(prisma.canvasBankMapping.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_canvasBankId_localCourseId: {
+            userId: 'u1',
+            canvasBankId: 10,
+            localCourseId: 9,
+          },
+        },
+      }),
+    );
     expect(result).toMatchObject({
       bankId: 'bank_new',
       created: 1,
       updated: 0,
+      truncated: false,
     });
   });
 
@@ -188,5 +224,14 @@ describe('importQuestionBankFromCanvas', () => {
     });
     expect(result.skipped).toBe(1);
     expect(createQuestion).not.toHaveBeenCalled();
+    expect(addQuestionsToBank).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-numeric canvas ids', async () => {
+    await expect(
+      importQuestionBankFromCanvas('u1', '123&context_type=Account', 10, 9, {
+        primaryTopicId: 't1',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });

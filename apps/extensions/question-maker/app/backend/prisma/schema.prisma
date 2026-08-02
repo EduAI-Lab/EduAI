@@ -287,6 +287,8 @@ model VariantSelectionCursor {
 model CanvasBankMapping {
   id             Int       @id @default(autoincrement())
   userId         String    @map("user_id")
+  /// Local QM course id — same Canvas bank may sync into multiple courses
+  localCourseId  Int       @map("local_course_id")
   /// Core QuestionBank id (cuid string) — banks live in EduAI Core
   localBankId    String    @map("local_bank_id")
   canvasCourseId Int       @map("canvas_course_id")
@@ -297,7 +299,7 @@ model CanvasBankMapping {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, canvasBankId])
+  @@unique([userId, canvasBankId, localCourseId])
   @@map("canvas_bank_mappings")
 }
 

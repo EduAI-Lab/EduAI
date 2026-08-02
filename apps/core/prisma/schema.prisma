@@ -483,6 +483,8 @@ model QuestionBank {
   memberships QuestionBankMembership[]
 
   @@index([courseId, isDefault])
+  /// Partial unique (one default bank per course) is enforced in SQL:
+  /// question_banks_courseId_default_key WHERE "isDefault"
   @@map("question_banks")
 }
 

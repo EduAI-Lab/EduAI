@@ -1,10 +1,14 @@
+import { Prisma } from "@prisma/client";
+
 import prisma from "~/lib/prisma.server";
 import {
   AddBankMembershipSchema,
+  AddBankMembershipsSchema,
   CreateQuestionBankSchema,
   DeleteQuestionBankSchema,
   UpdateQuestionBankSchema,
   type AddBankMembershipInput,
+  type AddBankMembershipsInput,
   type CreateQuestionBankInput,
   type DeleteQuestionBankInput,
   type UpdateQuestionBankInput,
@@ -12,23 +16,45 @@ import {
 
 export const DEFAULT_BANK_NAME = "Course bank";
 
-export async function ensureDefaultBank(courseId: string) {
-  const existing = await prisma.questionBank.findFirst({
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
+}
+
+export async function ensureDefaultBank(
+  courseId: string,
+  db: DbClient = prisma,
+) {
+  const existing = await db.questionBank.findFirst({
     where: { courseId, isDefault: true },
   });
   if (existing) return existing;
 
-  return prisma.questionBank.create({
-    data: {
-      courseId,
-      name: DEFAULT_BANK_NAME,
-      isDefault: true,
-    },
-  });
+  try {
+    return await db.questionBank.create({
+      data: {
+        courseId,
+        name: DEFAULT_BANK_NAME,
+        isDefault: true,
+      },
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await db.questionBank.findFirst({
+        where: { courseId, isDefault: true },
+      });
+      if (raced) return raced;
+    }
+    throw error;
+  }
 }
 
+/** Read-only list — does not create a default bank (mutations / course create do). */
 export async function listQuestionBanks(courseId: string) {
-  await ensureDefaultBank(courseId);
   return prisma.questionBank.findMany({
     where: { courseId },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
@@ -137,26 +163,25 @@ export async function deleteQuestionBank(
     const memberships = await prisma.questionBankMembership.findMany({
       where: { questionBankId: bankId },
     });
-    for (const membership of memberships) {
-      await prisma.questionBankMembership.upsert({
-        where: {
-          questionBankId_source_externalQuestionId: {
+
+    await prisma.$transaction(async (tx) => {
+      if (memberships.length > 0) {
+        await tx.questionBankMembership.createMany({
+          data: memberships.map((membership) => ({
             questionBankId: target.id,
             source: membership.source,
             externalQuestionId: membership.externalQuestionId,
-          },
-        },
-        create: {
-          questionBankId: target.id,
-          source: membership.source,
-          externalQuestionId: membership.externalQuestionId,
-        },
-        update: {},
-      });
-    }
-    await prisma.questionBankMembership.deleteMany({
-      where: { questionBankId: bankId },
+          })),
+          skipDuplicates: true,
+        });
+        await tx.questionBankMembership.deleteMany({
+          where: { questionBankId: bankId },
+        });
+      }
+      await tx.questionBank.delete({ where: { id: bankId } });
     });
+
+    return { success: true } as const;
   }
 
   await prisma.questionBank.delete({ where: { id: bankId } });
@@ -199,6 +224,46 @@ export async function addQuestionToBank(
   return { membership } as const;
 }
 
+/** Bulk membership upsert — collapses N Core round-trips for Canvas bank import. */
+export async function addQuestionsToBank(
+  courseId: string,
+  bankId: string,
+  payload: AddBankMembershipsInput,
+) {
+  const parsed = AddBankMembershipsSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { error: "Invalid input", details: parsed.error.flatten() } as const;
+  }
+
+  const bank = await prisma.questionBank.findFirst({
+    where: { id: bankId, courseId },
+  });
+  if (!bank) {
+    return { error: "Question bank not found" } as const;
+  }
+
+  await prisma.questionBankMembership.createMany({
+    data: parsed.data.memberships.map((m) => ({
+      questionBankId: bankId,
+      source: m.source,
+      externalQuestionId: m.externalQuestionId,
+    })),
+    skipDuplicates: true,
+  });
+
+  const memberships = await prisma.questionBankMembership.findMany({
+    where: {
+      questionBankId: bankId,
+      OR: parsed.data.memberships.map((m) => ({
+        source: m.source,
+        externalQuestionId: m.externalQuestionId,
+      })),
+    },
+  });
+
+  return { memberships, added: memberships.length } as const;
+}
+
 export async function removeQuestionFromBank(
   courseId: string,
   bankId: string,
@@ -228,7 +293,11 @@ export async function removeQuestionFromBank(
   await prisma.questionBankMembership.delete({ where: { id: membership.id } });
 
   const remaining = await prisma.questionBankMembership.count({
-    where: { source, externalQuestionId },
+    where: {
+      source,
+      externalQuestionId,
+      questionBank: { courseId },
+    },
   });
 
   if (remaining === 0) {

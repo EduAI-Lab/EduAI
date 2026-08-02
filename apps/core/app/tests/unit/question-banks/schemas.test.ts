@@ -23,6 +23,17 @@ describe("question-banks schemas", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("strips unrecognized isDefault on create", () => {
+    const parsed = CreateQuestionBankSchema.safeParse({
+      name: "Midterm bank",
+      isDefault: true,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).not.toHaveProperty("isDefault");
+    }
+  });
+
   it("accepts partial updates", () => {
     const parsed = UpdateQuestionBankSchema.safeParse({ name: "Renamed" });
     expect(parsed.success).toBe(true);

@@ -440,6 +440,15 @@ export async function addQuestionBankMembershipOnCore(coreCourseId, bankId, payl
   });
 }
 
+/** POST bulk memberships — body `{ memberships: [...] }` */
+export async function addQuestionBankMembershipsOnCore(coreCourseId, bankId, memberships, opts = {}) {
+  return fetchFromCore(`/api/courses/${coreCourseId}/banks/${bankId}/questions`, {
+    method: 'POST',
+    body: { memberships },
+    ...opts,
+  });
+}
+
 /** DELETE /api/courses/:courseId/banks/:bankId/questions/:externalQuestionId */
 export async function removeQuestionBankMembershipOnCore(
   coreCourseId,

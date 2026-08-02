@@ -4,6 +4,7 @@
  * Unit tests for Core question-bank server helpers (mocked Prisma).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = vi.hoisted(() => ({
   questionBank: {
@@ -19,18 +20,23 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn(),
     upsert: vi.fn(),
     create: vi.fn(),
+    createMany: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
   course: {
     findUnique: vi.fn(),
   },
+  $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn(prismaMock),
+  ),
 }));
 
 vi.mock("~/lib/prisma.server", () => ({ default: prismaMock }));
 
 import {
   addQuestionToBank,
+  addQuestionsToBank,
   createQuestionBank,
   deleteQuestionBank,
   ensureDefaultBank,
@@ -57,6 +63,9 @@ const EXTRA_BANK = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.$transaction.mockImplementation(
+    async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock),
+  );
 });
 
 describe("ensureDefaultBank", () => {
@@ -80,17 +89,32 @@ describe("ensureDefaultBank", () => {
       },
     });
   });
+
+  it("returns the raced row when create hits the partial unique index", async () => {
+    prismaMock.questionBank.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(DEFAULT_BANK);
+    prismaMock.questionBank.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    await expect(ensureDefaultBank(COURSE_ID)).resolves.toEqual(DEFAULT_BANK);
+  });
 });
 
 describe("listQuestionBanks", () => {
-  it("ensures a default bank then returns course banks", async () => {
-    prismaMock.questionBank.findFirst.mockResolvedValue(DEFAULT_BANK);
+  it("returns course banks without creating a default", async () => {
     prismaMock.questionBank.findMany.mockResolvedValue([DEFAULT_BANK, EXTRA_BANK]);
 
     await expect(listQuestionBanks(COURSE_ID)).resolves.toEqual([
       DEFAULT_BANK,
       EXTRA_BANK,
     ]);
+    expect(prismaMock.questionBank.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.questionBank.create).not.toHaveBeenCalled();
   });
 });
 
@@ -192,6 +216,41 @@ describe("addQuestionToBank", () => {
   });
 });
 
+describe("addQuestionsToBank", () => {
+  it("bulk-creates memberships with skipDuplicates", async () => {
+    prismaMock.questionBank.findFirst.mockResolvedValue(EXTRA_BANK);
+    prismaMock.questionBankMembership.createMany.mockResolvedValue({ count: 2 });
+    prismaMock.questionBankMembership.findMany.mockResolvedValue([
+      { id: "m1", externalQuestionId: "1" },
+      { id: "m2", externalQuestionId: "2" },
+    ]);
+
+    const result = await addQuestionsToBank(COURSE_ID, EXTRA_BANK.id, {
+      memberships: [
+        { externalQuestionId: "1", source: "question-maker" },
+        { externalQuestionId: "2", source: "question-maker" },
+      ],
+    });
+
+    expect(prismaMock.questionBankMembership.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          questionBankId: EXTRA_BANK.id,
+          source: "question-maker",
+          externalQuestionId: "1",
+        },
+        {
+          questionBankId: EXTRA_BANK.id,
+          source: "question-maker",
+          externalQuestionId: "2",
+        },
+      ],
+      skipDuplicates: true,
+    });
+    expect(result).toMatchObject({ added: 2 });
+  });
+});
+
 describe("updateQuestionBank", () => {
   it("rejects invalid input", async () => {
     const result = await updateQuestionBank(COURSE_ID, EXTRA_BANK.id, {
@@ -227,7 +286,7 @@ describe("updateQuestionBank", () => {
 });
 
 describe("deleteQuestionBank with membership move", () => {
-  it("moves memberships then deletes the bank", async () => {
+  it("moves memberships then deletes the bank in a transaction", async () => {
     prismaMock.questionBank.findFirst
       .mockResolvedValueOnce(EXTRA_BANK)
       .mockResolvedValueOnce(DEFAULT_BANK);
@@ -240,7 +299,7 @@ describe("deleteQuestionBank with membership move", () => {
         externalQuestionId: "42",
       },
     ]);
-    prismaMock.questionBankMembership.upsert.mockResolvedValue({});
+    prismaMock.questionBankMembership.createMany.mockResolvedValue({ count: 1 });
     prismaMock.questionBankMembership.deleteMany.mockResolvedValue({
       count: 1,
     });
@@ -251,7 +310,17 @@ describe("deleteQuestionBank with membership move", () => {
     });
 
     expect(result).toEqual({ success: true });
-    expect(prismaMock.questionBankMembership.upsert).toHaveBeenCalled();
+    expect(prismaMock.$transaction).toHaveBeenCalled();
+    expect(prismaMock.questionBankMembership.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          questionBankId: DEFAULT_BANK.id,
+          source: "question-maker",
+          externalQuestionId: "42",
+        },
+      ],
+      skipDuplicates: true,
+    });
     expect(prismaMock.questionBankMembership.deleteMany).toHaveBeenCalledWith({
       where: { questionBankId: EXTRA_BANK.id },
     });
@@ -321,7 +390,7 @@ describe("removeQuestionFromBank", () => {
     ).resolves.toEqual({ error: "Question is not a member of this bank" });
   });
 
-  it("reassigns to the default bank when no other memberships remain", async () => {
+  it("reassigns to the default bank when no other memberships remain in-course", async () => {
     prismaMock.questionBank.findFirst
       .mockResolvedValueOnce(EXTRA_BANK)
       .mockResolvedValueOnce(DEFAULT_BANK);
@@ -345,6 +414,13 @@ describe("removeQuestionFromBank", () => {
       removed: true,
       reassignedToDefault: true,
       defaultBankId: DEFAULT_BANK.id,
+    });
+    expect(prismaMock.questionBankMembership.count).toHaveBeenCalledWith({
+      where: {
+        source: "question-maker",
+        externalQuestionId: "42",
+        questionBank: { courseId: COURSE_ID },
+      },
     });
     expect(prismaMock.questionBankMembership.create).toHaveBeenCalledWith({
       data: {

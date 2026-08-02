@@ -23,6 +23,7 @@ import {
   getCanvasQuestionBanks,
   getCanvasQuestionBankQuestions,
   importQuestionBankFromCanvas,
+  parseCanvasNumericId,
 } from '../services/canvasService.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import { CANVAS_ROLES } from '../middleware/roles.js';
@@ -295,7 +296,13 @@ router.get(
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
-      const banks = await getCanvasQuestionBanks(req.user.id, req.params.canvasCourseId);
+      let canvasCourseId;
+      try {
+        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
+      } catch (error) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      const banks = await getCanvasQuestionBanks(req.user.id, canvasCourseId);
       res.json({ success: true, data: banks });
     } catch (error) {
       next(error);
@@ -310,11 +317,18 @@ router.get(
   requireRole(CANVAS_ROLES),
   async (req, res, next) => {
     try {
-      const questions = await getCanvasQuestionBankQuestions(
+      let canvasBankId;
+      try {
+        parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
+        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, 'canvasBankId');
+      } catch (error) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      const { questions, truncated } = await getCanvasQuestionBankQuestions(
         req.user.id,
-        req.params.canvasBankId,
+        canvasBankId,
       );
-      res.json({ success: true, data: questions });
+      res.json({ success: true, data: questions, truncated });
     } catch (error) {
       next(error);
     }
@@ -329,7 +343,14 @@ router.post(
   requireCourseAccess({ min: 'instructor', getCourseId: (req) => req.body.localCourseId }),
   async (req, res, next) => {
     try {
-      const { canvasCourseId, canvasBankId } = req.params;
+      let canvasCourseId;
+      let canvasBankId;
+      try {
+        canvasCourseId = parseCanvasNumericId(req.params.canvasCourseId, 'canvasCourseId');
+        canvasBankId = parseCanvasNumericId(req.params.canvasBankId, 'canvasBankId');
+      } catch (error) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
       const { primaryTopicId, targetBankId } = req.body;
 
       if (!primaryTopicId) {

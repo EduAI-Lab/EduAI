@@ -11,6 +11,7 @@ import {
   deleteQuestionBankOnCore,
   listQuestionBankMembershipsFromCore,
   addQuestionBankMembershipOnCore,
+  addQuestionBankMembershipsOnCore,
   removeQuestionBankMembershipOnCore,
 } from './coreApiService.js';
 
@@ -86,7 +87,7 @@ export async function ensureDefaultBank(localCourseId, userId) {
   const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
   const payload = await callCore(() => listQuestionBanksFromCore(coreCourseId));
   const list = Array.isArray(payload?.banks) ? payload.banks : [];
-  let defaultBank = list.find((b) => b.isDefault) || list[0];
+  const defaultBank = list.find((b) => b.isDefault);
   if (!defaultBank) {
     throw coreError('Failed to ensure default question bank in Core', 500);
   }
@@ -150,6 +151,32 @@ export async function addQuestionToBank(localCourseId, userId, bankId, questionM
     }),
   );
   return { membership, created: true };
+}
+
+/** Bulk Core membership add for Canvas bank sync. */
+export async function addQuestionsToBank(localCourseId, userId, bankId, questionMetadataIds) {
+  const ids = [...new Set((questionMetadataIds || []).map(Number).filter((id) => Number.isInteger(id)))];
+  if (ids.length === 0) return { added: 0 };
+
+  const questions = await prisma.questionMetadata.findMany({
+    where: { id: { in: ids }, courseId: Number(localCourseId) },
+    select: { id: true },
+  });
+  if (questions.length !== ids.length) {
+    throw coreError('Question and bank must belong to the same course', 400);
+  }
+
+  const { coreCourseId } = await resolveCoreCourse(localCourseId, userId);
+  return callCore(() =>
+    addQuestionBankMembershipsOnCore(
+      coreCourseId,
+      bankId,
+      ids.map((id) => ({
+        externalQuestionId: String(id),
+        source: SOURCE,
+      })),
+    ),
+  );
 }
 
 export async function removeQuestionFromBank(

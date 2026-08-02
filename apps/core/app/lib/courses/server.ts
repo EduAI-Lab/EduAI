@@ -22,6 +22,7 @@ import { assertValidDepartment } from "~/lib/disciplines/guards.server";
 import { canCreateCourse } from "~/lib/rbac/permissions";
 import type { RbacUser } from "~/lib/rbac/types";
 import { cascadeDeleteToExtensions } from "./cascadeDelete.server";
+import { ensureDefaultBank } from "~/lib/question-banks/server";
 import {
   CreateCourseSchema,
   UpdateCourseSchema,
@@ -347,6 +348,8 @@ export async function createCourse(request: Request) {
         isActive: true,
       })),
     });
+
+    await ensureDefaultBank(created.id, tx);
 
     return created;
   });
