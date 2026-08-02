@@ -1,0 +1,20 @@
+# docs/PICT_CENSUS.md § S3 — chat-entry-admission
+# POST /api/chat entry gates: auth, proxyUser, admin chatMode, publish/enrollment,
+# persisted-chat type mismatch (410), course-pin conflict (409).
+Auth:            session, service-key, admin-api-key, none
+ProxyUser:       none, valid, blocked
+ChatMode:        user, admin
+CoursePublished: yes, no
+Enrollment:      none, student, instructor
+PersistedChat:   none, ok, type-mismatch, pin-conflict
+
+IF [Auth] = "none" THEN [ProxyUser] = "none";
+IF [ProxyUser] = "valid" THEN [Auth] = "admin-api-key";
+IF [ProxyUser] = "blocked" THEN [Auth] in {"session", "service-key"};
+IF [PersistedChat] <> "none" THEN [Auth] in {"session", "admin-api-key"};
+IF [PersistedChat] in {"type-mismatch", "pin-conflict"} THEN [Enrollment] in {"student", "instructor"};
+IF [PersistedChat] = "type-mismatch" THEN [ChatMode] = "user";
+IF [Auth] = "session" AND [ChatMode] = "user" THEN [Enrollment] in {"student", "instructor"};
+IF [Auth] = "admin-api-key" AND [ChatMode] = "user" AND [ProxyUser] = "none" THEN [Enrollment] in {"student", "instructor"};
+IF [Auth] = "session" AND [Enrollment] = "none" THEN [ChatMode] = "admin";
+IF [Auth] = "admin-api-key" AND [Enrollment] = "none" AND [ProxyUser] = "none" THEN [ChatMode] = "admin";
