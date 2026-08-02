@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { CANVAS_EXTERNAL_SOURCE } from "~/lib/canvas/client.server";
 import { encrypt } from "~/lib/canvas/encryption";
 import prisma from "~/lib/prisma.server";
-import { enroll, seedUser } from "./rbac";
+import { enroll, seedCourse, seedUser } from "./rbac";
 
 const DEFAULT_CANVAS_URL = "http://localhost:8080";
 const TEST_MODE_API_KEY = "test-key";
@@ -21,20 +21,17 @@ export async function seedCanvasLinkedCourse(opts?: {
 }): Promise<{ course: { id: string; externalId: string }; instructor: { id: string } }> {
   const externalId = opts?.externalId ?? randomUUID().slice(0, 8);
   const instructor = await seedUser({ role: "INSTRUCTOR" });
-  const suffix = randomUUID().slice(0, 8);
 
-  const course = await prisma.course.create({
+  const seeded = await seedCourse({
+    department: opts?.department ?? null,
+    isPublished: true,
+  });
+
+  const course = await prisma.course.update({
+    where: { id: seeded.id },
     data: {
-      name: `Canvas PICT Course ${suffix}`,
-      code: `CPICT ${suffix}`,
-      section: "001",
-      term: "W1",
-      year: 2026,
-      startDate: new Date("2026-09-01"),
       externalId,
       externalSource: CANVAS_EXTERNAL_SOURCE,
-      isPublished: true,
-      department: opts?.department ?? null,
       lastSyncedAt: new Date(),
     },
   });
