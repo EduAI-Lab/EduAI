@@ -62,7 +62,7 @@ function expandIPv6Groups(address) {
  * range — fe80 through febf in the first group, not just the fe80 prefix),
  * fc00::/7 (unique local), and IPv4-mapped private addresses.
  */
-function isPrivateIPv6(address) {
+export function isPrivateIPv6(address) {
   const normalized = address.toLowerCase();
   if (normalized === '::1' || normalized === '::') return true;
 
