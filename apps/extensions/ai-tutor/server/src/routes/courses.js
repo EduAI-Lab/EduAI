@@ -53,6 +53,7 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapCourseOffering, mapCourseOfferingAfterPublishWrite, mapProgressData } from '../utils/mappers.js';
+import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
 import {
