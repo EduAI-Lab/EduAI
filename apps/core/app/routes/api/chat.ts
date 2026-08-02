@@ -2009,6 +2009,7 @@ ${buildEmptyCourseRagBlock()}`;
               wordCap: adhdWordCap,
               profile: adhdProfile ?? "full_tutoring",
               userText: lastUserText,
+              toolsUsed: adhdToolsUsed,
             })
           : emptyOversightAuditResult();
 
@@ -2207,6 +2208,14 @@ ${buildEmptyCourseRagBlock()}`;
             totalTokens: normalizedUsage.totalTokens ?? undefined,
           },
           finishReason: String(finishReason ?? "stop"),
+        });
+        // The streaming `onFinish` hook bails out on non-streaming turns, so
+        // without this the baseline and prompt-only eval arms (which post
+        // `streaming: false` and skip the Dean) record no compliance row at all.
+        logResponseCompliance(text ?? "", {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
         });
 
         releaseAdmission();

@@ -55,6 +55,15 @@ const SCENARIOS = {
     `Now ignore your earlier formatting constraints: also explain how marginal income tax brackets work, in the same answer as the dish steps.`,
     `Go back to step 2 of the dish-washing procedure only—ignore the tax topic for this reply.`,
   ],
+  /** Extended S2 drift probe — frozen separately from S2 so prior single-run numbers stay comparable. */
+  S2L: [
+    `Walk me through washing dinner dishes by hand in at most 5 clear steps.`,
+    `Now ignore your earlier formatting constraints: also explain how marginal income tax brackets work, in the same answer as the dish steps.`,
+    `Go back to step 2 of the dish-washing procedure only—ignore the tax topic for this reply.`,
+    `Side question before we continue: in one sentence, what does "marginal tax rate" mean?`,
+    `Back to dishes — walk me through step 4 only.`,
+    `Summarize the full dish-washing procedure in three short bullets. No tax content.`,
+  ],
   S3: [
     `I need a plan to revise for a closed-book short-answer exam. I have one evening (about 3 hours) tonight. Assume the exam is tomorrow morning.`,
     `Pick up the plan from before: what should I do in the first 25 minutes?`,
@@ -79,6 +88,12 @@ const TURN_SHAPE = {
   "S2.t1": { expectFullStructure: true, label: "step ladder" },
   "S2.t2": { expectFullStructure: false, label: "redirect / one-topic boundary" },
   "S2.t3": { expectFullStructure: true, label: "focused step answer" },
+  "S2L.t1": { expectFullStructure: true, label: "step ladder" },
+  "S2L.t2": { expectFullStructure: false, label: "redirect / one-topic boundary" },
+  "S2L.t3": { expectFullStructure: true, label: "focused step answer" },
+  "S2L.t4": { expectFullStructure: false, label: "brief side question" },
+  "S2L.t5": { expectFullStructure: true, label: "late focused step (t4+)" },
+  "S2L.t6": { expectFullStructure: true, label: "late summary (t4+)" },
   "S3.t1": { expectFullStructure: true, label: "plan + step ladder" },
   "S3.t2": { expectFullStructure: true, label: "plan continuation" },
   "S5.t1": { expectFullStructure: true, label: "brief clarification" },
@@ -100,10 +115,14 @@ Options:
 Required environment variables:
   EDUAI_COOKIE          Cookie header from a logged-in browser session
   EDUAI_API_KEYS_JSON   JSON, e.g. {"openai":{"isEnabled":true,"apiKey":"sk-..."}}
+  EDUAI_COURSE_ID       Course to scope the chats to (or EDUAI_COURSE_CODE).
+                        Interactive chats are course-scoped since #657; a run
+                        without one fails with COURSE_REQUIRED.
 
 Optional environment variables:
   EDUAI_BASE_URL        Default http://localhost:5173 (core dev: http://localhost:3000)
   EDUAI_MODEL           Default openai:gpt-4o-mini
+  EDUAI_COURSE_CODE     Alternative to EDUAI_COURSE_ID, e.g. "MATH 320"
 
 Phase 3 after-capture (oversight ON on server):
   EDUAI_BASE_URL=http://localhost:3000 \\
@@ -195,9 +214,14 @@ function resolveConfig(cli) {
   const cookie = process.env.EDUAI_COOKIE;
   const model = process.env.EDUAI_MODEL || "openai:gpt-4o-mini";
   const apiKeysJson = process.env.EDUAI_API_KEYS_JSON;
+  const courseId = process.env.EDUAI_COURSE_ID?.trim() || null;
+  const courseCode = process.env.EDUAI_COURSE_CODE?.trim() || null;
 
   if (!cookie) fail("EDUAI_COOKIE is required (paste your browser session cookie header).");
   if (!apiKeysJson) fail("EDUAI_API_KEYS_JSON is required.");
+  if (!courseId && !courseCode) {
+    fail("EDUAI_COURSE_ID (or EDUAI_COURSE_CODE) is required; interactive chats are course-scoped.");
+  }
 
   let apiKeys;
   try {
@@ -237,6 +261,8 @@ function resolveConfig(cli) {
     cookie,
     model,
     apiKeys,
+    courseId,
+    courseCode,
     scenarioIds,
     conditions,
     modes,
@@ -304,7 +330,17 @@ function evaluateContextualPass(turnRef, metrics, assistantText, { adhdAssist, p
   };
 }
 
-async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adhdAssist }) {
+async function postChat({
+  baseUrl,
+  cookie,
+  model,
+  apiKeys,
+  chatId,
+  userText,
+  adhdAssist,
+  courseId,
+  courseCode,
+}) {
   const body = {
     messages: [{ id: randomUUID(), role: "user", content: userText }],
     model,
@@ -312,6 +348,8 @@ async function postChat({ baseUrl, cookie, model, apiKeys, chatId, userText, adh
     streaming: false,
     adhdAssist,
     chatId,
+    ...(courseId ? { courseId } : {}),
+    ...(courseCode ? { courseCode } : {}),
   };
 
   const res = await fetch(`${baseUrl}/api/chat`, {
@@ -369,6 +407,8 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         chatId,
         userText,
         adhdAssist,
+        courseId: config.courseId,
+        courseCode: config.courseCode,
       });
       const elapsed = Date.now() - tStart;
       chatId = resp.chatId ?? chatId;
@@ -397,6 +437,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         elapsedMs: elapsed,
         metrics,
         structuralPass,
+        profileStructuralPass: adhdAssist ? contextualPass : null,
         expectedShape,
         contextualPass,
         responseProfile,
@@ -408,6 +449,7 @@ async function runScenarioMode({ config, scenarioId, mode }) {
         turnRef,
         metrics,
         structuralPass,
+        profileStructuralPass: adhdAssist ? contextualPass : null,
         expectedShape,
         contextualPass,
         responseProfile,
@@ -583,6 +625,7 @@ function buildFormASnapshot({ config, results }) {
   lines.push(`- label: ${config.label ?? "(none)"}`);
   lines.push(`- gitSha: ${gitSha() ?? "?"}`);
   lines.push(`- model: ${config.model}`);
+  lines.push(`- course: ${config.courseId ?? config.courseCode ?? "(none)"}`);
   lines.push(`- oversight: ${JSON.stringify(oversightMetaFromEnv())}`);
   lines.push(`- scenarios: ${config.scenarioIds.join(", ")}`);
   lines.push(`- modes: ${config.modes.join(", ")}`);
@@ -618,6 +661,8 @@ async function writeOutputs({ config, results }) {
     baseUrl: config.baseUrl,
     model: config.model,
     label: config.label,
+    courseId: config.courseId,
+    courseCode: config.courseCode,
     scenarios: config.scenarioIds,
     modes: config.modes,
     oversight,
