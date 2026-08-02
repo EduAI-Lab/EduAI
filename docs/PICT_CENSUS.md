@@ -201,7 +201,7 @@ Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200,
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `course-access-across-apps` ⭐ | 6 | Core `lib/courses/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
+| `course-access-across-apps` ⭐ | 6 | Core `lib/auth/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
 
 ```
 effective_access(user, app, course) =

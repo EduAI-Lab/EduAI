@@ -1,0 +1,18 @@
+# S2 flagship — cross-app per-course RBAC drift contract (#1181).
+# See docs/PICT_CENSUS.md § S2. Oracle: shared_course_rbac ∩ app_role_floor.
+# CourseState omits "present" (redundant with published).
+Role:        ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT
+App:         core, ai-tutor, question-maker
+Enrollment:  none, inactive, active-INSTRUCTOR, active-TA, active-STUDENT
+CourseState: deleted, published, unpublished
+UnitMatch:   in-unit, out-of-unit, null-dept
+TaWidening:  plain-STUDENT, STUDENT-with-TA-enrollment
+
+IF [App] = "question-maker" THEN [Role] in {"ADMIN","UNIT_ADMIN","INSTRUCTOR","TA"};
+IF [Role] in {"ADMIN","UNIT_ADMIN"} THEN [Enrollment] = "none";
+IF [Role] <> "UNIT_ADMIN" THEN [UnitMatch] = "in-unit";
+IF [Role] <> "STUDENT" THEN [TaWidening] = "plain-STUDENT";
+IF [TaWidening] = "STUDENT-with-TA-enrollment" THEN [Enrollment] = "active-TA";
+IF [Role] = "INSTRUCTOR" THEN [Enrollment] in {"none","inactive","active-INSTRUCTOR"};
+IF [Role] = "TA" THEN [Enrollment] in {"none","inactive","active-TA"};
+IF [Role] = "STUDENT" AND [TaWidening] = "plain-STUDENT" THEN [Enrollment] in {"none","inactive","active-STUDENT"};
