@@ -31,7 +31,41 @@ if (!serviceKey) {
   process.exit(1);
 }
 
-async function run(label, routingContext) {
+/** Mirrors apps/core/app/lib/ai/routing/fleet/registry.ts's serverIdFromUrl. */
+function serverIdFromUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    const segment = host.split(".")[0];
+    return segment || host;
+  } catch {
+    return url;
+  }
+}
+
+function parseCommaUrls(raw) {
+  if (!raw?.trim()) return [];
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+const interactiveHosts = parseCommaUrls(process.env.VLLM_FLEET_CHAT_URLS).map(serverIdFromUrl);
+const heavyUrl = process.env.VLLM_FLEET_HEAVY_URL?.trim();
+const heavyHost = heavyUrl ? serverIdFromUrl(heavyUrl) : null;
+
+if (interactiveHosts.length === 0) {
+  console.error("VLLM_FLEET_CHAT_URLS must configure at least one interactive host");
+  process.exit(1);
+}
+
+/**
+ * Asserts the response was actually served by fleet routing, not just that the
+ * HTTP call succeeded — a background request silently falling back to the
+ * interactive pool, or bypassing fleet routing entirely, would otherwise still
+ * report OK.
+ */
+async function run(label, routingContext, expectedHosts) {
   const started = performance.now();
   const response = await fetch(`${baseUrl}/api/completion`, {
     method: "POST",
@@ -52,21 +86,30 @@ async function run(label, routingContext) {
   });
   const body = await response.text();
   const elapsedMs = Math.round(performance.now() - started);
-  const fleetServer = response.headers.get("x-fleet-server") || "(header unavailable)";
+  const fleetServer = response.headers.get("x-fleet-server");
+  const fleetOk = fleetServer != null && expectedHosts.includes(fleetServer);
+  const ok = response.ok && fleetOk;
   console.log(
-    `${response.ok ? "OK" : "FAIL"} ${label}: HTTP ${response.status}, ${elapsedMs} ms, fleet=${fleetServer}`,
+    `${ok ? "OK" : "FAIL"} ${label}: HTTP ${response.status}, ${elapsedMs} ms, fleet=${fleetServer ?? "(header unavailable)"}, expected one of [${expectedHosts.join(", ")}]`,
   );
   if (!response.ok) console.log(body.slice(0, 300));
-  return response.ok;
+  else if (!fleetOk) {
+    console.log(
+      `X-Fleet-Server did not match an expected host — request may have bypassed fleet routing or fallen back to the wrong pool.`,
+    );
+  }
+  return ok;
 }
 
-const tutorOk = await run("AI Tutor / interactive", {
-  feature: "tutor",
-  jobType: "interactive",
-});
-const questionMakerOk = await run("Question Maker / background", {
-  feature: "question-maker",
-  jobType: "background",
-});
+const tutorOk = await run(
+  "AI Tutor / interactive",
+  { feature: "tutor", jobType: "interactive" },
+  interactiveHosts,
+);
+const questionMakerOk = await run(
+  "Question Maker / background",
+  { feature: "question-maker", jobType: "background" },
+  heavyHost ? [heavyHost] : interactiveHosts,
+);
 
 if (!tutorOk || !questionMakerOk) process.exit(1);

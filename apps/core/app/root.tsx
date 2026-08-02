@@ -49,7 +49,11 @@ export const middleware: Route.MiddlewareFunction[] = [
     // Reject only address-bar/document navigation so those implementation
     // payloads cannot be browsed directly without breaking app navigation.
     if (isDataDocumentNavigation) {
-      return new Response("Not Found", { status: 404 });
+      const blocked = new Response("Not Found", { status: 404 });
+      applySecurityHeaders(blocked.headers, {
+        isProd: process.env.NODE_ENV === "production",
+      });
+      return blocked;
     }
 
     const response = await next();

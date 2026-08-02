@@ -42,7 +42,10 @@ import {
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
-import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
+import {
+  resolvedModelIdFromMessage,
+  wasAutoRoutedFromMessage,
+} from "~/lib/chat/chat-message-metadata";
 
 export interface ChatScreenProps {
   /** Base loader data resolved by both `/chat` and `/chat/:chatId`. */
@@ -142,7 +145,19 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
    */
   const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<
     Record<string, boolean>
-  >({});
+  >(() => {
+    const hydrated: Record<string, boolean> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      if (id && resolvedModelIdFromMessage(message)) {
+        hydrated[id] = wasAutoRoutedFromMessage(message);
+      }
+    }
+    return hydrated;
+  });
   const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
