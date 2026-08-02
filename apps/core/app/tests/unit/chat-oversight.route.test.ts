@@ -12,6 +12,7 @@ vi.mock("ai", async (importOriginal) => {
         write: (part: string) => {
           chunks.push(part);
         },
+        writeMessageAnnotation: vi.fn(),
       };
       execute(dataStream);
       return new Response(chunks.join(""), { status: 200 });
@@ -120,7 +121,7 @@ function mockStreamResult(args: {
   text: string;
   messages?: Array<{ id: string; role: string; content: unknown }>;
 }) {
-  vi.mocked(streamText).mockResolvedValue({
+  vi.mocked(streamText).mockReturnValue({
     consumeStream: vi.fn().mockResolvedValue(undefined),
     text: Promise.resolve(args.text),
     usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -196,7 +197,35 @@ function lastPersistedRows() {
   return Array.isArray(data) ? data : data ? [data] : [];
 }
 
+function allPersistedRows() {
+  return vi.mocked(prisma.chatMessage.createMany).mock.calls.flatMap(([args]) => {
+    if (!args) return [];
+    const data = args.data;
+    return Array.isArray(data) ? data : [data];
+  });
+}
+
 describe("POST /api/chat — ADHD oversight persistence (#533)", () => {
+  it("persists a non-streaming assistant response exactly once", async () => {
+    process.env.ADHD_ASSIST_OVERSIGHT = "false";
+    mockStreamResult({
+      text: DRAFT,
+      messages: [{ id: "assistant-final", role: "assistant", content: DRAFT }],
+    });
+
+    const res = await action(makeArgs(baseBody({ streaming: false })));
+    expect(res.status).toBe(200);
+
+    const assistantRows = allPersistedRows().filter(
+      (row) => row.role === "assistant",
+    );
+    expect(assistantRows).toHaveLength(1);
+    expect(assistantRows[0]).toMatchObject({
+      messageId: "assistant-final",
+      role: "assistant",
+    });
+  });
+
   it("persists tool-step assistant messages with overseen final content (non-streaming)", async () => {
     mockStreamResult({ text: DRAFT });
     mockAuditResult();

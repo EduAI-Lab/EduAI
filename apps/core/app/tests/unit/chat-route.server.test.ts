@@ -63,6 +63,35 @@ describe("loadChatTranscript", () => {
     expect(getChatMessages).toHaveBeenCalledWith("chat-1");
   });
 
+  it("restores the durable long-output cap flag through transcript hydration", async () => {
+    vi.mocked(resolveChatReadAccess).mockResolvedValue(CHAT_ACCESS);
+    vi.mocked(getChatMessages).mockResolvedValue([
+      {
+        messageId: "assistant-capped",
+        role: "assistant",
+        content: {
+          id: "assistant-capped",
+          role: "assistant",
+          content: "Partial answer",
+          metadata: { hitLongOutputCap: true },
+        },
+      },
+    ]);
+
+    const result = await loadChatTranscript(
+      { id: "owner-1", role: "STUDENT" },
+      "chat-1",
+    );
+
+    expect(result?.messages).toEqual([
+      expect.objectContaining({
+        id: "assistant-capped",
+        role: "assistant",
+        metadata: { hitLongOutputCap: true },
+      }),
+    ]);
+  });
+
   it("marks oversight reads as non-editable", async () => {
     vi.mocked(resolveChatReadAccess).mockResolvedValue({
       ...CHAT_ACCESS,
