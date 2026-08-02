@@ -7,7 +7,11 @@ import {
   isEncrypted,
 } from "~/lib/canvas/encryption";
 import type { CanvasIntegrationPublic, ConnectCanvasInput } from "~/lib/canvas/schemas";
-import { parseAndValidateCanvasUrl, verifyCanvasCredentials } from "~/lib/canvas/client.server";
+import {
+  assertSafeCanvasSaveHost,
+  parseAndValidateCanvasUrl,
+  verifyCanvasCredentials,
+} from "~/lib/canvas/client.server";
 
 const TEST_MODE_API_KEY_PLACEHOLDER = "test-key";
 
@@ -78,7 +82,12 @@ export async function getCanvasIntegrationWithDecryptedKey(userId: string) {
 }
 
 export async function saveCanvasIntegration(userId: string, input: ConnectCanvasInput) {
-  parseAndValidateCanvasUrl(input.canvasUrl);
+  const parsed = parseAndValidateCanvasUrl(input.canvasUrl);
+
+  // Runs for test mode too. The DNS-backed check used to be reachable only via
+  // verifyCanvasCredentials in the branch below, so a test-mode save could
+  // persist a URL pointing at an internal host that nothing had validated.
+  await assertSafeCanvasSaveHost(parsed);
 
   let apiKeyPlaintext: string;
 

@@ -4,9 +4,35 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Fixed
+
+- [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+### Changed
+
+- [core] feat: Harden ADHD Dean fail-closed (policy v2.0) — reject → one retry with reject reasons → `forced_deterministic` wrap (no fail-open); learner message + profile policy slice in rewrite prompt; Top summary / Next? normalization; Sources footer when tools/RAG ran; telemetry methods `llm_retry` / `forced_deterministic`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] feat: Restore Teacher literal anchors (policy v2.1) — model-facing policy requires exact `**Top summary**` / `**Next?**` (copyable skeleton); TLDR/Continue stay client-only in `assistive-display-transform.ts` so prompt-only Assist can pass Form A again. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] fix: Log `response_compliance` on non-streaming chat turns (eval harness path) and require `EDUAI_COURSE_ID`/`EDUAI_COURSE_CODE` for course-scoped ADHD eval since #657; restore S2L + `profileStructuralPass` in the eval script. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+### Tests
+
+- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] refactor: Remove hardware energy-sidecar session management from live `/api/chat` and fleet host selection while retaining passive token-based `AIInteraction` energy/carbon estimates; hardware measurement is now explicitly research-script-owned. Closes #1241. (@superbolt08, 2026-07-28) — [#1242](https://github.com/EduAI-Lab/EduAI/pull/1242)
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
+
+- [core] security: Close three SSRF gaps in Core's Canvas integration (#1166). `verifyCanvasCredentials` and the paginated list path passed no `redirect` option, so undici followed 3xx by default — a Canvas host that passed the pre-flight check could redirect to a private address and be followed unchecked, which also removed the "path is pinned to `/api/v1`" constraint that bounded the impact, since a redirect controls the whole URL. Both now use `redirect: "manual"` and surface a 3xx as an error. Separately, `parseAndValidateCanvasUrl` was scheme-only and the DNS-backed check was reachable only through credential verification, which test mode skips — so a test-mode save could persist a URL aimed at an internal host; the validator now rejects private IP literals and the `localhost` name, and `saveCanvasIntegration` resolves the host outside the `isTestMode` branch. Canvas requests now also pin the connection to the address the guard validated (`resolvePublicHost` + an undici `Agent` with a pinned lookup), closing the DNS-rebinding window that a pre-flight check alone leaves open. The plain-`http` local-dev host allowance is gated on `NODE_ENV` and scoped to `http`, so it can no longer apply in production or exempt an `https` URL aimed at loopback. Closes #1166. (#1166, @yta3216, 2026-07-30) — [#1290](https://github.com/EduAI-Lab/EduAI/pull/1290)
+- [core] security: Block uncompressed IPv6 private addresses in the shared SSRF guard (#1166). The IPv6 range checks matched on the textual form — an empty first group meant the address started with `::` and failed closed — which only holds for the compressed spelling. Written out in full, `0:0:0:0:0:0:0:1` has a first group of `"0"`, parsed as hextet 0, matched no blocked range, and was allowed; so were `0:0:0:0:0:ffff:7f00:1` (`::ffff:127.0.0.1`) and `0:0:0:0:0:ffff:a00:1` (`::ffff:10.0.0.1`). Both paths were reachable, since a resolver may return either spelling and an IP literal in a Canvas URL is user-supplied. Addresses are now expanded to eight numeric hextets before any range check, which also covers zone indices (`fe80::1%eth0`), zero padding, uppercase, and the deprecated IPv4-compatible `::a.b.c.d` form; anything unparseable is still blocked. Also adds the reserved ranges neither app covered: multicast `224/4`, `240/4`, broadcast, TEST-NET-1/2/3, `198.18/15`, `2001:db8::/32`, and NAT64 `64:ff9b::/96`. (#1166, @yta3216, 2026-07-30) — [#1290](https://github.com/EduAI-Lab/EduAI/pull/1290)
+- [core] security: PR #1290 review follow-up — add IPv6 multicast `ff00::/8` to the shared SSRF guard's blocked ranges (#1166). The reconciled range table blocked IPv4 multicast `224/4` but had no IPv6 counterpart, so the two families disagreed on the same class of address. Low-risk in practice — a TCP `connect()` to a multicast address does not behave like reaching an internal host — but the asymmetry is exactly the kind of gap the range reconciliation was meant to close. (#1166, @yta3216, 2026-07-31) — [#1290](https://github.com/EduAI-Lab/EduAI/pull/1290)
+- [core] security: PR #1290 review follow-up — scope the Canvas local-dev guard bypass to plain-`http` request URLs (#1166). The per-request local-dev exemption matched on the request URL's hostname alone, so with a local-dev `canvasUrl` configured, a Canvas-controlled pagination `Link` (or redirect `Location`) header of the form `https://127.0.0.1/…` shared a hostname with the allow-list and skipped the address check entirely. The dev docker Canvas is served over plain HTTP, so an `https` URL aimed at loopback is never that case; the request URL must now be `http:` itself for the exemption to apply, mirroring the same scoping already applied to the configured base URL. Such a request is now both guarded and pinned. (#1166, @yta3216, 2026-07-31) — [#1290](https://github.com/EduAI-Lab/EduAI/pull/1290)
 
 - [monorepo] prisma: Isolate the AI Tutor server and Question Maker backend generated Prisma clients in distinct workspace-scoped packages, update each service to import its own client, add a repository smoke check plus CI coverage that verifies both generated packages resolve independently and expose their service-specific delegates, and align the supported Question Maker deployment image with the monorepo workspace context. Closes #1218. (#1243, @gwan-kib, 2026-07-28) — [#1243](https://github.com/EduAI-Lab/EduAI/pull/1243)
 - [core] ux: Show a live, accessible password-requirements checklist on both sign-up and invitation acceptance, keep invitation validation aligned with the shared backend policy, and replace generic weak-password failures with specific inline guidance. Closes #1240. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
@@ -20,6 +46,8 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] test: Canvas SSRF regression coverage (#1166) — save-time rejection of private/loopback/metadata literals and the `localhost` name, the production gate on the `http` dev-host allowance, refusal of a 302 to an internal host on both the verify and paginated paths, dispatcher presence for real hosts and absence for the local-dev Canvas, and a connect-endpoint integration test asserting an instructor cannot persist an internal Canvas URL including with `isTestMode: true`. Adds `pinned-dispatcher.server.test.ts` (both lookup callback contracts, private-address refusal, rebinding substitution, single shared pool) and `pinned-dispatcher.e2e.test.ts`, which drives the dispatcher against a **real socket** — a lookup-shape unit test alone still passes if the dispatcher is never wired into `fetch`, and that test also pins down the deliberate limit that IP literals skip DNS resolution entirely. Extends the guard suite with CGNAT, `0.0.0.0`, IPv6 `::`, empty-record-set, malformed fail-closed, the new reserved ranges, and the uncompressed IPv6 forms that the previous string-matching logic allowed. (#1166, @yta3216, 2026-07-30) — [#1290](https://github.com/EduAI-Lab/EduAI/pull/1290)
+
 - [monorepo] feat: PICT combinatorial-testing infra — `tests/models/` directory, `scripts/pict-gen.mjs` generator (writes deterministic `<name>.cases.json`; supports `/o:N` order and `/e:<seed>` seed rows via a per-model sidecar config), `npm run test:pict:gen`, and a CI drift check (`pict-drift` job) that fails the PR if a committed case table goes stale relative to its model. Generation always runs `pict` inside a pinned `docker/pict` image rather than a host install — PICT's greedy solver breaks ties via hash-container iteration order, so a macOS/Homebrew build and a Linux build produce a *different row count* for the identical model (19 vs 18 for the pilot model here), not just a reordering; pinning to one Docker image is the only way the committed JSON stays byte-identical across every contributor's machine and CI. TESTS.md documents this, plus install/add-a-model/regen and the model→oracle→world-builder split. Ships with one pilot model (`material-visibility`, census § S1) to prove the path end to end — oracle and world-builder tests land in a separate issue. (#1179, @evanbones, 2026-07-27) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/1210)
 - [core] fix: Pass the CSP nonce to `ServerRouter` and the theme provider so React Router's SSR data-stream scripts are no longer blocked, and allow `data:` in `font-src` for Vite-inlined fonts. (#1219, @mochi_21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 - [core] fix: Nonce the SSR data-stream and theme scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
@@ -27,6 +55,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Fixed
 
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+
+### Changed
+
+- [question-maker] fix: Delete the duplicate `vite.config.mts` and point the test image and `tsconfig.node.json` at `vite.config.ts`, so the Docker tests no longer build with a different config than every other environment. (#1306, @abdullahmoh21, 2026-07-30)
+- [question-maker] perf: Code-split the frontend by route and load `pdfjs-dist`, `tesseract.js`, and `docx` on demand, cutting the entry chunk from 2.73MB to 907kB. (#1281, @abdullahmoh21, 2026-07-30)
+- [monorepo] refactor: s378 dev serves tree-shaken production-style builds instead of `npm run dev` — five systemd **user** units become three group-owned **system** units restartable by any `eduai-dev` member, both extension SPAs are served statically by Apache, and the new `infra/s378/go-live-build.sh` becomes the deploy command (builds keep `NODE_ENV=development`, so every dev-only code path still behaves as development). (#1281, @abdullahmoh21, 2026-07-30)
+
+### Tests
+
+- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-29) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ## [Week 12 — July 20–26, 2026]
 
@@ -152,6 +190,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] feat: AI-job queue position/depth reads + backpressure — `enqueue()` (and the `/api/chat` 202 response) now returns a live 1-based `queuePosition` and `queueDepth` computed from the durable `ai_jobs` rows, and rejects with 429 + `Retry-After` when the target queue holds `QUEUE_MAX_DEPTH` PENDING jobs (unset/0 disables the cap; idempotent replays are never rejected). (#915, @abdullahmoh21, 2026-07-24) — [#1172](https://github.com/EduAI-Lab/EduAI/pull/1172)
 - [core] feat: Async AI-job queue producer — `enqueue()` validates a job against the frozen contract, creates a durable `AiJob` Postgres row (source of truth), and pushes it onto the resolved per-pool BullMQ queue, wired at the `/api/chat` question-generation call site behind the off-by-default `QUEUE_ENQUEUE_ENABLED` flag; dequeue/dispatch is epic #168. (#914, @abdullahmoh21, 2026-07-18) — [#1092](https://github.com/EduAI-Lab/EduAI/pull/1092)
 
 ### Changed
@@ -169,6 +208,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: PR #1172 review follow-ups — the enqueue 202 snapshot now reads position and depth after the row is written and inside one `REPEATABLE READ` transaction, so the pair can no longer contradict itself in either direction (`queuePosition > queueDepth`), plus `/api/chat` producer-branch route tests and an ops note that a Redis outage can surface as 429 rather than 502 when the cap is on. (#915, @abdullahmoh21, 2026-07-30) — [#1172](https://github.com/EduAI-Lab/EduAI/pull/1172)
 - [ai-tutor] fix: Retry transient EduAI `/api/completion` failures once for HTTP 503 and eligible upstream/proxy 429 within the existing 45-second `EDUAI_CALL_TIMEOUT_MS` bound, covering tutor and supervisor calls. Parses `Retry-After` delay-seconds and HTTP-date headers with a 250 ms fallback, bounded by the remaining timeout so an oversized value cannot extend the overall call. Skips the known Core `{"error":"Too Many Requests"}` application rate-limit response — the 250 ms backoff cannot fit inside Core's longer window. Preserves immediate failure for non-retryable statuses and honors caller cancellation during backoff. Removes unreachable post-loop throw in `callEduAI`. Unit coverage for all retry/backoff paths via Vitest fake timers. (#1001, @gwan-kib, 2026-07-20) — [#1103](https://github.com/EduAI-Lab/EduAI/pull/1103)
 - [question-maker, core] fix: PR #1022 review follow-ups — unit-test Core chat course-code variant lookup (`COSC121` → `COSC 121`), stop hardcoding `COSC 121` in QM connectivity probes (configurable `EDUAI_PROBE_COURSE_ID` / `EDUAI_PROBE_COURSE_CODE`, else course-free for service-key), and document campus vLLM defaults in READMEs. (#1020, @superbolt08, 2026-07-17) — [#1022](https://github.com/EduAI-Lab/EduAI/pull/1022)
 - [core] fix: Course materials list 500 — pass { headers: request.headers } into Better Auth getSession in the materials loader (raw Request threw Headers is required), so uploads no longer look empty after a successful POST. (#1024, @superbolt08, 2026-07-13) — [#1022](https://github.com/EduAI-Lab/EduAI/pull/1022)
