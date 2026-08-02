@@ -4,8 +4,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Spinner } from '@eduai/ui';
-import Tesseract from 'tesseract.js';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker?url';
 import { IconUpload, IconFileText, IconTrash, IconCopy as CopyIcon, IconRefresh, IconChevronDown, IconChevronUp, IconHistory } from '@tabler/icons-react';
 
@@ -29,20 +27,35 @@ import { FALLBACK_GENERATION_MODEL, isCampusModel, pickPreferredGenerationModel 
 import type { OCRJob, StoredQuestion } from '../../types/ocr';
 import { toast } from 'sonner';
 
+// pdfjs-dist and tesseract.js are by far the heaviest dependencies in this app,
+// and only the OCR path below touches them. Imported statically they landed in
+// the shared entry chunk, so every visitor downloaded the whole OCR stack to
+// render the dashboard. Loaded on demand instead, at the point a file is
+// actually being read. `pdf.worker?url` stays static — Vite resolves it to an
+// emitted asset URL, not to the library itself.
+const isProduction = typeof window !== 'undefined' &&
+    (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.0.0.1'));
+
 // Configure PDF.js worker
 // In production, use CDN to avoid issues with worker file path resolution
 // In development, use the local worker file
 // This fixes the "Failed to fetch dynamically imported module" error in production
-const isProduction = typeof window !== 'undefined' && 
-    (window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.0.0.1'));
-
-if (isProduction) {
-    // Use jsDelivr CDN in production for reliability
-    // Version 4.10.38 matches the installed pdfjs-dist package version
-    GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-} else {
-    // Use local worker in development
-    GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+function loadPdfjs() {
+    // Memoised: the worker config must be applied exactly once, and re-importing
+    // per upload would re-run it on every file.
+    if (!pdfjsPromise) {
+        pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+            pdfjs.GlobalWorkerOptions.workerSrc = isProduction
+                // Use jsDelivr CDN in production for reliability
+                // Version 4.10.38 matches the installed pdfjs-dist package version
+                ? 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+                // Use local worker in development
+                : pdfWorkerSrc;
+            return pdfjs;
+        });
+    }
+    return pdfjsPromise;
 }
 
 type DraftQuestion = Required<Pick<ExtractedQuestion, 'question'>> &
@@ -438,6 +451,7 @@ export const QuestionUploadDialog = ({
     }, [aiModel, providerApiKey, toast]);
 
     const performPdfOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const { getDocument } = await loadPdfjs();
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await getDocument({ data: arrayBuffer }).promise;
         const pageTexts: string[] = [];
@@ -454,6 +468,7 @@ export const QuestionUploadDialog = ({
     }, []);
 
     const performImageOcr = useCallback(async (file: File, onProgress: (value: number) => void) => {
+        const { default: Tesseract } = await import('tesseract.js');
         const result = await Tesseract.recognize(file, 'eng', {
             logger: (message) => {
                 if (message.status === 'recognizing text') {
