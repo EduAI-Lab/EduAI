@@ -470,7 +470,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           name={courseName(course)}
           description={course.description}
           accentColor={accentForCourse(course)}
-          topics={courseTopics.topics.map((topic) => topic.name)}
+          // #1207: the chip row shows a page of topics; append a "+N more" chip
+          // rather than ending silently at the page bound.
+          topics={[
+            ...courseTopics.topics.map((topic) => topic.name),
+            ...(courseTopics.total > courseTopics.topics.length
+              ? [`+${courseTopics.total - courseTopics.topics.length} more`]
+              : []),
+          ]}
           topRightBadges={[course.isPublished ? 'Published' : 'Draft']}
           topicsAction={<CourseTopicsHeroAction course={course} courseTopics={courseTopics} />}
         />

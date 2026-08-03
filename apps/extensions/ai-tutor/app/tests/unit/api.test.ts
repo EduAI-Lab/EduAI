@@ -100,8 +100,10 @@ describe('api methods', () => {
       const { api } = await import('~/lib/api');
       await api.modulesForCourse(7);
 
+      // #1207 dropped the tree page size from 200 ("load everything") to a real
+      // pager's worth, once reorder and ordinals stopped needing the whole set.
       expect(mockFetch.mock.calls[0][0]).toBe(
-        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=200',
+        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=25',
       );
     });
   });
