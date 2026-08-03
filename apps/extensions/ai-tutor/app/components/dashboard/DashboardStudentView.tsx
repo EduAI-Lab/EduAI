@@ -20,12 +20,14 @@ const PROGRESS_COLOR = 'oklch(0.55 0.16 255)';
 
 type DashboardStudentViewProps = {
   courses: Course[];
+  /** Full course count (#1208); `courses` is a bounded page, so the panel discloses the gap. */
+  courseTotal?: number;
   submissions: SubmissionRow[];
   /** Cross-course rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
   dashboardStats?: DashboardStats | null;
 };
 
-export function DashboardStudentView({ courses, submissions, dashboardStats }: DashboardStudentViewProps) {
+export function DashboardStudentView({ courses, courseTotal, submissions, dashboardStats }: DashboardStudentViewProps) {
   const inProgress = inProgressCourses(courses);
   const completed = completedCourses(courses);
   const notStarted = notStartedCourses(courses);
@@ -110,7 +112,7 @@ export function DashboardStudentView({ courses, submissions, dashboardStats }: D
       leftPanelTitle="Your courses"
       quickActions={quickActions}
       rightPanelTitle="Continue learning"
-      rightPanel={<ContinueLearningPanel courses={courses} coursesBaseHref="/student" />}
+      rightPanel={<ContinueLearningPanel courses={courses} total={courseTotal} coursesBaseHref="/student" />}
     />
   );
 }

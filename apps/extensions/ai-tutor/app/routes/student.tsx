@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router';
+import { Link, redirect, useNavigation } from 'react-router';
 import type { ReactNode } from 'react';
 import { IconBooks, IconSearch } from '@tabler/icons-react';
 import {
@@ -18,13 +18,45 @@ import { useLocalUser } from '../hooks/useLocalUser';
 import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
+import { PaginationControls } from '~/components/common/PaginationControls';
+import { readCourseListSelection, useCourseListFilters } from '~/lib/course-list-filters';
 
-export async function clientLoader(_: Route.ClientLoaderArgs) {
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
-  // #1043: /courses is paginated; students take one bounded page (enrolled
-  // course counts sit well under the page size).
-  const page = await api.listCourses();
-  return { courses: page.data };
+  // #1208: search, term and progress come from the URL and are applied
+  // SERVER-side, so they span every enrolled course rather than the loaded page.
+  // This route previously requested one unbounded-in-practice page and rendered
+  // no pager at all — fine while enrolment counts stayed under the page size,
+  // but a filtered result set would still have truncated silently at 200.
+  const url = new URL(request.url);
+  const selection = readCourseListSelection(url);
+
+  const [page, facets] = await Promise.all([
+    api.listCourses({
+      page: selection.page,
+      search: selection.search || undefined,
+      term: selection.filters.term,
+      progress: selection.filters.progress,
+    }),
+    api.listCourseFacets(),
+  ]);
+
+  // Same upper-bound guard as the instructor list (#1162): rebuild from
+  // `url.searchParams` so the search/filter params survive the redirect.
+  const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+  if (selection.page > lastPage) {
+    url.searchParams.set('page', String(lastPage));
+    throw redirect(`${url.pathname}${url.search}`);
+  }
+
+  return {
+    courses: page.data,
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
+    selection,
+    facets,
+  };
 }
 
 /** Time-of-day greeting for the page heading — mirrors EduAI Core's dashboard
@@ -53,8 +85,18 @@ function progressBadges(course: Course): string[] {
   return [`${Math.round(p.percentage)}% complete`];
 }
 
-/** Bucket a course by how far the student has progressed through it. */
-const PROGRESS_FILTER: CourseFilterGroup<Course> = {
+/**
+ * Bucket a course by how far the student has progressed through it.
+ *
+ * #1208: this is the definition of record for the buckets, but it is no longer
+ * what filters — `?progress=` is applied server-side (`progressBucket` in
+ * `server/src/services/progressCalculation.js`) so it spans every enrolled
+ * course, not the loaded page. `getValue` is kept exported-by-use here because
+ * unit tests on both sides pin the two implementations to the same four cases;
+ * if they drift, the dropdown would label a course differently from the filter
+ * that selected it.
+ */
+export const PROGRESS_FILTER: CourseFilterGroup<Course> = {
   id: 'progress',
   label: 'Progress',
   getValue: (course) => {
@@ -91,6 +133,10 @@ function EmptyCourseCard({ icon, title, body }: { icon: ReactNode; title: string
 export default function StudentHome({ loaderData }: Route.ComponentProps) {
   const { user } = useLocalUser();
   const courseList = useMemo(() => loaderData.courses ?? [], [loaderData.courses]);
+  const { total, page, pageSize, selection, facets } = loaderData;
+  const navigation = useNavigation();
+  const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
+    useCourseListFilters(selection);
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
 
@@ -113,6 +159,15 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
           startDate: course.startDate ?? null,
         })}
         getSearchText={(course) => `${course.title} ${courseCode(course)}`}
+        // Controlled: search, term and progress were applied server-side across
+        // every enrolled course, so the view must not narrow the page again.
+        searchValue={searchDraft}
+        onSearchChange={setSearchDraft}
+        selectedFilters={selection.filters}
+        onFilterChange={setFilter}
+        onClearAll={clearAll}
+        totalCount={total}
+        availableValues={{ term: facets.terms, progress: facets.progress }}
         filterGroups={[
           buildTermFilterGroup<Course>((c) => ({
             term: courseTerm(c),
@@ -163,6 +218,14 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
             card
           );
         }}
+      />
+
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={goToPage}
+        disabled={navigation.state === 'loading'}
       />
     </div>
   );

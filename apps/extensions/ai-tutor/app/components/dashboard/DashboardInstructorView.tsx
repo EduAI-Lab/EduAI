@@ -11,11 +11,13 @@ const DRAFT_COLOR = 'oklch(0.75 0.15 80)';
 
 type DashboardInstructorViewProps = {
   courses: Course[];
+  /** Full course count (#1208); `courses` is a bounded page, so the panel discloses the gap. */
+  courseTotal?: number;
   /** Cross-course rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
   dashboardStats?: DashboardStats | null;
 };
 
-export function DashboardInstructorView({ courses, dashboardStats }: DashboardInstructorViewProps) {
+export function DashboardInstructorView({ courses, courseTotal, dashboardStats }: DashboardInstructorViewProps) {
   const published = courses.filter((c) => c.isPublished);
   const drafts = courses.filter((c) => !c.isPublished);
   const synced = courses.filter((c) => !!c.coreOfferingId);
@@ -87,7 +89,7 @@ export function DashboardInstructorView({ courses, dashboardStats }: DashboardIn
       leftPanelTitle="Your courses"
       quickActions={quickActions}
       rightPanelTitle="Needs attention"
-      rightPanel={<NeedsAttentionPanel courses={courses} coursesBaseHref="/instructor" />}
+      rightPanel={<NeedsAttentionPanel courses={courses} total={courseTotal} coursesBaseHref="/instructor" />}
     />
   );
 }
