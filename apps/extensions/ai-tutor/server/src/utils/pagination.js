@@ -16,10 +16,15 @@
  *     values throw a 400-shaped `PaginationError`. Used by the
  *     unbounded list endpoints (courses, admin lists, importable activities).
  *   - optional (`required: false`): missing params fall back to page 1 at
- *     `defaultPageSize`. Used by the structure-bounded tree endpoints
- *     (modules / lessons / activities / topics) whose readers need the whole
- *     set (drag-and-drop reorder, ordinal derivation, the lesson player) and
- *     request one bounded page rather than a real pager.
+ *     `defaultPageSize`. Used by the tree endpoints (modules / lessons /
+ *     activities / topics), whose readers now drive a real pager but whose
+ *     non-pager callers (breadcrumb lookups, dropdown feeds) still request a
+ *     default page without spelling the params out.
+ *
+ * `parseSearchParam` (#1207) is the filter half of the same contract: search
+ * narrowing happens in SQL, ANDed into the route's existing `where`, and the
+ * SAME `where` feeds both the `count` and the `findMany` — so `total` is the
+ * count of matching rows and the pager pages the filtered set.
  *
  * Related: `server/src/utils/mappers.js`, `app/lib/api.ts` (`Paginated<T>`).
  */
@@ -47,6 +52,84 @@ export class PaginationError extends Error {
     this.status = 400;
     this.code = code;
   }
+}
+
+/**
+ * Upper bound on a `search` term. Long enough for a full activity question,
+ * short enough that a pathological query can't turn into an expensive scan.
+ */
+export const MAX_SEARCH_LENGTH = 100;
+
+/**
+ * Parse the optional `search` query param.
+ *
+ * Absent, empty, or whitespace-only means "no filter" and returns `null` — the
+ * caller then omits the search fragment entirely rather than ANDing a
+ * match-everything clause. Internal whitespace is collapsed so `"foo   bar"`
+ * and `"foo bar"` are the same query.
+ *
+ * A param that is present but not a string (`?search=a&search=b`, which Express
+ * parses as an array) or longer than `maxLength` is a 400, for the same reason
+ * malformed pagination is: silently coercing garbage hides caller bugs.
+ *
+ * @param {import('express').Request} req
+ * @param {object} [opts]
+ * @param {number} [opts.maxLength=100]
+ * @returns {string | null} The normalized term, or `null` for "no filter".
+ * @throws {PaginationError} `SEARCH_INVALID` on a non-string or over-long term.
+ */
+export function parseSearchParam(req, opts = {}) {
+  const { maxLength = MAX_SEARCH_LENGTH } = opts;
+  const raw = req.query.search;
+  if (raw === undefined) return null;
+
+  if (typeof raw !== 'string') {
+    throw new PaginationError('search must be a single string', 'SEARCH_INVALID');
+  }
+  if (raw.length > maxLength) {
+    throw new PaginationError(
+      `search must be at most ${maxLength} characters`,
+      'SEARCH_INVALID',
+    );
+  }
+
+  const normalized = raw.trim().replace(/\s+/g, ' ');
+  return normalized === '' ? null : normalized;
+}
+
+/**
+ * Build the Prisma `where` fragment for a search term across one or more
+ * fields, ANDable onto a route's existing scope/visibility clause.
+ *
+ * Fields may be dotted relation paths (`'lesson.module.title'`), which expand
+ * into nested relation filters — the activity import picker searches the parent
+ * lesson and module titles that its option rows display.
+ *
+ * Returns `null` when there is no term. Callers AND it onto their scope rather
+ * than spreading it, so a scope that already carries its own `OR` (published
+ * visibility, manageable-course lists) can't be clobbered:
+ *
+ *   const frag = searchWhere(term, ['title']);
+ *   const where = frag ? { AND: [scope, frag] } : scope;
+ *
+ * Note: `%` and `_` typed by the user are matched literally by Postgres' LIKE
+ * only if escaped, and Prisma does not escape them in `contains`. The effect is
+ * a harmless over-match on those two characters (no injection — the value is
+ * still parameterized), so it is left alone rather than hand-rolling raw SQL.
+ *
+ * @param {string | null} term From `parseSearchParam`.
+ * @param {string[]} fields Field names or dotted relation paths.
+ * @returns {{ OR: object[] } | null}
+ */
+export function searchWhere(term, fields) {
+  if (!term || fields.length === 0) return null;
+  const match = { contains: term, mode: 'insensitive' };
+  const OR = fields.map((field) =>
+    field
+      .split('.')
+      .reduceRight((acc, segment) => ({ [segment]: acc }), match),
+  );
+  return { OR };
 }
 
 function clampInt(value, min, max) {

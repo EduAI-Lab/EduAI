@@ -2,7 +2,13 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse } from '../middleware/auth.js';
 import { mapModule, mapProgressData } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  PaginationError,
+} from '../utils/pagination.js';
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -63,14 +69,19 @@ router.get('/courses/:courseId/modules', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this course' });
     }
 
-    const whereClause = hasElevatedAccess
+    const scope = hasElevatedAccess
       ? { courseOfferingId: courseId }
       : { courseOfferingId: courseId, isPublished: true };
 
-    // Structure-bounded list (a course has dozens of modules, not thousands).
-    // The tree UI + drag-and-drop reorder need the whole set, so callers
-    // request one bounded page (pageSize=200); pagination is optional here.
+    // #1207: `search` narrows in SQL and is ANDed onto the visibility scope, so
+    // a student can never surface an unpublished module by searching for it.
+    // The same `whereClause` feeds the count and the page, so `total` drives
+    // the pager over the filtered set.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = searchWhere(search, ['title', 'description']);
+    const whereClause = searchFragment ? { AND: [scope, searchFragment] } : scope;
+
     const [total, modules] = await prisma.$transaction([
       prisma.module.count({ where: whereClause }),
       prisma.module.findMany({

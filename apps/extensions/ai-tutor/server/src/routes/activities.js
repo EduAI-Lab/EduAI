@@ -28,7 +28,13 @@ import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
 import { mapActivity, mapImportableActivity } from '../utils/mappers.js';
-import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
+import {
+  parsePaginationParams,
+  paginated,
+  parseSearchParam,
+  searchWhere,
+  PaginationError,
+} from '../utils/pagination.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
 import { cloneActivityIntoLesson } from '../services/activityCloning.js';
@@ -406,15 +412,18 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
       return res.status(403).json({ error: 'Lesson is not published' });
     }
 
-    // Structure-bounded list (a lesson has a handful of activities). The
-    // instructor grid + drag-and-drop reorder and the student lesson player
-    // (which index-walks this array) need the whole set, so callers request one
-    // bounded page (pageSize=200); pagination is optional here.
+    // #1207: `search` narrows in SQL over the activity's own text. The same
+    // `whereClause` feeds the count and the page, so `total` drives the pager
+    // over the filtered set rather than the whole lesson.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
+    const search = parseSearchParam(req);
+    const searchFragment = searchWhere(search, ['title', 'question']);
+    const whereClause = searchFragment ? { AND: [{ lessonId }, searchFragment] } : { lessonId };
+
     const [total, activities] = await prisma.$transaction([
-      prisma.activity.count({ where: { lessonId } }),
+      prisma.activity.count({ where: whereClause }),
       prisma.activity.findMany({
-        where: { lessonId },
+        where: whereClause,
         orderBy: [{ position: 'asc' }, { id: 'asc' }],
         skip: pageParams.skip,
         take: pageParams.take,
@@ -1142,10 +1151,26 @@ router.get(
         manageableCourseIds = owned.map((c) => c.id);
       }
 
-      const importableWhere = {
+      const importableScope = {
         lesson: { module: { courseOfferingId: { in: manageableCourseIds } } },
         ...(excludeLessonId !== null ? { lessonId: { not: excludeLessonId } } : {}),
       };
+      // #1207: this scope spans EVERY course the caller manages, so a bounded
+      // page over it is an instructor's whole activity corpus — server-side
+      // search is the only way to reach a candidate past the first page. The
+      // parent lesson/module titles are searchable too, because the picker's
+      // option rows display them ("module · lesson"), so a user typing a module
+      // name expects a hit.
+      const search = parseSearchParam(req);
+      const searchFragment = searchWhere(search, [
+        'title',
+        'question',
+        'lesson.title',
+        'lesson.module.title',
+      ]);
+      const importableWhere = searchFragment
+        ? { AND: [importableScope, searchFragment] }
+        : importableScope;
       const [total, activities] = await prisma.$transaction([
         prisma.activity.count({ where: importableWhere }),
         prisma.activity.findMany({
