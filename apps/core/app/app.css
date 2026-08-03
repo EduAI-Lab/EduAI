@@ -1,9 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "katex/dist/katex.min.css";
 @import "../../../packages/ui/src/styles/assistive-reading.css";
 @import "./styles/assistive-active-highlight.css";
-@import "./styles/streamdown.css";
+/*
+ * katex and streamdown CSS deliberately live in ./styles/chat-markdown.css,
+ * imported from components/chat/chat-message.tsx (#1222). Re-adding them here
+ * puts ~18KB of KaTeX rules and the KaTeX web fonts back on every route.
+ * The @source directives below must stay — streamdown's markup relies on
+ * Tailwind utilities emitted into this global sheet.
+ */
 @source "../../../node_modules/streamdown/dist/index.js";
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "../../../node_modules/@streamdown/code/dist/*.js";
