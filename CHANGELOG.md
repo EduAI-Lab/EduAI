@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and routes shipping KaTeX rules drop from 76 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 
 ### Fixed
 

@@ -18,7 +18,8 @@ const read = (relative: string) => readFileSync(path.join(appDir, relative), "ut
 describe("chat markdown CSS scoping (#1222)", () => {
   it("keeps katex and streamdown out of the global stylesheet", () => {
     const appCss = read("app.css");
-    const imports = appCss.match(/^@import\s+.*$/gm) ?? [];
+    // Leading whitespace is legal CSS, so an indented re-add must fail too.
+    const imports = appCss.match(/^[ \t]*@import\s+.*$/gm) ?? [];
 
     expect(imports.some((line) => line.includes("katex"))).toBe(false);
     expect(imports.some((line) => line.includes("streamdown"))).toBe(false);

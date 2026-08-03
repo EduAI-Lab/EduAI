@@ -117,7 +117,7 @@ Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSW
 
 ## Route-scoped chat stylesheet (EduAI Core, `#1222`)
 
-`apps/core/app/app.css` is render-blocking on every route, so vendor CSS that only chat-style surfaces need must not be imported there. KaTeX and Streamdown's stylesheets live in [`apps/core/app/styles/chat-markdown.css`](apps/core/app/styles/chat-markdown.css), imported from [`apps/core/app/components/chat/chat-message.tsx`](apps/core/app/components/chat/chat-message.tsx) — the one component every Core markdown surface renders through. React Router emits it as a route-scoped `<link>`, so `/chat`, `/chat/:chatId`, `/admin/chat`, `/admin/users` and `/dashboard` load it and the other 71 routes do not.
+`apps/core/app/app.css` is render-blocking on every route, so vendor CSS that only chat-style surfaces need must not be imported there. KaTeX and Streamdown's stylesheets live in [`apps/core/app/styles/chat-markdown.css`](apps/core/app/styles/chat-markdown.css), imported from [`apps/core/app/components/chat/chat-message.tsx`](apps/core/app/components/chat/chat-message.tsx) — the one component every Core markdown surface renders through. React Router emits it as a route-scoped `<link>` in the server-rendered HTML, so `/chat`, `/chat/:chatId`, `/admin/chat`, `/admin/users` and `/dashboard` load it and Core's other 20 page routes do not.
 
 Two constraints when touching this:
 
