@@ -428,3 +428,125 @@ describe('api methods', () => {
     expect(result).toEqual(mockData);
   });
 });
+
+/**
+ * #1207: search is applied SERVER-side, so the wire layer has to actually put
+ * the term on the query string — and leave it off when there is nothing to
+ * filter by, since the server treats `search=` and an absent param the same.
+ */
+describe('search + move endpoints (#1207)', () => {
+  const okEmptyPage = () =>
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 25 }),
+    });
+
+  const okJson = (body: unknown) =>
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) });
+
+  const calledUrl = () => mockFetch.mock.calls[0][0] as string;
+
+  it('serializes a search term on the tree endpoints', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.modulesForCourse(7, { search: 'graphs' });
+
+    expect(calledUrl()).toBe(
+      'http://localhost:4000/api/courses/7/modules?page=1&pageSize=25&search=graphs',
+    );
+  });
+
+  it('url-encodes a multi-word term', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.lessonsForModule(3, { search: 'binary search' });
+
+    expect(calledUrl()).toContain('search=binary+search');
+  });
+
+  it.each([undefined, null, '', '   '])('omits the search param for %p', async (term) => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.activitiesForLesson(9, { search: term as string | null | undefined });
+
+    expect(calledUrl()).not.toContain('search=');
+  });
+
+  it('trims a term before sending it', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.topicsForCourse(4, { search: '  recursion  ' });
+
+    expect(calledUrl()).toContain('search=recursion');
+  });
+
+  it('sends page alongside search so the pager pages the filtered set', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.modulesForCourse(7, { page: 3, search: 'graphs' });
+
+    expect(calledUrl()).toBe(
+      'http://localhost:4000/api/courses/7/modules?page=3&pageSize=25&search=graphs',
+    );
+  });
+
+  it('listImportableActivities sends search alongside its scope params', async () => {
+    okEmptyPage();
+    const { api } = await import('~/lib/api');
+    await api.listImportableActivities(12, { excludeLessonId: 5, search: 'heap' });
+
+    const url = calledUrl();
+    expect(url).toContain('courseId=12');
+    expect(url).toContain('excludeLessonId=5');
+    expect(url).toContain('search=heap');
+    // Small page: the picker is search-as-you-type, not a pager.
+    expect(url).toContain('pageSize=25');
+  });
+
+  it.each([
+    ['moveModuleToPosition', 'modules', 'module'],
+    ['moveLessonToPosition', 'lessons', 'lesson'],
+    ['moveActivityToPosition', 'activities', 'activity'],
+  ])('%s PATCHes the position with a 0-based ordinal', async (method, segment, key) => {
+    okJson({ [key]: { id: 4 }, position: 12, total: 40 });
+    const { api } = await import('~/lib/api');
+
+    const result = await (api as unknown as Record<string, (id: number, p: number) => Promise<unknown>>)[
+      method
+    ](4, 12);
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe(`http://localhost:4000/api/${segment}/4/position`);
+    expect(options.method).toBe('PATCH');
+    expect(JSON.parse(options.body)).toEqual({ position: 12 });
+    // The server clamps, so callers read the resolved ordinal back off this.
+    expect(result).toMatchObject({ position: 12, total: 40 });
+  });
+
+  it('lessonContext GETs the context endpoint', async () => {
+    okJson({
+      moduleOrdinal: 3,
+      lessonOrdinal: 2,
+      moduleTotal: 9,
+      lessonTotal: 4,
+      prevLessonId: 1,
+      nextLessonId: 3,
+    });
+    const { api } = await import('~/lib/api');
+    const result = await api.lessonContext(77);
+
+    expect(calledUrl()).toBe('http://localhost:4000/api/lessons/77/context');
+    expect(result.moduleOrdinal).toBe(3);
+    expect(result.lessonOrdinal).toBe(2);
+  });
+
+  it('moduleContext GETs the module context endpoint', async () => {
+    okJson({ moduleOrdinal: 4, moduleTotal: 12 });
+    const { api } = await import('~/lib/api');
+    const result = await api.moduleContext(5);
+
+    expect(calledUrl()).toBe('http://localhost:4000/api/modules/5/context');
+    expect(result).toEqual({ moduleOrdinal: 4, moduleTotal: 12 });
+  });
+});
