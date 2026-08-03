@@ -144,6 +144,33 @@ export function createAIProviderRegistry(userSettings: UserProviderSettings) {
         baseURL,
         // Required for streamText usage on OpenAI-compatible backends (vLLM/LiteLLM).
         compatibility: "strict",
+        // Qwen3.5's chat template defaults to thinking mode (emits a leading
+        // <think>...</think> block) unless chat_template_kwargs.enable_thinking
+        // is explicitly false. The OpenAI wire format and this SDK don't expose
+        // that field via providerOptions for chat models, so it's injected here
+        // via a fetch wrapper. Set VLLM_DISABLE_THINKING=0 to opt out.
+        fetch:
+          process.env.VLLM_DISABLE_THINKING === "0"
+            ? undefined
+            : async (input, init) => {
+                if (
+                  init?.method === "POST" &&
+                  typeof init.body === "string" &&
+                  String(input).includes("/chat/completions")
+                ) {
+                  try {
+                    const body = JSON.parse(init.body);
+                    body.chat_template_kwargs = {
+                      ...body.chat_template_kwargs,
+                      enable_thinking: false,
+                    };
+                    return fetch(input, { ...init, body: JSON.stringify(body) });
+                  } catch {
+                    // Malformed body — fall through to the unmodified request.
+                  }
+                }
+                return fetch(input, init);
+              },
       });
     }
   }
