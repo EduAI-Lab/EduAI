@@ -290,4 +290,23 @@ describe("triggerCronJobAsync", () => {
     await Promise.resolve();
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
   });
+
+  // Review on #1291: output was sliced to its last 1000 chars *before* being redacted. The
+  // redactor recognises a secret only by the credential-named key in front of it, so a long
+  // value whose key fell outside the window arrived as an unattributed tail and survived.
+  it("redacts before truncating so a long secret cannot outlive its key", async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    // The `API_KEY=` prefix sits well outside the trailing 1000-char window.
+    child.stdout.emit("data", Buffer.from(`API_KEY=${"s3kr3t".repeat(400)}\ndone`));
+    child.emit("close", 0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("s3kr3t");
+    expect(persistedMessage).toContain("[REDACTED]");
+    expect(persistedMessage).toContain("done");
+  });
 });

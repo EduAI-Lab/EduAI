@@ -135,8 +135,35 @@ const SENSITIVE_KEY_PREFIX_RE =
  * The bare branch excludes brackets and braces so a nested literal is never half-consumed;
  * `scanBalancedStructure` handles those instead. That also means an already-redacted
  * `token=[REDACTED]` matches nothing here, which is what makes reapplication safe.
+ *
+ * `?` is deliberately *not* a terminator. It opened the query string of a URL that is itself the
+ * value, so stopping there published the tail: `apiKey=https://host/path?foo=secret` became
+ * `apiKey=[REDACTED]?foo=secret` (PR #1291 review). `&` stays a terminator because it separates
+ * one query parameter from the next rather than appearing inside a single value.
  */
-const SENSITIVE_VALUE_RE = /(["'])((?:\\.|(?!\1)[^\\\r\n])*)\1|[^\s,;&?<>()[\]{}"']+/y;
+const SENSITIVE_VALUE_RE = /(["'])((?:\\.|(?!\1)[^\\\r\n])*)\1|[^\s,;&<>()[\]{}"']+/y;
+
+/**
+ * Characters that mean a credential key simply has no value (`apiKey=, next=1`), as opposed to a
+ * value the scanner could not parse. Nothing is exposed in that case, so the fail-closed branch
+ * below must not fire and swallow the rest of the line.
+ */
+const EMPTY_VALUE_CHARS = new Set([",", ";", "&", ")", "]", "}", ">"]);
+
+function isEmptyValueAt(text: string, index: number): boolean {
+  if (index >= text.length) return true;
+  const char = text[index];
+  return /\s/.test(char) || EMPTY_VALUE_CHARS.has(char);
+}
+
+/** Index of the first `\r`/`\n` at or after `start`, or the end of the text. */
+function findLineEnd(text: string, start: number): number {
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "\n" || char === "\r") return i;
+  }
+  return text.length;
+}
 
 /** Auth scheme labels the header patterns above deliberately keep visible. */
 const AUTH_SCHEME_ONLY_RE = /^(?:Bearer|Basic)$/i;
@@ -236,6 +263,25 @@ function redactSensitiveKeyValuePairs(text: string): string {
     SENSITIVE_VALUE_RE.lastIndex = valueStart;
     const valueMatch = SENSITIVE_VALUE_RE.exec(text);
     if (!valueMatch) {
+      // Neither branch matched, so the value opens with a character the scanner cannot bound: an
+      // unterminated quote (`apiKey="sk-live-…` truncated mid-line) or a delimiter. Leaving it
+      // alone published the secret verbatim (PR #1291 review), so fail closed and redact to the
+      // end of the line — a credential-named key covers everything up to the next line anyway.
+      if (isEmptyValueAt(text, valueStart)) {
+        continue;
+      }
+
+      const lineEnd = findLineEnd(text, valueStart);
+      const openQuote = text[valueStart];
+      const quoted = openQuote === '"' || openQuote === "'";
+
+      result +=
+        text.slice(copiedUpTo, valueStart) +
+        (quoted ? `${openQuote}${REDACTED_VALUE}${openQuote}` : REDACTED_VALUE);
+      copiedUpTo = lineEnd;
+      // Resume past what was just consumed. Without this the next unparsable value would rescan
+      // the same tail, making a line of `k="a k="a …` quadratic.
+      SENSITIVE_KEY_PREFIX_RE.lastIndex = lineEnd;
       continue;
     }
 

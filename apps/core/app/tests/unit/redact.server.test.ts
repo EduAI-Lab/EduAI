@@ -184,9 +184,59 @@ describe("redactSecretValuesInString", () => {
       );
     });
 
+    // PR #1291 review: the value scan was fail-open. Anything it could not bound — a URL query
+    // inside the value, an unterminated quote — was left in the log verbatim.
+    it("redacts a URL value through its query string", () => {
+      expect(redactSecretValuesInString("apiKey=https://host/path?foo=secret")).toBe(
+        `apiKey=${REDACTED_VALUE}`,
+      );
+      expect(
+        redactSecretValuesInString('{"dbUrl":"postgres://host/db?sslmode=require&pw=hunter2"}'),
+      ).toBe(`{"dbUrl":"${REDACTED_VALUE}"}`);
+    });
+
+    it("keeps a following query parameter after the redacted one", () => {
+      expect(redactSecretValuesInString("/cb?apiKey=https://h/p?x=1&next=/home")).toBe(
+        `/cb?apiKey=${REDACTED_VALUE}&next=/home`,
+      );
+    });
+
+    it("fails closed on an unterminated quoted value", () => {
+      expect(redactSecretValuesInString('{"apiKey":"sk-live-abcdef')).toBe(
+        `{"apiKey":"${REDACTED_VALUE}"`,
+      );
+      expect(redactSecretValuesInString('{"apiKey":"sk-live-abc\nnext line')).toBe(
+        `{"apiKey":"${REDACTED_VALUE}"\nnext line`,
+      );
+    });
+
+    it("fails closed on a value opening with a delimiter", () => {
+      expect(redactSecretValuesInString("apiKey=<sk-live-abc>\nok")).toBe(
+        `apiKey=${REDACTED_VALUE}\nok`,
+      );
+    });
+
+    it("leaves a genuinely empty credential value alone", () => {
+      expect(redactSecretValuesInString("apiKey=, next=1")).toBe("apiKey=, next=1");
+      expect(redactSecretValuesInString("apiKey=")).toBe("apiKey=");
+      expect(redactSecretValuesInString('{"apiKey":}')).toBe('{"apiKey":}');
+    });
+
+    // Each fail-closed redaction must resume past the line it consumed, or a line of unparsable
+    // credential values rescans the same tail once per key.
+    it("stays linear on repeated unterminated quoted values", () => {
+      const blob = 'apiKey="a\n'.repeat(20_000);
+      const start = Date.now();
+      expect(redactSecretValuesInString(blob)).toBe(`apiKey="${REDACTED_VALUE}"\n`.repeat(20_000));
+      expect(Date.now() - start).toBeLessThan(500);
+    });
+
     it("is idempotent — re-running never double-redacts", () => {
       const inputs = [
         '{"apiKey":"secret"}',
+        "apiKey=https://host/path?foo=secret",
+        '{"apiKey":"sk-live-abcdef',
+        "apiKey=<sk-live-abc>",
         '{"credentials":{"user":"bob","value":"hunter2"}}',
         '{"tokens":["a","b"]}',
         '{"apiKey":"sk-a\\"b-tail"}',

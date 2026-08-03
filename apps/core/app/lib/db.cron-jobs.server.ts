@@ -276,7 +276,12 @@ export function triggerCronJobAsync(jobName: string, script: string, runId: stri
   child.on("close", (code: number | null) => {
     const exitCode = code ?? 1;
     const status = exitCode === 0 ? "SUCCESS" : "ERROR";
-    const msg = output.slice(-1000).trim() || (exitCode === 0 ? "Completed successfully" : `Exited with code ${exitCode}`);
+    // Redact before truncating. Slicing first can cut a long assignment between its key and its
+    // value, and the redactor recognises a secret only by the key that precedes it — a 1500-char
+    // `API_KEY=…` would arrive as an unattributed tail and survive (PR #1291 review).
+    const msg =
+      redactSecretValuesInString(output).slice(-1000).trim() ||
+      (exitCode === 0 ? "Completed successfully" : `Exited with code ${exitCode}`);
     finishCronRun(runId, status, msg, exitCode).catch((err: unknown) =>
       console.error("[cron] finishCronRun failed:", redactErrorForConsole(err)),
     );
