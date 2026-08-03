@@ -33,6 +33,7 @@ import {
   paginated,
   parseSearchParam,
   searchWhere,
+  activitySearchWhere,
   PaginationError,
 } from '../utils/pagination.js';
 import { evaluateQuestion } from '../services/activityEvaluation.js';
@@ -418,7 +419,7 @@ router.get('/lessons/:lessonId/activities', async (req, res) => {
     // over the filtered set rather than the whole lesson.
     const pageParams = parsePaginationParams(req, { required: false, defaultPageSize: 200 });
     const search = parseSearchParam(req);
-    const searchFragment = searchWhere(search, ['title', 'question']);
+    const searchFragment = activitySearchWhere(search);
     const whereClause = searchFragment ? { AND: [{ lessonId }, searchFragment] } : { lessonId };
 
     const [total, activities] = await prisma.$transaction([
@@ -1163,12 +1164,12 @@ router.get(
       // option rows display them ("module · lesson"), so a user typing a module
       // name expects a hit.
       const search = parseSearchParam(req);
-      const searchFragment = searchWhere(search, [
-        'title',
-        'question',
-        'lesson.title',
-        'lesson.module.title',
-      ]);
+      const activityFragment = activitySearchWhere(search);
+      const parentFragment = searchWhere(search, ['lesson.title', 'lesson.module.title']);
+      const searchFragment =
+        activityFragment && parentFragment
+          ? { OR: [...activityFragment.OR, ...parentFragment.OR] }
+          : null;
       const importableWhere = searchFragment
         ? { AND: [importableScope, searchFragment] }
         : importableScope;

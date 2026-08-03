@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   parsePaginationParams,
   paginated,
+  parseSearchParam,
+  searchWhere,
   PaginationError,
   MAX_PAGE_SIZE,
   MAX_PAGE,
+  MAX_SEARCH_LENGTH,
 } from '../../src/utils/pagination.js';
 
 /** Minimal Express-request stub — only `query` is read by the helper. */
@@ -165,5 +168,93 @@ describe('paginated', () => {
       page: 1,
       pageSize: 25,
     });
+  });
+});
+
+describe('parseSearchParam (#1207)', () => {
+  it('returns null when the param is absent, so callers omit the filter entirely', () => {
+    expect(parseSearchParam(reqWith({}))).toBeNull();
+  });
+
+  it('treats an empty or whitespace-only term as no filter', () => {
+    expect(parseSearchParam(reqWith({ search: '' }))).toBeNull();
+    expect(parseSearchParam(reqWith({ search: '   ' }))).toBeNull();
+    expect(parseSearchParam(reqWith({ search: '\t\n ' }))).toBeNull();
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(parseSearchParam(reqWith({ search: '  graphs  ' }))).toBe('graphs');
+  });
+
+  it('collapses internal whitespace so spacing variants are one query', () => {
+    expect(parseSearchParam(reqWith({ search: 'binary   search   trees' }))).toBe(
+      'binary search trees',
+    );
+  });
+
+  it('accepts a term exactly at the length limit', () => {
+    const term = 'a'.repeat(MAX_SEARCH_LENGTH);
+    expect(parseSearchParam(reqWith({ search: term }))).toBe(term);
+  });
+
+  it('rejects a term over the length limit rather than truncating it', () => {
+    const term = 'a'.repeat(MAX_SEARCH_LENGTH + 1);
+    expect(() => parseSearchParam(reqWith({ search: term }))).toThrow(PaginationError);
+    try {
+      parseSearchParam(reqWith({ search: term }));
+    } catch (e) {
+      expect(e.code).toBe('SEARCH_INVALID');
+      expect(e.status).toBe(400);
+    }
+  });
+
+  it('rejects a repeated param, which Express parses as an array', () => {
+    expect(() => parseSearchParam(reqWith({ search: ['a', 'b'] }))).toThrow(PaginationError);
+  });
+
+  it('honours a caller-supplied maxLength', () => {
+    expect(() => parseSearchParam(reqWith({ search: 'abcdef' }), { maxLength: 3 })).toThrow(
+      PaginationError,
+    );
+    expect(parseSearchParam(reqWith({ search: 'abc' }), { maxLength: 3 })).toBe('abc');
+  });
+});
+
+describe('searchWhere (#1207)', () => {
+  it('returns null with no term, so the caller skips the AND entirely', () => {
+    expect(searchWhere(null, ['title'])).toBeNull();
+    expect(searchWhere('', ['title'])).toBeNull();
+  });
+
+  it('returns null when no fields are searchable', () => {
+    expect(searchWhere('graphs', [])).toBeNull();
+  });
+
+  it('builds a case-insensitive contains across each field', () => {
+    expect(searchWhere('graphs', ['title', 'description'])).toEqual({
+      OR: [
+        { title: { contains: 'graphs', mode: 'insensitive' } },
+        { description: { contains: 'graphs', mode: 'insensitive' } },
+      ],
+    });
+  });
+
+  it('expands a dotted path into a nested relation filter', () => {
+    expect(searchWhere('week 1', ['lesson.module.title'])).toEqual({
+      OR: [
+        {
+          lesson: {
+            module: { title: { contains: 'week 1', mode: 'insensitive' } },
+          },
+        },
+      ],
+    });
+  });
+
+  it('mixes plain fields and relation paths in one OR', () => {
+    const where = searchWhere('x', ['title', 'lesson.title']);
+    expect(where.OR).toHaveLength(2);
+    expect(where.OR[0]).toEqual({ title: { contains: 'x', mode: 'insensitive' } });
+    expect(where.OR[1]).toEqual({ lesson: { title: { contains: 'x', mode: 'insensitive' } } });
   });
 });

@@ -121,6 +121,37 @@ export function parseSearchParam(req, opts = {}) {
  * @param {string[]} fields Field names or dotted relation paths.
  * @returns {{ OR: object[] } | null}
  */
+/**
+ * Search fragment for an Activity, whose searchable text is split across a
+ * column and a JSON blob.
+ *
+ * `title` and `instructionsMd` are real columns and match case-insensitively.
+ * The question text lives in the `config` JSON (there is no `question` column),
+ * so it is matched with Prisma's `string_contains`, which has NO `mode` option
+ * and is therefore case-SENSITIVE. Rather than pretend otherwise, the term is
+ * tried in three casings — as typed, all-lower, and all-upper — which covers
+ * the realistic ways a question is written without dropping to raw SQL.
+ *
+ * @param {string | null} term
+ * @param {string[]} [prefix] Relation path to the activity (e.g. `[]` when
+ *   querying activities directly).
+ * @returns {{ OR: object[] } | null}
+ */
+export function activitySearchWhere(term, prefix = []) {
+  if (!term) return null;
+  const nest = (leaf) => prefix.reduceRight((acc, segment) => ({ [segment]: acc }), leaf);
+  const casings = [...new Set([term, term.toLowerCase(), term.toUpperCase()])];
+  return {
+    OR: [
+      nest({ title: { contains: term, mode: 'insensitive' } }),
+      nest({ instructionsMd: { contains: term, mode: 'insensitive' } }),
+      ...casings.map((cased) =>
+        nest({ config: { path: ['question'], string_contains: cased } }),
+      ),
+    ],
+  };
+}
+
 export function searchWhere(term, fields) {
   if (!term || fields.length === 0) return null;
   const match = { contains: term, mode: 'insensitive' };
