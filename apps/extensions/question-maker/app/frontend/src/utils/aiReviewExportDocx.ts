@@ -1,17 +1,10 @@
 /**
  * AI variant review report as a real Word Open XML (.docx) document.
  */
-import {
-    Document,
-    HeadingLevel,
-    Packer,
-    Paragraph,
-    Table,
-    TableCell,
-    TableRow,
-    TextRun,
-    WidthType
-} from 'docx';
+// Type-only. `docx` is ~a third of a megabyte and this report is reachable from
+// one button on one route, so the library is imported at call time instead of
+// being pulled into whatever chunk happens to reference this module.
+import type { Paragraph as DocxParagraph } from 'docx';
 import type { VariantAiReviewResult } from '../services/assessmentVariantService';
 
 function formatUsabilityLabel(value: string): string {
@@ -48,19 +41,22 @@ function scoreOfRow(r: VariantAiReviewResult['perQuestion'][number]): number {
     return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-function cellParagraph(text: string, header = false): Paragraph {
-    return new Paragraph({
-        children: [new TextRun({ text, bold: header })],
-        spacing: { after: 40 }
-    });
-}
-
 /** Builds a .docx matching the former HTML report sections. */
 export async function buildAiReviewDocxBlob(
     result: VariantAiReviewResult,
     baselineName: string,
     variantName: string
 ): Promise<Blob> {
+    const { Document, HeadingLevel, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } =
+        await import('docx');
+
+    // Local rather than module-scope so it closes over the lazily imported constructors.
+    const cellParagraph = (text: string, header = false): DocxParagraph =>
+        new Paragraph({
+            children: [new TextRun({ text, bold: header })],
+            spacing: { after: 40 }
+        });
+
     const rows = [...result.perQuestion];
     const ranked = rows.map((r) => ({ row: r, avg: scoreOfRow(r) })).sort((a, b) => b.avg - a.avg);
     const highExamples = ranked.slice(0, Math.min(3, ranked.length));
@@ -137,7 +133,7 @@ export async function buildAiReviewDocxBlob(
 
     const rubricLines = (result.rubricUsed || '(none)').split(/\r?\n/);
 
-    const children: Paragraph[] = [
+    const children: DocxParagraph[] = [
         new Paragraph({
             text: 'AI Judge Report',
             heading: HeadingLevel.TITLE,
