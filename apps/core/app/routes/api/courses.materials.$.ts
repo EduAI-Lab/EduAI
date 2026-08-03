@@ -20,6 +20,7 @@ import type { Session } from '~/lib/auth/server';
 import { fireAndForget, logAuditAction, logSystemError } from '~/lib/logging.server';
 import { toMaterialUploadUserMessage } from '~/lib/material-upload-errors';
 import { getActorContext, getRequestContext } from '~/lib/request-context.server';
+import { parseCursorParams, splitPage } from '~/lib/cursor-list.server';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -553,20 +554,29 @@ async function uploadMaterial(
 
 const PREVIEW_EXCERPT_MAX = 4000;
 
-async function materialsListResponse(courseId: string, includeDeleted: boolean) {
-  const materials = await prisma.courseMaterial.findMany({
+async function materialsListResponse(
+  courseId: string,
+  includeDeleted: boolean,
+  cursorParams: { cursor: string | null; limit: number },
+) {
+  const { cursor, limit } = cursorParams;
+  const rows = await prisma.courseMaterial.findMany({
     where: { courseId, ...(includeDeleted ? {} : { deletedAt: null }) },
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
+  const { page, nextCursor } = splitPage(rows, limit);
 
   return json(200, {
-    materials: materials.map(({ _count, ...material }) => ({
+    materials: page.map(({ _count, ...material }) => ({
       ...material,
       chunkCount: _count?.chunks ?? 0,
     })),
+    nextCursor,
   });
 }
 
@@ -576,6 +586,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!courseId) {
     return json(400, { error: 'Course ID is required' });
   }
+
+  const cursorParams = parseCursorParams(new URL(request.url).searchParams);
 
   // §19 forensics opt-in (#315): ADMIN may pass ?includeDeleted=true to surface
   // soft-deleted materials — including those in a soft-deleted course. The access
@@ -593,7 +605,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (!course) {
       return json(404, { error: 'COURSE_NOT_FOUND' });
     }
-    return materialsListResponse(courseId, true);
+    return materialsListResponse(courseId, true, cursorParams);
   }
 
   const resolved = await resolveMaterialsAccess(request, courseId);
@@ -665,22 +677,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const materials = await prisma.courseMaterial.findMany({
+  const { cursor, limit } = cursorParams;
+  const rows = await prisma.courseMaterial.findMany({
     where: { courseId, deletedAt: null, ...studentGate },
     include: {
       _count: { select: { chunks: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
+  const { page, nextCursor } = splitPage(rows, limit);
 
   // Staff receive the scheduling fields so the management UI can render and edit
   // them; students never do (they only ever see already-visible materials).
   const staff = isStaffAccess(access);
   return json(200, {
-    materials: materials.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
+    materials: page.map(({ _count, visibleToStudents, availableAt, ...material }) => ({
       ...material,
       chunkCount: _count?.chunks ?? 0,
       ...(staff ? { visibleToStudents, availableAt } : {}),
     })),
+    nextCursor,
   });
 }

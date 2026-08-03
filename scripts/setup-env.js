@@ -50,11 +50,16 @@ for (const [src, dest] of envPairs) {
   }
 }
 
-// Generate core's Prisma client into its local node_modules so it doesn't
-// conflict with the ai-tutor server client that lands in root node_modules.
-try {
-  execSync('npm run db:generate', { cwd: resolve(root, 'apps/core'), stdio: 'pipe' });
-  console.log('  generated prisma client for apps/core');
-} catch (e) {
-  console.warn('  warning: prisma generate failed for apps/core:', e.message);
+// CI generates each workspace client explicitly in the job that consumes it. Skipping
+// this implicit generation there avoids doing the same work during npm ci and again
+// before typechecking/tests, while preserving the convenient local-install behavior.
+if (process.env.SKIP_PRISMA_GENERATE !== '1') {
+  try {
+    execSync('npm run db:generate', { cwd: resolve(root, 'apps/core'), stdio: 'pipe' });
+    console.log('  generated prisma client for apps/core');
+  } catch (e) {
+    console.warn('  warning: prisma generate failed for apps/core:', e.message);
+  }
+} else {
+  console.log('  skipped prisma client generation (SKIP_PRISMA_GENERATE=1)');
 }

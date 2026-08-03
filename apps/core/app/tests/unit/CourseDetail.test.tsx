@@ -65,7 +65,6 @@ const onFileSelect = vi.fn()
 const STAFF_PROPS = {
   tas: [],
   instructors: [],
-  studentUsers: [],
   onAssignInstructor: NOOP,
   onAddTA: NOOP,
   onRemoveTA: NOOP,
@@ -131,7 +130,9 @@ describe('CourseDetailManagerView', () => {
       />
     )
     expect(screen.getByPlaceholderText(/new topic name/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /add/i })).toBeInTheDocument()
+    // Exact match: the staff tab also renders an "Add TAs" search-select button
+    // (#1042), which would also match a loose /add/i query.
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
   })
 
   it('does NOT show topic "Add" form for unit access (no canManageTopics false path needed — unit CAN manage)', () => {

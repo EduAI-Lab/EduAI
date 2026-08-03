@@ -55,7 +55,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 export default function UnitChatsPage() {
   const { user, department, departmentLabel } = useLoaderData<typeof loader>()
-  const { chats, loading, error } = useUnitChats(department)
+  const { chats, loading, error, hasMore, loadingMore, loadMore } = useUnitChats(department)
   const codeById = new Map(chats.map((c) => [c.id, c.courseCode]))
 
   return (
@@ -90,6 +90,9 @@ export default function UnitChatsPage() {
             loading={loading}
             error={error}
             secondaryLabel={(id) => codeById.get(id) ?? null}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            onLoadMore={loadMore}
           />
         </div>
       </div>
