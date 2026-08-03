@@ -405,6 +405,90 @@ router.patch('/modules/:moduleId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
 });
 
 /**
+ * GET /modules/:moduleId/context — structural position of a module in its course.
+ *
+ * Returns `{ moduleOrdinal, moduleTotal }`, 1-based.
+ *
+ * Why (#1207): the instructor module view derived its ordinal chip by fetching
+ * the course's entire sibling module list and calling `findIndex`. That was
+ * already fragile and became wrong outright once the tree page size dropped to
+ * a real pager's worth — a module on page 2 would score `findIndex === -1` and
+ * render as "0". Counting the rows that sort before it is exact at any size.
+ *
+ * Mirrors `GET /lessons/:lessonId/context`, including its visibility rule: a
+ * student counts only published siblings.
+ */
+router.get('/modules/:moduleId/context', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const moduleId = Number(req.params.moduleId);
+  if (!Number.isFinite(moduleId)) {
+    return res.status(400).json({ error: 'Invalid module id' });
+  }
+
+  try {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      include: {
+        courseOffering: {
+          include: {
+            instructors: { select: { userId: true } },
+            enrollments: { select: { userId: true, role: true } },
+          },
+        },
+      },
+    });
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const { courseOffering } = module;
+    const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = courseOffering.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
+
+    if (!hasElevatedAccess && !isStudent) {
+      return res.status(403).json({ error: 'Not authorized for this module' });
+    }
+    if (isStudent && !hasElevatedAccess && !module.isPublished) {
+      return res.status(403).json({ error: 'Module is not published' });
+    }
+
+    const scope = {
+      courseOfferingId: module.courseOfferingId,
+      ...(isStudent && !hasElevatedAccess ? { isPublished: true } : {}),
+    };
+    // "Sorts before me" under `position asc, id asc` — the id tiebreak matters
+    // because `position` carries no unique constraint.
+    const [before, moduleTotal] = await Promise.all([
+      prisma.module.count({
+        where: {
+          AND: [
+            scope,
+            {
+              OR: [
+                { position: { lt: module.position } },
+                { position: module.position, id: { lt: module.id } },
+              ],
+            },
+          ],
+        },
+      }),
+      prisma.module.count({ where: scope }),
+    ]);
+
+    res.json({ moduleOrdinal: before + 1, moduleTotal });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
  * PATCH /modules/:moduleId/position — move one module to an absolute ordinal.
  *
  * Auth: same as the bulk reorder below (course instructor / unit-admin / admin).

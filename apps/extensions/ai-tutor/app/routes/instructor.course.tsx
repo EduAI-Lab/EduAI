@@ -20,7 +20,7 @@
  */
 import type { FormEvent } from 'react';
 import { useOptimistic, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useNavigation, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { IconDownload, IconLayoutGrid, IconPlus } from '@tabler/icons-react';
 import {
@@ -70,26 +70,46 @@ import { getCourseDetailTabs } from '~/lib/rbac/nav';
 import { useCourseTopics } from '../hooks/useCourseTopics';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { PaginationControls } from '~/components/common/PaginationControls';
+import { ListSearchInput } from '~/components/common/ListSearchInput';
+import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
+import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
  * if the route param isn't numeric so the router renders the error boundary.
  */
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const courseId = Number(params.courseId);
   if (!Number.isFinite(courseId)) {
     throw new Response('Invalid course id', { status: 400 });
   }
 
+  // #1207: page and search both live in the URL, so the list is bookmarkable
+  // and survives reload. `search` is applied server-side — nothing below
+  // filters `modulesPage.data` again.
+  const { page, search } = parseListUrlParams(request);
+
   const [course, modulesPage] = await Promise.all([
     api.courseById(courseId) as Promise<Course>,
-    // #1043: modules endpoint returns the pagination envelope. Reorder host —
-    // keep `total` so we can refuse a partial-order persist past the page.
-    api.modulesForCourse(courseId),
+    api.modulesForCourse(courseId, { page, search }),
   ]);
 
-  return { course, modules: modulesPage.data, modulesTotal: modulesPage.total };
+  redirectPastEnd(request, {
+    page,
+    total: modulesPage.total,
+    pageSize: modulesPage.pageSize,
+  });
+
+  return {
+    course,
+    modules: modulesPage.data,
+    modulesTotal: modulesPage.total,
+    page: modulesPage.page,
+    pageSize: modulesPage.pageSize,
+    search,
+  };
 }
 
 /**
@@ -99,24 +119,35 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
  */
 export default function InstructorCourseModules({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
   const { courseId } = useParams();
   const numericCourseId = courseId ? Number(courseId) : null;
   const { user } = useLocalUser();
   const perms = useAtPermissions();
   const tabs = getCourseDetailTabs(user ? { id: user.id, role: user.role, authorizedUnits: user.authorizedUnits } : null);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['id']>('content');
-  const { course, modules: initialModules, modulesTotal: initialModulesTotal } = loaderData;
+  const {
+    course,
+    modules: initialModules,
+    modulesTotal: initialModulesTotal,
+    page,
+    pageSize,
+    search,
+  } = loaderData;
   const accentColor = accentForCourse(course);
   const courseTopics = useCourseTopics(numericCourseId);
   const [modules, setModules] = useState<Module[]>(initialModules);
-  // #1043/#1162: `total` is state, not a loader constant — refresh/create/import
-  // all replace `modules`, so the truncation flag has to move with them or it
-  // goes stale and re-enables reorder after the list crosses the page bound.
+  // `total` is state, not a loader constant — refresh/create/import all replace
+  // `modules`, and the pager reads this.
   const [modulesTotal, setModulesTotal] = useState(initialModulesTotal);
-  // More modules than the bounded page we loaded — reorder is disabled all the
-  // way down (provider, item, drag handle) so a partial-order persist can't
-  // orphan the unseen tail, and the UI never advertises a drag it will reject.
-  const modulesTruncated = modulesTotal > modules.length;
+  // #1207: reorder is no longer disabled past the page bound — a drag persists
+  // an absolute ordinal via `PATCH /modules/:id/position`, so the rows this
+  // page never loaded get shifted server-side. It IS disabled while a search is
+  // active: a filtered list hides the rows between two visible matches, so a
+  // drop index doesn't describe a real destination.
+  const [movingModule, setMovingModule] = useState<Module | null>(null);
+  const searching = search !== '';
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -159,10 +190,36 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     setModulesTotal(initialModulesTotal);
   }
 
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('page', String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
+
+  // Narrowing the term invalidates the current page number, so reset to page 1
+  // alongside it — otherwise `?page=7` against 3 pages of matches would bounce
+  // through the loader's past-the-end redirect on every keystroke.
+  const setModuleSearch = (term: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (term === '') next.delete('search');
+      else next.set('search', term);
+      next.delete('page');
+      return next;
+    });
+  };
+
+  // Refetch the CURRENT page and term (#1207) — refetching page 1 would jump
+  // the user somewhere else after every create/delete/reorder.
   const refreshModules = async () => {
     if (!numericCourseId) return;
     try {
-      const modulesData = await api.modulesForCourse(numericCourseId);
+      const modulesData = await api.modulesForCourse(numericCourseId, { page, search });
       setModules(modulesData.data);
       setModulesTotal(modulesData.total);
     } catch (error) {
@@ -297,38 +354,56 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
-  // Persist a drag-reordered module list: reorder the local list to match the
-  // dropped order optimistically, then confirm with the bulk reorder endpoint;
-  // a failure rolls back to the prior order.
-  const reorderModulesList = async (orderedIds: number[]) => {
-    if (!numericCourseId) return;
-    if (modulesTruncated) {
-      toast.error('This course has more modules than can be reordered at once.');
-      return;
-    }
+  /**
+   * Persist a single module move to an absolute ordinal (#1207).
+   *
+   * Both entry points land here: a drag supplies the row's new index on the
+   * current page, which becomes `(page - 1) * pageSize + index`; the "Move to
+   * position…" dialog supplies the ordinal directly. Sending one ordinal rather
+   * than a full ordered id list is what lets this work on page 3 — the server
+   * shifts the siblings this page never loaded.
+   *
+   * The page is refetched afterwards rather than patched locally, because a
+   * move can push this row (or another) onto a different page entirely.
+   */
+  const moveModule = async (moduleId: number, targetOrdinal: number) => {
     const current = modules;
-    const byId = new Map(current.map((m) => [m.id, m]));
-    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
-    if (next.length !== current.length) {
-      // Dropped order came from a stale render (list changed mid-drag);
-      // refetch rather than persisting a partial order.
-      toast.error('The module list changed while reordering. Refreshing — please try again.');
-      await refreshModules();
-      return;
-    }
-
-    setModules(next);
     setReorderingModules(true);
     try {
-      const updated = await api.reorderModules(numericCourseId, orderedIds);
-      setModules(updated);
+      await api.moveModuleToPosition(moduleId, targetOrdinal);
+      await refreshModules();
     } catch (error) {
-      console.error('Failed to reorder modules', error);
+      console.error('Failed to move module', error);
       toast.error('Failed to reorder modules. The previous order was restored.');
       setModules(current);
     } finally {
       setReorderingModules(false);
+      setMovingModule(null);
     }
+  };
+
+  // Drag-drop handler. `SortableProvider` hands back the ids in their new
+  // on-page order; the moved row is the first whose index changed.
+  const reorderModulesList = async (orderedIds: number[]) => {
+    if (!numericCourseId || searching) return;
+    const previousIds = modules.map((m) => m.id);
+    const movedIndex = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+    if (movedIndex === -1) return;
+
+    const byId = new Map(modules.map((m) => [m.id, m]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Module[];
+    if (next.length !== modules.length) {
+      // Dropped order came from a stale render (list changed mid-drag); refetch
+      // rather than persisting a move against a list we no longer have.
+      toast.error('The module list changed while reordering. Refreshing — please try again.');
+      await refreshModules();
+      return;
+    }
+    // Show the dropped order immediately so the card doesn't snap back while
+    // the request is in flight.
+    setModules(next);
+
+    await moveModule(orderedIds[movedIndex], absoluteOrdinal(page, pageSize, movedIndex));
   };
 
   const openEditModule = (module: Module) => {
@@ -680,16 +755,26 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
             </Dialog>
           </PermissionGate>
 
-          {modulesTruncated && perms.canManageContent ? (
-            <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-              Showing {modules.length} of {modulesTotal} modules. Reordering is unavailable until the
-              full list fits on one page, so a partial order can&apos;t be saved over the rest.
-            </p>
-          ) : null}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <ListSearchInput
+              value={search}
+              label="Search modules"
+              placeholder="Search modules…"
+              onSearchChange={setModuleSearch}
+            />
+            {searching && perms.canManageContent ? (
+              <p className="text-sm text-muted-foreground">
+                Clear the search to reorder modules.
+              </p>
+            ) : null}
+          </div>
 
           {oModules.length === 0 ? (
             <Card>
-              <EmptyState icon={<IconLayoutGrid size={22} aria-hidden="true" />} title="No modules yet." />
+              <EmptyState
+                icon={<IconLayoutGrid size={22} aria-hidden="true" />}
+                title={searching ? 'No modules match your search.' : 'No modules yet.'}
+              />
             </Card>
           ) : (
             <SortableProvider
@@ -698,9 +783,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               strategy="grid"
               disabled={
                 !perms.canManageContent ||
-                oModules.length < 2 ||
+                modulesTotal < 2 ||
                 reorderingModules ||
-                modulesTruncated
+                searching
               }
             >
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -711,13 +796,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                     ? `Publish ${m.title} after publishing ${course?.title ?? 'the parent course'}.`
                     : null;
                   const busy = publishingId === m.id;
-                  const canReorder =
-                    perms.canManageContent && oModules.length > 1 && !modulesTruncated;
+                  const canReorder = perms.canManageContent && modulesTotal > 1 && !searching;
                   return (
                     <SortableItem key={m.id} id={m.id} disabled={!canReorder}>
                       {({ handleProps }) => (
                           <ModuleCard
-                            index={idx}
+                            // Absolute ordinal, so numbering continues across
+                            // pages instead of restarting at 1 on page 2.
+                            index={absoluteOrdinal(page, pageSize, idx)}
                             title={m.title}
                             description={m.description}
                             accentColor={accentColor}
@@ -745,6 +831,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
                                   }
                                   onEdit={perms.canManageContent ? () => openEditModule(m) : undefined}
                                   onDelete={perms.canManageContent ? () => setDeletingModule(m) : undefined}
+                                  // Cross-page move: drag can only reach rows
+                                  // on this page, so anything further needs an
+                                  // explicit destination (#1207).
+                                  onMove={
+                                    perms.canManageContent && modulesTotal > 1 && !searching
+                                      ? () => setMovingModule(m)
+                                      : undefined
+                                  }
                                 />
                               ) : undefined
                             }
@@ -756,6 +850,14 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
               </div>
             </SortableProvider>
           )}
+
+          <PaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={modulesTotal}
+            onPageChange={goToPage}
+            disabled={navigation.state === 'loading' || reorderingModules}
+          />
         </PageTabsContent>
 
 
@@ -777,6 +879,24 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
           </PageTabsContent>
         )}
       </PageTabs>
+      <MoveToPositionDialog
+        open={movingModule !== null}
+        onOpenChange={(open) => {
+          if (!open) setMovingModule(null);
+        }}
+        itemTitle={movingModule?.title ?? ''}
+        itemNoun="module"
+        currentPosition={
+          movingModule
+            ? absoluteOrdinal(page, pageSize, modules.findIndex((m) => m.id === movingModule.id)) + 1
+            : 1
+        }
+        total={modulesTotal}
+        submitting={reorderingModules}
+        onSubmit={(position) => {
+          if (movingModule) return moveModule(movingModule.id, position);
+        }}
+      />
       <ConfirmDialog
         open={pendingPublish !== null}
         onOpenChange={(open) => {
