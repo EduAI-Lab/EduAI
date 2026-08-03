@@ -10,28 +10,31 @@
  *
  * Core `parseAndValidateCanvasUrl`:
  *   - Rejects malformed / non-hierarchical URLs.
- *   - Accepts https: unconditionally (no IP-literal SSRF check at parse).
- *   - Accepts http: only for localhost, 127.0.0.1, ::1, canvas.docker.
+ *   - Rejects localhost names and private/reserved IP literals at parse time.
+ *   - Accepts http: only for localhost, 127.0.0.1, ::1, canvas.docker in local
+ *     development; production requires https:.
  *   - Rejects other schemes (file:, etc.).
  *
  * QM `validateCanvasUrl`:
  *   - Rejects malformed URLs.
  *   - Requires https: (http rejected, including localhost).
- *   - Rejects private/reserved IPv4 and IPv6 literals (isPrivateIPv4 /
- *     isPrivateIPv6); DNS names are accepted even when they look numeric
- *     (e.g. 10.example.edu).
+ *   - Rejects localhost and private/reserved IPv4 and IPv6 literals
+ *     (isPrivateIPv4 / isPrivateIPv6); DNS names are accepted even when they
+ *     look numeric (e.g. 10.example.edu).
  *   - Rejects non-https schemes.
  *
  * Union rule (strictest shared intent — both adapters assert this oracle):
  *   - Must be a valid absolute URL with https: scheme.
- *   - Must not target a private/reserved IP literal.
+ *   - Must not target localhost or a private/reserved IP literal.
  *   - Public DNS names and public IP literals are accepted.
  *   - Userinfo, path traversal segments, and query strings do not affect
  *     parse-time acceptance (SSRF via path/query is out of scope here).
  *
  * Known divergences (oracle stays strict; failing adapter side = bug to file):
  *   - Core accepts http://localhost (QM rejects).
- *   - Core accepts https://<private-ipv4|private-ipv6> at parse (QM rejects).
+ *   - Core's local-development exception still accepts http://localhost (QM
+ *     rejects); the model includes only the localhost hostname from Core's
+ *     broader local-development allowlist.
  */
 
 export type ParseValidateCanvasUrlRow = {
@@ -48,8 +51,6 @@ export type ParseValidateCanvasUrlVerdict = {
 /** Rows where Core currently diverges from the union oracle (parse-time only). */
 export function coreKnownDivergence(row: ParseValidateCanvasUrlRow): boolean {
   if (row.UrlShape === "http-host" && row.HostClass === "localhost") return true;
-  if (row.UrlShape === "https-host" && row.HostClass === "ipv4-private") return true;
-  if (row.UrlShape === "https-host" && row.HostClass === "ipv6-literal") return true;
   return false;
 }
 
@@ -113,7 +114,11 @@ export function parseValidateCanvasUrlOracle(
   }
 
   // https-host or with-userinfo
-  if (row.HostClass === "ipv4-private" || row.HostClass === "ipv6-literal") {
+  if (
+    row.HostClass === "localhost" ||
+    row.HostClass === "ipv4-private" ||
+    row.HostClass === "ipv6-literal"
+  ) {
     return { accept: false, rejectReason: "private-ip" };
   }
 
