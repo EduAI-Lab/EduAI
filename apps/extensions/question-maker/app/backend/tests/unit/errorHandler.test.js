@@ -4,7 +4,16 @@
  * A failing test here means the handler is misclassifying an error.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { Prisma } from '@eduai/question-maker-prisma-client';
 import { notFound, errorHandler } from '../../src/middleware/errorHandler.js';
+
+function prismaError(code, meta) {
+  return new Prisma.PrismaClientKnownRequestError('Prisma error', {
+    code,
+    clientVersion: '6.19.3',
+    meta,
+  });
+}
 
 function makeReq(url = '/test-path') {
   return { originalUrl: url, method: 'GET', url, path: url, query: {} };
@@ -68,36 +77,28 @@ describe('errorHandler middleware', () => {
     expect(res._status).toBe(403);
   });
 
-  it('maps a CastError to 404 with "Resource not found"', () => {
+  it('maps a Prisma P2025 (record not found) error to 404 with "Resource not found"', () => {
     const res = makeRes();
-    const err = Object.assign(new Error('Cast failed'), { name: 'CastError' });
+    const err = prismaError('P2025');
     errorHandler(err, makeReq(), res, () => {});
     expect(res._status).toBe(404);
     expect(res._body.error).toBe('Resource not found');
   });
 
-  it('maps an error with code 11000 (duplicate key) to 400', () => {
+  it('maps a Prisma P2002 (unique constraint) error to 409 naming the conflicting fields', () => {
     const res = makeRes();
-    const err = Object.assign(new Error('Duplicate'), { code: 11000 });
+    const err = prismaError('P2002', { target: ['email'] });
     errorHandler(err, makeReq(), res, () => {});
-    expect(res._status).toBe(400);
-    expect(res._body.error).toBe('Duplicate field value entered');
+    expect(res._status).toBe(409);
+    expect(res._body.error).toBe('A record with this email already exists');
   });
 
-  it('maps a Mongoose ValidationError to 400 with field-level messages', () => {
+  it('maps a Prisma P2003 (foreign key constraint) error to 400', () => {
     const res = makeRes();
-    const err = Object.assign(new Error('Validation failed'), {
-      name: 'ValidationError',
-      errors: {
-        email: { message: 'email is required' },
-        name: { message: 'name is too short' }
-      }
-    });
+    const err = prismaError('P2003');
     errorHandler(err, makeReq(), res, () => {});
     expect(res._status).toBe(400);
-    expect(Array.isArray(res._body.error)).toBe(true);
-    expect(res._body.error).toContain('email is required');
-    expect(res._body.error).toContain('name is too short');
+    expect(res._body.error).toBe('Referenced resource does not exist');
   });
 
   it('maps a JsonWebTokenError to 401 with "Invalid token"', () => {

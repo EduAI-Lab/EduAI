@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@eduai/question-maker-prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Thin local user record keyed on Core's CUID. Exists only for FK integrity
+/// within QM — all identity and auth decisions go through Core. `id` is
+/// caller-supplied (Core's CUID); never generate it here.
+model User {
+  id              String    @id
+  email           String    @unique
+  name            String?
+  coursesSeededAt DateTime? @map("courses_seeded_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  courses              Course[]
+  createdQuestions     QuestionMetadata[]    @relation("QuestionMetadataCreator")
+  createdVariants      Variants[]            @relation("VariantsCreator")
+  canvasIntegration    CanvasIntegration?
+  canvasCourseMappings CanvasCourseMapping[]
+
+  @@map("users")
+}
+
+/// Instructor-owned course anchor grouping topics, questions, and assessments.
+/// Pure anchor row (#1072 §2/§4 step 10): `name`/`code` are Core-owned and were
+/// dropped — every read goes through Core via `courseListService.js`. Never
+/// re-add them here; add a DB column only for data QM itself owns.
+model Course {
+  id           Int      @id @default(autoincrement())
+  userId       String   @map("user_id")
+  coreCourseId String?  @unique @map("core_course_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  topics                  Topics[]
+  questionMetadata        QuestionMetadata[]
+  assessments             Assessments[]
+  canvasMapping           CanvasCourseMapping?
+  variantSelectionCursors VariantSelectionCursor[]
+
+  @@map("courses")
+}
+
+/// Course topics used to classify questions and variants. `id` is a CUID
+/// string generated app-side via `@paralleldrive/cuid2` (not Prisma's native
+/// `cuid()`, which is a different CUID version).
+model Topics {
+  id          String   @id
+  name        String
+  courseId    Int      @map("course_id")
+  coreTopicId String?  @unique @map("core_topic_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  course           Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  primaryQuestions QuestionMetadata[] @relation("QuestionMetadataPrimaryTopic")
+
+  @@unique([courseId, name])
+  @@map("topics")
+}
+
+/// The question shell (metadata) that owns variants. `primaryTopicId`
+/// references topics.id (string CUID, changed from INTEGER in schema-unification).
+model QuestionMetadata {
+  id             Int          @id @default(autoincrement())
+  description    String?
+  type           QuestionType
+  courseId       Int          @map("course_id")
+  primaryTopicId String       @map("primary_topic_id")
+  /// Dictionary mapping assessment IDs to order numbers: {assessmentId: orderNumber}
+  questionOrder  Json?        @map("question_order")
+  /// users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.
+  createdBy      String?      @map("created_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  course           Course                   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  primaryTopic     Topics                   @relation("QuestionMetadataPrimaryTopic", fields: [primaryTopicId], references: [id], onDelete: Cascade)
+  creator          User?                    @relation("QuestionMetadataCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  variants         Variants[]
+  selectionCursors VariantSelectionCursor[]
+
+  @@map("question_metadata")
+}
+
+enum QuestionType {
+  MCQ
+  SA
+  LA
+}
+
+/// Assessment blueprints (midterm, quiz, etc.) tied to a course. `courseId` is
+/// nullable because an assessment can be created before the course is linked
+/// to Core. `semester` was dropped (#1072) — derive display strings from the
+/// linked course's Core term at the read seam; never re-add a stored column.
+///
+/// A partial unique index `assessments_practice_exam_unique` on
+/// `(course_id) WHERE name = 'Practice Exam'` is applied via a hand-authored
+/// migration (20260723220228_practice_exam_unique_index) — Prisma's schema
+/// DSL has no syntax for partial indexes, so it isn't declared here. It
+/// backstops importTaughtCoursesService.js's advisory-lock-guarded "at most
+/// one Practice Exam per course" invariant.
+model Assessments {
+  id              Int            @id @default(autoincrement())
+  courseId        Int?           @map("course_id")
+  type            AssessmentType
+  name            String
+  description     String?
+  blueprintConfig Json?          @map("blueprint_config") @db.JsonB
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  course   Course?              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  variants Variants[]
+  sections AssessmentSections[]
+
+  @@map("assessments")
+}
+
+enum AssessmentType {
+  Assignment
+  Lab
+  Quiz
+  Midterm
+  Final
+}
+
+/// Individual question variants (question text, difficulty, answer, review
+/// status). `secondaryTopicsId` stores local topics.id CUIDs (QM-internal
+/// references, not Core IDs) — translated to coreTopicId at push time.
+/// `coreQuestionId` is set once the variant is approved and pushed to Core.
+model Variants {
+  id                 Int                   @id @default(autoincrement())
+  questionText       String                @map("question_text")
+  difficulty         VariantDifficulty     @default(medium)
+  reasoningLevel     VariantReasoningLevel @default(factual) @map("reasoning_level")
+  questionMetadataId Int                   @map("question_metadata_id")
+  assessmentId       Int?                  @map("assessment_id")
+  /// Array of local topics.id CUIDs; translated to coreTopicId at push time
+  secondaryTopicsId  String[]              @default([]) @map("secondary_topics_id")
+  referenceId        Int?                  @map("reference_id")
+  isAiGenerated      Boolean               @default(false) @map("is_ai_generated")
+  /// All new variants start as drafts and need review before being added to assessments.
+  isDraft            Boolean               @default(true) @map("is_draft")
+  answer             String?
+  /// Array of choice objects for MCQ questions: [{letter: "A", text: "Option A"}, ...]
+  choices            Json?                 @db.JsonB
+  /// Core Question CUID; null until variant is approved and pushed to Core
+  coreQuestionId     String?               @unique @map("core_question_id")
+  /// users.id of the creator (RBAC §16/§19 TA own-only). Null = no owner → instructor-and-up only.
+  createdBy          String?               @map("created_by")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @default(now()) @updatedAt @map("updated_at")
+
+  questionMetadata          QuestionMetadata         @relation(fields: [questionMetadataId], references: [id], onDelete: Cascade)
+  assessment                Assessments?             @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  originalVariant           Variants?                @relation("VariantReference", fields: [referenceId], references: [id], onDelete: SetNull)
+  referencedVariants        Variants[]               @relation("VariantReference")
+  creator                   User?                    @relation("VariantsCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  sectionLinks              SectionVariants[]
+  selectionCursorLastPicked VariantSelectionCursor[]
+
+  @@map("variants")
+}
+
+enum VariantDifficulty {
+  easy
+  medium
+  hard
+}
+
+enum VariantReasoningLevel {
+  factual
+  analytical
+  application
+}
+
+/// Groupings of variants within an assessment. Captures filters, difficulty
+/// settings, metadata, and ordering used by the builder UI.
+model AssessmentSections {
+  id                 Int      @id @default(autoincrement())
+  assessmentId       Int      @map("assessment_id")
+  name               String
+  description        String?
+  sectionType        String?  @map("section_type")
+  difficultySettings Json?    @map("difficulty_settings") @db.JsonB
+  topicFilters       Json?    @map("topic_filters") @db.JsonB
+  metadata           Json?    @db.JsonB
+  position           Int      @default(0)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  assessment      Assessments       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  sectionVariants SectionVariants[]
+
+  @@map("assessment_sections")
+}
+
+/// Join table linking question variants to assessment sections with display
+/// order and metadata. Enforces uniqueness per section/variant pair.
+model SectionVariants {
+  id           Int      @id @default(autoincrement())
+  sectionId    Int      @map("section_id")
+  variantId    Int      @map("variant_id")
+  displayOrder Int      @default(0) @map("display_order")
+  metadata     Json?    @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  section AssessmentSections @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  variant Variants           @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, variantId])
+  @@map("section_variants")
+}
+
+/// Per-user Canvas integration details. `apiKey` is stored encrypted
+/// (AES-256-GCM via src/utils/encryption.js) — encrypt/decrypt happens in
+/// the service layer (canvasService.js), not here; Prisma has no field-level
+/// getters/setters to replace the old Sequelize accessor + hooks.
+model CanvasIntegration {
+  id         Int      @id @default(autoincrement())
+  userId     String   @unique @map("user_id")
+  canvasUrl  String   @map("canvas_url")
+  /// Encrypted Canvas API key
+  apiKey     String   @map("api_key")
+  isTestMode Boolean  @default(false) @map("is_test_mode")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("canvas_integrations")
+}
+
+/// Maps a local course to a Canvas course for export tracking. True 1:1 with
+/// Course — a course maps to exactly one Canvas course.
+model CanvasCourseMapping {
+  id               Int      @id @default(autoincrement())
+  userId           String   @map("user_id")
+  localCourseId    Int      @unique @map("local_course_id")
+  canvasCourseId   Int      @map("canvas_course_id")
+  canvasCourseName String?  @map("canvas_course_name")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localCourse Course @relation(fields: [localCourseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, localCourseId])
+  @@map("canvas_course_mappings")
+}
+
+/// Per-course, per-base-question cursor supporting fair round-robin variant picks.
+model VariantSelectionCursor {
+  id                 Int      @id @default(autoincrement())
+  courseId           Int      @map("course_id")
+  questionMetadataId Int      @map("question_metadata_id")
+  nextOffset         Int      @default(0) @map("next_offset")
+  lastVariantId      Int?     @map("last_variant_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  course           Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questionMetadata QuestionMetadata @relation(fields: [questionMetadataId], references: [id], onDelete: Cascade)
+  lastVariant      Variants?        @relation(fields: [lastVariantId], references: [id], onDelete: SetNull)
+
+  @@unique([courseId, questionMetadataId])
+  @@map("variant_selection_cursors")
+}

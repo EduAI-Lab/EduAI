@@ -58,7 +58,13 @@ import { fetchCoreCourseSafe, listEduAiCourses, listEduAiCoursesServiceKey } fro
  */
 export async function resolveCoreCourseCatalog() {
   try {
-    const courses = await listEduAiCoursesServiceKey();
+    // #1041: Core's `/courses` requires paging, so "the whole catalog" is now an
+    // explicit page-walk rather than one unbounded read. This flow genuinely
+    // needs every course — `/admin/courses` materializes a local anchor per Core
+    // course, and the UNIT_ADMIN department scope filters the catalog by unit —
+    // so there is no id set to narrow it with. Callers that already know which
+    // ids they want should use `resolveCoreCoursesByIds` instead.
+    const courses = await listEduAiCoursesServiceKey({ all: true });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
     console.error('[courseResolver] Core course catalog unavailable', err);
@@ -75,10 +81,30 @@ export async function resolveCoreCourseCatalog() {
  */
 export async function resolveCoreCourseList({ cookie } = {}) {
   try {
-    const courses = await listEduAiCourses({ cookie });
+    // Authorization context for the caller's own courses; page-walked (#1041).
+    const courses = await listEduAiCourses({ cookie, all: true });
     return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
   } catch (err) {
     console.error('[courseResolver] Core course list unavailable', err);
+    return { courses: [], coreUnavailable: true };
+  }
+}
+
+/**
+ * Resolve a known set of Core courses by id in one unpaged lookup (#1125).
+ *
+ * Prefer this over `resolveCoreCourseCatalog` whenever the caller already holds
+ * the `coreOfferingId`s it wants to join against — it is one request instead of
+ * a page-walk of the whole catalog.
+ */
+export async function resolveCoreCoursesByIds(ids) {
+  const wanted = [...new Set((ids ?? []).filter(Boolean))];
+  if (wanted.length === 0) return { courses: [], coreUnavailable: false };
+  try {
+    const courses = await listEduAiCoursesServiceKey({ ids: wanted });
+    return { courses: Array.isArray(courses) ? courses : [], coreUnavailable: false };
+  } catch (err) {
+    console.error('[courseResolver] Core course lookup unavailable', err);
     return { courses: [], coreUnavailable: true };
   }
 }
@@ -103,11 +129,16 @@ export function indexCoreCoursesById(coreCourses) {
  * `coreOfferingId` is absent, e.g. a legacy unlinked offering) — so the
  * caller can tell "Core is down" from "nothing to resolve" and render a
  * placeholder instead of a hard error either way.
+ *
+ * @param {number} coreOfferingId
+ * @param {{ signal?: AbortSignal }} options  Pass e.g. `AbortSignal.timeout(...)`
+ *   to bound the call — otherwise a hung Core hangs this read indefinitely
+ *   (#1173 review).
  */
-export async function resolveCoreCourseById(coreOfferingId) {
+export async function resolveCoreCourseById(coreOfferingId, options = {}) {
   if (!coreOfferingId) return { course: null, coreUnavailable: false };
   try {
-    const course = await fetchCoreCourseSafe(coreOfferingId);
+    const course = await fetchCoreCourseSafe(coreOfferingId, { signal: options.signal });
     return { course, coreUnavailable: false };
   } catch (err) {
     console.error('[courseResolver] Core course fetch failed', coreOfferingId, err);

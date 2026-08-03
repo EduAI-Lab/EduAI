@@ -13,6 +13,7 @@ import { CanvasDashboardCard } from "~/components/canvas/canvas-dashboard-card";
 import {
   DASHBOARD_CONFIG,
   DashboardAdminBody,
+  DashboardUnitAdminBody,
   DashboardStandardBody,
   type EffectiveRole,
 } from "~/components/dashboard/dashboard-view-config";
@@ -113,6 +114,8 @@ function DashboardContent({ user, isTA }: { user: User; isTA: boolean }) {
       <DashboardHero user={user} effectiveRole={effectiveRole} />
       {effectiveRole === "ADMIN" ? (
         <DashboardAdminBody />
+      ) : effectiveRole === "UNIT_ADMIN" ? (
+        <DashboardUnitAdminBody />
       ) : (
         <DashboardStandardBody effectiveRole={effectiveRole} />
       )}

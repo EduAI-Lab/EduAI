@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -9,24 +9,22 @@ import type { ChatBaseData } from "~/lib/chat/chat-route.server";
 import type { ChatTranscript } from "~/hooks/api/use-chat-history";
 
 const captureCourseViewProps = vi.hoisted(() => vi.fn());
-
+const captureUseChatOptions = vi.hoisted(() => vi.fn());
 const {
   handleSubmitMock,
   handleInputChangeMock,
   postAssistiveClientEventMock,
   appendMock,
-  useChatOptionsMock,
 } = vi.hoisted(() => ({
   handleSubmitMock: vi.fn(),
   handleInputChangeMock: vi.fn(),
   postAssistiveClientEventMock: vi.fn(),
   appendMock: vi.fn(),
-  useChatOptionsMock: vi.fn(),
 }));
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: (options: unknown) => {
-    useChatOptionsMock(options);
+    captureUseChatOptions(options);
     return {
       messages: [],
       input: "",
@@ -125,9 +123,27 @@ const baseData: ChatBaseData = {
   theme: "system",
 };
 
+const autoRoutingData: ChatBaseData = {
+  ...baseData,
+  routerAutoEnabled: true,
+  showRoutingModels: true,
+  chatModels: [
+    {
+      id: "auto",
+      name: "Auto (rules)",
+      description: "Automatic routing",
+      provider: "routing",
+    },
+    ...baseData.chatModels,
+  ],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+  );
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -144,7 +160,15 @@ beforeEach(() => {
   });
 });
 
-function renderChatScreen(initialTranscript: ChatTranscript | null = null) {
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function renderChatScreen(
+  initialTranscript: ChatTranscript | null = null,
+  data: ChatBaseData = baseData,
+  initialEntry: string | { pathname: string; state?: unknown } = "/chat",
+) {
   const router = createMemoryRouter(
     [
       {
@@ -152,18 +176,19 @@ function renderChatScreen(initialTranscript: ChatTranscript | null = null) {
         element: (
           <PolicyProvider policies={{}}>
             <SidebarProvider>
-              <ChatScreen
-                data={baseData}
-                initialTranscript={initialTranscript}
-              />
+              <ChatScreen data={data} initialTranscript={initialTranscript} />
             </SidebarProvider>
           </PolicyProvider>
         ),
       },
+      {
+        path: "/chat/:chatId",
+        element: <div data-testid="created-chat-route" />,
+      },
     ],
-    { initialEntries: ["/chat"] },
+    { initialEntries: [initialEntry] },
   );
-  return render(<RouterProvider router={router} />);
+  return { router, ...render(<RouterProvider router={router} />) };
 }
 
 describe("ChatScreen — header", () => {
@@ -275,7 +300,7 @@ describe("ChatScreen — header", () => {
   it("shows Continue from the server's live-stream annotation", () => {
     renderChatScreen();
 
-    const options = useChatOptionsMock.mock.calls.at(-1)?.[0] as {
+    const options = captureUseChatOptions.mock.calls.at(-1)?.[0] as {
       onFinish: (message: Record<string, unknown>) => void;
     };
 
@@ -332,5 +357,43 @@ describe("ChatScreen — header", () => {
       content:
         "Continue the previous response from where it stopped. Do not repeat content already provided.",
     });
+  });
+
+  it("carries an explicit model selection into the created chat route", async () => {
+    const { router } = renderChatScreen(null, autoRoutingData);
+    const selectedModel = "openai:gpt-4";
+
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].setSelectedModel(selectedModel);
+    });
+
+    const options = captureUseChatOptions.mock.lastCall?.[0] as {
+      onResponse: (response: Response) => Promise<void>;
+      onFinish: (message: { id: string; role: string }) => void;
+    };
+
+    await act(async () => {
+      await options.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
+      );
+      options.onFinish({ id: "assistant-1", role: "assistant" });
+    });
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual({
+      focusMode: false,
+      selectedModel,
+    });
+  });
+
+  it("restores a valid model selection carried across a route remount", () => {
+    renderChatScreen(null, autoRoutingData, {
+      pathname: "/chat",
+      state: { selectedModel: "openai:gpt-4" },
+    });
+
+    expect(captureCourseViewProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedModel: "openai:gpt-4" }),
+    );
   });
 });

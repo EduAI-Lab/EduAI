@@ -3,7 +3,6 @@
  * Includes forms to create/fetch courses, topics, questions, and assessments for debugging.
  */
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Label } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
 import React, { useState } from 'react';
 import { Navigate } from 'react-router';
 import api from '../services/api';
@@ -11,6 +10,7 @@ import eduaiService from '../services/eduaiService';
 import { useAuth } from '../contexts/AuthContext';
 import { AIServiceIndicators } from '../components/eduai/AIServiceIndicators';
 import { useEduAIStatus } from '../hooks/useEduAIStatus';
+import { toast } from 'sonner';
 
 interface ResultState {
   status: 'idle' | 'success' | 'error';
@@ -22,7 +22,6 @@ const defaultResult: ResultState = { status: 'idle' };
 
 export const ApiTestPage = () => {
   const { isAuthenticated, isLoading } = useAuth();
-  const { toast } = useToast();
   const eduaiStatus = useEduAIStatus();
 
   const [courseListResult, setCourseListResult] = useState<ResultState>(defaultResult);
@@ -112,11 +111,7 @@ export const ApiTestPage = () => {
         error.message ||
         'Request failed';
       onError(message);
-      toast({
-        variant: 'destructive',
-        title: 'Request failed',
-        description: message
-      });
+      toast.error('Request failed', { description: message });
     }
   };
 
@@ -188,7 +183,8 @@ export const ApiTestPage = () => {
                 variant="outline"
                 onClick={() =>
                   handleApiCall(
-                    () => api.get('/api/course', { params: { includeStats: true } }),
+                    // page/pageSize are required on this list (#1044).
+                    () => api.get('/api/course', { params: { page: 1, pageSize: 200, includeStats: true } }),
                     (data) => setCourseListResult({ status: 'success', payload: data }),
                     (message) => setCourseListResult({ status: 'error', message })
                   )
@@ -227,10 +223,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!topicForm.courseId || !topicForm.name.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course ID and topic name are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Course ID and topic name are required.',
                     });
                     return;
                   }
@@ -242,7 +236,7 @@ export const ApiTestPage = () => {
                       }),
                     (data) => {
                       setTopicResult({ status: 'success', payload: data });
-                      toast({ title: 'Topic created' });
+                      toast('Topic created');
                     },
                     (message) => setTopicResult({ status: 'error', message })
                   );
@@ -316,10 +310,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!questionForm.courseId || !questionForm.primaryTopicId || !questionForm.description.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course ID, primary topic ID, and description are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Course ID, primary topic ID, and description are required.',
                     });
                     return;
                   }
@@ -329,10 +321,8 @@ export const ApiTestPage = () => {
                     try {
                       parsedOrder = JSON.parse(questionForm.questionOrder);
                     } catch (error) {
-                      toast({
-                        variant: 'destructive',
-                        title: 'Invalid question order',
-                        description: 'Question order must be valid JSON.'
+                      toast.error('Invalid question order', {
+                          description: 'Question order must be valid JSON.',
                       });
                       return;
                     }
@@ -349,7 +339,7 @@ export const ApiTestPage = () => {
                       }),
                     (data) => {
                       setQuestionResult({ status: 'success', payload: data });
-                      toast({ title: 'Question created' });
+                      toast('Question created');
                     },
                     (message) => setQuestionResult({ status: 'error', message })
                   );
@@ -397,11 +387,7 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!assessmentForm.name.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Name is required.'
-                    });
+                    toast.error('Missing required fields', { description: 'Name is required.' });
                     return;
                   }
 
@@ -413,7 +399,7 @@ export const ApiTestPage = () => {
                       }),
                     (data) => {
                       setAssessmentResult({ status: 'success', payload: data });
-                      toast({ title: 'Assessment created' });
+                      toast('Assessment created');
                     },
                     (message) => setAssessmentResult({ status: 'error', message })
                   );
@@ -460,10 +446,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!assessmentLinkForm.assessmentId || !assessmentLinkForm.questionId) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Assessment ID and question ID are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Assessment ID and question ID are required.',
                     });
                     return;
                   }
@@ -476,7 +460,7 @@ export const ApiTestPage = () => {
                       }),
                     (data) => {
                       setAssessmentLinkResult({ status: 'success', payload: data });
-                      toast({ title: 'Question linked' });
+                      toast('Question linked');
                     },
                     (message) => setAssessmentLinkResult({ status: 'error', message })
                   );
@@ -568,10 +552,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!variantForm.questionId || !variantForm.questionText.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Question ID and question text are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Question ID and question text are required.',
                     });
                     return;
                   }
@@ -593,7 +575,7 @@ export const ApiTestPage = () => {
                       }),
                     (data) => {
                       setVariantResult({ status: 'success', payload: data });
-                      toast({ title: 'Variant created' });
+                      toast('Variant created');
                     },
                     (message) => setVariantResult({ status: 'error', message })
                   );
@@ -665,10 +647,8 @@ export const ApiTestPage = () => {
                 onClick={() => {
                   const trimmedId = eduaiTopicsForm.courseId.trim();
                   if (!trimmedId) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing course ID',
-                      description: 'Enter the AI service course identifier you want to inspect.'
+                    toast.error('Missing course ID', {
+                        description: 'Enter the AI service course identifier you want to inspect.',
                     });
                     return;
                   }
@@ -677,7 +657,7 @@ export const ApiTestPage = () => {
                     () => eduaiService.fetchCourseTopics(trimmedId),
                     (data) => {
                       setEduaiTopicsResult({ status: 'success', payload: data });
-                      toast({ title: 'Fetched course topics' });
+                      toast('Fetched course topics');
                     },
                     (message) => setEduaiTopicsResult({ status: 'error', message })
                   );
@@ -735,10 +715,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!eduaiChatForm.courseCode.trim() || !eduaiChatForm.message.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course code and message are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Course code and message are required.',
                     });
                     return;
                   }
@@ -756,7 +734,7 @@ export const ApiTestPage = () => {
                     }),
                     (data) => {
                       setEduaiChatResult({ status: 'success', payload: data });
-                      toast({ title: 'Chat request sent' });
+                      toast('Chat request sent');
                     },
                     (message) => setEduaiChatResult({ status: 'error', message })
                   );
@@ -855,10 +833,8 @@ export const ApiTestPage = () => {
               <Button
                 onClick={() => {
                   if (!eduaiQuestionForm.courseCode.trim() || !eduaiQuestionForm.prompt.trim()) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Missing required fields',
-                      description: 'Course code and prompt are required.'
+                    toast.error('Missing required fields', {
+                        description: 'Course code and prompt are required.',
                     });
                     return;
                   }
@@ -869,10 +845,8 @@ export const ApiTestPage = () => {
                   const hard = parseInt(eduaiQuestionForm.difficultyHard);
 
                   if (easy + medium + hard !== numQuestions) {
-                    toast({
-                      variant: 'destructive',
-                      title: 'Invalid difficulty distribution',
-                      description: 'Sum of difficulty levels must equal number of questions.'
+                    toast.error('Invalid difficulty distribution', {
+                        description: 'Sum of difficulty levels must equal number of questions.',
                     });
                     return;
                   }
@@ -892,7 +866,7 @@ export const ApiTestPage = () => {
                     }),
                     (data) => {
                       setEduaiQuestionResult({ status: 'success', payload: data });
-                      toast({ title: 'Questions generated' });
+                      toast('Questions generated');
                     },
                     (message) => setEduaiQuestionResult({ status: 'error', message })
                   );

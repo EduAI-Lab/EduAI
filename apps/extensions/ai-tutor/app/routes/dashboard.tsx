@@ -27,7 +27,7 @@ import { PageHeading } from '@eduai/ui';
 import type { Route } from './+types/dashboard';
 import api, { type DashboardStats } from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
-import type { AdminBugReportRow, AdminUser, Course, Role, SubmissionRow } from '~/lib/types';
+import type { AdminBugReportRow, AdminUserPage, Course, Role, SubmissionRow } from '~/lib/types';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { useLocalUser } from '~/hooks/useLocalUser';
 import { DashboardStudentView } from '~/components/dashboard/DashboardStudentView';
@@ -43,7 +43,7 @@ type DashboardLoaderData = {
   role: Role;
   courses: Course[];
   submissions: SubmissionRow[];
-  adminUsers: AdminUser[];
+  adminUsers: AdminUserPage | null;
   adminBugReports: AdminBugReportRow[];
   /** `null` when the rollup endpoint isn't available yet or the call failed — views fall back to client-derived stats. */
   dashboardStats: DashboardStats | null;
@@ -56,9 +56,17 @@ export async function clientLoader(_: Route.ClientLoaderArgs) {
   const isAdmin = user.role === 'ADMIN';
 
   const [courses, submissions, adminUsers, adminBugReports, dashboardStats] = await Promise.all([
-    api.listCourses() as Promise<Course[]>,
+    // #1043: /courses is paginated. Dashboards render a bounded page for the
+    // Continue-Learning / Needs-Attention panels; every COUNT tile and donut
+    // reads from `dashboardStats` (server-computed over the full set), not this
+    // page's length — so the panels' bounded view never skews a stat.
+    api.listCourses().then((r) => r.data),
     wantsSubmissions ? (api.mySubmissions() as Promise<SubmissionRow[]>) : Promise.resolve([]),
-    isAdmin ? (api.listAdminUsers() as Promise<AdminUser[]>) : Promise.resolve([]),
+    // #1041: one page plus Core's platform-wide `stats`, instead of the whole
+    // user table the role breakdown used to be computed from.
+    isAdmin
+      ? (api.listAdminUsers({ pageSize: 1 }) as Promise<AdminUserPage>)
+      : Promise.resolve(null),
     isAdmin ? (api.listAdminBugReports() as Promise<AdminBugReportRow[]>) : Promise.resolve([]),
     // The rollup endpoint is a data-source upgrade, not a hard dependency —
     // never let it fail the whole dashboard load.

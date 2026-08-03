@@ -2,13 +2,27 @@
  * Question service providing CRUD for metadata/variants plus assessment ordering helpers.
  * Validates ownership via course relationships and keeps variant-topic links normalized.
  */
-import { Question_Metadata, Variants, Topics, Assessments, AssessmentSections, SectionVariants } from '../schema/index.js';
-import { Course } from '../schema/Course.js';
+import { createId } from '@paralleldrive/cuid2';
+import { prisma } from '../config/database.js';
+import { config } from '../config/settings.js';
 import {
   enrichRowsWithCourse,
   enrichRowWithCourse,
   formatSemesterDisplay
 } from './courseListService.js';
+import { buildQuestionListQuery } from '../utils/questionListQuery.js';
+
+/**
+ * `saveExtractedQuestions` writes each question's metadata/variant/section-link
+ * rows sequentially inside one interactive transaction (per-item topic
+ * fallback lookups and FK chaining rule out a bulk `createMany`). Prisma's
+ * interactive-transaction timeout defaults to 5s, which a large extraction
+ * payload blows through (P2028), rolling back the whole upload. Reusing
+ * `config.maxQuestions` bounds the batch to the same ceiling already enforced
+ * for AI-generated batches, and `EXTRACT_SAVE_TX_TIMEOUT_MS` gives that
+ * capped batch comfortable headroom.
+ */
+const EXTRACT_SAVE_TX_TIMEOUT_MS = 30_000;
 
 /**
  * Overwrites each question row's nested `variant.assessment.semester` with the
@@ -178,9 +192,9 @@ export const createQuestion = async (userId, questionData) => {
       throw new Error('Valid primaryTopicId is required');
     }
 
-    const course = await Course.findOne({
+    const course = await prisma.course.findFirst({
       where: { id: parsedCourseId, userId },
-      attributes: ['id']
+      select: { id: true }
     });
 
     if (!course) {
@@ -190,13 +204,15 @@ export const createQuestion = async (userId, questionData) => {
     const allowedTypes = ['MCQ', 'SA', 'LA'];
     const normalizedType = allowedTypes.includes(type) ? type : 'MCQ';
 
-    const question = await Question_Metadata.create({
-      courseId: parsedCourseId,
-      primaryTopicId: parsedPrimaryTopicId,
-      type: normalizedType,
-      description: normalizedDescription,
-      questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {},
-      createdBy: questionData.createdBy ?? null
+    const question = await prisma.questionMetadata.create({
+      data: {
+        courseId: parsedCourseId,
+        primaryTopicId: parsedPrimaryTopicId,
+        type: normalizedType,
+        description: normalizedDescription,
+        questionOrder: questionOrder && typeof questionOrder === 'object' ? questionOrder : {},
+        createdBy: questionData.createdBy ?? null
+      }
     });
 
     return question;
@@ -205,14 +221,60 @@ export const createQuestion = async (userId, questionData) => {
   }
 };
 
-/** Returns questions (with course + variant associations) scoped to the requesting user. */
+/**
+ * Enriches raw question rows with their Core-backed course projection and the
+ * derived variant semesters. Exported so a batched reader (the export scan) can
+ * pay the single Core catalog fetch inside `enrichRowsWithCourse` once for the
+ * whole set instead of once per batch.
+ */
+export const enrichQuestionRows = async (rows) => {
+  const enriched = await enrichRowsWithCourse(rows);
+  return enriched.map(withDerivedVariantSemesters);
+};
+
+/**
+ * Returns a paginated question list (with course + variant associations)
+ * scoped to the requesting user. Shape: `{ items, total, limit, offset }` (#1040).
+ *
+ * Search matches description OR any variant's questionText. Type / difficulty /
+ * reasoning / AI / draft filters and sortBy are applied in SQL before paging
+ * so bank UI pagination stays correct (#1040 review).
+ *
+ * `enrich: false` returns the raw rows and skips `enrichRowsWithCourse`, whose
+ * `getAllCoursesFromCore()` call is an uncached full-catalog fetch — callers
+ * that page through in batches should skip it and run `enrichQuestionRows` once
+ * over the assembled set (#1044 export).
+ */
 export const getQuestionsByUser = async (userId, options = {}) => {
   try {
-    const { courseId, search, limit = 50, offset = 0 } = options;
-    
-    // Build where clause for Question_Metadata
-    const whereClause = {};
-    
+    const {
+      courseId,
+      search,
+      types,
+      difficulties,
+      reasoningLevels,
+      aiGenerated,
+      draftStatus,
+      sortBy,
+      limit = 50,
+      offset = 0,
+      enrich = true,
+    } = options;
+    const appliedLimit = Math.max(1, Number.parseInt(limit, 10) || 50);
+    const appliedOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+
+    const { where: filterWhere, orderBy } = buildQuestionListQuery({
+      search,
+      types,
+      difficulties,
+      reasoningLevels,
+      aiGenerated,
+      draftStatus,
+      sortBy,
+    });
+
+    const whereClause = { ...filterWhere, course: { userId } };
+
     if (courseId) {
       const parsedCourseId = Number(courseId);
       if (Number.isInteger(parsedCourseId)) {
@@ -220,45 +282,39 @@ export const getQuestionsByUser = async (userId, options = {}) => {
       }
     }
 
-    const questions = await Question_Metadata.findAll({
-      where: whereClause,
-      include: [
-        {
-          model: Course,
-          as: 'course',
+    const [rows, count] = await Promise.all([
+      prisma.questionMetadata.findMany({
+        where: whereClause,
+        include: {
           // `coreCourseId` feeds the Core projection below — `Course` has no
           // local name/code to select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: { userId: userId } // Filter by user through course relationship
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
-          include: [
-            {
-              model: Assessments,
-              as: 'assessment',
-              attributes: ['id', 'name', 'type']
+          course: { select: { id: true, coreCourseId: true } },
+          variants: {
+            select: {
+              id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true,
+              choices: true, assessmentId: true, secondaryTopicsId: true, referenceId: true,
+              isAiGenerated: true, isDraft: true, createdAt: true, updatedAt: true,
+              assessment: { select: { id: true, name: true, type: true } }
             }
-          ]
-        }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
+          }
+        },
+        orderBy,
+        take: appliedLimit,
+        skip: appliedOffset,
+      }),
+      prisma.questionMetadata.count({ where: whereClause }),
+    ]);
 
-    // Apply search filter if provided
-    let filteredQuestions = questions;
-    if (search) {
-      filteredQuestions = questions.filter(q =>
-        q.description.toLowerCase().includes(search.toLowerCase())
-      );
-    }
+    const items = enrich
+      ? (await enrichRowsWithCourse(rows)).map(withDerivedVariantSemesters)
+      : rows;
 
-    const enriched = await enrichRowsWithCourse(filteredQuestions);
-    return enriched.map(withDerivedVariantSemesters);
+    return {
+      items,
+      total: count,
+      limit: appliedLimit,
+      offset: appliedOffset,
+    };
   } catch (error) {
     throw error;
   }
@@ -267,30 +323,21 @@ export const getQuestionsByUser = async (userId, options = {}) => {
 /** Fetches a single question with variants once the user-course relationship is confirmed. */
 export const getQuestionById = async (questionId, userId) => {
   try {
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` feeds the Core projection below — `Course` has no
-          // local name/code to select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: { userId: userId } // Ensure user owns the course
-        },
-        {
-          model: Variants,
-          as: 'variants',
-          attributes: ['id', 'questionText', 'difficulty', 'reasoningLevel', 'answer', 'choices', 'assessmentId', 'secondaryTopicsId', 'referenceId', 'isAiGenerated', 'isDraft', 'createdAt', 'updatedAt'],
-          include: [
-            {
-              model: Assessments,
-              as: 'assessment',
-              attributes: ['id', 'name', 'type']
-            }
-          ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } },
+      include: {
+        // `coreCourseId` feeds the Core projection below — `Course` has no
+        // local name/code to select anymore (#1072 §4 step 10).
+        course: { select: { id: true, coreCourseId: true } },
+        variants: {
+          select: {
+            id: true, questionText: true, difficulty: true, reasoningLevel: true, answer: true,
+            choices: true, assessmentId: true, secondaryTopicsId: true, referenceId: true,
+            isAiGenerated: true, isDraft: true, createdAt: true, updatedAt: true,
+            assessment: { select: { id: true, name: true, type: true } }
+          }
         }
-      ]
+      }
     });
 
     if (!question) {
@@ -306,15 +353,8 @@ export const getQuestionById = async (questionId, userId) => {
 /** Updates metadata fields while ensuring provided IDs and types remain valid. */
 export const updateQuestion = async (questionId, userId, updateData) => {
   try {
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId } // Ensure user owns the course
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
@@ -336,9 +376,9 @@ export const updateQuestion = async (questionId, userId, updateData) => {
         throw new Error('Valid courseId is required');
       }
 
-      const course = await Course.findOne({
+      const course = await prisma.course.findFirst({
         where: { id: parsedCourseId, userId },
-        attributes: ['id']
+        select: { id: true }
       });
 
       if (!course) {
@@ -381,7 +421,7 @@ export const updateQuestion = async (questionId, userId, updateData) => {
     // lock applies. Un-review the reviewed variant(s) first (which clears
     // coreQuestionId) to unlock these fields again.
     if (updates.type !== undefined || updates.primaryTopicId !== undefined) {
-      const reviewedVariant = await Variants.findOne({
+      const reviewedVariant = await prisma.variants.findFirst({
         where: { questionMetadataId: question.id, isDraft: false }
       });
       if (reviewedVariant) {
@@ -389,8 +429,13 @@ export const updateQuestion = async (questionId, userId, updateData) => {
       }
     }
 
-    await question.update(updates);
-    return question;
+    const ALLOWED_QUESTION_UPDATE_FIELDS = ['description', 'courseId', 'primaryTopicId', 'type', 'questionOrder'];
+    const data = Object.fromEntries(
+      Object.entries(updates).filter(([key]) => ALLOWED_QUESTION_UPDATE_FIELDS.includes(key))
+    );
+
+    const updated = await prisma.questionMetadata.update({ where: { id: question.id }, data });
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -399,22 +444,15 @@ export const updateQuestion = async (questionId, userId, updateData) => {
 /** Deletes a question (and cascades variants) after verifying the user owns the course. */
 export const deleteQuestion = async (questionId, userId) => {
   try {
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId } // Ensure user owns the course
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
       throw new Error('Question not found');
     }
 
-    await question.destroy();
+    await prisma.questionMetadata.delete({ where: { id: question.id } });
     return true;
   } catch (error) {
     throw error;
@@ -469,29 +507,32 @@ export const saveExtractedQuestions = async (userId, payload) => {
     throw new Error('Questions array is required');
   }
 
-  const course = await Course.findOne({
-    where: { id: Number(courseId), userId },
-    attributes: ['id']
+  if (questions.length > config.maxQuestions) {
+    throw new Error(`Cannot save more than ${config.maxQuestions} questions at once`);
+  }
+
+  const parsedCourseId = Number(courseId);
+
+  const course = await prisma.course.findFirst({
+    where: { id: parsedCourseId, userId },
+    select: { id: true }
   });
 
   if (!course) {
     throw new Error('Course not found');
   }
 
-  const transaction = await Question_Metadata.sequelize.transaction();
-
-  try {
-    const existingTopics = await Topics.findAll({
-      where: { courseId },
-      transaction
+  const { createdIds, createdAssessmentId } = await prisma.$transaction(async (tx) => {
+    const courseId = parsedCourseId;
+    const existingTopics = await tx.topics.findMany({
+      where: { courseId }
     });
     const topicIdSet = new Set(existingTopics.map((topic) => topic.id));
 
     let fallbackTopicId = primaryTopicId || null;
     if (fallbackTopicId && !topicIdSet.has(fallbackTopicId)) {
-      const fallbackTopic = await Topics.findOne({
-        where: { id: fallbackTopicId, courseId },
-        transaction
+      const fallbackTopic = await tx.topics.findFirst({
+        where: { id: fallbackTopicId, courseId }
       });
 
       if (!fallbackTopic) {
@@ -509,16 +550,14 @@ export const saveExtractedQuestions = async (userId, payload) => {
       }
 
       if (sanitizedTopicName) {
-        let topic = await Topics.findOne({
-          where: { name: sanitizedTopicName, courseId },
-          transaction
+        let topic = await tx.topics.findFirst({
+          where: { name: sanitizedTopicName, courseId }
         });
 
         if (!topic) {
-          topic = await Topics.create({
-            name: sanitizedTopicName,
-            courseId
-          }, { transaction });
+          topic = await tx.topics.create({
+            data: { id: createId(), name: sanitizedTopicName, courseId }
+          });
         }
 
         topicIdSet.add(topic.id);
@@ -527,10 +566,9 @@ export const saveExtractedQuestions = async (userId, payload) => {
       }
 
       if (topicIdSet.size === 0) {
-        const autoTopic = await Topics.create({
-          name: 'Uploaded Questions',
-          courseId
-        }, { transaction });
+        const autoTopic = await tx.topics.create({
+          data: { id: createId(), name: 'Uploaded Questions', courseId }
+        });
         topicIdSet.add(autoTopic.id);
         fallbackTopicId = autoTopic.id;
         return fallbackTopicId;
@@ -548,19 +586,19 @@ export const saveExtractedQuestions = async (userId, payload) => {
       if (!type || !name) {
         throw new Error('Assessment type and name are required.');
       }
-      createdAssessment = await Assessments.create({
-        type,
-        name,
-        courseId
-      }, { transaction });
+      createdAssessment = await tx.assessments.create({
+        data: { type, name, courseId }
+      });
 
       // Create a default section for the uploaded questions
-      createdSection = await AssessmentSections.create({
-        assessmentId: createdAssessment.id,
-        name: 'Uploaded Questions',
-        description: 'Questions extracted from uploaded document',
-        position: 0
-      }, { transaction });
+      createdSection = await tx.assessmentSections.create({
+        data: {
+          assessmentId: createdAssessment.id,
+          name: 'Uploaded Questions',
+          description: 'Questions extracted from uploaded document',
+          position: 0
+        }
+      });
     }
 
     const createdIds = [];
@@ -610,14 +648,16 @@ export const saveExtractedQuestions = async (userId, payload) => {
       const secondaryTopics = normalizeSecondaryTopics(item.secondaryTopicIds)
         .filter((id) => topicIdSet.has(id) && id !== primaryTopicForQuestion);
 
-      const metadata = await Question_Metadata.create({
-        description: summaryText,
-        courseId,
-        primaryTopicId: primaryTopicForQuestion,
-        type: questionType,
-        questionOrder: createdAssessment ? { [createdAssessment.id]: orderCounter } : {},
-        createdBy
-      }, { transaction });
+      const metadata = await tx.questionMetadata.create({
+        data: {
+          description: summaryText,
+          courseId,
+          primaryTopicId: primaryTopicForQuestion,
+          type: questionType,
+          questionOrder: createdAssessment ? { [createdAssessment.id]: orderCounter } : {},
+          createdBy
+        }
+      });
 
       // Handle choices for MCQ questions
       let choices = null;
@@ -639,27 +679,31 @@ export const saveExtractedQuestions = async (userId, payload) => {
         answer = null;
       }
 
-      const variant = await Variants.create({
-        questionMetadataId: metadata.id,
-        questionText,
-        difficulty: ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium',
-        answer,
-        choices,
-        assessmentId: createdAssessment ? createdAssessment.id : null,
-        secondaryTopicsId: secondaryTopics,
-        referenceId: null,
-        isAiGenerated: Boolean(isAiGenerated),
-        isDraft: true, // All new variants start as drafts
-        createdBy
-      }, { transaction });
+      const variant = await tx.variants.create({
+        data: {
+          questionMetadataId: metadata.id,
+          questionText,
+          difficulty: ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium',
+          answer,
+          choices,
+          assessmentId: createdAssessment ? createdAssessment.id : null,
+          secondaryTopicsId: secondaryTopics,
+          referenceId: null,
+          isAiGenerated: Boolean(isAiGenerated),
+          isDraft: true, // All new variants start as drafts
+          createdBy
+        }
+      });
 
       // Link variant to section if assessment and section were created
       if (createdSection) {
-        await SectionVariants.create({
-          sectionId: createdSection.id,
-          variantId: variant.id,
-          displayOrder: orderCounter - 1
-        }, { transaction });
+        await tx.sectionVariants.create({
+          data: {
+            sectionId: createdSection.id,
+            variantId: variant.id,
+            displayOrder: orderCounter - 1
+          }
+        });
       }
 
       createdIds.push(metadata.id);
@@ -669,78 +713,107 @@ export const saveExtractedQuestions = async (userId, payload) => {
     }
 
     if (createdIds.length === 0) {
-      await transaction.rollback();
       throw new Error('No valid questions to save.');
     }
 
-    await transaction.commit();
+    return { createdIds, createdAssessmentId: createdAssessment ? createdAssessment.id : null };
+  }, { timeout: EXTRACT_SAVE_TX_TIMEOUT_MS });
 
-    const savedQuestions = await Question_Metadata.findAll({
-      where: { id: createdIds },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          // `coreCourseId` feeds the Core projection below — `Course` has no
-          // local name/code to select anymore (#1072 §4 step 10).
-          attributes: ['id', 'coreCourseId'],
-          where: { userId }
-        },
-        {
-          model: Variants,
-          as: 'variants'
-        }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
+  const savedQuestions = await prisma.questionMetadata.findMany({
+    where: { id: { in: createdIds }, course: { userId } },
+    include: {
+      // `coreCourseId` feeds the Core projection below — `Course` has no
+      // local name/code to select anymore (#1072 §4 step 10).
+      course: { select: { id: true, coreCourseId: true } },
+      variants: true
+    },
+    orderBy: { createdAt: 'desc' }
+  });
 
-    return {
-      questions: await enrichRowsWithCourse(savedQuestions),
-      assessmentId: createdAssessment ? createdAssessment.id : null
-    };
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+  return {
+    questions: await enrichRowsWithCourse(savedQuestions),
+    assessmentId: createdAssessmentId
+  };
 };
 
 /** Aggregates counts of questions/variants/drafts for dashboard stats. */
-export const getQuestionStats = async (userId) => {
+/**
+ * Aggregate question/variant stats for a user, optionally scoped to one course.
+ * Used by the dashboard and Course Detail overview so meters aren't computed
+ * from a single paginated page (#1040 review).
+ */
+export const getQuestionStats = async (userId, options = {}) => {
   try {
-    // Count questions for this user through course relationship
-    const totalQuestions = await Question_Metadata.count({
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const { courseId } = options;
+    const metadataWhere = { course: { userId } };
+    if (courseId != null && courseId !== '') {
+      const parsedCourseId = Number(courseId);
+      if (Number.isInteger(parsedCourseId)) {
+        metadataWhere.courseId = parsedCourseId;
+      }
+    }
+
+    const totalQuestions = await prisma.questionMetadata.count({
+      where: metadataWhere,
     });
-    
-    const typeStats = await Question_Metadata.findAll({
-      attributes: [
-        'type',
-        [Question_Metadata.sequelize.fn('COUNT', Question_Metadata.sequelize.col('Question_Metadata.id')), 'count']
-      ],
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId },
-          // Filter-only join: selecting no course columns keeps `course.id` out of
-          // the SELECT so it need not appear in GROUP BY (Postgres rejects otherwise).
-          attributes: []
-        }
-      ],
-      group: ['type'],
-      subQuery: false,
-      raw: true
+
+    const typeStatsRaw = await prisma.questionMetadata.groupBy({
+      by: ['type'],
+      where: metadataWhere,
+      _count: { _all: true },
     });
+    const typeStats = typeStatsRaw.map((row) => ({ type: row.type, count: row._count._all }));
+
+    // Variant-level aggregates (difficulty / AI / reviewed) over the same scope.
+    const variantRows = await prisma.variants.findMany({
+      where: { questionMetadata: metadataWhere },
+      select: {
+        difficulty: true,
+        isAiGenerated: true,
+        isDraft: true,
+        secondaryTopicsId: true,
+        questionMetadata: {
+          select: { id: true, type: true, primaryTopicId: true },
+        },
+      },
+    });
+
+    const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
+    let aiCount = 0;
+    let humanCount = 0;
+    let reviewedCount = 0;
+    const usedTopicIds = new Set();
+
+    for (const row of variantRows) {
+      const d = String(row.difficulty ?? 'medium').toLowerCase();
+      if (d === 'easy') difficultyCounts.easy += 1;
+      else if (d === 'hard') difficultyCounts.hard += 1;
+      else difficultyCounts.medium += 1;
+      if (row.isAiGenerated) aiCount += 1;
+      else humanCount += 1;
+      if (!row.isDraft) reviewedCount += 1;
+
+      const meta = row.questionMetadata;
+      if (meta?.primaryTopicId) usedTopicIds.add(String(meta.primaryTopicId));
+      const sec = row.secondaryTopicsId;
+      if (Array.isArray(sec)) {
+        for (const id of sec) usedTopicIds.add(String(id));
+      }
+    }
 
     return {
       totalQuestions,
-      typeStats
+      totalVariants: variantRows.length,
+      typeStats,
+      difficultyStats: [
+        { difficulty: 'easy', count: difficultyCounts.easy },
+        { difficulty: 'medium', count: difficultyCounts.medium },
+        { difficulty: 'hard', count: difficultyCounts.hard },
+      ],
+      aiCount,
+      humanCount,
+      reviewedCount,
+      usedTopicIds: [...usedTopicIds],
     };
   } catch (error) {
     throw error;
@@ -750,15 +823,8 @@ export const getQuestionStats = async (userId) => {
 /** Updates the per-assessment ordering map stored on a question metadata row. */
 export const updateQuestionOrder = async (questionId, assessmentId, orderNumber, userId) => {
   try {
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
@@ -767,14 +833,17 @@ export const updateQuestionOrder = async (questionId, assessmentId, orderNumber,
 
     // Get current questionOrder or initialize empty object
     const currentOrder = question.questionOrder || {};
-    
+
     // Update the order for the specific assessment
     currentOrder[assessmentId] = orderNumber;
-    
+
     // Update the question with new order
-    await question.update({ questionOrder: currentOrder });
-    
-    return question;
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -783,15 +852,8 @@ export const updateQuestionOrder = async (questionId, assessmentId, orderNumber,
 /** Removes a question from a specific assessment’s order map and detaches variants if needed. */
 export const removeQuestionFromAssessment = async (questionId, assessmentId, userId) => {
   try {
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: Number(questionId), course: { userId } }
     });
 
     if (!question) {
@@ -800,14 +862,17 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
 
     // Get current questionOrder or initialize empty object
     const currentOrder = question.questionOrder || {};
-    
+
     // Remove the assessment from the order
     delete currentOrder[assessmentId];
-    
+
     // Update the question with new order
-    await question.update({ questionOrder: currentOrder });
-    
-    return question;
+    const updated = await prisma.questionMetadata.update({
+      where: { id: question.id },
+      data: { questionOrder: currentOrder }
+    });
+
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -817,16 +882,10 @@ export const removeQuestionFromAssessment = async (questionId, assessmentId, use
 /** Creates a variant for a question while validating course ownership and metadata. */
 export const createVariant = async (questionId, variantData, userId) => {
   try {
+    questionId = Number(questionId);
     // Verify user owns the question
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: questionId, course: { userId } }
     });
 
     if (!question) {
@@ -862,19 +921,21 @@ export const createVariant = async (questionId, variantData, userId) => {
       answer = null;
     }
 
-    const variant = await Variants.create({
-      questionMetadataId: questionId,
-      questionText: variantData.questionText,
-      difficulty: variantData.difficulty || 'medium',
-      reasoningLevel,
-      assessmentId: variantData.assessmentId || null,
-      secondaryTopicsId: secondaryTopics,
-      answer,
-      choices,
-      referenceId: variantData.referenceId || null,
-      isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
-      isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
-      createdBy: variantData.createdBy ?? null
+    const variant = await prisma.variants.create({
+      data: {
+        questionMetadataId: questionId,
+        questionText: variantData.questionText,
+        difficulty: variantData.difficulty || 'medium',
+        reasoningLevel,
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null,
+        secondaryTopicsId: secondaryTopics,
+        answer,
+        choices,
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null,
+        isAiGenerated: variantData.isAiGenerated !== undefined ? Boolean(variantData.isAiGenerated) : false,
+        isDraft: variantData.isDraft !== undefined ? Boolean(variantData.isDraft) : true,
+        createdBy: variantData.createdBy ?? null
+      }
     });
 
     return variant;
@@ -886,21 +947,12 @@ export const createVariant = async (questionId, variantData, userId) => {
 /** Updates a variant’s content/difficulty/associations, normalizing secondary topics. */
 export const updateVariant = async (variantId, variantData, userId) => {
   try {
-    const variant = await Variants.findOne({
-      where: { id: variantId },
-      include: [
-        {
-          model: Question_Metadata,
-          as: 'questionMetadata',
-          include: [
-            {
-              model: Course,
-              as: 'course',
-              where: { userId: userId }
-            }
-          ]
-        }
-      ]
+    variantId = Number(variantId);
+    const variant = await prisma.variants.findFirst({
+      where: { id: variantId, questionMetadata: { course: { userId } } },
+      include: {
+        questionMetadata: { select: { id: true, type: true } }
+      }
     });
 
     if (!variant) {
@@ -935,8 +987,20 @@ export const updateVariant = async (variantId, variantData, userId) => {
     // as "already linked". Only fires on the false→true transition (not a no-op resend).
     const unreviewing = variant.isDraft === false && nextIsDraft === true;
 
+    const ALLOWED_VARIANT_UPDATE_FIELDS = [
+      'questionText', 'difficulty', 'reasoningLevel', 'assessmentId', 'secondaryTopicsId',
+      'answer', 'choices', 'referenceId', 'isAiGenerated', 'isDraft', 'coreQuestionId'
+    ];
     const normalizedData = {
-      ...variantData,
+      ...Object.fromEntries(
+        Object.entries(variantData).filter(([key]) => ALLOWED_VARIANT_UPDATE_FIELDS.includes(key))
+      ),
+      ...(variantData.assessmentId !== undefined && {
+        assessmentId: variantData.assessmentId != null ? Number(variantData.assessmentId) : null
+      }),
+      ...(variantData.referenceId !== undefined && {
+        referenceId: variantData.referenceId != null ? Number(variantData.referenceId) : null
+      }),
       ...(variantData.secondaryTopicsId !== undefined && {
         secondaryTopicsId: normalizeSecondaryTopics(variantData.secondaryTopicsId)
       }),
@@ -957,8 +1021,18 @@ export const updateVariant = async (variantId, variantData, userId) => {
       })
     };
 
-    await variant.update(normalizedData);
-    return variant;
+    // `variants.js`'s post-approval Core push reads `variant.questionMetadata.course.coreCourseId`
+    // off this return value — must include it, not just the bare row.
+    const updated = await prisma.variants.update({
+      where: { id: variant.id },
+      data: normalizedData,
+      include: {
+        questionMetadata: {
+          select: { id: true, type: true, primaryTopicId: true, course: { select: { id: true, coreCourseId: true } } }
+        }
+      }
+    });
+    return updated;
   } catch (error) {
     throw error;
   }
@@ -967,28 +1041,15 @@ export const updateVariant = async (variantId, variantData, userId) => {
 /** Deletes a variant and cleans up related section links if the user owns the question. */
 export const deleteVariant = async (variantId, userId) => {
   try {
-    const variant = await Variants.findOne({
-      where: { id: variantId },
-      include: [
-        {
-          model: Question_Metadata,
-          as: 'questionMetadata',
-          include: [
-            {
-              model: Course,
-              as: 'course',
-              where: { userId: userId }
-            }
-          ]
-        }
-      ]
+    const variant = await prisma.variants.findFirst({
+      where: { id: Number(variantId), questionMetadata: { course: { userId } } }
     });
 
     if (!variant) {
       throw new Error('Variant not found');
     }
 
-    await variant.destroy();
+    await prisma.variants.delete({ where: { id: variant.id } });
     return true;
   } catch (error) {
     throw error;
@@ -998,25 +1059,23 @@ export const deleteVariant = async (variantId, userId) => {
 /** Lists all variants for a question, including assessment context, for the owning user. */
 export const getVariantsByQuestion = async (questionId, userId) => {
   try {
+    questionId = Number(questionId);
     // Verify user owns the question
-    const question = await Question_Metadata.findOne({
-      where: { id: questionId },
-      include: [
-        {
-          model: Course,
-          as: 'course',
-          where: { userId: userId }
-        }
-      ]
+    const question = await prisma.questionMetadata.findFirst({
+      where: { id: questionId, course: { userId } }
     });
 
     if (!question) {
       throw new Error('Question not found');
     }
 
-    const variants = await Variants.findAll({
+    const variants = await prisma.variants.findMany({
       where: { questionMetadataId: questionId },
-      order: [['createdAt', 'ASC']]
+      // `id` breaks ties so the ordering is total (#1044). `createdAt` is not
+      // unique — bank generation inserts a question's variants in one statement,
+      // so they share a timestamp — and paging a non-total order can repeat and
+      // drop rows across requests.
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
 
     return variants;

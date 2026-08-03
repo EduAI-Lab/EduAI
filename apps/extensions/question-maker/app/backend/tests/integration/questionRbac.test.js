@@ -12,7 +12,7 @@ const { mockUpdate, mockDelete, mockCreate, mockList, mockQuestionFindOne, mockC
   mockUpdate: vi.fn(),
   mockDelete: vi.fn().mockResolvedValue(true),
   mockCreate: vi.fn(),
-  mockList: vi.fn().mockResolvedValue([]),
+  mockList: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
   mockQuestionFindOne: vi.fn(),
   mockCourseFindOne: vi.fn(),
   mockEnrollments: vi.fn(),
@@ -51,14 +51,15 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   getMyProfileFromCore: vi.fn().mockResolvedValue({ authorizedUnits: [] }),
 }));
 
-vi.mock('../../src/schema/index.js', () => ({
-  Course: { findOne: mockCourseFindOne },
-  Question_Metadata: { findOne: mockQuestionFindOne },
-  Variants: {},
-  Assessments: {},
-  AssessmentSections: {},
-  Topics: {},
-  sequelize: { define: vi.fn(), authenticate: vi.fn(), sync: vi.fn() },
+vi.mock('../../src/config/database.js', () => ({
+  prisma: {
+    course: { findUnique: mockCourseFindOne },
+    questionMetadata: { findUnique: mockQuestionFindOne },
+    variants: {},
+    assessments: {},
+    assessmentSections: {},
+    topics: {},
+  },
 }));
 
 const { default: app } = await import('../../src/app.js');

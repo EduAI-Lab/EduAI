@@ -1,8 +1,9 @@
 /**
- * Configures the Sequelize/PostgreSQL connection and keeps it healthy via retries and background monitoring.
- * Responsible for loading environment variables, authenticating, syncing schemas, and reconnecting when needed.
+ * Configures the Prisma/PostgreSQL client. Responsible for loading environment
+ * variables and retrying the initial connection so the server can still start
+ * listening while Postgres (e.g. a Docker Compose dependency) finishes booting.
  */
-import { Sequelize } from 'sequelize';
+import { PrismaClient } from '@eduai/question-maker-prisma-client';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -30,33 +31,10 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required. Please set it in your .env file.');
 }
 
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
-  dialect: 'postgres',
-  logging: false,
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000, // Maximum time to wait for a connection from the pool
-    idle: 10000, // Maximum time a connection can be idle before being released
-    evict: 1000, // Check for idle connections every second
-    // Handle connection errors in the pool
-    handleDisconnects: true,
-  },
-  // Reconnect on connection loss
-  dialectOptions: {
-    // PostgreSQL specific options
-    connectTimeout: 30000,
-  },
-  // Sequelize will automatically retry queries on connection errors
-  // but we handle reconnection at the application level for better control
-});
-
-// Track connection state
-let isConnected = false;
-let connectionRetryInterval = null;
+export const prisma = new PrismaClient();
 
 /**
- * Attempts to authenticate with exponential backoff until success or the retry limit is reached.
+ * Attempts to connect with exponential backoff until success or the retry limit is reached.
  * Keeps startup resilient when Postgres containers or services take time to become available.
  */
 const retryConnection = async (maxRetries = 10, initialDelay = 1000) => {
@@ -65,28 +43,27 @@ const retryConnection = async (maxRetries = 10, initialDelay = 1000) => {
 
   while (attempt < maxRetries) {
     try {
-      await sequelize.authenticate();
-      isConnected = true;
+      await prisma.$queryRaw`SELECT 1`;
       logger.info('Database connection successful');
       return;
     } catch (error) {
       attempt++;
       const isLastAttempt = attempt >= maxRetries;
-      
+
       if (isLastAttempt) {
         logger.error({ err: error, attempts: maxRetries }, 'Database connection failed after max retries');
         throw error;
       }
 
-      logger.warn({ 
-        err: error, 
-        attempt, 
-        maxRetries, 
-        retryDelay: delay 
+      logger.warn({
+        err: error,
+        attempt,
+        maxRetries,
+        retryDelay: delay
       }, 'Database connection attempt failed, retrying');
-      
+
       await new Promise(resolve => setTimeout(resolve, delay));
-      
+
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
       delay = Math.min(delay * 2, 60000);
     }
@@ -94,101 +71,29 @@ const retryConnection = async (maxRetries = 10, initialDelay = 1000) => {
 };
 
 /**
- * Starts background reconnection monitoring to periodically verify the database connection.
- * Automatically re-authenticates dropped pools so long-lived servers keep operating.
- */
-const startReconnectionMonitoring = () => {
-  if (connectionRetryInterval) {
-    return; // Already monitoring
-  }
-
-  connectionRetryInterval = setInterval(async () => {
-    if (!isConnected) {
-      try {
-        await sequelize.authenticate();
-        isConnected = true;
-        logger.info('Database reconnection successful');
-      } catch (error) {
-        // Silently fail - will retry on next interval
-        // Don't log every failed attempt to avoid log spam
-        // Only log if it's been a while since last connection
-      }
-    } else {
-      // Periodically verify connection is still alive
-      try {
-        await sequelize.authenticate();
-      } catch (error) {
-        // Connection lost - mark as disconnected
-        isConnected = false;
-        logger.warn({ err: error }, 'Database connection lost during health check, will retry automatically');
-      }
-    }
-  }, 10000); // Check every 10 seconds
-};
-
-/**
- * Establishes the Sequelize connection, optionally retries/syncs schema, and bootstraps background monitoring.
- * Options let callers control retry count, whether to tolerate failure, and how strict startup should be.
+ * Verifies the Prisma connection, optionally retrying/tolerating failure so the
+ * caller can decide whether to let the server start without a DB connection yet.
+ * Migrations are applied out-of-band via `prisma migrate deploy` (see package.json).
  */
 export const connectDatabase = async (options = {}) => {
-  const { 
-    retryOnFailure = true, 
-    maxRetries = 10, 
-    allowFailure = false 
+  const {
+    retryOnFailure = true,
+    maxRetries = 10,
+    allowFailure = false
   } = options;
 
   try {
     if (retryOnFailure) {
       await retryConnection(maxRetries);
     } else {
-      await sequelize.authenticate();
-      isConnected = true;
+      await prisma.$queryRaw`SELECT 1`;
     }
-    
-    // Sync database schema (create tables if they don't exist, alter existing tables to add missing columns)
-    // Using alter: true will add missing columns without dropping existing data
-    // Only sync if we have a connection
-    if (isConnected) {
-      try {
-        // Cast secondary_topics_id from integer[] to TEXT[] if it was created with the old type
-        await sequelize.query(`
-          DO $$ BEGIN
-            IF EXISTS (
-              SELECT 1 FROM information_schema.columns
-              WHERE table_name = 'variants'
-                AND column_name = 'secondary_topics_id'
-                AND udt_name = '_int4'
-            ) THEN
-              ALTER TABLE variants ALTER COLUMN secondary_topics_id TYPE TEXT[] USING secondary_topics_id::TEXT[];
-            END IF;
-          END $$;
-        `);
-      } catch (preMigrationError) {
-        logger.warn({ err: preMigrationError }, 'Pre-sync migration failed (non-fatal)');
-      }
-      try {
-        await sequelize.sync({ alter: true });
-        logger.info('Database schema synchronized');
-      } catch (syncError) {
-        logger.warn({ err: syncError }, 'Database schema sync failed (non-fatal)');
-        // Don't throw - schema sync failures shouldn't prevent app from starting
-      }
-    }
-
-    // Start background reconnection monitoring
-    startReconnectionMonitoring();
   } catch (error) {
-    isConnected = false;
-    
     if (allowFailure) {
-      logger.warn({ err: error }, 'Database connection failed, but continuing anyway. Will retry in background');
-      // Start monitoring even if initial connection failed
-      startReconnectionMonitoring();
+      logger.warn({ err: error }, 'Database connection failed, but continuing anyway. Prisma will reconnect on the next query.');
       return;
     }
-    
+
     throw error;
   }
 };
-
-export { sequelize };

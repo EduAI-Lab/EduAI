@@ -44,6 +44,68 @@ describe('api methods', () => {
     expect(result).toEqual(mockResponse);
   });
 
+  // #1162: the server parses /api/courses in required mode, so a call that
+  // supplied only pageSize used to 400 with PAGINATION_REQUIRED on every
+  // non-pager surface (dashboards, course switcher, command palette, imports).
+  describe('course-list pagination query strings', () => {
+    const okEmptyPage = () =>
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: [], total: 0, page: 1, pageSize: 200 }),
+      });
+
+    it('listCourses() sends both page and pageSize by default', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses();
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('listAdminCourses() sends both page and pageSize by default', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listAdminCourses();
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/admin/courses?page=1&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('an explicit page overrides the default without dropping pageSize', async () => {
+      okEmptyPage();
+      const { api, COURSE_LIST_PAGE_SIZE } = await import('~/lib/api');
+      await api.listCourses({ page: 3 });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        `http://localhost:4000/api/courses?page=3&pageSize=${COURSE_LIST_PAGE_SIZE}`,
+      );
+    });
+
+    it('an explicit pageSize overrides the default without dropping page', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.listCourses({ page: 2, pageSize: 25 });
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses?page=2&pageSize=25',
+      );
+    });
+
+    it('tree endpoints also send a complete pair', async () => {
+      okEmptyPage();
+      const { api } = await import('~/lib/api');
+      await api.modulesForCourse(7);
+
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        'http://localhost:4000/api/courses/7/modules?page=1&pageSize=200',
+      );
+    });
+  });
+
   it('successful response returns parsed JSON', async () => {
     const mockData = { courses: [{ id: 1, title: 'Math 101' }] };
     mockFetch.mockResolvedValue({
@@ -245,6 +307,99 @@ describe('api methods', () => {
     expect(options.method).toBe('POST');
     expect(options.credentials).toBe('include');
     expect(result).toEqual({ ok: true });
+  });
+
+  // #1041: Core's user list is server-paginated, so these two calls always send
+  // paging params and the admin views read the envelope (and its `stats`) rather
+  // than counting an array.
+  it('api.listAdminUsers() defaults to the first page and returns the envelope', async () => {
+    const page = {
+      data: [{ id: 'u1', name: 'Student', role: 'STUDENT' }],
+      total: 137,
+      page: 1,
+      pageSize: 25,
+      stats: { total: 137, active: 130, byRole: { STUDENT: 120 } },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(page) });
+
+    const { api } = await import('~/lib/api');
+    const result = await api.listAdminUsers();
+
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://localhost:4000/api/admin/users?page=1&pageSize=25');
+    expect(options.credentials).toBe('include');
+    // `stats` carries the platform-wide totals the dashboard needs.
+    expect(result).toEqual(page);
+  });
+
+  it('api.listAdminUsers() forwards an explicit page and pageSize', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: [], total: 0, page: 4, pageSize: 100 }),
+    });
+
+    const { api } = await import('~/lib/api');
+    await api.listAdminUsers({ page: 4, pageSize: 100 });
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'http://localhost:4000/api/admin/users?page=4&pageSize=100',
+    );
+  });
+
+  it('api.getAdminCourseEnrollments() omits the query string when unfiltered', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+    });
+
+    const { api } = await import('~/lib/api');
+    await api.getAdminCourseEnrollments(9);
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'http://localhost:4000/api/admin/courses/9/enrollments',
+    );
+  });
+
+  it('api.getAdminCourseEnrollments() sends search/page/pageSize so students past page 1 stay reachable', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          enrollments: [],
+          availableStudents: [{ id: 'u9' }],
+          availableStudentsPage: { total: 900, page: 2, pageSize: 50 },
+        }),
+    });
+
+    const { api } = await import('~/lib/api');
+    const result = await api.getAdminCourseEnrollments(9, {
+      search: 'ali',
+      page: 2,
+      pageSize: 50,
+    });
+
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'http://localhost:4000/api/admin/courses/9/enrollments?search=ali&page=2&pageSize=50',
+    );
+    expect(result.availableStudentsPage.total).toBe(900);
+  });
+
+  it('api.getAdminCourseEnrollments() drops an empty search rather than sending search=', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ enrollments: [], availableStudents: [] }),
+    });
+
+    const { api } = await import('~/lib/api');
+    await api.getAdminCourseEnrollments(9, { search: '', page: 3 });
+
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).not.toContain('search=');
+    expect(url).toContain('page=3');
   });
 
   it('api.listCourseFeedback() builds query params for course feedback (#784)', async () => {

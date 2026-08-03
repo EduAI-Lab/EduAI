@@ -2,9 +2,9 @@
  * Auto-imports Core courses the instructor teaches into the local QM library on login.
  * Uses Core GET /api/courses (session-scoped via buildCourseListFilter).
  */
-import { Op } from 'sequelize';
-import { sequelize } from '../config/database.js';
-import { Course, Topics, Assessments } from '../schema/index.js';
+import { createId } from '@paralleldrive/cuid2';
+import { Prisma } from '@eduai/question-maker-prisma-client';
+import { prisma } from '../config/database.js';
 import { listCoursesFromCore, getCourseEnrollmentsFromCore } from './coreApiService.js';
 import { syncTopicsFromCoreForCourse } from './topicSyncService.js';
 import { createAssessment } from './assessmentService.js';
@@ -32,15 +32,17 @@ async function ensurePracticeExam(userId, courseId) {
     // (the exam insert is awaited before that), then its re-check sees the
     // existing exam. The partial unique index added by migrate:1072 backstops
     // this at the schema level.
-    await sequelize.transaction(async (transaction) => {
-      await sequelize.query('SELECT pg_advisory_xact_lock(:ns, :courseId)', {
-        replacements: { ns: PRACTICE_EXAM_LOCK_NS, courseId },
-        transaction,
-      });
+    await prisma.$transaction(async (tx) => {
+      // Both args must be cast to the same integer type: pg_advisory_xact_lock
+      // only has bigint / (int, int) overloads, and Prisma's raw-query param
+      // binding can infer mismatched types (e.g. int4 vs int8) that don't match
+      // either overload, raising "function ... does not exist". $executeRaw (not
+      // $queryRaw) because the function returns void, which $queryRaw can't
+      // deserialize as a result column.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${PRACTICE_EXAM_LOCK_NS}::int, ${courseId}::int)`;
 
-      const existing = await Assessments.findOne({
+      const existing = await tx.assessments.findFirst({
         where: { courseId, name: 'Practice Exam' },
-        transaction,
       });
       if (existing) return;
 
@@ -67,9 +69,18 @@ async function ensurePracticeExam(userId, courseId) {
 async function provisionCourse(userId, course, cookie) {
   await syncTopicsFromCoreForCourse(course, cookie);
 
-  const topics = await Topics.findAll({ where: { courseId: course.id } });
+  const topics = await prisma.topics.findMany({ where: { courseId: course.id } });
   if (topics.length === 0) {
-    await Topics.create({ name: 'General', courseId: course.id });
+    try {
+      await prisma.topics.create({ data: { id: createId(), name: 'General', courseId: course.id } });
+    } catch (err) {
+      // Unique `(course_id, name)` race: a concurrent co-instructor's provisioning
+      // call (mirrors are throttled per USER, so two can run at once) already
+      // created the fallback topic between our read and this insert — the
+      // desired end state (>=1 topic exists) is already satisfied.
+      const isUniqueViolation = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+      if (!isUniqueViolation) throw err;
+    }
   }
 
   await ensurePracticeExam(userId, course.id);
@@ -106,7 +117,7 @@ async function maybeClaimAnchor(userId, course) {
       TEACHING_ENROLLMENT_ROLES.has(e.role),
   );
   if (!ownerTeaches) {
-    await course.update({ userId });
+    await prisma.course.update({ where: { id: course.id }, data: { userId } });
     logger.info(
       { userId, courseId: course.id, coreCourseId: course.coreCourseId },
       'Claimed course anchor from non-teaching owner during auto-import',
@@ -130,8 +141,8 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
   let coreCourses;
   try {
-    const data = await listCoursesFromCore(cookie ?? '');
-    coreCourses = Array.isArray(data?.courses) ? data.courses : [];
+    // #1041: import reconciles against every course the caller can see.
+    coreCourses = await listCoursesFromCore(cookie ?? '', { all: true });
   } catch (err) {
     logger.warn({ err, userId }, 'Auto-import skipped: could not list Core courses');
     return { imported: 0, skipped: 0, error: err.message };
@@ -145,8 +156,8 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
   const skippedNonTeaching = coreCourses.length - teachingCourses.length;
 
   const anchors = teachingCourses.length
-    ? await Course.findAll({
-        where: { coreCourseId: { [Op.in]: teachingCourses.map((c) => c.id) } },
+    ? await prisma.course.findMany({
+        where: { coreCourseId: { in: teachingCourses.map((c) => c.id) } },
       })
     : [];
   const anchorByCoreId = new Map(anchors.map((course) => [course.coreCourseId, course]));
@@ -160,12 +171,12 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
 
     if (!anchor) {
       try {
-        anchor = await Course.create({ userId, coreCourseId: coreCourse.id });
+        anchor = await prisma.course.create({ data: { userId, coreCourseId: coreCourse.id } });
         imported++;
       } catch (err) {
         // Unique `core_course_id` race: a concurrent request (or an ADMIN list
         // visit) created the anchor between our read and this insert. Adopt it.
-        anchor = await Course.findOne({ where: { coreCourseId: coreCourse.id } });
+        anchor = await prisma.course.findUnique({ where: { coreCourseId: coreCourse.id } });
         if (!anchor) {
           logger.warn({ err, userId, coreCourseId: coreCourse.id }, 'Auto-import failed for Core course');
           skipped++;
@@ -198,8 +209,8 @@ export async function importTaughtCoursesFromCore(userId, role, cookie) {
   // added manually via POST /api/course under a non-teaching enrollment) —
   // these were covered by the old per-owner refresh loop and still should be.
   const teachingCoreIds = new Set(teachingCourses.map((c) => c.id));
-  const otherOwned = await Course.findAll({
-    where: { userId, coreCourseId: { [Op.ne]: null } },
+  const otherOwned = await prisma.course.findMany({
+    where: { userId, coreCourseId: { not: null } },
   });
   for (const localCourse of otherOwned) {
     if (teachingCoreIds.has(localCourse.coreCourseId)) continue;

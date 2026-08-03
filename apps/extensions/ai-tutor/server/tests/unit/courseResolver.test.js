@@ -19,6 +19,7 @@ import {
   indexCoreCoursesById,
   resolveCoreCourseById,
   resolveCoreCourseCatalog,
+  resolveCoreCoursesByIds,
   resolveCoreCourseList,
   resolveIsPublished,
 } from '../../src/services/courseResolver.js';
@@ -38,7 +39,7 @@ describe('resolveCoreCourseList', () => {
 
     expect(result).toEqual({ courses, coreUnavailable: false });
     expect(listEduAiCourses).toHaveBeenCalledTimes(1);
-    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc' });
+    expect(listEduAiCourses).toHaveBeenCalledWith({ cookie: 'session=abc', all: true });
   });
 
   it('degrades to empty courses + coreUnavailable:true on a thrown error (network/5xx)', async () => {
@@ -110,6 +111,23 @@ describe('resolveCoreCourseById', () => {
     vi.mocked(fetchCoreCourseSafe).mockRejectedValue(Object.assign(new Error('down'), { status: 503 }));
 
     const result = await resolveCoreCourseById('core-1');
+
+    expect(result).toEqual({ course: null, coreUnavailable: true });
+  });
+
+  it('forwards options.signal to fetchCoreCourseSafe so a hung Core lookup can be bounded (#1173 review)', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({ id: 'core-1', name: 'Algorithms' });
+    const signal = AbortSignal.timeout(3_000);
+
+    await resolveCoreCourseById('core-1', { signal });
+
+    expect(fetchCoreCourseSafe).toHaveBeenCalledWith('core-1', { signal });
+  });
+
+  it('degrades to null course + coreUnavailable:true when the signal aborts (hung Core)', async () => {
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'));
+
+    const result = await resolveCoreCourseById('core-1', { signal: AbortSignal.timeout(3_000) });
 
     expect(result).toEqual({ course: null, coreUnavailable: true });
   });
@@ -211,6 +229,62 @@ describe('resolveCoreCourseCatalog', () => {
     vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(undefined);
 
     const result = await resolveCoreCourseCatalog();
+
+    expect(result).toEqual({ courses: [], coreUnavailable: false });
+  });
+});
+
+// #1125: the id-scoped counterpart to resolveCoreCourseCatalog. Callers that
+// already hold the `coreOfferingId`s they want pay one `?ids=` request instead
+// of page-walking the whole catalog, so the same fail-soft contract has to hold
+// here — a Core outage must degrade, not throw into the route handler.
+describe('resolveCoreCoursesByIds', () => {
+  it('returns the resolved courses and coreUnavailable:false on success', async () => {
+    const courses = [{ id: 'c1' }, { id: 'c2' }];
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(courses);
+
+    const result = await resolveCoreCoursesByIds(['c1', 'c2']);
+
+    expect(result).toEqual({ courses, coreUnavailable: false });
+    expect(listEduAiCoursesServiceKey).toHaveBeenCalledWith({ ids: ['c1', 'c2'] });
+  });
+
+  it('dedupes and drops falsy ids before asking Core', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue([{ id: 'c1' }]);
+
+    await resolveCoreCoursesByIds(['c1', 'c1', null, undefined, '']);
+
+    expect(listEduAiCoursesServiceKey).toHaveBeenCalledWith({ ids: ['c1'] });
+  });
+
+  it('short-circuits an empty id set without calling Core', async () => {
+    const result = await resolveCoreCoursesByIds([]);
+
+    expect(result).toEqual({ courses: [], coreUnavailable: false });
+    expect(listEduAiCoursesServiceKey).not.toHaveBeenCalled();
+  });
+
+  it('treats a nullish id list as empty', async () => {
+    const result = await resolveCoreCoursesByIds(undefined);
+
+    expect(result).toEqual({ courses: [], coreUnavailable: false });
+    expect(listEduAiCoursesServiceKey).not.toHaveBeenCalled();
+  });
+
+  it('degrades to empty + coreUnavailable:true on a thrown error rather than propagating', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockRejectedValue(
+      Object.assign(new Error('Core unreachable'), { status: 503 }),
+    );
+
+    const result = await resolveCoreCoursesByIds(['c1']);
+
+    expect(result).toEqual({ courses: [], coreUnavailable: true });
+  });
+
+  it('treats a non-array resolved value as empty', async () => {
+    vi.mocked(listEduAiCoursesServiceKey).mockResolvedValue(null);
+
+    const result = await resolveCoreCoursesByIds(['c1']);
 
     expect(result).toEqual({ courses: [], coreUnavailable: false });
   });

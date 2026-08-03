@@ -6,6 +6,7 @@ import { AiModelsAdminView } from "~/components/admin/ai-models-admin-view";
 import { CoreAppShell } from "~/components/layout/core-app-shell";
 import { useAiModels } from "~/hooks/api/use-ai-models";
 import { useAiProviders } from "~/hooks/api/use-ai-providers";
+import { useRoutingModelSettings } from "~/hooks/api/use-routing-model-settings";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -36,6 +37,9 @@ export default function AIModelsPage() {
   const { user } = useLoaderData<typeof loader>();
   const {
     providers,
+    total: providersTotal,
+    pagination: providersPagination,
+    setPagination: setProvidersPagination,
     isLoading: providersLoading,
     error: providersError,
     refresh: refreshProviders,
@@ -43,9 +47,18 @@ export default function AIModelsPage() {
     updateProvider,
     deleteProvider,
     toggleProviderActive,
-  } = useAiProviders();
+    // Providers also populate the model filter and form pickers, so load the
+    // largest page the API allows rather than the default 25.
+  } = useAiProviders({ pageSize: 200 });
   const {
     models,
+    total: modelsTotal,
+    pagination: modelsPagination,
+    setPagination: setModelsPagination,
+    search: modelSearch,
+    setSearch: setModelSearch,
+    providerId: modelProviderId,
+    setProviderId: setModelProviderId,
     isLoading: modelsLoading,
     error: modelsError,
     createModel,
@@ -53,9 +66,16 @@ export default function AIModelsPage() {
     deleteModel,
     toggleModelActive,
   } = useAiModels();
+  const {
+    settings: routingModelSettings,
+    definitions: routingModelDefinitions,
+    isLoading: routingModelsLoading,
+    error: routingModelsError,
+    setEnabled: setRoutingModelEnabled,
+  } = useRoutingModelSettings();
 
-  const isLoading = providersLoading || modelsLoading;
-  const error = providersError ?? modelsError;
+  const isLoading = providersLoading || modelsLoading || routingModelsLoading;
+  const error = providersError ?? modelsError ?? routingModelsError;
 
   const handleCreateModel = useCallback(
     async (data: Record<string, unknown>) => {
@@ -104,7 +124,17 @@ export default function AIModelsPage() {
     >
       <AiModelsAdminView
         providers={providers}
+        providersTotal={providersTotal}
+        providersPagination={providersPagination}
+        onProvidersPaginationChange={setProvidersPagination}
         models={models}
+        modelsTotal={modelsTotal}
+        modelsPagination={modelsPagination}
+        onModelsPaginationChange={setModelsPagination}
+        modelSearch={modelSearch}
+        onModelSearchChange={setModelSearch}
+        modelProviderId={modelProviderId}
+        onModelProviderIdChange={setModelProviderId}
         isLoading={isLoading}
         error={error}
         onCreateProvider={createProvider}
@@ -115,6 +145,9 @@ export default function AIModelsPage() {
         onUpdateModel={handleUpdateModel}
         onDeleteModel={handleDeleteModel}
         onToggleModelActive={toggleModelActive}
+        routingModelSettings={routingModelSettings}
+        routingModelDefinitions={routingModelDefinitions}
+        onToggleRoutingModel={setRoutingModelEnabled}
       />
     </CoreAppShell>
   );

@@ -25,6 +25,8 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 import { AI_TUTOR_API_URL, CORE_URL } from '../../playwright.config';
 import { createAdmin, createInstructor, registerUser } from '../helpers/auth';
 import { importAtCourseForInstructor } from '../helpers/at-courses';
+import { canSeeCoreCourse } from '../helpers/core-courses';
+import { atListData, atListResponse } from '../helpers/at-pagination';
 
 async function getMyId(request: APIRequestContext): Promise<string> {
   const res = await request.get(`${CORE_URL}/api/me`);
@@ -67,10 +69,8 @@ test.describe('Cross-service shared user identity (Core userId in AT enrollment)
       await instrCtx.patch(`${AT}/api/courses/${courseId}/publish`);
 
       // The student's Core session is sufficient to see the AT course
-      const listRes = await studentCtx.get(`${AT}/api/courses`);
-      expect(listRes.status()).toBe(200);
-      const courses = await listRes.json();
-      expect(courses.some((c: any) => c.id === courseId)).toBe(true);
+      const courses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(courses.some((c) => c.id === courseId)).toBe(true);
     } finally {
       await instrCtx.dispose();
       await studentCtx.dispose();
@@ -120,12 +120,7 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
       await adminCtx.patch(`${CORE_URL}/api/courses/${coreCourseId}/publish`);
 
       // Student sees the Core course
-      const coreList = await studentCtx.get(`${CORE_URL}/api/courses`);
-      const coreCourses = await coreList.json();
-      const coreCoursesArr: any[] = Array.isArray(coreCourses)
-        ? coreCourses
-        : (coreCourses.courses ?? []);
-      expect(coreCoursesArr.some((c) => c.id === coreCourseId)).toBe(true);
+      expect(await canSeeCoreCourse(studentCtx, coreCourseId)).toBe(true);
 
       // INSTRUCTOR imports a separate Core-linked AT course (not the Core-enrolled course)
       const { atCourseId } = await importAtCourseForInstructor(playwright, instrCtx, {
@@ -135,10 +130,8 @@ test.describe('Core and AI Tutor enrollment tracks are independent', () => {
       await instrCtx.patch(`${AT}/api/courses/${atCourseId}/publish`);
 
       // Student is NOT enrolled in the AT course — it should not appear in their AT list
-      const atList = await studentCtx.get(`${AT}/api/courses`);
-      expect(atList.status()).toBe(200);
-      const atCourses = await atList.json();
-      expect(atCourses.some((c: any) => c.id === atCourseId)).toBe(false);
+      const atCourses = await atListData<{ id: number }>(studentCtx, `${AT}/api/courses`);
+      expect(atCourses.some((c) => c.id === atCourseId)).toBe(false);
     } finally {
       await adminCtx.dispose();
       await instrCtx.dispose();
@@ -176,7 +169,7 @@ test.describe('Core role changes propagate to AI Tutor immediately', () => {
     const usersRes = await request.get(`${AT}/api/admin/users`);
     expect(usersRes.status()).toBe(200);
 
-    const coursesRes = await request.get(`${AT}/api/admin/courses`);
+    const coursesRes = await atListResponse(request, `${AT}/api/admin/courses`);
     expect(coursesRes.status()).toBe(200);
   });
 

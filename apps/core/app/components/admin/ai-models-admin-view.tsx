@@ -5,6 +5,10 @@ import { AIModelsTable } from "~/components/admin/ai-models-table";
 import { ModelFormDialog } from "~/components/admin/model-form-dialog";
 import { ProviderFormDialog } from "~/components/admin/provider-form-dialog";
 import { ProvidersTable } from "~/components/admin/providers-table";
+import { RoutingModelsTable } from "~/components/admin/routing-models-table";
+import { TablePagination } from "~/components/ui/table-pagination";
+import { fetchModelsByProvider } from "~/hooks/api/use-ai-models";
+import type { PaginationState } from "~/hooks/api/pagination";
 import { Button } from "@eduai/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@eduai/ui";
 import { Input } from "@eduai/ui";
@@ -19,6 +23,11 @@ import {
 import { PageTabs, PageTabsList, PageTabsTrigger, PageTabsContent } from "@eduai/ui";
 import type { AIModel, AIProvider } from "~/hooks/api/types";
 import type { OllamaModel, VllmModel } from "~/components/admin/model-form-dialog";
+import type { RoutingModelSettingDefinition } from "~/hooks/api/use-routing-model-settings";
+import type {
+  RoutingModelSettingKey,
+  RoutingModelSettings,
+} from "~/lib/routing-model-settings";
 import {
   buildOllamaModelCreatePayload,
   buildVllmModelCreatePayload,
@@ -37,7 +46,19 @@ function isVllmFetchNotFound(message: string, httpStatus?: number): boolean {
 
 export type AiModelsAdminViewProps = {
   providers: AIProvider[];
+  providersTotal: number;
+  providersPagination: PaginationState;
+  onProvidersPaginationChange: (next: PaginationState) => void;
   models: AIModel[];
+  modelsTotal: number;
+  modelsPagination: PaginationState;
+  onModelsPaginationChange: (next: PaginationState) => void;
+  /** Model search text; resolved server-side (#1041). */
+  modelSearch: string;
+  onModelSearchChange: (next: string) => void;
+  /** Provider filter, by id; `null` means all providers. */
+  modelProviderId: string | null;
+  onModelProviderIdChange: (next: string | null) => void;
   isLoading: boolean;
   error: string | null;
   onCreateProvider: (data: Record<string, unknown>) => Promise<void>;
@@ -48,11 +69,27 @@ export type AiModelsAdminViewProps = {
   onUpdateModel: (id: string, data: Record<string, unknown>) => Promise<void>;
   onDeleteModel: (id: string) => Promise<void>;
   onToggleModelActive: (model: AIModel) => Promise<void>;
+  routingModelSettings: RoutingModelSettings;
+  routingModelDefinitions: RoutingModelSettingDefinition[];
+  onToggleRoutingModel: (
+    key: RoutingModelSettingKey,
+    value: boolean,
+  ) => Promise<void>;
 };
 
 export function AiModelsAdminView({
   providers,
+  providersTotal,
+  providersPagination,
+  onProvidersPaginationChange,
   models,
+  modelsTotal,
+  modelsPagination,
+  onModelsPaginationChange,
+  modelSearch,
+  onModelSearchChange,
+  modelProviderId,
+  onModelProviderIdChange,
   isLoading,
   error,
   onCreateProvider,
@@ -63,9 +100,10 @@ export function AiModelsAdminView({
   onUpdateModel,
   onDeleteModel,
   onToggleModelActive,
+  routingModelSettings,
+  routingModelDefinitions,
+  onToggleRoutingModel,
 }: AiModelsAdminViewProps) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("all");
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
@@ -96,11 +134,13 @@ export function AiModelsAdminView({
       providerLabel: string,
       payloads: Record<string, unknown>[],
     ) => {
-      const result = await syncLocalModels(models, provider.id, payloads, onCreateModel);
+      // Dedupe against the provider's full model set, not the page on screen.
+      const existing = await fetchModelsByProvider(provider.id);
+      const result = await syncLocalModels(existing, provider.id, payloads, onCreateModel);
       setSyncMessage(formatLocalModelSyncMessage(providerLabel, result));
       return result;
     },
-    [models, onCreateModel],
+    [onCreateModel],
   );
 
   const handleFetchOllamaModels = useCallback(
@@ -218,19 +258,6 @@ export function AiModelsAdminView({
     }
   }, []);
 
-  const filteredModels = useMemo(
-    () =>
-      models.filter((model) => {
-        const matchesSearch =
-          model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          model.modelId.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesProvider =
-          selectedProvider === "all" || model.provider.name === selectedProvider;
-        return matchesSearch && matchesProvider;
-      }),
-    [models, searchTerm, selectedProvider],
-  );
-
   const handleProviderSubmit = async (data: Record<string, unknown>) => {
     try {
       if (editingProvider) {
@@ -288,6 +315,17 @@ export function AiModelsAdminView({
       await onToggleModelActive(model);
     } catch (err) {
       console.error("Failed to toggle model:", err);
+    }
+  };
+
+  const handleToggleRoutingModel = async (
+    key: RoutingModelSettingKey,
+    value: boolean,
+  ) => {
+    try {
+      await onToggleRoutingModel(key, value);
+    } catch (err) {
+      console.error("Failed to toggle routing model:", err);
     }
   };
 
@@ -366,6 +404,12 @@ export function AiModelsAdminView({
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <RoutingModelsTable
+                      definitions={routingModelDefinitions}
+                      settings={routingModelSettings}
+                      onToggle={handleToggleRoutingModel}
+                    />
+
                     {(syncMessage || ollamaError || vllmError) && (
                       <div className="space-y-2">
                         {syncMessage && (
@@ -387,15 +431,17 @@ export function AiModelsAdminView({
                         <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                           placeholder="Search models..."
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
+                          value={modelSearch}
+                          onChange={(e) => onModelSearchChange(e.target.value)}
                           className="pl-10"
                         />
                       </div>
 
                       <Select
-                        value={selectedProvider}
-                        onValueChange={setSelectedProvider}
+                        value={modelProviderId ?? "all"}
+                        onValueChange={(value) =>
+                          onModelProviderIdChange(value === "all" ? null : value)
+                        }
                       >
                         <SelectTrigger className="w-48">
                           <IconFilter className="h-4 w-4 mr-2" />
@@ -404,7 +450,7 @@ export function AiModelsAdminView({
                         <SelectContent>
                           <SelectItem value="all">All Providers</SelectItem>
                           {providers.map((provider) => (
-                            <SelectItem key={provider.id} value={provider.name}>
+                            <SelectItem key={provider.id} value={provider.id}>
                               {provider.displayName}
                             </SelectItem>
                           ))}
@@ -413,13 +459,18 @@ export function AiModelsAdminView({
                     </div>
 
                     <AIModelsTable
-                      models={filteredModels}
+                      models={models}
                       onEdit={(model) => {
                         setEditingModel(model);
                         handleModelDialogChange(true);
                       }}
                       onDelete={handleDeleteModel}
                       onToggleActive={handleToggleModel}
+                    />
+                    <TablePagination
+                      pagination={modelsPagination}
+                      onPaginationChange={onModelsPaginationChange}
+                      total={modelsTotal}
                     />
                   </CardContent>
                 </Card>
@@ -455,6 +506,11 @@ export function AiModelsAdminView({
                       }}
                       onDelete={handleDeleteProvider}
                       onToggleActive={handleToggleProvider}
+                    />
+                    <TablePagination
+                      pagination={providersPagination}
+                      onPaginationChange={onProvidersPaginationChange}
+                      total={providersTotal}
                     />
                   </CardContent>
                 </Card>
