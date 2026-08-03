@@ -13,7 +13,7 @@
  *     is no in-app import — they appear here automatically.
  * Related: routes/instructor.course.tsx (drilldown)
  */
-import { Link, redirect, useNavigation, useSearchParams } from 'react-router';
+import { Link, redirect, useNavigation } from 'react-router';
 import type { ReactNode } from 'react';
 import { IconSchool, IconSearch } from '@tabler/icons-react';
 import {
@@ -33,6 +33,7 @@ import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { PaginationControls } from '~/components/common/PaginationControls';
+import { readCourseListSelection, useCourseListFilters } from '~/lib/course-list-filters';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -41,25 +42,47 @@ import { PaginationControls } from '~/components/common/PaginationControls';
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   // #1043: /courses is paginated. The page comes from the URL (?page=), so the
-  // pager is bookmarkable and survives reload. CourseListView still searches/
-  // filters within the loaded page; `total` drives whether a pager shows.
+  // pager is bookmarkable and survives reload.
+  // #1208: search and the term/status filters come from the URL too and are
+  // applied SERVER-side. They used to be applied by CourseListView over
+  // `loaderData.courses` — a single page — so a course matching on page 2
+  // rendered "No courses match" while the pager below reported a non-zero
+  // total. `total` is now the filtered total, so the pager stays honest.
   const url = new URL(request.url);
-  const requestedPage = Number(url.searchParams.get('page'));
-  const safePage =
-    Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
-  const page = await api.listCourses({ page: safePage });
+  const selection = readCourseListSelection(url);
+
+  // Facets are fetched alongside (not per keystroke) so the filter dropdowns
+  // offer every value in the caller's whole accessible set — deriving options
+  // from the loaded page would hide a term that only appears further down.
+  const [page, facets] = await Promise.all([
+    api.listCourses({
+      page: selection.page,
+      search: selection.search || undefined,
+      term: selection.filters.term,
+      status: selection.filters.status,
+    }),
+    api.listCourseFacets(),
+  ]);
 
   // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
   // hand-edited `?page=` past the end would otherwise render an empty list
   // while the pager reports a non-zero total. Redirect (rather than silently
-  // clamp) so the URL and the rendered page can't disagree.
+  // clamp) so the URL and the rendered page can't disagree. Rebuilding from
+  // `url.searchParams` preserves the search/filter params alongside `page`.
   const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
-  if (safePage > lastPage) {
+  if (selection.page > lastPage) {
     url.searchParams.set('page', String(lastPage));
     throw redirect(`${url.pathname}${url.search}`);
   }
 
-  return { courses: page.data, total: page.total, page: page.page, pageSize: page.pageSize };
+  return {
+    courses: page.data,
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
+    selection,
+    facets,
+  };
 }
 
 /** Shared centered empty/no-results card used by the course list. */
@@ -83,22 +106,12 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
   // Read straight from loaderData (not local state) so navigating pages via the
   // URL re-renders with the new page rather than freezing the first one.
   const courses = loaderData.courses ?? [];
-  const { total, page, pageSize } = loaderData;
-  const [, setSearchParams] = useSearchParams();
+  const { total, page, pageSize, selection, facets } = loaderData;
   const navigation = useNavigation();
+  const { searchDraft, setSearchDraft, setFilter, clearAll, goToPage } =
+    useCourseListFilters(selection);
 
   useShellBreadcrumbs([{ label: 'Courses' }]);
-
-  const goToPage = (nextPage: number) => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set('page', String(nextPage));
-        return next;
-      },
-      { preventScrollReset: false },
-    );
-  };
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-6 pb-8 lg:px-6">
@@ -113,6 +126,15 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           startDate: course.startDate ?? null,
         })}
         getSearchText={(course) => `${course.title ?? ""} ${courseCode(course)}`}
+        // Controlled: the server already applied search + filters, so the view
+        // renders what it is given rather than narrowing the page again.
+        searchValue={searchDraft}
+        onSearchChange={setSearchDraft}
+        selectedFilters={selection.filters}
+        onFilterChange={setFilter}
+        onClearAll={clearAll}
+        totalCount={total}
+        availableValues={{ term: facets.terms, status: facets.statuses }}
         filterGroups={[
           buildStatusFilterGroup<Course>((c) => c.isPublished),
           buildTermFilterGroup<Course>((c) => ({
@@ -143,7 +165,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           <EmptyCourseCard
             icon={<IconSearch size={22} aria-hidden="true" />}
             title="No courses match"
-            body="Try a different search term."
+            body="Try a different search term or clear your filters."
           />
         }
         renderCard={(c) => (
