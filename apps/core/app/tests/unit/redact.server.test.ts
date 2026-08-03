@@ -132,9 +132,50 @@ describe("redactSecretValuesInString", () => {
       );
     });
 
-    it("does not mangle a nested literal under a credential key", () => {
-      // The bare-value branch must not half-consume the `[`, which would emit invalid JSON.
-      expect(redactSecretValuesInString('{"tokens":["a","b"]}')).toBe('{"tokens":["a","b"]}');
+    it("redacts a nested literal under a credential key whole", () => {
+      // The key already declared everything under it to be a credential, and the inner keys are
+      // usually innocuous, so a per-key pass would let them through (PR #1291 review).
+      expect(redactSecretValuesInString('{"tokens":["a","b"]}')).toBe(
+        `{"tokens":"${REDACTED_VALUE}"}`,
+      );
+      expect(redactSecretValuesInString('{"credentials":{"user":"bob","value":"hunter2"}}')).toBe(
+        `{"credentials":"${REDACTED_VALUE}"}`,
+      );
+      // Deeply nested, and the pair that follows the literal is still scanned.
+      expect(
+        redactSecretValuesInString('{"secret":{"a":{"b":["x"]}},"courseId":"CPSC110"}'),
+      ).toBe(`{"secret":"${REDACTED_VALUE}","courseId":"CPSC110"}`);
+      expect(redactSecretValuesInString('{"token":{"a":1},"apiKey":"zz"}')).toBe(
+        `{"token":"${REDACTED_VALUE}","apiKey":"${REDACTED_VALUE}"}`,
+      );
+    });
+
+    it("counts brackets outside strings only, and spans newlines", () => {
+      // A `}` inside a quoted value must not close the literal early.
+      expect(redactSecretValuesInString('{"token":{"note":"a}b","v":"z"},"ok":1}')).toBe(
+        `{"token":"${REDACTED_VALUE}","ok":1}`,
+      );
+      expect(redactSecretValuesInString('{\n  "secret": {\n    "a": "b"\n  },\n  "id": 7\n}')).toBe(
+        `{\n  "secret": "${REDACTED_VALUE}",\n  "id": 7\n}`,
+      );
+    });
+
+    it("redacts to the end when a credential literal is truncated", () => {
+      // A cron stdout tail cut mid-object: everything left is still inside the credential.
+      expect(redactSecretValuesInString('{"password":{"a":"b"')).toBe(
+        `{"password":"${REDACTED_VALUE}"`,
+      );
+    });
+
+    it("redacts a quoted value containing an escaped quote", () => {
+      // Stopping at the inner `\"` left the tail of the secret in the log and closed the string
+      // early, producing malformed JSON (PR #1291 review).
+      expect(redactSecretValuesInString('{"apiKey":"sk-a\\"b-tail"}')).toBe(
+        `{"apiKey":"${REDACTED_VALUE}"}`,
+      );
+      expect(redactSecretValuesInString('{"password":"a\\\\"}')).toBe(
+        `{"password":"${REDACTED_VALUE}"}`,
+      );
     });
 
     it("keeps the auth scheme that the header patterns preserve", () => {
@@ -146,6 +187,10 @@ describe("redactSecretValuesInString", () => {
     it("is idempotent — re-running never double-redacts", () => {
       const inputs = [
         '{"apiKey":"secret"}',
+        '{"credentials":{"user":"bob","value":"hunter2"}}',
+        '{"tokens":["a","b"]}',
+        '{"apiKey":"sk-a\\"b-tail"}',
+        '{"password":{"a":"b"',
         "API_KEY=secret",
         "DATABASE_URL=postgres://u:p@host/db",
         "Authorization: Bearer abc.def.ghi",
@@ -176,6 +221,16 @@ describe("redactSecretValuesInString", () => {
       expect(redactSecretValuesInString(blob)).toBe(blob);
       expect(Date.now() - start).toBeLessThan(500);
     }
+  });
+
+  // Repeated unterminated literals are the worst case for the balanced-structure scan: each one
+  // runs to the end of the input. Redacting the remainder and stopping at the first failed scan
+  // keeps that cost paid once.
+  it("stays linear on repeated unterminated credential literals", () => {
+    const blob = "secret={".repeat(20_000);
+    const start = Date.now();
+    expect(redactSecretValuesInString(blob)).toBe(`secret="${REDACTED_VALUE}"`);
+    expect(Date.now() - start).toBeLessThan(500);
   });
 });
 

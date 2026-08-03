@@ -125,17 +125,70 @@ const SENSITIVE_KEY_PREFIX_RE =
 /**
  * The value half, matched sticky at the position the key pattern stopped.
  *
- * The bare branch excludes brackets and braces so a nested literal (`"tokens":["a","b"]`) is
- * left alone rather than half-consumed and rewritten into malformed JSON. That also means an
- * already-redacted `token=[REDACTED]` matches nothing, which is what makes reapplication safe.
+ * The quoted branch consumes backslash escapes as a unit, so a secret containing an escaped
+ * quote (`{"apiKey":"sk-a\"b"}`) is matched whole. Stopping at the inner `\"` instead would
+ * both leave the tail of the secret in the log and close the string early, rewriting the row
+ * into malformed JSON (PR #1291 review). The two alternatives are mutually exclusive — one
+ * starts with a backslash, the other excludes it — so the star cannot backtrack ambiguously
+ * and the scan stays linear.
+ *
+ * The bare branch excludes brackets and braces so a nested literal is never half-consumed;
+ * `scanBalancedStructure` handles those instead. That also means an already-redacted
+ * `token=[REDACTED]` matches nothing here, which is what makes reapplication safe.
  */
-const SENSITIVE_VALUE_RE = /(["'])([^"'\r\n]*)\1|[^\s,;&?<>()[\]{}"']+/y;
+const SENSITIVE_VALUE_RE = /(["'])((?:\\.|(?!\1)[^\\\r\n])*)\1|[^\s,;&?<>()[\]{}"']+/y;
 
 /** Auth scheme labels the header patterns above deliberately keep visible. */
 const AUTH_SCHEME_ONLY_RE = /^(?:Bearer|Basic)$/i;
 
 /**
- * Replace the value of every credential-named `key=value` / `"key": "value"` pair.
+ * Scan the balanced `{…}` / `[…]` literal starting at `start`, returning the index just past
+ * its closing bracket, or -1 when it is unterminated (a truncated cron stdout tail) or does
+ * not start a literal at all.
+ *
+ * A credential-named key whose value is a structure (`{"credentials":{"user":"bob","value":
+ * "hunter2"}}`) used to survive redaction entirely: the key/value pass skipped the literal,
+ * and the nested keys it then scanned on their own — `user`, `value` — are not credential
+ * names, so nothing matched (PR #1291 review). Redacting the whole literal is the correct
+ * reading: the key already declared everything under it to be a credential.
+ *
+ * String contents are skipped so a bracket inside a quoted value cannot unbalance the depth
+ * count, and escapes are consumed as a unit so `"\\"` does not read as an unterminated string.
+ */
+function scanBalancedStructure(text: string, start: number): number {
+  const opener = text[start];
+  if (opener !== "{" && opener !== "[") {
+    return -1;
+  }
+
+  let depth = 0;
+  let quote: string | null = null;
+
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (quote !== null) {
+      if (char === "\\") i += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "{" || char === "[") {
+      depth += 1;
+    } else if (char === "}" || char === "]") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Replace the value of every credential-named `key=value` / `"key": "value"` pair, including
+ * values that are whole `{…}` / `[…]` literals.
  *
  * Only the value slice is rewritten, so the key, its quoting, and the separator survive
  * byte-for-byte and stay readable in the log row.
@@ -155,6 +208,31 @@ function redactSensitiveKeyValuePairs(text: string): string {
     }
 
     const valueStart = SENSITIVE_KEY_PREFIX_RE.lastIndex;
+
+    // An earlier pattern already scrubbed this pair (`?token=[REDACTED]`). Bail before the
+    // structure branch, which would otherwise read the marker's own brackets as a literal.
+    if (text.startsWith(REDACTED_VALUE, valueStart)) {
+      continue;
+    }
+
+    // A nested literal is redacted whole: the credential-named key covers everything inside it,
+    // and the inner keys are usually innocuous (`{"credentials":{"user":…,"value":…}}`).
+    if (text[valueStart] === "{" || text[valueStart] === "[") {
+      // Unterminated means the log line was truncated mid-structure, so everything that remains
+      // is still inside the credential — redact the rest and stop. Ending the scan here is also
+      // what keeps the pass linear: a successful scan skips the characters it consumed, and a
+      // failed one is the last work done, so `secret={secret={secret={…` cannot be quadratic.
+      const structureEnd = scanBalancedStructure(text, valueStart);
+      const redactedTo = structureEnd === -1 ? text.length : structureEnd;
+
+      result += text.slice(copiedUpTo, valueStart) + `"${REDACTED_VALUE}"`;
+      copiedUpTo = redactedTo;
+
+      if (structureEnd === -1) break;
+      SENSITIVE_KEY_PREFIX_RE.lastIndex = structureEnd;
+      continue;
+    }
+
     SENSITIVE_VALUE_RE.lastIndex = valueStart;
     const valueMatch = SENSITIVE_VALUE_RE.exec(text);
     if (!valueMatch) {
