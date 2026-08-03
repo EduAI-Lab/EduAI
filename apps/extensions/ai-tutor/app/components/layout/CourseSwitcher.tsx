@@ -55,19 +55,23 @@ export function CourseSwitcher({
 
   // Seed with the current course so the trigger label is right before the list
   // resolves. Once a search is active that seed would be a phantom result, so it
-  // applies only to the unsearched list.
+  // applies only to the unsearched list — and `currentLabel` below carries the
+  // trigger label independently, so dropping the seed can't blank the breadcrumb
+  // the moment the results stop including the course the user is on.
   const searching = query.trim().length > 0;
+  const current = splitTitle(currentTitle);
   const options: CourseSwitcherOption[] =
     courses.length > 0
       ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? 'Untitled course') }))
       : searching
         ? []
-        : [{ id: courseId, ...splitTitle(currentTitle) }];
+        : [{ id: courseId, ...current }];
 
   return (
     <SharedCourseSwitcher
       courses={options}
       currentId={courseId}
+      currentLabel={current.label}
       onSelect={(id) => navigate(`${basePath}/courses/${id}`)}
       onOpenCurrent={() => navigate(`${basePath}/courses/${courseId}`)}
       onViewAll={() => navigate(basePath)}

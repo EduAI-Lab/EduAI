@@ -130,6 +130,14 @@ export interface CourseFacets {
   terms: string[];
   statuses: string[];
   progress: string[];
+  /**
+   * Core was unreachable, so every catalog-side filter fail-closes to zero rows.
+   * The `X-Core-Status` header says the same thing, but `http()` consumes it into
+   * a generic toast and callers never see it — leaving the list to report "No
+   * courses match", which reads as "your course is gone" rather than "search is
+   * degraded". Carried in the body so the routes can say which one it is.
+   */
+  coreUnavailable: boolean;
 }
 
 /**

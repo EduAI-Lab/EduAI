@@ -91,6 +91,12 @@ export interface CourseListViewProps<T> {
   loadingSlot?: React.ReactNode
   searchPlaceholder?: string
   searchAriaLabel?: string
+  /**
+   * Cap on the search box, for controlled callers whose server bounds the term
+   * (AI Tutor 400s past 200 chars). Omitted means unbounded, which is right for
+   * uncontrolled callers that filter in-page and never send the value anywhere.
+   */
+  searchMaxLength?: number
   /** Extra bespoke control(s) rendered at the end of the toolbar. */
   filters?: React.ReactNode
   /** Shown when the role has no courses at all. */
@@ -196,6 +202,7 @@ export function CourseListView<T>({
   loadingSlot,
   searchPlaceholder = "Search courses by title or code",
   searchAriaLabel = "Search courses",
+  searchMaxLength,
   filters,
   emptyState = null,
   noResultsState,
@@ -329,8 +336,15 @@ export function CourseListView<T>({
     }))
   }, [groupSections, visible, orderedTermGroups])
 
-  const activeFilterCount =
-    Object.values(selected).reduce((n, v) => n + (v?.length ?? 0), 0)
+  // Count only the dimensions this list actually renders a dropdown for.
+  // `selected` is read straight from the URL and always carries every filter
+  // key, so summing all of it made a stray `?status=draft` on a list with no
+  // Status dropdown report "1 filter" and offer a Clear — for a dimension the
+  // route never forwarded to the server and the user has no control to unset.
+  const activeFilterCount = activeGroups.reduce(
+    (n, { group }) => n + (selected[group.id]?.length ?? 0),
+    0,
+  )
   const hasActiveQuery = search.trim().length > 0 || activeFilterCount > 0
 
   const clearAll = () => {
@@ -378,6 +392,7 @@ export function CourseListView<T>({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
+              maxLength={searchMaxLength}
               aria-label={searchAriaLabel}
             />
           </div>

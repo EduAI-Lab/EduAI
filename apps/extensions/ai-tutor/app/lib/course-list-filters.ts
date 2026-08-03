@@ -22,6 +22,29 @@ import { useDebouncedValue } from '~/hooks/useDebouncedValue';
 export const COURSE_FILTER_KEYS = ['term', 'status', 'progress'] as const;
 export type CourseFilterKey = (typeof COURSE_FILTER_KEYS)[number];
 
+/**
+ * Must byte-match `MAX_SEARCH_LENGTH` in `server/src/utils/pagination.js`, which
+ * 400s (`SEARCH_TOO_LONG`) past it. Nothing between the search box and the fetch
+ * used to bound the value, so a pasted paragraph threw out of the loader and
+ * replaced the whole route with its error boundary — reproducibly, since the
+ * over-long value stayed in the URL across reloads. Clamped on read (covers a
+ * bookmarked or hand-edited URL) and on write (covers typing and pasting).
+ */
+export const MAX_COURSE_SEARCH_LENGTH = 200;
+
+/**
+ * Values the server accepts per enum dimension, mirroring `COURSE_STATUS_VALUES`
+ * and `COURSE_PROGRESS_VALUES` in `server/src/utils/courseSearch.js`. Unknown
+ * values are dropped rather than forwarded: the server rejects them with
+ * `FILTER_INVALID`, which blanks the route exactly like an over-long search.
+ * `term` is free-form (`W1::2026` keys are data, not an enum), so it has no set —
+ * an unknown term simply matches nothing, which is the honest answer.
+ */
+const COURSE_FILTER_ALLOWED: Partial<Record<CourseFilterKey, readonly string[]>> = {
+  status: ['published', 'draft'],
+  progress: ['not-started', 'in-progress', 'completed'],
+};
+
 export interface CourseListSelection {
   page: number;
   search: string;
@@ -36,10 +59,16 @@ export function readCourseListSelection(url: URL): CourseListSelection {
 
   const filters = {} as Record<CourseFilterKey, string[]>;
   for (const key of COURSE_FILTER_KEYS) {
-    filters[key] = url.searchParams.getAll(key).filter(Boolean);
+    const allowed = COURSE_FILTER_ALLOWED[key];
+    filters[key] = url.searchParams
+      .getAll(key)
+      .filter(Boolean)
+      .filter((value) => !allowed || allowed.includes(value));
   }
 
-  return { page, search: url.searchParams.get('search')?.trim() ?? '', filters };
+  const search = (url.searchParams.get('search')?.trim() ?? '').slice(0, MAX_COURSE_SEARCH_LENGTH);
+
+  return { page, search, filters };
 }
 
 /** True when anything is narrowing the list — drives "no results" vs "empty" copy. */
@@ -80,7 +109,7 @@ export function useCourseListFilters(selection: CourseListSelection) {
   }, [selection.search]);
 
   useEffect(() => {
-    const next = debouncedSearch.trim();
+    const next = debouncedSearch.trim().slice(0, MAX_COURSE_SEARCH_LENGTH);
     if (next === committedSearch.current) return;
     committedSearch.current = next;
     setSearchParams(

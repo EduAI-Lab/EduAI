@@ -33,7 +33,12 @@ import type { Route } from './+types/instructor';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { PaginationControls } from '~/components/common/PaginationControls';
-import { readCourseListSelection, useCourseListFilters } from '~/lib/course-list-filters';
+import {
+  MAX_COURSE_SEARCH_LENGTH,
+  readCourseListSelection,
+  useCourseListFilters,
+} from '~/lib/course-list-filters';
+import { loadCourseFacets } from '~/lib/course-facets';
 
 /**
  * Loads the instructor's course list. The backend scopes /courses to the
@@ -51,9 +56,11 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const url = new URL(request.url);
   const selection = readCourseListSelection(url);
 
-  // Facets are fetched alongside (not per keystroke) so the filter dropdowns
-  // offer every value in the caller's whole accessible set — deriving options
-  // from the loaded page would hide a term that only appears further down.
+  // Facets span the caller's whole accessible set, so the dropdowns offer values
+  // that only appear further down the list. `loadCourseFacets` caches them (the
+  // response doesn't vary with search/filter/page, but the loader re-runs on
+  // every one of those) and never rejects, so a facets outage costs the
+  // dropdowns rather than the whole page.
   const [page, facets] = await Promise.all([
     api.listCourses({
       page: selection.page,
@@ -61,7 +68,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
       term: selection.filters.term,
       status: selection.filters.status,
     }),
-    api.listCourseFacets(),
+    loadCourseFacets(),
   ]);
 
   // #1162: guard the upper bound too, not just `page < 1`. A bookmarked or
@@ -130,6 +137,7 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
         // renders what it is given rather than narrowing the page again.
         searchValue={searchDraft}
         onSearchChange={setSearchDraft}
+        searchMaxLength={MAX_COURSE_SEARCH_LENGTH}
         selectedFilters={selection.filters}
         onFilterChange={setFilter}
         onClearAll={clearAll}
@@ -162,11 +170,23 @@ export default function InstructorHome({ loaderData }: Route.ComponentProps) {
           />
         }
         noResultsState={
-          <EmptyCourseCard
-            icon={<IconSearch size={22} aria-hidden="true" />}
-            title="No courses match"
-            body="Try a different search term or clear your filters."
-          />
+          // Core owns title/code/term/status, so with Core down every one of
+          // those filters fail-closes to zero rows. Saying "no courses match"
+          // there would read as "your course is gone" instead of "search is
+          // temporarily degraded".
+          facets.coreUnavailable ? (
+            <EmptyCourseCard
+              icon={<IconSearch size={22} aria-hidden="true" />}
+              title="Search is unavailable"
+              body="EduAI Core can't be reached right now, so courses can't be searched or filtered. Clear your filters to see your full list."
+            />
+          ) : (
+            <EmptyCourseCard
+              icon={<IconSearch size={22} aria-hidden="true" />}
+              title="No courses match"
+              body="Try a different search term or clear your filters."
+            />
+          )
         }
         renderCard={(c) => (
           <CourseCard

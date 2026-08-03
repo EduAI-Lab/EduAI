@@ -110,19 +110,30 @@ export function CommandPalette() {
     },
   ].filter((item) => matchesQuery(item, normalizedQuery));
 
-  const courseItems: CommandPaletteItem[] = courses.map((c) => ({
-    label: c.title ?? 'Untitled course',
-    value: `course ${c.title ?? c.id}`,
-    icon: <IconLayoutGrid className="size-4" />,
-    onSelect: () => navigate(`${coursePrefix}/courses/${c.id}`),
-  }));
+  // `courses` trails the input by the debounce plus a round-trip, and cmdk's own
+  // filtering is off, so rendering them raw shows rows that do not match what was
+  // typed — and cmdk auto-highlights the first one, so Enter during that window
+  // navigated to an arbitrary unrelated course. Narrowing locally as well means
+  // the visible rows always match the query; the server request is what widens
+  // the set beyond the loaded page once it lands.
+  const courseItems: CommandPaletteItem[] = courses
+    .map((c) => ({
+      label: c.title ?? 'Untitled course',
+      value: `course ${c.title ?? c.id}`,
+      icon: <IconLayoutGrid className="size-4" />,
+      onSelect: () => navigate(`${coursePrefix}/courses/${c.id}`),
+    }))
+    .filter((item) => matchesQuery(item, normalizedQuery));
 
-  // Disclose the bound rather than implying the list is complete. Selecting it
-  // is a no-op — it is a notice, not a destination.
+  // Disclose the bound rather than implying the list is complete. `disabled`
+  // keeps it out of keyboard navigation: every select runs through the shared
+  // palette's `run()`, which closes the dialog, so a no-op `onSelect` would
+  // still dismiss the palette and throw away the query.
   if (courseTotal > courses.length) {
     courseItems.push({
       label: `Showing ${courses.length} of ${courseTotal} courses — keep typing to narrow`,
       value: 'course truncation notice',
+      disabled: true,
       onSelect: () => {},
     });
   }

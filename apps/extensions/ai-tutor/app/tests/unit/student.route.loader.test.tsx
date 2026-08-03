@@ -20,6 +20,7 @@ vi.mock('~/lib/client-auth', () => ({
 }));
 
 import { clientLoader } from '~/routes/student';
+import { clearCourseFacetsCache } from '~/lib/course-facets';
 import type { Route } from '../../routes/+types/student';
 
 const runLoader = (url: string) =>
@@ -37,7 +38,11 @@ describe('student clientLoader (#1208)', () => {
       terms: ['W1::2026'],
       statuses: ['published'],
       progress: ['not-started', 'in-progress', 'completed'],
+      coreUnavailable: false,
     });
+    // Facets are cached for the SPA session so the loader doesn't re-walk Core's
+    // catalog on every keystroke; drop it so each test starts from a cold fetch.
+    clearCourseFacetsCache();
   });
 
   it('sends no filters for a bare URL', async () => {
