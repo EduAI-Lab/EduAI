@@ -21,6 +21,7 @@ vi.mock("~/lib/courses/enrollments.server", async (importOriginal) => {
   return {
     ...actual,
     getCourseEnrollments: vi.fn(),
+    getCourseEnrollmentsPage: vi.fn(),
     addEnrollment: vi.fn(),
   };
 });
@@ -48,7 +49,7 @@ import { auth } from "~/lib/auth/server";
 import { requireServiceKey } from "~/lib/auth/guards.server";
 import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import { getCourse } from "~/lib/courses/server";
-import { getCourseEnrollments, addEnrollment } from "~/lib/courses/enrollments.server";
+import { getCourseEnrollments, getCourseEnrollmentsPage, addEnrollment } from "~/lib/courses/enrollments.server";
 import { getPolicy, POLICY_FLAGS } from "~/lib/policy.server";
 import { withIdempotency } from "~/lib/idempotency.server";
 
@@ -129,6 +130,11 @@ beforeEach(() => {
   vi.mocked(auth.api.getSession).mockResolvedValue(null);
   vi.mocked(getCourse).mockResolvedValue(MOCK_COURSE as never);
   vi.mocked(getCourseEnrollments).mockResolvedValue(MOCK_ENROLLMENTS as never);
+  vi.mocked(getCourseEnrollmentsPage).mockResolvedValue({
+    page: MOCK_ENROLLMENTS,
+    nextCursor: null,
+    total: MOCK_ENROLLMENTS.length,
+  } as never);
   mockAccess({ level: "instructor", rank: 2 });
   vi.mocked(getPolicy).mockImplementation(async (key) => POLICY_FLAGS[key].default);
 });

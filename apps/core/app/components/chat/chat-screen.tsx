@@ -43,7 +43,10 @@ import {
 import { logChatApiResponse, logChatUseChatError } from "~/lib/chat-client-log";
 import { defaultChatModelId } from "~/lib/chat-auto-model";
 import type { ChatBaseData } from "~/lib/chat/chat-route.server";
-import { resolvedModelIdFromMessage } from "~/lib/chat/chat-message-metadata";
+import {
+  resolvedModelIdFromMessage,
+  wasAutoRoutedFromMessage,
+} from "~/lib/chat/chat-message-metadata";
 
 type LongOutputMessageMetadata = {
   hitLongOutputCap?: boolean;
@@ -140,7 +143,29 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [streamingRoutedRegistryId, setStreamingRoutedRegistryId] = useState<
     string | null
   >(null);
+  /**
+   * Whether each assistant message's request was sent with an auto mode
+   * selected, keyed by message id — captured at send time so switching the
+   * selector afterward doesn't retroactively change older messages' labels.
+   */
+  const [wasAutoRoutedByMessageId, setWasAutoRoutedByMessageId] = useState<
+    Record<string, boolean>
+  >(() => {
+    const hydrated: Record<string, boolean> = {};
+    for (const message of editableTranscript?.messages ?? []) {
+      const id =
+        typeof message.id === "string" && message.id.trim().length > 0
+          ? message.id
+          : null;
+      if (id && resolvedModelIdFromMessage(message)) {
+        hydrated[id] = wasAutoRoutedFromMessage(message);
+      }
+    }
+    return hydrated;
+  });
+  const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
+  const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
   const mountTimeRef = useRef(Date.now());
   const pendingNavigateChatId = useRef<string | null>(null);
@@ -317,6 +342,11 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           routedHeader && routedHeader.length > 0 ? routedHeader : null;
         pendingRoutedRegistryIdRef.current = routed;
         setStreamingRoutedRegistryId(routed);
+        // The selector is disabled while a request is in flight, so this
+        // still reflects what was selected when the request was sent.
+        const wasAutoRouted = selectedModel === "auto" || selectedModel === "auto-llm";
+        pendingWasAutoRoutedRef.current = wasAutoRouted;
+        setStreamingWasAutoRouted(wasAutoRouted);
 
         await logChatApiResponse(response, "learning-chat");
         const chatIdHeader = response.headers.get("X-Chat-Id");
@@ -330,41 +360,60 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           setWebToolsEnabled(webToolsHeader === "1");
         }
       },
-      onFinish: (message) => {
-        // The server classifies the request and reports the result as a message
-        // annotation. Persisted messages expose the same flag through metadata.
-        const hitLongOutputCap =
-          message.role === "assistant" &&
-          message.annotations?.some(
-            (annotation) =>
-              annotation !== null &&
-              typeof annotation === "object" &&
-              !Array.isArray(annotation) &&
-              (annotation as Record<string, unknown>).hitLongOutputCap === true,
-          );
+     onFinish: (message) => {
+      // Server-owned source of truth for the Continue button.
+      const hitLongOutputCap =
+        message.role === "assistant" &&
+        message.annotations?.some(
+          (annotation) =>
+            annotation !== null &&
+            typeof annotation === "object" &&
+            !Array.isArray(annotation) &&
+            (annotation as Record<string, unknown>).hitLongOutputCap === true,
+        );
 
-        if (hitLongOutputCap) {
-          setCappedMessageIds((current) => {
-            const next = new Set(current);
-            next.add(message.id);
-            return next;
-          });
-        }
+      if (hitLongOutputCap) {
+        setCappedMessageIds((current) => {
+          const next = new Set(current);
+          next.add(message.id);
+          return next;
+        });
+      }
 
-        const id = pendingNavigateChatId.current;
+      // Preserve the routed-model metadata added on development.
+      const routed = pendingRoutedRegistryIdRef.current;
+      if (message.role === "assistant" && routed) {
+        setRoutedModelByMessageId((prev) => ({
+          ...prev,
+          [message.id]: routed,
+        }));
+        setWasAutoRoutedByMessageId((prev) => ({
+          ...prev,
+          [message.id]: pendingWasAutoRoutedRef.current,
+        }));
+      }
 
-        if (id && location.pathname === "/chat") {
-          pendingNavigateChatId.current = null;
-          navigate(`/chat/${id}`, {
-            replace: true,
-            state: { focusMode, selectedModel },
-          });
-        }
-      },
+      pendingRoutedRegistryIdRef.current = null;
+      pendingWasAutoRoutedRef.current = false;
+      setStreamingRoutedRegistryId(null);
+      setStreamingWasAutoRouted(false);
+
+      const id = pendingNavigateChatId.current;
+
+      if (id && location.pathname === "/chat") {
+        pendingNavigateChatId.current = null;
+        navigate(`/chat/${id}`, {
+          replace: true,
+          state: { focusMode, selectedModel },
+        });
+      }
+    },
       onError: (error) => {
         logChatUseChatError(error, "learning-chat");
         pendingRoutedRegistryIdRef.current = null;
+        pendingWasAutoRoutedRef.current = false;
         setStreamingRoutedRegistryId(null);
+        setStreamingWasAutoRouted(false);
       },
     });
 
@@ -536,6 +585,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     streamingRoutedRegistryId,
     cappedMessageIds,
     onContinue: handleContinue,
+    wasAutoRoutedByMessageId,
+    streamingWasAutoRouted,
   };
 
   return (

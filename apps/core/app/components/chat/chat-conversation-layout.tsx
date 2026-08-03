@@ -59,6 +59,8 @@ export function ChatConversationLayout({
   streamingRoutedRegistryId = null,
   cappedMessageIds,
   onContinue,
+  wasAutoRoutedByMessageId = {},
+  streamingWasAutoRouted = false,
 }: ChatConversationLayoutProps) {
   return (
     <div
@@ -130,8 +132,16 @@ export function ChatConversationLayout({
                         ? (routedModelByMessageId[message.id] ??
                           (isStreamingMessage ? streamingRoutedRegistryId : null))
                         : null;
+                    // Whether *that turn* was requested with an auto mode — not
+                    // the live selector, which may have changed since (#829).
+                    const wasAutoRouted =
+                      message.id in wasAutoRoutedByMessageId
+                        ? wasAutoRoutedByMessageId[message.id]
+                        : isStreamingMessage
+                          ? streamingWasAutoRouted
+                          : false;
                     const answeredByLabel =
-                      routedRegistryId
+                      !wasAutoRouted && routedRegistryId
                         ? displayNameForRegistryId(routedRegistryId, chatModels)
                         : undefined;
 

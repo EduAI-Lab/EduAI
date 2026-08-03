@@ -90,7 +90,28 @@ describe("reviveStoredMessage", () => {
       },
     });
 
-    expect(revived.metadata).toEqual({ resolvedModelId: "openai:gpt-4o" });
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "openai:gpt-4o",
+      wasAutoRouted: false,
+    });
+  });
+
+  it("preserves the auto-routed flag across reload (#829 regression)", () => {
+    const revived = reviveStoredMessage({
+      messageId: "m8",
+      role: "assistant",
+      content: {
+        id: "m8",
+        role: "assistant",
+        content: "answer",
+        metadata: { resolvedModelId: "vllm:qwen2.5-7b-instruct", wasAutoRouted: true },
+      },
+    });
+
+    expect(revived.metadata).toEqual({
+      resolvedModelId: "vllm:qwen2.5-7b-instruct",
+      wasAutoRouted: true,
+    });
   });
 
   it("preserves durable long-output-cap metadata on assistant messages", () => {
