@@ -27,8 +27,16 @@
  *
  * Each run of a page uses a FRESH browser context (cold cache, clean storage,
  * session restored from that role's storageState) so runs are comparable and
- * the login navigation is never inside the measurement. Pass --warm to keep the
- * HTTP cache instead (measures repeat visits).
+ * the login navigation is never inside the measurement. Pass --warm to measure
+ * repeat visits instead: all runs of a page then share ONE context (a per-run
+ * context has its own cache partition, so every sample would be cold), after an
+ * unmeasured priming load that fills the cache.
+ *
+ * A sample is only kept if the navigation returned a non-error HTTP status — an
+ * error page rendered at the requested path keeps that path, so the status is
+ * the only thing that separates it from the real route. A page that ends with
+ * fewer good samples than --runs asked for is reported as PARTIAL and listed in
+ * errors.json rather than passing as a clean measurement.
  *
  * Usage:
  *   cd scripts/page-profile && npm install && npx playwright install chromium
@@ -42,9 +50,10 @@
  * Flags:
  *   --app=<key[,key]>   core | aiTutor | questionMaker      (default: all)
  *   --page=<name[,..]>  page names from pages.mjs           (default: all)
- *   --role=<r[,r]>      anon | student | instructor | unitAdmin | admin
+ *   --role=<r[,r]>      anon | student | ta | instructor | unitAdmin | admin
  *   --runs=N            iterations per page, median reported (default 3)
- *   --warm              reuse HTTP cache between runs        (default: cold)
+ *   --warm              share one context per page so the HTTP cache carries
+ *                       over, after a priming load                (default: cold)
  *   --cpu=N             CPU throttle multiplier, e.g. 4      (default: off)
  *   --net=<profile>     fast3g | slow3g | off                (default: off)
  *   --chunks            print per-chunk JS table per page
@@ -61,8 +70,9 @@
  * in full, but only the CHUNK_LIMIT heaviest chunks each (see trimChunks; pass
  * --full-chunks for the rest) — plus <out>/errors.log
  * and <out>/errors.json listing every page that did NOT produce a trustworthy
- * number — load failure, login bounce, unresolved dynamic id, or a role whose
- * login never succeeded. A failed login degrades that role's pages to errors
+ * number — load failure (including a non-error status never arriving), login
+ * bounce, incomplete sample set, unresolved dynamic id, or a role whose login
+ * never succeeded. A failed login degrades that role's pages to errors
  * instead of aborting the run, so one broken session still yields a full report
  * of what to fix.
  *
@@ -243,54 +253,92 @@ async function applyThrottling(page) {
 // ---------------------------------------------------------------------------
 // One measured load
 // ---------------------------------------------------------------------------
-async function profileOnce(browser, storageState, entry) {
-  const { url } = entry;
+async function newProfilingContext(browser, storageState) {
   const context = await browser.newContext(storageState ? { storageState } : {});
   await context.addInitScript(installCollectors);
+  return context;
+}
+
+async function measureIn(context, entry) {
+  const { url } = entry;
   const page = await context.newPage();
   try {
     await applyThrottling(page);
-    await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+    const response = await page.goto(url, { waitUntil: 'load', timeout: 60_000 });
+    // An error page served at the requested path keeps that path, so landedOk()
+    // cannot tell a rendered 404/500 apart from the real route — the HTTP status
+    // is the only signal. Reject the sample before readMetrics() runs, otherwise
+    // the error boundary's (typically fast) timings get reported as the page's.
+    const status = response?.status();
+    if (status == null) throw new Error(`navigation to ${url} produced no response`);
+    if (status >= 400) throw new Error(`HTTP ${status} ${response.statusText()}`.trim());
     // networkidle lets lazy chunks / deferred fetches land before the snapshot.
     await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
     const metrics = await page.evaluate(readMetrics);
-    return { ...metrics, finalUrl: page.url(), authOk: landedOk(url, page.url(), entry) };
+    return { ...metrics, status, finalUrl: page.url(), authOk: landedOk(url, page.url(), entry) };
   } finally {
-    await context.close();
+    await page.close();
   }
 }
 
 async function profilePage(browser, storageState, entry) {
-  const runs = [];
-  for (let i = 0; i < RUNS; i++) {
-    if (i > 0 && PACE_MS) await sleep(PACE_MS);
+  // Cold runs get a brand-new context each time, so every sample starts from an
+  // empty cache. Warm runs share ONE context for the whole page — that is what
+  // carries the HTTP cache across runs; a per-run context has its own cache
+  // partition and every sample would be cold no matter what --warm says. The
+  // shared context also pays one unmeasured priming load first, otherwise run 1
+  // is cold and the median quietly mixes a cold sample in with the warm ones.
+  const shared = COLD ? null : await newProfilingContext(browser, storageState);
+  const once = async () => {
+    if (shared) return measureIn(shared, entry);
+    const ctx = await newProfilingContext(browser, storageState);
     try {
-      runs.push(await profileOnce(browser, storageState, entry));
-    } catch (err) {
-      runs.push({ error: String(err?.message ?? err) });
+      return await measureIn(ctx, entry);
+    } finally {
+      await ctx.close();
     }
-  }
-  let ok = runs.filter((r) => !r.error);
-  // Every run failing is usually transient (a DNS blip or a dev-server restart
-  // takes out the whole burst at once), so pay for one backed-off retry before
-  // writing the page off — otherwise a two-second hiccup costs a 50-page run.
-  // Core's auth limiter is the one predictable cause: it allows 100 requests per
-  // 60s per IP, and a page load costs several, so wait out the whole window
-  // rather than retrying into the same wall.
-  if (!ok.length) {
-    const rateLimited = runs.some((r) => RATE_LIMIT_HINT.test(r.error ?? ''));
-    if (rateLimited) process.stderr.write('rate-limited, waiting out the 60s auth window ... ');
-    await sleep(rateLimited ? 65_000 : 3000);
-    try {
-      const retry = await profileOnce(browser, storageState, entry);
-      runs.push(retry);
-      ok = [retry];
-    } catch (err) {
-      runs.push({ error: String(err?.message ?? err) });
-    }
-  }
-  if (!ok.length) return { ...entry, error: runs[0]?.error ?? 'all runs failed' };
+  };
 
+  try {
+    if (shared) await once().catch(() => {}); // prime the cache; result discarded
+
+    const runs = [];
+    for (let i = 0; i < RUNS; i++) {
+      if (i > 0 && PACE_MS) await sleep(PACE_MS);
+      try {
+        runs.push(await once());
+      } catch (err) {
+        runs.push({ error: String(err?.message ?? err) });
+      }
+    }
+    let ok = runs.filter((r) => !r.error);
+    // Every run failing is usually transient (a DNS blip or a dev-server restart
+    // takes out the whole burst at once), so pay for one backed-off retry before
+    // writing the page off — otherwise a two-second hiccup costs a 50-page run.
+    // Core's auth limiter is the one predictable cause: it allows 100 requests per
+    // 60s per IP, and a page load costs several, so wait out the whole window
+    // rather than retrying into the same wall.
+    if (!ok.length) {
+      const rateLimited = runs.some((r) => RATE_LIMIT_HINT.test(r.error ?? ''));
+      if (rateLimited) process.stderr.write('rate-limited, waiting out the 60s auth window ... ');
+      await sleep(rateLimited ? 65_000 : 3000);
+      try {
+        const retry = await once();
+        runs.push(retry);
+        ok = [retry];
+      } catch (err) {
+        runs.push({ error: String(err?.message ?? err) });
+      }
+    }
+    if (!ok.length) return { ...entry, error: runs[0]?.error ?? 'all runs failed' };
+
+    return summarise(entry, ok, runs);
+  } finally {
+    if (shared) await shared.close();
+  }
+}
+
+function summarise(entry, ok, runs) {
   const pick = (k) => median(ok.map((r) => r[k]));
   // Chunk detail comes from the run whose LCP is closest to the median, so the
   // table matches the number reported above it.
@@ -302,7 +350,12 @@ async function profilePage(browser, storageState, entry) {
     ...entry,
     runs: ok.length,
     failed: runs.length - ok.length,
+    // Fewer good samples than asked for: the median is over a smaller (and, when
+    // the losses were timeouts, a survivor-biased) set. Still reported, but never
+    // as a clean measurement — see report()/collectErrors().
+    partial: ok.length < RUNS,
     authOk: ok.every((r) => r.authOk),
+    status: rep.status,
     finalUrl: rep.finalUrl,
     ttfb: pick('ttfb'),
     fcp: pick('fcp'),
@@ -363,6 +416,7 @@ function report(results, skipped, loginFailures) {
         { label: 'blocking', get: (r) => `${ms(r.longTaskTime)} (${r.longTasks})`, right: true },
         { label: 'JS', get: (r) => `${r.jsCount} / ${kb(r.jsDecodedBytes)}KB`, right: true },
         { label: 'total KB', get: (r) => kb(r.totalTransferBytes), right: true },
+        { label: 'runs', get: (r) => (r.partial ? `${r.runs}/${RUNS}` : `${r.runs}`), right: true },
         { label: 'auth', get: (r) => (r.authOk ? 'ok' : 'REDIRECTED') },
       ])
     );
@@ -406,15 +460,22 @@ function report(results, skipped, loginFailures) {
     console.log(`\n--- redirected (${redirected.length}) — numbers describe the redirect target, not the page ---`);
     for (const r of redirected) console.log(`${r.app}/${r.name}  as ${r.role}  ${r.url} -> ${r.finalUrl}`);
   }
+  // Landed correctly but on fewer samples than requested. Reported separately
+  // from redirects so the two failure modes are not conflated.
+  const partial = good.filter((r) => r.authOk && r.partial);
+  if (partial.length) {
+    console.log(`\n--- partial samples (${partial.length}) — fewer than the ${RUNS} runs requested ---`);
+    for (const r of partial) console.log(`${r.app}/${r.name}  as ${r.role}  ${r.runs}/${RUNS} ok, ${r.failed} failed`);
+  }
   if (loginFailures.length) {
     console.log(`\n--- login failed (${loginFailures.length} role(s)) — their pages were not measured ---`);
     for (const l of loginFailures) console.log(`${l.role} (${l.email})  ${l.reason}`);
   }
   console.log(
-    `\ncoverage: ${good.length - redirected.length} measured, ${redirected.length} redirected, ` +
-      `${realSkips.length} skipped, ${expectedSkips.length} expected-skip, ${failed.length} failed`
+    `\ncoverage: ${good.length - redirected.length - partial.length} measured, ${redirected.length} redirected, ` +
+      `${partial.length} partial, ${realSkips.length} skipped, ${expectedSkips.length} expected-skip, ${failed.length} failed`
   );
-  return { failed: failed.length, redirected: redirected.length, skipped: realSkips.length };
+  return { failed: failed.length, redirected: redirected.length, partial: partial.length, skipped: realSkips.length };
 }
 
 /**
@@ -481,6 +542,21 @@ function collectErrors(results, skipped, loginFailures) {
       final_url: r.finalUrl,
     });
   }
+  // Landed on the right route but on an incomplete sample set. Only emitted for
+  // rows not already listed as redirected, so one page never produces two rows.
+  for (const r of results.filter((r) => !r.error && r.authOk && r.partial)) {
+    errors.push({
+      app: r.app,
+      page: r.name,
+      role: r.role,
+      path: r.path,
+      url: r.url,
+      kind: 'partial-samples',
+      reason: `only ${r.runs} of ${RUNS} runs succeeded (${r.failed} failed) — the median is over an incomplete sample set`,
+      runs: r.runs,
+      requested_runs: RUNS,
+    });
+  }
   for (const s of skipped) {
     errors.push({
       app: s.app,
@@ -516,7 +592,7 @@ function writeArtifacts(results, skipped, loginFailures) {
   const dir = path.resolve(OUT_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const env = fingerprint();
-  const measured = results.filter((r) => !r.error && r.authOk);
+  const measured = results.filter((r) => !r.error && r.authOk && !r.partial);
 
   const vitalsPath = path.join(dir, 'page-vitals.json');
   fs.writeFileSync(
@@ -702,7 +778,7 @@ try {
 
   const counts = report(results, skipped, loginFailures);
   writeArtifacts(results, skipped, loginFailures);
-  if (counts.failed || counts.redirected || counts.skipped || loginFailures.length) exitCode = 1;
+  if (counts.failed || counts.redirected || counts.partial || counts.skipped || loginFailures.length) exitCode = 1;
 } finally {
   await browser.close();
 }
