@@ -14,6 +14,7 @@ const { assertPublicHostnameMock } = vi.hoisted(() => ({
 
 vi.mock("~/lib/net/ssrf-guard.server", () => ({
   assertPublicHostname: (hostname: string) => assertPublicHostnameMock(hostname),
+  assertPublicIpLiteral: (_hostname: string) => {},
   UnsafeHostError: class UnsafeHostError extends Error {
     constructor(message: string) {
       super(message);
