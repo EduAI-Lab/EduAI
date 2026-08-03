@@ -14,7 +14,10 @@
  * that cannot see it bounces to login/dashboard and the timings would describe
  * the redirect target, not the page — so every route carries the LOWEST role
  * that can actually render it, and role-sensitive pages (dashboard, chat,
- * courses) are listed once per role because they render different trees.
+ * courses, course detail, settings, help) are listed once per role because they
+ * render different trees. "Lowest" is about what the route's own guard allows,
+ * not about what the nav happens to link to: /settings and /help are gated on a
+ * session alone, so their lowest role is student, not instructor.
  *
  * `params` names the dynamic segments a route needs. They are resolved at run
  * time from each app's own API (see resolvers.mjs) — a route whose params
@@ -38,6 +41,11 @@
 export const ACCOUNTS = {
   anon: null,
   student: { email: 'student1@eduai.local', password: 'EduAI2026!' },
+  // A TA is a STUDENT-platform user carrying an Enrollment(role=TA) — the
+  // distinction is per-course, not platform-wide, so this account is only a
+  // "ta" on the courses it is enrolled to TA. Course pages render a third tree
+  // for it (CourseDetailTaView), separate from both manager and student.
+  ta: { email: 'ta.cs@eduai.local', password: 'EduAI2026!' },
   instructor: { email: 'instructor.cs@eduai.local', password: 'EduAI2026!' },
   unitAdmin: { email: 'unitadmin.cosc@eduai.local', password: 'EduAI2026!' },
   admin: { email: 'admin@eduai.local', password: 'EduAI2026!' },
@@ -69,14 +77,31 @@ export const APPS = {
       { name: 'chat-student', path: '/chat', role: 'student' },
       { name: 'chat-thread', path: '/chat/:chatId', role: 'student', params: ['chatId'] },
       { name: 'courses-student', path: '/courses', role: 'student' },
+      // courses.$courseId.tsx has no platform-role gate — access is derived from
+      // the enrollment (resolveCourseAccess), and the three access levels render
+      // three different trees: manager view for admin/unit/instructor,
+      // CourseDetailTaView for ta, CourseDetailStudentView for student. The
+      // student payload differs too (no user lists, aiInstructions replaced by a
+      // hasAiConfig boolean), so the instructor row alone does not describe it.
+      // The id comes from this session's own /api/courses, so it is a course the
+      // role is actually enrolled in; an unpublished one still bounces to
+      // /courses and would be reported as REDIRECTED rather than measured.
+      { name: 'course-detail-student', path: '/courses/:courseId', role: 'student', params: ['courseId'] },
+      // settings.tsx and help.tsx guard on session only, not role, and settings
+      // has a STUDENT-specific branch loading the student number.
+      { name: 'settings-student', path: '/settings', role: 'student' },
+      { name: 'help-student', path: '/help', role: 'student' },
+
+      // --- ta ---
+      { name: 'course-detail-ta', path: '/courses/:courseId', role: 'ta', params: ['courseId'] },
 
       // --- instructor-facing ---
       { name: 'dashboard-instructor', path: '/dashboard', role: 'instructor' },
       { name: 'chat-instructor', path: '/chat', role: 'instructor' },
       { name: 'courses-instructor', path: '/courses', role: 'instructor' },
-      { name: 'course-detail', path: '/courses/:courseId', role: 'instructor', params: ['courseId'] },
-      { name: 'settings', path: '/settings', role: 'instructor' },
-      { name: 'help', path: '/help', role: 'instructor' },
+      { name: 'course-detail-instructor', path: '/courses/:courseId', role: 'instructor', params: ['courseId'] },
+      { name: 'settings-instructor', path: '/settings', role: 'instructor' },
+      { name: 'help-instructor', path: '/help', role: 'instructor' },
 
       // --- unit admin ---
       { name: 'unit-chats', path: '/units/:department/chats', role: 'unitAdmin', params: ['department'] },
