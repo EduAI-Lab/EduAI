@@ -1869,6 +1869,24 @@ ${buildEmptyCourseRagBlock()}`;
       });
 
       if (probe) {
+        // streamText() sets up the request lazily: onChunk/onStepFinish only
+        // fire once something actually reads the stream. Downstream code
+        // doesn't start reading until after this function returns, so without
+        // a reader here the probe always falls through to its timeout —
+        // it has nothing to be signaled by. Pump a tee'd branch of the
+        // stream (fullStream tees a fresh, independent branch per access, so
+        // this doesn't steal chunks from the real consumer) purely to drive
+        // onChunk while we wait; discard its output.
+        const pump = (async () => {
+          try {
+            for await (const _ of result.fullStream) {
+              // draining only; onChunk/onStepFinish above do the signaling.
+            }
+          } catch {
+            // Errors surface to the caller via onError -> signalError.
+          }
+        })();
+        void pump;
         await probe.wait();
       }
       return result;

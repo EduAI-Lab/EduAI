@@ -269,3 +269,49 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
     expect(successIdx).toBeGreaterThan(attemptIdx);
   }, 15_000);
 });
+
+// Regression test for the fleet stream startup probe deadlock: onChunk/onStepFinish
+// only fire once something reads the stream (as the real AI SDK behaves — see
+// streamText's lazy fullStream getter), so runStreamText must start reading before
+// or concurrently with awaiting the probe, not after. Previously nothing read the
+// stream until after `await probe.wait()` returned, so the probe always fell through
+// to its full timeout even on a healthy, fast-responding host.
+describe("Fleet stream startup probe does not deadlock on a lazy stream", () => {
+  it("resolves via onChunk instead of waiting out the full probe timeout", async () => {
+    process.env.FLEET_STREAM_PROBE_MS = "5000";
+
+    async function* fakeFullStream(onChunk?: (chunk: unknown) => void) {
+      // Mirrors the real SDK: chunks are only produced once something iterates
+      // the stream, and onChunk fires as a side effect of that iteration.
+      onChunk?.({ chunk: { type: "text-delta" } });
+      yield { type: "text-delta", text: "Hi" };
+    }
+
+    vi.mocked(streamText).mockImplementation((args) => {
+      return {
+        get fullStream() {
+          return fakeFullStream(args.onChunk as never);
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        text: Promise.resolve("Hi"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi" }],
+        }),
+      } as never;
+    });
+
+    const t0 = Date.now();
+    const res = await action(makeRequest(baseBody()));
+    const elapsedMs = Date.now() - t0;
+
+    expect(res.status).toBe(200);
+    // A regression to the deadlock would take ~5000ms (the probe's soft-timeout);
+    // the fix resolves as soon as onChunk fires during stream iteration.
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+});
