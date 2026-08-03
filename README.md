@@ -204,6 +204,22 @@ npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
 
+**Fleet routing smoke tests (Core)**
+
+From `apps/core`, use the fleet smoke commands to verify the configured vLLM
+hosts and extension-style routing:
+
+```bash
+npm run fleet:smoke              # health-check interactive and heavy hosts
+npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
+```
+
+These commands require `VLLM_FLEET_CHAT_URLS` and `EDUAI_API_KEY`.
+`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat
+pool when it is not configured. See
+[`docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md)
+for routing details.
+
 To run tasks for a single app, use Turborepo's filter flag directly:
 
 ```bash
