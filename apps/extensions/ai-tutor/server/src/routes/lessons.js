@@ -9,6 +9,7 @@ import {
   searchWhere,
   PaginationError,
 } from '../utils/pagination.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import { calculateLessonProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -207,6 +208,182 @@ router.get('/lessons/:lessonId', async (req, res) => {
     res.status(500).json({ error: String(e) });
   }
 });
+
+/**
+ * GET /lessons/:lessonId/context — structural position of a lesson in its tree.
+ *
+ * Returns `{ moduleOrdinal, lessonOrdinal, moduleTotal, lessonTotal,
+ * prevLessonId, nextLessonId }`, ordinals 1-based.
+ *
+ * Why (#1207): the student lesson player derived its "3.2" breadcrumb by
+ * fetching the full sibling module and lesson lists and calling `findIndex` on
+ * each. That is exactly the read that breaks once a tree exceeds one page — the
+ * ordinal silently comes out wrong (or -1) for anything past the page bound.
+ * Counting the rows that sort before this one answers the same question in two
+ * cheap counts, needs no client-side list at all, and drops two round trips
+ * from the player's loader.
+ *
+ * Visibility mirrors the list endpoints: a student counts only published
+ * siblings, so the ordinals they see match the tree they can actually navigate.
+ */
+router.get('/lessons/:lessonId/context', async (req, res) => {
+  const authUser = req.user;
+  if (!authUser) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const lessonId = Number(req.params.lessonId);
+  if (!Number.isFinite(lessonId)) {
+    return res.status(400).json({ error: 'Invalid lesson id' });
+  }
+
+  try {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id: lessonId },
+      include: {
+        module: {
+          include: {
+            courseOffering: {
+              include: {
+                instructors: { select: { userId: true } },
+                enrollments: { select: { userId: true, role: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+    const { module } = lesson;
+    const { courseOffering } = module;
+    const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
+    const enrollment = courseOffering.enrollments.find((e) => e.userId === authUser.id);
+    const isTa = enrollment?.role === 'TA';
+    const isStudent = enrollment?.role === 'STUDENT';
+    const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
+    const isAdmin = authUser.role === 'ADMIN';
+    const hasElevatedAccess = isAdmin || isInstructor || isTa || unitAdmin;
+
+    if (!hasElevatedAccess && !isStudent) {
+      return res.status(403).json({ error: 'Not authorized for this lesson' });
+    }
+    if (isStudent && !hasElevatedAccess && !lesson.isPublished) {
+      return res.status(403).json({ error: 'Lesson is not published' });
+    }
+
+    const publishedOnly = isStudent && !hasElevatedAccess;
+    const moduleScope = {
+      courseOfferingId: module.courseOfferingId,
+      ...(publishedOnly ? { isPublished: true } : {}),
+    };
+    const lessonScope = {
+      moduleId: lesson.moduleId,
+      ...(publishedOnly ? { isPublished: true } : {}),
+    };
+
+    // "Sorts before me" under the canonical `position asc, id asc` ordering:
+    // a strictly-lower position, or an equal position and a lower id. The id
+    // tiebreak matters because `position` carries no unique constraint.
+    const sortsBefore = (row) => ({
+      OR: [
+        { position: { lt: row.position } },
+        { position: row.position, id: { lt: row.id } },
+      ],
+    });
+    const sortsAfter = (row) => ({
+      OR: [
+        { position: { gt: row.position } },
+        { position: row.position, id: { gt: row.id } },
+      ],
+    });
+
+    const [modulesBefore, moduleTotal, lessonsBefore, lessonTotal, prev, next] =
+      await Promise.all([
+        prisma.module.count({ where: { AND: [moduleScope, sortsBefore(module)] } }),
+        prisma.module.count({ where: moduleScope }),
+        prisma.lesson.count({ where: { AND: [lessonScope, sortsBefore(lesson)] } }),
+        prisma.lesson.count({ where: lessonScope }),
+        prisma.lesson.findFirst({
+          where: { AND: [lessonScope, sortsBefore(lesson)] },
+          orderBy: [{ position: 'desc' }, { id: 'desc' }],
+          select: { id: true },
+        }),
+        prisma.lesson.findFirst({
+          where: { AND: [lessonScope, sortsAfter(lesson)] },
+          orderBy: [{ position: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        }),
+      ]);
+
+    res.json({
+      moduleOrdinal: modulesBefore + 1,
+      lessonOrdinal: lessonsBefore + 1,
+      moduleTotal,
+      lessonTotal,
+      prevLessonId: prev?.id ?? null,
+      nextLessonId: next?.id ?? null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * PATCH /lessons/:lessonId/position — move one lesson to an absolute ordinal
+ * within its module. See the module equivalent for the #1207 rationale;
+ * `position` is a 0-based ordinal across the whole module, not a page index.
+ */
+router.patch(
+  '/lessons/:lessonId/position',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isFinite(lessonId)) {
+      return res.status(400).json({ error: 'Invalid lesson id' });
+    }
+
+    try {
+      const targetPosition = parsePositionBody(req.body?.position);
+
+      const lesson = await prisma.lesson.findUnique({
+        where: { id: lessonId },
+        include: {
+          module: {
+            include: {
+              courseOffering: { include: { instructors: { select: { userId: true } } } },
+            },
+          },
+        },
+      });
+      if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+      const isInstructor = lesson.module.courseOffering.instructors.some(
+        (i) => i.userId === authUser.id,
+      );
+      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this module' });
+      }
+
+      const { position, total } = await moveToPosition({
+        model: 'lesson',
+        id: lessonId,
+        scopeWhere: { moduleId: lesson.moduleId },
+        targetPosition,
+      });
+
+      const updated = await prisma.lesson.findUnique({ where: { id: lessonId } });
+      res.json({ lesson: mapLesson(updated), position, total });
+    } catch (e) {
+      if (e instanceof ReorderError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
 
 // Publish a lesson (requires parent module AND course to be published)
 router.patch('/lessons/:lessonId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']), async (req, res) => {
@@ -447,7 +624,9 @@ router.put(
       if (!module) return res.status(404).json({ error: 'Module not found' });
 
       const isInstructor = module.courseOffering.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = isUnitAdminForCourse(authUser, module.courseOffering);
+      // `isUnitAdminForCourse` is async — without the await this resolved to a
+      // (always truthy) Promise, so the guard below never denied anyone.
+      const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
       if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Not authorized for this module' });
       }

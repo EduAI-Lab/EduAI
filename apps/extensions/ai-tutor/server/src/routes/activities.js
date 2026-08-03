@@ -38,6 +38,7 @@ import {
 import { evaluateQuestion } from '../services/activityEvaluation.js';
 import { getActivityCompletionStatuses } from '../services/progressCalculation.js';
 import { cloneActivityIntoLesson } from '../services/activityCloning.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import {
   hasActivityFeedback,
   recordActivityFeedback,
@@ -1965,6 +1966,72 @@ router.get('/activities/:activityId/chat-sessions/:chatId/messages', async (req,
   }
 });
 
+/**
+ * PATCH /activities/:activityId/position — move one activity to an absolute
+ * ordinal within its lesson. See `PATCH /modules/:moduleId/position` for the
+ * #1207 rationale; `position` is a 0-based ordinal across the whole lesson.
+ */
+router.patch(
+  '/activities/:activityId/position',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const activityId = Number(req.params.activityId);
+    if (!Number.isFinite(activityId)) {
+      return res.status(400).json({ error: 'Invalid activity id' });
+    }
+
+    try {
+      const targetPosition = parsePositionBody(req.body?.position);
+
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          lesson: {
+            include: {
+              module: {
+                include: {
+                  courseOffering: { include: { instructors: { select: { userId: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!activity) return res.status(404).json({ error: 'Activity not found' });
+
+      const courseOffering = activity.lesson.module.courseOffering;
+      const isInstructor = courseOffering.instructors.some((i) => i.userId === authUser.id);
+      const unitAdmin = await isUnitAdminForCourse(authUser, courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this lesson' });
+      }
+
+      const { position, total } = await moveToPosition({
+        model: 'activity',
+        id: activityId,
+        scopeWhere: { lessonId: activity.lessonId },
+        targetPosition,
+      });
+
+      const updated = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          promptTemplate: { select: { id: true, name: true } },
+          mainTopic: true,
+          secondaryTopics: { include: { topic: true } },
+        },
+      });
+      res.json({ activity: mapActivity(updated), position, total });
+    } catch (e) {
+      if (e instanceof ReorderError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
 // Reorder every activity within a lesson in one atomic write. Positions are
 // reassigned 0..n-1 from the client-supplied ordered id list (issue #1047).
 router.put(
@@ -2005,7 +2072,9 @@ router.put(
       const isInstructor = lesson.module.courseOffering.instructors.some(
         (i) => i.userId === authUser.id,
       );
-      const unitAdmin = isUnitAdminForCourse(authUser, lesson.module.courseOffering);
+      // `isUnitAdminForCourse` is async — without the await this resolved to a
+      // (always truthy) Promise, so the guard below never denied anyone.
+      const unitAdmin = await isUnitAdminForCourse(authUser, lesson.module.courseOffering);
       if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Not authorized for this lesson' });
       }

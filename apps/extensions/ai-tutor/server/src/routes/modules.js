@@ -9,6 +9,7 @@ import {
   searchWhere,
   PaginationError,
 } from '../utils/pagination.js';
+import { moveToPosition, parsePositionBody, ReorderError } from '../services/reorder.js';
 import { calculateModuleProgress } from '../services/progressCalculation.js';
 import { isCoursePublishedLive } from '../services/courseResolver.js';
 
@@ -403,6 +404,64 @@ router.patch('/modules/:moduleId', requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADM
   }
 });
 
+/**
+ * PATCH /modules/:moduleId/position — move one module to an absolute ordinal.
+ *
+ * Auth: same as the bulk reorder below (course instructor / unit-admin / admin).
+ *
+ * Why alongside the bulk endpoint (#1207): the module grid is now paged, so a
+ * drag on page 3 no longer has the full ordered id set to send. `position` is a
+ * 0-based ordinal across the WHOLE course, which the client derives as
+ * `(page - 1) * pageSize + dropIndex`, and which the "Move to position…" menu
+ * item sends directly for a cross-page move.
+ */
+router.patch(
+  '/modules/:moduleId/position',
+  requireRole(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']),
+  async (req, res) => {
+    const authUser = req.user;
+    const moduleId = Number(req.params.moduleId);
+    if (!Number.isFinite(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module id' });
+    }
+
+    try {
+      const targetPosition = parsePositionBody(req.body?.position);
+
+      const module = await prisma.module.findUnique({
+        where: { id: moduleId },
+        include: {
+          courseOffering: { include: { instructors: { select: { userId: true } } } },
+        },
+      });
+      if (!module) return res.status(404).json({ error: 'Module not found' });
+
+      const isInstructor = module.courseOffering.instructors.some(
+        (i) => i.userId === authUser.id,
+      );
+      const unitAdmin = await isUnitAdminForCourse(authUser, module.courseOffering);
+      if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Not authorized for this course' });
+      }
+
+      const { position, total } = await moveToPosition({
+        model: 'module',
+        id: moduleId,
+        scopeWhere: { courseOfferingId: module.courseOfferingId },
+        targetPosition,
+      });
+
+      const updated = await prisma.module.findUnique({ where: { id: moduleId } });
+      res.json({ module: mapModule(updated), position, total });
+    } catch (e) {
+      if (e instanceof ReorderError) {
+        return res.status(e.status).json({ error: e.message, code: e.code });
+      }
+      res.status(500).json({ error: String(e) });
+    }
+  },
+);
+
 // Reorder every module in a course in one atomic write. The client sends the
 // full ordered list of module ids; positions are reassigned 0..n-1 by index.
 // Bulk-and-atomic (rather than N single-field PATCHes) avoids transient
@@ -437,7 +496,9 @@ router.put(
       if (!course) return res.status(404).json({ error: 'Course not found' });
 
       const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-      const unitAdmin = isUnitAdminForCourse(authUser, course);
+      // `isUnitAdminForCourse` is async — without the await this resolved to a
+      // (always truthy) Promise, so the guard below never denied anyone.
+      const unitAdmin = await isUnitAdminForCourse(authUser, course);
       if (!isInstructor && !unitAdmin && authUser.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Not authorized for this course' });
       }
