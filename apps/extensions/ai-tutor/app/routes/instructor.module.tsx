@@ -52,7 +52,7 @@ import { LessonCard } from '../components/lessons/LessonCard';
 import { ModuleHero } from '../components/lessons/ModuleHero';
 import { PublishMenu } from '../components/PublishMenu';
 import { accentForCourse } from '../lib/course-display';
-import api from '../lib/api';
+import api, { FULL_TREE_READ_PAGE_SIZE } from '../lib/api';
 import type { Course, Lesson, Module, ModuleDetail } from '../lib/types';
 import type { Route } from './+types/instructor.module';
 import { PermissionGate } from '@eduai/ui';
@@ -64,7 +64,12 @@ import { splitTitle } from '~/lib/course-title';
 import { PaginationControls } from '~/components/common/PaginationControls';
 import { ListSearchInput } from '~/components/common/ListSearchInput';
 import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
-import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+import {
+  absoluteOrdinal,
+  movedRowIndex,
+  parseListUrlParams,
+  redirectPastEnd,
+} from '~/lib/list-params';
 
 /**
  * Loads the module + its lessons in parallel; then fetches the parent course
@@ -227,6 +232,41 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
     }
   };
 
+  /**
+   * Land the instructor on the page that actually contains a just-created
+   * lesson (#1207).
+   *
+   * A new lesson is appended, so it lands on the last page — while the pager is
+   * usually on an earlier one, and an active search almost certainly doesn't
+   * match the new title. Plain `refreshLessons()` would redraw the same rows and
+   * the create would read as a silent failure.
+   */
+  const revealNewestLesson = async () => {
+    // `+ 1`: state still holds the pre-create count. `lessonsTotal` counts
+    // matches while a search is active, so ask the server for the real count.
+    let unfilteredTotal = lessonsTotal + 1;
+    if (searching && numericModuleId) {
+      try {
+        unfilteredTotal = (await api.lessonsForModule(numericModuleId, { page: 1, search: '' }))
+          .total;
+      } catch (error) {
+        console.error('Failed to count lessons after create', error);
+      }
+    }
+
+    const lastPage = Math.max(1, Math.ceil(unfilteredTotal / pageSize));
+    if (searching || page !== lastPage) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('search');
+        next.set('page', String(lastPage));
+        return next;
+      });
+      return;
+    }
+    await refreshLessons();
+  };
+
   const ensureSourceCoursesLoaded = () => {
     if (availableCourses.length > 0) return;
     setLoadingSourceCourses(true);
@@ -264,7 +304,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
     setLoadingSourceModules(true);
     try {
-      const modulesData = await api.modulesForCourse(nextCourseId);
+      const modulesData = await api.modulesForCourse(nextCourseId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (sourceModulesRequestIdRef.current === courseRequestId) {
         setSourceModules(modulesData.data);
       }
@@ -294,7 +336,9 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
 
     setLoadingSourceLessons(true);
     try {
-      const lessonData = await api.lessonsForModule(nextModuleId);
+      const lessonData = await api.lessonsForModule(nextModuleId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (sourceLessonsRequestIdRef.current === lessonRequestId) {
         setSourceLessons(lessonData.data);
       }
@@ -322,7 +366,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
       setTitle('');
       setContent('');
       setCreateOpen(false);
-      await refreshLessons();
+      await revealNewestLesson();
     } catch (error) {
       console.error('Failed to create lesson', error);
     } finally {
@@ -411,7 +455,7 @@ export default function InstructorModuleLessons({ loaderData }: Route.ComponentP
   const reorderLessonsList = async (orderedIds: number[]) => {
     if (!numericModuleId || searching) return;
     const previousIds = lessons.map((l) => l.id);
-    const movedIndex = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+    const movedIndex = movedRowIndex(orderedIds, previousIds);
     if (movedIndex === -1) return;
 
     const byId = new Map(lessons.map((l) => [l.id, l]));

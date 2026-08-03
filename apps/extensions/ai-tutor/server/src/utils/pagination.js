@@ -129,8 +129,15 @@ export function parseSearchParam(req, opts = {}) {
  * The question text lives in the `config` JSON (there is no `question` column),
  * so it is matched with Prisma's `string_contains`, which has NO `mode` option
  * and is therefore case-SENSITIVE. Rather than pretend otherwise, the term is
- * tried in three casings — as typed, all-lower, and all-upper — which covers
- * the realistic ways a question is written without dropping to raw SQL.
+ * tried in the casings question text actually gets written in: as typed,
+ * all-lower, all-upper, sentence case, and title case. The last two are what
+ * make the common case work — "What is Photosynthesis?" contains neither
+ * `photosynthesis` nor `PHOTOSYNTHESIS`, so a lowercase search used to miss any
+ * capitalised word mid-sentence.
+ *
+ * This is still a heuristic. Matching JSON question text properly needs either a
+ * real `question` column or a lowercased generated column to index — worth doing
+ * if question search gets heavier use, but it is a migration, not a filter.
  *
  * @param {string | null} term
  * @param {string[]} [prefix] Relation path to the activity (e.g. `[]` when
@@ -140,7 +147,10 @@ export function parseSearchParam(req, opts = {}) {
 export function activitySearchWhere(term, prefix = []) {
   if (!term) return null;
   const nest = (leaf) => prefix.reduceRight((acc, segment) => ({ [segment]: acc }), leaf);
-  const casings = [...new Set([term, term.toLowerCase(), term.toUpperCase()])];
+  const lower = term.toLowerCase();
+  const sentence = lower.charAt(0).toUpperCase() + lower.slice(1);
+  const title = lower.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+  const casings = [...new Set([term, lower, term.toUpperCase(), sentence, title])];
   return {
     OR: [
       nest({ title: { contains: term, mode: 'insensitive' } }),

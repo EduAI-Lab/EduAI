@@ -115,7 +115,12 @@ import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 import { PaginationControls } from '~/components/common/PaginationControls';
 import { ListSearchInput } from '~/components/common/ListSearchInput';
 import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
-import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+import {
+  absoluteOrdinal,
+  movedRowIndex,
+  parseListUrlParams,
+  redirectPastEnd,
+} from '~/lib/list-params';
 import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/common/ListSearchInput';
 
 /**
@@ -243,6 +248,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const [importSearchDraft, setImportSearchDraft] = useState('');
   const [importSearch, setImportSearch] = useState('');
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
+  // The chosen row itself, not just its id (#1207). With server-side search the
+  // options list is only the current term's page, so a later search drops the
+  // selection out of it — `Combobox` then finds nothing for `value` and falls
+  // back to the placeholder while the Import button, which only checks the id,
+  // stays enabled. Holding the row lets it be pinned into the options.
+  const [selectedImportActivity, setSelectedImportActivity] = useState<ImportableActivity | null>(
+    null,
+  );
   const [importing, setImporting] = useState(false);
 
   const courseOfferingId = lesson?.courseOfferingId ?? null;
@@ -397,6 +410,41 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   };
 
   /**
+   * Land the instructor on the page that actually contains a just-added
+   * activity (#1207).
+   *
+   * Created and imported activities are appended, so they land on the last page
+   * — while the pager is usually on an earlier one, and an active search almost
+   * certainly doesn't match. Plain `refreshActivities()` would redraw the same
+   * rows and the add would read as a silent failure.
+   */
+  const revealNewestActivity = async () => {
+    // `+ 1`: state still holds the pre-add count. `activitiesTotal` counts
+    // matches while a search is active, so ask the server for the real count.
+    let unfilteredTotal = activitiesTotal + 1;
+    if (searching && numericLessonId) {
+      try {
+        unfilteredTotal = (await api.activitiesForLesson(numericLessonId, { page: 1, search: '' }))
+          .total;
+      } catch (error) {
+        console.error('Failed to count activities after add', error);
+      }
+    }
+
+    const lastPage = Math.max(1, Math.ceil(unfilteredTotal / pageSize));
+    if (searching || page !== lastPage) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('search');
+        next.set('page', String(lastPage));
+        return next;
+      });
+      return;
+    }
+    await refreshActivities();
+  };
+
+  /**
    * Persist a single activity move to an absolute ordinal within the lesson
    * (#1207). Shared by the drag handler and the "Move to position…" dialog; see
    * `moveModule` in instructor.course.tsx for the full rationale.
@@ -420,7 +468,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   const reorderActivitiesList = async (orderedIds: number[]) => {
     if (!numericLessonId || searching) return;
     const previousIds = activities.map((a) => a.id);
-    const movedIndex = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+    const movedIndex = movedRowIndex(orderedIds, previousIds);
     if (movedIndex === -1) return;
 
     const byId = new Map(activities.map((a) => [a.id, a]));
@@ -552,6 +600,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setShowImportDialog(false);
     setImportableActivities(null);
     setSelectedImportId(null);
+    setSelectedImportActivity(null);
     setImportableError(null);
     setImportSearch('');
     setImportSearchDraft('');
@@ -566,10 +615,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setImportableError(null);
     try {
       await api.importActivity(numericLessonId, sourceActivityId);
-      await refreshActivities();
+      await revealNewestActivity();
       setShowImportDialog(false);
       setImportableActivities(null);
       setSelectedImportId(null);
+      setSelectedImportActivity(null);
     } catch (error) {
       console.error('Failed to import activity', error);
       setImportableError('Could not import this activity. Please try again.');
@@ -876,7 +926,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     <AddActivityPanel
                       lessonId={numericLessonId}
                       onActivityCreated={() => {
-                        refreshActivities();
+                        void revealNewestActivity();
                         setShowAddPanel(false);
                       }}
                       onCancel={() => setShowAddPanel(false)}
@@ -1420,13 +1470,26 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 Activity to import
               </Label>
               <Combobox
-                options={importableActivities.map((item) => ({
+                // Pin the current selection even when the live term no longer
+                // returns it, so the trigger keeps showing what will be
+                // imported instead of reverting to the placeholder.
+                options={(selectedImportActivity &&
+                !importableActivities.some((item) => item.id === selectedImportActivity.id)
+                  ? [selectedImportActivity, ...importableActivities]
+                  : importableActivities
+                ).map((item) => ({
                   value: String(item.id),
                   label: item.title || item.type || 'Untitled activity',
                   description: [item.moduleTitle, item.lessonTitle].filter(Boolean).join(' · '),
                 }))}
                 value={selectedImportId}
-                onValueChange={setSelectedImportId}
+                onValueChange={(nextValue) => {
+                  setSelectedImportId(nextValue);
+                  setSelectedImportActivity(
+                    importableActivities.find((item) => String(item.id) === nextValue) ??
+                      selectedImportActivity,
+                  );
+                }}
                 placeholder="Select an activity…"
                 searchPlaceholder="Search all your activities…"
                 emptyText={

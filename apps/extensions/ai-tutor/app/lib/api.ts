@@ -95,6 +95,17 @@ export interface Paginated<T> {
 export const TREE_PAGE_SIZE = 25;
 
 /**
+ * Single-read bound for the copy/import pickers and the student module page.
+ *
+ * These are the readers #1207 did *not* convert to pagers: a checkbox list of
+ * "which modules to copy" and the student's lesson list have no page controls,
+ * so falling back to `TREE_PAGE_SIZE` would silently hide rows past the 25th
+ * with nothing on screen to say so. Holding them at the pre-#1207 bound keeps
+ * that from regressing until they grow real pagers.
+ */
+export const FULL_TREE_READ_PAGE_SIZE = 200;
+
+/**
  * Topics stay on a large single read (#1207). Unlike the tree lists they have
  * no pager: their consumers are `<Select>` dropdowns that must be able to
  * `.find()` an already-saved value, and a topic row is tiny. The hook layer

@@ -15,6 +15,14 @@
  */
 import { redirect } from 'react-router';
 
+/**
+ * Mirror of the server's `MAX_SEARCH_LENGTH` (`server/src/utils/pagination.js`).
+ *
+ * Kept in sync deliberately: a longer term is a 400 (`SEARCH_INVALID`), and a
+ * loader has nowhere to put that but the route error boundary.
+ */
+export const MAX_SEARCH_LENGTH = 100;
+
 export interface ListUrlParams {
   page: number;
   /**
@@ -28,14 +36,18 @@ export interface ListUrlParams {
  * Parse `?page=` / `?search=` from a loader request URL.
  *
  * A malformed or non-positive `page` falls back to 1 rather than erroring: a
- * junk page number in a shared link should still render something useful.
+ * junk page number in a shared link should still render something useful. For
+ * the same reason an over-long `search` is truncated to the server's limit
+ * instead of being passed through — the API answers a longer term with a 400
+ * (`SEARCH_INVALID`), which a loader can only surface as the route error
+ * boundary, replacing the whole page over a pasted paragraph.
  */
 export function parseListUrlParams(request: Request): ListUrlParams {
   const url = new URL(request.url);
   const requestedPage = Number(url.searchParams.get('page'));
   const page =
     Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
-  const search = (url.searchParams.get('search') ?? '').trim();
+  const search = (url.searchParams.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH);
   return { page, search };
 }
 
@@ -69,4 +81,30 @@ export function redirectPastEnd(
  */
 export function absoluteOrdinal(page: number, pageSize: number, indexOnPage: number): number {
   return (page - 1) * pageSize + indexOnPage;
+}
+
+/**
+ * Index, in the dropped order, of the row the user actually dragged.
+ *
+ * `SortableProvider` hands back `arrayMove(ids, oldIndex, newIndex)`, so every
+ * row between the source and the target shifts by one and the naive "first index
+ * whose id changed" names the dragged row only for an *upward* drag. For a
+ * downward drag the first divergence is the row that merely shifted up, and the
+ * dragged row sits at the *last* divergence instead. Telling the two apart: on a
+ * downward drag the id that used to be at the first divergence has landed on the
+ * last one.
+ *
+ * A swap of two neighbours is genuinely ambiguous — "A moved down one" and "B
+ * moved up one" describe the same two arrays and persist the same order — so it
+ * resolves to the first index.
+ *
+ * @returns the index in `orderedIds`, or `-1` when nothing moved.
+ */
+export function movedRowIndex(orderedIds: number[], previousIds: number[]): number {
+  const first = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+  if (first === -1) return -1;
+  let last = orderedIds.length - 1;
+  while (last > first && orderedIds[last] === previousIds[last]) last -= 1;
+  if (last - first <= 1) return first;
+  return orderedIds[last] === previousIds[first] ? last : first;
 }

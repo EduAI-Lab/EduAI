@@ -13,9 +13,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@eduai/ui';
 import { IconSearch, IconX } from '@tabler/icons-react';
+import { MAX_SEARCH_LENGTH } from '~/lib/list-params';
 
 /** Long enough not to fire per keystroke, short enough to feel immediate. */
 export const SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * Cap the box at what the API accepts. Without it, pasting a paragraph pushes an
+ * over-long `?search=`, the loader takes a 400, and the whole route is replaced
+ * by the error boundary instead of showing "no results".
+ */
+export { MAX_SEARCH_LENGTH };
 
 export type ListSearchInputProps = {
   /** Current term from the URL; seeds the input. */
@@ -41,15 +49,27 @@ export function ListSearchInput({
   const onSearchChangeRef = useRef(onSearchChange);
   onSearchChangeRef.current = onSearchChange;
 
+  // What we last pushed into the URL. Comparing against this rather than
+  // against `draft` is what keeps the loader's echo from clobbering keystrokes
+  // typed while the request was in flight: the response arrives carrying the
+  // older term, and re-seeding from it would delete everything typed since.
+  const submittedRef = useRef(value);
+
   // Re-seed when the URL term changes underneath us (back/forward, or a reset
   // from elsewhere) — but not when it merely echoes what we just submitted.
   useEffect(() => {
-    setDraft((current) => (current.trim() === value.trim() ? current : value));
+    if (value.trim() === submittedRef.current.trim()) return;
+    submittedRef.current = value;
+    setDraft(value);
   }, [value]);
 
   useEffect(() => {
     if (draft.trim() === value.trim()) return;
-    const timer = setTimeout(() => onSearchChangeRef.current(draft.trim()), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      const term = draft.trim();
+      submittedRef.current = term;
+      onSearchChangeRef.current(term);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [draft, value]);
 
@@ -66,6 +86,7 @@ export function ListSearchInput({
         placeholder={placeholder}
         value={draft}
         disabled={disabled}
+        maxLength={MAX_SEARCH_LENGTH}
         onChange={(event) => setDraft(event.target.value)}
         className="pl-9 pr-9"
       />
@@ -75,6 +96,7 @@ export function ListSearchInput({
           aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => {
             setDraft('');
+            submittedRef.current = '';
             onSearchChangeRef.current('');
           }}
           className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"

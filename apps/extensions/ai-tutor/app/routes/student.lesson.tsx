@@ -29,6 +29,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconSparkles } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import {
   Button,
   Dialog,
@@ -209,6 +210,7 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
    * the threshold before the first fetch resolves.
    */
   const loadingMoreRef = useRef(false);
+  const [activitiesLoadFailed, setActivitiesLoadFailed] = useState(false);
   const ensureActivitiesLoaded = async (targetIdx: number) => {
     if (loadingMoreRef.current) return;
     if (orderedActivities.length >= activitiesTotal) return;
@@ -227,8 +229,14 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
         return [...prev, ...result.data.filter((a) => !seen.has(a.id))];
       });
       setLoadedPage(nextPage);
+      setActivitiesLoadFailed(false);
     } catch (error) {
       console.error('Failed to load more activities', error);
+      // Surface it: without this the student just hits an invisible wall at the
+      // page boundary. `canNext` stops at the loaded edge while this is set, and
+      // the next move (Prev, then Next) re-runs the effect and retries.
+      setActivitiesLoadFailed(true);
+      toast.error("Couldn't load the rest of this lesson. Check your connection and try again.");
     } finally {
       loadingMoreRef.current = false;
     }
@@ -242,8 +250,11 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
 
   const activity = orderedActivities[idx];
   // `total`, not the loaded length — otherwise "Next" would grey out at the
-  // page boundary as if the lesson had ended.
-  const canNext = idx < activitiesTotal - 1;
+  // page boundary as if the lesson had ended. But never step past what's loaded
+  // once an append has failed: `orderedActivities[idx]` would be undefined and
+  // the player would render a blank question card with no way out.
+  const canNext =
+    idx < activitiesTotal - 1 && (idx < orderedActivities.length - 1 || !activitiesLoadFailed);
   const canPrev = idx > 0;
 
   const questionChunks = useMemo(
@@ -591,12 +602,13 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
           }
           accentColor={accentColor}
           stats={
-            orderedActivities.length > 0
+            activitiesTotal > 0
               ? [
                   {
-                    label: `of ${orderedActivities.length} question${
-                      orderedActivities.length === 1 ? '' : 's'
-                    }`,
+                    // The lesson total, matching the "Question N of M" counter
+                    // on the card below — the loaded slice would disagree with
+                    // it, and its denominator would grow as pages append.
+                    label: `of ${activitiesTotal} question${activitiesTotal === 1 ? '' : 's'}`,
                     value: idx + 1,
                     accent: true,
                   },
@@ -604,12 +616,12 @@ export default function StudentLessonPlayer({ loaderData }: Route.ComponentProps
               : undefined
           }
           progress={
-            orderedActivities.length > 0
+            activitiesTotal > 0
               ? {
                   completed: orderedActivities.filter(
                     (a) => a.completionStatus === 'correct',
                   ).length,
-                  total: orderedActivities.length,
+                  total: activitiesTotal,
                 }
               : null
           }

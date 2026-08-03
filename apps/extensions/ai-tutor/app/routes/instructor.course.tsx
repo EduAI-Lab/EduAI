@@ -55,7 +55,7 @@ import {
 import { PublishMenu } from '../components/PublishMenu';
 import { ModuleCard } from '../components/courses/ModuleCard';
 import { accentForCourse, courseCode, courseName, courseTerm, courseYear } from '../lib/course-display';
-import api from '../lib/api';
+import api, { FULL_TREE_READ_PAGE_SIZE } from '../lib/api';
 import type { Course, Module } from '../lib/types';
 import type { Route } from './+types/instructor.course';
 import { requireClientUser } from '~/lib/client-auth';
@@ -73,7 +73,12 @@ import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
 import { PaginationControls } from '~/components/common/PaginationControls';
 import { ListSearchInput } from '~/components/common/ListSearchInput';
 import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
-import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+import {
+  absoluteOrdinal,
+  movedRowIndex,
+  parseListUrlParams,
+  redirectPastEnd,
+} from '~/lib/list-params';
 
 /**
  * Loads the course header and its modules in parallel. Throws a 400 Response
@@ -227,6 +232,42 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
     }
   };
 
+  /**
+   * Land the instructor on the page that actually contains a just-created
+   * module (#1207).
+   *
+   * A new module is appended, so it lands on the last page — while the pager is
+   * usually sitting on an earlier one, and an active search almost certainly
+   * doesn't match the new title. Plain `refreshModules()` would then redraw the
+   * same rows, the dialog would close over an unchanged grid, and the create
+   * would read as a silent failure.
+   */
+  const revealNewestModule = async () => {
+    // `+ 1`: state still holds the pre-create count. `modulesTotal` counts
+    // matches while a search is active, so ask the server for the real count.
+    let unfilteredTotal = modulesTotal + 1;
+    if (searching && numericCourseId) {
+      try {
+        unfilteredTotal = (await api.modulesForCourse(numericCourseId, { page: 1, search: '' }))
+          .total;
+      } catch (error) {
+        console.error('Failed to count modules after create', error);
+      }
+    }
+
+    const lastPage = Math.max(1, Math.ceil(unfilteredTotal / pageSize));
+    if (searching || page !== lastPage) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('search');
+        next.set('page', String(lastPage));
+        return next;
+      });
+      return;
+    }
+    await refreshModules();
+  };
+
   const ensureSourceCoursesLoaded = () => {
     if (availableCourses.length > 0) return;
     setLoadingSourceCourses(true);
@@ -259,7 +300,9 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
 
     setLoadingSourceModules(true);
     try {
-      const data = await api.modulesForCourse(nextCourseId);
+      const data = await api.modulesForCourse(nextCourseId, {
+        pageSize: FULL_TREE_READ_PAGE_SIZE,
+      });
       if (modulesRequestIdRef.current === requestId) {
         setSourceModules(data.data);
       }
@@ -283,7 +326,7 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
       await api.createModule(numericCourseId, { title: title.trim() });
       setTitle('');
       setCreateOpen(false);
-      await refreshModules();
+      await revealNewestModule();
     } catch (error) {
       console.error('Failed to create module', error);
     } finally {
@@ -383,11 +426,11 @@ export default function InstructorCourseModules({ loaderData }: Route.ComponentP
   };
 
   // Drag-drop handler. `SortableProvider` hands back the ids in their new
-  // on-page order; the moved row is the first whose index changed.
+  // on-page order; `movedRowIndex` recovers which row was dragged.
   const reorderModulesList = async (orderedIds: number[]) => {
     if (!numericCourseId || searching) return;
     const previousIds = modules.map((m) => m.id);
-    const movedIndex = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+    const movedIndex = movedRowIndex(orderedIds, previousIds);
     if (movedIndex === -1) return;
 
     const byId = new Map(modules.map((m) => [m.id, m]));
