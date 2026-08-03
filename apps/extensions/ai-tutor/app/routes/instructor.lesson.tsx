@@ -37,9 +37,10 @@
  */
 import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
 import { Spinner } from '@eduai/ui';
-import { useParams } from 'react-router';
+import { useNavigation, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
+  IconArrowsSort,
   IconListCheck,
   IconPencil,
   IconCopy,
@@ -111,6 +112,11 @@ import { PermissionGate } from '@eduai/ui';
 import { useAtPermissions } from '~/hooks/useAtPermissions';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
+import { PaginationControls } from '~/components/common/PaginationControls';
+import { ListSearchInput } from '~/components/common/ListSearchInput';
+import { MoveToPositionDialog } from '~/components/common/MoveToPositionDialog';
+import { absoluteOrdinal, parseListUrlParams, redirectPastEnd } from '~/lib/list-params';
+import { SEARCH_DEBOUNCE_MS as IMPORT_SEARCH_DEBOUNCE_MS } from '~/components/common/ListSearchInput';
 
 /**
  * Loads the lesson and its activities (parallel), then walks up to the
@@ -118,51 +124,67 @@ import { CourseSwitcher } from '~/components/layout/CourseSwitcher';
  * previous resource. The breadcrumb and EduAI sync path both depend on
  * having the parent course available.
  */
-export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   await requireClientUser(['INSTRUCTOR', 'UNIT_ADMIN', 'TA', 'ADMIN']);
   const lessonId = Number(params.lessonId);
   if (!Number.isFinite(lessonId)) {
     throw new Response('Invalid lesson id', { status: 400 });
   }
 
+  // #1207: page + search live in the URL; `search` is applied server-side.
+  const { page, search } = parseListUrlParams(request);
+
   const [lesson, activitiesPage] = await Promise.all([
     api.lessonById(lessonId) as Promise<Lesson>,
-    // #1043: activities endpoint returns the pagination envelope. This is a
-    // reorder host — keep `total` so the UI can refuse to persist a partial
-    // order if a lesson ever exceeds the bounded page.
-    api.activitiesForLesson(lessonId),
+    api.activitiesForLesson(lessonId, { page, search }),
   ]);
-  const activities = activitiesPage.data;
-  const activitiesTotal = activitiesPage.total;
+
+  redirectPastEnd(request, {
+    page,
+    total: activitiesPage.total,
+    pageSize: activitiesPage.pageSize,
+  });
 
   let module: ModuleDetail | null = null;
   let course: Course | null = null;
-  // Structural "module.lesson" order (e.g. "1.3") from the sibling positions,
-  // so newly-created lessons (whose titles carry no number) still follow the
-  // decimal system used on the module card grid.
+  // Structural "module.lesson" order (e.g. "1.3"), so newly-created lessons
+  // (whose titles carry no number) still follow the decimal system used on the
+  // module card grid.
+  //
+  // #1207: this comes from the server now. It used to be two `findIndex` walks
+  // over the full sibling module and lesson lists — a read that silently
+  // produced "0.0" for anything past the first page once those lists were
+  // paged.
   let orderText: string | undefined;
   if (lesson.moduleId) {
     module = (await api.moduleById(lesson.moduleId)) as ModuleDetail;
     if (module.courseOfferingId) {
-      const [courseData, siblingModules, siblingLessons] = await Promise.all([
+      const [courseData, context] = await Promise.all([
         api.courseById(module.courseOfferingId) as Promise<Course>,
-        api.modulesForCourse(module.courseOfferingId).then((r) => r.data),
-        api.lessonsForModule(lesson.moduleId).then((r) => r.data),
+        api.lessonContext(lessonId),
       ]);
       course = courseData;
-      const moduleOrder = siblingModules.findIndex((m) => m.id === module!.id) + 1;
-      const lessonIndex = siblingLessons.findIndex((l) => l.id === lesson.id) + 1;
-      if (moduleOrder > 0 && lessonIndex > 0) {
-        orderText = `${moduleOrder}.${lessonIndex}`;
-      }
+      orderText = `${context.moduleOrdinal}.${context.lessonOrdinal}`;
     }
   }
 
-  return { course, module, lesson, activities, activitiesTotal, orderText };
+  return {
+    course,
+    module,
+    lesson,
+    activities: activitiesPage.data,
+    activitiesTotal: activitiesPage.total,
+    orderText,
+    page: activitiesPage.page,
+    pageSize: activitiesPage.pageSize,
+    search,
+  };
 }
 
 export default function InstructorLessonBuilder({ loaderData }: Route.ComponentProps) {
   const { lessonId } = useParams();
+  const [, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
   const numericLessonId = lessonId ? Number(lessonId) : null;
   const perms = useAtPermissions();
   const {
@@ -172,6 +194,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     activities: initialActivities,
     activitiesTotal: initialActivitiesTotal,
     orderText,
+    page,
+    pageSize,
+    search,
   } = loaderData;
   const accentColor = course ? accentForCourse(course) : undefined;
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
@@ -179,10 +204,11 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   // duplicate all change the list, so the truncation flag has to move with them
   // or it goes stale and re-enables reorder once the list crosses the bound.
   const [activitiesTotal, setActivitiesTotal] = useState(initialActivitiesTotal);
-  // True when the lesson has more activities than the bounded page we loaded.
-  // Reorder is disabled all the way down (provider, item, drag handle) — a
-  // partial page would persist positions that orphan the unseen tail.
-  const activitiesTruncated = activitiesTotal > activities.length;
+  // #1207: reorder works across pages via `PATCH /activities/:id/position`; it
+  // is disabled only while a search is active, because a filtered list hides
+  // the rows between two visible matches.
+  const [movingActivity, setMovingActivity] = useState<Activity | null>(null);
+  const searching = search !== '';
   const [oActivities, addActivityOpt] = useOptimistic(
     activities,
     (state, patch: (items: Activity[]) => Activity[]) => patch(state),
@@ -208,6 +234,14 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
   );
   const [loadingImportable, setLoadingImportable] = useState(false);
   const [importableError, setImportableError] = useState<string | null>(null);
+  // #1207: `total` is the count of SERVER-side matches, which is what tells the
+  // user their term still has more results than the picker is showing.
+  const [importableTotal, setImportableTotal] = useState(0);
+  // `draft` is what the user is typing; `importSearch` is the settled term that
+  // has actually been sent. Keeping them apart is what makes the debounce
+  // observable to the effect below.
+  const [importSearchDraft, setImportSearchDraft] = useState('');
+  const [importSearch, setImportSearch] = useState('');
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -327,10 +361,34 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
+  const goToPage = (nextPage: number) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('page', String(nextPage));
+        return next;
+      },
+      { preventScrollReset: false },
+    );
+  };
+
+  // Reset to page 1 alongside the term — the old page number is meaningless
+  // against a narrowed result set.
+  const setActivitySearch = (term: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (term === '') next.delete('search');
+      else next.set('search', term);
+      next.delete('page');
+      return next;
+    });
+  };
+
+  // Refetch the CURRENT page and term (#1207), not page 1.
   const refreshActivities = async () => {
     if (!numericLessonId) return;
     try {
-      const activityData = await api.activitiesForLesson(numericLessonId);
+      const activityData = await api.activitiesForLesson(numericLessonId, { page, search });
       setActivities(activityData.data);
       setActivitiesTotal(activityData.total);
     } catch (error) {
@@ -338,40 +396,45 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
-  // Persist a drag-reordered activity list: reorder the local list to match the
-  // dropped order optimistically, then confirm with the bulk reorder endpoint;
-  // a failure rolls back to the prior order.
-  const reorderActivitiesList = async (orderedIds: number[]) => {
-    if (!numericLessonId) return;
-    if (activitiesTruncated) {
-      // The loaded page is a subset of the lesson's activities; persisting this
-      // order would reassign positions 0..n-1 and orphan the unseen tail.
-      toast.error('This lesson has more activities than can be reordered at once.');
-      return;
-    }
+  /**
+   * Persist a single activity move to an absolute ordinal within the lesson
+   * (#1207). Shared by the drag handler and the "Move to position…" dialog; see
+   * `moveModule` in instructor.course.tsx for the full rationale.
+   */
+  const moveActivity = async (activityId: number, targetOrdinal: number) => {
     const current = activities;
-    const byId = new Map(current.map((a) => [a.id, a]));
-    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
-    if (next.length !== current.length) {
-      // Dropped order came from a stale render (list changed mid-drag);
-      // refetch rather than persisting a partial order.
-      toast.error('The activity list changed while reordering. Refreshing — please try again.');
-      await refreshActivities();
-      return;
-    }
-
-    setActivities(next);
     setReorderingActivities(true);
     try {
-      const updated = await api.reorderActivities(numericLessonId, orderedIds);
-      setActivities(updated);
+      await api.moveActivityToPosition(activityId, targetOrdinal);
+      await refreshActivities();
     } catch (error) {
-      console.error('Failed to reorder activities', error);
+      console.error('Failed to move activity', error);
       toast.error('Failed to reorder activities. The previous order was restored.');
       setActivities(current);
     } finally {
       setReorderingActivities(false);
+      setMovingActivity(null);
     }
+  };
+
+  const reorderActivitiesList = async (orderedIds: number[]) => {
+    if (!numericLessonId || searching) return;
+    const previousIds = activities.map((a) => a.id);
+    const movedIndex = orderedIds.findIndex((id, index) => id !== previousIds[index]);
+    if (movedIndex === -1) return;
+
+    const byId = new Map(activities.map((a) => [a.id, a]));
+    const next = orderedIds.map((id) => byId.get(id)).filter(Boolean) as Activity[];
+    if (next.length !== activities.length) {
+      // Dropped order came from a stale render (list changed mid-drag); refetch
+      // rather than persisting a move against a list we no longer have.
+      toast.error('The activity list changed while reordering. Refreshing — please try again.');
+      await refreshActivities();
+      return;
+    }
+    setActivities(next);
+
+    await moveActivity(orderedIds[movedIndex], absoluteOrdinal(page, pageSize, movedIndex));
   };
 
   useEffect(() => {
@@ -392,8 +455,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     try {
       await api.deleteActivity(activityId);
       setActivities((prev) => prev.filter((activity) => activity.id !== activityId));
-      // Keep `total` in step with the local removal so `activitiesTruncated`
-      // stays accurate without a refetch.
+      // Keep `total` in step with the local removal so the pager stays accurate
+      // without a refetch.
       setActivitiesTotal((prev) => Math.max(0, prev - 1));
       if (editingActivityId === activityId) {
         cancelEditingActivity();
@@ -420,11 +483,24 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     }
   };
 
-  const openImportDialog = async () => {
-    setShowImportDialog(true);
-    setSelectedImportId(null);
-    setImportableError(null);
+  /**
+   * Fetch one page of import candidates for the current term (#1207).
+   *
+   * `/api/activities/importable` is scoped to EVERY course the caller manages,
+   * so a page of it is a slice of the instructor's whole activity corpus — one
+   * unfiltered read can't reach a candidate past row 25. The term therefore
+   * goes to the server, and the results are rendered as-is: filtering them
+   * again client-side would re-introduce the bug this replaces.
+   *
+   * A request id guards against out-of-order responses — with a 300ms debounce
+   * and a slow query, an earlier keystroke's results could otherwise land after
+   * a later one's and overwrite them.
+   */
+  const importRequestIdRef = useRef(0);
+  const loadImportable = async (term: string) => {
+    const requestId = ++importRequestIdRef.current;
     setLoadingImportable(true);
+    setImportableError(null);
     try {
       // #1043: importing an activity that already lives in this lesson is a
       // no-op (the per-activity "Duplicate" action covers that), so exclude the
@@ -432,16 +508,44 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
       // page could otherwise render an empty picker.
       const page = await api.listImportableActivities(courseOfferingId ?? undefined, {
         excludeLessonId: numericLessonId ?? undefined,
+        search: term,
       });
+      if (requestId !== importRequestIdRef.current) return;
       setImportableActivities(page.data);
+      setImportableTotal(page.total);
     } catch (error) {
+      if (requestId !== importRequestIdRef.current) return;
       console.error('Failed to load importable activities', error);
       setImportableError('Could not load activities to import. Please try again.');
       setImportableActivities(null);
+      setImportableTotal(0);
     } finally {
-      setLoadingImportable(false);
+      if (requestId === importRequestIdRef.current) setLoadingImportable(false);
     }
   };
+
+  const openImportDialog = async () => {
+    setShowImportDialog(true);
+    setSelectedImportId(null);
+    setImportSearch('');
+    setImportSearchDraft('');
+    await loadImportable('');
+  };
+
+  // Debounce the picker's term, then refetch. Keyed on the draft so each
+  // keystroke restarts the timer and only the settled term hits the server.
+  useEffect(() => {
+    if (!showImportDialog) return;
+    if (importSearchDraft === importSearch) return;
+    const timer = setTimeout(() => {
+      setImportSearch(importSearchDraft);
+      void loadImportable(importSearchDraft);
+    }, IMPORT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // `loadImportable` is recreated each render; depending on it would restart
+    // the timer on every render and never fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importSearchDraft, importSearch, showImportDialog]);
 
   const closeImportDialog = () => {
     if (importing) return;
@@ -449,6 +553,8 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
     setImportableActivities(null);
     setSelectedImportId(null);
     setImportableError(null);
+    setImportSearch('');
+    setImportSearchDraft('');
   };
 
   const handleConfirmImport = async () => {
@@ -780,13 +886,19 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </Dialog>
             </PermissionGate>
 
-            {activitiesTruncated && perms.canManageContent ? (
-              <p className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-                Showing {activities.length} of {activitiesTotal} activities. Reordering is
-                unavailable until the full list fits on one page, so a partial order can&apos;t be
-                saved over the rest.
-              </p>
-            ) : null}
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <ListSearchInput
+                value={search}
+                label="Search activities"
+                placeholder="Search activities…"
+                onSearchChange={setActivitySearch}
+              />
+              {searching && perms.canManageContent ? (
+                <p className="text-sm text-muted-foreground">
+                  Clear the search to reorder activities.
+                </p>
+              ) : null}
+            </div>
 
             {oActivities.length === 0 ? (
               <Card>
@@ -794,7 +906,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                   <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <IconListCheck size={22} aria-hidden="true" />
                   </div>
-                  <p className="text-sm text-muted-foreground">No activities yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {searching ? 'No activities match your search.' : 'No activities yet.'}
+                  </p>
                 </CardContent>
               </Card>
             ) : (
@@ -804,9 +918,9 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 strategy="list"
                 disabled={
                   !perms.canManageContent ||
-                  oActivities.length < 2 ||
+                  activitiesTotal < 2 ||
                   reorderingActivities ||
-                  activitiesTruncated
+                  searching
                 }
               >
               <div className="space-y-4">
@@ -826,7 +940,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                     Boolean(activity.enableCustomMode && activity.customPrompt);
                   const promptError = promptErrors[activity.id];
                   const canReorderActivity =
-                    perms.canManageContent && oActivities.length > 1 && !activitiesTruncated;
+                    perms.canManageContent && activitiesTotal > 1 && !searching;
                   return (
                     <SortableItem key={activity.id} id={activity.id} disabled={!canReorderActivity}>
                       {({ handleProps }) => (
@@ -851,7 +965,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                             color: 'color-mix(in oklch, var(--course-accent) 8%, transparent)',
                           }}
                         >
-                          {String(i + 1).padStart(2, '0')}
+                          {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, '0')}
                         </span>
                         <div className="relative flex items-start gap-3 p-5">
                           {canReorderActivity && (
@@ -871,7 +985,7 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                 'inset 0 0 0 1px color-mix(in oklch, var(--course-accent) 26%, transparent)',
                             }}
                           >
-                            {String(i + 1).padStart(2, '0')}
+                            {String(absoluteOrdinal(page, pageSize, i) + 1).padStart(2, '0')}
                           </span>
                           <div className="min-w-0 flex-1 space-y-1.5">
                             <div className="flex flex-wrap items-center gap-2">
@@ -938,6 +1052,25 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                                     </TooltipTrigger>
                                     <TooltipContent>Duplicate</TooltipContent>
                                   </Tooltip>
+                                  {canReorderActivity ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-8"
+                                          aria-label="Move activity to position"
+                                          onClick={() => setMovingActivity(activity)}
+                                          disabled={isDeleting || isDuplicating}
+                                        >
+                                          <IconArrowsSort className="size-4" aria-hidden="true" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      {/* Cross-page move (#1207): drag only reaches this page. */}
+                                      <TooltipContent>Move to position</TooltipContent>
+                                    </Tooltip>
+                                  ) : null}
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button
@@ -1208,8 +1341,39 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
               </div>
               </SortableProvider>
             )}
+
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              total={activitiesTotal}
+              onPageChange={goToPage}
+              disabled={navigation.state === 'loading' || reorderingActivities}
+            />
           </div>
       </div>
+
+      <MoveToPositionDialog
+        open={movingActivity !== null}
+        onOpenChange={(open) => {
+          if (!open) setMovingActivity(null);
+        }}
+        itemTitle={movingActivity?.title || movingActivity?.question || 'this activity'}
+        itemNoun="activity"
+        currentPosition={
+          movingActivity
+            ? absoluteOrdinal(
+                page,
+                pageSize,
+                activities.findIndex((a) => a.id === movingActivity.id),
+              ) + 1
+            : 1
+        }
+        total={activitiesTotal}
+        submitting={reorderingActivities}
+        onSubmit={(position) => {
+          if (movingActivity) return moveActivity(movingActivity.id, position);
+        }}
+      />
       <Dialog
         open={showImportDialog}
         onOpenChange={(next) => {
@@ -1232,20 +1396,25 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
             </DialogDescription>
           </DialogHeader>
 
-          {loadingImportable ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading activities…</p>
-          ) : importableError ? (
+          {importableError ? (
             <div className="space-y-3 py-4 text-center">
               <p className="text-sm text-destructive">{importableError}</p>
-              <Button type="button" variant="outline" size="sm" onClick={openImportDialog}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadImportable(importSearch)}
+              >
                 Try again
               </Button>
             </div>
-          ) : !importableActivities || importableActivities.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No activities available to import from your other lessons.
-            </p>
+          ) : importableActivities === null ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading activities…</p>
           ) : (
+            // The picker stays mounted once the first page lands, even while a
+            // later query is in flight or returns nothing — swapping it for a
+            // status message would tear the input out from under the user on
+            // every keystroke (#1207).
             <div className="space-y-2 py-2">
               <Label htmlFor="import-activity-combobox" className="text-xs font-semibold">
                 Activity to import
@@ -1259,10 +1428,28 @@ export default function InstructorLessonBuilder({ loaderData }: Route.ComponentP
                 value={selectedImportId}
                 onValueChange={setSelectedImportId}
                 placeholder="Select an activity…"
-                searchPlaceholder="Search activities…"
-                emptyText="No matching activities."
+                searchPlaceholder="Search all your activities…"
+                emptyText={
+                  importSearch
+                    ? 'No activities match your search.'
+                    : 'No activities available to import from your other lessons.'
+                }
                 disabled={importing}
                 className="w-full"
+                // Server-side search: the term round-trips, and the returned
+                // page is rendered as-is rather than filtered again.
+                searchValue={importSearchDraft}
+                onSearchChange={setImportSearchDraft}
+                filter={false}
+                loading={loadingImportable}
+                footer={
+                  importableTotal > importableActivities.length ? (
+                    <>
+                      Showing {importableActivities.length} of {importableTotal} matches — keep
+                      typing to narrow.
+                    </>
+                  ) : null
+                }
               />
             </div>
           )}
