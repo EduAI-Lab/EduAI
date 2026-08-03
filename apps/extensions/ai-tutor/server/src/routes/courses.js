@@ -386,9 +386,15 @@ router.get('/courses', async (req, res) => {
  * Gotchas:
  *   - Fail-soft, never a hard error: when Core is unavailable the catalog is
  *     empty, so terms/statuses come back empty with `X-Core-Status: unavailable`.
- *   - `progress` is offered only to callers whose rows carry progress, and is the
- *     fixed bucket list rather than a computed presence check — deciding whether
- *     to show the dropdown is not worth running the progress batch.
+ *     That state is ALSO returned in the body as `coreUnavailable`, because the
+ *     header is consumed by the client's `http()` wrapper and never reaches the
+ *     route — which left a fail-closed search rendering "No courses match".
+ *   - `progress` is offered only to callers whose rows carry progress, and only
+ *     for buckets actually reachable. The fixed list was cheaper, but it offered
+ *     filters that always yield nothing: `progressBucket` returns null for a
+ *     course with no published activities, and `?progress=` excludes those from
+ *     every bucket, so a student whose courses are all unpublished-inside got
+ *     three options that each emptied their list.
  */
 router.get('/courses/facets', async (req, res) => {
   const authUser = req.user;
@@ -411,16 +417,40 @@ router.get('/courses/facets', async (req, res) => {
     // ADMIN sees the whole catalog, so skip the id query entirely. Everyone else
     // is scoped to the Core courses behind the offerings they can actually see.
     let scopedCatalog = catalogCourses;
+    let scopedOfferingIds = null;
     if (access.kind !== 'admin') {
       if (access.isEmpty) {
         scopedCatalog = [];
+        scopedOfferingIds = [];
       } else {
         const visible = await prisma.courseOffering.findMany({
           where: access.where,
-          select: { coreOfferingId: true },
+          select: { id: true, coreOfferingId: true },
         });
         const visibleCoreIds = new Set(visible.map((o) => o.coreOfferingId).filter(Boolean));
         scopedCatalog = catalogCourses.filter((c) => visibleCoreIds.has(c?.id));
+        scopedOfferingIds = visible.map((o) => o.id);
+      }
+    }
+
+    // Only offer buckets the list can actually return. This mirrors exactly what
+    // `GET /courses` does when `?progress=` is supplied (same batch, same
+    // `progressBucket`), so the dropdown and the filter can't disagree. In the TA
+    // union, TA-held courses carry no progress and belong to no bucket, matching
+    // the list's own exclusion.
+    let progress = [];
+    if (access.hasProgress) {
+      if (scopedOfferingIds === null) {
+        // ADMIN: no per-offering scoping ran, and admins hold no progress rows of
+        // their own, so there is nothing to enumerate.
+        progress = [];
+      } else {
+        const ids = scopedOfferingIds.filter(
+          (id) => access.kind !== 'taUnion' || !access.taOfferingIdSet.has(id),
+        );
+        const bucketed = await calculateCourseProgressBatch(ids, authUser.id);
+        const present = new Set(ids.map((id) => progressBucket(bucketed.get(id))));
+        progress = COURSE_PROGRESS_VALUES.filter((v) => present.has(v));
       }
     }
 
@@ -431,7 +461,8 @@ router.get('/courses/facets', async (req, res) => {
     res.json({
       terms,
       statuses,
-      progress: access.hasProgress ? COURSE_PROGRESS_VALUES : [],
+      progress,
+      coreUnavailable,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });

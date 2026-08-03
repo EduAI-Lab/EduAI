@@ -25,6 +25,7 @@ vi.mock('~/lib/client-auth', () => ({
 }));
 
 import InstructorHome, { clientLoader } from '~/routes/instructor';
+import { clearCourseFacetsCache } from '~/lib/course-facets';
 import { ShellBreadcrumbProvider } from '~/components/layout/ShellBreadcrumbContext';
 import type { Route } from '../../routes/+types/instructor';
 import type { Course } from '~/lib/types';
@@ -52,7 +53,11 @@ describe('instructor clientLoader — filter threading', () => {
       terms: ['W1::2026'],
       statuses: ['published', 'draft'],
       progress: [],
+      coreUnavailable: false,
     });
+    // Facets are cached for the SPA session so the loader doesn't re-walk Core's
+    // catalog on every keystroke; drop it so each test starts from a cold fetch.
+    clearCourseFacetsCache();
   });
 
   it('sends no filters for a bare URL', async () => {

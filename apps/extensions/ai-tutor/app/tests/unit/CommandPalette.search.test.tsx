@@ -122,9 +122,27 @@ describe('CommandPalette — server course search (#1208)', () => {
     await openPalette();
     expect(await screen.findByText('Linear Algebra')).toBeInTheDocument();
 
+    // A failed query must not wipe what was already listed. The query still
+    // matches the loaded row, so it stays visible rather than being narrowed out
+    // by the local filter below.
+    listCourses.mockRejectedValue(new Error('network'));
+    await type('linear');
+
+    expect(screen.getByText('Linear Algebra')).toBeInTheDocument();
+  });
+
+  it('hides loaded courses that do not match the query yet', async () => {
+    renderPalette();
+    await openPalette();
+    expect(await screen.findByText('Linear Algebra')).toBeInTheDocument();
+
+    // cmdk's own filtering is off, and `courses` trails the input by the
+    // debounce plus a round-trip. Without the local narrowing, the stale rows
+    // stay rendered AND cmdk auto-highlights the first one, so Enter during that
+    // window navigates to an unrelated course.
     listCourses.mockRejectedValue(new Error('network'));
     await type('zzz');
 
-    expect(screen.getByText('Linear Algebra')).toBeInTheDocument();
+    expect(screen.queryByText('Linear Algebra')).not.toBeInTheDocument();
   });
 });

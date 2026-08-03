@@ -19,7 +19,12 @@ import api from '~/lib/api';
 import { requireClientUser } from '~/lib/client-auth';
 import { useShellBreadcrumbs } from '~/components/layout/ShellBreadcrumbContext';
 import { PaginationControls } from '~/components/common/PaginationControls';
-import { readCourseListSelection, useCourseListFilters } from '~/lib/course-list-filters';
+import {
+  MAX_COURSE_SEARCH_LENGTH,
+  readCourseListSelection,
+  useCourseListFilters,
+} from '~/lib/course-list-filters';
+import { loadCourseFacets } from '~/lib/course-facets';
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   await requireClientUser(['STUDENT', 'TA']);
@@ -38,7 +43,10 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs) {
       term: selection.filters.term,
       progress: selection.filters.progress,
     }),
-    api.listCourseFacets(),
+    // Cached + never-rejecting: see the note in routes/instructor.tsx. The
+    // loader re-runs on every keystroke, and a facets failure must not take the
+    // enrolled-course list down with it.
+    loadCourseFacets(),
   ]);
 
   // Same upper-bound guard as the instructor list (#1162): rebuild from
@@ -163,6 +171,7 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
         // every enrolled course, so the view must not narrow the page again.
         searchValue={searchDraft}
         onSearchChange={setSearchDraft}
+        searchMaxLength={MAX_COURSE_SEARCH_LENGTH}
         selectedFilters={selection.filters}
         onFilterChange={setFilter}
         onClearAll={clearAll}
@@ -184,11 +193,22 @@ export default function StudentHome({ loaderData }: Route.ComponentProps) {
           />
         }
         noResultsState={
-          <EmptyCourseCard
-            icon={<IconSearch size={22} aria-hidden="true" />}
-            title="No courses match"
-            body="Try a different title or course code."
-          />
+          // See routes/instructor.tsx: with Core down every catalog-side filter
+          // fail-closes to zero rows, so "no matches" would misreport a degraded
+          // search as a missing course.
+          facets.coreUnavailable ? (
+            <EmptyCourseCard
+              icon={<IconSearch size={22} aria-hidden="true" />}
+              title="Search is unavailable"
+              body="EduAI Core can't be reached right now, so courses can't be searched or filtered. Clear your filters to see your full list."
+            />
+          ) : (
+            <EmptyCourseCard
+              icon={<IconSearch size={22} aria-hidden="true" />}
+              title="No courses match"
+              body="Try a different title or course code."
+            />
+          )
         }
         renderCard={(course) => {
           const card = (

@@ -499,8 +499,15 @@ describe('GET /api/courses — search and filters (#1208)', () => {
       });
       const studentApp = await createApp({ mockUser: student });
 
+      // Only buckets the list can actually return are offered. Previously this
+      // was the fixed three-value list, which handed the student filters that
+      // each emptied their list — `progressBucket` is null for a course with no
+      // published activities and `?progress=` excludes those from every bucket.
       const forStudent = await request(studentApp).get('/api/courses/facets');
-      expect(forStudent.body.progress).toEqual(['not-started', 'in-progress', 'completed']);
+      for (const bucket of forStudent.body.progress) {
+        const listed = await request(studentApp).get(`/api/courses?page=1&progress=${bucket}`);
+        expect(listed.body.total).toBeGreaterThan(0);
+      }
 
       const forProf = await request(profApp).get('/api/courses/facets');
       expect(forProf.body.progress).toEqual([]);
@@ -512,7 +519,15 @@ describe('GET /api/courses — search and filters (#1208)', () => {
       const res = await request(profApp).get('/api/courses/facets');
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ terms: [], statuses: [], progress: [] });
+      // `coreUnavailable` rides in the body because the client's `http()` wrapper
+      // swallows `X-Core-Status` into a toast, so the route never sees it — and
+      // without it a fail-closed search renders "No courses match".
+      expect(res.body).toEqual({
+        terms: [],
+        statuses: [],
+        progress: [],
+        coreUnavailable: true,
+      });
       expect(res.headers['x-core-status']).toBe('unavailable');
     });
 

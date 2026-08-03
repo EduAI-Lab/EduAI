@@ -54,6 +54,14 @@ export interface CourseSwitcherProps {
   searchPlaceholder?: string
   /** Shown in place of the list when `courses` is empty and search is enabled. */
   emptyLabel?: string
+  /**
+   * Trigger label to fall back to when `currentId` isn't in `courses`. Required
+   * for search-driven hosts: once the result set narrows to something the
+   * current course doesn't match, deriving the label from the list alone drops
+   * the breadcrumb to "Select course" while the user is still sitting on that
+   * course.
+   */
+  currentLabel?: string
 }
 
 export function CourseSwitcher({
@@ -68,9 +76,10 @@ export function CourseSwitcher({
   onQueryChange,
   searchPlaceholder = "Search courses…",
   emptyLabel = "No courses found",
+  currentLabel,
 }: CourseSwitcherProps) {
   const current = courses.find((c) => c.id === currentId) ?? null
-  const label = current?.label ?? "Select course"
+  const label = current?.label ?? currentLabel ?? "Select course"
   const searchable = Boolean(onQueryChange)
   const [query, setQuery] = React.useState("")
   const [open, setOpen] = React.useState(false)
