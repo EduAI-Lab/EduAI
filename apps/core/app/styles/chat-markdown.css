@@ -1,0 +1,24 @@
+/*
+ * Markdown/math stylesheet, scoped to the chunk that renders chat messages
+ * (#1222). Imported from components/chat/chat-message.tsx rather than from
+ * app.css so React Router only emits a <link> for it on routes whose module
+ * graph actually renders markdown. Every markdown surface in Core reaches
+ * ChatMessage, so this one import covers /chat, /admin/chat,
+ * /units/:department/chats and the transcript viewers embedded in the
+ * dashboard, course detail and admin user dialogs.
+ *
+ * Note: the Tailwind `@source` directives for streamdown stay in app.css.
+ * Streamdown's own markup is styled with Tailwind utilities that must be
+ * emitted into the global sheet; only these vendor imports move.
+ */
+@import "katex/dist/katex.min.css";
+@import "streamdown/styles.css";
+
+/*
+ * Streamdown wraps code-block actions in a pointer-events-none sticky row.
+ * Tailwind must emit pointer-events-auto on the inner toolbar; this rule
+ * keeps copy/download clickable even when @source misses streamdown chunks.
+ */
+[data-streamdown="code-block-actions"] {
+  pointer-events: auto;
+}
