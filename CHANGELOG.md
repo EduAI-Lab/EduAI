@@ -4,7 +4,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
-## [Week 13 — July 27–August 2, 2026]
+## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
 
@@ -19,6 +19,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Tests
 
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] fix: Bound five previously-unbounded Core list queries — course roster, chat transcript, course/unit chat lists, and course materials now page via a shared cursor `?cursor=`/`?limit=`/`nextCursor` "load more" envelope (`lib/cursor-list.server.ts`) instead of returning every row for a parent; the AI Tutor service-key roster sync stays unpaged (its documented full-sync contract). The all-STUDENT TA-candidate/enroll-student dropdown is replaced by a bounded, course-scoped search-select (`GET /api/courses/:id/student-candidates`), so the platform-wide STUDENT preload is gone. Unit-chats' owner-role filter also no longer resolves the whole department's active-student roster up front — that lookup is now scoped per fetched batch. Closes #1042. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
+
+### Added
+
+- [core] test: Coverage for the #1042 pagination surface — `lib/cursor-list.server` helpers, the four cursor-paginated hooks, `GET /api/courses/:id/student-candidates`'s auth/exclusion/search/limit behavior, and a regression test for a silent-data-loss bug the review pass found in the unit-chats batched owner-role filter. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
 
 ## [Week 12 — July 20–26, 2026]
 
