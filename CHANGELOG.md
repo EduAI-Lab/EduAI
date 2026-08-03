@@ -51,6 +51,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [core] test: PICT pilot — oracle (`material-visibility.oracle.ts`) and world-builder/adapters (`material-visibility.integration.test.ts`) for the material-visibility drift contract (census § S1): one spec-derived verdict function exercised against the REST material read gate and both RAG retrieval branches (hybrid BM25 + pure vector) in `lib/ai/embedding.ts` via the 18 committed PICT rows from #1179. Seeded-regression check confirmed (a deliberately dropped visibility gate fails exactly the row that isolates it, naming the row in the failure). Closes #1180. (#1180, @evanbones, 2026-07-30) — [#1297](https://github.com/EduAI-Lab/EduAI/pull/1297)
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
 ## [Week 13 — July 27 – August 2, 2026]
