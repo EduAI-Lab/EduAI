@@ -8,7 +8,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 
 ### Fixed
 
@@ -23,7 +23,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Tests
 
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
-- [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 
 ## [Week 12 — July 20–26, 2026]
 
