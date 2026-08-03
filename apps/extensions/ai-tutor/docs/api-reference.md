@@ -40,15 +40,73 @@ List endpoints return the platform pagination envelope (#1043), matching EduAI C
 | **Required** | `GET /api/courses`, `GET /api/admin/courses`, `GET /api/activities/importable` | `400 PAGINATION_REQUIRED` |
 | **Optional** | `GET /api/courses/:courseId/modules`, `GET /api/modules/:moduleId/lessons`, `GET /api/lessons/:lessonId/activities`, `GET /api/courses/:courseId/topics` | Defaults to page 1, `pageSize` 200 |
 
-The optional-mode ("tree") endpoints default to a single bounded page of 200 because their readers need the whole set — drag-and-drop reorder, ordinal derivation, the lesson player — rather than a real pager.
+Reordering and ordinals for these endpoints are documented under [Ordering and structure](#ordering-and-structure).
+
+The optional-mode ("tree") endpoints keep a large default page for callers that don't drive a pager (breadcrumb lookups, dropdown feeds). Their UI readers now page for real (#1207): reorder goes through `PATCH .../position` with an absolute ordinal, ordinals come from the context endpoints below, and the lesson player appends pages as the student advances — so none of them needs the whole set any more.
+
+### Search
+
+Every list endpoint above accepts an optional `search` query param (#1207). Filtering happens **server-side, in SQL**: the term is ANDed onto the endpoint's existing visibility scope, and the same `where` feeds both the count and the page — so `total` is the count of *matching* rows and a pager built on it pages the filtered set.
+
+| Endpoint | Matched against |
+| --- | --- |
+| `GET /api/courses/:courseId/modules` | `title`, `description` |
+| `GET /api/modules/:moduleId/lessons` | `title` |
+| `GET /api/lessons/:lessonId/activities` | `title`, `instructionsMd`, `config.question` |
+| `GET /api/courses/:courseId/topics` | `name` |
+| `GET /api/activities/importable` | the above, plus the parent lesson and module titles |
+
+Matching is case-insensitive on ordinary columns. An activity's question text lives in the `config` JSON rather than a column, so it is matched with a JSON path filter, which Prisma cannot make case-insensitive; the term is tried as typed, lower-cased, and upper-cased to compensate.
+
+An absent, empty, or whitespace-only `search` means "no filter". Because search is applied server-side, clients **must not** filter the returned page again — doing so is what made a match on page 2 render as "no results" while the pager reported a non-zero total.
 
 **Pagination errors:**
 - `400 PAGINATION_REQUIRED` — a required-mode endpoint was called without both `page` and `pageSize`.
 - `400 PAGINATION_INVALID` — `page` or `pageSize` was supplied but is not a finite number.
+- `400 SEARCH_INVALID` — `search` was repeated (parsed as an array) or exceeds 100 characters.
 
-Both are shaped `{ error: string, code: string }`.
+All are shaped `{ error: string, code: string }`.
 
 **Ordering.** Every paginated query carries a unique tie-break (`id`) as its final sort key, so tied rows can't shift between pages and be duplicated or skipped.
+
+---
+
+## Ordering and structure
+
+The ordered tree levels (modules, lessons, activities) sort by `position asc, id asc`. `position` has no unique constraint and is not guaranteed contiguous — `POST` appends with `last.position + 1` and deletions leave gaps — so it is a sort key, **not** a rank.
+
+### Move to position
+
+```
+PATCH /api/modules/:moduleId/position
+PATCH /api/lessons/:lessonId/position
+PATCH /api/activities/:activityId/position
+```
+
+Body: `{ "position": <0-based ordinal> }`. Response: `{ <module|lesson|activity>, position, total }`.
+
+Auth: course instructor / unit-admin / admin.
+
+`position` is an **ordinal** — an index into the ordered sibling list — not a raw `position` column value. The server resolves it against the actual ordering and rewrites only the rows whose index changed, leaving the siblings contiguous.
+
+Added in #1207 so a paged client can reorder without holding every sibling: a drag on page 3 sends `(page - 1) * pageSize + dropIndex`, and a "Move to position…" prompt sends a typed ordinal directly. An out-of-range ordinal is **clamped** rather than rejected (a concurrent delete shouldn't turn a legitimate drag into an error), so callers should trust the returned `position` over their own optimistic guess.
+
+- `400 POSITION_INVALID` — `position` is missing, non-integer, or negative.
+- `404` — the row does not exist, or is not part of the list it was resolved against.
+
+The bulk `PUT .../order` endpoints remain for the single-page case. They still require `orderedIds` to be the complete sibling set and `400` otherwise — the server-side backstop against a caller holding one page reassigning `0..n-1` over the whole list.
+
+### Structural context
+
+```
+GET /api/modules/:moduleId/context  -> { moduleOrdinal, moduleTotal }
+GET /api/lessons/:lessonId/context  -> { moduleOrdinal, lessonOrdinal, moduleTotal,
+                                         lessonTotal, prevLessonId, nextLessonId }
+```
+
+All ordinals are 1-based. These exist (#1207) because clients used to derive them with `findIndex` over a full sibling list — a read that silently produced a wrong ordinal (or `-1`, rendering as "0") for anything past the first page. Counting the rows that sort before the target is exact at any tree size.
+
+Visibility matches the list endpoints: a student's ordinals and totals count only published siblings, so the numbering agrees with the tree they can actually navigate. `403` if the caller can't see the row; `404` if it doesn't exist.
 
 ---
 

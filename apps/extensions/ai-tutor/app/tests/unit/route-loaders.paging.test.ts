@@ -8,6 +8,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Each `describe` block dynamically imports a route module, and these routes
+// pull in a large component graph — the first import in the file routinely
+// costs more than the 5s default on a loaded machine. The tests themselves are
+// synchronous once the module is warm.
+vi.setConfig({ testTimeout: 30_000 });
+
 const api = {
   courseById: vi.fn(),
   moduleById: vi.fn(),
