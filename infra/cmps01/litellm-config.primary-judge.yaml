@@ -1,0 +1,33 @@
+# LiteLLM router — single public port for all vLLM backends on cmps01.
+#
+# Backends bind host loopback only (127.0.0.1:18001 / :18002).
+# LiteLLM uses network_mode: host (see docker-compose.yml) so 127.0.0.1 works.
+# Do NOT use host.docker.internal here — Linux cannot reach 127.0.0.1 services that way.
+#
+# GPU1 (:18002) temporarily serves the PREREG_v3.md Sec 2.3 primary judge
+# (Llama-3.3-70B-Instruct, AWQ) instead of qwen3.5-9b-instruct. See
+# migrate-primary-judge-cmps01.sh. Restore via migrate-qwen35-cmps01.sh.
+
+model_list:
+  - model_name: qwen3.5-2b-instruct
+    litellm_params:
+      model: openai/qwen3.5-2b-instruct
+      api_base: http://127.0.0.1:18001/v1
+      api_key: vllm-local
+
+  - model_name: llama-3.3-70b-instruct-awq
+    litellm_params:
+      model: openai/llama-3.3-70b-instruct-awq
+      api_base: http://127.0.0.1:18002/v1
+      api_key: vllm-local
+
+  - model_name: mxbai-embed-large
+    litellm_params:
+      model: openai/mxbai-embed-large
+      api_base: http://127.0.0.1:18003/v1
+      api_key: vllm-local
+    model_info:
+      mode: embedding
+
+general_settings:
+  master_key: vllm-local
