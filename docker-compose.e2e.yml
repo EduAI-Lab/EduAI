@@ -199,6 +199,7 @@ services:
       dockerfile: docker/tests/Dockerfile.playwright
     network_mode: host
     environment:
+      E2E_SUITES: ${E2E_SUITES:-all}
       CORE_URL: http://localhost:3000
       AI_TUTOR_URL: http://localhost:3001
       AI_TUTOR_SERVER_URL: http://localhost:4000
