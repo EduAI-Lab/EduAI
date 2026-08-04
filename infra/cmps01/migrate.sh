@@ -22,8 +22,11 @@ fi
 
 # Reject unset/empty/example secrets before any docker stop/run (#1115).
 # Otherwise a bad CMPS01_INTERNAL_KEY still tears down and recreates vLLM before
-# deploy-edge-proxy.sh fails closed.
+# deploy-edge-proxy.sh fails closed. CMPS01_INTERNAL_ALLOW_IPS gets the same
+# early check — it used to only be validated inside deploy-edge-proxy.sh at
+# Step 3, well after Step 1/2 had already stopped and recreated containers.
 check_cmps01_internal_key || exit 1
+check_cmps01_allow_ips || exit 1
 
 echo "=== Step 1: stop old containers ==="
 docker stop eduai-vllm eduai-vllm-t3 2>/dev/null || true

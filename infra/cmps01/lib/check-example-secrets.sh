@@ -21,6 +21,11 @@ check_not_example_secret() {
     return 1
   fi
 
+  if [ "${#value}" -lt 16 ]; then
+    echo "FATAL: ${var_name} is too short; generate a real key with \`openssl rand -hex 32\`" >&2
+    return 1
+  fi
+
   local example
   for example in "${CMPS01_EXAMPLE_SECRETS[@]}"; do
     if [ "${value}" = "${example}" ]; then
@@ -36,4 +41,15 @@ check_not_example_secret() {
 # LiteLLM master_key, and (on s378) VLLM_API_KEY — keep them identical (#1115).
 check_cmps01_internal_key() {
   check_not_example_secret CMPS01_INTERNAL_KEY
+}
+
+# CMPS01_INTERNAL_ALLOW_IPS gates the nginx internal-path allowlist. Must be
+# validated before any docker stop/rm/run so a missing allowlist fails closed
+# up front rather than after vLLM containers have already been torn down (#1115).
+check_cmps01_allow_ips() {
+  if [ -z "${CMPS01_INTERNAL_ALLOW_IPS:-}" ]; then
+    echo "FATAL: CMPS01_INTERNAL_ALLOW_IPS is unset; set it to s378 only (e.g. 206.87.25.229) — do not add laptops" >&2
+    return 1
+  fi
+  return 0
 }

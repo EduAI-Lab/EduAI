@@ -22,4 +22,4 @@ model_list:
       api_key: vllm-local
 
 general_settings:
-  master_key: ${CMPS01_INTERNAL_KEY}
+  master_key: "${CMPS01_INTERNAL_KEY}"

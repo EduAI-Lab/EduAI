@@ -17,11 +17,12 @@ assert_rejects() {
   if check_cmps01_internal_key 2>/tmp/cmps01-check-err.$$; then
     echo "FAIL: expected reject for ${label}"
     fail=$((fail + 1))
+    rm -f /tmp/cmps01-check-err.$$
   else
     local err
     err="$(cat /tmp/cmps01-check-err.$$)"
     rm -f /tmp/cmps01-check-err.$$
-    if echo "${err}" | grep -q "${value}" && [ -n "${value}" ]; then
+    if [ -n "${value}" ] && echo "${err}" | grep -qF -- "${value}"; then
       echo "FAIL: error message leaked the secret for ${label}"
       fail=$((fail + 1))
       return
@@ -72,6 +73,9 @@ else
   fi
 fi
 
+assert_rejects "short key below entropy floor" "abc123"
+assert_rejects "short mixed-case denylist dodge" "VLLM-LOCAL"
+
 assert_accepts "synthetic openssl-like key" "a1b2c3d4e5f6789012345678abcdef01"
 
 # Early-exit: deploy must not reach docker when key is bad (smoke via subshell dry-run of check only).
@@ -92,6 +96,17 @@ if [ -n "${check_line}" ] && [ -n "${docker_line}" ] && [ "${check_line}" -lt "$
   pass=$((pass + 1))
 else
   echo "FAIL: migrate.sh must call check_cmps01_internal_key before docker stop (check=${check_line:-missing} docker=${docker_line:-missing})"
+  fail=$((fail + 1))
+fi
+
+# migrate.sh must also validate CMPS01_INTERNAL_ALLOW_IPS before any docker stop/run —
+# it used to only be checked inside deploy-edge-proxy.sh at Step 3, after teardown (#1115).
+allow_ips_line="$(grep -n 'check_cmps01_allow_ips' "${migrate}" | head -1 | cut -d: -f1)"
+if [ -n "${allow_ips_line}" ] && [ -n "${docker_line}" ] && [ "${allow_ips_line}" -lt "${docker_line}" ]; then
+  echo "ok: migrate.sh validates CMPS01_INTERNAL_ALLOW_IPS before docker stop"
+  pass=$((pass + 1))
+else
+  echo "FAIL: migrate.sh must call check_cmps01_allow_ips before docker stop (check=${allow_ips_line:-missing} docker=${docker_line:-missing})"
   fail=$((fail + 1))
 fi
 
