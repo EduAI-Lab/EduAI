@@ -23,7 +23,6 @@ import { CourseSwitcher } from '~/components/layout/course-switcher'
 import type { CourseMaterial as UploadMaterial } from '~/components/course-materials-upload'
 import type { CourseDetail } from '~/hooks/api/use-course-detail'
 import { resolveCourseAccess } from '~/lib/rbac/resolve-course-access.server'
-import { getPolicy } from '~/lib/policy.server'
 import type { RbacUser } from '~/lib/rbac'
 import { courseHasAiConfig } from '~/lib/ai/response-style-tags'
 
@@ -70,35 +69,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Students cannot view unpublished courses by direct URL
   if (access === 'student' && !course.isPublished) return redirect('/courses')
 
-  // Reassigning the instructor is ADMIN/UNIT_ADMIN only; managing TAs also opens
-  // to an owning INSTRUCTOR when `instructors.canManageEnrollments` is on
-  // (mirrors the TA endpoint gate). Load each user list only when usable.
+  // Reassigning the instructor is ADMIN/UNIT_ADMIN only. Load the instructor
+  // list only when usable.
   const canManageStaff = access === 'admin' || access === 'unit'
-  const canManageStudentEnrollments =
-    access === 'admin' || access === 'unit' || access === 'instructor'
-  const canManageTAs =
-    canManageStaff ||
-    (access === 'instructor' && (await getPolicy('instructors.canManageEnrollments')))
 
-  const needsStudentUsers = canManageStudentEnrollments || canManageTAs
-  const [instructors, studentUsers] = await Promise.all([
-    canManageStaff
-      ? prisma.user.findMany({
-          where: { role: 'INSTRUCTOR', isActive: true },
-          select: { id: true, name: true, email: true },
-          orderBy: { name: 'asc' },
-        })
-      : Promise.resolve([]),
-    needsStudentUsers
-      ? prisma.user.findMany({
-          // TA candidates are STUDENT-platform users; assigning one creates an
-          // Enrollment(role=TA). There is no platform-level TA role anymore.
-          where: { role: 'STUDENT', isActive: true },
-          select: { id: true, name: true, email: true },
-          orderBy: { name: 'asc' },
-        })
-      : Promise.resolve([]),
-  ])
+  // TA/student candidates are no longer preloaded here (#1042) — the platform-wide
+  // STUDENT list used to grow unbounded with total user count. The manager view's
+  // pickers now search on demand via /api/courses/:id/student-candidates.
+  const instructors = canManageStaff
+    ? await prisma.user.findMany({
+        where: { role: 'INSTRUCTOR', isActive: true },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' },
+      })
+    : []
 
   const isStudent = access === 'student'
 
@@ -138,12 +122,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     user,
     access,
     instructors,
-    studentUsers,
   }
 }
 
 export default function CourseDetailPage() {
-  const { course, user, access, instructors, studentUsers } =
+  const { course, user, access, instructors } =
     useLoaderData<typeof loader>()
   const revalidator = useRevalidator()
   const { topics, createTopic, deleteTopic } = useCourseTopics(course.id)
@@ -151,11 +134,23 @@ export default function CourseDetailPage() {
     enrollments,
     loading: enrollmentsLoading,
     error: enrollmentsError,
+    total: enrollmentsTotal,
+    hasMore: hasMoreEnrollments,
+    loadingMore: enrollmentsLoadingMore,
+    loadMore: loadMoreEnrollments,
     enroll,
     removeEnrollment,
     refetch: refetchEnrollments,
   } = useCourseEnrollments(course.id)
-  const { materials, uploadMaterial, deleteMaterial, refetch: refetchMaterials } = useCourseMaterials(course.id)
+  const {
+    materials,
+    uploadMaterial,
+    deleteMaterial,
+    hasMore: hasMoreMaterials,
+    loadingMore: materialsLoadingMore,
+    loadMore: loadMoreMaterials,
+    refetch: refetchMaterials,
+  } = useCourseMaterials(course.id)
   const { tas, addTA, removeTA } = useCourseTAs(course.id)
   const [isUploading, setIsUploading] = useState(false)
   const [materialsError, setMaterialsError] = useState<string | null>(null)
@@ -248,10 +243,16 @@ export default function CourseDetailPage() {
               enrollments={enrollments}
               enrollmentsLoading={enrollmentsLoading}
               enrollmentsError={enrollmentsError}
+              enrollmentsTotal={enrollmentsTotal}
+              hasMoreEnrollments={hasMoreEnrollments}
+              enrollmentsLoadingMore={enrollmentsLoadingMore}
+              onLoadMoreEnrollments={loadMoreEnrollments}
               materials={uploadMaterials}
+              hasMoreMaterials={hasMoreMaterials}
+              materialsLoadingMore={materialsLoadingMore}
+              onLoadMoreMaterials={loadMoreMaterials}
               tas={tas}
               instructors={instructors}
-              studentUsers={studentUsers}
               onEnrollStudent={handleEnrollStudent}
               onRemoveEnrollment={handleRemoveEnrollment}
               isUploading={isUploading}
@@ -279,6 +280,9 @@ export default function CourseDetailPage() {
               course={course}
               topics={topics}
               materials={uploadMaterials}
+              hasMoreMaterials={hasMoreMaterials}
+              materialsLoadingMore={materialsLoadingMore}
+              onLoadMoreMaterials={loadMoreMaterials}
               isUploading={isUploading}
               materialsError={materialsError}
               materialsSuccess={materialsSuccess}
@@ -295,6 +299,9 @@ export default function CourseDetailPage() {
             <CourseDetailStudentView
               course={course}
               materials={uploadMaterials}
+              hasMoreMaterials={hasMoreMaterials}
+              materialsLoadingMore={materialsLoadingMore}
+              onLoadMoreMaterials={loadMoreMaterials}
               topics={topics}
               tas={tas}
               isUploading={isUploading}
