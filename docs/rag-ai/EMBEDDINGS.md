@@ -297,6 +297,21 @@ course_materials          ← file metadata, courseId, status (PROCESSING → RE
 
 pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma uses raw SQL for vector insert/search. Schema: [`schema.prisma`](../../apps/core/prisma/schema.prisma) — `MaterialChunk`, `MaterialEmbedding`.
 
+### ANN index (#940)
+
+`material_embeddings.embedding` has an `ivfflat` index (`vector_cosine_ops`) added by migration `20260804000000_material_embeddings_ivfflat_index`, so both retrieval paths in `findRelevantContent()` (pure vector and hybrid BM25) hit the index instead of an exact full-scan over every chunk.
+
+| Knob | Where | Default | Notes |
+| ---- | ----- | ------- | ----- |
+| `lists` | Index DDL (migration, build-time only) | `100` | ivfflat's own heuristic is `rows / 1000` for tables up to ~1M rows, but the real chunk count varies per deployment and grows over time, so a dynamic value would go stale. 100 is a static default sized for tens of thousands to a few hundred thousand chunks; `REINDEX` with a new `lists` once real production counts are known. |
+| `ivfflat.probes` | Runtime GUC, `RAG_IVFFLAT_PROBES` env var | `10` | How many of the `lists` clusters a query scans — higher = better recall/closer to exact search, at the cost of scanning more rows. Set per-query via `SET LOCAL` inside a `prisma.$transaction` in `findRelevantContent()` (see `resolveIvfflatProbes()` in `embedding.ts`), since it's a session-scoped setting and Prisma pools connections — a bare `$executeRaw` `SET` before a separate `$queryRaw` is not guaranteed to land on the same connection. Clamped to `[1, 100]`. |
+
+**Why `ivfflat` and not `hnsw`:** the issue allows either. `hnsw` generally gives better recall/latency without a `lists` tuned to row count, but requires pgvector ≥ 0.5.0 and the repo's Postgres image (`pgvector/pgvector:pg16` in the `docker-compose.*.yml` files) doesn't pin an extension version in its tag. `ivfflat` has been available since pgvector 0.1.0, so it's the safe default until HNSW availability is confirmed on every environment this migration runs against (shared dev host, CI, prod).
+
+**Why plain `CREATE INDEX` and not `CONCURRENTLY`:** no other migration in this repo uses `CONCURRENTLY`, and Prisma's `migrate deploy` runs each migration file inside a transaction, which `CONCURRENTLY` cannot run inside. On a large production table a plain `CREATE INDEX` briefly locks out writes; re-run as `CONCURRENTLY` out-of-band once `material_embeddings` is large enough for that lock window to matter.
+
+**Verifying the index is used:** `EXPLAIN ANALYZE` the query in `findRelevantContent()` (substitute a real `courseId` and a `vector` literal) and confirm the plan shows `Index Scan using material_embeddings_embedding_ivfflat_idx` rather than `Seq Scan on material_embeddings`.
+
 ---
 
 ## Failure modes and debugging
@@ -327,6 +342,7 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 | `generateEmbeddings` / `generateEmbedding` | `embedding.ts` | Local or cloud embed API |
 | `processMaterialEmbeddings` | `embedding.ts` | Index one material |
 | `reEmbedCourseMaterials` | `embedding.ts` | Re-index all materials in a course |
+| `resolveIvfflatProbes` | `embedding.ts` | Reads/clamps `RAG_IVFFLAT_PROBES` for the ANN index probes GUC (#940) |
 | `findRelevantContent` | `embedding.ts` | Similarity search |
 | `re-embed-course.ts` | `scripts/` | CLI wrapper for course re-embed |
 | Upload handler | `courses.materials.$.ts` | Triggers indexing |
