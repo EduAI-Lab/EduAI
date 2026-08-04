@@ -67,14 +67,26 @@ describe('GET /api/ai-models', () => {
     expect(o1).toMatchObject({ studentSelectable: false, availability: 'admin-only' });
   });
 
-  it('treats a request with no req.user like a non-student (returns all models)', async () => {
+  it('fails closed to the allow-list-filtered view when req.user is missing', async () => {
     mockGetAiModelPolicyState.mockResolvedValue({ policy, availableModels, availableModelsError: null });
     const app = buildApp();
 
     const res = await request(app).get('/api/ai-models');
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ modelId: 'google:gemini-2.5-flash' });
+  });
+
+  it('fails closed to the allow-list-filtered view for an unrecognized role (e.g. TA)', async () => {
+    mockGetAiModelPolicyState.mockResolvedValue({ policy, availableModels, availableModelsError: null });
+    const app = buildApp({ role: 'TA' });
+
+    const res = await request(app).get('/api/ai-models');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ modelId: 'google:gemini-2.5-flash' });
   });
 
   it('returns 500 when the policy state lookup throws', async () => {

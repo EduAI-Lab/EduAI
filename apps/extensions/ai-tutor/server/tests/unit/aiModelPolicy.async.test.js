@@ -261,10 +261,24 @@ describe('resolveTutorModelSelection', () => {
     await expect(resolveTutorModelSelection(undefined)).resolves.toBe(DEFAULT_TUTOR_MODEL);
   });
 
-  it('allows any requested model when the allow-list is empty (unrestricted)', async () => {
+  it('allows any catalog model when the allow-list is empty (unrestricted within the catalog)', async () => {
     mockGetSystemSetting.mockResolvedValue(null);
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({ id: '1', modelId: 'gemini-2.5-flash', name: 'Gemini Flash', provider: 'google' }),
+    ]);
 
-    await expect(resolveTutorModelSelection('anything:goes')).resolves.toBe('anything:goes');
+    await expect(resolveTutorModelSelection('google:gemini-2.5-flash')).resolves.toBe(
+      'google:gemini-2.5-flash',
+    );
+  });
+
+  it('rejects a hallucinated model id even when the allow-list is empty (catalog-constrained)', async () => {
+    mockGetSystemSetting.mockResolvedValue(null);
+    mockListEduAiModels.mockResolvedValue([
+      catalogModel({ id: '1', modelId: 'gemini-2.5-flash', name: 'Gemini Flash', provider: 'google' }),
+    ]);
+
+    await expect(resolveTutorModelSelection('anything:goes')).rejects.toMatchObject({ status: 403 });
   });
 });
 
