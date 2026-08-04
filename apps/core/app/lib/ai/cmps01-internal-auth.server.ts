@@ -1,4 +1,4 @@
-/** Header nginx checks for /energy/ and /ollama/ on cmps01 :8001 edge proxy. */
+/** Header nginx checks for the server-managed Ollama edge on cmps01 :8001. */
 export const CMPS01_INTERNAL_KEY_HEADER = "X-EduAI-Internal-Key";
 
 let warnedMissingInternalKey = false;
@@ -21,10 +21,7 @@ export function isTrustedCmps01EdgeUrl(baseUrl: string): boolean {
   const normalized = normalizeEdgeBaseUrl(baseUrl);
   if (!normalized) return false;
 
-  const trustedBases = [
-    process.env.OLLAMA_BASE_URL,
-    process.env.ENERGY_SIDECAR_URL,
-  ]
+  const trustedBases = [process.env.OLLAMA_BASE_URL]
     .map((v) => (v ? normalizeEdgeBaseUrl(v) : null))
     .filter((v): v is string => Boolean(v));
 
@@ -40,7 +37,7 @@ export function cmps01InternalAuthHeaders(): Record<string, string> {
     if (!warnedMissingInternalKey) {
       warnedMissingInternalKey = true;
       console.warn(
-        "CMPS01_INTERNAL_KEY not set — sidecar requests will be rejected by nginx (403)",
+        "CMPS01_INTERNAL_KEY not set — cmps01 Ollama edge requests will be rejected by nginx (403)",
       );
     }
     return {};

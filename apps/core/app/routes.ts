@@ -48,6 +48,10 @@ export default [
   route("/api/units/:department/chats", "routes/api/units.chats.$.ts"),
   route("/api/courses/:courseId/tas", "routes/api/courses.tas.$.ts"),
   route(
+    "/api/courses/:courseId/student-candidates",
+    "routes/api/courses.student-candidates.$.ts",
+  ),
+  route(
     "/api/courses/:courseId/topics/:topicId",
     "routes/api/courses.topics.$.ts",
     { id: "routes/api/courses.topics.$:topicId" },
