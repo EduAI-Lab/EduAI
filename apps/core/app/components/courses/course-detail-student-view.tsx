@@ -16,6 +16,7 @@ import {
   EmptyState,
   MaterialList,
   type MaterialListItem,
+  Button,
 } from '@eduai/ui'
 import { termLabel } from '@eduai/ui'
 import {
@@ -43,6 +44,9 @@ import {
 interface Props {
   course: CourseDetail
   materials: CourseMaterial[]
+  hasMoreMaterials?: boolean
+  materialsLoadingMore?: boolean
+  onLoadMoreMaterials?: () => void
   topics: CourseTopic[]
   tas?: CourseTA[]
   isUploading?: boolean
@@ -75,6 +79,9 @@ function formatSize(bytes: number): string {
 export function CourseDetailStudentView({
   course,
   materials,
+  hasMoreMaterials = false,
+  materialsLoadingMore = false,
+  onLoadMoreMaterials,
   topics,
   tas = [],
   isUploading = false,
@@ -307,6 +314,17 @@ export function CourseDetailStudentView({
                 />
               }
             />
+            {hasMoreMaterials && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                disabled={materialsLoadingMore}
+                onClick={() => onLoadMoreMaterials?.()}
+              >
+                {materialsLoadingMore ? "Loading…" : "Load more materials"}
+              </Button>
+            )}
             <MaterialPreviewDialog
               courseId={course.id}
               materialId={previewMaterial?.id ?? null}

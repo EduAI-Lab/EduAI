@@ -45,6 +45,8 @@ RAG-powered chat platform and the central API layer for the EduAI ecosystem. Han
 
 Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
 
+Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
@@ -203,6 +205,22 @@ npm run test:all     # Unit + integration tests
 npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
+
+**Fleet routing smoke tests (Core)**
+
+From `apps/core`, use the fleet smoke commands to verify the configured vLLM
+hosts and extension-style routing:
+
+```bash
+npm run fleet:smoke              # health-check interactive and heavy hosts
+npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
+```
+
+These commands require `VLLM_FLEET_CHAT_URLS` and `EDUAI_API_KEY`.
+`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat
+pool when it is not configured. See
+[`docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md)
+for routing details.
 
 To run tasks for a single app, use Turborepo's filter flag directly:
 
