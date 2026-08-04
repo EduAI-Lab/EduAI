@@ -169,10 +169,15 @@ file imports the oracle and the generated cases by relative path from `tests/mod
 
 The oracle must be derived from the spec, never read off the handler under test — copying the
 handler's branch logic makes the test tautological (it asserts the code does what the code does).
-Where the spec is genuinely silent on a presentational detail (e.g. which of several "denied" HTTP
-status codes a REST adapter returns), it's legitimate for the adapter to defer to a documented
-platform-wide convention (e.g. the 404-vs-403 split in `docs/implementations/rbac-matrix.md` §3) —
-that's a shared contract, not the handler under test.
+This escape hatch is narrow and easy to abuse: it is legitimate for an adapter to defer to a
+documented platform-wide convention only when that convention is written down *and citable by
+line* in a spec doc (e.g. a specific line in `docs/implementations/rbac-matrix.md` §3), and the
+oracle's comment must link that line, not the implementation symbol that happens to agree with it.
+"The handler already does X" is never itself a citation — if the only source for a value is the
+handler under test, the oracle is tautological regardless of how the deferral is worded. Where a
+real disagreement between the spec and a handler surfaces this way, prefer fixing the handler (or
+updating the spec, if the handler is actually correct) over encoding the handler's behavior into
+the oracle.
 
 ### Generation runs in Docker, not a host install
 
@@ -237,7 +242,7 @@ table silently tests the old row set, which is worse than no coverage because it
 
 | Model | Dims | What it covers |
 |---|---|---|
-| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, publish state, delete state, read path) across the REST route (`routes/api/courses.materials.$.ts`) and both RAG retrieval branches (`lib/ai/embedding.ts` — hybrid BM25 and pure vector) — census § S1 pilot, the first model to land end to end: [`material-visibility.oracle.ts`](tests/models/material-visibility.oracle.ts) (pure verdict function) and the world-builder + REST/RAG adapters in [`apps/core/app/tests/integration/material-visibility.integration.test.ts`](apps/core/app/tests/integration/material-visibility.integration.test.ts). One caveat: this model's 18-row pairwise reduction never isolates `AvailableAt=future` as the sole reason for denial (every row combining it with a `STUDENT` role also sets `Deleted=yes` or `VisibleToStudents=false`) — a real limit of pairwise-vs-exhaustive coverage, not a gap in the oracle or adapters. |
+| [`material-visibility.pict`](tests/models/material-visibility.pict) | 6 | Material read-gate inputs (role, enrollment, visible-to-students flag, availability window, delete state, Canvas-unpublished state) — census § S1 pilot: [`material-visibility.oracle.ts`](tests/models/material-visibility.oracle.ts) (pure verdict function) exercised against all three read paths — REST (`routes/api/courses.materials.$.ts`) and both RAG retrieval branches (`lib/ai/embedding.ts` — hybrid BM25 and pure vector) — for every row, in [`apps/core/app/tests/integration/material-visibility.integration.test.ts`](apps/core/app/tests/integration/material-visibility.integration.test.ts). `Path` is deliberately not a model dimension: the test cross-products all three paths per row itself, so any two paths disagreeing on the same input fails loudly instead of silently, which a per-row `Path` factor (routing each row to exactly one path) could not have caught. A [`.config.json`](tests/models/material-visibility.config.json) seed pins the `STUDENT`-visible and isolated-denial-reason rows pairwise alone wouldn't guarantee. This pilot surfaced two real disagreements between paths, both fixed as part of landing the contract (per #1180 — not left for a follow-up issue): the REST single-material read returned 404 instead of 403 for a hidden-but-existing material (indistinguishable from nonexistent, because the student-visibility gate was folded into the same `WHERE` clause as the existence check); and RAG's Canvas-unpublished filter applied to every caller including staff, while REST's staff bypass skipped it entirely — a Canvas-unpublished material was readable by an instructor over REST but invisible to that same instructor in RAG. |
 
 ---
 
