@@ -16,7 +16,15 @@ export function requestUrlFromIdempotencyRoute(route: string): URL {
   const withoutMethod = trimmed.replace(/^[A-Za-z]+\s+/, "").trim();
   // Require a same-origin path. Reject "//host/..." (protocol-relative) and
   // absolute URLs so `new URL(path, base)` cannot retarget the request origin.
-  if (!withoutMethod.startsWith("/") || withoutMethod.startsWith("//")) {
+  // Also reject backslashes and ASCII tab/CR/LF: the WHATWG URL parser treats
+  // "\" as "/" for special schemes and strips tab/CR/LF anywhere in the
+  // string, so paths like "/\evil.com/x" or "/\t/evil.com" would otherwise
+  // resolve to "//evil.com/..." and retarget the origin.
+  if (
+    !withoutMethod.startsWith("/") ||
+    withoutMethod.startsWith("//") ||
+    /[\\\t\r\n]/.test(withoutMethod)
+  ) {
     throw new TypeError(
       `idempotency route must include a path starting with /: ${JSON.stringify(route)}`,
     );
