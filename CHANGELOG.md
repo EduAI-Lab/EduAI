@@ -37,6 +37,15 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [ai-tutor] feat: Move course search and the term/status/progress filters server-side on `GET /api/courses` (plus a new `GET /api/courses/facets` so dropdown options span the caller's whole accessible set), so the course switcher, command palette, and the instructor/student lists reach past the bounded 200-course page instead of filtering it. Closes #1208. (@abdullahmoh21, 2026-08-02) — [#1345](https://github.com/EduAI-Lab/EduAI/pull/1345)
+### Changed
+
+- [core] perf: Hybrid RAG's `ts_rank(to_tsvector('english', content), plainto_tsquery(...))` no longer re-tokenizes `material_chunks.content` on every query — a generated, GIN-indexed `content_tsv` column stores the tsvector (computed once at write time, self-backfilling for existing rows) and the hybrid query in `findRelevantContent` reads it directly. Closes #941. (@saadtab01, 2026-08-04) — #PR
+
+### Tests
+
+- [core] test: Extend `embedding-hybrid-bm25.test.ts` to assert the hybrid path's SQL references the stored `content_tsv` column and no longer recomputes `to_tsvector(content)` inline. Closes #941. (@saadtab01, 2026-08-04) — #PR
+
+## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
 
