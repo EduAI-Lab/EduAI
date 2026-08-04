@@ -32,40 +32,51 @@ const hasCloudKey = async (): Promise<boolean> => {
 };
 const listeners = new Set<() => void>();
 let inflight: Promise<void> | null = null;
-let heartbeatTimeout: number | null = null;
-let backoffStep = 0; // 0 → 1s, 1 → 2s, 2 → 4s, 3+ → 8s
+let retryTimeout: number | null = null;
+let retryAttempt = 0; // 0 → 1s, 1 → 2s, 2 → 4s, 3 → 8s, ... capped below
+
+// Bounded backoff for the error path only: this is the sole automatic-recovery
+// path for a transient AI-services outage (e.g. UBC wifi/VPN drops briefly).
+// Caps at 8s between attempts and gives up after MAX_RETRIES so a persistent
+// outage doesn't poll forever in the background — the user can still hit
+// "refresh" manually (a status chip click, or saving/clearing an API key).
+const MAX_RETRY_DELAY_MS = 8_000;
+const MAX_RETRIES = 6; // ~ 1+2+4+8+8+8 = 31s of automatic retrying before giving up
+
+// Clears any pending retry timer. `resetAttempts` is false for the internal call
+// made right before a retry itself fires (so the attempt counter it just
+// incremented survives), and true for every other caller — success, the
+// non-retryable "needs sign-in" error, and any manual/explicit refresh — so a
+// fresh error afterwards starts backing off from 1s again.
+const clearRetry = (resetAttempts = true) => {
+    if (typeof window !== 'undefined' && retryTimeout !== null) {
+        window.clearTimeout(retryTimeout);
+    }
+    retryTimeout = null;
+    if (resetAttempts) retryAttempt = 0;
+};
+
+const scheduleRetryIfNeeded = () => {
+    if (typeof window === 'undefined') return;
+    if (retryTimeout !== null) return;
+    if (retryAttempt >= MAX_RETRIES) return;
+
+    const delayMs = Math.min(MAX_RETRY_DELAY_MS, 1000 * Math.pow(2, retryAttempt));
+
+    retryTimeout = window.setTimeout(() => {
+        retryTimeout = null;
+        retryAttempt += 1;
+        // Silent re-check: keep the current status visible so the badge/banner
+        // don't flicker to "Checking…" on every background retry.
+        void refreshEduAIStatus({ silent: true, preserveAttempts: true });
+    }, delayMs);
+};
 
 const notify = () => listeners.forEach((l) => l());
 
 const setState = (next: Partial<EduAIState>) => {
     state = { ...state, ...next };
     notify();
-};
-
-const clearHeartbeat = () => {
-    if (typeof window !== 'undefined' && heartbeatTimeout !== null) {
-        window.clearTimeout(heartbeatTimeout);
-    }
-    heartbeatTimeout = null;
-    backoffStep = 0;
-};
-
-const scheduleHeartbeatIfNeeded = () => {
-    if (typeof window === 'undefined') return;
-    if (heartbeatTimeout !== null) return;
-
-    const seconds = Math.min(8, Math.pow(2, backoffStep));
-    const delayMs = seconds * 1000;
-
-    heartbeatTimeout = window.setTimeout(() => {
-        heartbeatTimeout = null;
-        // Silent re-check: keep the current status visible so the badge/banner
-        // don't flicker to "Checking…" on every background poll.
-        void refreshEduAIStatus({ silent: true });
-        if (backoffStep < 3) {
-            backoffStep += 1;
-        }
-    }, delayMs);
 };
 
 const fetchStatus = async () => {
@@ -86,14 +97,14 @@ const fetchStatus = async () => {
                     ? 'AI online via your cloud provider key.'
                     : 'AI online via the UBC-hosted model.',
             });
-            clearHeartbeat();
+            clearRetry();
         } else if (result?.configured === false) {
             setState({
                 status: 'error',
                 provider: undefined,
                 message: 'AI needs a Core sign-in (shared session cookie). Sign in via Core and retry.'
             });
-            clearHeartbeat();
+            clearRetry();
         } else {
             // Service unreachable. Tailor the guidance: if the user has a cloud key
             // saved it failed (bad key / network); if not, point them to Settings —
@@ -105,7 +116,7 @@ const fetchStatus = async () => {
                   'Your cloud provider key could not be validated. Check the key in Settings or your network.'
                 : 'UBC-hosted AI is unavailable (needs UBC wifi/VPN). Add a cloud provider API key in Settings to use AI off-network.';
             setState({ status: 'error', provider, message });
-            scheduleHeartbeatIfNeeded();
+            scheduleRetryIfNeeded();
         }
     } catch {
         const cloudKey = await hasCloudKey();
@@ -116,7 +127,7 @@ const fetchStatus = async () => {
                 ? 'Could not reach the AI service. Check your network and try again.'
                 : 'AI service unavailable. Connect to UBC wifi/VPN, or add a cloud provider API key in Settings.',
         });
-        scheduleHeartbeatIfNeeded();
+        scheduleRetryIfNeeded();
     }
 };
 
@@ -126,9 +137,13 @@ export const setQuestionGenerationPhase = (phase: QuestionGenerationPhase) => {
     notify();
 };
 
-export const refreshEduAIStatus = async (opts?: { silent?: boolean }) => {
+export const refreshEduAIStatus = async (opts?: { silent?: boolean; preserveAttempts?: boolean }) => {
     if (inflight) return inflight;
-    // Background polls pass { silent } to avoid flipping the UI back to "loading".
+    // A manual/explicit refresh (status chip click, saving/clearing an API key)
+    // supersedes any pending background retry and resets the backoff; the retry
+    // loop's own internal call passes preserveAttempts so its counter survives.
+    clearRetry(!opts?.preserveAttempts);
+    // Background retries pass { silent } to avoid flipping the UI back to "loading".
     if (!opts?.silent) {
         setState({ status: 'loading', message: 'Checking AI service status. Connect to UBC wifi or VPN.' });
     }
