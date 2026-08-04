@@ -43,4 +43,13 @@ export type ChatViewSharedProps = {
   routedModelByMessageId?: Record<string, string>;
   /** In-flight assistant bubble before onFinish assigns message id. */
   streamingRoutedRegistryId?: string | null;
+  /**
+   * Whether the model selector was set to an auto mode ("auto"/"auto-llm")
+   * at the time each assistant message was requested, keyed by message id.
+   * Read this instead of the live `selectedModel` so switching the selector
+   * mid-conversation doesn't retroactively change older messages' labels.
+   */
+  wasAutoRoutedByMessageId?: Record<string, boolean>;
+  /** Whether the in-flight request was made with an auto mode selected. */
+  streamingWasAutoRouted?: boolean;
 };
