@@ -1894,7 +1894,11 @@ ${buildEmptyCourseRagBlock()}`;
         try {
           await probe.wait();
         } finally {
-          await reader.cancel().catch(() => {});
+          // A tee branch's cancel promise does not settle until its sibling
+          // branch also finishes or cancels. Register cancellation, but do not
+          // await that promise here: the sibling is the response stream and
+          // cannot start until runStreamText returns.
+          void reader.cancel().catch(() => {});
           void pump;
         }
       }

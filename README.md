@@ -97,6 +97,8 @@ node ./scripts/chat-latency-bench.mjs
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
 
+Fleet-routed chat uses a startup probe before returning the response. Because the AI SDK stream is lazy, Core briefly reads a tee branch to drive the probe, cancels that branch as soon as startup is confirmed, and leaves the sibling response branch responsible for generation. Canceling a streaming HTTP response propagates to the provider and releases the admission slot; `FLEET_STREAM_PROBE_MS` controls only the soft startup deadline.
+
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
 ## Mobile responsiveness audit (`#805`)

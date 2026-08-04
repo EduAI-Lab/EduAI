@@ -114,7 +114,7 @@ import {
   resolveFleetHost,
   resolveFleetHostAfterFailure,
 } from "~/lib/ai/routing/fleet/resolve-fleet";
-import { resetAiAdmission } from "~/lib/ai/admission.server";
+import { getAiAdmissionStats, resetAiAdmission } from "~/lib/ai/admission.server";
 import { resetRateLimitsForTests } from "~/lib/auth/rate-limit.server";
 
 const CHAT_ID = "cjld2cjxh0000qzrmn831i7rn";
@@ -344,53 +344,47 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
 
   it("stops reading fullStream once the probe is ready, on the streaming response path", async () => {
     process.env.FLEET_STREAM_PROBE_MS = "5000";
+    process.env.AI_MAX_INFLIGHT = "1";
 
-    let cancelled = false;
-    let pulls = 0;
-    const parts = [
-      { type: "text-delta", text: "Hi" },
-      { type: "text-delta", text: " there" },
-    ];
+    let upstreamCancelled = false;
     vi.mocked(streamText).mockImplementation((args) => {
-      // Lazily construct the stream inside the getter, same as the real SDK:
-      // fullStream tees a fresh branch only once something actually reads
-      // it. A stream built eagerly at mock-setup time would call its pull()
-      // (default highWaterMark fills the queue on construction) before
-      // onChunk is even wired up.
-      const makeStream = () =>
-        new ReadableStream({
-          async pull(controller) {
-            pulls += 1;
-            if (pulls > 1) {
-              // Mirrors real network latency between chunks, giving the
-              // pump's reader.cancel() (fired off the probe settling on
-              // part 1) a chance to land before a second chunk is pulled.
-              await new Promise((resolve) => setTimeout(resolve, 50));
-            }
-            const part = parts.shift();
-            if (part === undefined) {
-              controller.close();
-              return;
-            }
-            // Only the first pull drives the probe; later pulls belong to
-            // the real downstream consumer (toDataStreamResponse), not the
-            // startup pump.
-            if (pulls === 1) {
-              args.onChunk?.({ chunk: part } as never);
-            }
-            controller.enqueue(part);
-          },
-          cancel() {
-            cancelled = true;
-          },
-        });
+      const chunks = ["Hi", " there"];
+      const upstream = new ReadableStream<{ type: string; text: string }>({
+        pull(controller) {
+          const text = chunks.shift();
+          if (text === undefined) {
+            // Keep the provider stream open until the client disconnects.
+            return;
+          }
+          const part = { type: "text-delta", text };
+          args.onChunk?.({ chunk: part } as never);
+          controller.enqueue(part);
+        },
+        cancel() {
+          upstreamCancelled = true;
+        },
+      });
+
+      // Mirror the AI SDK: fullStream tees the shared provider stream, and
+      // toDataStreamResponse consumes the sibling rather than a canned body.
+      let responseBranch = upstream;
       return {
         get fullStream() {
-          return makeStream();
+          const [probeBranch, downstreamBranch] = responseBranch.tee();
+          responseBranch = downstreamBranch;
+          return probeBranch;
         },
         consumeStream: vi.fn().mockResolvedValue(undefined),
         toDataStreamResponse: vi.fn(({ headers }: { headers?: Record<string, string> }) => {
-          return new Response("Hi there", { status: 200, headers });
+          const encoder = new TextEncoder();
+          const encodedBody = responseBranch.pipeThrough(
+            new TransformStream<{ type: string; text: string }, Uint8Array>({
+              transform(part, controller) {
+                controller.enqueue(encoder.encode(part.text));
+              },
+            }),
+          );
+          return new Response(encodedBody, { status: 200, headers });
         }),
         text: Promise.resolve("Hi there"),
         usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
@@ -407,13 +401,16 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
     const res = await action(makeRequest(baseBody({ streaming: true })));
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("Hi there");
-    // The startup-only pump must cancel its reader once the probe settles,
-    // instead of draining fullStream for the whole generation: only one
-    // pull should have happened before the response was returned, and the
-    // reader must have been canceled so a slow client can't make the tee
-    // buffer the rest of the response in memory.
-    expect(pulls).toBe(1);
-    expect(cancelled).toBe(true);
+    expect(getAiAdmissionStats().inflight).toBe(1);
+
+    const reader = res.body!.getReader();
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe("Hi");
+    await reader.cancel();
+
+    await vi.waitFor(() => {
+      expect(upstreamCancelled).toBe(true);
+      expect(getAiAdmissionStats().inflight).toBe(0);
+    });
   });
 });
