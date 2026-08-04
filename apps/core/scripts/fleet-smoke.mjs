@@ -8,6 +8,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { resolveSmokeApiKey } from "./lib/vllm-api-key.mjs";
 
 function loadEnvFile() {
   const envPath = resolve(process.cwd(), ".env");
@@ -47,17 +48,6 @@ function serverIdFromUrl(url) {
 }
 
 loadEnvFile();
-
-/**
- * Mirror resolveVllmApiKey (#1115): production never falls back to vllm-local.
- * Local/dev may still use the documented example key when VLLM_API_KEY is unset.
- */
-function resolveSmokeApiKey() {
-  const fromEnv = process.env.VLLM_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === "production") return undefined;
-  return "vllm-local";
-}
 
 const apiKey = resolveSmokeApiKey();
 const timeoutMs = Number(process.env.VLLM_FLEET_SMOKE_TIMEOUT_MS || "8000");
