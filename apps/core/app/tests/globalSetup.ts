@@ -94,6 +94,22 @@ export async function setup() {
     stdio: 'pipe',
   });
 
+  // `content_tsv` is a generated tsvector column that Prisma cannot model.
+  // db push provisions only schema.prisma, so apply the idempotent raw migration
+  // afterward to keep integration databases aligned with deployed databases.
+  const contentTsvMigration = resolve(
+    appRoot,
+    'prisma',
+    'migrations',
+    '20260804180000_material_chunks_content_tsv_gin',
+    'migration.sql',
+  );
+  execBin(
+    prismaBin,
+    ['db', 'execute', '--file', contentTsvMigration, '--schema', resolve(appRoot, 'prisma', 'schema.prisma')],
+    { cwd: appRoot, env: { ...process.env, DATABASE_URL: dbUrl }, stdio: 'pipe' },
+  );
+
   // Prisma cannot represent an ivfflat index on Unsupported(vector), and
   // db push intentionally ignores the raw-SQL migration. Recreate it for the
   // integration database after every schema sync so ANN tests exercise the
