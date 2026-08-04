@@ -22,6 +22,17 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 /** Provider hard limit (e.g. Google Gemini embedMany — "At most 100 requests per batch"). */
 const CLOUD_EMBED_MANY_MAX_BATCH_SIZE = 100;
 
+/**
+ * Max rows per multi-row `material_embeddings` INSERT (#943).
+ *
+ * Each row binds 3 params (id, chunkId, embedding), so Postgres's ~65535
+ * bind-parameter limit per statement allows roughly 21800 rows/statement.
+ * Real-world PDF chunk counts are far smaller, but we cap well under that
+ * ceiling defensively so a single pathological upload can't build one
+ * enormous statement — batching also keeps individual round trips small.
+ */
+export const MATERIAL_EMBEDDING_INSERT_BATCH_SIZE = 500;
+
 /** pgvector column dimension — must match LOCAL-EMBEDDINGS and `EMBEDDING_DIMENSION`. */
 export const DEFAULT_EMBEDDING_DIMENSION = 1024;
 
@@ -839,6 +850,41 @@ export type ProcessMaterialEmbeddingsOptions = {
 };
 
 /**
+ * Insert one `material_embeddings` row per chunk using batched multi-row
+ * INSERTs instead of one `$executeRaw` round trip per chunk (#943).
+ *
+ * Prisma's typed client can't write the `vector` column type directly, so
+ * raw SQL is required; `Prisma.sql` + `Prisma.join` keep every value
+ * (including the vector literal) bound as a parameter rather than
+ * string-concatenated, and rows are chunked to
+ * `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` to stay well under Postgres's
+ * ~65535 bind-parameter limit per statement.
+ */
+export async function insertMaterialEmbeddingsBatched(
+  tx: Prisma.TransactionClient,
+  chunksByIndex: Array<{ id: string }>,
+  embeddings: Array<{ embedding: number[] }>,
+): Promise<void> {
+  if (chunksByIndex.length === 0) {
+    return;
+  }
+
+  for (let start = 0; start < chunksByIndex.length; start += MATERIAL_EMBEDDING_INSERT_BATCH_SIZE) {
+    const batch = chunksByIndex.slice(start, start + MATERIAL_EMBEDDING_INSERT_BATCH_SIZE);
+
+    const rows = batch.map((chunk, offset) => {
+      const vectorLiteral = formatPgVectorLiteral(embeddings[start + offset].embedding);
+      return Prisma.sql`(${randomUUID()}, ${chunk.id}, ${vectorLiteral}::vector, NOW())`;
+    });
+
+    await tx.$executeRaw`
+      INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
+      VALUES ${Prisma.join(rows)}
+    `;
+  }
+}
+
+/**
  * Process and store embeddings for a course material (single transaction).
  */
 export async function processMaterialEmbeddings(
@@ -876,12 +922,6 @@ export async function processMaterialEmbeddings(
 
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
 
-    for (let i = 0; i < chunksByIndex.length; i++) {
-      const vectorLiteral = formatPgVectorLiteral(embeddings[i].embedding);
-      await tx.$executeRaw`
-        INSERT INTO material_embeddings (id, "chunkId", embedding, "createdAt")
-        VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${vectorLiteral}::vector, NOW())
-      `;
-    }
+    await insertMaterialEmbeddingsBatched(tx, chunksByIndex, embeddings);
   });
 }
