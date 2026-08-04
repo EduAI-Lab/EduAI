@@ -39,6 +39,7 @@ export function chatApiReject(
   status: number,
   body: Record<string, unknown>,
   trace?: ChatApiRejectTrace,
+  headers?: Record<string, string>,
 ): Response {
   console.error("[chat-api] rejected", {
     status,
@@ -47,6 +48,6 @@ export function chatApiReject(
   });
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }

@@ -1,0 +1,90 @@
+[
+  {
+    "Excluded": "no",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "yes"
+  },
+  {
+    "Excluded": "no",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "no",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "no",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "no",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "yes",
+    "DeletedAt": "yes",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "no",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "yes",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "yes",
+    "CanvasPublished": "yes",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "yes",
+    "CanvasPublished": "no",
+    "ExistingPresent": "no",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "yes",
+    "CanvasPublished": "no",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "no",
+    "ChecksumDup": "yes"
+  },
+  {
+    "Excluded": "yes",
+    "CanvasPublished": "no",
+    "ExistingPresent": "yes",
+    "DeletedAt": "yes",
+    "StaleAndReady": "no",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "yes",
+    "CanvasPublished": "no",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "yes",
+    "ChecksumDup": "no"
+  },
+  {
+    "Excluded": "no",
+    "CanvasPublished": "no",
+    "ExistingPresent": "yes",
+    "DeletedAt": "no",
+    "StaleAndReady": "yes",
+    "ChecksumDup": "no"
+  }
+]

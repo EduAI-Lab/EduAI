@@ -41,7 +41,6 @@ describe("buildFleetRouterFeatures", () => {
       buildFleetRouterFeatures("tutor", {
         serverId: "cmps02",
         baseUrl: "http://cmps02.ok.ubc.ca:8001",
-        energySidecarUrl: "http://cmps02.ok.ubc.ca:8001/energy",
         reason: "interactive-round-robin",
       }),
     ).toEqual({
@@ -158,7 +157,6 @@ describe("resolveFleetHost", () => {
     expect(first?.serverId).toBe("cmps01");
     expect(first?.reason).toBe("interactive-round-robin");
     expect(second?.serverId).toBe("cmps02");
-    expect(first?.energySidecarUrl).toBe("http://cmps01.ok.ubc.ca:8001/energy");
     fetchMock.mockRestore();
   });
 
