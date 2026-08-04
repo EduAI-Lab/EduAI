@@ -8,15 +8,13 @@
  *   - ubc:   probed with an explicit `forceProvider: 'vllm'`, pinning the
  *            UBC-hosted path even when the server has its own cloud key.
  *
- * Feeds the shared `@eduai/ui` AIServiceIndicators. Polls on an interval; a manual
+ * Feeds the shared `@eduai/ui` AIServiceIndicators. Checks once on mount; a manual
  * refresh re-checks both at once.
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { ServiceStatus } from '@eduai/ui';
 import eduaiService from '../services/eduaiService';
 import { apiKeyStorage, isCloudProvider, isCampusProvider } from '../services/apiKeyStorage';
-
-const POLL_MS = 60_000;
 
 async function probeCloud(): Promise<ServiceStatus> {
   let cloudKeys: Record<string, any> = {};
@@ -82,10 +80,8 @@ export function useAiServicesStatus() {
       }
     };
     void run();
-    const timer = setInterval(run, POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, []);
 

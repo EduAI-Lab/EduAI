@@ -1,100 +1,150 @@
 name: PR Tests
 
-# Unit/integration tests run natively on the runner (Vitest via Turborepo) against
-# Postgres service containers — the Docker test images (docker-compose.test.yml) remain
-# available for local runs but are not used here, since remote runners get no BuildKit
-# layer cache and rebuilt every image (incl. a full `npm ci` per image) on every run.
-# E2E still runs the real dockerized stack, with image layers cached via the GitHub
-# Actions cache backend.
-
 on:
   pull_request:
-    branches:
-      - development
-      - main
-  # Push runs seed the GitHub Actions caches (Turborepo tasks + Docker layers) that PR
-  # runs restore from — a fresh PR can only read caches created on its base branch.
+    branches: [development, main]
   push:
-    branches:
-      - development
+    branches: [development]
 
 concurrency:
   group: pr-tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # "Unit & Integration Tests" and "E2E Tests" are required status checks, so they must
-  # report a conclusion on every PR. Docs-only changes therefore skip the test jobs via
-  # `if:` (skipped jobs satisfy required checks) rather than `paths-ignore` (which would
-  # leave the checks pending forever and block the merge).
   changes:
-    name: Detect docs-only changes
+    name: Detect affected applications
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      core: ${{ steps.filter.outputs.core }}
+      ai_tutor: ${{ steps.filter.outputs.ai_tutor }}
+      question_maker: ${{ steps.filter.outputs.question_maker }}
+      shared: ${{ steps.filter.outputs.shared }}
+      cross_service: ${{ steps.filter.outputs.cross_service }}
+      unit_matrix: ${{ steps.filter.outputs.unit_matrix }}
     steps:
-      - name: Check for non-docs changes
+      - name: Classify changed paths
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
-          echo "Changed files:"
-          echo "$files"
-          if echo "$files" | grep -qvE '\.(md|txt)$|^docs/|^LICENSE'; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(gh api \
+              "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate --jq '.[].filename')
           else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Docs-only change — skipping test jobs."
+            files="__all__"
+          fi
+          echo "$files"
+
+          code=false
+          core=false
+          ai_tutor=false
+          question_maker=false
+          shared=false
+
+          if [ "$files" = "__all__" ]; then
+            code=true
+            core=true
+            ai_tutor=true
+            question_maker=true
+            shared=true
+          elif echo "$files" | grep -qvE '\.(md|txt)$|^docs/|^LICENSE'; then
+            code=true
+
+            if echo "$files" | grep -qE '^apps/core/'; then
+              core=true
+            fi
+            if echo "$files" | grep -qE '^apps/extensions/ai-tutor/'; then
+              ai_tutor=true
+            fi
+            if echo "$files" | grep -qE '^apps/extensions/question-maker/'; then
+              question_maker=true
+            fi
+
+            # Root build/test infrastructure and shared packages can affect every app.
+            if echo "$files" | grep -qE \
+              '^packages/|^tests/|^scripts/|^docker/|^docker-compose|^package(-lock)?\.json$|^turbo\.json$|^\.github/workflows/pr-tests\.yml$'; then
+              shared=true
+              core=true
+              ai_tutor=true
+              question_maker=true
+            fi
+
+            # Unknown code paths are treated conservatively as shared.
+            if [ "$core" = false ] && [ "$ai_tutor" = false ] && \
+               [ "$question_maker" = false ] && [ "$shared" = false ]; then
+              shared=true
+              core=true
+              ai_tutor=true
+              question_maker=true
+            fi
           fi
 
-  test:
-    name: Unit & Integration Tests
+          cross_service=false
+          # Cross-service specs exercise contracts from every application, so an
+          # application-only change still needs the full stack.
+          if [ "$core" = true ] || [ "$ai_tutor" = true ] || [ "$question_maker" = true ]; then
+            cross_service=true
+          fi
+
+          {
+            echo "code=$code"
+            echo "core=$core"
+            echo "ai_tutor=$ai_tutor"
+            echo "question_maker=$question_maker"
+            echo "shared=$shared"
+            echo "cross_service=$cross_service"
+          } >> "$GITHUB_OUTPUT"
+
+          matrix='{"include":['
+          separator=''
+          if [ "$core" = true ]; then
+            matrix+="${separator}"'{"scope":"core","label":"Core and shared UI","db_image":"pgvector/pgvector:pg16","db_user":"postgres","db_password":"postgres","db_name":"postgres"}'
+            separator=','
+          fi
+          if [ "$ai_tutor" = true ]; then
+            matrix+="${separator}"'{"scope":"ai_tutor","label":"AI Tutor","db_image":"postgres:16-alpine","db_user":"postgres","db_password":"postgres","db_name":"aitutor_test"}'
+            separator=','
+          fi
+          if [ "$question_maker" = true ]; then
+            matrix+="${separator}"'{"scope":"question_maker","label":"Question Maker","db_image":"postgres:15-alpine","db_user":"postgres","db_password":"password","db_name":"question_maker_test"}'
+          fi
+          matrix+=']}'
+          echo "unit_matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Affected applications"
+            echo
+            echo "| Core | AI Tutor | Question Maker | Cross-service |"
+            echo "| --- | --- | --- | --- |"
+            echo "| $core | $ai_tutor | $question_maker | $cross_service |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  unit:
+    name: Unit tests — ${{ matrix.label }}
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
 
-    # Same database layout as the Backend Coverage Report workflow: core's integration
-    # globalSetup reaches psql at the default port, so core-db must sit on 5432.
     services:
-      core-db:
-        image: pgvector/pgvector:pg16
+      db:
+        image: ${{ matrix.db_image }}
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_USER: ${{ matrix.db_user }}
+          POSTGRES_PASSWORD: ${{ matrix.db_password }}
+          POSTGRES_DB: ${{ matrix.db_name }}
         ports:
+          # Core's test configuration assumes the database is on the default port.
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 10s
-          --health-timeout 5s --health-retries 12
-      ai-tutor-db:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: aitutor_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 10s
-          --health-timeout 5s --health-retries 12
-      qm-db:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: question_maker_test
-        ports:
-          - 5434:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 10s
-          --health-timeout 5s --health-retries 12
+          --health-cmd "pg_isready -U ${{ matrix.db_user }}"
+          --health-interval 5s --health-timeout 5s --health-retries 12
       core-redis:
         image: redis:7-alpine
         ports:
@@ -106,119 +156,244 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Start timing
+        run: echo "CI_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          cache: 'npm'
+          node-version: "24"
+          cache: npm
 
       - name: Install dependencies
+        env:
+          SKIP_PRISMA_GENERATE: "1"
         run: npm ci
 
-      # Each backend resolves its test database from committed env files / globalSetup.
-      # Write the CI-specific values so they point at the service containers above.
       - name: Configure test environment
         run: |
           set -euo pipefail
-          # core: resolveIntegrationTestDatabaseUrl() merges apps/core/.env (host/port)
-          # with apps/core/.env.test (db name). Remove .env so .env.test is used verbatim.
-          rm -f apps/core/.env
-          cat > apps/core/.env.test <<'EOF'
-          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/eduai_test?schema=public"
+          case "${{ matrix.scope }}" in
+            core)
+              rm -f apps/core/.env
+              cat > apps/core/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres?schema=public"
+          REDIS_URL="redis://127.0.0.1:6379"
           BETTER_AUTH_SECRET="test-secret-not-for-production"
           BETTER_AUTH_URL="http://localhost:3000"
           COOKIE_DOMAIN="localhost"
           PORT=4001
           EOF
-          # ai-tutor-server: globalSetup loads .env.test with override:true.
-          cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
-          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/aitutor_test"
+              ;;
+            ai_tutor)
+              cat > apps/extensions/ai-tutor/server/.env.test <<'EOF'
+          DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/aitutor_test"
           BETTER_AUTH_SECRET="test-secret-not-for-production"
           BETTER_AUTH_URL="http://localhost:4000/api/auth"
           COOKIE_DOMAIN="localhost"
           PORT=4001
           EOF
+              ;;
+            question_maker)
+              ;;
+          esac
 
-      # Generate Core immediately before typechecking so another workspace's
-      # hoisted Prisma client cannot mask or invalidate Core's generated types.
-      - name: Typecheck core
+      - name: Generate Prisma client
         run: |
           set -euo pipefail
-          npm run db:generate -w edu-ai
-          npm run typecheck -w edu-ai
+          case "${{ matrix.scope }}" in
+            core)
+              npm run db:generate -w edu-ai
+              ;;
+            ai_tutor)
+              ( cd apps/extensions/ai-tutor/server && npx prisma generate )
+              ;;
+            question_maker)
+              npm run db:generate -w question-maker-backend
+              ;;
+          esac
 
-      - name: Generate Prisma clients
-        run: |
-          set -euo pipefail
-          npm run db:generate -w edu-ai
-          ( cd apps/extensions/ai-tutor/server && npx prisma generate )
-          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
-
-      - name: Verify Prisma client isolation
-        run: npm run test:prisma-client-isolation
+      - name: Typecheck Core
+        if: matrix.scope == 'core'
+        run: npm run typecheck -w edu-ai
 
       - name: Restore Turborepo cache
-        uses: actions/cache@v4
+        id: turbo-cache
+        # Restore before testing, then save in a separate post-test step so a
+        # failed run never publishes incomplete task artifacts.
+        uses: actions/cache/restore@v4
         with:
           path: .turbo/cache
-          key: turbo-test-${{ runner.os }}-${{ github.sha }}
+          key: turbo-test-${{ runner.os }}-${{ matrix.scope }}-${{ github.sha }}
           restore-keys: |
-            turbo-test-${{ runner.os }}-
+            turbo-test-${{ runner.os }}-${{ matrix.scope }}-
 
-      # --env-mode=loose: the suites read their config from process env / .env files
-      # (TEST_DATABASE_URL etc.), which Turborepo's default strict mode would strip.
-      #
-      # Each extension schema now generates a distinct workspace-local client
-      # package. Regenerate each package before its corresponding test batch so
-      # the inputs are explicit; the isolation check above proves both packages
-      # coexist without overwriting either model set. `status` keeps a
-      # first-batch failure from masking the second batch, matching what
-      # --continue does within a single run.
-      - name: Run tests
+      - name: Run workspace tests
         env:
           NODE_ENV: test
           GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
           REDIS_URL: redis://127.0.0.1:6379
-          TEST_DATABASE_URL: postgresql://postgres:password@127.0.0.1:5434/question_maker_test
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
         run: |
-          set -uo pipefail
-          status=0
+          case "${{ matrix.scope }}" in
+            core)
+              status=0
+              npx turbo run test --continue --env-mode=loose \
+                --filter=@eduai/ui &
+              ui_pid=$!
+              npx turbo run test:unit test:integration --continue --env-mode=loose \
+                --filter=edu-ai &
+              core_pid=$!
+              wait "$ui_pid" || status=1
+              wait "$core_pid" || status=1
+              exit "$status"
+              ;;
+            ai_tutor)
+              npx turbo run test --continue --env-mode=loose \
+                --filter=ai-tutor --filter=ai-tutor-server
+              ;;
+            question_maker)
+              export TEST_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/question_maker_test
+              npx turbo run test --continue --env-mode=loose \
+                --filter=question-maker-frontend --filter=question-maker-backend
+              ;;
+          esac
 
+      - name: Save Turborepo cache
+        if: success() && steps.turbo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/cache
+          key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          started_at=${CI_JOB_STARTED:-$(date +%s)}
+          elapsed=$(($(date +%s) - started_at))
+          matched='${{ steps.turbo-cache.outputs.cache-matched-key }}'
+          [ -n "$matched" ] || matched='none'
+          {
+            echo "### ${{ matrix.label }}"
+            echo
+            echo "- Job time: ${elapsed}s"
+            echo "- Turbo cache matched: \`$matched\`"
+            echo "- Exact cache hit: \`${{ steps.turbo-cache.outputs.cache-hit || 'false' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prisma-isolation:
+    name: Prisma Client Isolation
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.shared == 'true' || needs.changes.outputs.ai_tutor == 'true' || needs.changes.outputs.question_maker == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        env:
+          SKIP_PRISMA_GENERATE: "1"
+        run: npm ci
+      - name: Generate each client once
+        run: |
+          npm run db:generate -w edu-ai
           ( cd apps/extensions/ai-tutor/server && npx prisma generate )
-          npx turbo run test --continue --env-mode=loose \
-            --filter='!question-maker-backend' || status=1
+          npm run db:generate -w question-maker-backend
+      - run: npm run test:prisma-client-isolation
 
-          ( cd apps/extensions/question-maker/app/backend && npx prisma generate )
-          npx turbo run test --continue --env-mode=loose \
-            --filter=question-maker-backend || status=1
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    # The aggregate job must always run so required checks stay present on
+    # docs-only pull requests and still propagate upstream failures.
+    if: always()
+    needs: [changes, unit, prisma-isolation]
+    steps:
+      - name: Preserve required-check result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          PRISMA_RESULT: ${{ needs.prisma-isolation.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Affected-application detection failed or was cancelled."
+            exit 1
+          fi
+          if [ "$CODE_CHANGED" != "true" ]; then
+            echo "Docs-only change; unit tests were not required."
+            exit 0
+          fi
+          if [ "$UNIT_RESULT" != "success" ] || \
+             { [ "$PRISMA_RESULT" != "success" ] && [ "$PRISMA_RESULT" != "skipped" ]; }; then
+            echo "One or more unit-test jobs failed or were cancelled."
+            exit 1
+          fi
 
-          exit $status
-
-  e2e:
-    name: E2E Tests
+  e2e-run:
+    name: E2E tests — affected stacks
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Free runner disk space
+      - name: Start timing
+        run: echo "CI_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Select suites and images
+        id: select
+        env:
+          CORE: ${{ needs.changes.outputs.core }}
+          AI_TUTOR: ${{ needs.changes.outputs.ai_tutor }}
+          QUESTION_MAKER: ${{ needs.changes.outputs.question_maker }}
+          CROSS_SERVICE: ${{ needs.changes.outputs.cross_service }}
         run: |
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          docker system prune --all --force --volumes
-          df -h
+          set -euo pipefail
+          suites=()
+          targets=(e2e-eduai-app e2e-runner)
+          [ "$CORE" = true ] && suites+=(core)
+          if [ "$AI_TUTOR" = true ]; then
+            suites+=(ai-tutor)
+            targets+=(e2e-ai-tutor-server e2e-ai-tutor-app)
+          fi
+          if [ "$QUESTION_MAKER" = true ]; then
+            suites+=(question-maker)
+            targets+=(e2e-qm-server e2e-qm-app)
+          fi
+          if [ "$CROSS_SERVICE" = true ]; then
+            suites+=(cross-service)
+            targets+=(
+              e2e-ai-tutor-server e2e-ai-tutor-app
+              e2e-qm-server e2e-qm-app
+            )
+          fi
+          suites_csv=$(IFS=,; echo "${suites[*]}")
+          targets_csv=$(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++' | paste -sd, -)
+          echo "suites=$suites_csv" >> "$GITHUB_OUTPUT"
+          echo "targets=$targets_csv" >> "$GITHUB_OUTPUT"
+
+      - name: Check runner disk space
+        id: disk
+        run: |
+          set -euo pipefail
+          available_kb=$(df --output=avail / | tail -1)
+          cleanup=false
+          # Keep cleanup as an exceptional path; it took 1–2 minutes on every prior run.
+          if [ "$available_kb" -lt $((20 * 1024 * 1024)) ]; then
+            cleanup=true
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+            docker system prune --all --force --volumes
+          fi
+          echo "cleanup=$cleanup" >> "$GITHUB_OUTPUT"
+          df -h /
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # BuildKit's gha cache backend needs the Actions runtime endpoint + token, which
-      # are only exposed to actions (not run steps). Export them for the bake calls below
-      # and force cache API v2; GitHub retired the legacy v1 API in April 2025.
       - name: Expose GitHub Actions runtime for BuildKit cache
         uses: actions/github-script@v7
         with:
@@ -227,44 +402,46 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
 
-      # cache-from only, no cache-to: a GitHub Actions cache-service hiccup here can only
-      # slow the build down to an uncached one, never fail it. Cache writes happen in a
-      # separate best-effort step below so an outage there can't take the E2E check down
-      # (buildx bake aborts the whole graph on any target's failure, incl. mid-build
-      # targets that haven't been --load'ed yet, so cache-to must never share this step).
-      - name: Build and load E2E images
+      - name: Build and load affected E2E images
+        env:
+          TARGETS: ${{ steps.select.outputs.targets }}
         run: |
           set -euo pipefail
           : "${ACTIONS_RESULTS_URL:?GitHub Actions cache v2 URL is unavailable}"
           : "${ACTIONS_RUNTIME_TOKEN:?GitHub Actions cache token is unavailable}"
           args=()
-          for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
-            args+=(--set "${target}.cache-from=type=gha,scope=${target},version=2,timeout=30s")
+          IFS=',' read -ra targets <<< "$TARGETS"
+          for target in "${targets[@]}"; do
+            args+=(
+              --set "${target}.cache-from=type=gha,scope=${target},version=2,timeout=30s"
+            )
           done
-          docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}"
+          docker buildx bake -f docker-compose.e2e.yml --load "${args[@]}" "${targets[@]}"
 
-      - name: Run E2E tests
+      - name: Run affected E2E suites
         env:
-          E2E_SKIP_BUILD: '1'
+          E2E_SKIP_BUILD: "1"
+          E2E_SUITES: ${{ steps.select.outputs.suites }}
         run: bash scripts/e2e-in-docker.sh
 
-      # Images are already built and loaded above; this re-solves against the same
-      # builder's local cache (near-instant, no rebuild) and pushes layers for future runs.
-      # It deliberately avoids cache-from: the current builder already has every layer,
-      # and repeating six remote lookups only adds cache-API traffic. A short timeout caps
-      # outage delay, while continue-on-error keeps cache failures from failing E2E.
-      - name: Warm E2E build cache (best-effort)
+      - name: Warm affected E2E caches
+        # Cache export is intentionally separate from the loaded test build:
+        # exporting inline makes the critical path wait for a mode=max upload.
         continue-on-error: true
         env:
+          TARGETS: ${{ steps.select.outputs.targets }}
           GHA_CACHE_GH_TOKEN: ${{ github.token }}
           GHA_CACHE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           args=()
-          for target in e2e-eduai-app e2e-ai-tutor-server e2e-ai-tutor-app e2e-qm-server e2e-qm-app e2e-runner; do
-            args+=(--set "${target}.cache-to=type=gha,scope=${target},version=2,mode=max,timeout=2m,ignore-error=true,repository=${GHA_CACHE_REPOSITORY},ghtoken=${GHA_CACHE_GH_TOKEN}")
+          IFS=',' read -ra targets <<< "$TARGETS"
+          for target in "${targets[@]}"; do
+            args+=(
+              --set "${target}.cache-to=type=gha,scope=${target},version=2,mode=max,timeout=2m,ignore-error=true,repository=${GHA_CACHE_REPOSITORY},ghtoken=${GHA_CACHE_GH_TOKEN}"
+            )
           done
-          docker buildx bake -f docker-compose.e2e.yml "${args[@]}"
+          docker buildx bake -f docker-compose.e2e.yml "${args[@]}" "${targets[@]}"
 
       - name: Upload Playwright report
         if: failure()
@@ -274,33 +451,64 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+      - name: Write timing summary
+        if: always()
+        run: |
+          started_at=${CI_JOB_STARTED:-$(date +%s)}
+          elapsed=$(($(date +%s) - started_at))
+          {
+            echo "### Affected E2E"
+            echo
+            echo "- Suites: \`${{ steps.select.outputs.suites }}\`"
+            echo "- Images: \`${{ steps.select.outputs.targets }}\`"
+            echo "- Conditional disk cleanup: \`${{ steps.disk.outputs.cleanup }}\`"
+            echo "- Job time: ${elapsed}s"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    # Keep the required check present for docs-only pull requests while
+    # propagating failures from classification and the affected E2E run.
+    if: always()
+    needs: [changes, e2e-run]
+    steps:
+      - name: Preserve required-check result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          E2E_RESULT: ${{ needs.e2e-run.result }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Affected-application detection failed or was cancelled."
+            exit 1
+          fi
+          if [ "$CODE_CHANGED" != "true" ]; then
+            echo "Docs-only change; E2E was not required."
+            exit 0
+          fi
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "Affected E2E suites failed or were cancelled."
+            exit 1
+          fi
+
   pict-drift:
     name: PICT Case Drift Check
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-
-      # Generation runs pict inside the pinned docker/pict image (Docker is preinstalled on
-      # GitHub-hosted runners) rather than a natively-installed pict — see scripts/pict-gen.mjs
-      # for why a host install can't be trusted to reproduce the committed output.
+          node-version: "24"
       - name: Regenerate PICT case tables
         run: npm run test:pict:gen
-
-      # Modified rows (stale .cases.json) and untracked rows (new .pict committed without
-      # its generated sibling) both count as drift.
       - name: Fail if regeneration produced a diff
         run: |
           set -euo pipefail
           if [ -n "$(git status --porcelain -- tests/models)" ]; then
-            echo "::error::tests/models/*.cases.json is stale relative to its .pict source. Run 'npm run test:pict:gen' and commit the result."
+            echo "::error::tests/models/*.cases.json is stale. Run 'npm run test:pict:gen' and commit the result."
             git status --porcelain -- tests/models
             git diff -- tests/models
             exit 1

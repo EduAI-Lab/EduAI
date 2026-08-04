@@ -8,13 +8,11 @@ export type FleetServer = {
   baseUrl: string;
   jobTypes: JobType[];
   models: string[];
-  energySidecarUrl: string;
 };
 
 export type FleetPick = {
   serverId: string;
   baseUrl: string;
-  energySidecarUrl: string;
   reason: string;
 };
 
