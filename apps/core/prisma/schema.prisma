@@ -507,6 +507,13 @@ model MaterialChunk {
   material   CourseMaterial     @relation(fields: [materialId], references: [id], onDelete: Cascade)
   embedding  MaterialEmbedding?
 
+  // #941: `content_tsv` (GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+  // GIN-indexed) also lives on this table. Prisma has no first-class `tsvector` type
+  // and can't model a generated/STORED column, so it's intentionally left off this
+  // model (same reasoning as the `Unsupported("vector(1024)")` column on
+  // MaterialEmbedding below — raw SQL only). See
+  // prisma/migrations/20260804180000_material_chunks_content_tsv_gin and the hybrid
+  // query in app/lib/ai/embedding.ts (findRelevantContent).
   @@unique([materialId, index])
   @@map("material_chunks")
 }
