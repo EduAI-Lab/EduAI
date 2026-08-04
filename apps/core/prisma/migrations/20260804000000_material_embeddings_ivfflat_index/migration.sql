@@ -34,18 +34,16 @@
 --   for the follow-up note.
 --
 -- CREATE INDEX vs CREATE INDEX CONCURRENTLY:
---   No other migration in this repo uses CONCURRENTLY (checked all existing
---   `CREATE INDEX` statements under prisma/migrations/) -- Prisma's
---   `migrate deploy` runs each migration file inside a single transaction, and
---   CONCURRENTLY cannot run inside a transaction block. Splitting this into a
---   non-transactional migration is possible but would break from repo
---   convention and add operational complexity for a table that, per #940's own
---   problem statement, is not yet large enough to have an existing index. We
---   use a plain CREATE INDEX and call this out in the PR description; on a
---   large production `material_embeddings` table a plain CREATE INDEX briefly
---   holds a lock that blocks writes, so re-running this as CONCURRENTLY
---   out-of-band is the right move once the table is large enough for that lock
---   window to matter.
+--   Prisma Migrate does not automatically wrap PostgreSQL migration files in a
+--   transaction, so transaction wrapping is not a reason to avoid CONCURRENTLY.
+--   This migration uses plain CREATE INDEX to match the repository's existing
+--   migration convention. It takes a SHARE lock for the duration of the build,
+--   which allows reads but blocks writes to material_embeddings; deployment
+--   should therefore be scheduled for a low-write window. If production table
+--   size makes that unacceptable, change this statement to CREATE INDEX
+--   CONCURRENTLY before applying the migration. CONCURRENTLY cannot run inside
+--   an explicit transaction and a failed concurrent build may require dropping
+--   an INVALID index before retrying.
 --
 -- Runtime `probes` tuning (ivfflat.probes) is set per-query in
 -- findRelevantContent() via a transaction-scoped `SET LOCAL`, not here -- see

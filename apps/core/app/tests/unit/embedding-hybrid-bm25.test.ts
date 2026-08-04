@@ -4,8 +4,8 @@
  *
  * Covers:
  *  - isHybridBm25Enabled() reads RAG_HYBRID_BM25 correctly
- *  - RAG_HYBRID_BM25=1 → hybrid SQL (ts_rank + plainto_tsquery + ORDER BY score)
- *  - RAG_HYBRID_BM25 unset → pure-vector SQL (similarity threshold filter)
+ *  - RAG_HYBRID_BM25=1 → ANN vector candidates followed by hybrid reranking
+ *  - RAG_HYBRID_BM25 unset → ANN vector candidates followed by thresholding
  *  - RAG_HYBRID_BM25_ALPHA env var adjusts the vector/BM25 weights
  *  - Return shape is identical ({content, similarity, materialTitle}) regardless of path
  */
@@ -143,11 +143,19 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("to_tsvector");
   });
 
-  it("applies the vector similarity threshold and orders by combined score", async () => {
+  it("uses an ANN-compatible vector candidate query before hybrid reranking", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
+    expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
+    expect(sql).toMatch(
+      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
+    );
+    expect(sql.indexOf("ORDER BY me.embedding <=>")).toBeLessThan(
+      sql.indexOf("ORDER BY score DESC"),
+    );
     expect(sql).toContain("ORDER BY score DESC");
-    expect(sql).toContain("AND 1 -");
+    expect(sql).toContain("WHERE 1 - distance >");
+    expect(capturedParams()).toContain(16);
   });
 
   // #315: soft-deleted materials must never leak into RAG context, including on
@@ -181,22 +189,19 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
 
   it("defaults to alpha=0.7 (vector) and bm25Weight=0.3", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    // Hybrid SQL interpolation order: queryEmbedding, alpha, userQuery, bm25Weight, courseId, limit
     const params = capturedParams();
-    const alpha = params[1] as number;
-    const bm25Weight = params[3] as number;
-    expect(alpha).toBeCloseTo(0.7);
-    expect(bm25Weight).toBeCloseTo(0.3);
+    const queryParamIndex = params.indexOf(QUERY);
+    expect(params[queryParamIndex - 1]).toBeCloseTo(0.7);
+    expect(params[queryParamIndex + 1]).toBeCloseTo(0.3);
   });
 
   it("respects RAG_HYBRID_BM25_ALPHA for the vector/BM25 weight split", async () => {
     process.env.RAG_HYBRID_BM25_ALPHA = "0.5";
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const alpha = params[1] as number;
-    const bm25Weight = params[3] as number;
-    expect(alpha).toBeCloseTo(0.5);
-    expect(bm25Weight).toBeCloseTo(0.5);
+    const queryParamIndex = params.indexOf(QUERY);
+    expect(params[queryParamIndex - 1]).toBeCloseTo(0.5);
+    expect(params[queryParamIndex + 1]).toBeCloseTo(0.5);
   });
 
   it("respects the caller-supplied limit", async () => {
@@ -243,11 +248,15 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     expect(sql).not.toContain("plainto_tsquery");
   });
 
-  it("orders by similarity DESC and applies the threshold filter", async () => {
+  it("orders ANN candidates by cosine distance before applying the threshold", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
-    expect(sql).toContain("ORDER BY similarity DESC");
-    expect(sql).toContain("AND 1 -");
+    expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
+    expect(sql).toMatch(
+      /ORDER BY me\.embedding <=> __param__::vector ASC\s+LIMIT __param__/,
+    );
+    expect(sql).toContain("WHERE 1 - distance >");
+    expect(sql).toContain("ORDER BY distance ASC");
   });
 
   it("maps the similarity column correctly", async () => {

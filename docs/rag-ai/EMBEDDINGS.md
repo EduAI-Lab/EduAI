@@ -299,7 +299,7 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 
 ### ANN index (#940)
 
-`material_embeddings.embedding` has an `ivfflat` index (`vector_cosine_ops`) added by migration `20260804000000_material_embeddings_ivfflat_index`, so both retrieval paths in `findRelevantContent()` (pure vector and hybrid BM25) hit the index instead of an exact full-scan over every chunk.
+`material_embeddings.embedding` has an `ivfflat` index (`vector_cosine_ops`) added by migration `20260804000000_material_embeddings_ivfflat_index`. Both retrieval paths in `findRelevantContent()` first materialize vector candidates with the planner-recognizable `ORDER BY me.embedding <=> query_vector ASC LIMIT candidate_count` shape. Similarity conversion, thresholding, and hybrid BM25 reranking happen outside that candidate query so they do not hide the distance operator from the ANN planner.
 
 | Knob | Where | Default | Notes |
 | ---- | ----- | ------- | ----- |
@@ -308,9 +308,9 @@ pgvector enabled via migration (`CREATE EXTENSION IF NOT EXISTS vector`). Prisma
 
 **Why `ivfflat` and not `hnsw`:** the issue allows either. `hnsw` generally gives better recall/latency without a `lists` tuned to row count, but requires pgvector ≥ 0.5.0 and the repo's Postgres image (`pgvector/pgvector:pg16` in the `docker-compose.*.yml` files) doesn't pin an extension version in its tag. `ivfflat` has been available since pgvector 0.1.0, so it's the safe default until HNSW availability is confirmed on every environment this migration runs against (shared dev host, CI, prod).
 
-**Why plain `CREATE INDEX` and not `CONCURRENTLY`:** no other migration in this repo uses `CONCURRENTLY`, and Prisma's `migrate deploy` runs each migration file inside a transaction, which `CONCURRENTLY` cannot run inside. On a large production table a plain `CREATE INDEX` briefly locks out writes; re-run as `CONCURRENTLY` out-of-band once `material_embeddings` is large enough for that lock window to matter.
+**Why plain `CREATE INDEX` and not `CONCURRENTLY`:** this follows the repository's existing migration convention. Prisma Migrate does not automatically wrap PostgreSQL migration files in a transaction, so transaction wrapping is not the reason for this choice. A plain build allows reads but blocks writes to `material_embeddings` for the duration of the build; schedule deployment for a low-write window. If the production table is too large for that lock window, change the migration statement to `CREATE INDEX CONCURRENTLY` before it is applied. A concurrent build must remain outside an explicit transaction and a failed build can leave an `INVALID` index that must be removed before retrying.
 
-**Verifying the index is used:** `EXPLAIN ANALYZE` the query in `findRelevantContent()` (substitute a real `courseId` and a `vector` literal) and confirm the plan shows `Index Scan using material_embeddings_embedding_ivfflat_idx` rather than `Seq Scan on material_embeddings`.
+**Verifying the index is used:** run `EXPLAIN (ANALYZE, BUFFERS)` on the inner `vector_candidates` query in `findRelevantContent()` with a real `courseId` and vector literal. Confirm the plan contains `Index Scan using material_embeddings_embedding_ivfflat_idx`, with an `Order By` using `<=>`, rather than `Seq Scan on material_embeddings`. Small tables may legitimately prefer a sequential scan; for a diagnostic-only check, run the explain inside `BEGIN; SET LOCAL enable_seqscan = off; ...; ROLLBACK;` and never apply that setting globally.
 
 ---
 

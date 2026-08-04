@@ -697,32 +697,48 @@ export async function findRelevantContent(
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
     const bm25Weight = 1 - alpha;
+    // Retrieve a wider semantic candidate pool before lexical reranking so BM25
+    // can still change the final ordering without turning the ANN query back
+    // into a full scan.
+    const hybridCandidateLimit = Number(effectiveLimit) * 4;
 
-    // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
-    // Same vector similarity floor as the pure-vector path; combined score ranks survivors.
-    // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
+    // pgvector can use an ANN index only when the index operator itself is the
+    // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
+    // a materialized CTE, then apply the similarity floor and hybrid reranking
+    // to the resulting candidate set.
     const [, hybridResults] = await prisma.$transaction([
       prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
-      prisma.$queryRaw<Array<{ content: string; score: number; material_title: string }>>`
+      prisma.$queryRaw<
+        Array<{ content: string; score: number; material_title: string }>
+      >`
+        WITH vector_candidates AS MATERIALIZED (
+          SELECT
+            mc.content,
+            cm.title AS material_title,
+            me.embedding <=> ${queryEmbedding}::vector AS distance
+          FROM material_embeddings me
+          JOIN material_chunks mc ON me."chunkId" = mc.id
+          JOIN course_materials cm ON mc."materialId" = cm.id
+          WHERE cm."courseId" = ${courseId}
+            AND cm."deletedAt" IS NULL
+            ${canvasPublishFilter}
+            ${visibilityFilter}
+          ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+          LIMIT ${hybridCandidateLimit}
+        )
         SELECT
-          mc.content,
-          cm.title AS material_title,
-          (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
+          content,
+          material_title,
+          (1 - distance) * ${alpha} +
           COALESCE(
             ts_rank(
-              to_tsvector('english', mc.content),
+              to_tsvector('english', content),
               plainto_tsquery('english', ${userQuery})
             ),
             0
           ) * ${bm25Weight} AS score
-        FROM material_embeddings me
-        JOIN material_chunks mc ON me."chunkId" = mc.id
-        JOIN course_materials cm ON mc."materialId" = cm.id
-        WHERE cm."courseId" = ${courseId}
-          AND cm."deletedAt" IS NULL
-          ${canvasPublishFilter}
-          ${visibilityFilter}
-          AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
+        FROM vector_candidates
+        WHERE 1 - distance > ${threshold}
         ORDER BY score DESC
         LIMIT ${Number(effectiveLimit)}
       `,
@@ -744,19 +760,28 @@ export async function findRelevantContent(
         material_title: string;
       }>
     >`
+      WITH vector_candidates AS MATERIALIZED (
+        SELECT
+          mc.content,
+          cm.title AS material_title,
+          me.embedding <=> ${queryEmbedding}::vector AS distance
+        FROM material_embeddings me
+        JOIN material_chunks mc ON me."chunkId" = mc.id
+        JOIN course_materials cm ON mc."materialId" = cm.id
+        WHERE cm."courseId" = ${courseId}
+          AND cm."deletedAt" IS NULL
+          ${canvasPublishFilter}
+          ${visibilityFilter}
+        ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
+        LIMIT ${Number(effectiveLimit)}
+      )
       SELECT
-        mc.content,
-        1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
-        cm.title as material_title
-      FROM material_embeddings me
-      JOIN material_chunks mc ON me."chunkId" = mc.id
-      JOIN course_materials cm ON mc."materialId" = cm.id
-      WHERE cm."courseId" = ${courseId}
-        AND cm."deletedAt" IS NULL
-        ${canvasPublishFilter}
-        ${visibilityFilter}
-        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-      ORDER BY similarity DESC
+        content,
+        1 - distance AS similarity,
+        material_title
+      FROM vector_candidates
+      WHERE 1 - distance > ${threshold}
+      ORDER BY distance ASC
       LIMIT ${Number(effectiveLimit)}
     `,
   ]);
