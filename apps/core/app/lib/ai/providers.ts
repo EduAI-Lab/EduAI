@@ -222,7 +222,7 @@ export function listEnabledRegistryProviders(
   if (userSettings.openai?.isEnabled && userSettings.openai?.apiKey) ids.push('openai');
   if (userSettings.google?.isEnabled && userSettings.google?.apiKey) ids.push('google');
   if (userSettings.ollama?.isEnabled) ids.push('ollama');
-  if (userSettings.vllm?.isEnabled) ids.push('vllm');
+  if (userSettings.vllm?.isEnabled && (userSettings.vllm?.apiKey || resolveVllmApiKey())) ids.push('vllm');
   return ids;
 }
 

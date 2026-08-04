@@ -23,10 +23,12 @@ vi.mock("ai", () => ({
   createProviderRegistry: (providers: unknown) => ({ __providers: providers }),
 }));
 
-import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { createAIProviderRegistry, listEnabledRegistryProviders } from "~/lib/ai/providers";
 
 const originalOllamaUrl = process.env.OLLAMA_BASE_URL;
 const originalVllmUrl = process.env.VLLM_BASE_URL;
+const originalVllmApiKey = process.env.VLLM_API_KEY;
+const originalNodeEnv = process.env.NODE_ENV;
 
 afterEach(() => {
   createOllamaMock.mockClear();
@@ -35,6 +37,10 @@ afterEach(() => {
   else process.env.OLLAMA_BASE_URL = originalOllamaUrl;
   if (originalVllmUrl === undefined) delete process.env.VLLM_BASE_URL;
   else process.env.VLLM_BASE_URL = originalVllmUrl;
+  if (originalVllmApiKey === undefined) delete process.env.VLLM_API_KEY;
+  else process.env.VLLM_API_KEY = originalVllmApiKey;
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
 });
 
 describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
@@ -82,5 +88,53 @@ describe("createAIProviderRegistry SSRF guard (issue #972)", () => {
     });
 
     expect(createOllamaMock).toHaveBeenCalledWith(expect.objectContaining({ headers: {} }));
+  });
+});
+
+describe("listEnabledRegistryProviders vllm key gate (#1268 review)", () => {
+  it("excludes vllm when enabled but no key is available anywhere (production)", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).not.toContain("vllm");
+  });
+
+  it("includes vllm when the user settings supply an apiKey", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({
+      vllm: { isEnabled: true, apiKey: "real-secret" },
+    });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("includes vllm when VLLM_API_KEY is set in the environment", () => {
+    process.env.VLLM_API_KEY = "real-secret";
+    process.env.NODE_ENV = "production";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("falls back to the dev default key outside production, matching createAIProviderRegistry", () => {
+    delete process.env.VLLM_API_KEY;
+    process.env.NODE_ENV = "development";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: true } });
+
+    expect(ids).toContain("vllm");
+  });
+
+  it("excludes vllm when not enabled, regardless of key availability", () => {
+    process.env.VLLM_API_KEY = "real-secret";
+
+    const ids = listEnabledRegistryProviders({ vllm: { isEnabled: false } });
+
+    expect(ids).not.toContain("vllm");
   });
 });
