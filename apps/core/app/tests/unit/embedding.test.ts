@@ -16,6 +16,7 @@ const {
   resolveMaterialChunks,
   getExpectedEmbeddingDimension,
   wantsLocalEmbeddingProvider,
+  resolveIvfflatProbes,
   DEFAULT_EMBEDDING_DIMENSION,
 } = await import("~/lib/ai/embedding");
 const { SEMANTIC_CHUNK_SEPARATOR, joinSemanticChunks, applyChunkOverlap } = await import("~/lib/ai/file-processing");
@@ -296,5 +297,55 @@ describe("wantsLocalEmbeddingProvider", () => {
     expect(wantsLocalEmbeddingProvider()).toBe(false);
     delete process.env.EMBEDDING_PROVIDER;
     expect(wantsLocalEmbeddingProvider()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveIvfflatProbes (#940)
+// ---------------------------------------------------------------------------
+
+describe("resolveIvfflatProbes", () => {
+  const original = process.env.RAG_IVFFLAT_PROBES;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.RAG_IVFFLAT_PROBES;
+    else process.env.RAG_IVFFLAT_PROBES = original;
+  });
+
+  it("returns the default of 10 when unset", () => {
+    delete process.env.RAG_IVFFLAT_PROBES;
+    expect(resolveIvfflatProbes()).toBe(10);
+  });
+
+  it("returns the default when the value is not a finite number", () => {
+    process.env.RAG_IVFFLAT_PROBES = "not-a-number";
+    expect(resolveIvfflatProbes()).toBe(10);
+  });
+
+  it("returns the default when the value is zero or negative", () => {
+    process.env.RAG_IVFFLAT_PROBES = "0";
+    expect(resolveIvfflatProbes()).toBe(10);
+    process.env.RAG_IVFFLAT_PROBES = "-5";
+    expect(resolveIvfflatProbes()).toBe(10);
+  });
+
+  it("honors a valid override within range", () => {
+    process.env.RAG_IVFFLAT_PROBES = "25";
+    expect(resolveIvfflatProbes()).toBe(25);
+  });
+
+  it("rounds fractional overrides", () => {
+    process.env.RAG_IVFFLAT_PROBES = "12.6";
+    expect(resolveIvfflatProbes()).toBe(13);
+  });
+
+  it("clamps overrides above the max to 100", () => {
+    process.env.RAG_IVFFLAT_PROBES = "9999";
+    expect(resolveIvfflatProbes()).toBe(100);
+  });
+
+  it("clamps overrides below the min to 1", () => {
+    process.env.RAG_IVFFLAT_PROBES = "0.4";
+    expect(resolveIvfflatProbes()).toBe(1);
   });
 });

@@ -44,6 +44,29 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
   return wantsLocal ? LOCAL_EMBED_MANY_BATCH_SIZE : CLOUD_EMBED_MANY_BATCH_SIZE;
 }
 
+/**
+ * ivfflat.probes (#940): how many of the index's `lists` clusters to scan per
+ * query. Higher = better recall, closer to exact search, at the cost of more
+ * rows scanned; pgvector's own default is 1, which is fast but recall-poor
+ * once `lists` is non-trivial. This is a session/transaction-scoped Postgres
+ * GUC, not an index property, so it can't be "baked into" the migration.
+ *
+ * Env override lets ops raise recall (or lower latency) without a code change;
+ * clamped to a sane range so a bad value can't silently disable the index
+ * (0 falls back to Postgres' own default) or force a near-exact scan.
+ */
+const DEFAULT_IVFFLAT_PROBES = 10;
+const MIN_IVFFLAT_PROBES = 1;
+const MAX_IVFFLAT_PROBES = 100;
+
+export function resolveIvfflatProbes(): number {
+  const raw = Number(process.env.RAG_IVFFLAT_PROBES);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_IVFFLAT_PROBES;
+  }
+  return Math.min(MAX_IVFFLAT_PROBES, Math.max(MIN_IVFFLAT_PROBES, Math.round(raw)));
+}
+
 function isOllamaBadRequestError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /bad request/i.test(message) || /\b400\b/.test(message);
@@ -661,6 +684,16 @@ export async function findRelevantContent(
     ? Prisma.sql`AND cm."visibleToStudents" = true AND (cm."availableAt" IS NULL OR cm."availableAt" <= NOW())`
     : Prisma.empty;
 
+  // #940: ivfflat.probes is a session/transaction-scoped GUC, not an index
+  // property. Prisma's PrismaClient pools connections, so a bare
+  // `$executeRaw(SET ivfflat.probes = ...)` followed by a separate
+  // `$queryRaw` is not guaranteed to land on the same physical connection.
+  // `SET LOCAL` inside an explicit `$transaction` is — Prisma runs every
+  // statement in an interactive/batched transaction over one reserved
+  // connection — so the probes setting reliably applies to the query that
+  // follows it and is automatically reset once the transaction ends.
+  const probes = resolveIvfflatProbes();
+
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
     const bm25Weight = 1 - alpha;
@@ -668,31 +701,32 @@ export async function findRelevantContent(
     // Hybrid path: weighted sum of vector cosine similarity and BM25 (ts_rank).
     // Same vector similarity floor as the pure-vector path; combined score ranks survivors.
     // to_tsvector / plainto_tsquery are built-in PostgreSQL; no extra extension needed.
-    const hybridResults = await prisma.$queryRaw<
-      Array<{ content: string; score: number; material_title: string }>
-    >`
-      SELECT
-        mc.content,
-        cm.title AS material_title,
-        (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
-        COALESCE(
-          ts_rank(
-            to_tsvector('english', mc.content),
-            plainto_tsquery('english', ${userQuery})
-          ),
-          0
-        ) * ${bm25Weight} AS score
-      FROM material_embeddings me
-      JOIN material_chunks mc ON me."chunkId" = mc.id
-      JOIN course_materials cm ON mc."materialId" = cm.id
-      WHERE cm."courseId" = ${courseId}
-        AND cm."deletedAt" IS NULL
-        ${canvasPublishFilter}
-        ${visibilityFilter}
-        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-      ORDER BY score DESC
-      LIMIT ${Number(effectiveLimit)}
-    `;
+    const [, hybridResults] = await prisma.$transaction([
+      prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
+      prisma.$queryRaw<Array<{ content: string; score: number; material_title: string }>>`
+        SELECT
+          mc.content,
+          cm.title AS material_title,
+          (1 - (me.embedding <=> ${queryEmbedding}::vector)) * ${alpha} +
+          COALESCE(
+            ts_rank(
+              to_tsvector('english', mc.content),
+              plainto_tsquery('english', ${userQuery})
+            ),
+            0
+          ) * ${bm25Weight} AS score
+        FROM material_embeddings me
+        JOIN material_chunks mc ON me."chunkId" = mc.id
+        JOIN course_materials cm ON mc."materialId" = cm.id
+        WHERE cm."courseId" = ${courseId}
+          AND cm."deletedAt" IS NULL
+          ${canvasPublishFilter}
+          ${visibilityFilter}
+          AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
+        ORDER BY score DESC
+        LIMIT ${Number(effectiveLimit)}
+      `,
+    ]);
 
     return hybridResults.map((r) => ({
       content: r.content,
@@ -701,28 +735,31 @@ export async function findRelevantContent(
     }));
   }
 
-  const results = await prisma.$queryRaw<
-    Array<{
-      content: string;
-      similarity: number;
-      material_title: string;
-    }>
-  >`
-    SELECT
-      mc.content,
-      1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
-      cm.title as material_title
-    FROM material_embeddings me
-    JOIN material_chunks mc ON me."chunkId" = mc.id
-    JOIN course_materials cm ON mc."materialId" = cm.id
-    WHERE cm."courseId" = ${courseId}
-      AND cm."deletedAt" IS NULL
-      ${canvasPublishFilter}
-      ${visibilityFilter}
-      AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
-    ORDER BY similarity DESC
-    LIMIT ${Number(effectiveLimit)}
-  `;
+  const [, results] = await prisma.$transaction([
+    prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
+    prisma.$queryRaw<
+      Array<{
+        content: string;
+        similarity: number;
+        material_title: string;
+      }>
+    >`
+      SELECT
+        mc.content,
+        1 - (me.embedding <=> ${queryEmbedding}::vector) AS similarity,
+        cm.title as material_title
+      FROM material_embeddings me
+      JOIN material_chunks mc ON me."chunkId" = mc.id
+      JOIN course_materials cm ON mc."materialId" = cm.id
+      WHERE cm."courseId" = ${courseId}
+        AND cm."deletedAt" IS NULL
+        ${canvasPublishFilter}
+        ${visibilityFilter}
+        AND 1 - (me.embedding <=> ${queryEmbedding}::vector) > ${threshold}
+      ORDER BY similarity DESC
+      LIMIT ${Number(effectiveLimit)}
+    `,
+  ]);
 
   return results.map((result) => ({
     content: result.content,

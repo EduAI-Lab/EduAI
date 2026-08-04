@@ -20,10 +20,17 @@ vi.mock("~/lib/courses/server", () => ({
 }));
 
 const queryRawMock = vi.hoisted(() => vi.fn());
+const executeRawUnsafeMock = vi.hoisted(() => vi.fn());
 const courseFindUniqueMock = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/prisma.server", () => ({
   default: {
     $queryRaw: queryRawMock,
+    $executeRawUnsafe: executeRawUnsafeMock,
+    // findRelevantContent (#940) wraps `SET LOCAL ivfflat.probes` + the query in
+    // a transaction so both run on the same pooled connection. The real
+    // PrismaClient accepts an array of pending raw-query promises; mimic that by
+    // resolving each entry and returning the results array.
+    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     course: { findUnique: courseFindUniqueMock },
   },
 }));
