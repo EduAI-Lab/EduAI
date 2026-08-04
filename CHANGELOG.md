@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Changed
+
+- [core] perf: Bounded concurrency for `reEmbedCourseMaterials` (course re-embed background job) — materials now process up to `REINDEX_CONCURRENCY` (default 4) at a time via `p-limit` instead of strictly serially, cutting large re-embed wall-clock time while each material keeps its own try/catch so one failure never blocks or cancels sibling in-flight work; aggregate `processed`/`failed`/`total` and progress reporting are unchanged. Closes #945. (@saadtab01, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Tests
+
+- [core] test: `reembed-course-materials.test.ts` — asserts bounded in-flight concurrency (never exceeds the configured limit, proven concurrent via a delayed `embedMany` mock), per-material failure isolation (one rejection doesn't stop siblings), monotonic/consistent progress reporting, and blank/null `rawText` exclusion. (@saadtab01, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
