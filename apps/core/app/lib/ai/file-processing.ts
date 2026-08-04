@@ -1,4 +1,9 @@
 import { createHash } from 'crypto';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /** Delimiter written by `processUploadedFile` between semantic chunks for the embed path. */
 export const SEMANTIC_CHUNK_SEPARATOR = '--- CHUNK SEPARATOR ---';
@@ -612,16 +617,469 @@ export async function readFileAsText(file: File | any): Promise<string> {
  * This avoids server-side compatibility issues and provides better performance
  */
 
+// ---------------------------------------------------------------------------
+// PDF extraction isolation (decompression-bomb follow-up to the ZIP guardrails above)
+// ---------------------------------------------------------------------------
+// `@opendocsg/pdf2md` fully inflates a PDF's FlateDecode streams into memory in a
+// single call, with no streaming/limit hook and no up-front declared size the way
+// a ZIP central directory gives PPTX/DOCX. A crafted <50MB PDF whose streams expand
+// to gigabytes can still OOM the host during inflation. Defense-in-depth is to run
+// the inflater in its own process with:
+//   1. a V8 heap soft ceiling (`--max-old-space-size`)
+//   2. an OS-enforced hard ceiling: parent RSS monitor (SIGKILL on breach) plus a
+//      generous `ulimit -v` / RLIMIT_AS backstop (AS sized >> RSS so Node can start)
+//   3. a wall-clock timeout
+// so a breach kills the worker instead of the main server.
+//
+// `--max-old-space-size` alone is NOT a hard RSS / cgroup guarantee — native
+// allocations can still push RSS well above the V8 soft ceiling (e.g. ~866MB observed
+// against a 512MB soft setting). The hard RSS cap closes that gap per worker.
+// This is process isolation for resource separation, not a security sandbox.
+
+/** V8 old-space soft ceiling (MB) for the isolated PDF extraction worker process. */
+export const PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB = 512;
+
 /**
- * Extract text from PDF files using @opendocsg/pdf2md (client-side)
+ * Hard per-worker RSS ceiling (MB). Enforced primarily by a parent-side RSS poll that
+ * SIGKILLs on breach. On Unix we also apply `ulimit -v` (RLIMIT_AS) as a backstop, but
+ * that limit is sized well above this RSS target — RLIMIT_AS bounds virtual address
+ * space, and Node/V8 maps far more VAS than its RSS (a 640MB AS ceiling kills workers
+ * at startup on Linux). Override with `PDF_EXTRACTION_MAX_RSS_MB`.
+ */
+export const PDF_EXTRACTION_WORKER_MAX_RSS_MB = 640;
+
+/**
+ * RLIMIT_AS (`ulimit -v`) must be >> RSS. Node + V8 reserve multi-GB virtual address
+ * space even with a 512MB old-space soft ceiling. Multiplier + floor keep the OS
+ * backstop meaningful without SIGTRAP/SIGKILL on healthy workers.
+ */
+const PDF_EXTRACTION_AS_MULTIPLIER = 8;
+const PDF_EXTRACTION_AS_FLOOR_MB = 2048;
+
+/** Wall-clock ceiling for the isolated PDF extraction worker process. */
+export const PDF_EXTRACTION_WORKER_TIMEOUT_MS = 30_000;
+
+/** How often the parent samples worker RSS for the hard ceiling. */
+const PDF_EXTRACTION_RSS_POLL_MS = 100;
+
+/**
+ * Maximum UTF-8 byte length of the worker's JSON result file. Distinct from
+ * `MAX_EXTRACTED_CONTENT_CHARS` (character budget on extracted text after parse).
+ */
+export const PDF_EXTRACTION_MAX_OUTPUT_BYTES = 25 * 1024 * 1024;
+
+/** Cap on stderr bytes buffered from a worker before its crash message is truncated. */
+const PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES = 4096;
+
+/** Default max concurrent PDF extraction subprocesses in this Node process. */
+export const PDF_EXTRACTION_DEFAULT_MAX_CONCURRENT = 4;
+
+/** Default max waiting queue depth before rejecting with backpressure. */
+export const PDF_EXTRACTION_DEFAULT_MAX_QUEUED = 16;
+
+/**
+ * Thrown when the waiting queue is full. Callers may map this to HTTP 503.
+ * Message includes "busy" / "capacity" for easy matching.
+ */
+export class PdfExtractionBusyError extends Error {
+  constructor(
+    message = 'PDF extraction busy: capacity exceeded (too many concurrent/queued extractions)',
+  ) {
+    super(message);
+    this.name = 'PdfExtractionBusyError';
+  }
+}
+
+function readIntEnv(name: string, fallback: number, { min }: { min: number }): number {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= min ? n : fallback;
+}
+
+/**
+ * Per-process concurrency. Override with `PDF_EXTRACTION_MAX_CONCURRENT`.
+ * Multi-replica note: each replica/instance has its own budget, so fleet capacity is
+ * approximately `replicas × PDF_EXTRACTION_MAX_CONCURRENT` (plus each replica's queue).
+ */
+export function getPdfExtractionMaxConcurrent(): number {
+  return readIntEnv('PDF_EXTRACTION_MAX_CONCURRENT', PDF_EXTRACTION_DEFAULT_MAX_CONCURRENT, { min: 1 });
+}
+
+/** Waiting-queue depth before reject (0 = reject when all slots busy). Override with `PDF_EXTRACTION_MAX_QUEUED`. */
+export function getPdfExtractionMaxQueued(): number {
+  return readIntEnv('PDF_EXTRACTION_MAX_QUEUED', PDF_EXTRACTION_DEFAULT_MAX_QUEUED, { min: 0 });
+}
+
+/** Hard per-worker RSS ceiling in MB. Override with `PDF_EXTRACTION_MAX_RSS_MB`. */
+export function getPdfExtractionMaxRssMb(): number {
+  return readIntEnv('PDF_EXTRACTION_MAX_RSS_MB', PDF_EXTRACTION_WORKER_MAX_RSS_MB, { min: 64 });
+}
+
+/** Best-effort RSS sample for a child PID (Linux `/proc`, Darwin `ps`). */
+export function readChildRssBytes(pid: number): number | null {
+  try {
+    if (process.platform === 'linux') {
+      const status = readFileSync(`/proc/${pid}/status`, 'utf8');
+      const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+      return match ? Number(match[1]) * 1024 : null;
+    }
+    if (process.platform === 'darwin') {
+      const out = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 1_000,
+      }).trim();
+      const kb = Number.parseInt(out, 10);
+      return Number.isFinite(kb) ? kb * 1024 : null;
+    }
+  } catch {
+    // Monitor stays a no-op when RSS cannot be read (permissions / platform).
+  }
+  return null;
+}
+
+function looksLikeHeapOom(stderr: string): boolean {
+  return /FATAL ERROR|JavaScript heap out of memory|Last few GCs|Ineffective mark-compacts|Allocation failed|ENOMEM/i.test(
+    stderr,
+  );
+}
+
+/**
+ * Spawn the PDF worker. On Unix, apply `ulimit -v` (RLIMIT_AS) before `exec` as an
+ * address-space backstop (sized >> RSS — see `PDF_EXTRACTION_AS_*`). Darwin often
+ * rejects `ulimit -v`; the parent RSS monitor is the hard RSS bound on all platforms.
+ */
+export function spawnPdfExtractionWorker(
+  maxOldSpaceMb: number,
+  maxRssMb: number,
+  inputPath: string,
+  outputPath: string,
+): ChildProcess {
+  const nodeArgs = [`--max-old-space-size=${maxOldSpaceMb}`, '-', inputPath, outputPath];
+  const opts = {
+    cwd: process.cwd(),
+    stdio: ['pipe', 'ignore', 'pipe'] as ['pipe', 'ignore', 'pipe'],
+    env: buildPdfWorkerMinimalEnv(),
+  };
+
+  if (process.platform !== 'win32') {
+    // RLIMIT_AS is virtual address space, not RSS. Size it generously so Node can start.
+    const addressSpaceMb = Math.max(
+      maxRssMb * PDF_EXTRACTION_AS_MULTIPLIER,
+      PDF_EXTRACTION_AS_FLOOR_MB,
+    );
+    const virtualMemKb = Math.max(1, Math.floor(addressSpaceMb * 1024));
+    return spawn(
+      'sh',
+      [
+        '-c',
+        // Ignore ulimit failures (e.g. Darwin) so the worker still starts; RSS monitor backs us.
+        `ulimit -v ${virtualMemKb} 2>/dev/null || true; exec "$@"`,
+        'pdf-extract-worker',
+        process.execPath,
+        ...nodeArgs,
+      ],
+      opts,
+    );
+  }
+
+  return spawn(process.execPath, nodeArgs, opts);
+}
+
+let activePdfExtractions = 0;
+const pdfExtractionQueue: Array<() => void> = [];
+
+/** Test-only: reset in-process semaphore/queue between cases. */
+export function resetPdfExtractionConcurrencyForTests(): void {
+  activePdfExtractions = 0;
+  pdfExtractionQueue.length = 0;
+}
+
+/** Test-only: acquire (and hold) a concurrency slot without starting a worker. */
+export function holdPdfExtractionSlotForTests(): Promise<() => void> {
+  return acquirePdfExtractionSlot();
+}
+
+async function acquirePdfExtractionSlot(): Promise<() => void> {
+  const maxConcurrent = getPdfExtractionMaxConcurrent();
+  const maxQueued = getPdfExtractionMaxQueued();
+
+  if (activePdfExtractions < maxConcurrent) {
+    activePdfExtractions += 1;
+  } else if (pdfExtractionQueue.length >= maxQueued) {
+    throw new PdfExtractionBusyError(
+      `PDF extraction busy: ${activePdfExtractions} active and ${pdfExtractionQueue.length} queued (capacity exceeded)`,
+    );
+  } else {
+    // Waiter receives a handed-off permit on wake — do NOT increment again after resume.
+    await new Promise<void>((resolve) => {
+      pdfExtractionQueue.push(resolve);
+    });
+  }
+
+  return () => {
+    // Permit handoff: if someone is waiting, wake them without decrementing.
+    // Decrementing first and letting the waiter re-increment races with a
+    // concurrent fast-path acquire() in the same window and overbooks.
+    const next = pdfExtractionQueue.shift();
+    if (next) {
+      next();
+      return;
+    }
+    activePdfExtractions -= 1;
+  };
+}
+
+function buildPdfWorkerMinimalEnv(): NodeJS.ProcessEnv {
+  // Minimal env so the worker can resolve modules via cwd/`node_modules` — not a sandbox.
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH ?? '',
+  };
+  if (process.env.NODE_PATH) env.NODE_PATH = process.env.NODE_PATH;
+  if (process.env.HOME) env.HOME = process.env.HOME;
+  if (process.env.LANG) env.LANG = process.env.LANG;
+  // Do not forward NODE_OPTIONS — worker gets its own --max-old-space-size on argv.
+  return env;
+}
+
+// Runs as a plain Node CommonJS script piped over stdin (`node - <in> <out>`), so it
+// ships as part of this module rather than a separate file the build/Docker image
+// would need to know to copy. `@opendocsg/pdf2md` resolves via the worker's cwd
+// (the app root), same as it would for a `require` in this file.
+// The worker enforces `PDF_EXTRACTION_MAX_OUTPUT_BYTES` before writeFile so oversized
+// output cannot grow unbounded on disk.
+function buildPdfExtractionWorkerSource(maxOutputBytes: number): string {
+  return `
+  const fs = require("node:fs");
+  const pdf2md = require("@opendocsg/pdf2md");
+
+  const [, , inputPath, outputPath] = process.argv;
+  const MAX_OUTPUT_BYTES = ${maxOutputBytes};
+
+  Promise.resolve()
+    .then(async () => {
+      const buffer = fs.readFileSync(inputPath);
+      const markdown = await pdf2md(buffer);
+      const payload = JSON.stringify({ content: markdown });
+      if (Buffer.byteLength(payload, "utf8") > MAX_OUTPUT_BYTES) {
+        process.stderr.write(
+          "PDF extraction output of " + Buffer.byteLength(payload, "utf8") +
+          " bytes exceeds the maximum of " + MAX_OUTPUT_BYTES,
+        );
+        process.exit(2);
+      }
+      fs.writeFileSync(outputPath, payload);
+    })
+    .catch((error) => {
+      process.stderr.write(String((error && error.stack) || error));
+      process.exit(1);
+    });
+`;
+}
+
+export type ExtractPdfTextIsolatedLimits = {
+  maxOldSpaceMb?: number;
+  /** Hard RSS ceiling in MB (OS ulimit + parent monitor). */
+  maxRssMb?: number;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+};
+
+/**
+ * Run `@opendocsg/pdf2md` in an isolated subprocess with a V8 heap soft ceiling,
+ * an OS-enforced RSS hard ceiling, and a wall-clock timeout, so a decompression-bomb
+ * PDF kills the worker instead of over-allocating the main server. Throws if the
+ * worker breaches a limit, exits non-zero, fails to start, or the waiting queue is full.
+ */
+export async function extractPdfTextIsolated(
+  buffer: Buffer,
+  limits: ExtractPdfTextIsolatedLimits = {},
+): Promise<{ content: string }> {
+  const maxOldSpaceMb = limits.maxOldSpaceMb ?? PDF_EXTRACTION_WORKER_MAX_OLD_SPACE_MB;
+  const maxRssMb = limits.maxRssMb ?? getPdfExtractionMaxRssMb();
+  const timeoutMs = limits.timeoutMs ?? PDF_EXTRACTION_WORKER_TIMEOUT_MS;
+  const maxOutputBytes = limits.maxOutputBytes ?? PDF_EXTRACTION_MAX_OUTPUT_BYTES;
+
+  // Acquire the slot before any fallible setup (mkdtemp/write) so a failure cannot leak
+  // a concurrency permit. Temp dir cleanup is best-effort inside the same finally.
+  const release = await acquirePdfExtractionSlot();
+  let dir: string | undefined;
+
+  try {
+    dir = await mkdtemp(join(tmpdir(), 'pdf-extract-'));
+    const inputPath = join(dir, 'input.pdf');
+    const outputPath = join(dir, 'output.json');
+
+    await writeFile(inputPath, buffer);
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let timedOut = false;
+      let rssBreached = false;
+      let earlyFailure: Error | null = null;
+      let childExited = false;
+      let rssMonitor: ReturnType<typeof setInterval> | undefined;
+
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (rssMonitor) clearInterval(rssMonitor);
+        fn();
+      };
+
+      const child = spawnPdfExtractionWorker(maxOldSpaceMb, maxRssMb, inputPath, outputPath);
+
+      const stderrChunks: Buffer[] = [];
+      let stderrBytes = 0;
+
+      const forceKillChild = () => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      };
+
+      // Reject only after the child has exited (or spawn failed), so `finally`
+      // never releases the concurrency slot while a worker is still running.
+      const killAndReject = (error: Error) => {
+        earlyFailure = earlyFailure ?? error;
+        forceKillChild();
+        if (childExited || child.exitCode !== null || child.signalCode !== null) {
+          settle(() => reject(earlyFailure!));
+        }
+        // else: wait for `exit` to settle with earlyFailure
+      };
+
+      const timer = setTimeout(() => {
+        // Only mark timedOut when we actually issue a kill against a still-running child.
+        if (child.exitCode === null && child.signalCode === null) {
+          const killed = child.kill('SIGKILL');
+          if (killed) timedOut = true;
+        }
+      }, timeoutMs);
+
+      // Parent-enforced hard RSS ceiling (backs ulimit -v on platforms that ignore it).
+      rssMonitor = setInterval(() => {
+        if (settled || !child.pid) return;
+        const rss = readChildRssBytes(child.pid);
+        if (rss != null && rss > maxRssMb * 1024 * 1024) {
+          rssBreached = true;
+          forceKillChild();
+        }
+      }, PDF_EXTRACTION_RSS_POLL_MS);
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        if (stderrBytes >= PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES) return;
+        const remaining = PDF_EXTRACTION_WORKER_STDERR_CAP_BYTES - stderrBytes;
+        const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
+        stderrChunks.push(slice);
+        stderrBytes += slice.length;
+      });
+
+      child.stdin?.on('error', (error: NodeJS.ErrnoException) => {
+        // Child often closes stdin early on crash/OOM; EPIPE is expected and the exit
+        // handler owns the outcome. Other stdin errors kill + wait for exit.
+        if (error.code === 'EPIPE') return;
+        killAndReject(error);
+      });
+
+      child.on('error', (error) => {
+        // Spawn/startup failure — there may be no process to wait on.
+        earlyFailure = earlyFailure ?? error;
+        forceKillChild();
+        settle(() => reject(earlyFailure!));
+      });
+
+      child.on('exit', (code, signal) => {
+        childExited = true;
+        settle(() => {
+          if (earlyFailure) {
+            reject(earlyFailure);
+            return;
+          }
+          if (timedOut) {
+            reject(
+              new Error(
+                `PDF extraction exceeded the ${timeoutMs}ms wall-clock limit and was terminated`,
+              ),
+            );
+            return;
+          }
+          if (code === 0) {
+            resolve();
+            return;
+          }
+          const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+          // Hard RSS breach (parent monitor) or OS/V8 OOM: normalize to a "killed" message
+          // so callers/tests accept both signal termination (Unix) and plain exit-code OOM
+          // (Windows reports V8 heap fatal errors without a signal).
+          if (rssBreached || signal || looksLikeHeapOom(stderr)) {
+            const reason = rssBreached
+              ? ` after exceeding the ${maxRssMb}MB RSS hard limit`
+              : '';
+            reject(
+              new Error(
+                `PDF extraction worker was killed (signal ${signal ?? 'none'}` +
+                  (code != null ? `, exit code ${code}` : '') +
+                  `)${reason}`,
+              ),
+            );
+            return;
+          }
+          reject(
+            new Error(
+              `PDF extraction worker failed: ${stderr || `exit code ${code}`}`,
+            ),
+          );
+        });
+      });
+
+      try {
+        child.stdin?.write(buildPdfExtractionWorkerSource(maxOutputBytes));
+        child.stdin?.end();
+      } catch (error) {
+        // Synchronous write failures: kill and wait for exit before rejecting.
+        if ((error as NodeJS.ErrnoException)?.code !== 'EPIPE') {
+          killAndReject(error as Error);
+        }
+      }
+    });
+
+    // Defense-in-depth: worker already refused oversized payloads, but re-check bytes
+    // before reading the result fully into this process's memory.
+    const { size } = await stat(outputPath);
+    if (size > maxOutputBytes) {
+      throw new Error(
+        `PDF extraction result of ${size} bytes exceeds the maximum of ${maxOutputBytes} bytes`,
+      );
+    }
+
+    const raw = await readFile(outputPath, 'utf8');
+    const parsed = JSON.parse(raw) as { content: string };
+    if (typeof parsed.content === 'string' && parsed.content.length > MAX_EXTRACTED_CONTENT_CHARS) {
+      throw new Error(
+        `PDF extraction result of ${parsed.content.length} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+      );
+    }
+    return parsed;
+  } finally {
+    release();
+    if (dir) {
+      await rm(dir, { recursive: true, force: true }).catch((error) => {
+        console.error('[PDF_EXTRACTION_TEMP_CLEANUP_FAILED]', { dir, error });
+      });
+    }
+  }
+}
+
+/**
+ * Extract text from PDF files using @opendocsg/pdf2md, isolated in a memory- and
+ * time-capped subprocess (see PDF extraction isolation guardrails above).
  */
 export async function extractPdfText(file: File): Promise<{ content: string; pageCount?: number; metadata?: any }> {
   try {
-    // Dynamic import for client-side PDF processing
-    const pdf2md = await import('@opendocsg/pdf2md');
-
     const arrayBuffer = await file.arrayBuffer();
-    const markdown = await pdf2md.default(arrayBuffer);
+    const { content: markdown } = await extractPdfTextIsolated(Buffer.from(arrayBuffer));
 
     // Estimate page count from markdown structure
     const pageCount = (markdown.match(/---\s*PAGE\s*\d+\s*---/gi) || []).length || 1;
