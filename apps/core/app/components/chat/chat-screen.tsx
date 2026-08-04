@@ -167,6 +167,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
    * the user flips the toggle back and forth on the same response.
    */
   const assistVariantCacheRef = useRef<Record<string, Partial<Record<"true" | "false", string>>>>({});
+  /**
+   * Synchronous in-flight guard for the regenerate call below — a ref (not
+   * `regeneratingMessageId` state) because a rapid second toggle click can
+   * fire before React commits the re-render that disables the Assist button,
+   * so a state read at that point would still see the pre-click value.
+   */
+  const regeneratingRef = useRef(false);
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
@@ -378,10 +385,21 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         return;
       }
 
+      // A rapid second click can fire before assistBusy re-renders the toggle
+      // as disabled — ignore it rather than starting an overlapping regenerate.
+      if (regeneratingRef.current) return;
+      regeneratingRef.current = true;
+
       void (async () => {
         const cacheKey = checked ? "true" : "false";
         const cached = assistVariantCacheRef.current[lastMessage.id]?.[cacheKey];
-        const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+        let lastUserMessage: (typeof messages)[number] | undefined;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "user") {
+            lastUserMessage = messages[i];
+            break;
+          }
+        }
 
         try {
           let content = cached;
@@ -391,10 +409,8 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                chatMode: "learning",
-                chatId,
-                model: selectedModel,
-                courseCode: selectedCourseCode || undefined,
+                ...requestMetadata,
+                systemPrompt: undefined,
                 adhdAssist: checked,
                 regenerateOnly: true,
                 streaming: false,
@@ -420,17 +436,29 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === lastMessage.id
-                  ? { ...m, content: resolvedContent, parts: [{ type: "text", text: resolvedContent }] }
+                  ? {
+                      ...m,
+                      content: resolvedContent,
+                      // Keep any tool-invocation/citation parts from the original
+                      // reply — only the text part reflects the regenerated content.
+                      parts: [
+                        ...(m.parts ?? []).filter((part) => part.type !== "text"),
+                        { type: "text", text: resolvedContent },
+                      ],
+                    }
                   : m,
               ),
             );
+            // Only commit the mode switch once the displayed content actually
+            // matches it — a failed regenerate (below) leaves both unchanged.
+            setAdhdAssist(checked);
+            setAssistive(checked);
           }
         } catch (error) {
           console.error("Failed to regenerate response for Assist toggle:", error);
         } finally {
+          regeneratingRef.current = false;
           setRegeneratingMessageId(null);
-          setAdhdAssist(checked);
-          setAssistive(checked);
         }
       })();
     },

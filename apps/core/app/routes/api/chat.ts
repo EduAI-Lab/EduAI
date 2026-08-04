@@ -1700,6 +1700,9 @@ ${buildEmptyCourseRagBlock()}`;
         profileStructuralPass?: boolean;
       },
     ) => {
+      // regenerateOnly is a read-only content preview (#1246) — never logs
+      // compliance telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
       const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
@@ -1806,6 +1809,9 @@ ${buildEmptyCourseRagBlock()}`;
         | undefined;
       finishReason: string;
     }) => {
+      // regenerateOnly is a read-only content preview (#1246) — never
+      // persists routing/sustainability telemetry for a toggled-preview turn.
+      if (regenerateOnly) return;
       await persistAiInteractionTelemetry({
         userId: actingUser.id,
         courseId: effectiveCourseId,
@@ -2037,30 +2043,28 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
-        // regenerateOnly is a read-only content preview (#1246) — skip telemetry
-        // and compliance logging so a toggled-preview doesn't double-count a turn.
-        if (!regenerateOnly) {
-          await persistTurnTelemetry({
-            responseText: finalText,
-            usage: {
-              promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-              completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
-              totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
-            },
-            finishReason: String(finishReason ?? "stop"),
-          });
-          logResponseCompliance(finalText, {
-            finishReason,
-            promptTokens: usage?.promptTokens,
-            completionTokens: usage?.completionTokens,
-            oversightRewritten: audited.rewritten,
-            oversightMethod: audited.method,
-            preStructuralPass: audited.beforeMetrics.structuralPass,
-            oversightDurationMs: audited.oversightDurationMs,
-            oversightPromptTokens: audited.oversightUsage?.promptTokens,
-            oversightCompletionTokens: audited.oversightUsage?.completionTokens,
-          });
-        }
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
+        await persistTurnTelemetry({
+          responseText: finalText,
+          usage: {
+            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
+        logResponseCompliance(finalText, {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+          oversightRewritten: audited.rewritten,
+          oversightMethod: audited.method,
+          preStructuralPass: audited.beforeMetrics.structuralPass,
+          oversightDurationMs: audited.oversightDurationMs,
+          oversightPromptTokens: audited.oversightUsage?.promptTokens,
+          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
+        });
 
         const persistOverseenAssistantMessages = async (text: string) => {
           const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
@@ -2224,27 +2228,25 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
-        // regenerateOnly is a read-only content preview (#1246) — skip telemetry
-        // and compliance logging so a toggled-preview doesn't double-count a turn.
-        if (!regenerateOnly) {
-          await persistTurnTelemetry({
-            responseText: text ?? "",
-            usage: {
-              promptTokens: normalizedUsage.promptTokens ?? undefined,
-              completionTokens: normalizedUsage.completionTokens ?? undefined,
-              totalTokens: normalizedUsage.totalTokens ?? undefined,
-            },
-            finishReason: String(finishReason ?? "stop"),
-          });
-          // The streaming `onFinish` hook bails out on non-streaming turns, so
-          // without this the baseline and prompt-only eval arms (which post
-          // `streaming: false` and skip the Dean) record no compliance row at all.
-          logResponseCompliance(text ?? "", {
-            finishReason,
-            promptTokens: usage?.promptTokens,
-            completionTokens: usage?.completionTokens,
-          });
-        }
+        // Both helpers no-op internally for regenerateOnly (#1246) — a
+        // read-only content preview shouldn't double-count a turn.
+        await persistTurnTelemetry({
+          responseText: text ?? "",
+          usage: {
+            promptTokens: normalizedUsage.promptTokens ?? undefined,
+            completionTokens: normalizedUsage.completionTokens ?? undefined,
+            totalTokens: normalizedUsage.totalTokens ?? undefined,
+          },
+          finishReason: String(finishReason ?? "stop"),
+        });
+        // The streaming `onFinish` hook bails out on non-streaming turns, so
+        // without this the baseline and prompt-only eval arms (which post
+        // `streaming: false` and skip the Dean) record no compliance row at all.
+        logResponseCompliance(text ?? "", {
+          finishReason,
+          promptTokens: usage?.promptTokens,
+          completionTokens: usage?.completionTokens,
+        });
 
         releaseAdmission();
         return new Response(

@@ -200,6 +200,21 @@ describe("POST /api/chat — regenerateOnly content preview (#1246)", () => {
     expect(recordResponseComplianceEvent).not.toHaveBeenCalled();
   });
 
+  it("returns 410 and generates nothing when the chatId is not owned by the acting user", async () => {
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue(null);
+
+    const res = await action(
+      makeArgs(
+        baseBody({ chatId: "someone-elses-chat-id", regenerateOnly: true, adhdAssist: true }),
+      ),
+    );
+    expect(res.status).toBe(410);
+
+    const body = await res.json();
+    expect(body.chatDeleted).toBe(true);
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
   it("returns the baseline content when previewing Assist off, ignoring the streaming flag", async () => {
     mockStreamResult(BASELINE_DRAFT);
 

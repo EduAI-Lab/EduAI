@@ -390,6 +390,130 @@ describe("ChatScreen — Assist toggle regenerates content (#1246)", () => {
     fetchSpy.mockRestore();
   });
 
+  it("leaves the toggle and content unchanged when the regenerate call fails", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((async (url: string) => {
+      if (url !== "/api/chat") return { ok: false, json: () => Promise.resolve({}) };
+      return { ok: false, status: 500, json: () => Promise.resolve({}) };
+    }) as typeof fetch);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderChatScreen(transcriptWithAssistantReply);
+
+    await act(async () => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const finalProps = captureCourseViewProps.mock.lastCall?.[0];
+    // Neither the toggle nor the displayed content commit on a failed regenerate.
+    expect(finalProps.assistBusy).toBe(false);
+    expect(finalProps.adhdAssist).toBe(false);
+    expect(finalProps.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "assistant-1", content: "A long baseline paragraph." }),
+      ]),
+    );
+
+    consoleErrorSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it("leaves the toggle and content unchanged when the regenerate response has no content", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    } as never);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderChatScreen(transcriptWithAssistantReply);
+
+    await act(async () => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const finalProps = captureCourseViewProps.mock.lastCall?.[0];
+    expect(finalProps.adhdAssist).toBe(false);
+    expect(finalProps.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "assistant-1", content: "A long baseline paragraph." }),
+      ]),
+    );
+
+    consoleErrorSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it("ignores a second toggle click while a regenerate request is already in flight", () => {
+    // Never resolves — simulates the request still being in flight.
+    const fetchSpy = vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}) as never);
+
+    renderChatScreen(transcriptWithAssistantReply);
+
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+      // Fires synchronously, before assistBusy's re-render would disable the
+      // toggle — mirrors a rapid double-click landing inside that window.
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+    });
+
+    const chatApiCalls = fetchSpy.mock.calls.filter(([url]) => url === "/api/chat");
+    expect(chatApiCalls.length).toBe(1);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("preserves existing tool-invocation parts when swapping in regenerated text", async () => {
+    const transcriptWithToolParts: ChatTranscript = {
+      ...transcriptWithAssistantReply,
+      messages: [
+        { id: "user-1", role: "user", content: "Explain tax brackets" },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "A long baseline paragraph.",
+          parts: [
+            { type: "tool-invocation", toolInvocation: { toolName: "getInformation", state: "result" } },
+            { type: "text", text: "A long baseline paragraph." },
+          ],
+        } as never,
+      ],
+    };
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ content: "**Top summary**\n- Adapted point" }),
+    } as never);
+
+    renderChatScreen(transcriptWithToolParts);
+
+    await act(async () => {
+      captureCourseViewProps.mock.lastCall?.[0].onAssistiveChange(true);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const updatedMessage = captureCourseViewProps.mock.lastCall?.[0].messages.find(
+      (m: { id: string }) => m.id === "assistant-1",
+    );
+    expect(updatedMessage.parts).toEqual([
+      { type: "tool-invocation", toolInvocation: { toolName: "getInformation", state: "result" } },
+      { type: "text", text: "**Top summary**\n- Adapted point" },
+    ]);
+
+    fetchSpy.mockRestore();
+  });
+
   it("falls back to the cosmetic-only toggle when there is no assistant reply yet", () => {
     // Unrelated components in the tree (e.g. ai-service-indicators) poll their
     // own endpoints — only assert on the regenerate call this test cares about.
