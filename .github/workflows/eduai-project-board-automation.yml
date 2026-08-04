@@ -1,0 +1,72 @@
+name: EduAI project board automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_week:
+        description: "Optional week number to archive from Done (for a manual run)."
+        required: false
+      dry_run:
+        description: "Report planned changes without updating the project."
+        type: boolean
+        default: false
+  issues:
+    types: [closed]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, edited, synchronize, closed]
+  schedule:
+    # Safety reconciliation for manually added PR cards and missed events.
+    - cron: "*/15 * * * *"
+    # Sunday 11:59 PM PDT (Monday 06:59 UTC). 2026-08-09 is Week 14.
+    - cron: "59 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eduai-project-board-automation
+  cancel-in-progress: false
+
+jobs:
+  sync-project:
+    name: Sync issue-only project workflow
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Synchronize project board
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+          PROJECT_OWNER: EduAI-Lab
+          PROJECT_NUMBER: "8"
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_ARCHIVE_WEEK: ${{ inputs.archive_week }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "PROJECTS_TOKEN is required to update organization project 8." >&2
+            exit 1
+          fi
+
+          args=()
+          if [ "$EVENT_SCHEDULE" = "59 6 * * 1" ]; then
+            args+=(--scheduled-weekly-archive)
+          elif [ -n "$INPUT_ARCHIVE_WEEK" ]; then
+            args+=(--archive-week "$INPUT_ARCHIVE_WEEK")
+          fi
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+
+          node eduai-summer-2026/scripts/sync-project-board.js "${args[@]}"
