@@ -23,7 +23,7 @@ EduAI Core; this service holds only a local `User` FK row plus QM's own course/q
 - **Database**: PostgreSQL via Prisma ORM (`prisma/schema.prisma`)
 - **Auth**: session cookie validated against EduAI Core (no local passwords/JWTs issued by this service)
 - **AI**: EduAI's hosted chat/generation API, with direct Groq/OpenAI/DeepSeek as optional fallbacks
-- **File upload**: Multer (OCR text extraction inputs)
+- **File upload**: none — OCR runs client-side in the frontend; the backend receives the already-extracted text
 - **Security**: Helmet, CORS, rate limiting, AES-256-GCM at-rest encryption for stored Canvas API keys
 
 ## Project Structure
