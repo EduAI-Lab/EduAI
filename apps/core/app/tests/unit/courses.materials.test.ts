@@ -371,6 +371,16 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     );
   });
 
+  it("returns 403 (not 404) when a student-hidden material actually exists (#1180)", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // studentGate-filtered read: excluded
+      .mockResolvedValueOnce({ id: "mat-1" } as never); // existence check: it's really there
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(403);
+  });
+
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });

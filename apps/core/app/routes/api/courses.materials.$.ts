@@ -577,6 +577,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
 
     if (!material) {
+      // A student-gated miss is ambiguous: either the material doesn't exist
+      // (or is soft-deleted) or it exists but studentGate excluded it. Only
+      // students can hit the latter case (studentGate is `{}` for staff, so
+      // this findFirst is otherwise identical to the existence check below).
+      // Distinguish them with one extra query so hidden-but-real material
+      // reports 403, matching #1180's spec, instead of the indistinguishable
+      // 404 a folded WHERE clause would otherwise produce.
+      if (access.level === 'student') {
+        const exists = await prisma.courseMaterial.findFirst({
+          where: { id: materialId, courseId, deletedAt: null },
+          select: { id: true },
+        });
+        if (exists) {
+          return json(403, { error: 'Forbidden' });
+        }
+      }
       return json(404, { error: 'Material not found' });
     }
 

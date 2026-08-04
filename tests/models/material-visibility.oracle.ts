@@ -10,15 +10,19 @@
  *   - Deleted material is invisible to everyone who clears that gate, on every
  *     path — soft-deleted is absent, not merely hidden.
  *   - Staff (ADMIN / UNIT_ADMIN-in-unit / enrolled INSTRUCTOR / enrolled TA)
- *     bypass the student visibility gate entirely.
- *   - An enrolled STUDENT is additionally gated by VisibleToStudents and
- *     AvailableAt.
+ *     bypass the student visibility gate entirely, including the
+ *     Canvas-unpublished clause — a material staff can read directly must
+ *     never be invisible to that same staff member in RAG.
+ *   - An enrolled STUDENT is additionally gated by VisibleToStudents,
+ *     AvailableAt, and Unpublished (Canvas sync, #777).
  *
  * This file is intentionally app-agnostic (no imports from apps/core) — the
  * verdict is a semantic fact about the visibility rule, not about any one
  * enforcement site. Each path adapter (REST status code, RAG chunk inclusion)
  * maps the verdict to its own observable; see
- * apps/core/app/tests/integration/material-visibility.integration.test.ts.
+ * apps/core/app/tests/integration/material-visibility.integration.test.ts,
+ * which exercises all three paths (REST, hybrid-RAG, SQL-RAG) against every
+ * row, rather than routing each row to a single path.
  */
 
 export type MaterialVisibilityRow = {
@@ -27,7 +31,7 @@ export type MaterialVisibilityRow = {
   VisibleToStudents: "true" | "false";
   AvailableAt: "past" | "future" | "null";
   Deleted: "yes" | "no";
-  Path: "rest" | "rag-hybrid" | "rag-sql";
+  Unpublished: "yes" | "no";
 };
 
 export type Verdict =
@@ -49,7 +53,7 @@ const STAFF_ROLES = new Set<MaterialVisibilityRow["Role"]>([
  * unit match for UNIT_ADMIN (this model has no UnitMatch dimension), so both
  * always have access. Everyone else needs an active enrollment.
  */
-function hasCourseAccess(row: MaterialVisibilityRow): boolean {
+export function hasCourseAccess(row: MaterialVisibilityRow): boolean {
   if (row.Role === "ANON") return false;
   if (row.Role === "ADMIN" || row.Role === "UNIT_ADMIN") return true;
   return row.Enrolled === "yes";
@@ -66,7 +70,10 @@ export function materialVisibilityOracle(row: MaterialVisibilityRow): Verdict {
   if (isStaff(row)) return { outcome: "visible" };
 
   // Remaining case: an enrolled STUDENT.
-  const hiddenFromStudent = row.VisibleToStudents === "false" || row.AvailableAt === "future";
+  const hiddenFromStudent =
+    row.VisibleToStudents === "false" ||
+    row.AvailableAt === "future" ||
+    row.Unpublished === "yes";
   return hiddenFromStudent
     ? { outcome: "denied", reason: "hidden-from-student" }
     : { outcome: "visible" };
@@ -75,13 +82,6 @@ export function materialVisibilityOracle(row: MaterialVisibilityRow): Verdict {
 /**
  * REST adapter: the exact HTTP status `routes/api/courses.materials.$.ts`
  * returns for `GET /api/courses/:courseId/materials/:materialId`.
- *
- * `hidden-from-student` maps to 404, not 403: the single-material query folds
- * the student visibility gate into the `WHERE` clause itself (see
- * `studentVisibilityWhere`), so a hidden-but-existing material is
- * indistinguishable from a nonexistent one — same as `absent`. Only the
- * coarser course-level gate (no session / no course access) returns a
- * distinct 401/403 before the material row is ever queried.
  */
 export function expectedRestStatus(row: MaterialVisibilityRow): number {
   const verdict = materialVisibilityOracle(row);
@@ -97,7 +97,7 @@ export function expectedRestStatus(row: MaterialVisibilityRow): number {
         case "no-course-access":
           return 403;
         case "hidden-from-student":
-          return 404;
+          return 403;
       }
   }
 }
