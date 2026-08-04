@@ -146,6 +146,59 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     expect(maxInFlight).toBeLessThanOrEqual(4);
   });
 
+  it.each(["2.5", "not-a-number", "0", "-2"])(
+    "falls back to concurrency 4 for invalid REINDEX_CONCURRENCY=%s",
+    async (configuredConcurrency) => {
+      process.env.REINDEX_CONCURRENCY = configuredConcurrency;
+
+      const materials: Material[] = Array.from({ length: 6 }, (_, i) => ({
+        id: `m${i}`,
+        rawText: `content ${i}`,
+        title: `Material ${i}`,
+      }));
+      mockMaterials(materials);
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      (embedManyMock as any).mockImplementation(async ({ values }: any) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        inFlight -= 1;
+        return { embeddings: values.map(() => [...SAMPLE_EMBEDDING]) };
+      });
+
+      await reEmbedCourseMaterials("course-1");
+
+      expect(maxInFlight).toBe(4);
+    },
+  );
+
+  it("caps oversized REINDEX_CONCURRENCY values at 16", async () => {
+    process.env.REINDEX_CONCURRENCY = "1000";
+
+    const materials: Material[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `m${i}`,
+      rawText: `content ${i}`,
+      title: `Material ${i}`,
+    }));
+    mockMaterials(materials);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    (embedManyMock as any).mockImplementation(async ({ values }: any) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return { embeddings: values.map(() => [...SAMPLE_EMBEDDING]) };
+    });
+
+    await reEmbedCourseMaterials("course-1");
+
+    expect(maxInFlight).toBe(16);
+  });
+
   it("isolates per-material failures: one rejection does not stop siblings", async () => {
     process.env.REINDEX_CONCURRENCY = "3";
 
