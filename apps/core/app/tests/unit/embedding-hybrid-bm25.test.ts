@@ -4,7 +4,7 @@
  *
  * Covers:
  *  - isHybridBm25Enabled() reads RAG_HYBRID_BM25 correctly
- *  - RAG_HYBRID_BM25=1 → ANN vector candidates followed by hybrid reranking
+ *  - RAG_HYBRID_BM25=1 → GIN lexical candidates unioned with bounded ANN candidates
  *  - RAG_HYBRID_BM25 unset → ANN vector candidates followed by thresholding
  *  - RAG_HYBRID_BM25_ALPHA env var adjusts the vector/BM25 weights
  *  - Return shape is identical ({content, similarity, materialTitle}) regardless of path
@@ -172,6 +172,16 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("ts_rank");
     expect(sql).toContain("plainto_tsquery");
     expect(sql).toContain("content_tsv");
+    expect(sql).toContain("content_tsv @@");
+  });
+
+  it("unions GIN-eligible lexical candidates with semantic-threshold candidates", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).toContain("candidate_chunks AS");
+    expect(sql).toContain("content_tsv @@");
+    expect(sql).toContain("UNION");
+    expect(sql).toContain("AND 1 -");
   });
 
   // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
@@ -184,7 +194,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("mc.content_tsv");
   });
 
-  it("uses an ANN-compatible vector candidate query before hybrid reranking", async () => {
+  it("unions GIN lexical candidates with ANN semantic candidates before hybrid reranking", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("WITH vector_candidates AS MATERIALIZED");
@@ -244,7 +254,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
   it("defaults to alpha=0.7 (vector) and bm25Weight=0.3", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const queryParamIndex = params.indexOf(QUERY);
+    const queryParamIndex = params.lastIndexOf(QUERY);
     expect(params[queryParamIndex - 1]).toBeCloseTo(0.7);
     expect(params[queryParamIndex + 1]).toBeCloseTo(0.3);
   });
@@ -253,7 +263,7 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     process.env.RAG_HYBRID_BM25_ALPHA = "0.5";
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const params = capturedParams();
-    const queryParamIndex = params.indexOf(QUERY);
+    const queryParamIndex = params.lastIndexOf(QUERY);
     expect(params[queryParamIndex - 1]).toBeCloseTo(0.5);
     expect(params[queryParamIndex + 1]).toBeCloseTo(0.5);
   });

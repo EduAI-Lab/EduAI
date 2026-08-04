@@ -949,6 +949,27 @@ export async function findRelevantContent(
             ${visibilityFilter}
           ORDER BY me.embedding <=> ${queryEmbedding}::vector ASC
           LIMIT ${hybridCandidateLimit}
+        ), lexical_candidates AS MATERIALIZED (
+          SELECT
+            mc.content,
+            mc.content_tsv,
+            cm.title AS material_title,
+            me.embedding <=> ${queryEmbedding}::vector AS distance
+          FROM material_chunks mc
+          JOIN material_embeddings me ON me."chunkId" = mc.id
+          JOIN course_materials cm ON mc."materialId" = cm.id
+          WHERE cm."courseId" = ${courseId}
+            AND cm."deletedAt" IS NULL
+            ${canvasPublishFilter}
+            ${visibilityFilter}
+            AND mc.content_tsv @@ plainto_tsquery('english', ${userQuery})
+        ), candidate_chunks AS (
+          SELECT content, content_tsv, material_title, distance
+          FROM vector_candidates
+          WHERE 1 - distance > ${threshold}
+          UNION
+          SELECT content, content_tsv, material_title, distance
+          FROM lexical_candidates
         )
         SELECT
           content,
@@ -963,8 +984,7 @@ export async function findRelevantContent(
             ),
             0
           ) * ${bm25Weight} AS score
-        FROM vector_candidates
-        WHERE 1 - distance > ${threshold}
+        FROM candidate_chunks
         ORDER BY score DESC
         LIMIT ${Number(effectiveLimit)}
       `,

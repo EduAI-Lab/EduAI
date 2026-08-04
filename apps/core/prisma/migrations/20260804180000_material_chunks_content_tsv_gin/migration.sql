@@ -16,7 +16,7 @@
 
 -- AlterTable
 ALTER TABLE "material_chunks"
-  ADD COLUMN "content_tsv" tsvector GENERATED ALWAYS AS (to_tsvector('english', "content")) STORED;
+  ADD COLUMN IF NOT EXISTS "content_tsv" tsvector GENERATED ALWAYS AS (to_tsvector('english', "content")) STORED;
 
 -- CreateIndex
-CREATE INDEX "material_chunks_content_tsv_idx" ON "material_chunks" USING GIN ("content_tsv");
+CREATE INDEX IF NOT EXISTS "material_chunks_content_tsv_idx" ON "material_chunks" USING GIN ("content_tsv");
