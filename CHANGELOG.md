@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Changed
+
+- [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). Closes #942. (@saad, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Tests
+
+- [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — mocks the three pre-stream dependencies with artificial delays and asserts `POST /api/chat`'s total pre-stream latency tracks the slowest call, not their sum, for both the default and admin chat-mode branches. (@saad, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
