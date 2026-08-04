@@ -3,7 +3,9 @@ import { Prisma } from "@prisma/client";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
+import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
+import { parseEnvInt } from "~/lib/auth/rate-limit.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
@@ -42,6 +44,21 @@ const LOCAL_EMBED_MANY_BATCH_SIZE = Math.min(
 
 function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
   return wantsLocal ? LOCAL_EMBED_MANY_BATCH_SIZE : CLOUD_EMBED_MANY_BATCH_SIZE;
+}
+
+/**
+ * Default number of materials re-embedded concurrently in `reEmbedCourseMaterials`
+ * (#945). Kept modest (rather than unbounded `Promise.all`) so a large re-embed run
+ * doesn't exhaust the Postgres connection pool or burst past the embedding
+ * provider's rate limit — each in-flight material holds a `prisma.$transaction`
+ * connection plus an `embedMany` call for the duration of its chunking/embedding
+ * work. Mirrors the same "small bounded pool, env-overridable" pattern as
+ * `AI_MAX_INFLIGHT` in admission.server.ts. Override via `REINDEX_CONCURRENCY`.
+ */
+const DEFAULT_REINDEX_CONCURRENCY = 4;
+
+function reindexConcurrency(): number {
+  return Math.max(1, parseEnvInt(process.env.REINDEX_CONCURRENCY, DEFAULT_REINDEX_CONCURRENCY));
 }
 
 function isOllamaBadRequestError(err: unknown): boolean {
@@ -782,6 +799,10 @@ export async function reEmbedCourseMaterials(
   const failed: string[] = [];
   let processed = 0;
 
+  // Progress is reported after every state transition (started/finished), so
+  // operators still see live counts even though completion order is no longer
+  // strictly sequential under concurrency. `currentMaterialTitle` reflects the
+  // most recently *started* material rather than a single in-flight item.
   const reportProgress = async (currentMaterialTitle?: string) => {
     await options?.onProgress?.({
       total: eligible.length,
@@ -793,38 +814,49 @@ export async function reEmbedCourseMaterials(
 
   await reportProgress();
 
-  for (const material of eligible) {
-    const content = material.rawText!.trim();
+  // Bounded concurrency (#945): each material is fully independent (its own
+  // transaction, its own row), so materials run concurrently up to
+  // `reindexConcurrency()` in-flight at a time. Each task is individually
+  // try/caught so one material's failure never cancels or blocks its siblings —
+  // same isolation semantics as the previous serial for-loop.
+  const limit = pLimit(reindexConcurrency());
 
-    await prisma.courseMaterial.update({
-      where: { id: material.id },
-      data: { status: "PROCESSING" },
-    });
-    await reportProgress(material.title);
+  await Promise.all(
+    eligible.map((material) =>
+      limit(async () => {
+        const content = material.rawText!.trim();
 
-    try {
-      await processMaterialEmbeddings(material.id, content, { replace: true });
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "READY", processedAt: new Date() },
-      });
-      processed += 1;
-    } catch (err) {
-      failed.push(material.id);
-      await prisma.courseMaterial.update({
-        where: { id: material.id },
-        data: { status: "FAILED" },
-      });
-      console.error("[re-embed] material failed", {
-        courseId,
-        materialId: material.id,
-        title: material.title,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        await prisma.courseMaterial.update({
+          where: { id: material.id },
+          data: { status: "PROCESSING" },
+        });
+        await reportProgress(material.title);
 
-    await reportProgress();
-  }
+        try {
+          await processMaterialEmbeddings(material.id, content, { replace: true });
+          await prisma.courseMaterial.update({
+            where: { id: material.id },
+            data: { status: "READY", processedAt: new Date() },
+          });
+          processed += 1;
+        } catch (err) {
+          failed.push(material.id);
+          await prisma.courseMaterial.update({
+            where: { id: material.id },
+            data: { status: "FAILED" },
+          });
+          console.error("[re-embed] material failed", {
+            courseId,
+            materialId: material.id,
+            title: material.title,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        await reportProgress();
+      }),
+    ),
+  );
 
   if (processed > 0 && failed.length === 0 && processed === eligible.length) {
     await markCourseEmbedded(courseId);
