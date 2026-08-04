@@ -1223,7 +1223,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
         const messageToPersist =
           message.role === "assistant"
-            ? withResolvedModelMetadata(message, resolvedModelId)
+            ? withResolvedModelMetadata(message, resolvedModelId, wasAuto)
             : message;
 
         rows.push({
