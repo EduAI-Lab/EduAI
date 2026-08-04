@@ -7,7 +7,6 @@ import {
 
 const baseCtx = {
   prompt: "Explain the midterm grading rubric in detail.",
-  imagesPresent: false,
   courseId: "course-1",
 };
 
@@ -24,12 +23,6 @@ describe("isShortFactualPrompt", () => {
 });
 
 describe("matchPhase1Rules", () => {
-  it("rule 1: images route to tier >= 2 with image support", () => {
-    const match = matchPhase1Rules({ ...baseCtx, imagesPresent: true });
-    expect(match.rule).toBe("rule1_images_tier_ge_2");
-    expect(match.pick).toMatchObject({ kind: "minTier", minTier: 2, requireImages: true });
-  });
-
   it("rule 3: short factual prompts use tier 1", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -164,15 +157,6 @@ describe("matchPhase1Rules", () => {
       expect(routingDefaultTier()).toBe(2);
       expect(matchPhase1Rules(baseCtx).rule).toBe("rule6_default_tier_2_carbon");
     });
-  });
-
-  it("images win over other signals when attachments present", () => {
-    const match = matchPhase1Rules({
-      ...baseCtx,
-      imagesPresent: true,
-      prompt: "Summarize this chart from the syllabus",
-    });
-    expect(match.rule).toBe("rule1_images_tier_ge_2");
   });
 
   describe("strict-oracle under-route fixes (10 prompts)", () => {

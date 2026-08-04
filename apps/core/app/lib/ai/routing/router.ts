@@ -102,7 +102,6 @@ function buildPhase1Context(
 ): Phase1RouterContext {
   return {
     prompt: prompt.trim(),
-    imagesPresent: ctx.imagesPresent,
     courseId: ctx.courseId,
     ragTopSimilarity: ctx.ragTopSimilarity,
     ragChunkCount: ctx.ragChunkCount,
@@ -189,7 +188,7 @@ async function finalizePick(
     rule: meta.rule,
     pick: normalizedPick,
     promptLength: meta.phaseCtx.prompt.length,
-    imagesPresent: meta.phaseCtx.imagesPresent,
+    imagesPresent: meta.context.imagesPresent,
     messageTokenCount: meta.context.messageTokenCount ?? null,
     ragTopSimilarity: meta.phaseCtx.ragTopSimilarity ?? null,
     ragChunkCount: meta.phaseCtx.ragChunkCount ?? null,
@@ -243,25 +242,13 @@ export async function resolveRoutedModelRules(
   });
 }
 
-/** Phase 3 kNN tier + carbon policy model pick. Images still use rule 1. */
+/** Phase 3 kNN tier + carbon policy model pick. */
 export async function resolveRoutedModelKnn(
   prompt: string,
   context: RouterInputContext,
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_KNN,
-      rule: match.rule,
-      mode: "knn",
-      knn: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   const knn = await predictTierKnn(prompt);
   const pick = pickSpecFromTier(knn.tier, context);
@@ -286,18 +273,6 @@ export async function resolveRoutedModelHybrid(
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_HYBRID,
-      rule: match.rule,
-      mode: "hybrid",
-      knn: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   const knn = await predictTierKnn(prompt);
   const minSim = Number(process.env.ROUTING_KNN_MIN_SIM ?? "0.55");
@@ -329,7 +304,6 @@ export async function resolveRoutedModelHybrid(
 
 /**
  * P3 LLM classifier: dedicated tier-1 router call, then carbon-aware model pick.
- * Hard rules still win for images (tier ≥ 2).
  */
 export async function resolveRoutedModelLlm(
   prompt: string,
@@ -337,19 +311,6 @@ export async function resolveRoutedModelLlm(
 ): Promise<RouterDecision> {
   const phaseCtx = buildPhase1Context(prompt, context);
   const match = matchPhase1Rules(phaseCtx);
-
-  if (phaseCtx.imagesPresent) {
-    return finalizePick(match.pick, {
-      routerVersion: ROUTER_VERSION_LLM,
-      rule: match.rule,
-      mode: "llm",
-      knn: null,
-      llm: null,
-      phaseCtx,
-      context,
-      pickSource: "rules",
-    });
-  }
 
   // Tier-3 escalation rules win over the classifier (same stack as P1).
   const rulePick = match.pick;

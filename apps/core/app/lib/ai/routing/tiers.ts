@@ -20,7 +20,6 @@ export type PickSpec =
   | {
       kind: "minTier";
       minTier: 2 | 3;
-      requireImages?: boolean;
       requireTools?: boolean;
       tieBreak: "energy" | "carbon";
     }
@@ -49,30 +48,6 @@ export function numToRouterTier(n: number): RouterTier | null {
   if (n === 3) return "TIER_3";
   return null;
 }
-async function loadCloudImageTierRows(): Promise<TierModelRow[]> {
-  const rows = await prisma.aIModel.findMany({
-    where: {
-      isActive: true,
-      supportsImages: true,
-      provider: {
-        isActive: true,
-        name: { in: ["google", "openai"] },
-      },
-    },
-    include: { provider: { select: { name: true } } },
-  });
-
-  return rows.map((r) => ({
-    registryId: `${r.provider.name}:${r.modelId}`,
-    tier: 2,
-    routerTier: "TIER_2" as RouterTier,
-    estEnergyJoulesPerToken: r.estEnergyJoulesPerToken,
-    averageCarbonGramsPerToken: r.averageCarbonGramsPerToken,
-    supportsImages: true,
-    supportsTools: r.supportsTools,
-  }));
-}
-
 async function loadTierRows(options?: { localVllmOnly?: boolean }): Promise<TierModelRow[]> {
   const rows = await prisma.aIModel.findMany({
     where: {
@@ -150,9 +125,6 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
     filtered = rows.filter((r) => r.tier === spec.tier);
   } else {
     filtered = rows.filter((r) => r.tier >= spec.minTier);
-    if (spec.requireImages) {
-      filtered = filtered.filter((r) => r.supportsImages);
-    }
     if (spec.requireTools) {
       filtered = filtered.filter((r) => r.supportsTools);
     }
@@ -175,10 +147,6 @@ export function pickFromCandidates(rows: TierModelRow[], spec: PickSpec): TierMo
 }
 
 export async function pickModelForSpec(spec: PickSpec): Promise<TierModelRow | null> {
-  const needsCloudImages =
-    isLocalVllmRouting() && spec.kind === "minTier" && spec.requireImages;
-  const rows = needsCloudImages
-    ? await loadCloudImageTierRows()
-    : await getCachedTierModels();
+  const rows = await getCachedTierModels();
   return pickFromCandidates(rows, spec);
 }

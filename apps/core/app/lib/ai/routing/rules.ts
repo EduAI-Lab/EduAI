@@ -1,18 +1,20 @@
 /**
  * Phase 1 routing rules — pure predicates and ordering (no DB, no I/O).
  *
- * Given a **`Phase1RouterContext`** (prompt text, attachments flag, optional RAG stats),
+ * Given a **`Phase1RouterContext`** (prompt text, optional RAG stats),
  * **`matchPhase1Rules`** returns the first matching rule and a **`PickSpec`** telling **`tiers.ts`** how to choose a model.
  *
- * Rule order: images → escalation (web/debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
+ * Rule order: escalation (web/debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
  *
  * **Frozen 2026-06-27** for Paper 1 held-out evaluation — no further dev-suite rule tuning.
+ * Image-escalation rule (former rule 1) retired — PREREG_v3.md §7: the v3 suite has no
+ * image prompts and the model family handles images natively, so a dedicated
+ * image-routing rule no longer describes a real capability boundary.
  */
 import type { PickSpec } from "./tiers";
 
 export type Phase1RouterContext = {
   prompt: string;
-  imagesPresent: boolean;
   courseId: string | null;
   /** Top-1 cosine similarity from pgvector retrieval (same scale as `findRelevantContent`). */
   ragTopSimilarity?: number | null;
@@ -154,7 +156,6 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
 /**
  * Phase 1 rule stack. First match wins.
  *
- * 1. Images → tier ≥ 2
  * 2. Web lookup → tier 3
  * 2b. Debug → tier 3
  * 2c. Complex reasoning / code → tier 3
@@ -162,7 +163,6 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
  * 2e. Distinct multi-item enumeration → tier 3 (tier-sensitive RAG, e.g. ts-080)
  * 3. Short factual → tier 1
  * 3b. Course RAG → tier 1
- * 4c. Strong RAG + reasoning escalation → tier 3 (legacy; rule2d covers pattern-only)
  * 4. Strong RAG → tier 1
  * 4b. Moderate RAG → tier 1
  * 5. Long RAG → default tier
@@ -171,18 +171,6 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
 export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
   const prompt = normalizeWhitespace(ctx.prompt);
   const lower = prompt.toLowerCase();
-
-  if (ctx.imagesPresent) {
-    return {
-      rule: "rule1_images_tier_ge_2",
-      pick: {
-        kind: "minTier",
-        minTier: 2,
-        requireImages: true,
-        tieBreak: "energy",
-      },
-    };
-  }
 
   if (isWebLookupPrompt(prompt, lower)) {
     return { rule: "rule2_web_lookup_tier_3", pick: TIER_3_ESCALATION_PICK };
