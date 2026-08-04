@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
+import { splitPage, type CursorParams } from "~/lib/cursor-list.server";
 
 const ENROLLMENT_ROLES = ["STUDENT", "TA", "INSTRUCTOR"] as const;
 
@@ -8,28 +9,58 @@ export function isEnrollmentRole(value: unknown): value is EnrollmentRole {
   return typeof value === "string" && (ENROLLMENT_ROLES as readonly string[]).includes(value);
 }
 
+const ENROLLMENT_INCLUDE = {
+  user: {
+    select: {
+      email: true,
+      name: true,
+      studentId: true,
+    },
+  },
+} satisfies Prisma.EnrollmentInclude;
+
 /**
  * Returns all enrollments (active and inactive) for a course,
  * joined with user data to provide studentEmail and studentName.
  *
  * Does NOT filter by isActive — AI Tutor's enrollmentSync.js
  * handles that filtering on its side. Ordered by enrolledAt ascending.
+ *
+ * Unbounded by design: this is the full-sync contract AI Tutor's
+ * enrollmentSync.js depends on (dual-auth service-key path in the route). Do
+ * NOT add a limit here — bound the browser-facing roster instead via
+ * {@link getCourseEnrollmentsPage} (#1042).
  */
 export async function getCourseEnrollments(courseId: string) {
   return prisma.enrollment.findMany({
     where: { courseId },
-    // Join user to populate studentEmail and studentName in the response
-    include: {
-      user: {
-        select: {
-          email: true,
-          name: true,
-          studentId: true,
-        },
-      },
-    },
+    include: ENROLLMENT_INCLUDE,
     orderBy: { enrolledAt: "asc" },
   });
+}
+
+/**
+ * Cursor-paginated student roster for the browser-facing course detail page
+ * (#1042). Filters to active STUDENT rows — the same set the Students tab
+ * renders — so `total` and each page agree with the UI (instructors/TAs/soft-
+ * removed rows are excluded). Staff live on the Staff tab via separate
+ * endpoints. Bounded to `limit` (+ `total` so the UI can show an accurate
+ * student count without loading every page).
+ */
+export async function getCourseEnrollmentsPage(courseId: string, { cursor, limit }: CursorParams) {
+  const where = { courseId, role: "STUDENT" as const, isActive: true };
+  const [rows, total] = await prisma.$transaction([
+    prisma.enrollment.findMany({
+      where,
+      include: ENROLLMENT_INCLUDE,
+      orderBy: [{ enrolledAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    }),
+    prisma.enrollment.count({ where }),
+  ]);
+  const { page, nextCursor } = splitPage(rows, limit);
+  return { page, nextCursor, total };
 }
 
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
