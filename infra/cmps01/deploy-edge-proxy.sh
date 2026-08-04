@@ -17,8 +17,7 @@ fi
 
 # Reject unset/empty/example secrets before any docker compose / service start (#1115).
 check_cmps01_internal_key || exit 1
-
-: "${CMPS01_INTERNAL_ALLOW_IPS:?Set CMPS01_INTERNAL_ALLOW_IPS to s378 only (e.g. 206.87.25.229) — do not add laptops}"
+check_cmps01_allow_ips || exit 1
 
 echo "=== render nginx configs ==="
 {
@@ -33,9 +32,11 @@ echo "=== render nginx configs ==="
 
 export CMPS01_INTERNAL_KEY
 envsubst '${CMPS01_INTERNAL_KEY}' < nginx.conf.template > nginx.conf
+chmod 600 nginx.conf
 
 # LiteLLM master_key must match CMPS01_INTERNAL_KEY (and s378 VLLM_API_KEY) — no vllm-local fallback.
 envsubst '${CMPS01_INTERNAL_KEY}' < litellm-config.yaml.template > litellm-config.runtime.yaml
+chmod 600 litellm-config.runtime.yaml
 
 AUTH_HEADER=(-H "X-EduAI-Internal-Key: ${CMPS01_INTERNAL_KEY}")
 VLLM_AUTH_HEADER=(-H "Authorization: Bearer ${CMPS01_INTERNAL_KEY}")
