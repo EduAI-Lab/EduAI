@@ -17,13 +17,21 @@ import { prisma } from '../config/database.js';
 /** Advisory-lock namespace for QM course-anchor creation (#1114). */
 export const COURSE_ANCHOR_LOCK_NS = 1114;
 
+/** Largest value `| 0` can produce; `Math.abs` of this overflows int32. */
+const INT32_MIN = -2147483648;
+
 /** Stable positive int32 for pg_advisory_xact_lock's second key. */
 export function courseAnchorAdvisoryLockKey(coreCourseId) {
   let h = 0;
   for (let i = 0; i < coreCourseId.length; i++) {
     h = (Math.imul(31, h) + coreCourseId.charCodeAt(i)) | 0;
   }
-  return h === 0 ? 1 : Math.abs(h);
+  if (h === 0) return 1;
+  // Math.abs(INT32_MIN) is 2147483648, one past int32's max — the positive
+  // counterpart isn't representable, so pg's `::int` cast throws. Clamp to
+  // int32 max instead of overflowing.
+  if (h === INT32_MIN) return 2147483647;
+  return Math.abs(h);
 }
 
 /**

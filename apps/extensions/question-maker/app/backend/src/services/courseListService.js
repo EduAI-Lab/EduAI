@@ -19,6 +19,14 @@ import { ensureCourseAnchor } from './ensureCourseAnchor.js';
 
 const MIN_LIST_RANK = LEVELS.instructor.rank;
 
+/**
+ * Max concurrent `ensureCourseAnchor` calls when ADMIN's list backfills
+ * missing anchors (#1270) — each holds an advisory-lock transaction for its
+ * duration, so this bounds how many are open against the pool at once
+ * instead of fanning out one per Core course on a fresh deploy/import.
+ */
+const ADMIN_ANCHOR_BACKFILL_BATCH_SIZE = 25;
+
 /** Placeholder shown when a linked course's Core row can't be resolved right now. */
 const CORE_UNAVAILABLE_NAME = 'Course unavailable';
 
@@ -249,17 +257,24 @@ export async function listCoursesForUser(reqUser, { cookie } = {}) {
     let adminCourses = allCourses;
     if (missingCoreCourseIds.length > 0) {
       // Same locked ensure as POST /api/course and auto-import (#1114 / #1270).
-      // Parallel across distinct coreCourseIds; each id serializes on its own
-      // advisory lock (createMany+skipDuplicates could race an unlocked insert
-      // into a POST transaction and abort that writer's recovery).
-      await Promise.all(
-        missingCoreCourseIds.map((coreCourseId) =>
-          ensureCourseAnchor(reqUser.id, coreCourseId),
-        ),
-      );
+      // Parallel across distinct coreCourseIds, but batched — on a fresh
+      // deploy or after a catalog import, missingCoreCourseIds can be the
+      // entire Core catalog, and each ensure opens its own interactive
+      // transaction holding an advisory lock for its duration. Unbounded
+      // fan-out there means one ADMIN list request opening thousands of
+      // concurrent transactions against the pool at once.
+      for (let i = 0; i < missingCoreCourseIds.length; i += ADMIN_ANCHOR_BACKFILL_BATCH_SIZE) {
+        const batch = missingCoreCourseIds.slice(i, i + ADMIN_ANCHOR_BACKFILL_BATCH_SIZE);
+        await Promise.all(batch.map((coreCourseId) => ensureCourseAnchor(reqUser.id, coreCourseId)));
+      }
       // Re-fetch: ensure does not return every row, and a racing request may
       // have inserted some of these first — read back the ground truth.
-      adminCourses = await prisma.course.findMany({ orderBy: { createdAt: 'desc' } });
+      // Same `id` tiebreak as the initial findMany above, so a fresh
+      // materialization here doesn't reintroduce the pagination instability
+      // that tiebreak exists to prevent.
+      adminCourses = await prisma.course.findMany({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
     }
 
     // Catalog-sourced dedupe: an existing local anchor and a freshly

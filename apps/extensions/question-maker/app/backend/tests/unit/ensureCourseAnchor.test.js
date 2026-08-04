@@ -48,6 +48,20 @@ describe('ensureCourseAnchor', () => {
     expect(courseAnchorAdvisoryLockKey('core-1')).toBeGreaterThan(0);
   });
 
+  it('clamps the advisory lock key to int32 range instead of overflowing on Math.abs(INT32_MIN)', () => {
+    // This specific coreCourseId's char codes were chosen so the running hash
+    // lands exactly on -2147483648 (int32 min) right before the final `| 0`.
+    // Math.abs(-2147483648) is 2147483648 — one past int32 max, which would
+    // make Postgres's `::int` cast in the advisory-lock query throw.
+    const overflowingId = String.fromCharCode(48413, 11590, 42712, 12697, 16906);
+
+    const key = courseAnchorAdvisoryLockKey(overflowingId);
+
+    expect(Number.isInteger(key)).toBe(true);
+    expect(key).toBeGreaterThan(0);
+    expect(key).toBeLessThanOrEqual(2147483647);
+  });
+
   it('creates when no row exists', async () => {
     txFindUnique.mockResolvedValue(null);
     const created = { id: 2, userId: 'u1', coreCourseId: 'core-2' };

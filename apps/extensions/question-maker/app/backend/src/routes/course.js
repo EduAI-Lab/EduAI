@@ -141,6 +141,7 @@ router.post('/', authenticateToken, requireRole(INSTRUCTORS), async (req, res, n
     next(error);
   }
 });
+
 /**
  * GET /api/course – lists the courses the caller may access, role-scoped per the
  * RBAC matrix (§5): ADMIN sees all, UNIT_ADMIN sees their units, INSTRUCTOR sees
