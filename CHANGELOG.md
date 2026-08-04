@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Added
+
+- [core] perf: Add an `ivfflat` ANN index (`vector_cosine_ops`, `lists=100`) on `material_embeddings.embedding` via a Prisma raw-SQL migration, so both retrieval paths in `findRelevantContent()` (pure vector and hybrid BM25) hit the index instead of an exact cosine full-scan over every chunk on every course-scoped chat turn. Also tunes `ivfflat.probes` per query — `resolveIvfflatProbes()` reads `RAG_IVFFLAT_PROBES` (default 10, clamped `[1, 100]`) and applies it via `SET LOCAL` inside a `prisma.$transaction` wrapping the retrieval query, since `ivfflat.probes` is a session-scoped GUC and Prisma pools connections. Documented tuning rationale (static `lists` default, ivfflat-vs-hnsw tradeoff, why plain `CREATE INDEX` instead of `CONCURRENTLY`) in the migration file and `docs/rag-ai/EMBEDDINGS.md`. Closes #940. (@saadtab01, 2026-08-04) — [#PR](#PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
