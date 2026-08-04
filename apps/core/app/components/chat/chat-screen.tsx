@@ -117,6 +117,13 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   const [focusMode, setFocusMode] = useState(
     Boolean(navigationState?.focusMode),
   );
+  // onFinish/handleSystemPromptSave fire after the user may have toggled Focus
+  // Mode mid-response; a ref keeps the replace-navigation below reading the
+  // live value instead of whatever was true when that callback was bound (#1244).
+  const focusModeRef = useRef(focusMode);
+  useEffect(() => {
+    focusModeRef.current = focusMode;
+  }, [focusMode]);
   const [reorientationEpoch, setReorientationEpoch] = useState(0);
   const [webToolsEnabled, setWebToolsEnabled] = useState(false);
   /** Persisted/header registry ids keyed by their assistant message id. */
@@ -346,7 +353,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
           pendingNavigateChatId.current = null;
           navigate(`/chat/${id}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       },
@@ -454,7 +461,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         if (location.pathname === "/chat") {
           navigate(`/chat/${data.chatId}`, {
             replace: true,
-            state: { focusMode, selectedModel },
+            state: { focusMode: focusModeRef.current, selectedModel },
           });
         }
       }

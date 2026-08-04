@@ -233,4 +233,36 @@ describe("ChatScreen — header", () => {
       expect.objectContaining({ selectedModel: "openai:gpt-4" }),
     );
   });
+
+  it("carries the live Focus Mode value into the created chat route even when toggled mid-response (#1244)", async () => {
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Bound at mount, before Focus Mode is toggled on — mirrors a chat hook
+    // that keeps its original callback reference once a request starts
+    // streaming, rather than always handing back the newest render's closure.
+    const initialOptions = captureUseChatOptions.mock.calls[0][0] as {
+      onResponse: (response: Response) => Promise<void>;
+      onFinish: (message: { id: string; role: string }) => void;
+    };
+
+    await act(async () => {
+      await initialOptions.onResponse(
+        new Response(null, { headers: { "X-Chat-Id": "chat-1" } }),
+      );
+    });
+
+    // User flips Focus Mode on while the response is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    act(() => {
+      initialOptions.onFinish({ id: "assistant-1", role: "assistant" });
+    });
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
 });
