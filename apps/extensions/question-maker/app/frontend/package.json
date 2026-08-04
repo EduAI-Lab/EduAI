@@ -8,6 +8,7 @@
     "@eduai/ui": "*",
     "@fontsource-variable/outfit": "5.3.0",
     "axios": "^1.13.1",
+    "clsx": "^2.1.1",
     "docx": "^9.6.1",
     "html2canvas": "^1.4.1",
     "pdfjs-dist": "^4.6.82",
@@ -15,6 +16,7 @@
     "react-dom": "^19.2.3",
     "react-router": "^7.5.3",
     "sonner": "^2.0.6",
+    "tailwind-merge": "^3.3.1",
     "tesseract.js": "^5.1.0"
   },
   "devDependencies": {
