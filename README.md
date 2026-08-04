@@ -88,7 +88,7 @@ All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) a
 
 ## Chat latency benchmarking (EduAI Core)
 
-For scripted non-streaming `POST /api/chat` latency runs (for example against a dev deployment), use:
+For scripted `POST /api/chat` latency runs (for example against a dev deployment), use:
 
 ```bash
 cd apps/core
@@ -96,6 +96,17 @@ node ./scripts/chat-latency-bench.mjs
 ```
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
+
+To capture the time-to-first-byte evidence for #942, set
+`CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline
+deployment and once against the candidate deployment, changing only the URL
+and label. The benchmark prints per-request and aggregate TTFB plus paste-ready
+TSV, so the two runs can be compared directly:
+
+```bash
+CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
+CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
+```
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 

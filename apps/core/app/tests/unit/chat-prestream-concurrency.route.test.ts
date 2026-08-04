@@ -3,22 +3,18 @@
 // the course-RAG prefetch used to run as three serial awaits right before
 // `streamText`, adding their latencies together into TTFB. They are mutually
 // independent (none consumes another's result), so the route now fires them
-// concurrently. These tests give each dependency an artificial delay and
-// assert the route's total pre-stream latency tracks the slowest one, not
-// their sum — proving the calls actually overlap rather than merely looking
-// parallel in the source.
+// concurrently. These tests hold each dependency behind a manually released
+// gate and assert every dependency has started before any gate is released.
+// A serial implementation can never satisfy that assertion, regardless of CI
+// machine speed.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const DELAY_MS = 150;
-// Serial execution would take >= 3 * DELAY_MS (default path) or 2 * DELAY_MS
-// (admin path); concurrent execution should stay close to 1 * DELAY_MS. This
-// threshold sits comfortably between "concurrent" and "two calls serialized"
-// so the test is not flaky under normal CI scheduling jitter while still
-// failing if the awaits regress back to serial.
-const SERIAL_THRESHOLD_MS = DELAY_MS * 2.5;
-
-function delay<T>(value: T, ms: number): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 vi.mock("ai", async (importOriginal) => {
@@ -209,30 +205,65 @@ afterEach(() => {
 
 describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
   it("runs getPolicy, getChatModelCapabilities, and course-RAG prefetch concurrently in the default (non-admin) path", async () => {
-    vi.mocked(getPolicy).mockImplementation(() => delay(false, DELAY_MS));
-    vi.mocked(getChatModelCapabilities).mockImplementation(() =>
-      delay({ supportsTools: false, maxTokens: null, name: null }, DELAY_MS),
-    );
-    vi.mocked(findRelevantContent).mockImplementation(() =>
-      delay([{ content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" }], DELAY_MS),
-    );
+    const policy = deferred<boolean>();
+    const capabilities = deferred<{
+      supportsTools: boolean;
+      maxTokens: null;
+      name: null;
+    }>();
+    const rag = deferred<Array<{
+      content: string;
+      similarity: number;
+      materialTitle: string;
+    }>>();
+    const started = new Set<string>();
+
+    vi.mocked(getPolicy).mockImplementation(() => {
+      started.add("policy");
+      return policy.promise;
+    });
+    vi.mocked(getChatModelCapabilities).mockImplementation(() => {
+      started.add("capabilities");
+      return capabilities.promise;
+    });
+    vi.mocked(findRelevantContent).mockImplementation(() => {
+      started.add("rag");
+      return rag.promise;
+    });
     mockStream();
 
-    const start = performance.now();
-    const res = await action(makeRequest(baseBody()));
-    const elapsedMs = performance.now() - start;
+    const actionPromise = action(makeRequest(baseBody()));
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(new Set(["policy", "capabilities", "rag"]));
+    });
+
+    policy.resolve(false);
+    capabilities.resolve({ supportsTools: false, maxTokens: null, name: null });
+    rag.resolve([
+      { content: "Late work loses 10%.", similarity: 0.72, materialTitle: "Syllabus" },
+    ]);
+    const res = await actionPromise;
 
     expect(res.status).toBe(200);
     expect(getPolicy).toHaveBeenCalled();
     expect(getChatModelCapabilities).toHaveBeenCalled();
     expect(findRelevantContent).toHaveBeenCalled();
-    // Serial awaits would take >= 3 * DELAY_MS; concurrent execution should
-    // land close to 1 * DELAY_MS plus incidental route overhead.
-    expect(elapsedMs).toBeLessThan(SERIAL_THRESHOLD_MS);
   });
 
   it("runs getPolicy and resolveActiveChatModel concurrently in the admin path", async () => {
-    vi.mocked(getPolicy).mockImplementation(() => delay(false, DELAY_MS));
+    const policy = deferred<boolean>();
+    const activeModel = deferred<{
+      supportsTools: boolean;
+      maxTokens: number;
+      name: string;
+    }>();
+    const started = new Set<string>();
+
+    vi.mocked(getPolicy).mockImplementation(() => {
+      started.add("policy");
+      return policy.promise;
+    });
     vi.mocked(prisma.chat.findFirst).mockResolvedValue({
       id: CHAT_ID,
       userId: "admin-1",
@@ -244,13 +275,13 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: "admin-1", role: "ADMIN" },
     } as never);
-    vi.mocked(prisma.aIModel.findFirst).mockImplementation(() =>
-      delay({ supportsTools: true, maxTokens: 16_384, name: "Admin test model" }, DELAY_MS) as never,
-    );
+    vi.mocked(prisma.aIModel.findFirst).mockImplementation(() => {
+      started.add("active-model");
+      return activeModel.promise as never;
+    });
     mockStream();
 
-    const start = performance.now();
-    const res = await action(
+    const actionPromise = action(
       makeRequest(
         baseBody({
           courseId: undefined,
@@ -259,13 +290,21 @@ describe("POST /api/chat — pre-stream await concurrency (#942)", () => {
         }),
       ),
     );
-    const elapsedMs = performance.now() - start;
+
+    await vi.waitFor(() => {
+      expect(started).toEqual(new Set(["policy", "active-model"]));
+    });
+
+    policy.resolve(false);
+    activeModel.resolve({
+      supportsTools: true,
+      maxTokens: 16_384,
+      name: "Admin test model",
+    });
+    const res = await actionPromise;
 
     expect(res.status).toBe(200);
     expect(getPolicy).toHaveBeenCalled();
     expect(prisma.aIModel.findFirst).toHaveBeenCalled();
-    // Serial awaits would take >= 2 * DELAY_MS; concurrent execution should
-    // land close to 1 * DELAY_MS plus incidental route overhead.
-    expect(elapsedMs).toBeLessThan(SERIAL_THRESHOLD_MS);
   });
 });
