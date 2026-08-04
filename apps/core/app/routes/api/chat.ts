@@ -2183,6 +2183,8 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
           }),
           {
             status: 200,
@@ -2307,6 +2309,8 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
           }),
           {
             status: 200,
