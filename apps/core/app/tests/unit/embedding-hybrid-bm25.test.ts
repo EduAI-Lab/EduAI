@@ -8,6 +8,8 @@
  *  - RAG_HYBRID_BM25 unset → ANN vector candidates followed by thresholding
  *  - RAG_HYBRID_BM25_ALPHA env var adjusts the vector/BM25 weights
  *  - Return shape is identical ({content, similarity, materialTitle}) regardless of path
+ *  - #941: the hybrid path reads the stored/GIN-indexed `content_tsv` column
+ *    instead of recomputing `to_tsvector(content)` inline on every query
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -164,12 +166,22 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     ]);
   });
 
-  it("uses ts_rank and plainto_tsquery in the SQL", async () => {
+  it("uses ts_rank and plainto_tsquery against the stored content_tsv column", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
     const sql = capturedSql();
     expect(sql).toContain("ts_rank");
     expect(sql).toContain("plainto_tsquery");
-    expect(sql).toContain("to_tsvector");
+    expect(sql).toContain("content_tsv");
+  });
+
+  // #941: content_tsv is a GENERATED ALWAYS ... STORED column (GIN-indexed) derived
+  // from content via to_tsvector('english', ...); the hybrid query must read that
+  // stored column instead of recomputing to_tsvector(content) inline on every query.
+  it("does not recompute to_tsvector(content) inline — reads the stored content_tsv column", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    const sql = capturedSql();
+    expect(sql).not.toContain("to_tsvector");
+    expect(sql).toContain("mc.content_tsv");
   });
 
   it("uses an ANN-compatible vector candidate query before hybrid reranking", async () => {
