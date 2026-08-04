@@ -211,7 +211,7 @@ export async function runCompletion(request: CompletionRequest) {
   }
 
   if (streaming) {
-    return { ok: true as const, streaming: true as const, result };
+    return { ok: true as const, streaming: true as const, result, fleetServerId };
   }
 
   try {
@@ -225,6 +225,7 @@ export async function runCompletion(request: CompletionRequest) {
     return {
       ok: true as const,
       streaming: false as const,
+      fleetServerId,
       body: {
         content: text,
         model: validatedModelId,

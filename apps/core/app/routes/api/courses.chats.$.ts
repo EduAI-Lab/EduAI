@@ -20,6 +20,7 @@ import { jsonResponse as json } from "~/lib/api/json-response.server";
 import { courseChatViewPolicyKey } from "~/lib/rbac/permissions";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import prisma from "~/lib/prisma.server";
+import { parseCursorParams, splitPage } from "~/lib/cursor-list.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const courseId = params.courseId;
@@ -56,7 +57,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   }
 
-  const chats = await prisma.chat.findMany({
+  const { cursor, limit } = parseCursorParams(new URL(request.url).searchParams);
+  const rows = await prisma.chat.findMany({
     // Owner must be an active STUDENT of this course — excludes staff chats
     // (instructor/TA/unit-admin) that are also tagged to the course.
     where: {
@@ -72,11 +74,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       updatedAt: true,
       user: { select: { id: true, name: true } },
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
+  const { page, nextCursor } = splitPage(rows, limit);
 
   return json({
-    chats: chats.map((chat) => ({
+    chats: page.map((chat) => ({
       id: chat.id,
       title: chat.title,
       ownerId: chat.user.id,
@@ -84,5 +89,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       createdAt: chat.createdAt.toISOString(),
       updatedAt: chat.updatedAt.toISOString(),
     })),
+    nextCursor,
   });
 }

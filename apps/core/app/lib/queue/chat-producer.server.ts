@@ -3,7 +3,7 @@ import {
   parseWorkloadFeature,
   type JobType,
 } from "~/lib/ai/routing/fleet/types";
-import { enqueue } from "./enqueue.server";
+import { enqueue, type EnqueueResult } from "./enqueue.server";
 
 /**
  * Guarded producer branch for the `/api/chat` question-generation call site
@@ -71,10 +71,11 @@ export type ChatEnqueueParams = {
 
 /**
  * Build a `question-generation` job from a `/api/chat` request and enqueue it.
- * Returns the durable `{ jobId }`. Throws (ZodError) on an invalid payload —
- * the route maps that to a 400.
+ * Returns the durable `jobId` plus a live `queuePosition`/`queueDepth` snapshot
+ * (#915). Throws `ZodError` on an invalid payload (route maps to 400) and
+ * `QueueFullError` when the queue is saturated (route maps to 429).
  */
-export async function enqueueQuestionGeneration(params: ChatEnqueueParams): Promise<{ jobId: string }> {
+export async function enqueueQuestionGeneration(params: ChatEnqueueParams): Promise<EnqueueResult> {
   const { body, messages, userId, courseId, requestedModel } = params;
   const type = resolveJobType(body.routingContext);
   const rawCount = body.count;

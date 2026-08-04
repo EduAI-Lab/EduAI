@@ -5,10 +5,17 @@ import { fireAndForget, logSystemError } from "~/lib/logging.server";
 import {
   JobPayloadSchema,
   type JobPayload,
+  type JobType,
   type QueuedJobPayload,
 } from "./job-schema";
+import {
+  getQueueDepth,
+  getQueueSnapshot,
+  maxQueueDepth,
+  QueueFullError,
+} from "./queue-stats.server";
 import { getQueue } from "./queues.server";
-import { priorityFor, resolveQueueName } from "./resolve-pool.server";
+import { priorityFor, resolveQueueName, type QueueName } from "./resolve-pool.server";
 
 /** True for a unique-constraint violation on `AiJob(queueName, bullJobId)`. */
 function isBullJobIdConflict(error: unknown): boolean {
@@ -37,16 +44,53 @@ export function aiJobRetryOptions(): {
   };
 }
 
+export type EnqueueResult = {
+  jobId: string;
+  /** Live 1-based position in the resolved queue; null once the job is not PENDING (or the read failed). */
+  queuePosition: number | null;
+  /** Live count of PENDING jobs in the resolved queue (includes this job); null when the read failed. */
+  queueDepth: number | null;
+};
+
+/**
+ * Live position + depth snapshot for a row (#915).
+ *
+ * Never throws: by the time this runs the job is durably enqueued, and a
+ * transient stats-read failure must not surface as a 502 for a job that
+ * actually made it in (the retry would enqueue a duplicate).
+ *
+ * Both halves are read here, after the row exists — never reused from the
+ * pre-write backpressure count, which is taken before the insert and would let
+ * `count + 1` disagree with a freshly-read position. `getQueueSnapshot()` then
+ * reads the pair under REPEATABLE READ so they also cannot disagree in the
+ * other direction, when jobs drain out between the two counts.
+ */
+async function queueStatsFor(
+  row: { id: string; type: JobType; status: string; createdAt: Date; queueName: string | null },
+  queueName: QueueName,
+): Promise<{ queuePosition: number | null; queueDepth: number | null }> {
+  try {
+    return await getQueueSnapshot(row, queueName);
+  } catch {
+    return { queuePosition: null, queueDepth: null };
+  }
+}
+
 /**
  * Producer entry point for the async AI-job queue — the single seam used by
  * `app/lib/ai/` call sites (contract §6). Creates the durable `AiJob` row
  * (source of truth), pushes the job onto the resolved BullMQ pool queue, and
  * returns the DB-backed job id.
  *
- * The Postgres row is authoritative; if the Redis add fails between steps 4 and
- * 5 the row is left `PENDING` with no `bullJobId` — a reaper (#915) sweeps such
- * orphans. Backpressure / queue-full rejection is also #915; this function only
- * guarantees the signature and the row lifecycle below.
+ * The Postgres row is authoritative; if the Redis add (step 6) fails, an
+ * unkeyed row is left `PENDING` with no `bullJobId` for a reaper (deferred, see
+ * the #914 plan doc) — a keyed row is deleted instead so its replay isn't
+ * blocked (see the catch below). Stats reads age unkeyed orphans out.
+ *
+ * Backpressure (#915): when `QUEUE_MAX_DEPTH` is set, an enqueue into a queue
+ * already holding that many PENDING jobs rejects with `QueueFullError` before
+ * any row is written — the route maps it to a 429 with `Retry-After`. An
+ * idempotent replay of an existing job is never rejected (nothing new is added).
  *
  * Idempotency: when `idempotencyKey` is set it is the BullMQ job id (dedupes the
  * queue) AND the `AiJob.bullJobId`, so one logical key maps to exactly one row.
@@ -68,9 +112,11 @@ export function aiJobRetryOptions(): {
  * one.
  *
  * `jobId` returned to callers is always the `AiJob.id` (stable, DB-backed),
- * never the raw BullMQ id.
+ * never the raw BullMQ id. `queuePosition` (1-based, null once not PENDING) and
+ * `queueDepth` are live snapshots at enqueue time (#915); subsequent reads come
+ * from the status endpoint (#917).
  */
-export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
+export async function enqueue(job: JobPayload): Promise<EnqueueResult> {
   // 1. Validate (throws on failure → 400 at the route).
   const payload = JobPayloadSchema.parse(job);
 
@@ -83,14 +129,30 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
   if (payload.idempotencyKey) {
     const existing = await prisma.aiJob.findUnique({
       where: { queueName_bullJobId: { queueName, bullJobId: payload.idempotencyKey } },
-      select: { id: true },
+      select: { id: true, type: true, status: true, createdAt: true, queueName: true },
     });
     if (existing) {
-      return { jobId: existing.id };
+      // The key is scoped to `queueName`, so the winner is in this queue by
+      // construction — its own row is still what the snapshot is computed from.
+      return { jobId: existing.id, ...(await queueStatsFor(existing, queueName)) };
     }
   }
 
-  // 4. Create the AiJob row as PENDING (payload = the validated job).
+  // 4. Backpressure (#915): reject before writing anything when the target
+  //    queue is saturated. Disabled unless QUEUE_MAX_DEPTH is set. The cap is
+  //    approximate — check-then-act with no transaction, so a burst of
+  //    concurrent enqueues can briefly overshoot it. Acceptable for a soft
+  //    protective limit; a serialized count-and-insert isn't worth the hot-path
+  //    contention.
+  const maxDepth = maxQueueDepth();
+  if (maxDepth !== null) {
+    const depthAtCheck = await getQueueDepth(queueName);
+    if (depthAtCheck >= maxDepth) {
+      throw new QueueFullError(queueName, depthAtCheck, maxDepth);
+    }
+  }
+
+  // 5. Create the AiJob row as PENDING (payload = the validated job).
   const aiJob = await prisma.aiJob.create({
     data: {
       kind: payload.kind,
@@ -102,10 +164,10 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
       courseId: payload.courseId ?? null,
       queueName,
     },
-    select: { id: true },
+    select: { id: true, type: true, status: true, createdAt: true, queueName: true },
   });
 
-  // 5. Add to that queue with priority; BullMQ job name = kind.
+  // 6. Add to that queue with priority; BullMQ job name = kind.
   //    idempotencyKey, when present, becomes the BullMQ job id so a re-enqueue is a no-op.
   const queuedPayload: QueuedJobPayload = {
     ...payload,
@@ -119,10 +181,21 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
       ...aiJobRetryOptions(),
     });
   } catch (error) {
-    // Redis down / queue unreachable: the PENDING row stays without a bullJobId
-    // for the #915 reaper. Surface the failure to the caller so the route can 5xx.
-    // Scoped to the `add` alone — a failure of the step-6 update below is a
-    // different fault and must not be logged as a queue outage.
+    // Redis down / queue unreachable. Scoped to the `add` alone — a failure of
+    // the step-7 update below is a different fault and must not be logged as a
+    // queue outage.
+    //
+    // A keyed job must not leave an orphan: the idempotency fast path looks
+    // rows up by (queueName, bullJobId), and the key was never persisted here,
+    // so the orphan would be invisible to the client's retry and the retry
+    // would create a duplicate row for the same logical job. Drop it so the
+    // replay recreates cleanly. Unkeyed orphans stay for the (deferred) reaper;
+    // stats reads age them out after PENDING_WITHOUT_BULL_GRACE_MS so they
+    // can't wedge the backpressure cap.
+    if (payload.idempotencyKey) {
+      await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
+    }
+    // Surface the failure to the caller so the route can 5xx.
     fireAndForget(
       logSystemError({
         source: "AI",
@@ -136,7 +209,7 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
     throw error;
   }
 
-  // 6. Persist the BullMQ id back onto the row.
+  // 7. Persist the BullMQ id back onto the row.
   if (bullJob.id) {
     try {
       await prisma.aiJob.update({
@@ -188,7 +261,7 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
         }),
         prisma.aiJob.findUnique({
           where: { queueName_bullJobId: { queueName, bullJobId: bullJob.id } },
-          select: { id: true, status: true },
+          select: { id: true, type: true, status: true, createdAt: true, queueName: true },
         }),
       ]);
 
@@ -204,14 +277,14 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
               where: { id: aiJob.id },
               data: { bullJobId: bullJob.id },
             });
-            return { jobId: aiJob.id };
+            return { jobId: aiJob.id, ...(await queueStatsFor(aiJob, queueName)) };
           } catch {
             // Extremely rare double race (another row grabbed the slot in the
             // instant between the delete and this retry). Our row is still the
             // one being executed, so we must not delete it below — just report
             // our own id; the row runs to completion without a persisted
             // bullJobId, which only affects a hypothetical redelivery lookup.
-            return { jobId: aiJob.id };
+            return { jobId: aiJob.id, ...(await queueStatsFor(aiJob, queueName)) };
           }
         }
       }
@@ -220,7 +293,7 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
         // Our row is claimed/in flight but we couldn't safely reconcile the
         // spurious duplicate above (it was no longer PENDING either — an even
         // rarer race). Never delete a claimed row; just report our own id.
-        return { jobId: aiJob.id };
+        return { jobId: aiJob.id, ...(await queueStatsFor(aiJob, queueName)) };
       }
 
       // Standard case: our row is still PENDING — we really did lose the
@@ -229,11 +302,13 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
       await prisma.aiJob.delete({ where: { id: aiJob.id } }).catch(() => undefined);
       const winner = await prisma.aiJob.findUnique({
         where: { queueName_bullJobId: { queueName, bullJobId: bullJob.id } },
-        select: { id: true },
+        select: { id: true, type: true, status: true, createdAt: true, queueName: true },
       });
       if (winner) {
-        return { jobId: winner.id };
+        return { jobId: winner.id, ...(await queueStatsFor(winner, queueName)) };
       }
+      // The job is queued but the row never got its bullJobId — log it as its own
+      // fault so the reaper's orphans aren't confused with a Redis outage.
       fireAndForget(
         logSystemError({
           source: "AI",
@@ -248,7 +323,12 @@ export async function enqueue(job: JobPayload): Promise<{ jobId: string }> {
     }
   }
 
-  // 6. Return the durable handle only. Queue position / ETA come from the status
-  //    endpoint (#917), never from here.
-  return { jobId: aiJob.id };
+  // 8. Return the durable handle plus a live position/depth snapshot (#915).
+  //    Read after the row exists and under one REPEATABLE READ snapshot, so
+  //    depth always counts this job and can never come in below the reported
+  //    position; later polls read fresher values from the status endpoint (#917).
+  return {
+    jobId: aiJob.id,
+    ...(await queueStatsFor(aiJob, queueName)),
+  };
 }
