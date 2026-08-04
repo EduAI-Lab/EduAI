@@ -5,7 +5,6 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOllama } from "ollama-ai-provider";
 import pLimit from "p-limit";
 import { cmps01InternalAuthHeadersForUrl } from "~/lib/ai/cmps01-internal-auth.server";
-import { parseEnvInt } from "~/lib/auth/rate-limit.server";
 import prisma from "../prisma.server";
 import { getCourseRagSettings } from "../courses/server";
 import { randomUUID } from "crypto";
@@ -56,9 +55,18 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
  * `AI_MAX_INFLIGHT` in admission.server.ts. Override via `REINDEX_CONCURRENCY`.
  */
 const DEFAULT_REINDEX_CONCURRENCY = 4;
+const MAX_REINDEX_CONCURRENCY = 16;
 
 function reindexConcurrency(): number {
-  return Math.max(1, parseEnvInt(process.env.REINDEX_CONCURRENCY, DEFAULT_REINDEX_CONCURRENCY));
+  const raw = process.env.REINDEX_CONCURRENCY;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_REINDEX_CONCURRENCY;
+
+  const configured = Number(raw);
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return DEFAULT_REINDEX_CONCURRENCY;
+  }
+
+  return Math.min(configured, MAX_REINDEX_CONCURRENCY);
 }
 
 function isOllamaBadRequestError(err: unknown): boolean {
