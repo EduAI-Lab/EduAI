@@ -1,0 +1,57 @@
+-- #940: add an ANN index to material_embeddings so course-scoped chat retrieval
+-- stops doing an exact cosine full-scan over every chunk in the DB.
+--
+-- Why ivfflat (not hnsw):
+--   The issue allows either; we default to ivfflat because it is the
+--   longer-established pgvector index type and needs no extra availability
+--   check. The dev/test/e2e Postgres image is `pgvector/pgvector:pg16`
+--   (docker-compose.dev.yml / docker-compose.test.yml / docker-compose.e2e.yml),
+--   which does not pin a specific pgvector extension version in its tag, so we
+--   cannot confirm HNSW (pgvector >= 0.5.0) is available everywhere this
+--   migration runs (shared dev host, CI, prod) without inspecting the live
+--   `pg_available_extensions` there first. ivfflat has been available since
+--   pgvector 0.1.0, so it is the safe default. If a later check confirms HNSW
+--   is available everywhere, it is worth revisiting — HNSW generally gives
+--   better recall/latency without needing a `lists` tuned to row count, at the
+--   cost of slower index builds.
+--
+-- Why `vector_cosine_ops`:
+--   Both retrieval paths in findRelevantContent() (apps/core/app/lib/ai/embedding.ts)
+--   use the `<=>` cosine-distance operator against `material_embeddings.embedding`
+--   (vector path ~line 713, hybrid BM25 path ~line 677). An index built with a
+--   different opclass (e.g. vector_l2_ops) would not be used by planner for `<=>`
+--   queries, so the opclass must match exactly.
+--
+-- `lists` = 100 tuning rationale:
+--   ivfflat's own docs heuristic is `lists = rows / 1000` for tables up to ~1M
+--   rows (`sqrt(rows)` beyond that). We do not know the real row count at
+--   migration time -- it varies per course/deployment and grows over time -- so
+--   a dynamic value computed from today's row count would go stale as soon as
+--   more materials are embedded. 100 lists is a reasonable static default for
+--   the expected mid-term scale (tens of thousands to a few hundred thousand
+--   chunks across all courses combined); revisit (`REINDEX` with a new `lists`)
+--   once real production chunk counts are known -- see docs/rag-ai/EMBEDDINGS.md
+--   for the follow-up note.
+--
+-- CREATE INDEX vs CREATE INDEX CONCURRENTLY:
+--   No other migration in this repo uses CONCURRENTLY (checked all existing
+--   `CREATE INDEX` statements under prisma/migrations/) -- Prisma's
+--   `migrate deploy` runs each migration file inside a single transaction, and
+--   CONCURRENTLY cannot run inside a transaction block. Splitting this into a
+--   non-transactional migration is possible but would break from repo
+--   convention and add operational complexity for a table that, per #940's own
+--   problem statement, is not yet large enough to have an existing index. We
+--   use a plain CREATE INDEX and call this out in the PR description; on a
+--   large production `material_embeddings` table a plain CREATE INDEX briefly
+--   holds a lock that blocks writes, so re-running this as CONCURRENTLY
+--   out-of-band is the right move once the table is large enough for that lock
+--   window to matter.
+--
+-- Runtime `probes` tuning (ivfflat.probes) is set per-query in
+-- findRelevantContent() via a transaction-scoped `SET LOCAL`, not here -- see
+-- apps/core/app/lib/ai/embedding.ts and docs/rag-ai/EMBEDDINGS.md.
+
+CREATE INDEX IF NOT EXISTS "material_embeddings_embedding_ivfflat_idx"
+  ON "material_embeddings"
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
