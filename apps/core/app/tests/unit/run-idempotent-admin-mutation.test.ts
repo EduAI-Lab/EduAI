@@ -75,6 +75,19 @@ describe("requestUrlFromIdempotencyRoute (#1110)", () => {
     );
   });
 
+  it("rejects backslash and control-character bypasses of the protocol-relative guard", () => {
+    // Backslashes are treated as "/" by the WHATWG URL parser for special
+    // schemes, so "/\evil.com/x" would otherwise resolve to "//evil.com/x".
+    expect(() => requestUrlFromIdempotencyRoute("POST /\\evil.com/x")).toThrow(
+      /path starting with \//,
+    );
+    // Tabs are stripped anywhere in the string per the URL spec, so
+    // "/\t/evil.com" would otherwise resolve to "//evil.com".
+    expect(() => requestUrlFromIdempotencyRoute("POST /\t/evil.com")).toThrow(
+      /path starting with \//,
+    );
+  });
+
   it("does not produce the pre-fix invalid URL shape", () => {
     // Regression: `http://localhost${"POST /api/users"}` → Invalid URL
     expect(() => new Request(`http://localhostPOST /api/users`)).toThrow();
