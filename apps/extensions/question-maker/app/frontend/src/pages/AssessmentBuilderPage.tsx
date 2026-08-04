@@ -13,9 +13,9 @@ import {
     StackedBar,
     cn,
 } from '@eduai/ui';
-import { DeleteConfirmationModal } from '@/components/ui/DeleteConfirmationModal';
+import { PermissionGate } from '@eduai/ui';
+import { ConfirmDialog } from '@eduai/ui';
 import { Tooltip } from '@/components/ui/tooltip';
-import { useToast } from '@/components/ui/use-toast';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
@@ -43,7 +43,6 @@ import { Assessment, Question, QuestionVariantEntry } from '../types/question';
 import type { AssessmentGenerationParams } from '../types/question';
 import { Topic } from '../types/topic';
 import { AssessmentBuilder } from '../components/assessments/AssessmentBuilder';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { QuestionModal } from '../components/questions/QuestionModal';
@@ -57,6 +56,7 @@ import {
     slugifyAssessmentBasename
 } from '../utils/assessmentExport';
 import { difficultySolidVar, normalizeDifficulty } from '../lib/difficulty';
+import { toast } from 'sonner';
 
 /** Coloured icon tones for the summary stat tiles — keeps the strip from going monotone. */
 const STAT_TONE = {
@@ -125,7 +125,6 @@ const AssessmentBuilderPage = () => {
     const navigate = useNavigate();
     const assessmentId = Number(assessmentIdParam);
     const routeCourseId = Number(courseIdParam);
-    const { toast } = useToast();
     const [assessment, setAssessment] = useState<Assessment | null>(null);
     const { canManageAssessment, canExportAssessment, canUseVariantWorkflow, hasCourseAccess, accessLoading } =
         useQmPermissionsForCourse(assessment?.courseId ?? null);
@@ -259,10 +258,8 @@ const AssessmentBuilderPage = () => {
             setQuestions(courseQuestions);
             setAssessment(updatedAssessment);
         } catch (refreshError: any) {
-            toast({
-                title: 'Failed to refresh assessment data',
+            toast.error('Failed to refresh assessment data', {
                 description: refreshError?.response?.data?.error || 'Please try again.',
-                variant: 'destructive'
             });
         }
     };
@@ -273,19 +270,12 @@ const AssessmentBuilderPage = () => {
     const handleExportTxt = () => {
         if (!assessment) return;
         if (!hasQuestions) {
-            toast({
-                title: 'Cannot export',
-                description: 'No questions in assessment.',
-                variant: 'destructive'
-            });
+            toast.error('Cannot export', { description: 'No questions in assessment.' });
             return;
         }
         if (hasDraftQuestions) {
-            toast({
-                title: 'Cannot export',
-                description:
-                    'Assessment contains draft questions. Please review all draft questions before exporting.',
-                variant: 'destructive'
+            toast.error('Cannot export', {
+                description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
             });
             return;
         }
@@ -293,10 +283,8 @@ const AssessmentBuilderPage = () => {
         try {
             const blocks = collectAssessmentExportBlocks(assessment, resolveVariantForExport);
             if (blocks.length === 0) {
-                toast({
-                    title: 'Cannot export',
+                toast.error('Cannot export', {
                     description: 'No questions to export for this assessment.',
-                    variant: 'destructive'
                 });
                 return;
             }
@@ -311,10 +299,7 @@ const AssessmentBuilderPage = () => {
             linkEl.click();
             linkEl.remove();
             URL.revokeObjectURL(url);
-            toast({
-                title: 'Export started',
-                description: 'Questions downloaded as a TXT file.'
-            });
+            toast('Export started', { description: 'Questions downloaded as a TXT file.' });
         } finally {
             setIsTxtExporting(false);
         }
@@ -323,19 +308,12 @@ const AssessmentBuilderPage = () => {
     const handleExportWord = async () => {
         if (!assessment) return;
         if (!hasQuestions) {
-            toast({
-                title: 'Cannot export',
-                description: 'No questions in assessment.',
-                variant: 'destructive'
-            });
+            toast.error('Cannot export', { description: 'No questions in assessment.' });
             return;
         }
         if (hasDraftQuestions) {
-            toast({
-                title: 'Cannot export',
-                description:
-                    'Assessment contains draft questions. Please review all draft questions before exporting.',
-                variant: 'destructive'
+            toast.error('Cannot export', {
+                description: 'Assessment contains draft questions. Please review all draft questions before exporting.',
             });
             return;
         }
@@ -343,10 +321,8 @@ const AssessmentBuilderPage = () => {
         try {
             const blocks = collectAssessmentExportBlocks(assessment, resolveVariantForExport);
             if (blocks.length === 0) {
-                toast({
-                    title: 'Cannot export',
+                toast.error('Cannot export', {
                     description: 'No questions to export for this assessment.',
-                    variant: 'destructive'
                 });
                 return;
             }
@@ -360,15 +336,10 @@ const AssessmentBuilderPage = () => {
             linkEl.click();
             linkEl.remove();
             URL.revokeObjectURL(url);
-            toast({
-                title: 'Export started',
-                description: 'Questions downloaded as a Word document.'
-            });
+            toast('Export started', { description: 'Questions downloaded as a Word document.' });
         } catch {
-            toast({
-                title: 'Export failed',
+            toast.error('Export failed', {
                 description: 'Could not build the Word file. Please try again.',
-                variant: 'destructive'
             });
         } finally {
             setIsWordExporting(false);
@@ -380,16 +351,11 @@ const AssessmentBuilderPage = () => {
         try {
             const updated = await assessmentService.updateAssessment(assessment.id, params);
             setAssessment((prev) => (prev ? { ...updated, sections: prev.sections } : prev));
-            toast({
-                title: 'Assessment updated',
-                description: 'Blueprint details have been saved.'
-            });
+            toast('Assessment updated', { description: 'Blueprint details have been saved.' });
             setIsEditAssessmentOpen(false);
         } catch (err: unknown) {
-            toast({
-                title: 'Failed to update assessment',
+            toast.error('Failed to update assessment', {
                 description: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Please try again.',
-                variant: 'destructive'
             });
         }
     };
@@ -404,10 +370,7 @@ const AssessmentBuilderPage = () => {
         try {
             setIsDeletingAssessment(true);
             await assessmentService.deleteAssessment(assessment.id);
-            toast({
-                title: 'Assessment deleted',
-                description: `"${assessment.name}" has been removed.`
-            });
+            toast('Assessment deleted', { description: `"${assessment.name}" has been removed.` });
             const backCourseId = assessment.courseId ?? assessment.course?.id ?? routeCourseId;
             navigate(
                 Number.isFinite(backCourseId) && backCourseId
@@ -415,11 +378,7 @@ const AssessmentBuilderPage = () => {
                     : '/courses',
             );
         } catch (_err) {
-            toast({
-                title: 'Failed to delete assessment',
-                description: 'Please try again.',
-                variant: 'destructive'
-            });
+            toast.error('Failed to delete assessment', { description: 'Please try again.' });
         } finally {
             setIsDeletingAssessment(false);
             setDeleteModalOpen(false);
@@ -434,25 +393,22 @@ const AssessmentBuilderPage = () => {
         try {
             await questionService.updateVariant(entry.variant.id, { isDraft: nextDraft });
             await refreshQuestionsAndAssessment();
-            toast({
-                title: 'Review status updated',
-                description: `Variant is now ${nextDraft ? 'marked as draft' : 'marked as reviewed'}.`
+            toast('Review status updated', {
+                description: `Variant is now ${nextDraft ? 'marked as draft' : 'marked as reviewed'}.`,
             });
         } catch (toggleError: any) {
-            toast({
-                title: 'Failed to update review status',
-                description: toggleError?.response?.data?.error || 'Please try again.',
-                variant: 'destructive'
+            // Mirror the question dialog: prefer the server error, fall back to the
+            // client-side message before the generic string.
+            toast.error('Failed to update review status', {
+                description: toggleError?.response?.data?.error || toggleError?.message || 'Please try again.',
             });
         }
     };
 
     const handleCreateVariant = (entry: QuestionVariantEntry) => {
         if (!assessment?.course?.id) {
-            toast({
-                title: 'Select a course first',
+            toast.error('Select a course first', {
                 description: 'Unable to create a variant without course context.',
-                variant: 'destructive'
             });
             return;
         }
@@ -504,10 +460,8 @@ const AssessmentBuilderPage = () => {
                 });
             }
         } catch (err: unknown) {
-            toast({
-                title: 'Update failed',
+            toast.error('Update failed', {
                 description: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Please try again.',
-                variant: 'destructive'
             });
         }
     };
@@ -524,15 +478,12 @@ const AssessmentBuilderPage = () => {
             }
             await refreshQuestionsAndAssessment();
             if (viewEntry?.variant.id === entry.variant.id) setViewEntry(null);
-            toast({
-                title: 'Question removed',
-                description: isLastVariant ? 'Question deleted.' : 'Variant removed.'
+            toast('Question removed', {
+                description: isLastVariant ? 'Question deleted.' : 'Variant removed.',
             });
         } catch (err: unknown) {
-            toast({
-                title: 'Delete failed',
+            toast.error('Delete failed', {
                 description: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Please try again.',
-                variant: 'destructive'
             });
         }
     };
@@ -541,9 +492,8 @@ const AssessmentBuilderPage = () => {
         setIsAddQuestionOpen(false);
         void (async () => {
             await refreshQuestionsAndAssessment();
-            toast({
-                title: 'Question saved',
-                description: 'The question and its variants have been updated. You can now add it to sections.'
+            toast('Question saved', {
+                description: 'The question and its variants have been updated. You can now add it to sections.',
             });
         })();
     };
@@ -813,10 +763,8 @@ const AssessmentBuilderPage = () => {
                                     : prev
                             );
                         } catch (createError: any) {
-                            toast({
-                                title: 'Failed to create section',
+                            toast.error('Failed to create section', {
                                 description: createError?.response?.data?.error || 'Please try again.',
-                                variant: 'destructive'
                             });
                         }
                     }}
@@ -826,10 +774,8 @@ const AssessmentBuilderPage = () => {
                             await assessmentService.updateSection(assessment.id, sectionId, { name });
                             await refreshQuestionsAndAssessment();
                         } catch (updateError: any) {
-                            toast({
-                                title: 'Failed to rename section',
+                            toast.error('Failed to rename section', {
                                 description: updateError?.response?.data?.error || 'Please try again.',
-                                variant: 'destructive'
                             });
                         }
                     }}
@@ -848,10 +794,8 @@ const AssessmentBuilderPage = () => {
                                     : prev
                             );
                         } catch (deleteError: any) {
-                            toast({
-                                title: 'Failed to delete section',
+                            toast.error('Failed to delete section', {
                                 description: deleteError?.response?.data?.error || 'Please try again.',
-                                variant: 'destructive'
                             });
                         }
                     }}
@@ -865,10 +809,8 @@ const AssessmentBuilderPage = () => {
                             );
                             await refreshQuestionsAndAssessment();
                         } catch (addError: any) {
-                            toast({
-                                title: 'Failed to add questions to section',
+                            toast.error('Failed to add questions to section', {
                                 description: addError?.response?.data?.error || 'Please try again.',
-                                variant: 'destructive'
                             });
                         }
                     }}
@@ -878,10 +820,8 @@ const AssessmentBuilderPage = () => {
                             await assessmentService.removeVariantFromSection(assessment.id, sectionId, variantId);
                             await refreshQuestionsAndAssessment();
                         } catch (removeError: any) {
-                            toast({
-                                title: 'Failed to remove question from section',
+                            toast.error('Failed to remove question from section', {
                                 description: removeError?.response?.data?.error || 'Please try again.',
-                                variant: 'destructive'
                             });
                         }
                     }}
@@ -930,10 +870,7 @@ const AssessmentBuilderPage = () => {
                     assessmentName={assessment.name ?? 'Assessment'}
                     courseId={assessment.courseId ?? null}
                     onExportSuccess={() => {
-                        toast({
-                            title: 'Export successful',
-                            description: 'Assessment exported to Canvas.'
-                        });
+                        toast('Export successful', { description: 'Assessment exported to Canvas.' });
                     }}
                 />
             )}
@@ -968,14 +905,15 @@ const AssessmentBuilderPage = () => {
                 />
             )}
 
-            <DeleteConfirmationModal
+            <ConfirmDialog
                 open={deleteModalOpen}
                 onOpenChange={setDeleteModalOpen}
                 onConfirm={confirmDeleteAssessment}
                 title={assessment ? `Delete assessment "${assessment.name}"?` : 'Delete assessment?'}
-                message="This action cannot be undone. All sections and questions in this assessment will be removed."
+                description="This action cannot be undone. All sections and questions in this assessment will be removed."
                 confirmLabel="Delete"
                 isLoading={isDeletingAssessment}
+                closeOnConfirm={false}
             />
         </>
     );

@@ -1,11 +1,11 @@
 import { useState } from "react";
+import { Spinner } from "@eduai/ui";
 import { Link, useNavigate } from "react-router";
 import {
   IconMessageCircle,
   IconChevronRight,
   IconBook,
   IconUser,
-  IconLoader2,
 } from "@tabler/icons-react";
 
 import {
@@ -275,7 +275,7 @@ function RecentChatsPanel({
           </DialogHeader>
           {transcriptLoading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
-              <IconLoader2 size={20} className="animate-spin" />
+              <Spinner size="md" />
             </div>
           ) : (
             <ChatTranscriptViewer

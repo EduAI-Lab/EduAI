@@ -6,12 +6,12 @@ import { useState, useEffect } from 'react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@eduai/ui';
 import { Button, Label, Input } from '@eduai/ui';
-import { useToast } from '@/components/ui/use-toast';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import canvasService, { CanvasCourse, CanvasIntegration, CanvasQuiz, CanvasSkippedQuestion } from '../../services/canvasService';
 import { courseService } from '../../services/courseService';
 import { Course } from '../../types/question';
 import { Topic } from '../../types/topic';
+import { toast } from 'sonner';
 
 interface CanvasImportDialogProps {
   open: boolean;
@@ -26,7 +26,6 @@ export const CanvasImportDialog = ({
   courseId = null,
   onImportSuccess
 }: CanvasImportDialogProps) => {
-  const { toast } = useToast();
   const { canManageCanvas } = useQmPermissionsForCourse(courseId);
   const [integration, setIntegration] = useState<CanvasIntegration | null>(null);
   const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
@@ -111,10 +110,8 @@ export const CanvasImportDialog = ({
       const courses = await canvasService.getCourses();
       setCanvasCourses(courses);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load Canvas courses',
-        description: error.response?.data?.error || 'Please check your Canvas connection.',
-        variant: 'destructive'
+      toast.error('Failed to load Canvas courses', {
+          description: error.response?.data?.error || 'Please check your Canvas connection.',
       });
     } finally {
       setIsLoadingCourses(false);
@@ -136,10 +133,8 @@ export const CanvasImportDialog = ({
       const quizList = await canvasService.getQuizzes(canvasCourseId);
       setQuizzes(quizList);
     } catch (error: any) {
-      toast({
-        title: 'Failed to load quizzes',
-        description: error.response?.data?.error || 'Failed to load quizzes from Canvas.',
-        variant: 'destructive'
+      toast.error('Failed to load quizzes', {
+          description: error.response?.data?.error || 'Failed to load quizzes from Canvas.',
       });
       setQuizzes([]);
     } finally {
@@ -165,20 +160,12 @@ export const CanvasImportDialog = ({
 
   const handleConnect = async () => {
     if (!canvasUrl) {
-      toast({
-        title: 'Canvas URL required',
-        description: 'Please enter your Canvas instance URL.',
-        variant: 'destructive'
-      });
+      toast.error('Canvas URL required', { description: 'Please enter your Canvas instance URL.' });
       return;
     }
 
     if (!apiKey) {
-      toast({
-        title: 'API Key required',
-        description: 'Please enter your Canvas API key.',
-        variant: 'destructive'
-      });
+      toast.error('API Key required', { description: 'Please enter your Canvas API key.' });
       return;
     }
 
@@ -191,17 +178,14 @@ export const CanvasImportDialog = ({
       setIntegration(result);
       setShowConnectForm(false);
       if (usedTestMode) {
-        toast({
-          title: 'Canvas test mode',
-          description: 'Using mock Canvas data because live credentials were unavailable.',
+        toast('Canvas test mode', {
+            description: 'Using mock Canvas data because live credentials were unavailable.',
         });
       }
       await loadCanvasCourses();
     } catch (error: any) {
-      toast({
-        title: 'Failed to connect Canvas',
-        description: error.response?.data?.error || 'Please check your credentials and try again.',
-        variant: 'destructive'
+      toast.error('Failed to connect Canvas', {
+          description: error.response?.data?.error || 'Please check your credentials and try again.',
       });
     } finally {
       setIsConnecting(false);
@@ -210,47 +194,29 @@ export const CanvasImportDialog = ({
 
   const handleImport = async () => {
     if (!selectedCanvasCourseId) {
-      toast({
-        title: 'Canvas course required',
-        description: 'Please select a Canvas course.',
-        variant: 'destructive'
-      });
+      toast.error('Canvas course required', { description: 'Please select a Canvas course.' });
       return;
     }
 
     if (!selectedQuizId) {
-      toast({
-        title: 'Quiz required',
-        description: 'Please select a quiz to import.',
-        variant: 'destructive'
-      });
+      toast.error('Quiz required', { description: 'Please select a quiz to import.' });
       return;
     }
 
     if (!selectedLocalCourseId) {
-      toast({
-        title: 'Local course required',
-        description: 'Please select a local course to import into.',
-        variant: 'destructive'
-      });
+      toast.error('Local course required', { description: 'Please select a local course to import into.' });
       return;
     }
 
     if (!selectedTopicId) {
-      toast({
-        title: 'Topic required',
-        description: 'Please select a primary topic for the imported questions.',
-        variant: 'destructive'
+      toast.error('Topic required', {
+          description: 'Please select a primary topic for the imported questions.',
       });
       return;
     }
 
     if (!assessmentName.trim()) {
-      toast({
-        title: 'Assessment name required',
-        description: 'Please enter a name for the assessment.',
-        variant: 'destructive'
-      });
+      toast.error('Assessment name required', { description: 'Please enter a name for the assessment.' });
       return;
     }
 
@@ -273,20 +239,15 @@ export const CanvasImportDialog = ({
         description += ` ${result.questionsSkipped} question${result.questionsSkipped !== 1 ? 's were' : ' was'} skipped due to unsupported question types.`;
       }
       
-      toast({
-        title: 'Import successful!',
-        description: description,
-      });
+      toast('Import successful!', { description: description });
 
       // If there are skipped questions, show details in console and optionally in a longer toast
       if (result.skippedQuestions && result.skippedQuestions.length > 0) {
         console.warn('Skipped questions during import:', result.skippedQuestions);
         // Show additional toast with details if there are many skipped questions
         if (result.skippedQuestions.length > 3) {
-          toast({
-            title: 'Some questions were skipped',
-            description: `${result.skippedQuestions.length} questions with unsupported types were not imported. Check the browser console for details.`,
-            variant: 'default',
+          toast('Some questions were skipped', {
+              description: `${result.skippedQuestions.length} questions with unsupported types were not imported. Check the browser console for details.`,
           });
         }
       }
@@ -308,10 +269,8 @@ export const CanvasImportDialog = ({
       
       onClose();
     } catch (error: any) {
-      toast({
-        title: 'Import failed',
-        description: error.response?.data?.error || 'Failed to import quiz from Canvas.',
-        variant: 'destructive'
+      toast.error('Import failed', {
+          description: error.response?.data?.error || 'Failed to import quiz from Canvas.',
       });
     } finally {
       setIsLoading(false);
