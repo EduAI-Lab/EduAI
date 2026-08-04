@@ -937,6 +937,7 @@ export async function findRelevantContent(
         WITH vector_candidates AS MATERIALIZED (
           SELECT
             mc.content,
+            mc.content_tsv,
             cm.title AS material_title,
             me.embedding <=> ${queryEmbedding}::vector AS distance
           FROM material_embeddings me
@@ -955,7 +956,9 @@ export async function findRelevantContent(
           (1 - distance) * ${alpha} +
           COALESCE(
             ts_rank(
-              to_tsvector('english', content),
+              -- `content_tsv` is generated/stored and backed by the GIN index;
+              -- avoid rebuilding a tsvector for every hybrid candidate.
+              content_tsv,
               plainto_tsquery('english', ${userQuery})
             ),
             0
