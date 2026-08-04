@@ -285,6 +285,42 @@ describe("Canvas API — connect / integration / disconnect", () => {
     expect(row).toBeNull();
   });
 
+  it("returns 400 when an instructor points the Canvas URL at an internal host", async () => {
+    for (const canvasUrl of [
+      "https://10.0.0.5",
+      "https://192.168.1.1",
+      "https://169.254.169.254",
+      "https://127.0.0.1",
+      "https://[::1]",
+      "https://localhost:8080",
+    ]) {
+      sessionFor(instructorId, "INSTRUCTOR");
+
+      const res = await call("POST", "connect", { canvasUrl, apiKey: "1234~test-token-secret" });
+      expect(res.status, canvasUrl).toBe(400);
+      expect(await res.json()).toMatchObject({ success: false });
+      expect(verifyCanvasCredentials).not.toHaveBeenCalled();
+
+      const row = await prisma.canvasIntegration.findUnique({ where: { userId: instructorId } });
+      expect(row, canvasUrl).toBeNull();
+    }
+  });
+
+  it("rejects an internal Canvas URL in test mode too", async () => {
+    // Test mode skips credential verification, which used to be the only step
+    // that ran the host check — so the URL could be persisted unvalidated.
+    sessionFor(instructorId, "INSTRUCTOR");
+
+    const res = await call("POST", "connect", {
+      canvasUrl: "https://169.254.169.254",
+      isTestMode: true,
+    });
+
+    expect(res.status).toBe(400);
+    const row = await prisma.canvasIntegration.findUnique({ where: { userId: instructorId } });
+    expect(row).toBeNull();
+  });
+
   it("returns 404 for unknown subpaths", async () => {
     sessionFor(instructorId, "INSTRUCTOR");
     const res = await call("GET", "unknown");

@@ -503,6 +503,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "listUnitChats",
     routeFile: "routes/api/units.chats.$.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/student-candidates",
+    readiness: "ready",
+    routeFile: "routes/api/courses.student-candidates.$.ts",
+    note: "Search-select backend for the enroll-student/add-TA pickers (#1042); bounded by `limit`, not an admin-chat-tool surface.",
+  }),
 
   // ── Users ───────────────────────────────────────────────────────────────────
   entry({
