@@ -551,6 +551,28 @@ describe("POST /api/courses/:courseId/materials action", () => {
     expect(body.error).not.toMatch(/prisma/i);
   });
 
+  it("persists a FAILED material when PDF extraction dies before create (#1018)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(processUploadedFile).mockRejectedValueOnce(
+      new Error("Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)"),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.materialId).toBe("mat-failed");
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "FAILED",
+          checksum: expect.stringMatching(/^failed:[0-9a-f]{64}$/),
+        }),
+      }),
+    );
+  });
+
   it("persists uploadedBy as the session user on create (#294)", async () => {
     mockSession("INSTRUCTOR");
     vi.mocked(processUploadedFile).mockResolvedValue({
