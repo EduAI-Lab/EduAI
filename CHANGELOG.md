@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Changed
+
+- [core] perf: Batch `material_embeddings` vector inserts into a single multi-row `INSERT` per batch instead of one `$executeRaw` round trip per chunk during material ingestion (`processMaterialEmbeddings`) — cuts DB round trips and shortens the open-transaction hold time for large PDFs. Rows are chunked to `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE` (500) to stay well under Postgres's per-statement bind-parameter limit; params (including the pgvector literal) stay bound via `Prisma.sql`/`Prisma.join`, never string-concatenated. Closes #943. (@saadtab01, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Tests
+
+- [core] test: `insertMaterialEmbeddingsBatched` (#943) coverage in `embedding.test.ts` — zero-chunk no-op, single-batch call count and param binding correctness, `MATERIAL_EMBEDDING_INSERT_BATCH_SIZE + 1` chunk boundary split into `ceil(N/batchSize)` calls with rows correctly partitioned, and unique row ids. (@saadtab01, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
