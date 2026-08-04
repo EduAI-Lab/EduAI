@@ -1467,19 +1467,25 @@ describe('Tutoring-flow: question consumption via Core', () => {
       },
     ];
 
-    // Call 1: Core questions list. All subsequent calls: EduAI chat (tutor + supervisor).
+    // Route by URL rather than call order: the tutor-model policy resolution
+    // (Stage 3, `/ai-models`) fetches before the Core questions list (Stage 4),
+    // so a positional `mockResolvedValueOnce` would land on the wrong call.
     vi.stubGlobal(
       'fetch',
-      vi.fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ questions: coreQuestions, total: 1 }),
-          text: () => Promise.resolve(''),
-        })
-        .mockResolvedValue({
+      vi.fn((url) => {
+        if (typeof url === 'string' && url.includes('/questions') && url.includes('testable=true')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ questions: coreQuestions, total: 1 }),
+            text: () => Promise.resolve(''),
+          });
+        }
+        return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ content: 'AI response', chatId: 'chat-1' }),
-        }),
+          text: () => Promise.resolve(''),
+        });
+      }),
     );
 
     const res = await request(studentApp)
