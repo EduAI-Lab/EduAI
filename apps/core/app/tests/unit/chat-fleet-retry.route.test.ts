@@ -144,6 +144,35 @@ function makeRequest(body: object) {
   } as never;
 }
 
+// Mirrors the real AI SDK's fullStream: a genuine ReadableStream (so
+// `.getReader()` / `.cancel()` behave like production), not a bare async
+// generator. onChunk fires as a side effect of the stream being read, same
+// as the real SDK.
+function makeFullStream(
+  parts: unknown[],
+  onChunk?: (chunk: unknown) => void,
+): ReadableStream<unknown> {
+  let cancelled = false;
+  return new ReadableStream({
+    async pull(controller) {
+      if (cancelled) {
+        controller.close();
+        return;
+      }
+      const part = parts.shift();
+      if (part === undefined) {
+        controller.close();
+        return;
+      }
+      onChunk?.({ chunk: part });
+      controller.enqueue(part);
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+}
+
 function baseBody(overrides: Record<string, unknown> = {}) {
   return {
     messages: [{ id: "msg-1", role: "user", content: "Explain recursion." }],
@@ -235,9 +264,14 @@ describe("Fleet Slice 2 retry success marker (#876)", () => {
         throw new Error("connection refused");
       })
       .mockImplementation((args) => {
-        args.onChunk?.({} as never);
         args.onStepFinish?.({ toolCalls: [], toolResults: [] } as never);
         return {
+          get fullStream() {
+            return makeFullStream(
+              [{ type: "text-delta", text: "Recovered on cmps02." }],
+              args.onChunk as never,
+            );
+          },
           consumeStream: vi.fn().mockResolvedValue(undefined),
           text: Promise.resolve("Recovered on cmps02."),
           usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
@@ -280,17 +314,10 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
   it("resolves via onChunk instead of waiting out the full probe timeout", async () => {
     process.env.FLEET_STREAM_PROBE_MS = "5000";
 
-    async function* fakeFullStream(onChunk?: (chunk: unknown) => void) {
-      // Mirrors the real SDK: chunks are only produced once something iterates
-      // the stream, and onChunk fires as a side effect of that iteration.
-      onChunk?.({ chunk: { type: "text-delta" } });
-      yield { type: "text-delta", text: "Hi" };
-    }
-
     vi.mocked(streamText).mockImplementation((args) => {
       return {
         get fullStream() {
-          return fakeFullStream(args.onChunk as never);
+          return makeFullStream([{ type: "text-delta", text: "Hi" }], args.onChunk as never);
         },
         consumeStream: vi.fn().mockResolvedValue(undefined),
         text: Promise.resolve("Hi"),
@@ -313,5 +340,80 @@ describe("Fleet stream startup probe does not deadlock on a lazy stream", () => 
     // A regression to the deadlock would take ~5000ms (the probe's soft-timeout);
     // the fix resolves as soon as onChunk fires during stream iteration.
     expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("stops reading fullStream once the probe is ready, on the streaming response path", async () => {
+    process.env.FLEET_STREAM_PROBE_MS = "5000";
+
+    let cancelled = false;
+    let pulls = 0;
+    const parts = [
+      { type: "text-delta", text: "Hi" },
+      { type: "text-delta", text: " there" },
+    ];
+    vi.mocked(streamText).mockImplementation((args) => {
+      // Lazily construct the stream inside the getter, same as the real SDK:
+      // fullStream tees a fresh branch only once something actually reads
+      // it. A stream built eagerly at mock-setup time would call its pull()
+      // (default highWaterMark fills the queue on construction) before
+      // onChunk is even wired up.
+      const makeStream = () =>
+        new ReadableStream({
+          async pull(controller) {
+            pulls += 1;
+            if (pulls > 1) {
+              // Mirrors real network latency between chunks, giving the
+              // pump's reader.cancel() (fired off the probe settling on
+              // part 1) a chance to land before a second chunk is pulled.
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            const part = parts.shift();
+            if (part === undefined) {
+              controller.close();
+              return;
+            }
+            // Only the first pull drives the probe; later pulls belong to
+            // the real downstream consumer (toDataStreamResponse), not the
+            // startup pump.
+            if (pulls === 1) {
+              args.onChunk?.({ chunk: part } as never);
+            }
+            controller.enqueue(part);
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+      return {
+        get fullStream() {
+          return makeStream();
+        },
+        consumeStream: vi.fn().mockResolvedValue(undefined),
+        toDataStreamResponse: vi.fn(({ headers }: { headers?: Record<string, string> }) => {
+          return new Response("Hi there", { status: 200, headers });
+        }),
+        text: Promise.resolve("Hi there"),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 2 }),
+        finishReason: Promise.resolve("stop"),
+        sources: Promise.resolve([]),
+        reasoning: Promise.resolve(undefined),
+        response: Promise.resolve({
+          id: "resp-1",
+          messages: [{ id: "msg-1", role: "assistant", content: "Hi there" }],
+        }),
+      } as never;
+    });
+
+    const res = await action(makeRequest(baseBody({ streaming: true })));
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("Hi there");
+    // The startup-only pump must cancel its reader once the probe settles,
+    // instead of draining fullStream for the whole generation: only one
+    // pull should have happened before the response was returned, and the
+    // reader must have been canceled so a slow client can't make the tee
+    // buffer the rest of the response in memory.
+    expect(pulls).toBe(1);
+    expect(cancelled).toBe(true);
   });
 });

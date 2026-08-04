@@ -1876,18 +1876,27 @@ ${buildEmptyCourseRagBlock()}`;
         // it has nothing to be signaled by. Pump a tee'd branch of the
         // stream (fullStream tees a fresh, independent branch per access, so
         // this doesn't steal chunks from the real consumer) purely to drive
-        // onChunk while we wait; discard its output.
+        // onChunk while we wait; discard its output. The reader is
+        // startup-only: it's canceled as soon as the probe settles so it
+        // doesn't keep the tee buffering/consuming for the whole generation.
+        const reader = result.fullStream.getReader();
         const pump = (async () => {
           try {
-            for await (const _ of result.fullStream) {
+            while (true) {
+              const { done } = await reader.read();
+              if (done) break;
               // draining only; onChunk/onStepFinish above do the signaling.
             }
           } catch {
             // Errors surface to the caller via onError -> signalError.
           }
         })();
-        void pump;
-        await probe.wait();
+        try {
+          await probe.wait();
+        } finally {
+          await reader.cancel().catch(() => {});
+          void pump;
+        }
       }
       return result;
     };
