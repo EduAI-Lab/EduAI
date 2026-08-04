@@ -163,8 +163,15 @@ Copy this `infra/cmps01` folder to cmps01 (or `git pull` the repo), then:
 
 ```bash
 cd /path/to/EduAICoreLearning/infra/cmps01
-docker compose up -d
+./deploy-edge-proxy.sh
 ```
+
+Do not run `docker compose up -d` directly here — `litellm-config.runtime.yaml` is
+gitignored and only exists after `deploy-edge-proxy.sh` renders it from
+`litellm-config.yaml.template`. Running compose first makes Docker create a
+directory at that path instead, which then breaks the next `deploy-edge-proxy.sh`
+run (`envsubst ... > litellm-config.runtime.yaml` fails with "Is a directory")
+until it's manually removed.
 
 Verify **both** models through the proxy:
 
@@ -211,14 +218,18 @@ npx prisma db seed   # registers vllm provider only (not individual models)
 
 ## LiteLLM config
 
-See [`litellm-config.yaml`](./litellm-config.yaml). Backends:
+See [`litellm-config.yaml.template`](./litellm-config.yaml.template) — the source of
+truth; `deploy-edge-proxy.sh` renders it to the gitignored `litellm-config.runtime.yaml`
+that the container actually reads. Backends:
 
 | `model_name` | Backend URL (proxy uses host network) |
 | --- | --- |
 | `qwen2.5-7b-instruct` | `http://127.0.0.1:18001/v1` |
 | `qwen2.5-32b-instruct` | `http://127.0.0.1:18002/v1` |
 
-After editing config: `docker compose restart` in this directory.
+After editing `litellm-config.yaml.template`: re-run `./deploy-edge-proxy.sh` in this
+directory to re-render `litellm-config.runtime.yaml` and restart the proxy — a bare
+`docker compose restart` won't pick up template edits.
 
 ---
 
@@ -328,7 +339,7 @@ Chat model id: **`vllm:<served-model-name>`** (e.g. `vllm:qwen2.5-14b-instruct`)
 | --- | --- |
 | **Add** model (keep 7B + 32B) | New GPU or enough VRAM; new port `18003+`; new LiteLLM row |
 | **Swap** model on a GPU | Stop old container, reuse same port (e.g. `18001`), update LiteLLM row + EduAI Admin |
-| **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml`; `docker compose restart`; deactivate row in Admin |
+| **Remove** model | Stop/remove backend container; delete its block from `litellm-config.yaml.template`; re-run `./deploy-edge-proxy.sh`; deactivate row in Admin |
 
 ### Port map (convention)
 
