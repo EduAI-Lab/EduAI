@@ -93,12 +93,19 @@ describe("extractPdfTextIsolated", () => {
     // Accept both termination forms: Unix typically signals (SIGABRT); Windows
     // reports V8 heap fatal errors as a plain exit code with OOM stderr — the
     // parent normalizes both to a "killed (signal …)" message.
+    //
+    // The wall-clock budget is deliberately generous (~8s to OOM on an idle dev
+    // machine): `timedOut` wins over the OOM branch in the exit handler, so a
+    // contended CI runner that inflates the bomb slowly would otherwise reject
+    // with the wall-clock message and fail this assertion. The timeout path has
+    // its own test below, so nothing is lost by keeping this one far from the
+    // race; the long budget is only ever spent if the heap ceiling regresses.
     const bomb = readFileSync(BOMB_FIXTURE);
 
     await expect(
-      extractPdfTextIsolated(bomb, { maxOldSpaceMb: 48, timeoutMs: 25_000 }),
+      extractPdfTextIsolated(bomb, { maxOldSpaceMb: 48, timeoutMs: 120_000 }),
     ).rejects.toThrow(/killed \(signal /i);
-  }, 30_000);
+  }, 150_000);
 
   it("spawns the worker under an OS address-space ceiling on Unix", async () => {
     if (process.platform === "win32") return;
