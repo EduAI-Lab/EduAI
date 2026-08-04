@@ -40,6 +40,16 @@ Next? Want to know more?`;
     expect(isStructuralCompliancePass(metrics)).toBe(false);
   });
 
+  it("detects Top summary variants used in the wild (* Top summary)", () => {
+    const text = `* Top summary
+- One bullet
+
+**Next?** Want more?`;
+    const metrics = computeAdhdResponseMetrics(text);
+    expect(metrics.topSummary).toBe(true);
+    expect(metrics.nextLine).toBe(true);
+  });
+
   it("respects a custom word cap", () => {
     const text = "one two three four five";
     expect(computeAdhdResponseMetrics(text, { wordCap: 3 }).underCap).toBe(false);
