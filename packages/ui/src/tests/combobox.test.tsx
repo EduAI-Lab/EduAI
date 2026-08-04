@@ -57,6 +57,28 @@ describe("MultiSelect", () => {
     expect(screen.queryByText("Alan Turing")).not.toBeInTheDocument();
   });
 
+  it("keeps selected chips when server-driven options no longer include them", () => {
+    const { rerender } = render(
+      <MultiSelect
+        options={options}
+        value={["u1"]}
+        onValueChange={() => {}}
+        onSearchChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+    // New search result page no longer contains Ada — chip must remain.
+    rerender(
+      <MultiSelect
+        options={[{ value: "u2", label: "Alan Turing", description: "alan@eduai.local" }]}
+        value={["u1"]}
+        onValueChange={() => {}}
+        onSearchChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+  });
+
   it("disables the trigger when disabled", () => {
     render(
       <MultiSelect options={options} value={[]} onValueChange={vi.fn()} disabled />,

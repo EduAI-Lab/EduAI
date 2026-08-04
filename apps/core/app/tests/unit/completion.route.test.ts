@@ -28,10 +28,30 @@ vi.mock("~/lib/ai/providers", async (importOriginal) => {
   };
 });
 
+vi.mock("~/lib/ai/routing/fleet/registry", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("~/lib/ai/routing/fleet/registry")>();
+  return {
+    ...actual,
+    fleetRoutingEnabled: vi.fn().mockReturnValue(false),
+  };
+});
+
+vi.mock("~/lib/ai/routing/fleet/resolve-fleet", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("~/lib/ai/routing/fleet/resolve-fleet")>();
+  return {
+    ...actual,
+    resolveFleetHost: vi.fn(),
+  };
+});
+
 import { streamText } from "ai";
 import { action } from "~/routes/api/completion";
 import { auth } from "~/lib/auth/server";
 import { createAIProviderRegistry } from "~/lib/ai/providers";
+import { fleetRoutingEnabled } from "~/lib/ai/routing/fleet/registry";
+import { resolveFleetHost } from "~/lib/ai/routing/fleet/resolve-fleet";
 
 function makeRequest(
   body: object,
@@ -74,6 +94,7 @@ function mockStream() {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.VLLM_BASE_URL = "http://localhost:8001";
+  vi.mocked(fleetRoutingEnabled).mockReturnValue(false);
 
   vi.mocked(auth.api.getSession).mockResolvedValue({
     user: { id: "user-1", role: "STUDENT" },
@@ -119,5 +140,29 @@ describe("POST /api/completion review regressions", () => {
     });
     expect(body.error).toContain("AI_NoSuchProviderError");
     expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("returns the selected fleet host for extension observability", async () => {
+    vi.mocked(fleetRoutingEnabled).mockReturnValue(true);
+    vi.mocked(resolveFleetHost).mockResolvedValue({
+      serverId: "cmps03",
+      baseUrl: "http://cmps03.ok.ubc.ca:8001",
+      reason: "background-round-robin",
+    });
+    mockStream();
+
+    const res = await action(
+      makeRequest(
+        baseBody({
+          routingContext: {
+            feature: "question-maker",
+            jobType: "background",
+          },
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Fleet-Server")).toBe("cmps03");
   });
 });
