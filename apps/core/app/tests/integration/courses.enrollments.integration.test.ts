@@ -204,14 +204,21 @@ describe("GET /api/courses/:id/enrollments (integration)", () => {
   });
 
   // --- 200 user auth (instructor) ---
-  it("returns all enrollments when caller is an enrolled instructor", async () => {
+  // Browser roster (#1042): user OAuth returns a cursor-paginated active STUDENT
+  // page only — TAs/instructors/inactive rows are excluded (service key still
+  // returns the full set above).
+  it("returns the active student roster page when caller is an enrolled instructor", async () => {
     vi.mocked(auth.api.getSession).mockResolvedValue({
       user: { id: instructorId, role: "INSTRUCTOR" },
     } as never);
     const res = await loader(makeArgs(courseId));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.enrollments).toHaveLength(3);
+    expect(body.enrollments).toHaveLength(1);
+    expect(body.enrollments[0].studentId).toBe(studentId);
+    expect(body.enrollments[0].role).toBe("STUDENT");
+    expect(body.total).toBe(1);
+    expect(body.nextCursor).toBeNull();
   });
 
   // --- Role mapping from real DB ---
