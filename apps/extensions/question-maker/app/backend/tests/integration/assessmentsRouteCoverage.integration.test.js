@@ -207,7 +207,14 @@ describe('GET /api/assessments/:id/questions', () => {
     const res = await request(app).get('/api/assessments/5/questions').set('Cookie', 'session=v');
 
     expect(res.status).toBe(200);
-    expect(res.body.items ?? res.body.data).toBeTruthy();
+    expect(res.body).toEqual({
+      success: true,
+      data: [{ id: 1 }, { id: 2 }],
+      total: 2,
+      page: 1,
+      pageSize: 200,
+    });
+    expect(svc.getQuestionsInAssessment).toHaveBeenCalledWith('5', COURSE.userId);
   });
 });
 
@@ -219,6 +226,14 @@ describe('GET /api/assessments/:id/sections', () => {
     const res = await request(app).get('/api/assessments/5/sections').set('Cookie', 'session=v');
 
     expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      data: [{ id: 1 }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
+    expect(sectionSvc.getSectionsForAssessment).toHaveBeenCalledWith('5', COURSE.userId);
   });
 });
 
