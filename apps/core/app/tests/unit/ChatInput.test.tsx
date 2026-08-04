@@ -160,3 +160,44 @@ describe("ChatInput — focus mode chip", () => {
     expect(onFocusModeChange).toHaveBeenCalledWith(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Assist toggle busy state (#1246)
+// ---------------------------------------------------------------------------
+
+describe("ChatInput — assist toggle busy state", () => {
+  it("disables the assist chip and shows a spinner while a regenerate request is in flight", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: true,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).toBeDisabled();
+    expect(assistChip).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).not.toHaveBeenCalled();
+  });
+
+  it("is enabled and toggleable when not busy", () => {
+    const onAdhdAssistChange = vi.fn();
+    render(
+      <ChatInput
+        {...makeProps({
+          adhdAssist: false,
+          onAdhdAssistChange,
+          assistBusy: false,
+        })}
+      />,
+    );
+    const assistChip = screen.getByRole("button", { name: /assistive mode/i });
+    expect(assistChip).not.toBeDisabled();
+    fireEvent.click(assistChip);
+    expect(onAdhdAssistChange).toHaveBeenCalledWith(true);
+  });
+});

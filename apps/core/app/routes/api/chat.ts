@@ -549,12 +549,29 @@ export async function action({ request }: ActionFunctionArgs) {
     const routeWithAuto = autoRouting.routeWithAuto;
     const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
     const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
-    const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    // #1246: re-generate the last turn's response under a different ADHD Assist
+    // policy for in-place preview (toggling Assist swaps content, not just
+    // styling). Always non-streaming and never persists anything — it requires
+    // an existing owned chatId (validated below) and reuses that chat's normal
+    // course/RAG/model context, just with `adhdAssist` overridden for this call.
+    const regenerateOnly = body.regenerateOnly === true;
+    const streaming = regenerateOnly
+      ? false
+      : body.streaming === undefined
+        ? true
+        : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
     const expectedChatbotType = chatbotTypeFromMode(chatMode);
     const jobType = parseJobType(body.routingContext);
+
+    if (regenerateOnly && !chatId) {
+      return new Response(
+        JSON.stringify({ error: "regenerateOnly requires an existing chatId" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     chatApiTrace("request received", {
       chatMode,
@@ -878,7 +895,9 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    if (!ephemeral && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+    // regenerateOnly always sets adhdAssist to request a one-off override — must
+    // never persist it as the chat's new stored default (#1246).
+    if (!ephemeral && !regenerateOnly && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { adhdAssist },
@@ -1207,7 +1226,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
     const appendMessages = async (messages: GenericMessage[]) => {
       // Stateless callers never persist messages (no chat row / no real user).
-      if (ephemeral || !chat?.id) return;
+      // regenerateOnly is a read-only content preview (#1246) — never persists.
+      if (ephemeral || regenerateOnly || !chat?.id) return;
       if (!messages.length) return;
 
       const rows: Prisma.ChatMessageCreateManyInput[] = [];
@@ -2017,26 +2037,30 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedOversightUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
-        await persistTurnTelemetry({
-          responseText: finalText,
-          usage: {
-            promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
-            totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
-          },
-          finishReason: String(finishReason ?? "stop"),
-        });
-        logResponseCompliance(finalText, {
-          finishReason,
-          promptTokens: usage?.promptTokens,
-          completionTokens: usage?.completionTokens,
-          oversightRewritten: audited.rewritten,
-          oversightMethod: audited.method,
-          preStructuralPass: audited.beforeMetrics.structuralPass,
-          oversightDurationMs: audited.oversightDurationMs,
-          oversightPromptTokens: audited.oversightUsage?.promptTokens,
-          oversightCompletionTokens: audited.oversightUsage?.completionTokens,
-        });
+        // regenerateOnly is a read-only content preview (#1246) — skip telemetry
+        // and compliance logging so a toggled-preview doesn't double-count a turn.
+        if (!regenerateOnly) {
+          await persistTurnTelemetry({
+            responseText: finalText,
+            usage: {
+              promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
+              completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+              totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
+            },
+            finishReason: String(finishReason ?? "stop"),
+          });
+          logResponseCompliance(finalText, {
+            finishReason,
+            promptTokens: usage?.promptTokens,
+            completionTokens: usage?.completionTokens,
+            oversightRewritten: audited.rewritten,
+            oversightMethod: audited.method,
+            preStructuralPass: audited.beforeMetrics.structuralPass,
+            oversightDurationMs: audited.oversightDurationMs,
+            oversightPromptTokens: audited.oversightUsage?.promptTokens,
+            oversightCompletionTokens: audited.oversightUsage?.completionTokens,
+          });
+        }
 
         const persistOverseenAssistantMessages = async (text: string) => {
           const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
@@ -2200,23 +2224,27 @@ ${buildEmptyCourseRagBlock()}`;
         const normalizedUsage = coalesceTokenUsage(
           usage as Record<string, unknown> | undefined,
         );
-        await persistTurnTelemetry({
-          responseText: text ?? "",
-          usage: {
-            promptTokens: normalizedUsage.promptTokens ?? undefined,
-            completionTokens: normalizedUsage.completionTokens ?? undefined,
-            totalTokens: normalizedUsage.totalTokens ?? undefined,
-          },
-          finishReason: String(finishReason ?? "stop"),
-        });
-        // The streaming `onFinish` hook bails out on non-streaming turns, so
-        // without this the baseline and prompt-only eval arms (which post
-        // `streaming: false` and skip the Dean) record no compliance row at all.
-        logResponseCompliance(text ?? "", {
-          finishReason,
-          promptTokens: usage?.promptTokens,
-          completionTokens: usage?.completionTokens,
-        });
+        // regenerateOnly is a read-only content preview (#1246) — skip telemetry
+        // and compliance logging so a toggled-preview doesn't double-count a turn.
+        if (!regenerateOnly) {
+          await persistTurnTelemetry({
+            responseText: text ?? "",
+            usage: {
+              promptTokens: normalizedUsage.promptTokens ?? undefined,
+              completionTokens: normalizedUsage.completionTokens ?? undefined,
+              totalTokens: normalizedUsage.totalTokens ?? undefined,
+            },
+            finishReason: String(finishReason ?? "stop"),
+          });
+          // The streaming `onFinish` hook bails out on non-streaming turns, so
+          // without this the baseline and prompt-only eval arms (which post
+          // `streaming: false` and skip the Dean) record no compliance row at all.
+          logResponseCompliance(text ?? "", {
+            finishReason,
+            promptTokens: usage?.promptTokens,
+            completionTokens: usage?.completionTokens,
+          });
+        }
 
         releaseAdmission();
         return new Response(

@@ -28,6 +28,8 @@ export type ChatViewSharedProps = {
   adhdAssist: boolean;
   assistive: boolean;
   onAssistiveChange: (value: boolean) => void;
+  /** True while the latest response is being re-generated for the toggled Assist mode (#1246). */
+  assistBusy?: boolean;
   focusMode: boolean;
   onFocusModeChange: (value: boolean) => void;
   systemPrompt: string | null;

@@ -43,6 +43,7 @@ export function ChatConversationLayout({
   adhdAssist,
   assistive,
   onAssistiveChange,
+  assistBusy,
   focusMode,
   onFocusModeChange,
   webToolsEnabled,
@@ -184,6 +185,7 @@ export function ChatConversationLayout({
         showCourseSelector={showCourseSelector}
         adhdAssist={adhdAssist}
         onAdhdAssistChange={onAssistiveChange}
+        assistBusy={assistBusy}
         focusMode={focusMode}
         onFocusModeChange={onFocusModeChange}
         assistiveHighlight={assistive}

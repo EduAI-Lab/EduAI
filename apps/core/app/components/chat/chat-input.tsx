@@ -16,6 +16,7 @@ import {
   IconBrain,
   IconFocusCentered,
   IconBooksOff,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { useState } from "react";
 import { ApiKeySettings } from "./api-key-settings";
@@ -65,6 +66,8 @@ interface ChatInputProps {
   showCourseSelector?: boolean;
   adhdAssist?: boolean;
   onAdhdAssistChange?: (v: boolean) => void;
+  /** True while the latest response is being re-generated for the toggled Assist mode (#1246). */
+  assistBusy?: boolean;
   focusMode?: boolean;
   onFocusModeChange?: (v: boolean) => void;
   assistiveHighlight?: boolean;
@@ -99,6 +102,7 @@ export function ChatInput({
   showCourseSelector = true,
   adhdAssist = false,
   onAdhdAssistChange,
+  assistBusy = false,
   focusMode = false,
   onFocusModeChange,
   assistiveHighlight = false,
@@ -283,8 +287,9 @@ export function ChatInput({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          disabled={controlsDisabled}
+                          disabled={controlsDisabled || assistBusy}
                           aria-pressed={adhdAssist}
+                          aria-busy={assistBusy}
                           aria-label="Assistive mode"
                           onClick={() => onAdhdAssistChange(!adhdAssist)}
                           className={cn(
@@ -293,14 +298,19 @@ export function ChatInput({
                             adhdAssist && TOOLBAR_TOGGLE_ACTIVE,
                           )}
                         >
-                          <IconBrain size={12} stroke={2} />
+                          {assistBusy ? (
+                            <IconLoader2 size={12} stroke={2} className="animate-spin" />
+                          ) : (
+                            <IconBrain size={12} stroke={2} />
+                          )}
                           <span className="hidden sm:inline">Assist</span>
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px]">
                         <p>
-                          Formats AI responses for improved focus and
-                          readability.
+                          {assistBusy
+                            ? "Re-generating the response for this mode…"
+                            : "Formats AI responses for improved focus and readability."}
                         </p>
                       </TooltipContent>
                     </Tooltip>

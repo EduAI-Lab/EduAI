@@ -159,6 +159,14 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     return hydrated;
   });
   const [streamingWasAutoRouted, setStreamingWasAutoRouted] = useState(false);
+  /** Id of the assistant message currently being re-generated for a toggled Assist mode (#1246). */
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
+  /**
+   * Session-only cache of the last message's content per Assist variant, keyed
+   * by message id then "true"/"false" — avoids re-hitting the model every time
+   * the user flips the toggle back and forth on the same response.
+   */
+  const assistVariantCacheRef = useRef<Record<string, Partial<Record<"true" | "false", string>>>>({});
   const pendingRoutedRegistryIdRef = useRef<string | null>(null);
   const pendingWasAutoRoutedRef = useRef(false);
   const wasLoadingRef = useRef(false);
@@ -178,15 +186,6 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
       prefsFetcher.submit(updates, { method: "post", encType: "application/json" });
     },
     [prefsFetcher],
-  );
-
-  const handleAssistiveChange = useCallback(
-    (checked: boolean) => {
-      setAdhdAssist(checked);
-      // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
-      setAssistive(checked);
-    },
-    [setAssistive],
   );
 
   const handleCourseChange = useCallback(
@@ -283,7 +282,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
   };
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, stop } =
+  const { messages, setMessages, input, handleInputChange, handleSubmit, isLoading, stop } =
     useChat({
       api: "/api/chat",
       // Seed the composer from the route loader's transcript (DB is the source of
@@ -358,6 +357,85 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
         setStreamingWasAutoRouted(false);
       },
     });
+
+  // #1246: toggling Assist while the latest response is already on screen
+  // re-generates that response's actual content (not just its display styling)
+  // for the target mode — reusing the server's normal composeSystemPrompt/
+  // oversight pipeline via a read-only `regenerateOnly` request. In-memory
+  // only (no cross-reload persistence needed): both variants are cached per
+  // message id so flipping back and forth doesn't re-hit the model every time.
+  // Any other case (no messages yet, still streaming, or no chat saved yet)
+  // falls back to the prior cosmetic-only toggle unchanged.
+  const handleAssistiveChange = useCallback(
+    (checked: boolean) => {
+      const lastMessage = messages[messages.length - 1];
+      const canRegenerate = !isLoading && lastMessage?.role === "assistant" && Boolean(chatId);
+
+      if (!canRegenerate) {
+        setAdhdAssist(checked);
+        // setAssistive already persists via PATCH /api/preferences — no extra submit needed.
+        setAssistive(checked);
+        return;
+      }
+
+      void (async () => {
+        const cacheKey = checked ? "true" : "false";
+        const cached = assistVariantCacheRef.current[lastMessage.id]?.[cacheKey];
+        const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+
+        try {
+          let content = cached;
+          if (content === undefined && lastUserMessage) {
+            setRegeneratingMessageId(lastMessage.id);
+            const response = await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chatMode: "learning",
+                chatId,
+                model: selectedModel,
+                courseCode: selectedCourseCode || undefined,
+                adhdAssist: checked,
+                regenerateOnly: true,
+                streaming: false,
+                messages: [lastUserMessage],
+              }),
+            });
+            if (!response.ok) {
+              throw new Error(`Regenerate failed with ${response.status}`);
+            }
+            const data = await response.json();
+            content = typeof data.content === "string" ? data.content : undefined;
+            if (!content) {
+              throw new Error("Regenerate returned empty content");
+            }
+            assistVariantCacheRef.current[lastMessage.id] = {
+              ...assistVariantCacheRef.current[lastMessage.id],
+              [cacheKey]: content,
+            };
+          }
+
+          if (content !== undefined) {
+            const resolvedContent = content;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === lastMessage.id
+                  ? { ...m, content: resolvedContent, parts: [{ type: "text", text: resolvedContent }] }
+                  : m,
+              ),
+            );
+          }
+        } catch (error) {
+          console.error("Failed to regenerate response for Assist toggle:", error);
+        } finally {
+          setRegeneratingMessageId(null);
+          setAdhdAssist(checked);
+          setAssistive(checked);
+        }
+      })();
+    },
+    [messages, isLoading, chatId, selectedModel, selectedCourseCode, setMessages, setAssistive],
+  );
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
@@ -494,6 +572,7 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
     adhdAssist,
     assistive,
     onAssistiveChange: handleAssistiveChange,
+    assistBusy: regeneratingMessageId !== null,
     focusMode,
     onFocusModeChange: setFocusMode,
     systemPrompt,
