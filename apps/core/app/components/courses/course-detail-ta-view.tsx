@@ -55,6 +55,9 @@ interface Props {
   course: CourseDetail
   topics: CourseTopic[]
   materials: CourseMaterial[]
+  hasMoreMaterials?: boolean
+  materialsLoadingMore?: boolean
+  onLoadMoreMaterials?: () => void
   isUploading?: boolean
   materialsError?: string | null
   materialsSuccess?: string | null
@@ -87,6 +90,9 @@ export function CourseDetailTaView({
   course,
   topics,
   materials,
+  hasMoreMaterials = false,
+  materialsLoadingMore = false,
+  onLoadMoreMaterials,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -552,6 +558,17 @@ export function CourseDetailTaView({
               )
             }}
           />
+          {hasMoreMaterials && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              disabled={materialsLoadingMore}
+              onClick={() => onLoadMoreMaterials?.()}
+            >
+              {materialsLoadingMore ? "Loading…" : "Load more materials"}
+            </Button>
+          )}
         </PageTabsContent>
 
         {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}
