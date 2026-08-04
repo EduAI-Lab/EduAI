@@ -113,7 +113,10 @@ export function ChatScreen({ data, initialTranscript }: ChatScreenProps) {
   // Focus mode and the explicit model choice are carried across the
   // /chat -> /chat/:chatId replace-navigation below. That route swap remounts
   // ChatScreen (see chat.$chatId.tsx's key), so uncarried state would reset to
-  // its defaults — notably switching a concrete model back to Auto.
+  // its defaults — notably switching a concrete model back to Auto. focusMode
+  // is read via focusModeRef at those call sites (see below) to avoid a
+  // stale-closure revert (#1244); selectedModel is read directly since the
+  // model selector is disabled while a request is in flight.
   const [focusMode, setFocusMode] = useState(
     Boolean(navigationState?.focusMode),
   );

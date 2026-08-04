@@ -265,4 +265,40 @@ describe("ChatScreen — header", () => {
       expect.objectContaining({ focusMode: true }),
     );
   });
+
+  it("carries the live Focus Mode value into the created chat route after saving a system prompt mid-toggle (#1244)", async () => {
+    let resolveFetch: (value: { json: () => Promise<unknown> }) => void;
+    const fetchPromise = new Promise<{ json: () => Promise<unknown> }>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchSpy = vi
+      .spyOn(global, "fetch")
+      .mockReturnValue(fetchPromise as unknown as Promise<Response>);
+
+    const { router } = renderChatScreen(null, autoRoutingData);
+
+    // Save fires before Focus Mode is toggled on — mirrors
+    // handleSystemPromptSave reading focusModeRef only after its in-flight
+    // fetch resolves.
+    const savePromise = captureCourseViewProps.mock.lastCall?.[0].onSystemPromptSave(
+      "Be concise",
+    );
+
+    // User flips Focus Mode on while the save request is still in flight.
+    act(() => {
+      captureCourseViewProps.mock.lastCall?.[0].onFocusModeChange(true);
+    });
+
+    await act(async () => {
+      resolveFetch({ json: () => Promise.resolve({ chatId: "chat-1" }) });
+      await savePromise;
+    });
+
+    fetchSpy.mockRestore();
+
+    expect(router.state.location.pathname).toBe("/chat/chat-1");
+    expect(router.state.location.state).toEqual(
+      expect.objectContaining({ focusMode: true }),
+    );
+  });
 });
