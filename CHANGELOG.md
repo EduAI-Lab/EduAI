@@ -4,6 +4,16 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Fixed
+
+- [core] fix: Disable Qwen3.5's default reasoning-mode output for vLLM chat completions, preventing leaked `<think>` blocks in responses; set `VLLM_DISABLE_THINKING=0` only when reasoning output is intended. Closes #1367. (@superbolt08, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Tests
+
+- [core] test: Add vLLM thinking-mode request-wrapper regression coverage for chat-body rewriting, existing template kwargs, non-chat requests, and the explicit opt-out. Closes #1367. (@superbolt08, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
