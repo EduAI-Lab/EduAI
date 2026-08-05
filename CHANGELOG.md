@@ -2,6 +2,16 @@
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
+## [Week 14 — August 3–9, 2026]
+
+### Changed
+
+- [core] routing: Retire the image-escalation rule and its cloud multimodal fallback; image presence remains available to telemetry and the LLM classifier, while kNN, hybrid, and classifier modes now choose their normal tier. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
+
+### Tests
+
+- [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
+
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 ## [Week 13 — July 27 – August 2, 2026]
