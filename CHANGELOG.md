@@ -7,22 +7,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [core] routing: Retire the image-escalation rule and its cloud multimodal fallback; image presence remains available to telemetry and the LLM classifier, while kNN, hybrid, and classifier modes now choose their normal tier. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
-
-### Tests
-
-- [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
-
-> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
-
-## [Week 14 — August 3–9, 2026]
-
-### Changed
-
 - [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ### Tests
 
+- [core] tests: Cover image inputs after image-rule retirement across kNN, hybrid, and LLM classifier routing modes. Closes #1393. (@superbolt08, 2026-08-05) — [#1352](https://github.com/EduAI-Lab/EduAI/pull/1352)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
+> See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
 ## [Week 13 — July 27 – August 2, 2026]
 
