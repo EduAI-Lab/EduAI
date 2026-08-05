@@ -1,12 +1,17 @@
 # S1 pilot — material read gate: REST route + lib/ai/embedding.ts (hybrid + SQL RAG branches).
-# See docs/PICT_CENSUS.md § S1 for the oracle spec (out of scope for issue #1179 — this model
-# proves the generator path end to end; the oracle and world-builder land separately).
+# See docs/PICT_CENSUS.md § S1 for the oracle spec (tests/models/material-visibility.oracle.ts).
+#
+# `Path` (rest / rag-hybrid / rag-sql) is deliberately NOT a dimension here: as a PICT factor it
+# would route each row to exactly one implementation, so no row would ever compare two paths on
+# the same input — the opposite of a drift contract. Instead every row generated from this model
+# is exercised against all three paths in the world-builder
+# (apps/core/app/tests/integration/material-visibility.integration.test.ts), which cross-products
+# Path itself.
 Role:              ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT, ANON
 Enrolled:          yes, no
 VisibleToStudents: true, false
 AvailableAt:       past, future, null
 Deleted:           yes, no
-Path:              rest, rag-hybrid, rag-sql
+Unpublished:       yes, no
 
 IF [Role] in {"ADMIN", "UNIT_ADMIN", "ANON"} THEN [Enrolled] = "no";
-IF [Role] = "ANON" THEN [Path] = "rest";

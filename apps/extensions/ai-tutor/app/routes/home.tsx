@@ -39,7 +39,7 @@ export default function Home() {
         <div className="relative h-16 w-16">
           <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
           <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-          <IconBrain className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary" />
+          <IconBrain className="absolute inset-0 m-auto h-6 w-6 animate-pulse text-primary-text" />
         </div>
         <p className="text-sm font-medium text-muted-foreground">
           Initializing your workspace...

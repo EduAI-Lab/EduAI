@@ -93,12 +93,20 @@ describe("extractPdfTextIsolated", () => {
     // Accept both termination forms: Unix typically signals (SIGABRT); Windows
     // reports V8 heap fatal errors as a plain exit code with OOM stderr — the
     // parent normalizes both to a "killed (signal …)" message.
+    //
+    // The wall-clock limit is deliberately far above the time the worker needs to
+    // inflate the bomb and hit the ceiling (~6s on an idle dev machine). The two
+    // termination paths — heap abort and wall-clock kill — race each other, and a
+    // limit anywhere near the observed cost makes this assertion flaky on loaded
+    // CI runners, where the same work takes 4x longer. Lowering maxOldSpaceMb does
+    // not help: the cost is inflation work, not the size of the ceiling. Vitest's
+    // own per-test timeout is the backstop against a genuine hang.
     const bomb = readFileSync(BOMB_FIXTURE);
 
     await expect(
-      extractPdfTextIsolated(bomb, { maxOldSpaceMb: 48, timeoutMs: 25_000 }),
+      extractPdfTextIsolated(bomb, { maxOldSpaceMb: 48, timeoutMs: 120_000 }),
     ).rejects.toThrow(/killed \(signal /i);
-  }, 30_000);
+  }, 150_000);
 
   it("spawns the worker under an OS address-space ceiling on Unix", async () => {
     if (process.platform === "win32") return;
