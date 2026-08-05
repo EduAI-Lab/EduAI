@@ -84,6 +84,10 @@ Purely `docker-compose.dev.yml` port overrides — optional, dev-only.
 | `REDIS_URL` | optional (default `redis://localhost:63790`) | dev/prod | Redis connection for the async AI-job queue (BullMQ) |
 | `QUEUE_ENQUEUE_ENABLED` | optional (default `false`) | dev/prod | Guarded #914 producer flag. When `true`, opted-in `/api/chat` requests (`enqueue: true`) enqueue an AI job instead of streaming. Keep off until the dispatch worker (#168) can drain the queue |
 | `QUEUE_MAX_DEPTH` | optional (default off) | dev/prod | Backpressure cap (#915): max PENDING jobs per queue before `enqueue()` rejects with 429 + `Retry-After`. Plain positive integer only — unset, `0`, or a non-integer value (e.g. `1e3`) disables the cap. See [Operating `QUEUE_MAX_DEPTH`](#operating-queue_max_depth) before enabling it |
+| `AI_JOB_DEFAULT_MODEL` | optional | dev/prod | Worker model override. When unset, the worker uses Auto routing and falls back to `vllm:qwen2.5-32b-instruct` if routing fails |
+| `AI_JOB_CHAT_CONCURRENCY` / `AI_JOB_HEAVY_CONCURRENCY` | optional (defaults `8` / `1`) | dev/prod | BullMQ worker concurrency for the chat and heavy fleet-pool queues |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | optional (default `120000`) | dev/prod | Maximum provider execution time for an async AI job before it is aborted and retried |
+| `AI_JOB_ATTEMPTS` / `AI_JOB_RETRY_DELAY_MS` | optional (defaults `3` / `5000`) | dev/prod | BullMQ attempts and exponential retry base delay for async AI jobs |
 | `DEV_SERVER_HMR_HOST` / `DEV_SERVER_HMR_CLIENT_PORT` | optional | dev | Vite HMR through an HTTPS reverse proxy |
 | `EMBEDDING_PROVIDER`, `EMBEDDING_DIMENSION`, `OLLAMA_BASE_URL`, `OLLAMA_EMBEDDING_MODEL`, `OLLAMA_EMBED_MANY_BATCH_SIZE` | optional | dev | RAG embeddings — local Ollama path (default) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL`, `OPENROUTER_HTTP_REFERER`, `OPENROUTER_APP_TITLE`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENAI_API_KEY` | optional | dev/prod | RAG embeddings — cloud fallback path |

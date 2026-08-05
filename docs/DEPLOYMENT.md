@@ -202,6 +202,32 @@ bash infra/s378/go-live-build.sh
 sets their public URLs. The canonical script and operational notes live in
 [`infra/s378/GO-LIVE.md`](../infra/s378/GO-LIVE.md).
 
+### Async AI-job worker
+
+The durable BullMQ queue is drained by a separate Core process. Run one worker
+process per Core deployment:
+
+```bash
+cd apps/core
+npm run queue:worker
+```
+
+The process consumes `ai-jobs-chat` and `ai-jobs-heavy`, claims the authoritative
+`AiJob` row, routes inference through the matching fleet pool, and writes
+`COMPLETED` or `FAILED`. Graceful `SIGINT`/`SIGTERM` shutdown closes both BullMQ
+workers before disconnecting Redis.
+
+| Variable | Purpose |
+| -------- | ------- |
+| `REDIS_URL` | Shared Redis used by the producer and worker |
+| `QUEUE_ENQUEUE_ENABLED` | Enables the guarded producer path; turn on only when the worker service is healthy |
+| `AI_JOB_DEFAULT_MODEL` | Optional explicit worker model; otherwise Auto routing is used |
+| `AI_JOB_CHAT_CONCURRENCY` | Chat-pool worker concurrency (default `8`) |
+| `AI_JOB_HEAVY_CONCURRENCY` | Heavy-pool worker concurrency (default `1`) |
+| `AI_JOB_EXECUTION_TIMEOUT_MS` | Per-attempt provider timeout in milliseconds (default `120000`) |
+| `AI_JOB_ATTEMPTS` | Total BullMQ attempts per job (default `3`) |
+| `AI_JOB_RETRY_DELAY_MS` | Exponential retry base delay (default `5000`) |
+
 ### Apache reverse proxy
 
 The checked-in vhost templates are:
