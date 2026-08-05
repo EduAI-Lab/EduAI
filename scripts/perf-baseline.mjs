@@ -6,7 +6,7 @@
  * three apps (Core, AI-Tutor, Question Maker) — every read AND every mutation
  * (create / update / delete) that touches only our own databases. External/AI/
  * Canvas endpoints are out of scope (LLM/embedding/Canvas latency reflects a
- * provider, not our code — see docs/perf/baseline/*-measurement-spec.md and the
+ * provider, not our code — see docs/perf/backend/baseline/*-measurement-spec.md and the
  * SKIP lists). NOT AI-chat latency, NOT load/concurrency (that's #918 —
  * concurrency=1 here).
  *
@@ -28,7 +28,7 @@
  *   npm run db:seed:perf          # once (and again between runs to refill pools)
  *   CORE_URL=http://localhost:3000 AITUTOR_URL=http://localhost:4000 \
  *     QM_URL=http://localhost:8000 \
- *     npm run perf:endpoints -- --out=docs/perf/baseline --target=local-docker
+ *     npm run perf:endpoints -- --out=docs/perf/backend/baseline --target=local-docker
  *
  * CLI flags (win over env): --out=<dir> (output dir), --target=<label>.
  *   Note the npm `--` that forwards args to the script.
@@ -50,7 +50,7 @@ import { execSync } from "node:child_process";
 // ---------------------------------------------------------------------------
 // CLI flags. Supports `--out=dir`, `--out dir`, and `--target=label`.
 // --out sets the output dir (no env equivalent); --target wins over TARGET_LABEL env.
-// Invoke via npm with a forwarding `--`:  npm run perf:endpoints -- --out=docs/perf/baseline
+// Invoke via npm with a forwarding `--`:  npm run perf:endpoints -- --out=docs/perf/backend/baseline
 function cliFlag(name) {
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
@@ -75,7 +75,7 @@ const SAMPLES = Number(process.env.PERF_SAMPLES ?? 30);
 const RUN_MUTATIONS = (process.env.PERF_SKIP_MUTATIONS ?? "0") !== "1";
 const MUT = Number(process.env.PERF_MUT_SAMPLES ?? 15);
 const TARGET_LABEL = cliFlag("target") ?? process.env.TARGET_LABEL ?? "unspecified";
-const OUT_DIR = (cliFlag("out") ?? `docs/perf/baseline`).replace(/\/$/, "");
+const OUT_DIR = (cliFlag("out") ?? `docs/perf/backend/baseline`).replace(/\/$/, "");
 const VALIDATE_LIMIT = Number(process.env.PERF_VALIDATE_LIMIT ?? 300);
 const VALIDATE_WINDOW_MS = Number(process.env.PERF_VALIDATE_WINDOW_MS ?? 60_000);
 
