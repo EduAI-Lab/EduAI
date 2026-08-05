@@ -236,7 +236,7 @@ async function syncUnpublishedState(
 
 const MAX_CANVAS_FILE_SIZE = 50 * 1024 * 1024; // 50 MB — matches file-processing.ts cap
 
-async function importSingleCanvasFile(
+export async function importSingleCanvasFile(
   courseId: string,
   userId: string,
   file: CanvasFileApi,
@@ -296,27 +296,17 @@ async function importSingleCanvasFile(
     file.filename || file.display_name,
     { type: mimeType },
   );
-  const fileInfo = await processUploadedFile(uploadFile);
 
-  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
-    where: { courseId, checksum: fileInfo.checksum },
-  });
-
-  if (duplicateByChecksum && duplicateByChecksum.id !== existing?.id) {
-    return "skipped-not-modified";
-  }
-
+  // Persist PROCESSING *before* extraction so a killed PDF worker cannot leave an
+  // existing Canvas material stuck at READY, and new imports still get a FAILED row (#1018).
   let materialId: string;
+  const displayName = file.filename || file.display_name || "canvas-file";
+  const provisionalTitle = displayName.replace(/\.[^/.]+$/, "") || displayName;
 
   if (existing) {
     await prisma.courseMaterial.update({
       where: { id: existing.id },
       data: {
-        title: fileInfo.title,
-        mimeType: fileInfo.mimeType,
-        fileSize: fileInfo.fileSize,
-        checksum: fileInfo.checksum,
-        rawText: fileInfo.content,
         status: "PROCESSING",
         uploadedBy: userId,
         canvasUpdatedAt,
@@ -327,11 +317,12 @@ async function importSingleCanvasFile(
     const created = await prisma.courseMaterial.create({
       data: {
         courseId,
-        title: fileInfo.title,
-        mimeType: fileInfo.mimeType,
-        fileSize: fileInfo.fileSize,
-        checksum: fileInfo.checksum,
-        rawText: fileInfo.content,
+        title: provisionalTitle,
+        mimeType,
+        fileSize: typeof file.size === "number" ? file.size : bytes.length,
+        // Stable provisional checksum until extraction supplies the content hash.
+        checksum: `canvas-pending:${canvasFileId}`,
+        rawText: null,
         status: "PROCESSING",
         uploadedBy: userId,
         externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -341,6 +332,51 @@ async function importSingleCanvasFile(
     });
     materialId = created.id;
   }
+
+  let fileInfo;
+  try {
+    fileInfo = await processUploadedFile(uploadFile);
+  } catch (error) {
+    await prisma.courseMaterial.update({
+      where: { id: materialId },
+      data: { status: "FAILED" },
+    });
+    throw error;
+  }
+
+  const duplicateByChecksum = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum: fileInfo.checksum, id: { not: materialId } },
+  });
+
+  if (duplicateByChecksum) {
+    if (!existing) {
+      await prisma.courseMaterial.delete({ where: { id: materialId } });
+    } else {
+      // Revert the pre-extraction PROCESSING flip; leave prior content untouched.
+      await prisma.courseMaterial.update({
+        where: { id: materialId },
+        data: {
+          status: existing.status,
+          canvasUpdatedAt: existing.canvasUpdatedAt,
+        },
+      });
+    }
+    return "skipped-not-modified";
+  }
+
+  await prisma.courseMaterial.update({
+    where: { id: materialId },
+    data: {
+      title: fileInfo.title,
+      mimeType: fileInfo.mimeType,
+      fileSize: fileInfo.fileSize,
+      checksum: fileInfo.checksum,
+      rawText: fileInfo.content,
+      status: "PROCESSING",
+      uploadedBy: userId,
+      canvasUpdatedAt,
+    },
+  });
 
   try {
     await processMaterialEmbeddings(materialId, fileInfo.content, { replace: Boolean(existing) });

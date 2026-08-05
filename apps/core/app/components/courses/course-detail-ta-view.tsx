@@ -55,6 +55,9 @@ interface Props {
   course: CourseDetail
   topics: CourseTopic[]
   materials: CourseMaterial[]
+  hasMoreMaterials?: boolean
+  materialsLoadingMore?: boolean
+  onLoadMoreMaterials?: () => void
   isUploading?: boolean
   materialsError?: string | null
   materialsSuccess?: string | null
@@ -71,10 +74,10 @@ interface Props {
 }
 
 function fileTypeColor(mime: string): string {
-  if (mime.includes('pdf')) return 'oklch(0.63 0.22 25)'
-  if (mime.includes('pptx') || mime.includes('presentation')) return 'oklch(0.55 0.18 48)'
-  if (mime.includes('docx') || mime.includes('word')) return 'oklch(0.52 0.18 230)'
-  return 'oklch(0.55 0.12 260)'
+  if (mime.includes('pdf')) return 'var(--color-file-pdf)'
+  if (mime.includes('pptx') || mime.includes('presentation')) return 'var(--color-file-slides)'
+  if (mime.includes('docx') || mime.includes('word')) return 'var(--color-file-doc)'
+  return 'var(--color-file-generic)'
 }
 
 function formatSize(bytes: number): string {
@@ -87,6 +90,9 @@ export function CourseDetailTaView({
   course,
   topics,
   materials,
+  hasMoreMaterials = false,
+  materialsLoadingMore = false,
+  onLoadMoreMaterials,
   isUploading = false,
   materialsError = null,
   materialsSuccess = null,
@@ -552,6 +558,17 @@ export function CourseDetailTaView({
               )
             }}
           />
+          {hasMoreMaterials && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              disabled={materialsLoadingMore}
+              onClick={() => onLoadMoreMaterials?.()}
+            >
+              {materialsLoadingMore ? "Loading…" : "Load more materials"}
+            </Button>
+          )}
         </PageTabsContent>
 
         {/* ── Topics (§8: add/delete only when tas.canManageTopics is on) ── */}

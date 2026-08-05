@@ -228,7 +228,7 @@ export function AdminSettingsPanel({ loaderData }: AdminSettingsPanelProps) {
                             type="checkbox"
                             checked={isAllowed}
                             onChange={() => toggleTutorModel(model.modelId)}
-                            className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                            className="mt-1 h-4 w-4 rounded border-border text-primary-text focus:ring-primary"
                           />
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">

@@ -665,15 +665,20 @@ export async function findRelevantContent(
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
-  // Canvas publish-aware gate (#777): always hide unpublished / selectively
-  // excluded Canvas materials from RAG for every caller.
-  const canvasPublishFilter = Prisma.sql`
-    AND cm."unpublishedAt" IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM canvas_material_exclusions cme
-      WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
-    )
-  `;
+  // Canvas publish-aware gate (#777): hide unpublished / selectively excluded
+  // Canvas materials from RAG for student callers, same as the REST route's
+  // studentVisibilityWhere (courses.materials.$.ts) — staff bypass this, same
+  // as every other student-visibility clause, so a material an instructor can
+  // read directly is never invisible to that instructor in RAG.
+  const canvasPublishFilter = restrictToStudentVisible
+    ? Prisma.sql`
+        AND cm."unpublishedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM canvas_material_exclusions cme
+          WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+        )
+      `
+    : Prisma.empty;
 
   // §839 student-visibility gate, injected into both retrieval paths. Empty for
   // staff callers so their retrieval is unchanged.
