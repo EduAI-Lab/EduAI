@@ -4,6 +4,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Tests
+
+- [core] test: Route loader/action coverage for `app/routes` (#1213) — adds 46 test files covering every `admin.*.tsx` route's authorization checks, `courses.$courseId.tsx`/`chat.$chatId.tsx` found/not-found/unauthorized branches, every remaining top-level page loader/action, all four `auth/*` routes, and ~20 `app/routes/api/*` handlers that had drifted to 0% coverage since the issue was filed (`dashboard.stats`, `sessions.validate`, `courses.embedding-settings.$`, `questions(.ts/.id.ts)`, `courses.id.rag-settings`, `vllm-models`, `courses.re-embed.$`/`$jobId`, `e2e.promote`, `canvas.$`, `courses.canvas-materials.$`, and others). Statement coverage: `app/routes/api` 63%→86.45% (the issue's stated 72.57% had regressed since filing; now above it), `app/routes/auth` 36%→81.43%, top-level `app/routes` 3.67%→43.32%, combined 54.4%(stale)/59%(re-measured)→76.34%. The remaining gap to the 80% combined target sits almost entirely in top-level route JSX component bodies, which the issue itself scopes out as "not the testable surface" for loader/action work — closing it would require rendering full page components (data fetching, `@eduai/ui` deps), a separate and substantially larger effort. (#1213, @evanbones, 2026-08-05)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
