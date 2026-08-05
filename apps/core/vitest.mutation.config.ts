@@ -66,6 +66,7 @@ export default defineConfig({
       'app/tests/unit/permissions.test.ts',
       'app/tests/unit/policies.route.test.ts',
       'app/tests/unit/rate-limit.server.test.ts',
+      'app/tests/unit/resolve-course-access.server.test.ts',
       'app/tests/unit/user-provider-settings.server.test.ts',
       'app/tests/unit/users.rbac.test.ts',
     ],
