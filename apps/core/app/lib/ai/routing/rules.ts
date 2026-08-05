@@ -8,26 +8,16 @@
  *
  * **Frozen 2026-06-27** for Paper 1 held-out evaluation — no further dev-suite rule tuning.
  *
- * **Re-tuned 2026-08-04** (PREREG_v3.md §7, RULE_STACK_v3.md): the original
- * escalation regexes (debug/complex-task) were authored against v2's exact
- * wording and never fired on any of v3's 212 authored prompts. Broadened
- * DEBUG_PATTERN and added a named-construct-gated code/algorithm pattern,
- * sourced from the 15 legitimate escalation examples available at the time
- * (10 Stage-5 calibration-stratum + 5 Stage-6 dev escalations only — the
- * sealed confirmatory split was never inspected). Three known escalation
- * misses (v3-038 concept definition, v3-098 UML multiplicity, v3-183 WCAG
- * acronym expansion, v3-096 combinatorial test-case reasoning) have no
- * identified low-false-positive lexical signal and are deliberately left
- * unaddressed rather than forcing a broad pattern that would over-escalate
- * unrelated prompts — see RULE_STACK_v3.md for the full rationale. A
- * proposed numeric-multi-step-extraction rule (for prompts like v3-150) was
- * evaluated and NOT shipped: it rested on a single supporting example and a
- * naive version leaked onto ordinary "given a list, find the max" prompts.
- * Every broadened/added pattern here was stress-tested against realistic
- * easy-homework-help decoys before shipping (see
- * tests/unit/routing-rules-fp-guardrail.test.ts) — this is a production
- * router serving live student traffic, and over-escalation has a real cost
- * (latency + energy on every matching turn), not just under-escalation.
+ * Escalation misses without an identified low-false-positive lexical signal
+ * (bare concept definitions, UML-multiplicity interpretation, acronym
+ * expansion, combinatorial test-case reasoning) are deliberately left
+ * unmatched rather than forcing a broad pattern that would over-escalate
+ * unrelated prompts — see RULE_STACK_v3.md for the audit behind this. Every
+ * escalation pattern here is stress-tested against realistic easy-homework
+ * decoys (tests/unit/routing-rules-fp-guardrail.test.ts): this is a
+ * production router serving live student traffic, and over-escalation has a
+ * real cost (latency + energy on every matching turn), not just
+ * under-escalation.
  */
 import type { PickSpec } from "./tiers";
 
@@ -74,27 +64,14 @@ const WEB_LOOKUP_PATTERN =
 const WEB_LOOKUP_TOPIC_PATTERN =
   /\b(look up|find|search for|current|latest|today'?s?).{0,40}\b(hours|deadline|calendar|intensity|withdrawal|library)\b/i;
 
-// Broadened 2026-08-04 (PREREG_v3.md §7 rule-stack re-tuning, see RULE_STACK_v3.md):
-// the original literal-phrase DEBUG_PATTERN and iteratively/recursively-only
-// COMPLEX_CODE_PATTERN were authored against v2's specific wording and never
-// fired on any of v3's 212 authored prompts. Re-authored from the 15
-// legitimate escalation examples available for this purpose (10 Stage-5
-// calibration-stratum + 5 Stage-6 dev escalations — the sealed 95-item
-// confirmatory split was never inspected to design these). Stress-tested
-// against realistic easy-homework decoys (Opus 5 review, 2026-08-04) before
-// shipping — see the "reasoning about broken/undefined behaviour" and
-// "why does X crash" additions to DEBUG_PATTERN below, and the
-// tests/unit/routing-rules-fp-guardrail.test.ts file for the FP check.
-//
 // The trailing-anchor word list deliberately excludes bare "wrong" and
-// "deadlock" — an earlier version included them and, when re-evaluated
-// against the full v3 dev split (not just the original decoy set), over-fired
-// on abstract "why does concept X work this way" questions ("Why is a class
-// diagram the wrong tool for...", "Why does eliminating the circular-wait
-// condition prevent deadlock...") that are not bug reports at all. The
-// remaining anchors describe a concrete incident/symptom (a program that
-// crashes, leaks, hangs, or behaves undefined/unpredictably), which is a
-// tighter signal for "student debugging an actually-broken artifact."
+// "deadlock" — those also match abstract "why does concept X work this way"
+// questions ("Why is a class diagram the wrong tool for...", "Why does
+// eliminating the circular-wait condition prevent deadlock...") that are not
+// bug reports. The anchors below instead require a concrete incident/symptom
+// (a program that crashes, leaks, hangs, or behaves undefined/unpredictably),
+// which is a tighter signal for "student debugging an actually-broken
+// artifact."
 const DEBUG_PATTERN =
   /\bdebug this code\b|\bwhy might the loop\b|\bwhy (?:is|does|would|might|can)\b[\s\S]{0,120}\b(?:dangerous|undefined behaviou?r|unpredictab\w*|incorrect|fail\w*|crash\w*|leak\w*|corrupt\w*|race condition|hang\w*|infinite loop|off by one)\b|\b(?:behaves?|behaving|behaviou?r)\b[\s\S]{0,60}\b(?:unpredictab\w*|erratic\w*|inconsistent\w*|nondeterministic\w*)/i;
 
@@ -104,11 +81,9 @@ const COMPLEX_REASONING_PATTERN =
 // Named-construct gate, NOT a bare-topic-word gate. Bare topic words (graph,
 // mutex, semaphore, hash table, array) appear constantly in routine easy
 // homework-help prompts ("write a function that returns the size of a
-// graph") and produced ~50% false-positive escalation on realistic easy
-// decoys when tried as a gate (Opus 5 stress test, 2026-08-04). Named
+// graph"), so gating on them alone over-escalates. Named
 // algorithms/patterns/primitives (bfs, dijkstra, "factory method",
-// "producer thread", "counting semaphore") are a much tighter signal —
-// measured 9/10 recall on the 15 source examples, 1/24 on easy decoys.
+// "producer thread", "counting semaphore") are a much tighter signal.
 const COMPLEX_NAMED_CONSTRUCT_PATTERN =
   /\b(?:bfs|dfs|breadth-first search|depth-first search|dijkstra|dijkstra's algorithm|quicksort|mergesort|merge sort|heapsort|heap sort|topological sort|kruskal|prim's algorithm|bellman-ford|union-find|knapsack|dynamic programming|memoi[sz]ation|red-black tree|avl tree|b-tree|trie|minimum spanning tree|factory method|abstract factory|strategy pattern|observer pattern|singleton pattern|decorator pattern|visitor pattern|command pattern|producer thread|consumer thread|bounded buffer|deadlock|race condition|critical section|counting semaphore|semaphores|page table|virtual address|byte offset|\btlb\b|round-robin|context switch)\b/i;
 
@@ -180,20 +155,17 @@ export function isWebLookupPrompt(prompt: string, lower: string): boolean {
 
 /**
  * Debugging prompts where the small tier often mis-explains control flow or
- * reasons incorrectly about a bug. Broadened 2026-08-04 beyond the literal
- * "debug this code" phrasing to also catch "why does X behave
- * unpredictably/crash/leak" reasoning-about-a-bug prompts (v3-148: a
- * dangling-pointer prompt). Deliberately also catches "why is my code
- * wrong" / "why does my program crash" — a student debugging broken code is
- * exactly the case that should escalate, not a false positive.
+ * reasons incorrectly about a bug — covers both literal "debug this code"
+ * phrasing and "why does X behave unpredictably/crash/leak" prompts that
+ * describe a bug without using the word "debug". A student asking why their
+ * program crashes is exactly the case that should escalate.
  */
 export function isDebugEscalationPrompt(lower: string): boolean {
   return DEBUG_PATTERN.test(lower);
 }
 
 /**
- * Multi-step code / algorithm tasks that strict oracle rated tier-3 only.
- * Two independent 2026-08-04 additions:
+ * Multi-step code / algorithm tasks that need tier-3 reasoning quality:
  *   - COMPLEX_NAMED_CONSTRUCT_PATTERN + a code-writing verb/artifact: e.g.
  *     "write pseudocode for a Factory Method pattern", "implement BFS".
  *     Requires BOTH the verb/artifact and a named construct — this is
@@ -202,8 +174,8 @@ export function isDebugEscalationPrompt(lower: string): boolean {
  *     "write a function that returns the size of a graph").
  *   - ISA_ASSEMBLY_PATTERN + a code-writing verb: e.g. "Write the MIPS
  *     assembly for a loop that sums...". No named-construct requirement —
- *     assembly-level instruction prompts (v3-067/068) don't name an
- *     algorithm at all, so the named-construct gate would miss them.
+ *     assembly-level instruction prompts don't name an algorithm at all, so
+ *     the named-construct gate would miss them.
  */
 export function isComplexReasoningPrompt(prompt: string, lower: string): boolean {
   if (COMPLEX_REASONING_PATTERN.test(lower)) return true;

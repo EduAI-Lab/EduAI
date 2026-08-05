@@ -1,6 +1,5 @@
 /**
- * FP guardrail for the 2026-08-04 escalation-rule broadening
- * (PREREG_v3.md §7 rule-stack re-tuning, RULE_STACK_v3.md).
+ * False-positive guardrail for the Phase 1 escalation rules.
  *
  * The dev-suite evaluation script (research/evaluate-p1-rules-v3-dev.ts)
  * measures escalation RECALL — how many true-escalation prompts the rules
@@ -105,11 +104,9 @@ describe("debug rule intentionally still escalates genuine broken-code questions
 });
 
 describe("debug rule correctly stays quiet on abstract 'why does concept X work' questions", () => {
-  // Caught during dev-suite re-evaluation, not the original decoy set: an
-  // earlier version of DEBUG_PATTERN included bare "wrong" and "deadlock" as
-  // trailing anchors, which fired on abstract conceptual questions that are
-  // not bug reports at all (v3-119, v3-134 in the v3 dev split). These two
-  // are the actual false positives that caused the pattern to be tightened.
+  // Bare "wrong"/"deadlock" as trailing anchors would match these — they're
+  // abstract conceptual questions, not bug reports, so DEBUG_PATTERN must
+  // not fire on them.
   const abstractConceptualPrompts = [
     "Why is a class diagram the wrong tool for showing the step-by-step message flow of a single use case scenario?",
     "Why does eliminating the circular-wait condition prevent deadlock, and how does a global lock-ordering rule achieve that?",
