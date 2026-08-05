@@ -8,11 +8,9 @@ afterEach(() => {
 });
 
 describe("parseEnvInt", () => {
-  // #1101: these cases must stay direct calls on the exported helper. The
-  // store-cap path used to invoke parseEnvInt at module import with an unset
-  // RATE_LIMIT_MAX_KEYS; mutants that only diverge on `undefined` then crashed
-  // the whole file on load, which Stryker could not attribute to a killing test.
-  // Caps are now lazy-read so this suite can kill those mutants cleanly.
+  // #1101: call the exported helper directly. Cap config is read at module
+  // load (`RATE_LIMIT_MAX_KEYS`); bounded-store tests that need a custom
+  // cap use `vi.resetModules()` + dynamic import after stubbing the env.
   it("returns the fallback when the value is undefined", () => {
     expect(parseEnvInt(undefined, 20)).toBe(20);
   });

@@ -15,29 +15,14 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
 // single-process deployment, since a key with one hit and no return visit is
 // never removed. STALE_ENTRY_MS is comfortably larger than any configured
 // window so a sweep never evicts a key with an active hit count.
-//
-// Caps are read lazily (not at module import) so a broken `parseEnvInt`
-// undefined-guard is killable by the dedicated unit test — calling it at
-// top level with an unset RATE_LIMIT_MAX_KEYS made those mutants crash the
-// whole file on import, which Stryker could not attribute to a killing test.
+// Cap is read at module load so a misconfigured RATE_LIMIT_MAX_KEYS surfaces
+// at process start rather than on the first request.
+const MAX_STORE_KEYS = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
 const STALE_ENTRY_MS = 60 * 60_000;
-let cachedMaxStoreKeys: number | null = null;
-
-function getMaxStoreKeys(): number {
-  if (cachedMaxStoreKeys === null) {
-    cachedMaxStoreKeys = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
-  }
-  return cachedMaxStoreKeys;
-}
-
 // Eviction below targets 90% of the cap rather than exactly MAX_STORE_KEYS,
 // so a sweep isn't immediately re-triggered by the next insert once the
-// store is sitting right at the cap under sustained load. Derived from the
-// cached max on each call — caching the floor() result separately only
-// added an equivalent-to-always-recompute branch for mutation testing.
-function getEvictionTargetKeys(): number {
-  return Math.floor(getMaxStoreKeys() * 0.9);
-}
+// store is sitting right at the cap under sustained load.
+const EVICTION_TARGET_KEYS = Math.floor(MAX_STORE_KEYS * 0.9);
 
 function evictStaleEntries(now: number): void {
   for (const [key, hits] of store) {
@@ -65,7 +50,7 @@ export function isRateLimited(
   hits.push(now);
   store.set(key, hits);
 
-  if (store.size > getMaxStoreKeys()) {
+  if (store.size > MAX_STORE_KEYS) {
     evictStaleEntries(now);
     // Sweep alone may not be enough if every key is still "hot" — fall back
     // to evicting the oldest-inserted keys down to EVICTION_TARGET_KEYS
@@ -78,9 +63,8 @@ export function isRateLimited(
     // a flood of distinct keys could in theory evict another key's counter
     // early. Acceptable at the current 50k default; revisit if that stops
     // being true.
-    const evictionTarget = getEvictionTargetKeys();
     for (const oldestKey of store.keys()) {
-      if (store.size <= evictionTarget) break;
+      if (store.size <= EVICTION_TARGET_KEYS) break;
       store.delete(oldestKey);
     }
   }
@@ -91,5 +75,4 @@ export function isRateLimited(
 /** Clears in-memory rate limit state between tests. */
 export function resetRateLimitsForTests(): void {
   store.clear();
-  cachedMaxStoreKeys = null;
 }
