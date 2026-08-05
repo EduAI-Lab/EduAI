@@ -107,6 +107,7 @@ beforeEach(() => {
   });
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
+  vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
 });
@@ -309,6 +310,35 @@ describe("syncSelectedCanvasMaterials", () => {
     expect(result.failed).toHaveLength(0);
     expect(processUploadedFile).toHaveBeenCalled();
     expect(processMaterialEmbeddings).toHaveBeenCalledWith("mat-1", "hello", { replace: false });
+  });
+
+  it("marks PROCESSING before extraction and FAILED when extraction throws (#1018)", async () => {
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue({
+      id: "mat-existing",
+      status: "READY",
+      canvasUpdatedAt: new Date("2025-01-09T00:00:00.000Z"),
+      deletedAt: null,
+    } as never);
+    vi.mocked(processUploadedFile).mockRejectedValueOnce(new Error("PDF extraction worker was killed"));
+
+    const result = await syncSelectedCanvasMaterials("user-1", "core-course-1", ["1001"]);
+
+    expect(result.failed).toEqual([
+      expect.objectContaining({ canvasFileId: "1001" }),
+    ]);
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-existing" },
+        data: expect.objectContaining({ status: "PROCESSING" }),
+      }),
+    );
+    expect(prisma.courseMaterial.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "mat-existing" },
+        data: { status: "FAILED" },
+      }),
+    );
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 
   it("skips a soft-deleted material instead of reviving it on re-sync", async () => {

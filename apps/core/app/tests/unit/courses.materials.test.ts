@@ -371,6 +371,16 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     );
   });
 
+  it("returns 403 (not 404) when a student-hidden material actually exists (#1180)", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // studentGate-filtered read: excluded
+      .mockResolvedValueOnce({ id: "mat-1" } as never); // existence check: it's really there
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(403);
+  });
+
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
@@ -549,6 +559,28 @@ describe("POST /api/courses/:courseId/materials action", () => {
       "Couldn't save this material's search data due to a database error. Please try again or contact support.",
     );
     expect(body.error).not.toMatch(/prisma/i);
+  });
+
+  it("persists a FAILED material when PDF extraction dies before create (#1018)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(processUploadedFile).mockRejectedValueOnce(
+      new Error("Failed to process file file.pdf: PDF extraction worker was killed (signal SIGABRT)"),
+    );
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-failed" } as never);
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.materialId).toBe("mat-failed");
+    expect(prisma.courseMaterial.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "FAILED",
+          checksum: expect.stringMatching(/^failed:[0-9a-f]{64}$/),
+        }),
+      }),
+    );
   });
 
   it("persists uploadedBy as the session user on create (#294)", async () => {

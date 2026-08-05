@@ -1,0 +1,3265 @@
+{
+  "env": {
+    "captured_at": "2026-07-31T22:46:01.200Z",
+    "target_label": "dev-remote",
+    "targets": {
+      "core": "https://dev.eduai.ok.ubc.ca",
+      "aiTutor": "https://dev.aitutor.eduai.ok.ubc.ca",
+      "questionMaker": "https://dev.questionmaker.eduai.ok.ubc.ca"
+    },
+    "git_sha": "d622f7e1a",
+    "git_branch": "feat/page-perf-profiler",
+    "node": "v23.11.0",
+    "platform": "darwin-arm64",
+    "runs": 3,
+    "cache": "cold",
+    "cpu_throttle": 0,
+    "network": "off",
+    "seed_note": "Run `npm run dbseed` before measuring; unresolved dynamic ids are reported as skipped."
+  },
+  "measured_count": 52,
+  "chunks_per_page": 5,
+  "results": [
+    {
+      "app": "core",
+      "name": "home",
+      "role": "anon",
+      "path": "/",
+      "url": "https://dev.eduai.ok.ubc.ca/",
+      "requiresAuth": false,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/",
+      "ttfb": 185,
+      "fcp": 316,
+      "lcp": 316,
+      "dcl": 307.6999999284744,
+      "load": 400.39999997615814,
+      "cls": 0.0008112809922960069,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 24,
+      "jsCount": 21,
+      "jsTransferBytes": 216962,
+      "jsDecodedBytes": 672785,
+      "totalTransferBytes": 254578,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 109.5,
+          "startMs": 190.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 76.90000009536743,
+          "startMs": 190.59999990463257,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 93.70000004768372,
+          "startMs": 190.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 104.09999990463257,
+          "startMs": 191,
+          "cached": false
+        },
+        {
+          "file": "home-B_m9tmR1.js",
+          "transferBytes": 3341,
+          "decodedBytes": 10511,
+          "durationMs": 108.89999997615814,
+          "startMs": 191.19999992847443,
+          "cached": false
+        }
+      ],
+      "chunkCount": 21
+    },
+    {
+      "app": "core",
+      "name": "team",
+      "role": "anon",
+      "path": "/team",
+      "url": "https://dev.eduai.ok.ubc.ca/team",
+      "requiresAuth": false,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/team",
+      "ttfb": 169.5,
+      "fcp": 388,
+      "lcp": 388,
+      "dcl": 368.6999999284744,
+      "load": 662.5,
+      "cls": 0.00027252197265625,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 32,
+      "jsCount": 17,
+      "jsTransferBytes": 216070,
+      "jsDecodedBytes": 673653,
+      "totalTransferBytes": 7000048,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 170.69999992847443,
+          "startMs": 177.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 157.70000004768372,
+          "startMs": 177.59999990463257,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 155.30000007152557,
+          "startMs": 177.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 172.90000009536743,
+          "startMs": 178.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "team-8a5NXvXF.js",
+          "transferBytes": 5658,
+          "decodedBytes": 14020,
+          "durationMs": 158.70000004768372,
+          "startMs": 194.79999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 17
+    },
+    {
+      "app": "core",
+      "name": "sign-in",
+      "role": "anon",
+      "path": "/auth/login",
+      "url": "https://dev.eduai.ok.ubc.ca/auth/login",
+      "requiresAuth": false,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/auth/login",
+      "ttfb": 111.20000004768372,
+      "fcp": 292,
+      "lcp": 292,
+      "dcl": 283.6999999284744,
+      "load": 377.2999999523163,
+      "cls": 0.00006239424811469184,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 22,
+      "jsCount": 19,
+      "jsTransferBytes": 214019,
+      "jsDecodedBytes": 664001,
+      "totalTransferBytes": 250750,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 123.89999997615814,
+          "startMs": 154.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 123.40000009536743,
+          "startMs": 155.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 123.10000002384186,
+          "startMs": 155.19999992847443,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 153.80000007152557,
+          "startMs": 155.59999990463257,
+          "cached": false
+        },
+        {
+          "file": "root-D6cALvNU.js",
+          "transferBytes": 2455,
+          "decodedBytes": 4632,
+          "durationMs": 47.699999928474426,
+          "startMs": 154.89999997615814,
+          "cached": false
+        }
+      ],
+      "chunkCount": 19
+    },
+    {
+      "app": "core",
+      "name": "register",
+      "role": "anon",
+      "path": "/auth/register",
+      "url": "https://dev.eduai.ok.ubc.ca/auth/register",
+      "requiresAuth": false,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/auth/register",
+      "ttfb": 118.60000002384186,
+      "fcp": 256,
+      "lcp": 256,
+      "dcl": 248.5,
+      "load": 363.5,
+      "cls": 0.00003072102864583333,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 22,
+      "jsCount": 19,
+      "jsTransferBytes": 213740,
+      "jsDecodedBytes": 663663,
+      "totalTransferBytes": 250475,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 150.29999995231628,
+          "startMs": 60.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 142.5,
+          "startMs": 60.90000009536743,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 141,
+          "startMs": 61,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 199,
+          "startMs": 61.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "root-D6cALvNU.js",
+          "transferBytes": 2455,
+          "decodedBytes": 4632,
+          "durationMs": 31.199999928474426,
+          "startMs": 60.90000009536743,
+          "cached": false
+        }
+      ],
+      "chunkCount": 19
+    },
+    {
+      "app": "core",
+      "name": "accept-invitation",
+      "role": "anon",
+      "path": "/auth/accept-invitation",
+      "url": "https://dev.eduai.ok.ubc.ca/auth/accept-invitation",
+      "requiresAuth": false,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/auth/accept-invitation",
+      "ttfb": 207.79999995231628,
+      "fcp": 316,
+      "lcp": 316,
+      "dcl": 310.6999999284744,
+      "load": 468.2999999523163,
+      "cls": 0.00004901885986328125,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 19,
+      "jsCount": 16,
+      "jsTransferBytes": 210029,
+      "jsDecodedBytes": 659149,
+      "totalTransferBytes": 247216,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 159.20000004768372,
+          "startMs": 218.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 97.89999997615814,
+          "startMs": 219.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 122.79999995231628,
+          "startMs": 219.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 144.70000004768372,
+          "startMs": 219.29999995231628,
+          "cached": false
+        },
+        {
+          "file": "root-D6cALvNU.js",
+          "transferBytes": 2455,
+          "decodedBytes": 4632,
+          "durationMs": 76.79999995231628,
+          "startMs": 218.89999997615814,
+          "cached": false
+        }
+      ],
+      "chunkCount": 16
+    },
+    {
+      "app": "core",
+      "name": "dashboard-student",
+      "role": "student",
+      "path": "/dashboard",
+      "url": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 398.59999990463257,
+      "fcp": 536,
+      "lcp": 1360,
+      "dcl": 529.5999999046326,
+      "load": 670.0999999046326,
+      "cls": 0.01267578125,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 47,
+      "jsCount": 39,
+      "jsTransferBytes": 298816,
+      "jsDecodedBytes": 904058,
+      "totalTransferBytes": 340870,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 101.5,
+          "startMs": 401.5,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 147.39999997615814,
+          "startMs": 401.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 69.60000002384186,
+          "startMs": 401.6999999284744,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 228.20000004768372,
+          "startMs": 402.59999990463257,
+          "cached": false
+        },
+        {
+          "file": "dashboard-cQxWEBAv.js",
+          "transferBytes": 10596,
+          "decodedBytes": 33253,
+          "durationMs": 115.19999992847443,
+          "startMs": 401.89999997615814,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "onboarding-student-id",
+      "role": "student",
+      "path": "/onboarding/student-id",
+      "url": "https://dev.eduai.ok.ubc.ca/onboarding/student-id",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 793.4000000953674,
+      "fcp": 948,
+      "lcp": 1884,
+      "dcl": 985.5,
+      "load": 1201.7000000476837,
+      "cls": 0.01267578125,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 47,
+      "jsCount": 39,
+      "jsTransferBytes": 298816,
+      "jsDecodedBytes": 904058,
+      "totalTransferBytes": 340870,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 121,
+          "startMs": 798.8000000715256,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 308.60000002384186,
+          "startMs": 799.8000000715256,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 96.89999997615814,
+          "startMs": 799.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 349.09999990463257,
+          "startMs": 823.9000000953674,
+          "cached": false
+        },
+        {
+          "file": "dashboard-cQxWEBAv.js",
+          "transferBytes": 10596,
+          "decodedBytes": 33253,
+          "durationMs": 163.10000002384186,
+          "startMs": 799.8000000715256,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "chat-student",
+      "role": "student",
+      "path": "/chat",
+      "url": "https://dev.eduai.ok.ubc.ca/chat",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/chat",
+      "ttfb": 468.1999999284744,
+      "fcp": 612,
+      "lcp": 612,
+      "dcl": 590.5999999046326,
+      "load": 773.1999999284744,
+      "cls": 0.02134709866841634,
+      "longTasks": 1,
+      "longTaskTime": 63,
+      "requests": 49,
+      "jsCount": 42,
+      "jsTransferBytes": 320861,
+      "jsDecodedBytes": 962995,
+      "totalTransferBytes": 361518,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 75.5,
+          "startMs": 476.6999999284744,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 103.10000002384186,
+          "startMs": 478.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "chat-client-log-CDn4CvbR.js",
+          "transferBytes": 24068,
+          "decodedBytes": 71618,
+          "durationMs": 89.79999995231628,
+          "startMs": 478,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 63.200000047683716,
+          "startMs": 477.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 126.70000004768372,
+          "startMs": 479.2999999523163,
+          "cached": false
+        }
+      ],
+      "chunkCount": 42
+    },
+    {
+      "app": "core",
+      "name": "chat-thread",
+      "role": "student",
+      "path": "/chat/cms8d2ene00rux5ud3muf6rgp",
+      "url": "https://dev.eduai.ok.ubc.ca/chat/cms8d2ene00rux5ud3muf6rgp",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/chat/cms8d2ene00rux5ud3muf6rgp",
+      "ttfb": 1163.2000000476837,
+      "fcp": 1424,
+      "lcp": 1424,
+      "dcl": 1401.7999999523163,
+      "load": 1762.2999999523163,
+      "cls": 0.009472334120008682,
+      "longTasks": 1,
+      "longTaskTime": 63,
+      "requests": 56,
+      "jsCount": 49,
+      "jsTransferBytes": 628996,
+      "jsDecodedBytes": 1956723,
+      "totalTransferBytes": 669653,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 322.7999999523163,
+          "startMs": 1171.1000000238419,
+          "cached": false
+        },
+        {
+          "file": "mermaid-GHXKKRXX-BLMCN6BI.js",
+          "transferBytes": 137577,
+          "decodedBytes": 455334,
+          "durationMs": 95.89999997615814,
+          "startMs": 1887.7000000476837,
+          "cached": false
+        },
+        {
+          "file": "index-C49DERFl.js",
+          "transferBytes": 81821,
+          "decodedBytes": 273842,
+          "durationMs": 110.60000002384186,
+          "startMs": 1888.1000000238419,
+          "cached": false
+        },
+        {
+          "file": "index-CaKKDyGL.js",
+          "transferBytes": 62922,
+          "decodedBytes": 193218,
+          "durationMs": 106.20000004768372,
+          "startMs": 1888,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 374.6999999284744,
+          "startMs": 1173.1000000238419,
+          "cached": false
+        }
+      ],
+      "chunkCount": 49
+    },
+    {
+      "app": "core",
+      "name": "courses-student",
+      "role": "student",
+      "path": "/courses",
+      "url": "https://dev.eduai.ok.ubc.ca/courses",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/courses",
+      "ttfb": 201.10000002384186,
+      "fcp": 412,
+      "lcp": 704,
+      "dcl": 407,
+      "load": 539.8000000715256,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 62,
+      "requests": 45,
+      "jsCount": 39,
+      "jsTransferBytes": 287571,
+      "jsDecodedBytes": 881743,
+      "totalTransferBytes": 328420,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 166.79999995231628,
+          "startMs": 199.30000007152557,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 231.70000004768372,
+          "startMs": 199.70000004768372,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 158.79999995231628,
+          "startMs": 199.40000009536743,
+          "cached": false
+        },
+        {
+          "file": "courses-sy6wMnCP.js",
+          "transferBytes": 10528,
+          "decodedBytes": 41381,
+          "durationMs": 217,
+          "startMs": 199.70000004768372,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 171.79999995231628,
+          "startMs": 199.40000009536743,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "dashboard-instructor",
+      "role": "instructor",
+      "path": "/dashboard",
+      "url": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 230.70000004768372,
+      "fcp": 384,
+      "lcp": 1260,
+      "dcl": 391.2000000476837,
+      "load": 574,
+      "cls": 0.015345377604166667,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 49,
+      "jsCount": 39,
+      "jsTransferBytes": 298816,
+      "jsDecodedBytes": 904058,
+      "totalTransferBytes": 342153,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 210.20000004768372,
+          "startMs": 198.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 210.09999990463257,
+          "startMs": 198.70000004768372,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 69.20000004768372,
+          "startMs": 198.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 296.89999997615814,
+          "startMs": 199.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "dashboard-cQxWEBAv.js",
+          "transferBytes": 10596,
+          "decodedBytes": 33253,
+          "durationMs": 171.89999997615814,
+          "startMs": 198.60000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "chat-instructor",
+      "role": "instructor",
+      "path": "/chat",
+      "url": "https://dev.eduai.ok.ubc.ca/chat",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/chat",
+      "ttfb": 314.59999990463257,
+      "fcp": 452,
+      "lcp": 452,
+      "dcl": 430.09999990463257,
+      "load": 591.7999999523163,
+      "cls": 0.02134709866841634,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 49,
+      "jsCount": 42,
+      "jsTransferBytes": 320861,
+      "jsDecodedBytes": 962995,
+      "totalTransferBytes": 360581,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 94,
+          "startMs": 317.2999999523163,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 143.39999997615814,
+          "startMs": 317.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "chat-client-log-CDn4CvbR.js",
+          "transferBytes": 24068,
+          "decodedBytes": 71618,
+          "durationMs": 108.79999995231628,
+          "startMs": 317.7999999523163,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 81.59999990463257,
+          "startMs": 317.5,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 173.5,
+          "startMs": 318.5,
+          "cached": false
+        }
+      ],
+      "chunkCount": 42
+    },
+    {
+      "app": "core",
+      "name": "courses-instructor",
+      "role": "instructor",
+      "path": "/courses",
+      "url": "https://dev.eduai.ok.ubc.ca/courses",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/courses",
+      "ttfb": 272.7000000476837,
+      "fcp": 400,
+      "lcp": 1008,
+      "dcl": 395,
+      "load": 784.2000000476837,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 61,
+      "requests": 47,
+      "jsCount": 39,
+      "jsTransferBytes": 287571,
+      "jsDecodedBytes": 881743,
+      "totalTransferBytes": 331328,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 211.70000004768372,
+          "startMs": 275.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 371.3000000715256,
+          "startMs": 275.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 97,
+          "startMs": 275.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "courses-sy6wMnCP.js",
+          "transferBytes": 10528,
+          "decodedBytes": 41381,
+          "durationMs": 217,
+          "startMs": 275.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 58.699999928474426,
+          "startMs": 275.2000000476837,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "course-detail",
+      "role": "instructor",
+      "path": "/courses/seed_course_cosc101",
+      "url": "https://dev.eduai.ok.ubc.ca/courses/seed_course_cosc101",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/courses/seed_course_cosc101",
+      "ttfb": 759.1000000238419,
+      "fcp": 952,
+      "lcp": 952,
+      "dcl": 945.6000000238419,
+      "load": 1020.8000000715256,
+      "cls": 0.01645800582567851,
+      "longTasks": 3,
+      "longTaskTime": 213,
+      "requests": 55,
+      "jsCount": 46,
+      "jsTransferBytes": 311855,
+      "jsDecodedBytes": 956594,
+      "totalTransferBytes": 353412,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 105.10000002384186,
+          "startMs": 762.6000000238419,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 130.5,
+          "startMs": 763.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "courses._courseId-CR6otkic.js",
+          "transferBytes": 25641,
+          "decodedBytes": 102180,
+          "durationMs": 124.29999995231628,
+          "startMs": 763.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 75.19999992847443,
+          "startMs": 762.8000000715256,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 74,
+          "startMs": 762.8000000715256,
+          "cached": false
+        }
+      ],
+      "chunkCount": 46
+    },
+    {
+      "app": "core",
+      "name": "settings",
+      "role": "instructor",
+      "path": "/settings",
+      "url": "https://dev.eduai.ok.ubc.ca/settings",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/settings",
+      "ttfb": 133.69999992847443,
+      "fcp": 248,
+      "lcp": 248,
+      "dcl": 243.10000002384186,
+      "load": 482.89999997615814,
+      "cls": 0.00006176070372263591,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 41,
+      "jsCount": 36,
+      "jsTransferBytes": 305296,
+      "jsDecodedBytes": 943644,
+      "totalTransferBytes": 343570,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 145.40000009536743,
+          "startMs": 136.19999992847443,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 150.30000007152557,
+          "startMs": 136.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "settings-C7No39ru.js",
+          "transferBytes": 22772,
+          "decodedBytes": 66045,
+          "durationMs": 150.19999992847443,
+          "startMs": 136.60000002384186,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 94.20000004768372,
+          "startMs": 136.29999995231628,
+          "cached": false
+        },
+        {
+          "file": "types-D21V0whL.js",
+          "transferBytes": 12841,
+          "decodedBytes": 53673,
+          "durationMs": 212.10000002384186,
+          "startMs": 139.29999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 36
+    },
+    {
+      "app": "core",
+      "name": "help",
+      "role": "instructor",
+      "path": "/help",
+      "url": "https://dev.eduai.ok.ubc.ca/help",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/help",
+      "ttfb": 181.89999997615814,
+      "fcp": 416,
+      "lcp": 416,
+      "dcl": 409.60000002384186,
+      "load": 504.39999997615814,
+      "cls": 0.00004894600974188911,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 24,
+      "jsCount": 20,
+      "jsTransferBytes": 257035,
+      "jsDecodedBytes": 809276,
+      "totalTransferBytes": 294968,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 200.39999997615814,
+          "startMs": 186.20000004768372,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 274,
+          "startMs": 187,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 222.80000007152557,
+          "startMs": 186.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 225.20000004768372,
+          "startMs": 186.5,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 225.30000007152557,
+          "startMs": 186.79999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 20
+    },
+    {
+      "app": "core",
+      "name": "unit-chats",
+      "role": "unitAdmin",
+      "path": "/units/AGRO/chats",
+      "url": "https://dev.eduai.ok.ubc.ca/units/AGRO/chats",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/courses?access=denied",
+      "ttfb": 257.1999999284744,
+      "fcp": 456,
+      "lcp": 956,
+      "dcl": 451.1999999284744,
+      "load": 593.0999999046326,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 61,
+      "requests": 47,
+      "jsCount": 39,
+      "jsTransferBytes": 287571,
+      "jsDecodedBytes": 881743,
+      "totalTransferBytes": 331190,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 151.89999997615814,
+          "startMs": 302.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 191,
+          "startMs": 303,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 141.5,
+          "startMs": 302.5,
+          "cached": false
+        },
+        {
+          "file": "courses-sy6wMnCP.js",
+          "transferBytes": 10528,
+          "decodedBytes": 41381,
+          "durationMs": 170.60000002384186,
+          "startMs": 302.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 139.10000002384186,
+          "startMs": 302.59999990463257,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "unit-admin-invitations",
+      "role": "unitAdmin",
+      "path": "/unit-admin/invitations",
+      "url": "https://dev.eduai.ok.ubc.ca/unit-admin/invitations",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 366.89999997615814,
+      "fcp": 804,
+      "lcp": 1944,
+      "dcl": 1043,
+      "load": 1273,
+      "cls": 0.01906073808670044,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 47,
+      "jsCount": 39,
+      "jsTransferBytes": 298816,
+      "jsDecodedBytes": 904058,
+      "totalTransferBytes": 339172,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 610,
+          "startMs": 373.3000000715256,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 664.2000000476837,
+          "startMs": 374.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 112.70000004768372,
+          "startMs": 373.5,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 830.2999999523163,
+          "startMs": 389.3000000715256,
+          "cached": false
+        },
+        {
+          "file": "dashboard-cQxWEBAv.js",
+          "transferBytes": 10596,
+          "decodedBytes": 33253,
+          "durationMs": 607.7999999523163,
+          "startMs": 374.3000000715256,
+          "cached": false
+        }
+      ],
+      "chunkCount": 39
+    },
+    {
+      "app": "core",
+      "name": "admin-users",
+      "role": "admin",
+      "path": "/admin/users",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/users",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/users",
+      "ttfb": 315.8000000715256,
+      "fcp": 672,
+      "lcp": 1980,
+      "dcl": 924.7999999523163,
+      "load": 1520.8999999761581,
+      "cls": 0.17160521507263185,
+      "longTasks": 3,
+      "longTaskTime": 305,
+      "requests": 59,
+      "jsCount": 48,
+      "jsTransferBytes": 345010,
+      "jsDecodedBytes": 1051960,
+      "totalTransferBytes": 395953,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 944.0999999046326,
+          "startMs": 322.3000000715256,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 992.3000000715256,
+          "startMs": 323.5,
+          "cached": false
+        },
+        {
+          "file": "admin.users-BA_jICDt.js",
+          "transferBytes": 35318,
+          "decodedBytes": 115156,
+          "durationMs": 943.5,
+          "startMs": 323.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 123.10000002384186,
+          "startMs": 322.7000000476837,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 1091.3999999761581,
+          "startMs": 347.10000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 48
+    },
+    {
+      "app": "core",
+      "name": "admin-ai-models",
+      "role": "admin",
+      "path": "/admin/ai-models",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/ai-models",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/ai-models",
+      "ttfb": 207.79999995231628,
+      "fcp": 332,
+      "lcp": 1004,
+      "dcl": 327.10000002384186,
+      "load": 662.7999999523163,
+      "cls": 0.16275,
+      "longTasks": 1,
+      "longTaskTime": 60,
+      "requests": 44,
+      "jsCount": 36,
+      "jsTransferBytes": 280380,
+      "jsDecodedBytes": 866056,
+      "totalTransferBytes": 323549,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 355.10000002384186,
+          "startMs": 215.29999995231628,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 375.6999999284744,
+          "startMs": 216.5,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 80.69999992847443,
+          "startMs": 215.60000002384186,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 80.80000007152557,
+          "startMs": 215.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "admin.ai-models-icF95X17.js",
+          "transferBytes": 9840,
+          "decodedBytes": 36402,
+          "durationMs": 340.2000000476837,
+          "startMs": 216.19999992847443,
+          "cached": false
+        }
+      ],
+      "chunkCount": 36
+    },
+    {
+      "app": "core",
+      "name": "admin-invitations",
+      "role": "admin",
+      "path": "/admin/invitations",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/invitations",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/invitations",
+      "ttfb": 325.7999999523163,
+      "fcp": 488,
+      "lcp": 488,
+      "dcl": 482.89999997615814,
+      "load": 722.7999999523163,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 39,
+      "jsCount": 32,
+      "jsTransferBytes": 272115,
+      "jsDecodedBytes": 835997,
+      "totalTransferBytes": 315369,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 126.89999997615814,
+          "startMs": 344.5,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 160.90000009536743,
+          "startMs": 345.59999990463257,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 43.5,
+          "startMs": 344.6999999284744,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 77.89999997615814,
+          "startMs": 344.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 121.39999997615814,
+          "startMs": 345.1999999284744,
+          "cached": false
+        }
+      ],
+      "chunkCount": 32
+    },
+    {
+      "app": "core",
+      "name": "admin-bug-reports",
+      "role": "admin",
+      "path": "/admin/bug-reports",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/bug-reports",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/bug-reports",
+      "ttfb": 249.29999995231628,
+      "fcp": 372,
+      "lcp": 392,
+      "dcl": 377.89999997615814,
+      "load": 545.1000000238419,
+      "cls": 0.00010746256510416668,
+      "longTasks": 2,
+      "longTaskTime": 248,
+      "requests": 33,
+      "jsCount": 27,
+      "jsTransferBytes": 269059,
+      "jsDecodedBytes": 836386,
+      "totalTransferBytes": 311414,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 139.5,
+          "startMs": 253.79999995231628,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 191.39999997615814,
+          "startMs": 254.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 127.60000002384186,
+          "startMs": 253.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 121.60000002384186,
+          "startMs": 254,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 149,
+          "startMs": 254.19999992847443,
+          "cached": false
+        }
+      ],
+      "chunkCount": 27
+    },
+    {
+      "app": "core",
+      "name": "admin-chat",
+      "role": "admin",
+      "path": "/admin/chat",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/chat",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/chat",
+      "ttfb": 200.89999997615814,
+      "fcp": 340,
+      "lcp": 340,
+      "dcl": 331.59999990463257,
+      "load": 532.2000000476837,
+      "cls": 0.00011871576309204102,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 42,
+      "jsCount": 36,
+      "jsTransferBytes": 312057,
+      "jsDecodedBytes": 947022,
+      "totalTransferBytes": 352014,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 100.39999997615814,
+          "startMs": 208.79999995231628,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 121.89999997615814,
+          "startMs": 210,
+          "cached": false
+        },
+        {
+          "file": "chat-client-log-CDn4CvbR.js",
+          "transferBytes": 24068,
+          "decodedBytes": 71618,
+          "durationMs": 111.20000004768372,
+          "startMs": 209.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 78.80000007152557,
+          "startMs": 209.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "chat-message-CRzEFUf0.js",
+          "transferBytes": 14959,
+          "decodedBytes": 41647,
+          "durationMs": 258,
+          "startMs": 211.29999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 36
+    },
+    {
+      "app": "core",
+      "name": "admin-settings",
+      "role": "admin",
+      "path": "/admin/settings",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/settings",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/settings",
+      "ttfb": 233.59999990463257,
+      "fcp": 396,
+      "lcp": 696,
+      "dcl": 389.59999990463257,
+      "load": 468.39999997615814,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 28,
+      "jsCount": 22,
+      "jsTransferBytes": 257749,
+      "jsDecodedBytes": 809462,
+      "totalTransferBytes": 299332,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 146.20000004768372,
+          "startMs": 236.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 188.89999997615814,
+          "startMs": 237.19999992847443,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 100.5,
+          "startMs": 236.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 67.39999997615814,
+          "startMs": 236.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 132.80000007152557,
+          "startMs": 237.09999990463257,
+          "cached": false
+        }
+      ],
+      "chunkCount": 22
+    },
+    {
+      "app": "core",
+      "name": "admin-logs",
+      "role": "admin",
+      "path": "/admin/logs",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/logs",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/logs",
+      "ttfb": 430.2000000476837,
+      "fcp": 704,
+      "lcp": 988,
+      "dcl": 981.8000000715256,
+      "load": 1052.3999999761581,
+      "cls": 0.010878928237491182,
+      "longTasks": 1,
+      "longTaskTime": 70,
+      "requests": 31,
+      "jsCount": 26,
+      "jsTransferBytes": 264564,
+      "jsDecodedBytes": 826311,
+      "totalTransferBytes": 304817,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 512.3999999761581,
+          "startMs": 434.5,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 558.0999999046326,
+          "startMs": 435.3000000715256,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 91.79999995231628,
+          "startMs": 434.8000000715256,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 415,
+          "startMs": 434.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 507.7000000476837,
+          "startMs": 435.10000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 26
+    },
+    {
+      "app": "core",
+      "name": "admin-cron-jobs",
+      "role": "admin",
+      "path": "/admin/cron-jobs",
+      "url": "https://dev.eduai.ok.ubc.ca/admin/cron-jobs",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.eduai.ok.ubc.ca/admin/cron-jobs",
+      "ttfb": 279.7999999523163,
+      "fcp": 456,
+      "lcp": 456,
+      "dcl": 449.3000000715256,
+      "load": 687,
+      "cls": 0.0010894227557712132,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 30,
+      "jsCount": 25,
+      "jsTransferBytes": 263217,
+      "jsDecodedBytes": 822959,
+      "totalTransferBytes": 303470,
+      "chunks": [
+        {
+          "file": "vendor-react-DZZIxKeL.js",
+          "transferBytes": 157883,
+          "decodedBytes": 522395,
+          "durationMs": 205.70000004768372,
+          "startMs": 344,
+          "cached": false
+        },
+        {
+          "file": "core-app-shell-DrEaxR9H.js",
+          "transferBytes": 42717,
+          "decodedBytes": 144096,
+          "durationMs": 254.09999990463257,
+          "startMs": 344.40000009536743,
+          "cached": false
+        },
+        {
+          "file": "policy-gate-CU9w_jLR.js",
+          "transferBytes": 20136,
+          "decodedBytes": 55046,
+          "durationMs": 137.29999995231628,
+          "startMs": 344.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "index-CSJjaOaV.js",
+          "transferBytes": 10007,
+          "decodedBytes": 33835,
+          "durationMs": 68.5,
+          "startMs": 344.2000000476837,
+          "cached": false
+        },
+        {
+          "file": "bundle-mjs-Bbg69IUi.js",
+          "transferBytes": 8958,
+          "decodedBytes": 27512,
+          "durationMs": 172.89999997615814,
+          "startMs": 344.3000000715256,
+          "cached": false
+        }
+      ],
+      "chunkCount": 25
+    },
+    {
+      "app": "aiTutor",
+      "name": "home",
+      "role": "student",
+      "path": "/",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 33.89999997615814,
+      "fcp": 192,
+      "lcp": 1164,
+      "dcl": 176.10000002384186,
+      "load": 267.89999997615814,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 67,
+      "jsCount": 57,
+      "jsTransferBytes": 893854,
+      "jsDecodedBytes": 876754,
+      "totalTransferBytes": 1065223,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 65.19999992847443,
+          "startMs": 31.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 68.5,
+          "startMs": 31.800000071525574,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 59.5,
+          "startMs": 738.8999999761581,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 69.60000002384186,
+          "startMs": 31.899999976158142,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 11.100000023841858,
+          "startMs": 724.6000000238419,
+          "cached": false
+        }
+      ],
+      "chunkCount": 57
+    },
+    {
+      "app": "aiTutor",
+      "name": "unsupported-role",
+      "role": "student",
+      "path": "/unsupported-role",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/unsupported-role",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 32.799999952316284,
+      "fcp": 124,
+      "lcp": 224,
+      "dcl": 111.39999997615814,
+      "load": 211.5,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 69,
+      "jsCount": 59,
+      "jsTransferBytes": 896643,
+      "jsDecodedBytes": 878943,
+      "totalTransferBytes": 1068012,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 89.30000007152557,
+          "startMs": 35.299999952316284,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 65.29999995231628,
+          "startMs": 35.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 48.89999997615814,
+          "startMs": 342,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 92.69999992847443,
+          "startMs": 35.5,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 14.199999928474426,
+          "startMs": 326.60000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 59
+    },
+    {
+      "app": "aiTutor",
+      "name": "dashboard",
+      "role": "student",
+      "path": "/dashboard",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/dashboard",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 34.10000002384186,
+      "fcp": 140,
+      "lcp": 924,
+      "dcl": 113.29999995231628,
+      "load": 215.70000004768372,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 65,
+      "jsCount": 55,
+      "jsTransferBytes": 891134,
+      "jsDecodedBytes": 874634,
+      "totalTransferBytes": 1062503,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 54.89999997615814,
+          "startMs": 34.799999952316284,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 52.10000002384186,
+          "startMs": 34.799999952316284,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 99.20000004768372,
+          "startMs": 169.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 58.799999952316284,
+          "startMs": 34.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 15,
+          "startMs": 151.79999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 55
+    },
+    {
+      "app": "aiTutor",
+      "name": "settings",
+      "role": "student",
+      "path": "/settings",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/settings",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/settings",
+      "ttfb": 46.39999997615814,
+      "fcp": 164,
+      "lcp": 524,
+      "dcl": 135.19999992847443,
+      "load": 233.29999995231628,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 55,
+      "requests": 64,
+      "jsCount": 57,
+      "jsTransferBytes": 880727,
+      "jsDecodedBytes": 863627,
+      "totalTransferBytes": 1046856,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 165.89999997615814,
+          "startMs": 47.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 147.20000004768372,
+          "startMs": 47.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 49.39999997615814,
+          "startMs": 257.60000002384186,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 161.80000007152557,
+          "startMs": 48.199999928474426,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 8.600000023841858,
+          "startMs": 247.69999992847443,
+          "cached": false
+        }
+      ],
+      "chunkCount": 57
+    },
+    {
+      "app": "aiTutor",
+      "name": "help",
+      "role": "student",
+      "path": "/help",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/help",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/help",
+      "ttfb": 37.200000047683716,
+      "fcp": 148,
+      "lcp": 808,
+      "dcl": 135.39999997615814,
+      "load": 224.59999990463257,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 53,
+      "requests": 58,
+      "jsCount": 51,
+      "jsTransferBytes": 861428,
+      "jsDecodedBytes": 846128,
+      "totalTransferBytes": 1027557,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 104.20000004768372,
+          "startMs": 39,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 58.5,
+          "startMs": 39.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 79.20000004768372,
+          "startMs": 196.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 59.59999990463257,
+          "startMs": 39.300000071525574,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 17.300000071525574,
+          "startMs": 178,
+          "cached": false
+        }
+      ],
+      "chunkCount": 51
+    },
+    {
+      "app": "aiTutor",
+      "name": "admin",
+      "role": "admin",
+      "path": "/admin",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/admin",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/admin",
+      "ttfb": 27.100000023841858,
+      "fcp": 216,
+      "lcp": 1380,
+      "dcl": 199.20000004768372,
+      "load": 296.7000000476837,
+      "cls": 0,
+      "longTasks": 2,
+      "longTaskTime": 185,
+      "requests": 70,
+      "jsCount": 58,
+      "jsTransferBytes": 908624,
+      "jsDecodedBytes": 891224,
+      "totalTransferBytes": 1082504,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 145.89999997615814,
+          "startMs": 25.40000009536743,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 145.69999992847443,
+          "startMs": 25.40000009536743,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 51.60000002384186,
+          "startMs": 263.5,
+          "cached": false
+        },
+        {
+          "file": "admin-DmXElK49.js",
+          "transferBytes": 44328,
+          "decodedBytes": 44028,
+          "durationMs": 16,
+          "startMs": 246.30000007152557,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 137.60000002384186,
+          "startMs": 25.600000023841858,
+          "cached": false
+        }
+      ],
+      "chunkCount": 58
+    },
+    {
+      "app": "aiTutor",
+      "name": "student-list",
+      "role": "student",
+      "path": "/student",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/student",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/student",
+      "ttfb": 67.89999997615814,
+      "fcp": 168,
+      "lcp": 616,
+      "dcl": 153.60000002384186,
+      "load": 252,
+      "cls": 0,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 68,
+      "jsCount": 60,
+      "jsTransferBytes": 889739,
+      "jsDecodedBytes": 871739,
+      "totalTransferBytes": 1059329,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 50.10000002384186,
+          "startMs": 70.19999992847443,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 45.60000002384186,
+          "startMs": 70.29999995231628,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 50.90000009536743,
+          "startMs": 206.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 71.69999992847443,
+          "startMs": 70.60000002384186,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 10.800000071525574,
+          "startMs": 194.29999995231628,
+          "cached": false
+        }
+      ],
+      "chunkCount": 60
+    },
+    {
+      "app": "aiTutor",
+      "name": "student-course",
+      "role": "student",
+      "path": "/student/courses/3",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/student/courses/3",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/student/courses/3",
+      "ttfb": 34.60000002384186,
+      "fcp": 148,
+      "lcp": 768,
+      "dcl": 133,
+      "load": 295.2000000476837,
+      "cls": 0.008188627031114367,
+      "longTasks": 0,
+      "longTaskTime": 0,
+      "requests": 71,
+      "jsCount": 56,
+      "jsTransferBytes": 872381,
+      "jsDecodedBytes": 855581,
+      "totalTransferBytes": 1049334,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 58.59999990463257,
+          "startMs": 36.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 45.39999997615814,
+          "startMs": 36.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 52.199999928474426,
+          "startMs": 232.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 53.89999997615814,
+          "startMs": 36.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 76.29999995231628,
+          "startMs": 161,
+          "cached": false
+        }
+      ],
+      "chunkCount": 56
+    },
+    {
+      "app": "aiTutor",
+      "name": "student-module",
+      "role": "student",
+      "path": "/student/module/9",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/student/module/9",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/student/module/9",
+      "ttfb": 36.10000002384186,
+      "fcp": 128,
+      "lcp": 988,
+      "dcl": 115.90000009536743,
+      "load": 220.60000002384186,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 51,
+      "requests": 69,
+      "jsCount": 56,
+      "jsTransferBytes": 872792,
+      "jsDecodedBytes": 855992,
+      "totalTransferBytes": 1048313,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 56.60000002384186,
+          "startMs": 39.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 51.5,
+          "startMs": 39.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 35.699999928474426,
+          "startMs": 226.90000009536743,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 58,
+          "startMs": 39.90000009536743,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 69.29999995231628,
+          "startMs": 156.80000007152557,
+          "cached": false
+        }
+      ],
+      "chunkCount": 56
+    },
+    {
+      "app": "aiTutor",
+      "name": "student-lesson",
+      "role": "student",
+      "path": "/student/lesson/13",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/student/lesson/13",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/student/lesson/13",
+      "ttfb": 46.89999997615814,
+      "fcp": 236,
+      "lcp": 1520,
+      "dcl": 205.39999997615814,
+      "load": 300.5,
+      "cls": 0.0031409912109374998,
+      "longTasks": 1,
+      "longTaskTime": 92,
+      "requests": 88,
+      "jsCount": 65,
+      "jsTransferBytes": 980920,
+      "jsDecodedBytes": 961420,
+      "totalTransferBytes": 1162822,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 60.200000047683716,
+          "startMs": 120.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 52.39999997615814,
+          "startMs": 120.5,
+          "cached": false
+        },
+        {
+          "file": "student.lesson-C4lCCXP1.js",
+          "transferBytes": 100791,
+          "decodedBytes": 100491,
+          "durationMs": 18.200000047683716,
+          "startMs": 244.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 66.60000002384186,
+          "startMs": 252.20000004768372,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 66.19999992847443,
+          "startMs": 120.70000004768372,
+          "cached": false
+        }
+      ],
+      "chunkCount": 65
+    },
+    {
+      "app": "aiTutor",
+      "name": "instructor-list",
+      "role": "instructor",
+      "path": "/instructor",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/instructor",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/instructor",
+      "ttfb": 32.199999928474426,
+      "fcp": 196,
+      "lcp": 1324,
+      "dcl": 186.69999992847443,
+      "load": 281.6999999284744,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 57,
+      "requests": 69,
+      "jsCount": 61,
+      "jsTransferBytes": 891064,
+      "jsDecodedBytes": 872764,
+      "totalTransferBytes": 1059089,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 97.80000007152557,
+          "startMs": 33.699999928474426,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 70.30000007152557,
+          "startMs": 33.699999928474426,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 56.199999928474426,
+          "startMs": 185.39999997615814,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 97.79999995231628,
+          "startMs": 33.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "_app-DqfmRosh.js",
+          "transferBytes": 41521,
+          "decodedBytes": 41221,
+          "durationMs": 6.300000071525574,
+          "startMs": 177.69999992847443,
+          "cached": false
+        }
+      ],
+      "chunkCount": 61
+    },
+    {
+      "app": "aiTutor",
+      "name": "instructor-course",
+      "role": "instructor",
+      "path": "/instructor/courses/2",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/courses/2",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/courses/2",
+      "ttfb": 32.89999997615814,
+      "fcp": 144,
+      "lcp": 952,
+      "dcl": 126.5,
+      "load": 301.7000000476837,
+      "cls": 0.015034611172146266,
+      "longTasks": 1,
+      "longTaskTime": 58,
+      "requests": 85,
+      "jsCount": 70,
+      "jsTransferBytes": 989048,
+      "jsDecodedBytes": 968048,
+      "totalTransferBytes": 1162990,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 68.30000007152557,
+          "startMs": 45.799999952316284,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 55.200000047683716,
+          "startMs": 45.799999952316284,
+          "cached": false
+        },
+        {
+          "file": "useAtPermissions-RoM8uJ_Q.js",
+          "transferBytes": 53322,
+          "decodedBytes": 53022,
+          "durationMs": 22.100000023841858,
+          "startMs": 178.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 194.30000007152557,
+          "startMs": 179.69999992847443,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 69,
+          "startMs": 46.10000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 70
+    },
+    {
+      "app": "aiTutor",
+      "name": "instructor-module",
+      "role": "instructor",
+      "path": "/instructor/module/7",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/module/7",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/module/7",
+      "ttfb": 35.799999952316284,
+      "fcp": 212,
+      "lcp": 872,
+      "dcl": 188.10000002384186,
+      "load": 285.7000000476837,
+      "cls": 0,
+      "longTasks": 1,
+      "longTaskTime": 57,
+      "requests": 76,
+      "jsCount": 63,
+      "jsTransferBytes": 946861,
+      "jsDecodedBytes": 927961,
+      "totalTransferBytes": 1119192,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 63.39999997615814,
+          "startMs": 34,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 55.10000002384186,
+          "startMs": 34.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "useAtPermissions-RoM8uJ_Q.js",
+          "transferBytes": 53322,
+          "decodedBytes": 53022,
+          "durationMs": 101.80000007152557,
+          "startMs": 164.5,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 68.10000002384186,
+          "startMs": 163.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "api-DjRBmUcG.js",
+          "transferBytes": 42907,
+          "decodedBytes": 42607,
+          "durationMs": 65.19999992847443,
+          "startMs": 34.200000047683716,
+          "cached": false
+        }
+      ],
+      "chunkCount": 63
+    },
+    {
+      "app": "aiTutor",
+      "name": "instructor-lesson",
+      "role": "instructor",
+      "path": "/instructor/lesson/10",
+      "url": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/lesson/10",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.aitutor.eduai.ok.ubc.ca/instructor/lesson/10",
+      "ttfb": 50.39999997615814,
+      "fcp": 232,
+      "lcp": 1344,
+      "dcl": 194.20000004768372,
+      "load": 292,
+      "cls": 0.0021947556601630315,
+      "longTasks": 1,
+      "longTaskTime": 67,
+      "requests": 84,
+      "jsCount": 65,
+      "jsTransferBytes": 986734,
+      "jsDecodedBytes": 967234,
+      "totalTransferBytes": 1163256,
+      "chunks": [
+        {
+          "file": "entry.client-pK2fo92L.js",
+          "transferBytes": 360829,
+          "decodedBytes": 360529,
+          "durationMs": 65.19999992847443,
+          "startMs": 134.30000007152557,
+          "cached": false
+        },
+        {
+          "file": "index-BGf9rEZW.js",
+          "transferBytes": 159067,
+          "decodedBytes": 158767,
+          "durationMs": 70.39999997615814,
+          "startMs": 134.30000007152557,
+          "cached": false
+        },
+        {
+          "file": "useAtPermissions-RoM8uJ_Q.js",
+          "transferBytes": 53322,
+          "decodedBytes": 53022,
+          "durationMs": 105.20000004768372,
+          "startMs": 282.60000002384186,
+          "cached": false
+        },
+        {
+          "file": "index-BzGAn2-j.js",
+          "transferBytes": 50548,
+          "decodedBytes": 50248,
+          "durationMs": 58.10000002384186,
+          "startMs": 274.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "instructor.lesson-lLziWcnt.js",
+          "transferBytes": 44784,
+          "decodedBytes": 44484,
+          "durationMs": 26.700000047683716,
+          "startMs": 255.10000002384186,
+          "cached": false
+        }
+      ],
+      "chunkCount": 65
+    },
+    {
+      "app": "questionMaker",
+      "name": "dashboard",
+      "role": "instructor",
+      "path": "/dashboard",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/dashboard",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/dashboard",
+      "ttfb": 37.799999952316284,
+      "fcp": 500,
+      "lcp": 764,
+      "dcl": 438.2999999523163,
+      "load": 438.89999997615814,
+      "cls": 0.1235919664171007,
+      "longTasks": 5,
+      "longTaskTime": 410,
+      "requests": 25,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3083570,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 218.89999997615814,
+          "startMs": 137,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 106,
+          "startMs": 3722.5,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "question-bank",
+      "role": "instructor",
+      "path": "/library",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/library",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/library",
+      "ttfb": 31.399999976158142,
+      "fcp": 264,
+      "lcp": 1604,
+      "dcl": 247.29999995231628,
+      "load": 247.79999995231628,
+      "cls": 0,
+      "longTasks": 5,
+      "longTaskTime": 552,
+      "requests": 21,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3073290,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 207.70000004768372,
+          "startMs": 32.5,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 39.5,
+          "startMs": 3650.9000000953674,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "settings",
+      "role": "instructor",
+      "path": "/settings",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/settings",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/settings",
+      "ttfb": 36.199999928474426,
+      "fcp": 236,
+      "lcp": 596,
+      "dcl": 220.39999997615814,
+      "load": 220.89999997615814,
+      "cls": 0,
+      "longTasks": 5,
+      "longTaskTime": 400,
+      "requests": 19,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3062768,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 113.89999997615814,
+          "startMs": 38.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 90.70000004768372,
+          "startMs": 3576.399999976158,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "help",
+      "role": "instructor",
+      "path": "/help",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/help",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/help/",
+      "ttfb": 41.699999928474426,
+      "fcp": 372,
+      "lcp": 688,
+      "dcl": 350.2000000476837,
+      "load": 350.7000000476837,
+      "cls": 0,
+      "longTasks": 5,
+      "longTaskTime": 439,
+      "requests": 15,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3059076,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 237.90000009536743,
+          "startMs": 42.5,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 49.5,
+          "startMs": 3668.7000000476837,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "course-selection",
+      "role": "instructor",
+      "path": "/courses",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses",
+      "ttfb": 46.199999928474426,
+      "fcp": 476,
+      "lcp": 964,
+      "dcl": 459,
+      "load": 459.5,
+      "cls": 0,
+      "longTasks": 5,
+      "longTaskTime": 430,
+      "requests": 19,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3065454,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 347.89999997615814,
+          "startMs": 39.5,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 66.79999995231628,
+          "startMs": 3925.5,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "course-detail",
+      "role": "instructor",
+      "path": "/courses/445",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445",
+      "ttfb": 35.5,
+      "fcp": 320,
+      "lcp": 4320,
+      "dcl": 302.7000000476837,
+      "load": 303.2000000476837,
+      "cls": 0.00000547366672092014,
+      "longTasks": 4,
+      "longTaskTime": 273,
+      "requests": 36,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3087216,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 218.70000004768372,
+          "startMs": 38.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 2209.399999976158,
+          "startMs": 3788.600000023842,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "question-composer-new",
+      "role": "instructor",
+      "path": "/courses/445/questions/new",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/questions/new",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/questions/new",
+      "ttfb": 43.5,
+      "fcp": 456,
+      "lcp": 1768,
+      "dcl": 440.3000000715256,
+      "load": 440.8000000715256,
+      "cls": 0.00009968704647488063,
+      "longTasks": 6,
+      "longTaskTime": 487,
+      "requests": 29,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3076972,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 320.3000000715256,
+          "startMs": 46.09999990463257,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 2037.5,
+          "startMs": 3665.399999976158,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "question-composer-edit",
+      "role": "instructor",
+      "path": "/courses/445/questions/95/edit",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/questions/95/edit",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/questions/95/edit",
+      "ttfb": 38.5,
+      "fcp": 244,
+      "lcp": 6040,
+      "dcl": 228.29999995231628,
+      "load": 228.60000002384186,
+      "cls": 0.000022858778635660807,
+      "longTasks": 5,
+      "longTaskTime": 438,
+      "requests": 31,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3079360,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 190.20000004768372,
+          "startMs": 41.10000002384186,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 1920.1999999284744,
+          "startMs": 3879.3000000715256,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "assessment-builder",
+      "role": "instructor",
+      "path": "/courses/445/assessments/45",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/45",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/45",
+      "ttfb": 29.899999976158142,
+      "fcp": 264,
+      "lcp": 5088,
+      "dcl": 244.70000004768372,
+      "load": 245.10000002384186,
+      "cls": 0.000029234356350368926,
+      "longTasks": 6,
+      "longTaskTime": 551,
+      "requests": 28,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3076723,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 204,
+          "startMs": 30.600000023841858,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 310.5,
+          "startMs": 3565.7999999523163,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "assessment-variants",
+      "role": "instructor",
+      "path": "/courses/445/assessments/45/variants",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/45/variants",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/45/variants",
+      "ttfb": 37.200000047683716,
+      "fcp": 328,
+      "lcp": 852,
+      "dcl": 315,
+      "load": 315.3000000715256,
+      "cls": 0.0015169798003302679,
+      "longTasks": 5,
+      "longTaskTime": 406,
+      "requests": 31,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3077790,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 316.60000002384186,
+          "startMs": 31.700000047683716,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 94.40000009536743,
+          "startMs": 3806,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "assessment-variants-course",
+      "role": "instructor",
+      "path": "/courses/445/assessments/variants",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/variants",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/courses/445/assessments/variants",
+      "ttfb": 31,
+      "fcp": 260,
+      "lcp": 612,
+      "dcl": 244.29999995231628,
+      "load": 244.79999995231628,
+      "cls": 0.0015670030381944443,
+      "longTasks": 5,
+      "longTaskTime": 386,
+      "requests": 30,
+      "jsCount": 2,
+      "jsTransferBytes": 2887693,
+      "jsDecodedBytes": 2887093,
+      "totalTransferBytes": 3076600,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 117.80000007152557,
+          "startMs": 32.89999997615814,
+          "cached": false
+        },
+        {
+          "file": "html2canvas.esm-QH1iLAAe.js",
+          "transferBytes": 202679,
+          "decodedBytes": 202379,
+          "durationMs": 458.2999999523163,
+          "startMs": 3569.2000000476837,
+          "cached": false
+        }
+      ],
+      "chunkCount": 2
+    },
+    {
+      "app": "questionMaker",
+      "name": "admin-bug-reports",
+      "role": "admin",
+      "path": "/admin/bug-reports",
+      "url": "https://dev.questionmaker.eduai.ok.ubc.ca/admin/bug-reports",
+      "requiresAuth": true,
+      "runs": 3,
+      "failed": 0,
+      "authOk": true,
+      "finalUrl": "https://dev.questionmaker.eduai.ok.ubc.ca/admin/bug-reports",
+      "ttfb": 37.200000047683716,
+      "fcp": 352,
+      "lcp": 1184,
+      "dcl": 333.60000002384186,
+      "load": 334.10000002384186,
+      "cls": 0,
+      "longTasks": 6,
+      "longTaskTime": 508,
+      "requests": 16,
+      "jsCount": 1,
+      "jsTransferBytes": 2685014,
+      "jsDecodedBytes": 2684714,
+      "totalTransferBytes": 2861406,
+      "chunks": [
+        {
+          "file": "index-Dsx5Jylp.js",
+          "transferBytes": 2685014,
+          "decodedBytes": 2684714,
+          "durationMs": 223.29999995231628,
+          "startMs": 39.700000047683716,
+          "cached": false
+        }
+      ],
+      "chunkCount": 1
+    }
+  ],
+  "skipped": []
+}

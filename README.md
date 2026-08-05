@@ -21,7 +21,7 @@ EduAI/
 ├── packages/
 │   ├── ui/                          # @eduai/ui — shared shadcn component library + design system components
 │   └── types/                       # @eduai/types — shared UserRole and EnrollmentRole types
-├── eduai-design-system/             # EduAI design system bundle (tokens, guidelines, Figma UI kit exports)
+├── eduai-design-system/             # Design system bundle (typography, guidelines, Figma exports). Colour tokens here are superseded by packages/ui/src/styles/base.css
 ├── infra/
 │   └── cron/                        # Server backup + data-lifecycle scripts (pg_dump, off-site sync, rotation, stale-record cleanup) + cron.env config
 ├── tools/
@@ -44,6 +44,9 @@ EduAI/
 RAG-powered chat platform and the central API layer for the EduAI ecosystem. Handles AI provider routing, course-aware retrieval, auth, account-level Assistive Mode (`data-assistive` gating), and exposes the API that AI Tutor and Question Maker integrate with.
 
 Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/api/ai-providers`) require `page` and `pageSize` on every request and answer `400 PAGINATION_REQUIRED` without them, returning a `{ data, total, page, pageSize }` envelope. `/api/users` and `/api/courses` also take `?ids=a,b,c` (max 200, mutually exclusive with paging) to resolve a known set without page-looping, plus `?search=`. See [`docs/EXTENSION_ONBOARDING.md`](docs/EXTENSION_ONBOARDING.md) for the full contract and the consumer-migration checklist.
+
+Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
+Core conversations are pinned to a single course so their history and RAG context cannot mix across courses. Selecting another course from an existing conversation starts a fresh chat with that course selected.
 
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
@@ -86,7 +89,7 @@ All notable changes across apps are recorded in [`CHANGELOG.md`](CHANGELOG.md) a
 
 ## Chat latency benchmarking (EduAI Core)
 
-For scripted non-streaming `POST /api/chat` latency runs (for example against a dev deployment), use:
+For scripted `POST /api/chat` latency runs (for example against a dev deployment), use:
 
 ```bash
 cd apps/core
@@ -94,6 +97,17 @@ node ./scripts/chat-latency-bench.mjs
 ```
 
 Required environment variables and auth options (`CHAT_BENCH_URL`, `CHAT_BENCH_MODEL`, `CHAT_BENCH_API_KEYS`, cookies or API key) are documented in the script header in [`apps/core/scripts/chat-latency-bench.mjs`](apps/core/scripts/chat-latency-bench.mjs).
+
+To capture the time-to-first-byte evidence for #942, set
+`CHAT_BENCH_STREAMING=1`. Run the same prompt set once against the baseline
+deployment and once against the candidate deployment, changing only the URL
+and label. The benchmark prints per-request and aggregate TTFB plus paste-ready
+TSV, so the two runs can be compared directly:
+
+```bash
+CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=baseline npm run bench:chat
+CHAT_BENCH_STREAMING=1 CHAT_BENCH_LABEL=parallel npm run bench:chat
+```
 
 **Hybrid RAG** (optional, `#203 L03`): set `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE` in [`apps/core/.env.example`](apps/core/.env.example) to force hybrid RAG whenever a course is selected. Chat always uses the model the user selected (no automatic tier downgrade). Admin `webToolsEnabled` is seeded `false` in `system_config`.
 
@@ -112,6 +126,15 @@ Requires Core, AI Tutor, and Question Maker dev servers already running locally 
 The tool audits public pages (e.g. Core sign-in, marked `requiresAuth: false` in `pages.mjs`) in a logged-out browser context, then logs into Core once and reuses that session for every other page across all three apps — Better Auth's dev cookie is host-only for `localhost` with no port restriction (RFC 6265), and AI Tutor / Question Maker authenticate every request by forwarding the `Cookie` header to Core's `/api/sessions/validate` rather than keeping their own session. Each result carries an `authOk` flag confirming the navigation actually landed on the target page; the run exits non-zero if any page fails that check. Full rationale in the navigation helpers in [`scripts/mobile-audit/lib.mjs`](scripts/mobile-audit/lib.mjs).
 
 Env overrides (`CORE_URL`, `AI_TUTOR_URL`, `QM_URL`, `AUDIT_EMAIL`, `AUDIT_PASSWORD`, `MOBILE_AUDIT_OUT_DIR`) are documented in the script header in [`scripts/mobile-audit/run.mjs`](scripts/mobile-audit/run.mjs).
+
+## Route-scoped chat stylesheet (EduAI Core, `#1222`)
+
+`apps/core/app/app.css` is render-blocking on every route, so vendor CSS that only chat-style surfaces need must not be imported there. KaTeX and Streamdown's stylesheets live in [`apps/core/app/styles/chat-markdown.css`](apps/core/app/styles/chat-markdown.css), imported from [`apps/core/app/components/chat/chat-message.tsx`](apps/core/app/components/chat/chat-message.tsx) — the one component every Core markdown surface renders through. React Router emits it as a route-scoped `<link>` in the server-rendered HTML, so `/chat`, `/chat/:chatId`, `/admin/chat`, `/admin/users` and `/dashboard` load it and Core's other 20 page routes do not.
+
+Two constraints when touching this:
+
+- The `@source` directives for `streamdown` stay in `app.css`. Streamdown's own markup is styled with Tailwind utilities that must be emitted into the global sheet; removing them silently unstyles chat.
+- Re-adding `@import "katex/dist/katex.min.css"` to `app.css` puts ~18KB of rules and the KaTeX web fonts back on every route. [`apps/core/app/tests/unit/chat-markdown-css-scope.test.ts`](apps/core/app/tests/unit/chat-markdown-css-scope.test.ts) fails if that happens.
 
 ## Getting started
 
@@ -203,6 +226,22 @@ npm run test:all     # Unit + integration tests
 npm run test:coverage # Coverage for all six test suites (backends + frontends)
 npm run dbseed       # Force-seed all three databases (Core → AI Tutor → Question Maker)
 ```
+
+**Fleet routing smoke tests (Core)**
+
+From `apps/core`, use the fleet smoke commands to verify the configured vLLM
+hosts and extension-style routing:
+
+```bash
+npm run fleet:smoke              # health-check interactive and heavy hosts
+npm run fleet:extensions:smoke   # exercise AI Tutor and Question Maker routing
+```
+
+These commands require `VLLM_FLEET_CHAT_URLS` and `EDUAI_API_KEY`.
+`VLLM_FLEET_HEAVY_URL` is optional; background requests fall back to the chat
+pool when it is not configured. See
+[`docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md`](docs/rag-ai/MULTI_SERVER_ROUTING_PLAN.md)
+for routing details.
 
 To run tasks for a single app, use Turborepo's filter flag directly:
 

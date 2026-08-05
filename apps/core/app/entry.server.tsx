@@ -8,6 +8,7 @@ import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
 import { NonceProvider } from "~/lib/nonce";
+import { redactErrorForConsole } from "~/lib/redact.server";
 import {
   applySecurityHeaders,
   generateNonce,
@@ -95,7 +96,9 @@ export default function handleRequest(
           // errors encountered during initial shell rendering since they'll
           // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
-            console.error(error);
+            // Loader/action failures surface here with the upstream fetch URL (and its query
+            // string) in the message, so redact before writing to stdout.
+            console.error(redactErrorForConsole(error));
           }
         },
       },

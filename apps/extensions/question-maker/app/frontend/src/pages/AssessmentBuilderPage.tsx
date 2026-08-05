@@ -502,7 +502,7 @@ const AssessmentBuilderPage = () => {
         return (
             <div className="min-h-screen bg-background">
                 <div className="mx-auto max-w-6xl px-6 py-16 flex flex-col items-center gap-3">
-                    <IconLoader2 className="h-8 w-8 animate-spin text-primary" />
+                    <IconLoader2 className="h-8 w-8 animate-spin text-primary-text" />
                     <p className="text-sm text-muted-foreground">Loading assessment builder…</p>
                 </div>
             </div>
