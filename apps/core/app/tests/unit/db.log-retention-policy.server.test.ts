@@ -18,9 +18,12 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 const prisma = ((await import("~/lib/prisma.server")) as any).default;
-const { getLogRetentionPolicy, updateLogRetentionPolicy, runConfiguredLogRetention } = await import(
-  "~/lib/db.log-retention-policy.server"
-);
+const {
+  getLogRetentionPolicy,
+  updateLogRetentionPolicy,
+  runConfiguredLogRetention,
+  runConfiguredLogRetentionIfDue,
+} = await import("~/lib/db.log-retention-policy.server");
 
 describe("db.log-retention-policy.server", () => {
   beforeEach(() => {
@@ -144,5 +147,24 @@ describe("db.log-retention-policy.server", () => {
       deletedAuditRows: 4,
       deletedSystemRows: 2,
     });
+  });
+
+  // Review on #1291: the sweep only ever fails on a DB error, which is exactly the error whose
+  // message embeds the connection string — it was being handed to console.error raw.
+  it("redacts the sweep failure before logging it", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(prisma.auditLog.deleteMany).mockRejectedValue(
+      new Error("connect ECONNREFUSED postgresql://admin:hunter2@db:5432/eduai"),
+    );
+
+    await runConfiguredLogRetentionIfDue();
+
+    expect(consoleError).toHaveBeenCalledWith(
+      "[LOG_RETENTION_SWEEP_FAILED]",
+      expect.objectContaining({ message: expect.stringContaining("[REDACTED]") }),
+    );
+    const logged = JSON.stringify(consoleError.mock.calls[0]?.[1]);
+    expect(logged).not.toContain("hunter2");
+    consoleError.mockRestore();
   });
 });

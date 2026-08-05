@@ -2,6 +2,7 @@ import type { ScheduledTask } from "node-cron";
 import cron from "node-cron";
 import { KNOWN_CRON_JOBS, startCronRun, triggerCronJobAsync } from "~/lib/db.cron-jobs.server";
 import prisma from "~/lib/prisma.server";
+import { redactErrorForConsole } from "~/lib/redact.server";
 
 declare global {
   var __cronTasks: Map<string, ScheduledTask> | undefined;
@@ -25,7 +26,9 @@ function scheduleOne(jobName: string, schedule: string, script: string): void {
         .then(({ runId, created }) => {
           if (created) triggerCronJobAsync(jobName, script, runId);
         })
-        .catch((err: unknown) => console.error(`[cron] ${jobName} failed to start:`, err));
+        .catch((err: unknown) =>
+          console.error(`[cron] ${jobName} failed to start:`, redactErrorForConsole(err)),
+        );
     },
     { timezone: "UTC" },
   );
@@ -60,13 +63,13 @@ export function ensureCronSchedulerRunning(): void {
         try {
           scheduleOne(job.name, overrideMap.get(job.name) ?? job.schedule, job.script);
         } catch (err) {
-          console.error(`[cron] Failed to schedule ${job.name}:`, err);
+          console.error(`[cron] Failed to schedule ${job.name}:`, redactErrorForConsole(err));
         }
       }
       console.log("[cron] In-process scheduler started");
     })
     .catch((err: unknown) => {
-      console.error("[cron] Scheduler init failed:", err);
+      console.error("[cron] Scheduler init failed:", redactErrorForConsole(err));
       globalThis.__cronSchedulerReady = false; // allow retry on next request
     });
 }
