@@ -16,7 +16,7 @@ import { AssistiveModeProvider } from '~/components/settings/assistive-mode';
 // Import from narrow subpaths, NOT the `@eduai/ui` barrel. The barrel
 // (`packages/ui/src/index.ts`) re-exports ~93 modules via `export *`; pulling
 // even one named member from it forces Vite dev to crawl and transform the
-// whole shared UI library (recharts, shiki, markdown, every Radix primitive,
+// whole shared UI library (shiki, markdown, every Radix primitive,
 // @tabler icons) on first load — for every user, before login. root renders
 // for everyone, so keep its UI imports minimal.
 import { ThemeProvider } from '@eduai/ui/theme-provider';

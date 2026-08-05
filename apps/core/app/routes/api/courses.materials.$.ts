@@ -5,6 +5,7 @@
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
+import { createHash } from 'crypto';
 import { processMaterialEmbeddings } from '~/lib/ai/embedding';
 import { processUploadedFile } from '~/lib/ai/file-processing';
 import prisma from '~/lib/prisma.server';
@@ -342,6 +343,49 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 }
 
+async function persistFailedUploadMaterial(
+  courseId: string,
+  file: File,
+  userId: string,
+): Promise<string> {
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const checksum = `failed:${createHash('sha256').update(bytes).digest('hex')}`;
+  const title = (file.name || 'upload').replace(/\.[^/.]+$/, '') || 'upload';
+
+  const existing = await prisma.courseMaterial.findFirst({
+    where: { courseId, checksum },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await prisma.courseMaterial.update({
+      where: { id: existing.id },
+      data: {
+        status: 'FAILED',
+        uploadedBy: userId,
+        deletedAt: null,
+        deletedBy: null,
+        processedAt: null,
+      },
+    });
+    return existing.id;
+  }
+
+  const created = await prisma.courseMaterial.create({
+    data: {
+      courseId,
+      title,
+      mimeType: file.type || 'application/octet-stream',
+      fileSize: file.size || bytes.length,
+      checksum,
+      rawText: null,
+      status: 'FAILED',
+      uploadedBy: userId,
+    },
+  });
+  return created.id;
+}
+
 async function uploadMaterial(
   request: Request,
   courseId: string,
@@ -355,9 +399,35 @@ async function uploadMaterial(
     return json(400, { error: 'No file provided' });
   }
 
+  let fileInfo;
   try {
-    const fileInfo = await processUploadedFile(file);
+    fileInfo = await processUploadedFile(file);
+  } catch (extractError) {
+    // Extraction (e.g. PDF worker kill) happens before a material row exists — persist
+    // FAILED so a killed worker still leaves an auditable record (#1018 / #1161).
+    console.error('Error extracting material upload:', extractError);
+    let materialId: string | undefined;
+    try {
+      materialId = await persistFailedUploadMaterial(courseId, file, user.id);
+      fireAndForget(
+        logSystemError({
+          ...requestContext,
+          source: 'AI',
+          code: 'MATERIAL_EXTRACT_FAILED',
+          message: 'Material extraction failed during upload processing',
+          error: extractError,
+        }),
+      );
+    } catch (persistError) {
+      console.error('Additionally failed to persist FAILED material:', persistError);
+    }
+    return json(500, {
+      error: toMaterialUploadUserMessage(extractError),
+      ...(materialId ? { materialId } : {}),
+    });
+  }
 
+  try {
     const existingMaterial = await prisma.courseMaterial.findFirst({
       where: { courseId, checksum: fileInfo.checksum },
     });
@@ -589,6 +659,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
 
     if (!material) {
+      // A student-gated miss is ambiguous: either the material doesn't exist
+      // (or is soft-deleted) or it exists but studentGate excluded it. Only
+      // students can hit the latter case (studentGate is `{}` for staff, so
+      // this findFirst is otherwise identical to the existence check below).
+      // Distinguish them with one extra query so hidden-but-real material
+      // reports 403, matching #1180's spec, instead of the indistinguishable
+      // 404 a folded WHERE clause would otherwise produce.
+      if (access.level === 'student') {
+        const exists = await prisma.courseMaterial.findFirst({
+          where: { id: materialId, courseId, deletedAt: null },
+          select: { id: true },
+        });
+        if (exists) {
+          return json(403, { error: 'Forbidden' });
+        }
+      }
       return json(404, { error: 'Material not found' });
     }
 
