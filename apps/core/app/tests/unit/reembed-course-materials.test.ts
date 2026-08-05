@@ -311,6 +311,75 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     expect(seen).toEqual([0, 1, 2]);
   });
 
+  it("continues re-embedding when a progress write fails", async () => {
+    mockMaterials([
+      { id: "m0", rawText: "content 0", title: "First" },
+      { id: "m1", rawText: "content 1", title: "Second" },
+    ]);
+    (embedManyMock as any).mockResolvedValue({ embeddings: [[...SAMPLE_EMBEDDING]] });
+    const progressError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const onProgress = vi.fn().mockRejectedValueOnce(new Error("pool timeout"));
+
+    await expect(reEmbedCourseMaterials("course-1", { onProgress })).resolves.toEqual({
+      processed: 2,
+      failed: [],
+      total: 2,
+    });
+
+    expect(onProgress).toHaveBeenCalledTimes(3);
+    expect(progressError).toHaveBeenCalledWith(
+      "[re-embed] progress write failed",
+      expect.any(Error),
+    );
+  });
+
+  it("isolates a material status-write failure without rejecting sibling workers", async () => {
+    mockMaterials([
+      { id: "m0", rawText: "content 0", title: "Missing row" },
+      { id: "m1", rawText: "content 1", title: "Still processed" },
+    ]);
+    prisma.courseMaterial.update.mockImplementation(({ where, data }: any) => {
+      if (where.id === "m0" && data.status === "PROCESSING") {
+        return Promise.reject(new Error("row deleted"));
+      }
+      return Promise.resolve({});
+    });
+    (embedManyMock as any).mockResolvedValue({ embeddings: [[...SAMPLE_EMBEDDING]] });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(reEmbedCourseMaterials("course-1")).resolves.toEqual({
+      processed: 1,
+      failed: ["m0"],
+      total: 2,
+    });
+  });
+
+  it("retries a transient embedding-provider failure", async () => {
+    mockMaterials([{ id: "m0", rawText: "content", title: "Retry" }]);
+    (embedManyMock as any)
+      .mockRejectedValueOnce(Object.assign(new Error("rate limited"), { status: 429 }))
+      .mockResolvedValueOnce({ embeddings: [[...SAMPLE_EMBEDDING]] });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(reEmbedCourseMaterials("course-1")).resolves.toMatchObject({
+      processed: 1,
+      failed: [],
+    });
+    expect(embedManyMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses an extended transaction budget for concurrent reindex writes", async () => {
+    mockMaterials([{ id: "m0", rawText: "content", title: "Transaction" }]);
+    (embedManyMock as any).mockResolvedValue({ embeddings: [[...SAMPLE_EMBEDDING]] });
+
+    await reEmbedCourseMaterials("course-1");
+
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+  });
+
   it("skips materials with blank or missing rawText and reports them outside eligible/total", async () => {
     mockMaterials([
       { id: "m0", rawText: "real content", title: "Real" },
