@@ -17,8 +17,10 @@ import {
   courseChatViewPolicyKey,
   manageEnrollmentsPolicyKey,
   resolvePolicyGate,
+  canViewCourseChats,
 } from '~/lib/rbac/permissions'
 import type { CourseAccess, RbacUser } from '~/lib/rbac/types'
+import type { PolicyKey } from '~/lib/policy.server'
 
 const ALL_ACCESS: CourseAccess[] = ['admin', 'unit', 'instructor', 'ta', 'student', null]
 
@@ -224,6 +226,16 @@ describe('canManageTopics', () => {
   ] as [CourseAccess, boolean][])('access=%s → %s', (access, expected) => {
     expect(canManageTopics(access)).toBe(expected)
   })
+
+  it('TA follows the taCanManageTopics flag', () => {
+    expect(canManageTopics('ta', true)).toBe(true)
+    expect(canManageTopics('ta', false)).toBe(false)
+  })
+
+  it('non-TA access ignores the taCanManageTopics flag', () => {
+    expect(canManageTopics('student', true)).toBe(false)
+    expect(canManageTopics('admin', false)).toBe(true)
+  })
 })
 
 // §19 Cross-cutting
@@ -237,6 +249,49 @@ describe('isStudentAccess', () => {
     [null, false],
   ] as [CourseAccess, boolean][])('access=%s → %s', (access, expected) => {
     expect(isStudentAccess(access)).toBe(expected)
+  })
+})
+
+// §5c Course chat visibility
+describe('courseChatViewPolicyKey', () => {
+  it.each([
+    ['admin', 'always'],
+    ['instructor', 'instructors.canViewCourseChats'],
+    ['unit', 'unitAdmins.canViewUnitChats'],
+    ['ta', 'never'],
+    ['student', 'never'],
+    [null, 'never'],
+  ] as [CourseAccess, string][])('access=%s → %s', (access, expected) => {
+    expect(courseChatViewPolicyKey(access)).toBe(expected)
+  })
+})
+
+describe('canViewCourseChats', () => {
+  it('admin is always allowed regardless of policies', () => {
+    expect(canViewCourseChats('admin', {})).toBe(true)
+  })
+
+  it('ta/student/null are never allowed regardless of policies', () => {
+    expect(canViewCourseChats('ta', { 'instructors.canViewCourseChats': true })).toBe(false)
+    expect(canViewCourseChats('student', {})).toBe(false)
+    expect(canViewCourseChats(null, {})).toBe(false)
+  })
+
+  it('the "never" gate short-circuits before consulting the policy map', () => {
+    // Mutant-killer for the `gate === 'never'` short-circuit: force a truthy
+    // `never` entry (not a real PolicyKey — typed policies never carry one)
+    // so a broken short-circuit would fall through to `policies[gate] ?? false`
+    // and incorrectly return true.
+    const policiesWithNeverSet = { never: true } as Partial<Record<PolicyKey, boolean>>
+    expect(canViewCourseChats('ta', policiesWithNeverSet)).toBe(false)
+  })
+
+  it('instructor/unit defer to the resolved policy flag', () => {
+    expect(canViewCourseChats('instructor', { 'instructors.canViewCourseChats': true })).toBe(true)
+    expect(canViewCourseChats('instructor', { 'instructors.canViewCourseChats': false })).toBe(false)
+    expect(canViewCourseChats('instructor', {})).toBe(false)
+    expect(canViewCourseChats('unit', { 'unitAdmins.canViewUnitChats': true })).toBe(true)
+    expect(canViewCourseChats('unit', {})).toBe(false)
   })
 })
 
