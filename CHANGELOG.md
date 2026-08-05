@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] fix: Replace the course enrollment picker's platform-wide active-student preload with a debounced, paginated `/api/users` search. Candidate reads are constrained to managed courses, active STUDENT users, and the appropriate enrollment anti-join, so the picker remains scalable without opening the general user directory to instructors. Closes #1144. (@SyedS, 2026-08-05) — [#1402](https://github.com/EduAI-Lab/EduAI/pull/1402)
 
 All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) are documented in this file.
 
