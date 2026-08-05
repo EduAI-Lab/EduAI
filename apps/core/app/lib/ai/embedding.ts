@@ -807,17 +807,19 @@ export async function reEmbedCourseMaterials(
   const failed: string[] = [];
   let processed = 0;
 
-  // Progress is reported after every state transition (started/finished), so
-  // operators still see live counts even though completion order is no longer
-  // strictly sequential under concurrency. `currentMaterialTitle` reflects the
-  // most recently *started* material rather than a single in-flight item.
-  const reportProgress = async (currentMaterialTitle?: string) => {
-    await options?.onProgress?.({
+  // A concurrent worker must not let an older progress write overwrite a
+  // newer one. Snapshot at transition time, then serialize the callback so
+  // persistence observes non-decreasing completed counts. There is no single
+  // current material under concurrency, so omit the title/count pairing.
+  let progressQueue = Promise.resolve();
+  const reportProgress = () => {
+    const snapshot: ReEmbedProgress = {
       total: eligible.length,
       processed,
       failed: [...failed],
-      currentMaterialTitle,
-    });
+    };
+    progressQueue = progressQueue.then(() => options?.onProgress?.(snapshot));
+    return progressQueue;
   };
 
   await reportProgress();
@@ -838,8 +840,6 @@ export async function reEmbedCourseMaterials(
           where: { id: material.id },
           data: { status: "PROCESSING" },
         });
-        await reportProgress(material.title);
-
         try {
           await processMaterialEmbeddings(material.id, content, { replace: true });
           await prisma.courseMaterial.update({
