@@ -17,6 +17,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import {
   paginatedResponse,
   parseIdsParam,
@@ -52,31 +53,6 @@ const activeStudentEnrollmentWhere = {
   role: "STUDENT",
   isActive: true,
 } satisfies Prisma.EnrollmentWhereInput;
-
-/**
- * AUTH-04 admin-floor invariant: mirrors the instructor-floor guard in
- * `enrollments.server.ts:44` — the platform must always retain >= 1 active
- * ADMIN. Applies to every caller, including another ADMIN demoting or
- * deactivating a peer, with no override. Caller must run this inside the
- * same transaction as the write so the check-then-write is atomic.
- *
- * Takes a transaction-scoped advisory lock first so two concurrent demotions
- * cannot each count the other admin, both pass, and both commit (leaving
- * zero active admins under default READ COMMITTED isolation).
- */
-async function adminFloorViolation(
-  tx: Pick<Prisma.TransactionClient, "user" | "$executeRaw">,
-  userId: string,
-) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"admin-floor"}))`;
-  const remainingAdmins = await tx.user.count({
-    where: { role: "ADMIN", isActive: true, id: { not: userId } },
-  });
-  if (remainingAdmins === 0) {
-    return { status: "409", error: "ADMIN_FLOOR_VIOLATION" } as const;
-  }
-  return null;
-}
 
 export async function handleUsersApiRequest(request: Request) {
   const url = new URL(request.url);
@@ -559,11 +535,32 @@ export async function handleUsersApiRequest(request: Request) {
       }
 
       try {
-        const deleted = await prisma.user.delete({
-          where: { id: userId },
-          select: { id: true, name: true, email: true },
+        const transactionResult = await prisma.$transaction(async (tx) => {
+          const target = await tx.user.findUnique({
+            where: { id: userId },
+            select: { id: true, name: true, email: true, role: true, isActive: true },
+          });
+          if (!target) {
+            return { error: "USER_NOT_FOUND" } as const;
+          }
+          // AUTH-04: hard-delete of an active ADMIN must leave >= 1 active ADMIN.
+          if (target.role === "ADMIN" && target.isActive) {
+            const violation = await adminFloorViolation(tx, userId);
+            if (violation) return violation;
+          }
+          const deleted = await tx.user.delete({
+            where: { id: userId },
+            select: { id: true, name: true, email: true },
+          });
+          return { deleted } as const;
         });
 
+        if ("error" in transactionResult) {
+          const status = transactionResult.error === "ADMIN_FLOOR_VIOLATION" ? 409 : 404;
+          return apiError(status, transactionResult.error);
+        }
+
+        const deleted = transactionResult.deleted;
         fireAndForget(
           logAuditAction({
             ...getActorContext(session.user),

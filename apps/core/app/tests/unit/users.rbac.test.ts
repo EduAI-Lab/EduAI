@@ -92,6 +92,14 @@ function makeGet() {
   } as any;
 }
 
+function makeDelete(userId: string) {
+  return {
+    request: new Request(`http://localhost/api/users/${userId}`, { method: "DELETE" }),
+    params: { "*": userId },
+    context: {} as never,
+  } as any;
+}
+
 function mockUser(user: { id: string; role: string } | null) {
   vi.mocked(auth.api.getSession).mockResolvedValue((user ? { user } : null) as never);
 }
@@ -387,6 +395,68 @@ describe("PATCH /api/users/:id — admin-floor invariant (AUTH-04)", () => {
 
     expect(order).toEqual(["lock", "count"]);
     expect(prisma.$executeRaw).toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/users/:id — admin-floor invariant (AUTH-04)", () => {
+  it("blocks deleting the last other active ADMIN", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "admin-2",
+      name: "Peer Admin",
+      email: "peer@test.local",
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(0);
+
+    const res = await action(makeDelete("admin-2"));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "ADMIN_FLOOR_VIOLATION" });
+    expect(prisma.user.delete).not.toHaveBeenCalled();
+  });
+
+  it("allows deleting an ADMIN when another active ADMIN remains", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "admin-2",
+      name: "Peer Admin",
+      email: "peer@test.local",
+      role: "ADMIN",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.count).mockResolvedValue(1);
+    vi.mocked(prisma.user.delete).mockResolvedValue({
+      id: "admin-2",
+      name: "Peer Admin",
+      email: "peer@test.local",
+    } as never);
+
+    const res = await action(makeDelete("admin-2"));
+
+    expect(res.status).toBe(204);
+    expect(prisma.user.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "admin-2" } }),
+    );
+  });
+
+  it("does not run the floor check when deleting a non-ADMIN", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: "student-1",
+      name: "Student",
+      email: "student@test.local",
+      role: "STUDENT",
+      isActive: true,
+    } as never);
+    vi.mocked(prisma.user.delete).mockResolvedValue({
+      id: "student-1",
+      name: "Student",
+      email: "student@test.local",
+    } as never);
+
+    const res = await action(makeDelete("student-1"));
+
+    expect(res.status).toBe(204);
+    expect(prisma.user.count).not.toHaveBeenCalled();
   });
 });
 
