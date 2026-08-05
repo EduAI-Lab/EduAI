@@ -1,0 +1,106 @@
+[
+  {
+    "Owner": "yes",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "student",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "no",
+    "Admin": "no",
+    "CourseId": "present",
+    "AccessLevel": "unit",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "no"
+  },
+  {
+    "Owner": "no",
+    "Admin": "no",
+    "CourseId": "null",
+    "AccessLevel": "none",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "yes",
+    "CourseId": "null",
+    "AccessLevel": "none",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "no",
+    "CourseId": "present",
+    "AccessLevel": "instructor",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "no"
+  },
+  {
+    "Owner": "no",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "unit",
+    "PolicyFlag": "off",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "ta",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "no",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "instructor",
+    "PolicyFlag": "off",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "unit",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "no"
+  },
+  {
+    "Owner": "no",
+    "Admin": "no",
+    "CourseId": "present",
+    "AccessLevel": "student",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "no",
+    "CourseId": "present",
+    "AccessLevel": "unit",
+    "PolicyFlag": "off",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "no",
+    "Admin": "no",
+    "CourseId": "present",
+    "AccessLevel": "ta",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  },
+  {
+    "Owner": "yes",
+    "Admin": "yes",
+    "CourseId": "present",
+    "AccessLevel": "none",
+    "PolicyFlag": "on",
+    "OwnerActiveStudent": "yes"
+  }
+]
