@@ -66,12 +66,15 @@ describe.each(rows.map((row, index) => [index, row] as const))(
 
         const actor = row.Identity === "match" ? PRE_ACTOR : OTHER_ACTOR;
         const turnId = confirmTurnValue(row);
-        const run = () =>
-          Promise.resolve(
+        let runCallCount = 0;
+        const run = () => {
+          runCallCount += 1;
+          return Promise.resolve(
             row.RunOutcome === "success"
               ? { writeSucceeded: true as const }
               : { error: "MUTATION_FAILED" },
           );
+        };
 
         const result = await runConfirmedAdminWriteTool(
           TOOL_NAME,
@@ -94,9 +97,25 @@ describe.each(rows.map((row, index) => [index, row] as const))(
             expect(result.writeSucceeded).toBe(false);
             expect((result as { error?: string }).error).toBe("CONFIRMATION_REQUIRED");
             break;
-          case "write-succeeded":
+          case "write-succeeded": {
             expect(result.writeSucceeded).toBe(true);
+            expect(runCallCount).toBe(1);
+            // One-time consumption: the same confirmed:true call replayed with the
+            // exact same arguments must not find a preview to consume a second time,
+            // and must not run the write again.
+            const replay = await runConfirmedAdminWriteTool(
+              TOOL_NAME,
+              actor,
+              true,
+              run,
+              PAYLOAD,
+              turnId,
+            ) as { writeSucceeded?: boolean; error?: string };
+            expect(replay.writeSucceeded).toBe(false);
+            expect(replay.error).toBe("CONFIRMATION_REQUIRED");
+            expect(runCallCount).toBe(1);
             break;
+          }
           case "write-failed":
             expect(result.writeSucceeded).toBe(false);
             expect((result as { error?: string }).error).toBeTruthy();
@@ -106,3 +125,49 @@ describe.each(rows.map((row, index) => [index, row] as const))(
     );
   },
 );
+
+describe("admin-write-confirmation preview key isolation (tool/payload, beyond the Identity axis)", () => {
+  // The preview key is (actorId, toolName, payloadHash) — the generated rows above only vary
+  // actor identity via `Identity`. These cover the other two components directly, since a bug
+  // that ignored toolName or payload in the lookup would still pass every generated row.
+  const OTHER_TOOL_NAME = "pictTestWriteTool_other";
+  const OTHER_PAYLOAD = { field: "different-value" };
+
+  const run = () => Promise.resolve({ writeSucceeded: true as const });
+
+  it("does not let a confirm under a different tool name consume a preview registered for this tool", async () => {
+    registerWritePreview(PRE_ACTOR.id, TOOL_NAME, BOUND_PAYLOAD, 60_000, null);
+
+    const result = (await runConfirmedAdminWriteTool(
+      OTHER_TOOL_NAME,
+      PRE_ACTOR,
+      true,
+      run,
+      PAYLOAD,
+      null,
+    )) as { writeSucceeded?: boolean; error?: string };
+    expect(result.writeSucceeded).toBe(false);
+    expect(result.error).toBe("CONFIRMATION_REQUIRED");
+
+    // The original preview must still be intact and confirmable under its real tool name.
+    expect(consumeWritePreview(PRE_ACTOR.id, TOOL_NAME, BOUND_PAYLOAD, null)).toBe("ok");
+  });
+
+  it("does not let a confirm with a different payload consume a preview registered for this payload", async () => {
+    registerWritePreview(PRE_ACTOR.id, TOOL_NAME, BOUND_PAYLOAD, 60_000, null);
+
+    const result = (await runConfirmedAdminWriteTool(
+      TOOL_NAME,
+      PRE_ACTOR,
+      true,
+      run,
+      OTHER_PAYLOAD,
+      null,
+    )) as { writeSucceeded?: boolean; error?: string };
+    expect(result.writeSucceeded).toBe(false);
+    expect(result.error).toBe("CONFIRMATION_REQUIRED");
+
+    // The original preview must still be intact and confirmable under its real payload.
+    expect(consumeWritePreview(PRE_ACTOR.id, TOOL_NAME, BOUND_PAYLOAD, null)).toBe("ok");
+  });
+});

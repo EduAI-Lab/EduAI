@@ -328,7 +328,13 @@ rather than discover.
 and the `/api/me` composition are **two implementations of one precedence rule** — invalid key **plus**
 cookie defers to the cookie, invalid key **without** cookie is 401. `KeyState × CookieState × Site` (3
 dims, down from the 4–5 estimated per standalone endpoint — merging into one model collapses the
-overlap). The hand-written matrix at `guards.server.test.ts:125-200` converted directly into rows.
+overlap). The precedence cases at `guards.server.test.ts:154-465` became PICT rows.
+
+`guards.server.test.ts` itself is **kept, not converted away** — it covers robustness edges the 3-dim
+precedence model has no axis for: x-api-key whitespace trimming, malformed/userless session shapes,
+missing/orphan user records, and the exact `logSecurityEvent` fields per denial path. Those are
+implementation invariants, not additional points in `KeyState × CookieState × Site`; folding them into
+the generated adapter would duplicate the same assertions on every row rather than add coverage.
 
 `role-forked-listing`: the publish gate keys on **enrollment** role, not platform role — a frequent
 source of TA-parity divergence between Core and ai-tutor. Building it surfaced a real cross-app

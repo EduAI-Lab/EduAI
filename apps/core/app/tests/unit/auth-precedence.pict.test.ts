@@ -7,6 +7,14 @@
  * Same mocking convention as guards.server.test.ts (auth/prisma/policy/
  * logging mocked, real guard/route code exercised) — this file specifically
  * targets the cross-site precedence contract the two call sites share.
+ *
+ * guards.server.test.ts is intentionally NOT superseded by this file: it keeps
+ * the robustness edges this model has no axis for — x-api-key whitespace
+ * trimming, malformed/userless session shapes, missing/orphan user records,
+ * and the exact logSecurityEvent fields per denial path. Those are
+ * implementation invariants, not additional points in the KeyState ×
+ * CookieState × Site precedence space, so this adapter deliberately doesn't
+ * re-assert them per generated row.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { enforceAdminIfApiKey } from "~/lib/auth/guards.server";

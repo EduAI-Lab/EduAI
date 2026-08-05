@@ -39,6 +39,13 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  // setPolicy persists overrides to SystemConfig (upsert under the `policy.<key>`
+  // prefix, per lib/policy.server.ts) — clearing the in-memory cache alone leaves
+  // those rows behind for whatever runs against this DB next.
+  await prisma.systemConfig.deleteMany({
+    where: { key: { in: Object.values(POLICY_KEY_FOR_LEVEL).map((key) => `policy.${key}`) } },
+  });
+  await invalidatePolicyCache();
   await prisma.chat.deleteMany({ where: { id: { in: chatIds } } });
   await cleanupRbac({ userIds, courseIds });
   await prisma.$disconnect();
