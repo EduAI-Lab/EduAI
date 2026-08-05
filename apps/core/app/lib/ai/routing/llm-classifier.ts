@@ -6,6 +6,7 @@ import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { isLocalVllmRouting } from "./local-vllm";
+import { vllmThinkingDisabledFetch } from "~/lib/ai/vllm-thinking.server";
 
 export type LlmClassifierContext = {
   courseId: string | null;
@@ -86,7 +87,12 @@ function createClassifierClient() {
     baseURL = `${baseURL}/v1`;
   }
   const apiKey = process.env.VLLM_API_KEY?.trim() || "vllm-local";
-  return createOpenAI({ baseURL, apiKey, compatibility: "strict" });
+  return createOpenAI({
+    baseURL,
+    apiKey,
+    compatibility: "strict",
+    fetch: vllmThinkingDisabledFetch(),
+  });
 }
 
 function buildClassifierUserPrompt(
