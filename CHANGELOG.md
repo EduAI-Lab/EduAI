@@ -9,10 +9,13 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Changed
 
 - [core] perf: Bounded concurrency for `reEmbedCourseMaterials` (course re-embed background job) — materials now process up to `REINDEX_CONCURRENCY` (default 4) at a time via `p-limit` instead of strictly serially, cutting large re-embed wall-clock time while each material keeps its own try/catch so one failure never blocks or cancels sibling in-flight work; aggregate `processed`/`failed`/`total` and progress reporting are unchanged. Closes #945. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
+- [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ### Tests
 
 - [core] test: `reembed-course-materials.test.ts` — asserts bounded in-flight concurrency (never exceeds the configured limit, proven concurrent via a delayed `embedMany` mock), per-material failure isolation (one rejection doesn't stop siblings), monotonic/consistent progress reporting, and blank/null `rawText` exclusion. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
+- [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
 
 ## [Week 13 — July 27 – August 2, 2026]
 
@@ -81,6 +84,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [monorepo] perf: Headless page profiler (`npm run perf:pages`) that drives real Chromium over every UI route in all three apps under the lowest seeded role that can render it and pins the browser-side before-snapshot to `docs/perf/frontend/baseline/`, with #961's endpoint baseline moved to `docs/perf/backend/baseline/` to sit beside it. Closes #1288. (#1288, @abdullahmoh21, 2026-07-30) — [#1289](https://github.com/EduAI-Lab/EduAI/pull/1289)
 - [core] test: PICT pilot — oracle (`material-visibility.oracle.ts`) and world-builder/adapters (`material-visibility.integration.test.ts`) for the material-visibility drift contract (census § S1): one spec-derived verdict function exercised against the REST material read gate and both RAG retrieval branches (hybrid BM25 + pure vector) in `lib/ai/embedding.ts` via the 18 committed PICT rows from #1179. Seeded-regression check confirmed (a deliberately dropped visibility gate fails exactly the row that isolates it, naming the row in the failure). Closes #1180. (#1180, @evanbones, 2026-07-30) — [#1297](https://github.com/EduAI-Lab/EduAI/pull/1297)
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
