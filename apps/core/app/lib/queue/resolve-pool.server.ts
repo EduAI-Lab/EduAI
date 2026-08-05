@@ -3,21 +3,21 @@ import type { JobType } from "./job-schema";
 /**
  * Pool + priority resolver for the AI-job queue.
  *
- * TEMPORARY SHIM. The frozen contract (§2/§4/§6) routes jobs via the fleet layer
- * (`app/lib/ai/routing/fleet/types.ts` — `featureToJobType`, `resolveFleetHost`),
- * which does not exist in code yet. This encodes the v1 reality directly:
+ * The frozen contract (§2/§4/§6) keys queues by the fleet pool. This resolver
+ * mirrors the fleet registry's v1 pool selection without probing host health:
  *   - The heavy pool (cmps03 / `VLLM_FLEET_HEAVY_URL`) is not running, so
- *     `background` resolves to the chat pool too — both types land on `ai-jobs:chat`.
+ *     `background` resolves to the chat pool too — both types land on `ai-jobs-chat`.
  *   - Priority (from `type`) keeps interactive draining ahead of background while a
  *     single pool serves both.
  *
- * TODO(#168): replace with the fleet's `resolveFleetHost()` pool logic once
- * `fleet/types.ts` lands. When cmps03 is configured, `background` re-resolves to
- * `ai-jobs:heavy` with no schema or contract change.
+ * The dequeue worker performs the live `resolveFleetHost()` selection before
+ * inference. When cmps03 is configured, `background` resolves to
+ * `ai-jobs-heavy` with no schema or contract change.
  */
 
-export const QUEUE_CHAT = "ai-jobs:chat" as const;
-export const QUEUE_HEAVY = "ai-jobs:heavy" as const;
+// BullMQ forbids ":" in queue names. Hyphens preserve the pool-qualified names.
+export const QUEUE_CHAT = "ai-jobs-chat" as const;
+export const QUEUE_HEAVY = "ai-jobs-heavy" as const;
 
 export type QueueName = typeof QUEUE_CHAT | typeof QUEUE_HEAVY;
 
@@ -31,7 +31,7 @@ function heavyPoolConfigured(): boolean {
 
 /**
  * Resolve the target queue from the fleet pool for `type`. `background` only
- * reaches `ai-jobs:heavy` once the heavy pool is configured; otherwise it shares
+ * reaches `ai-jobs-heavy` once the heavy pool is configured; otherwise it shares
  * the chat pool and relies on priority to yield to interactive work.
  */
 export function resolveQueueName(type: JobType): QueueName {

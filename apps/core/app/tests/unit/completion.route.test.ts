@@ -119,6 +119,13 @@ describe("POST /api/completion review regressions", () => {
         abortSignal: args.request.signal,
       }),
     );
+
+    await expect(res.json()).resolves.toEqual({
+      content: "Done.",
+      model: "vllm:test-model",
+      usage: { promptTokens: 1, completionTokens: 2 },
+      finishReason: "stop",
+    });
   });
 
   it("returns JSON 502 when languageModel() throws before streamText", async () => {
