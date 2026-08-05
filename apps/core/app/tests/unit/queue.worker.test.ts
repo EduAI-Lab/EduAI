@@ -100,7 +100,11 @@ describe("AI-job dequeue worker", () => {
       },
     );
 
-    await expect(enqueue(payload)).resolves.toEqual({ jobId: "aijob_1" });
+    await expect(enqueue(payload)).resolves.toEqual({
+      jobId: "aijob_1",
+      queuePosition: null,
+      queueDepth: null,
+    });
     expect(emittedPayload).toEqual({
       ...payload,
       aiJobId: "aijob_1",
