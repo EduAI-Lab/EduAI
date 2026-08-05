@@ -6,12 +6,17 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Added
+
+- [core] feat: Surface `ragTopSimilarity`, `ragChunkCount`, and `ragContextTokenEstimate` on both non-streaming `/api/chat` response-body sites (plain course-mode + ADHD-oversight), via a new shared `ragContextTokenEstimateForCourseRagHits` helper — previously these fields were only computed for the `routeWithAuto` router-prefetch path, leaving Phase 1's `rule5` ("long RAG context") unevaluatable for the path most non-"auto" callers actually hit. Purely additive telemetry; no routing-behavior change. (@superbolt08, 2026-08-05) — [#1396](https://github.com/EduAI-Lab/EduAI/pull/1396)
+
 ### Changed
 
 - [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ### Tests
 
+- [core] test: Add `chat-rag-context-token-estimate.test.ts` — covers `ragContextTokenEstimateForCourseRagHits` (zero hits, multi-hit summation with per-hit ceiling, threshold-shape check against rule5's `>2000` tokens / `>=4` chunks expectation). (@superbolt08, 2026-08-05) — [#1396](https://github.com/EduAI-Lab/EduAI/pull/1396)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ## [Week 13 — July 27 – August 2, 2026]
