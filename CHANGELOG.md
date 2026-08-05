@@ -4,6 +4,14 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 13 — July 27–August 2, 2026]
+
+### Added
+
+- [core] feat: Add the BullMQ dequeue/dispatch worker for durable AI jobs: per-pool consumers, race-safe durable-row claiming before `bullJobId` persistence, cancellation-safe lifecycle transitions, Auto/fleet-aware question generation, configurable retries/concurrency, graceful shutdown, and producer-to-worker integration coverage. (#916/#168, @ssaada08, 2026-07-27)
+
+### Fixed
+
 ## [Week 14 — August 3–9, 2026]
 
 ### Changed

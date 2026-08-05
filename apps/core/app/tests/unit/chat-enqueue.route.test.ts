@@ -189,7 +189,7 @@ describe("/api/chat enqueue branch (#914/#915)", () => {
 
   it("maps QueueFullError to 429 with a Retry-After header", async () => {
     vi.mocked(enqueueQuestionGeneration).mockRejectedValue(
-      new QueueFullError("ai-jobs:chat", 50, 50),
+      new QueueFullError("ai-jobs-chat", 50, 50),
     );
 
     const res = await action(makeRequest(enqueueBody()));
