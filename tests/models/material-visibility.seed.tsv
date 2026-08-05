@@ -1,0 +1,4 @@
+Role	Enrolled	VisibleToStudents	AvailableAt	Deleted	Unpublished
+STUDENT	yes	true	past	no	no
+STUDENT	yes	true	future	no	no
+STUDENT	yes	true	past	no	yes

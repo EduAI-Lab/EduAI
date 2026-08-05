@@ -1,6 +1,7 @@
 export type ChatMessageMetadata = {
-  resolvedModelId: string;
-  wasAutoRouted: boolean;
+  resolvedModelId?: string;
+  wasAutoRouted?: boolean;
+  courseScopeRedirect?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -21,6 +22,17 @@ export function resolvedModelIdFromMessage(message: unknown): string | null {
   return /^[a-z0-9][a-z0-9._-]*:\S+$/i.test(resolvedModelId)
     ? resolvedModelId
     : null;
+}
+
+/**
+ * Read the server-owned course-scope-guardrail redirect flag attached to an
+ * assistant message, so history restore can render the same redirect
+ * affordance a live turn shows (e.g. suppressing regenerate/feedback
+ * controls on a canned redirect message).
+ */
+export function courseScopeRedirectFromMessage(message: unknown): boolean {
+  if (!isRecord(message) || !isRecord(message.metadata)) return false;
+  return message.metadata.courseScopeRedirect === true;
 }
 
 /**
@@ -45,6 +57,19 @@ export function withResolvedModelMetadata<T extends Record<string, unknown>>(
       ...(isRecord(message.metadata) ? message.metadata : {}),
       resolvedModelId,
       wasAutoRouted,
+    },
+  };
+}
+
+/** Tag a persisted assistant turn as a course-scope-guardrail redirect (analytics/UI). */
+export function withCourseScopeRedirectMetadata<
+  T extends Record<string, unknown>,
+>(message: T): T & { metadata: Record<string, unknown> & ChatMessageMetadata } {
+  return {
+    ...message,
+    metadata: {
+      ...(isRecord(message.metadata) ? message.metadata : {}),
+      courseScopeRedirect: true,
     },
   };
 }
