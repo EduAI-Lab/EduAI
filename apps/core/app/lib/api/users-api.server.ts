@@ -556,8 +556,11 @@ export async function handleUsersApiRequest(request: Request) {
         });
 
         if ("error" in transactionResult) {
-          const status = transactionResult.error === "ADMIN_FLOOR_VIOLATION" ? 409 : 404;
-          return apiError(status, transactionResult.error);
+          const error =
+            transactionResult.error === "ADMIN_FLOOR_VIOLATION"
+              ? "ADMIN_FLOOR_VIOLATION"
+              : "USER_NOT_FOUND";
+          return apiError(error === "ADMIN_FLOOR_VIOLATION" ? 409 : 404, error);
         }
 
         const deleted = transactionResult.deleted;
