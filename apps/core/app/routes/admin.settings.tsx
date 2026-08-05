@@ -17,9 +17,13 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  Alert,
+  AlertDescription,
+  AlertTitle,
 } from '@eduai/ui'
 import { usePolicies } from '~/hooks/api/use-policies'
 import { auth } from '~/lib/auth/server'
+import { getEnvironmentHealth } from '~/lib/environment-health.server'
 
 /**
  * Permission groups for the admin settings UI, in display order. Each policy
@@ -78,11 +82,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return {
     user: session.user,
+    environmentHealth: getEnvironmentHealth(),
   }
 }
 
 export default function AdminSettingsPage() {
-  const { user } = useLoaderData<typeof loader>()
+  const { user, environmentHealth } = useLoaderData<typeof loader>()
   const { policies, definitions, isLoading, error, setPolicy } = usePolicies()
 
   // Bucket each flag into the first group whose `match` passes, preserving the
@@ -133,6 +138,15 @@ export default function AdminSettingsPage() {
             ) : null}
 
             <div className="flex flex-col gap-4 px-4 md:gap-6 lg:px-6">
+              {environmentHealth.missingKeys.length > 0 ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Environment configuration is incomplete</AlertTitle>
+                  <AlertDescription>
+                    Missing: {environmentHealth.missingKeys.join(', ')}. Add the key
+                    to this deployment&apos;s environment and restart the service.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               {isLoading ? (
                 <Card>
                   <CardContent className="pt-6">

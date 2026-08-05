@@ -343,16 +343,22 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
     }
   }
 
-  const activeCoreIds = new Set(studentCourses.map((course) => course.id));
+  const activeStudentCoreIds = new Set(studentCourses.map((course) => course.id));
+  const activeTaCoreIds = new Set(taCourses.map((course) => course.id));
 
-  // Guard: if Core returned no courses (deploy blip, permission hiccup, empty filter),
-  // skip pruning to avoid deleting every mirrored student enrollment.
-  if (activeCoreIds.size === 0) {
+  // Guard: if Core returned no courses at all (deploy blip, permission hiccup,
+  // empty filter), skip pruning to avoid deleting every mirrored enrollment.
+  if (activeStudentCoreIds.size === 0 && activeTaCoreIds.size === 0) {
     return { enrolled, skipped, removed: 0 };
   }
 
+  // Both STUDENT and TA rows are pruned here (#1173 review) — this mirror is
+  // the only one hit on every /api/me and GET /courses request, so a TA row
+  // left out would keep a revoked TA locally privileged until the nightly
+  // reconciliation or a targeted course-detail read (which runs
+  // syncCourseEnrollments, the other place TA rows get pruned).
   const localEnrollments = await prisma.courseEnrollment.findMany({
-    where: { userId: student.id, role: STUDENT_ENROLLMENT_ROLE },
+    where: { userId: student.id, role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] } },
     include: {
       courseOffering: {
         select: { coreOfferingId: true },
@@ -363,7 +369,10 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
   const staleOfferingIds = localEnrollments
     .filter((enrollment) => {
       const coreId = enrollment.courseOffering.coreOfferingId;
-      return coreId && !activeCoreIds.has(coreId);
+      if (!coreId) return false;
+      const activeIds =
+        enrollment.role === TA_ENROLLMENT_ROLE ? activeTaCoreIds : activeStudentCoreIds;
+      return !activeIds.has(coreId);
     })
     .map((enrollment) => enrollment.courseOfferingId);
 
@@ -372,7 +381,7 @@ export async function importEnrolledCoursesFromCore(student, cookie, options = {
     const result = await prisma.courseEnrollment.deleteMany({
       where: {
         userId: student.id,
-        role: STUDENT_ENROLLMENT_ROLE,
+        role: { in: [STUDENT_ENROLLMENT_ROLE, TA_ENROLLMENT_ROLE] },
         courseOfferingId: { in: staleOfferingIds },
       },
     });

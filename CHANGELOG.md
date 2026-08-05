@@ -4,7 +4,62 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Changed
+
+- [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
+### Tests
+
+- [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
 ## [Week 13 — July 27 – August 2, 2026]
+
+### Changed
+
+- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
+
+### Fixed
+
+- [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+### Changed
+
+- [core] feat: Harden ADHD Dean fail-closed (policy v2.0) — reject → one retry with reject reasons → `forced_deterministic` wrap (no fail-open); learner message + profile policy slice in rewrite prompt; Top summary / Next? normalization; Sources footer when tools/RAG ran; telemetry methods `llm_retry` / `forced_deterministic`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] feat: Restore Teacher literal anchors (policy v2.1) — model-facing policy requires exact `**Top summary**` / `**Next?**` (copyable skeleton); TLDR/Continue stay client-only in `assistive-display-transform.ts` so prompt-only Assist can pass Form A again. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] fix: Log `response_compliance` on non-streaming chat turns (eval harness path) and require `EDUAI_COURSE_ID`/`EDUAI_COURSE_CODE` for course-scoped ADHD eval since #657; restore S2L + `profileStructuralPass` in the eval script. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+
+### Tests
+
+- [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
+- [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#1158](https://github.com/EduAI-Lab/EduAI/pull/1158)
+- [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
+- [core] fix: Course-access check on RAG settings endpoint (IDOR) — `GET`/`PATCH /api/courses/:id/rag-settings` authorized on the caller's global role only, never verifying they teach the target course; any INSTRUCTOR (or any authenticated user for GET) could read or mutate another course's RAG tuning values. Both handlers now use `resolveCourseAccessWithCourse` + a rank gate, matching sibling course-mutation routes. (#975, @GlowyBlack, 2026-07-20) — [#1131](https://github.com/EduAI-Lab/EduAI/pull/1131)
+- [question-maker] fix: PR #1013 review follow-ups, round 2 — `isPrivateIPv6` missed the deprecated IPv4-compatible form (`::a.b.c.d`, no `::ffff:` prefix), so `https://[::127.0.0.1]/` (normalized by Node's `URL` parser to `::7f00:1`) sailed through as a non-private literal; now the low 32 bits are pulled out and re-checked via `isPrivateIPv4` whenever the first six 16-bit groups are zero. `createPinnedLookup` fails closed with a clean `Error` instead of throwing a `TypeError` on a destructure if `dns.lookup` ever calls back with zero addresses. `makeCanvasRequest`'s blanket `maxRedirects: 0` (added in round 1) broke Canvas hosts that legitimately 3xx-redirect (e.g. an apex→`www` or canonicalizing-LB hop); now redirects are followed (`maxRedirects: 5`) but each hop is re-validated through `validateCanvasUrl` via axios's `beforeRedirect`, so a permitted host still can't hand the request off to a private target or downgrade to HTTP. (#991, @GlowyBlack, 2026-07-20) — [#1013](https://github.com/EduAI-Lab/EduAI/pull/1013)
+
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] fix: Bound five previously-unbounded Core list queries — course roster, chat transcript, course/unit chat lists, and course materials now page via a shared cursor `?cursor=`/`?limit=`/`nextCursor` "load more" envelope (`lib/cursor-list.server.ts`) instead of returning every row for a parent; the AI Tutor service-key roster sync stays unpaged (its documented full-sync contract). The all-STUDENT TA-candidate/enroll-student dropdown is replaced by a bounded, course-scoped search-select (`GET /api/courses/:id/student-candidates`), so the platform-wide STUDENT preload is gone. Unit-chats' owner-role filter also no longer resolves the whole department's active-student roster up front — that lookup is now scoped per fetched batch. Closes #1042. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
+
+### Added
+
+- [core] test: Coverage for the #1042 pagination surface — `lib/cursor-list.server` helpers, the four cursor-paginated hooks, `GET /api/courses/:id/student-candidates`'s auth/exclusion/search/limit behavior, and a regression test for a silent-data-loss bug the review pass found in the unit-chats batched owner-role filter. (@Ayyhab, 2026-07-28) — [#1239](https://github.com/EduAI-Lab/EduAI/pull/1239)
+
+## [Week 12 — July 20–26, 2026]
+
+### Changed
+
+- [core] refactor: Remove hardware energy-sidecar session management from live `/api/chat` and fleet host selection while retaining passive token-based `AIInteraction` energy/carbon estimates; hardware measurement is now explicitly research-script-owned. Closes #1241. (@superbolt08, 2026-07-28) — [#1242](https://github.com/EduAI-Lab/EduAI/pull/1242)
+## [Week 13 — July 27 – August 2, 2026]
+
+### Changed
+
+- [monorepo] css: Consolidate the three near-identical app stylesheets (993 lines) into a single shared `packages/ui/src/styles/base.css`, and unify every other place colour values were defined. Drops the 35 `.dark` entries that repeated their `:root` value verbatim, makes `course-theme.ts` the sole owner of the course palette, names the values used by more than one token as primitives (the brand navy had been written out five times), and gives the 54 duplicated colour literals in TS/TSX shared tokens. Adds `scripts/token-parity.mjs`, which replays the `@import` cascade and resolves `var()` chains to assert every resolved token value is unchanged, and adds `packages/ui/src` to the duplication scan so moving code into the shared package cannot flatter the metric. CSS duplication 47.91% -> 0.00% (17 clones -> 0). Closes #1272, #1301. (#1305, @yta3216, 2026-07-31) — [#1305](https://github.com/EduAI-Lab/EduAI/pull/1305)
 
 ### Fixed
 

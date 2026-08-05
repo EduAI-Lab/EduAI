@@ -66,7 +66,7 @@ export function AtRoleBanner({ role, authorizedUnits, variant }: AtRoleBannerPro
       data-testid={`at-role-banner-${view}`}
     >
       <div className="flex gap-3">
-        <Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+        <Icon className="mt-0.5 size-5 shrink-0 text-primary-text" aria-hidden />
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium text-foreground">{copy.title}</p>
