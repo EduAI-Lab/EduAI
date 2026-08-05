@@ -27,6 +27,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_PROMPTS = [
   "Reply with exactly the word: ok.",
@@ -60,6 +61,12 @@ function sleep(ms) {
 function readEnv(name, fallback = undefined) {
   const v = process.env[name];
   return v === undefined || v === "" ? fallback : v;
+}
+
+export function responseChatId(response, json) {
+  const headerChatId = response.headers.get("X-Chat-Id");
+  if (headerChatId) return headerChatId;
+  return json && typeof json.chatId === "string" ? json.chatId : null;
 }
 
 function parseArgs() {
@@ -186,8 +193,8 @@ async function main() {
       /* ignore */
     }
 
-    if (!chatId && json && typeof json.chatId === "string") {
-      chatId = json.chatId;
+    if (!chatId) {
+      chatId = responseChatId(res, json);
     }
 
     return { ms, ttfbMs, status: res.status, json, rawLen: text.length };
@@ -267,7 +274,9 @@ function textSnippet(json) {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
