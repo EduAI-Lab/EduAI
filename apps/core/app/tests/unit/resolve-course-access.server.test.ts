@@ -9,10 +9,21 @@ vi.mock("~/lib/auth/course-access.server", () => ({
 }));
 
 import { resolveCourseAccess } from "~/lib/rbac/resolve-course-access.server";
-import type { RbacUser } from "~/lib/rbac/types";
 
-const COURSE = { id: "c1", instructorId: null, department: "COSC" };
-const USER: RbacUser = { id: "u1", role: "STUDENT", authorizedUnits: [] };
+const COURSE = {
+  id: "c1",
+  instructorId: null,
+  department: "COSC",
+  // Extra field that must NOT be forwarded — only `course.id` is passed.
+  code: "COSC 111",
+};
+const USER = {
+  id: "u1",
+  role: "STUDENT" as const,
+  authorizedUnits: [] as string[],
+  // Extra runtime field that must be dropped by the wrapper's narrowing.
+  name: "Student User",
+};
 
 beforeEach(() => {
   resolveCourseAccessWithCourseMock.mockReset();
@@ -41,5 +52,10 @@ describe("resolveCourseAccess", () => {
       { id: "u1", role: "STUDENT", authorizedUnits: [] },
       "c1",
     );
+    const [forwardedUser, forwardedCourseId] =
+      resolveCourseAccessWithCourseMock.mock.calls[0]!;
+    expect(forwardedUser).not.toHaveProperty("name");
+    expect(forwardedCourseId).toBe("c1");
+    expect(forwardedCourseId).not.toEqual(COURSE);
   });
 });

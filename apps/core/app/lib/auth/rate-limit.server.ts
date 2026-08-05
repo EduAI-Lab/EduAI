@@ -54,6 +54,9 @@ export function isRateLimited(
   windowMs = 60_000
 ): boolean {
   const now = Date.now();
+  // Equivalent ArrayDeclaration mutant: replacing `[]` with a non-empty
+  // Stryker sentinel still yields an empty filtered list, because the
+  // sentinel timestamps fail `now - t < windowMs` (NaN comparison).
   const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= limit) {
     store.set(key, hits);
@@ -88,4 +91,5 @@ export function isRateLimited(
 /** Clears in-memory rate limit state between tests. */
 export function resetRateLimitsForTests(): void {
   store.clear();
+  cachedMaxStoreKeys = null;
 }

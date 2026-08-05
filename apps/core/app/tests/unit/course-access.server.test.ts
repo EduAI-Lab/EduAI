@@ -132,6 +132,7 @@ describe("resolveCourseAccess", () => {
       "c1",
     );
     expect(access).toBeNull();
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
   });
 
   it("does not call user.findUnique when UNIT_ADMIN course department is null (§19 unit lock)", async () => {
