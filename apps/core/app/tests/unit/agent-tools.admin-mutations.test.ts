@@ -3,12 +3,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
+  $transaction: vi.fn(),
+  $executeRaw: vi.fn().mockResolvedValue(undefined),
   user: {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
+    count: vi.fn(),
   },
   enrollment: { findFirst: vi.fn() },
 }));
@@ -50,6 +53,10 @@ const STUDENT = { id: "student-1", role: "STUDENT" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  prismaMock.$transaction.mockImplementation(async (arg: unknown) =>
+    typeof arg === "function" ? (arg as (tx: typeof prismaMock) => unknown)(prismaMock) : arg,
+  );
+  prismaMock.$executeRaw.mockResolvedValue(undefined);
 });
 
 describe("createAdminUser", () => {
@@ -109,10 +116,28 @@ describe("deleteAdminUser", () => {
     expect(result).toEqual({ error: "CANNOT_DELETE_SELF" });
   });
 
-  it("deletes other users", async () => {
+  it("deletes other non-ADMIN users without a floor check", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ role: "STUDENT", isActive: true });
     prismaMock.user.delete.mockResolvedValue({ id: "u2" });
     const result = await deleteAdminUser(ADMIN, "u2");
     expect(result).toMatchObject({ ok: true, deletedUserId: "u2" });
+    expect(prismaMock.user.count).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting the last other active ADMIN (AUTH-04)", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ role: "ADMIN", isActive: true });
+    prismaMock.user.count.mockResolvedValue(0);
+    const result = await deleteAdminUser(ADMIN, "admin-2");
+    expect(result).toEqual({ error: "ADMIN_FLOOR_VIOLATION" });
+    expect(prismaMock.user.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes an ADMIN when another active ADMIN remains", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ role: "ADMIN", isActive: true });
+    prismaMock.user.count.mockResolvedValue(1);
+    prismaMock.user.delete.mockResolvedValue({ id: "admin-2" });
+    const result = await deleteAdminUser(ADMIN, "admin-2");
+    expect(result).toMatchObject({ ok: true, deletedUserId: "admin-2" });
   });
 });
 

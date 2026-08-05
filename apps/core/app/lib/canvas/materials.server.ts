@@ -200,7 +200,12 @@ async function syncUnpublishedState(
 
   for (const [canvasFileId, material] of importedByExternalId) {
     const file = canvasFileById.get(canvasFileId);
+    // CANVAS-05 (#225 / #1195): a file missing from Canvas is treated as
+    // unpublished so imported materials stop being RAG-visible.
     if (!file) {
+      if (!material.unpublishedAt) {
+        toUnpublishIds.push(material.id);
+      }
       continue;
     }
 
