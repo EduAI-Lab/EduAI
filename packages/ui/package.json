@@ -42,6 +42,7 @@
     "@dnd-kit/modifiers": "*",
     "@dnd-kit/sortable": "*",
     "@dnd-kit/utilities": "*",
+    "@fontsource-variable/outfit": "*",
     "@radix-ui/react-accordion": "*",
     "@radix-ui/react-alert-dialog": "*",
     "@radix-ui/react-aspect-ratio": "*",

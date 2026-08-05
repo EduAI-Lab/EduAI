@@ -61,17 +61,19 @@ describe("applySecurityHeaders", () => {
     expect(csp).toContain("'strict-dynamic'");
   });
 
-  it("whitelists Google Fonts origins and denies framing in the HTML CSP", () => {
+  it("allows no third-party font origins and denies framing in the HTML CSP", () => {
     const headers = new Headers();
     applySecurityHeaders(headers, { isProd: true, nonce: "abc" });
 
     const csp = headers.get("Content-Security-Policy") ?? "";
-    expect(csp).toContain(
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    );
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
     // `data:` covers the woff2 fonts Vite inlines under `assetsInlineLimit`.
-    expect(csp).toContain("font-src 'self' data: https://fonts.gstatic.com");
+    expect(csp).toContain("font-src 'self' data:");
     expect(csp).toContain("frame-ancestors 'none'");
+    // Outfit is self-hosted (#1221) — re-adding a Google Fonts <link> anywhere
+    // would need these origins back, so assert they stay gone.
+    expect(csp).not.toContain("fonts.googleapis.com");
+    expect(csp).not.toContain("fonts.gstatic.com");
   });
 
   it("uses a locked-down resource CSP when no nonce is given", () => {
