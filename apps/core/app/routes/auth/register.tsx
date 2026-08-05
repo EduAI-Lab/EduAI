@@ -142,7 +142,7 @@ export default function RegisterPage() {
             </p>
             <Link
               to="/auth/login"
-              className="text-sm text-primary underline underline-offset-4"
+              className="text-sm text-primary-text underline underline-offset-4"
             >
               Back to sign in
             </Link>
