@@ -19,7 +19,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
-- [question-maker] chore: Align qm-frontend's `@eduai/ui` dependency range from a pinned `0.1.0` to `*`, matching Core and ai-tutor, so the workspace doesn't break on the next `@eduai/ui` version bump. Three of the four manifest issues this ticket named were already stale by the time of this PR — verified and left untouched (see PR description). Also moved the campus-model size-ranking helper (`modelSizeRankFromText`) into `@eduai/types` and dropped qm-frontend's `question-maker-backend` dependency, which existed solely so the frontend could reach into the backend's `src/utils` for that helper — the last cross-package `src/` import in the workspace. Closes #1252. (#1252, @Ayyhab, 2026-07-31) — [#1296](https://github.com/EduAI-Lab/EduAI/pull/1296)
+- [question-maker] chore: Two of the four manifest issues this ticket named were already stale by the time of this PR and needed no action (see PR description); the other two are fixed here — aligned qm-frontend's `@eduai/ui` dependency range from a pinned `0.1.0` to `*`, matching Core and ai-tutor, so the workspace doesn't break on the next `@eduai/ui` version bump, and moved the campus-model size-ranking helper (`modelSizeRankFromText`) into `@eduai/types`, dropping qm-frontend's `question-maker-backend` dependency, which existed solely so the frontend could reach into the backend's `src/utils` for that helper — the last cross-package `src/` import in the workspace. Closes #1252. (#1252, @Ayyhab, 2026-07-31) — [#1296](https://github.com/EduAI-Lab/EduAI/pull/1296)
 
 ## [Week 13 — July 27 – August 2, 2026]
 
