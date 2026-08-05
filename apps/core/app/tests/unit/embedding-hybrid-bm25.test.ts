@@ -67,7 +67,8 @@ delete process.env.OLLAMA_BASE_URL;
 
 // ── Module import (after mocks) ───────────────────────────────────────────────
 
-const { findRelevantContent, isHybridBm25Enabled } = await import("~/lib/ai/embedding");
+const { findRelevantContent, isHybridBm25Enabled, resolveIvfflatProbes } =
+  await import("~/lib/ai/embedding");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,14 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.RAG_HYBRID_BM25;
   delete process.env.RAG_HYBRID_BM25_ALPHA;
+  delete process.env.RAG_IVFFLAT_PROBES;
+});
+
+describe("resolveIvfflatProbes()", () => {
+  it("caps probes below the migration's 100 IVFFlat lists", () => {
+    process.env.RAG_IVFFLAT_PROBES = "100";
+    expect(resolveIvfflatProbes()).toBe(99);
+  });
 });
 
 // ── isHybridBm25Enabled ───────────────────────────────────────────────────────
@@ -156,6 +165,14 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(sql).toContain("ORDER BY score DESC");
     expect(sql).toContain("WHERE 1 - distance >");
     expect(capturedParams()).toContain(16);
+  });
+
+  it("uses bounded iterative ANN scanning so course filters retain recall", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(executeRawUnsafeMock).toHaveBeenCalledWith(
+      "SET LOCAL ivfflat.iterative_scan = relaxed_order",
+    );
+    expect(executeRawUnsafeMock).toHaveBeenCalledWith("SET LOCAL ivfflat.max_probes = 99");
   });
 
   // #315: soft-deleted materials must never leak into RAG context, including on
@@ -257,6 +274,14 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     );
     expect(sql).toContain("WHERE 1 - distance >");
     expect(sql).toContain("ORDER BY distance ASC");
+  });
+
+  it("uses bounded iterative ANN scanning before applying the course filter", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4);
+    expect(executeRawUnsafeMock).toHaveBeenCalledWith(
+      "SET LOCAL ivfflat.iterative_scan = relaxed_order",
+    );
+    expect(executeRawUnsafeMock).toHaveBeenCalledWith("SET LOCAL ivfflat.max_probes = 99");
   });
 
   it("maps the similarity column correctly", async () => {

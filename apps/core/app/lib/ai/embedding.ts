@@ -53,11 +53,12 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
  *
  * Env override lets ops raise recall (or lower latency) without a code change;
  * clamped to a sane range so a bad value can't silently disable the index
- * (0 falls back to Postgres' own default) or force a near-exact scan.
+ * (0 falls back to Postgres' own default) or scan every one of this index's
+ * 100 lists (which PostgreSQL may plan as an exact scan instead of ANN).
  */
 const DEFAULT_IVFFLAT_PROBES = 10;
 const MIN_IVFFLAT_PROBES = 1;
-const MAX_IVFFLAT_PROBES = 100;
+const MAX_IVFFLAT_PROBES = 99;
 
 export function resolveIvfflatProbes(): number {
   const raw = Number(process.env.RAG_IVFFLAT_PROBES);
@@ -693,6 +694,11 @@ export async function findRelevantContent(
   // connection — so the probes setting reliably applies to the query that
   // follows it and is automatically reset once the transaction ends.
   const probes = resolveIvfflatProbes();
+  // Course filtering happens after the ANN scan. Iterative scanning asks
+  // pgvector for additional lists until the filtered LIMIT is satisfied, up
+  // to this bounded maximum, so a large unrelated course cannot starve a
+  // smaller course's nearest chunks from the candidate set.
+  const maxProbes = MAX_IVFFLAT_PROBES;
 
   if (isHybridBm25Enabled()) {
     const alpha = getHybridAlpha();
@@ -706,8 +712,10 @@ export async function findRelevantContent(
     // ascending ORDER BY expression with a LIMIT. Keep that shape isolated in
     // a materialized CTE, then apply the similarity floor and hybrid reranking
     // to the resulting candidate set.
-    const [, hybridResults] = await prisma.$transaction([
+    const [, , , hybridResults] = await prisma.$transaction([
       prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
+      prisma.$executeRawUnsafe("SET LOCAL ivfflat.iterative_scan = relaxed_order"),
+      prisma.$executeRawUnsafe(`SET LOCAL ivfflat.max_probes = ${maxProbes}`),
       prisma.$queryRaw<
         Array<{ content: string; score: number; material_title: string }>
       >`
@@ -751,8 +759,10 @@ export async function findRelevantContent(
     }));
   }
 
-  const [, results] = await prisma.$transaction([
+  const [, , , results] = await prisma.$transaction([
     prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = ${probes}`),
+    prisma.$executeRawUnsafe("SET LOCAL ivfflat.iterative_scan = relaxed_order"),
+    prisma.$executeRawUnsafe(`SET LOCAL ivfflat.max_probes = ${maxProbes}`),
     prisma.$queryRaw<
       Array<{
         content: string;
