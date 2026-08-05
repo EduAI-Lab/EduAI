@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { EnrollmentRole } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 import type { RbacUser } from "~/lib/auth/course-access.server";
+import { adminFloorViolation } from "~/lib/auth/admin-floor.server";
 import { createUserSchema, updateUserSchema } from "~/lib/auth/schemas";
 import {
   addEnrollment,
@@ -419,7 +420,26 @@ export async function deleteAdminUser(actor: RbacUser, userId: string): Promise<
   }
 
   try {
-    await prisma.user.delete({ where: { id: userId } });
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({
+        where: { id: userId },
+        select: { role: true, isActive: true },
+      });
+      if (!target) {
+        return { error: "USER_NOT_FOUND" } as const;
+      }
+      // AUTH-04: hard-delete of an active ADMIN must leave >= 1 active ADMIN.
+      if (target.role === "ADMIN" && target.isActive) {
+        const violation = await adminFloorViolation(tx, userId);
+        if (violation) return violation;
+      }
+      await tx.user.delete({ where: { id: userId } });
+      return { ok: true as const };
+    });
+
+    if ("error" in transactionResult) {
+      return { error: transactionResult.error };
+    }
     return mutationPayload({ ok: true, deletedUserId: userId });
   } catch (error: unknown) {
     if (
