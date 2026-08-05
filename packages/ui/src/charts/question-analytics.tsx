@@ -12,10 +12,10 @@ import { MeterBar } from "./meter-bar"
 import { PanelCard } from "./panel-card"
 import { cn } from "../utils"
 
-const AI_COLOR = "oklch(0.62 0.17 295)"
-const HUMAN_COLOR = "oklch(0.55 0.14 255)"
-const REVIEWED_COLOR = "oklch(0.60 0.15 150)"
-const COVERAGE_COLOR = "oklch(0.55 0.16 255)"
+const AI_COLOR = "var(--color-series-5)"
+const HUMAN_COLOR = "var(--color-series-4)"
+const REVIEWED_COLOR = "var(--color-series-1)"
+const COVERAGE_COLOR = "var(--color-series-3)"
 
 export interface QuestionAnalyticsProps {
   typeComposition: DonutSegment[]

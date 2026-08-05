@@ -6,8 +6,8 @@ import { DashboardView, type DashboardQuickAction } from './DashboardView';
 import { NeedsAttentionPanel } from './NeedsAttentionPanel';
 import { toDashboardCourseRow } from './dashboard-helpers';
 
-const PUBLISHED_COLOR = 'oklch(0.60 0.15 150)';
-const DRAFT_COLOR = 'oklch(0.75 0.15 80)';
+const PUBLISHED_COLOR = 'var(--color-series-1)';
+const DRAFT_COLOR = 'var(--color-series-2)';
 
 type DashboardUnitAdminViewProps = {
   courses: Course[];
