@@ -258,4 +258,49 @@ describe("runIdempotentAdminMutation (#1110)", () => {
     expect(mutation).toHaveBeenCalledOnce();
     expect(prismaMock.idempotencyRecord.create).toHaveBeenCalledOnce();
   });
+
+  it("cross-process overlap replays once the first request completes", async () => {
+    prismaMock.idempotencyRecord.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("dup", {
+        code: "P2002",
+        clientVersion: "test",
+      }),
+    );
+
+    const { hashRequestBody, bodyForIdempotencyHash } = await import(
+      "~/lib/idempotency.server"
+    );
+    const body = { email: "cross@process.test" };
+    const requestHash = hashRequestBody(bodyForIdempotencyHash(body));
+
+    prismaMock.idempotencyRecord.findUnique
+      // claimIdempotency sees active first writer
+      .mockResolvedValueOnce({
+        requestHash,
+        status: "PROCESSING",
+        statusCode: null,
+        responseBody: null,
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      // waitForInProgressReplay poll sees completion and replays
+      .mockResolvedValueOnce({
+        requestHash,
+        status: "COMPLETED",
+        statusCode: 200,
+        responseBody: { id: "u-cross", writeSucceeded: true },
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+    const mutation = vi.fn().mockResolvedValue({ shouldNot: "run" });
+    const result = await runIdempotentAdminMutation(
+      "admin-1",
+      "POST /api/users",
+      "cross-process-key",
+      body,
+      mutation,
+    );
+
+    expect(result).toEqual({ id: "u-cross", writeSucceeded: true });
+    expect(mutation).not.toHaveBeenCalled();
+  });
 });

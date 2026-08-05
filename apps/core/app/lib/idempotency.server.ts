@@ -4,6 +4,8 @@ import prisma from "~/lib/prisma.server";
 import { apiError, jsonResponse } from "~/lib/api-error.server";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const IN_PROGRESS_REPLAY_WAIT_MS = 5_000;
+const IN_PROGRESS_REPLAY_POLL_INTERVAL_MS = 50;
 const IDEMPOTENCY_HEADER = "idempotency-key";
 
 /**
@@ -71,6 +73,61 @@ function expiresAtFromNow(ttlMs = DEFAULT_TTL_MS): Date {
 
 function replayResponse(statusCode: number, responseBody: unknown): Response {
   return jsonResponse(statusCode, responseBody);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForInProgressReplay(opts: {
+  key: string;
+  route: string;
+  actorId: string;
+  requestHash: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}): Promise<IdempotencyClaimResult> {
+  const {
+    key,
+    route,
+    actorId,
+    requestHash,
+    timeoutMs = IN_PROGRESS_REPLAY_WAIT_MS,
+    pollIntervalMs = IN_PROGRESS_REPLAY_POLL_INTERVAL_MS,
+  } = opts;
+
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const existing = await prisma.idempotencyRecord.findUnique({
+      where: { key_route_actorId: { key, route, actorId } },
+    });
+
+    if (!existing) {
+      return { kind: "in_progress" };
+    }
+
+    const isLegacyEntityBackfill = existing.requestHash === LEGACY_ENTITY_BACKFILL_HASH;
+    if (!isLegacyEntityBackfill && existing.requestHash !== requestHash) {
+      return { kind: "mismatch" };
+    }
+
+    if (existing.status === "COMPLETED" && existing.statusCode != null) {
+      return {
+        kind: "replay",
+        statusCode: existing.statusCode,
+        responseBody: existing.responseBody ?? null,
+      };
+    }
+
+    if (existing.status !== "PROCESSING") {
+      return { kind: "in_progress" };
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  return { kind: "in_progress" };
 }
 
 export async function claimIdempotency(opts: {
@@ -262,9 +319,24 @@ async function executeIdempotentRequest(
     return apiError(422, "IDEMPOTENCY_KEY_MISMATCH");
   }
   if (claim.kind === "in_progress") {
-    // Cross-process (or after this process's in-flight entry cleared): no
-    // sibling to await. 409 tells the client to retry; a later retry hits
-    // COMPLETED replay. Same-process overlap is handled by the coalesce map.
+    // Same-process overlap is handled by the coalesce map above. For
+    // cross-process overlap, wait briefly for the writer to complete so the
+    // second request can replay instead of failing with 409.
+    const waited = await waitForInProgressReplay({
+      key,
+      route: opts.route,
+      actorId: opts.actorId,
+      requestHash,
+    });
+
+    if (waited.kind === "replay") {
+      return replayResponse(waited.statusCode, waited.responseBody);
+    }
+    if (waited.kind === "mismatch") {
+      return apiError(422, "IDEMPOTENCY_KEY_MISMATCH");
+    }
+
+    // Still processing after bounded wait; ask client to retry.
     return apiError(409, "IDEMPOTENCY_IN_PROGRESS");
   }
   if (claim.kind === "replay") {
