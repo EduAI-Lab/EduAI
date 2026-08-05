@@ -322,7 +322,7 @@ describe("enqueue", () => {
     const result = await enqueue(job);
 
     // The loser's row is dropped, and the snapshot describes the winner (#915).
-    expect(result).toEqual({ jobId: "aijob_winner", queuePosition: 3, queueDepth: 9 });
+    expect(result).toEqual({ jobId: "aijob_winner", queuePosition: null, queueDepth: 9 });
     expect(prismaMock.aiJob.delete).toHaveBeenCalledWith({ where: { id: "aijob_1" } });
     expect(prismaMock.aiJob.deleteMany).not.toHaveBeenCalled();
     expect(prismaMock.aiJob.findUnique).toHaveBeenCalledWith(

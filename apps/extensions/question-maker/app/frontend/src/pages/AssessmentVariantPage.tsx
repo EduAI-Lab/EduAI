@@ -762,7 +762,7 @@ export function AssessmentVariantPage() {
                 Assessments
               </Button>
               <div className="flex items-center gap-2">
-                <IconSparkles className="h-6 w-6 text-primary" />
+                <IconSparkles className="h-6 w-6 text-primary-text" />
                 <h1 className="text-lg font-semibold tracking-tight text-foreground">Assessment variants</h1>
               </div>
             </div>

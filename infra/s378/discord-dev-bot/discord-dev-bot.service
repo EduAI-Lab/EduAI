@@ -1,0 +1,21 @@
+[Unit]
+Description=EduAI Discord dev server branch bot
+Documentation=file:///srv/www/dev.eduai.ok.ubc.ca/EduAICore/EduAICore/docs/operations/DISCORD_DEV_BOT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/eduai-discord-dev-bot
+EnvironmentFile=%h/.config/eduai/discord-dev-bot.env
+Environment=PATH=%h/.volta/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=VOLTA_HOME=%h/.volta
+ExecStart=%h/.volta/bin/node bot.mjs
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
