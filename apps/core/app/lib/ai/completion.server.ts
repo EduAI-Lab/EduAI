@@ -232,6 +232,11 @@ export async function runCompletion(request: CompletionRequest) {
         usage,
         finishReason,
       },
+      // Server-only routing metadata. API routes serialize `body` only.
+      internal: {
+        fleetHost: fleetBaseUrl ?? null,
+        fleetServerId: fleetServerId ?? null,
+      },
     };
   } catch (error) {
     return {

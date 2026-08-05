@@ -253,6 +253,6 @@ describe("QueueFullError", () => {
     expect(error.depth).toBe(25);
     expect(error.maxDepth).toBe(25);
     expect(error.retryAfterSeconds).toBeGreaterThan(0);
-    expect(error.message).toContain("ai-jobs:chat");
+    expect(error.message).toContain(QUEUE_CHAT);
   });
 });
