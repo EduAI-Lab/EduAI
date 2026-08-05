@@ -1,7 +1,10 @@
 /**
  * Shared assessment export: ordered question blocks for TXT and Word (.docx).
  */
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+// `docx` is only reachable from the Word export below, but a static import put it
+// in the entry chunk alongside the TXT path that never needs it. Type-only here;
+// the runtime import happens inside the one function that builds a document.
+import type { Paragraph as DocxParagraph } from 'docx';
 import type { Assessment, QuestionVariant } from '../types/question';
 
 export type AssessmentExportBlock = {
@@ -80,13 +83,15 @@ export async function assessmentBlocksToDocxBlob(
     assessment: Assessment,
     blocks: AssessmentExportBlock[]
 ): Promise<Blob> {
+    const { Document, HeadingLevel, Packer, Paragraph, TextRun } = await import('docx');
+
     const metaParts: string[] = [assessment.type, assessment.semester].filter(Boolean);
     if (assessment.course?.name) {
         metaParts.push(assessment.course.name);
     }
     const metaLine = metaParts.join(' · ');
 
-    const children: Paragraph[] = [
+    const children: DocxParagraph[] = [
         new Paragraph({
             text: assessment.name,
             heading: HeadingLevel.TITLE,
