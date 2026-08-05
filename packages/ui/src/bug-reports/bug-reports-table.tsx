@@ -253,7 +253,7 @@ export function BugReportsTable({
                 <TableCell className="overflow-hidden whitespace-normal px-3 py-3 text-sm">
                   <button
                     type="button"
-                    className="line-clamp-3 w-full wrap-break-word text-left text-foreground hover:text-primary"
+                    className="line-clamp-3 w-full wrap-break-word text-left text-foreground hover:text-primary-text"
                     title={report.description}
                     onClick={() => onOpenViewer('description', report.id)}
                   >

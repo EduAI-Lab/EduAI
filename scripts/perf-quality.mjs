@@ -39,6 +39,10 @@ const SRC = {
   "aitutor-frontend": { ext: "ts,tsx", path: "apps/extensions/ai-tutor/app" },
   "qm-backend": { ext: "js", path: "apps/extensions/question-maker/app/backend/src" },
   "qm-frontend": { ext: "ts,tsx", path: "apps/extensions/question-maker/app/frontend/src" },
+  // The shared component library was never scanned, so anything moved into it
+  // left the duplication metric entirely -- which would read as an improvement
+  // regardless of whether duplication was actually removed (#1272).
+  "shared-ui": { ext: "ts,tsx", path: "packages/ui/src" },
 };
 const TS_PROJECTS = {
   core: "apps/core/tsconfig.json",
