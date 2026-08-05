@@ -56,6 +56,10 @@ function resolveEmbedManyBatchSize(wantsLocal: boolean): number {
  */
 const DEFAULT_REINDEX_CONCURRENCY = 4;
 const MAX_REINDEX_CONCURRENCY = 16;
+const REINDEX_TRANSACTION_MAX_WAIT_MS = 10_000;
+const REINDEX_TRANSACTION_TIMEOUT_MS = 60_000;
+const MAX_TRANSIENT_EMBED_ATTEMPTS = 3;
+const TRANSIENT_EMBED_RETRY_DELAY_MS = 500;
 
 function reindexConcurrency(): number {
   const raw = process.env.REINDEX_CONCURRENCY;
@@ -67,6 +71,42 @@ function reindexConcurrency(): number {
   }
 
   return Math.min(configured, MAX_REINDEX_CONCURRENCY);
+}
+
+function isTransientEmbeddingError(err: unknown): boolean {
+  const status =
+    err && typeof err === "object" && "status" in err
+      ? Number((err as { status?: unknown }).status)
+      : NaN;
+  if (status === 429 || status === 503) return true;
+
+  const message = err instanceof Error ? err.message : String(err);
+  return /\b(429|503)\b|rate limit|too many requests|service unavailable/i.test(message);
+}
+
+async function retryTransientEmbeddingError<T>(run: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_EMBED_ATTEMPTS; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      lastError = err;
+      if (!isTransientEmbeddingError(err) || attempt === MAX_TRANSIENT_EMBED_ATTEMPTS) {
+        throw err;
+      }
+
+      const delayMs = TRANSIENT_EMBED_RETRY_DELAY_MS * 2 ** (attempt - 1);
+      console.warn("[embeddings] transient provider failure; retrying", {
+        attempt,
+        maxAttempts: MAX_TRANSIENT_EMBED_ATTEMPTS,
+        delayMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError;
 }
 
 function isOllamaBadRequestError(err: unknown): boolean {
@@ -561,7 +601,7 @@ async function embedWithConfiguredProvider<T>(
     : getCloudEmbeddingModel(settings).model;
 
   try {
-    return await run(model);
+    return await retryTransientEmbeddingError(() => run(model));
   } catch (err) {
     if (settings.wantsLocal) {
       throw new Error(
@@ -823,7 +863,11 @@ export async function reEmbedCourseMaterials(
       processed,
       failed: [...failed],
     };
-    progressQueue = progressQueue.then(() => options?.onProgress?.(snapshot));
+    progressQueue = progressQueue
+      .then(() => options?.onProgress?.(snapshot))
+      .catch((err) => {
+        console.error("[re-embed] progress write failed", err);
+      });
     return progressQueue;
   };
 
@@ -841,24 +885,38 @@ export async function reEmbedCourseMaterials(
       limit(async () => {
         const content = material.rawText!.trim();
 
-        await prisma.courseMaterial.update({
-          where: { id: material.id },
-          data: { status: "PROCESSING" },
-        });
-        try {
-          await processMaterialEmbeddings(material.id, content, { replace: true });
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "READY", processedAt: new Date() },
-          });
-          processed += 1;
-        } catch (err) {
-          failed.push(material.id);
-          await prisma.courseMaterial.update({
-            where: { id: material.id },
-            data: { status: "FAILED" },
-          });
-          console.error("[re-embed] material failed", {
+          try {
+            await prisma.courseMaterial.update({
+              where: { id: material.id },
+              data: { status: "PROCESSING" },
+            });
+            await processMaterialEmbeddings(material.id, content, {
+              replace: true,
+              transactionOptions: {
+                maxWait: REINDEX_TRANSACTION_MAX_WAIT_MS,
+                timeout: REINDEX_TRANSACTION_TIMEOUT_MS,
+              },
+            });
+            await prisma.courseMaterial.update({
+              where: { id: material.id },
+              data: { status: "READY", processedAt: new Date() },
+            });
+            processed += 1;
+          } catch (err) {
+            failed.push(material.id);
+            try {
+              await prisma.courseMaterial.update({
+                where: { id: material.id },
+                data: { status: "FAILED" },
+              });
+            } catch (statusError) {
+              console.error("[re-embed] failed to persist material failure", {
+                courseId,
+                materialId: material.id,
+                error: statusError instanceof Error ? statusError.message : String(statusError),
+              });
+            }
+            console.error("[re-embed] material failed", {
             courseId,
             materialId: material.id,
             title: material.title,
@@ -881,6 +939,8 @@ export async function reEmbedCourseMaterials(
 export type ProcessMaterialEmbeddingsOptions = {
   /** Delete existing chunks only after new embeddings succeed, inside the same transaction. */
   replace?: boolean;
+  /** Override interactive transaction limits for a bounded concurrent reindex. */
+  transactionOptions?: { maxWait: number; timeout: number };
 };
 
 /**
@@ -928,5 +988,5 @@ export async function processMaterialEmbeddings(
         VALUES (${randomUUID()}, ${chunksByIndex[i].id}, ${vectorLiteral}::vector, NOW())
       `;
     }
-  });
+  }, options?.transactionOptions);
 }
