@@ -19,7 +19,7 @@ export async function adminFloorViolation(
     where: { role: "ADMIN", isActive: true, id: { not: userId } },
   });
   if (remainingAdmins === 0) {
-    return { status: "409", error: "ADMIN_FLOOR_VIOLATION" } as const;
+    return { error: "ADMIN_FLOOR_VIOLATION" } as const;
   }
   return null;
 }
