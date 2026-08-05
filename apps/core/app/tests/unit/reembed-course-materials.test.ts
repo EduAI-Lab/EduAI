@@ -283,6 +283,34 @@ describe("reEmbedCourseMaterials concurrency (#945)", () => {
     }
   });
 
+  it("serializes async progress writes so completed counts cannot regress", async () => {
+    process.env.REINDEX_CONCURRENCY = "2";
+    mockMaterials([
+      { id: "m0", rawText: "content 0", title: "First" },
+      { id: "m1", rawText: "content 1", title: "Second" },
+    ]);
+    (embedManyMock as any).mockResolvedValue({ embeddings: [[...SAMPLE_EMBEDDING]] });
+
+    const seen: number[] = [];
+    let releaseFirstCompletion: (() => void) | undefined;
+    const firstCompletionWritten = new Promise<void>((resolve) => {
+      releaseFirstCompletion = resolve;
+    });
+
+    const run = reEmbedCourseMaterials("course-1", {
+      onProgress: async (progress) => {
+        if (progress.processed === 1) await firstCompletionWritten;
+        seen.push(progress.processed);
+      },
+    });
+
+    await vi.waitFor(() => expect(releaseFirstCompletion).toBeTypeOf("function"));
+    releaseFirstCompletion!();
+    await run;
+
+    expect(seen).toEqual([0, 1, 2]);
+  });
+
   it("skips materials with blank or missing rawText and reports them outside eligible/total", async () => {
     mockMaterials([
       { id: "m0", rawText: "real content", title: "Real" },
