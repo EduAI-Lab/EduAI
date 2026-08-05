@@ -329,6 +329,22 @@ function llmPromptSizeHints(system: unknown, messages: GenericMessage[]) {
   };
 }
 
+/**
+ * Rough token estimate (chars/4) for a set of retrieved RAG chunks, used by
+ * Phase 1 rule5's "long RAG context" threshold (rules.ts). Shared between
+ * the router's own RAG prefetch (routerRagPrefetch, routeWithAuto only) and
+ * the plain course-mode RAG path (courseRagHits, every course-scoped
+ * request) so both surface the same field with the same formula — added
+ * 2026-08-04 (PREREG_v3.md §7 rule-stack audit, RULE_STACK_v3.md item 4)
+ * since rule5 was previously unevaluatable: this estimate was computed for
+ * the router-prefetch path but never for the plain course-mode path, which
+ * is the one non-"auto" callers (including the v3 research generation
+ * script) actually hit.
+ */
+export function ragContextTokenEstimateForCourseRagHits(hits: HybridRagHit[]): number {
+  return hits.reduce((acc, hit) => acc + Math.ceil(hit.content.length / 4), 0);
+}
+
 /** Serializes a message object to JSON, handling circular references. */
 function serializeMessage(message: GenericMessage): Prisma.JsonValue {
   try {
@@ -1235,10 +1251,7 @@ export async function action({ request }: ActionFunctionArgs) {
         );
         ragChunkCount = routerRagPrefetch.length;
         ragTopSimilarity = routerRagPrefetch[0]?.similarity ?? null;
-        ragContextTokenEstimate = routerRagPrefetch.reduce(
-          (acc, hit) => acc + Math.ceil(hit.content.length / 4),
-          0,
-        );
+        ragContextTokenEstimate = ragContextTokenEstimateForCourseRagHits(routerRagPrefetch);
       } catch (err) {
         chatApiDebug("Router RAG prefetch failed", { err });
       }
@@ -2441,6 +2454,9 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
@@ -2579,6 +2595,9 @@ ${buildEmptyCourseRagBlock()}`;
             responseId: response?.id,
             courseCode,
             chatId: chat?.id,
+            ragTopSimilarity: courseRagHits[0]?.similarity ?? null,
+            ragChunkCount: courseRagHits.length,
+            ragContextTokenEstimate: ragContextTokenEstimateForCourseRagHits(courseRagHits),
           }),
           {
             status: 200,
