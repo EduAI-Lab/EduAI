@@ -321,7 +321,9 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         confirmed: confirmedWrite,
         name: z.string().min(2),
         email: z.string().email(),
-        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]),
+        // #225 AUTH-12: platform UserRole has no TA — a course TA is a
+        // STUDENT-platform user with a TA enrollment (see `enrollmentRole` above).
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]),
         isActive: z.boolean().optional(),
         idempotencyKey: z.string().min(1),
       }),
@@ -344,7 +346,7 @@ export function createAdminChatTools(ctx: ChatToolContext) {
         ...userRef,
         name: z.string().min(2).optional(),
         email: z.string().email().optional(),
-        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"]).optional(),
+        role: z.enum(["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"]).optional(),
         isActive: z.boolean().optional(),
       }),
       execute: async ({ confirmed, userId, userEmail, ...updates }) => {
