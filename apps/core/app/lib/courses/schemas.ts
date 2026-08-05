@@ -21,7 +21,8 @@ export const UpdateCourseResponseStyleSchema = z
     (data) =>
       data.responseStyleTags !== undefined || data.aiInstructions !== undefined,
     {
-      message: "At least one of responseStyleTags or aiInstructions is required",
+      message:
+        "At least one of responseStyleTags or aiInstructions is required",
     },
   );
 
@@ -66,6 +67,12 @@ export const UpdateCourseSchema = z.object({
 });
 
 export const UpdateCourseRagSettingsSchema = z.object({
+  // Naming debt (#1152 review, yta3216): this schema also carries the
+  // per-course course-scope-guardrail toggle, which isn't a RAG setting.
+  // Kept here rather than renamed because it's served by the same
+  // instructor-only PATCH /api/courses/:id/rag-settings endpoint and a rename
+  // would be a larger, separate change.
+  courseScopeGuardrailEnabled: z.boolean().optional(),
   ragTopK: z
     .number()
     .int()
@@ -81,7 +88,9 @@ export const UpdateCourseRagSettingsSchema = z.object({
     .optional(),
 });
 
-export type UpdateCourseRagSettingsInput = z.infer<typeof UpdateCourseRagSettingsSchema>;
+export type UpdateCourseRagSettingsInput = z.infer<
+  typeof UpdateCourseRagSettingsSchema
+>;
 
 export const AddTASchema = z.object({
   userId: z.string().min(1, "User ID is required"),
