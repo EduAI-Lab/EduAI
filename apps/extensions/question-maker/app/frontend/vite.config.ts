@@ -12,6 +12,9 @@ const monorepoRoot = path.resolve(frontendDir, '../../../..')
 
 export default defineConfig({
   plugins: [tailwindcss(), react(), tsconfigPaths()],
+  css: {
+    devSourcemap: false,
+  },
   resolve: {
     alias: {
       '@': path.resolve(frontendDir, './src'),

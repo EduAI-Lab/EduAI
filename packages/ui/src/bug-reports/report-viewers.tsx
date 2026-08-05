@@ -242,7 +242,7 @@ function ScreenshotViewer({ report }: { report: AdminBugReportRow }) {
         href={report.screenshot}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex text-sm text-primary underline underline-offset-2"
+        className="inline-flex text-sm text-primary-text underline underline-offset-2"
       >
         Open in new tab
       </a>

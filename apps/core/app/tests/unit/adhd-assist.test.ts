@@ -89,7 +89,7 @@ describe("resolveEffectiveAdhdAssist", () => {
 describe("ADHD_ASSIST_POLICY_BLOCK", () => {
   it("contains the verbatim anchors from the policy doc", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("=== ADHD ASSIST MODE ===");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("RESPONSE SHAPE:");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("RESPONSE SHAPE");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Top summary");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Next?");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("=== END ADHD ASSIST MODE ===");
@@ -122,7 +122,7 @@ describe("v1.1 response-format rules", () => {
 describe("v1.9 labeled eduai-diagram policy", () => {
   it("full tutoring block lists the catalog and requires matching stage names", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("DIAGRAMS:");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the \"Next?\" line");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the **Next?** line");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("diagram is REQUIRED");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("eduai-diagram");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("process-flow");
@@ -133,7 +133,13 @@ describe("v1.9 labeled eduai-diagram policy", () => {
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("never omit later");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("do not emit a bare type-id-only fence");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain("How a bill becomes law");
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("Step ladder → diagram → TLDR → Continue");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("BEFORE the **Next?** line");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("FIRST LINE of the reply must be exactly: **Top summary**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("LAST structural line must start exactly: **Next?**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain(
+      "UI shows Step ladder → diagram → TLDR → Continue",
+    );
+    expect(ADHD_ASSIST_POLICY_BLOCK).not.toContain("learner-facing TLDR");
     expect(ADHD_ASSIST_POLICY_BLOCK).toContain(
       "Do NOT describe what a diagram would look like in prose",
     );
@@ -146,8 +152,9 @@ describe("v1.9 labeled eduai-diagram policy", () => {
   });
 
   it("keeps the Top summary / Next? anchors the oversight layer depends on", () => {
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Top summary"');
-    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('"Next?"');
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Top summary**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain("**Next?**");
+    expect(ADHD_ASSIST_POLICY_BLOCK).toContain('Do not rename **Top summary** or **Next?**');
   });
 });
 

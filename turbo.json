@@ -16,8 +16,44 @@
         "tests/**",
         "vitest.config.*",
         "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "jest.config.*",
         "jest.integration.config.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:unit": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
+        "package.json",
+        "prisma/**",
+        "tsconfig*.json"
+      ]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "server/**",
+        "shared/**",
+        "test/**",
+        "tests/**",
+        "vitest.integration.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "package.json",
         "prisma/**",
         "tsconfig*.json"
@@ -34,6 +70,8 @@
         "tests/**",
         "vitest.config.*",
         "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",
@@ -52,6 +90,8 @@
         "tests/**",
         "vitest.config.*",
         "vitest.*.config.*",
+        "vitest.shared.*",
+        "vitest.ui-aliases.*",
         "jest.config.*",
         "jest.integration.config.*",
         "package.json",

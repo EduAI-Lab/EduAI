@@ -19,26 +19,49 @@ export interface CourseMaterial {
   availableAt?: string | null
 }
 
+/** Cursor "load more" course materials (#1042) — bounded per page instead of one unbounded fetch. */
 export function useCourseMaterials(courseId: string) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+
+  const fetchPage = useCallback(async (cursor: string | null) => {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+    const res = await fetch(`/api/courses/${courseId}/materials${query}`)
+    if (!res.ok) throw new Error(await res.text())
+    return (await res.json()) as { materials: CourseMaterial[]; nextCursor: string | null }
+  }, [courseId])
 
   const fetchMaterials = useCallback(async () => {
     if (!courseId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/courses/${courseId}/materials`)
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
+      const data = await fetchPage(null)
       setMaterials(data.materials)
+      setNextCursor(data.nextCursor)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch materials')
     } finally {
       setLoading(false)
     }
-  }, [courseId])
+  }, [courseId, fetchPage])
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const data = await fetchPage(nextCursor)
+      setMaterials((prev) => [...prev, ...data.materials])
+      setNextCursor(data.nextCursor)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load more materials')
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [fetchPage, nextCursor, loadingMore])
 
   useEffect(() => { fetchMaterials() }, [fetchMaterials])
 
@@ -63,5 +86,15 @@ export function useCourseMaterials(courseId: string) {
     await fetchMaterials()
   }, [courseId, fetchMaterials])
 
-  return { materials, loading, error, uploadMaterial, deleteMaterial, refetch: fetchMaterials }
+  return {
+    materials,
+    loading,
+    error,
+    hasMore: nextCursor !== null,
+    loadingMore,
+    loadMore,
+    uploadMaterial,
+    deleteMaterial,
+    refetch: fetchMaterials,
+  }
 }
