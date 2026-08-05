@@ -4,6 +4,18 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Tests
+
+- [core] test: PICT models for Core auth precedence + role-forked listing (census § S6, #1185) — `password-set-reuse-gate` (the #339 strength/reuse before-hook across sign-up/change-password/reset-password/set-password); `auth-precedence` (`enforceAdminIfApiKey` + its `/api/me` composition built as one drift-override model with a site dimension, converting the hand-written matrix in `guards.server.test.ts:125-200`); and `role-forked-listing` (Core `buildCourseListFilter` vs ai-tutor `GET /courses`, enrollment-role-keyed vs platform-role-keyed). Two real findings filed rather than fixed here: `/set-password` never reaches the strength/reuse gate since a better-auth `SERVER_ONLY` endpoint has no `ctx.path` ([#1385](https://github.com/EduAI-Lab/EduAI/issues/1385)), and a platform-STUDENT holding instructor-of-record status is visible in Core's course listing but not ai-tutor's ([#1386](https://github.com/EduAI-Lab/EduAI/issues/1386)). (@evanbones, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] test: PICT models for chat-read access, createQuestion, and admin-write confirmation (census § S7, #1186) — `resolveChatReadAccess` (the §5c single-chat oversight gate); `createQuestion` (its 6-way error taxonomy: 5 errors + success, with missing/deleted secondary topics folded into one outcome); and `admin-write-confirmation`, modeled against the real caller-facing `runConfirmedAdminWriteTool` entry point rather than just the underlying preview map, covering one-time consumption, actor/tool/payload key isolation, and the same-turn anti-replay guard. (@evanbones, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Fixed
+
+- [core] fix: `apps/core/app/tests/setup.integration.ts` set `BETTER_AUTH_DISABLE_RATE_LIMIT` after its own top-level imports (`./helpers/disciplines` → `~/lib/disciplines/server` → `~/lib/auth/server`) had already constructed the `auth` singleton with the flag unset, so Better Auth's per-IP rate limiter was never actually disabled — any integration test issuing more than 3 sign-in/sign-up/change-password/change-email calls within a 10s window would spuriously 429. Moved the flag into a new import-free `apps/core/app/tests/setup.env.ts` listed first in `vitest.integration.config.ts`'s `setupFiles`. (@evanbones, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core] fix: `docker/tests/Dockerfile.eduai` and `docker/tests/Dockerfile.ai-tutor-server`'s `test` stages had no `COPY tests`, so `tests/models/*.cases.json`/`*.oracle.ts` (every PICT model's generated table and pure verdict function) were unreachable when running `eduai-unit-tests`/`eduai-integration-tests`/`ai-tutor-server-integration-tests` via `docker-compose.test.yml` — unrelated to CI, which checks out the full repo and runs tests directly, but breaking the local `npm run test:integration` convenience path for every PICT test, not just this sprint's. `Dockerfile.eduai` was separately missing `COPY apps/core/vitest.ui-aliases.ts`, breaking vitest startup entirely under that path. (@evanbones, 2026-08-04) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Fixed
