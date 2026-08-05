@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { redactErrorForConsole } from "~/lib/redact.server";
 
 declare global {
   var __prisma: PrismaClient | undefined;
@@ -28,7 +29,12 @@ const prisma = getPrismaClient();
 // imports from opening hundreds of redundant database connections.
 if (process.env.VITEST_SKIP_PRISMA_EAGER_CONNECT !== "1") {
   void prisma.$connect().catch((err) => {
-    console.error("[prisma] initial $connect failed (will retry lazily)", err);
+    // A connect failure is the single most likely place for DATABASE_URL credentials to reach
+    // stdout — the driver embeds `//user:pass@host` in its message and stack.
+    console.error(
+      "[prisma] initial $connect failed (will retry lazily)",
+      redactErrorForConsole(err),
+    );
   });
 }
 

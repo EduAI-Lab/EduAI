@@ -136,6 +136,52 @@ describe("finishCronRun", () => {
     await finishCronRun("run-abc", "ERROR", "failed", 1);
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
   });
+
+  // Cron scripts are spawned with the full process.env, so their stdout/stderr tail — which
+  // becomes this message — can carry DATABASE_URL credentials or a token-bearing callback URL.
+  it("redacts secret values out of the persisted message", async () => {
+    await finishCronRun(
+      "run-abc",
+      "ERROR",
+      "connect failed for postgresql://admin:hunter2@db:5432/eduai and https://lms/api?access_token=abc123",
+      1,
+    );
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("hunter2");
+    expect(persistedMessage).not.toContain("abc123");
+    expect(persistedMessage).toContain("[REDACTED]");
+    // Non-secret diagnostic text must survive so admins can still triage the failure.
+    expect(persistedMessage).toContain("connect failed for");
+  });
+
+  // Review on #1291: a `set -x` trace or crash dump prints env credentials as bare assignments
+  // rather than as a header or URL, so the value-level patterns alone missed them.
+  it("redacts structured key/value secrets in the persisted message", async () => {
+    await finishCronRun(
+      "run-abc",
+      "ERROR",
+      'env dump: API_KEY=sk-live-abcdef PGPASSWORD=hunter2 payload={"clientSecret":"s3kr3t"} rows=42',
+      1,
+    );
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("sk-live-abcdef");
+    expect(persistedMessage).not.toContain("hunter2");
+    expect(persistedMessage).not.toContain("s3kr3t");
+    expect(persistedMessage).toContain("API_KEY=[REDACTED]");
+    expect(persistedMessage).toContain("PGPASSWORD=[REDACTED]");
+    expect(persistedMessage).toContain('"clientSecret":"[REDACTED]"');
+    // Non-secret operational counters stay readable for triage.
+    expect(persistedMessage).toContain("rows=42");
+  });
+
+  it("leaves a message with no secrets untouched", async () => {
+    await finishCronRun("run-abc", "SUCCESS", "Processed 42 rows in 3.1s", 0);
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).toBe("Processed 42 rows in 3.1s");
+  });
 });
 
 describe("getRecentCronJobRuns", () => {
@@ -243,5 +289,24 @@ describe("triggerCronJobAsync", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockExecuteRaw).toHaveBeenCalledOnce();
+  });
+
+  // Review on #1291: output was sliced to its last 1000 chars *before* being redacted. The
+  // redactor recognises a secret only by the credential-named key in front of it, so a long
+  // value whose key fell outside the window arrived as an unattributed tail and survived.
+  it("redacts before truncating so a long secret cannot outlive its key", async () => {
+    const child = makeChild();
+    mockSpawn.mockReturnValue(child);
+    triggerCronJobAsync("backup-nightly", "backup-nightly.sh", "run-1");
+    // The `API_KEY=` prefix sits well outside the trailing 1000-char window.
+    child.stdout.emit("data", Buffer.from(`API_KEY=${"s3kr3t".repeat(400)}\ndone`));
+    child.emit("close", 0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const [, , persistedMessage] = mockExecuteRaw.mock.calls[0] as unknown[];
+    expect(persistedMessage).not.toContain("s3kr3t");
+    expect(persistedMessage).toContain("[REDACTED]");
+    expect(persistedMessage).toContain("done");
   });
 });
