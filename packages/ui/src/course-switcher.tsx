@@ -158,7 +158,7 @@ export function CourseSwitcher({
                   <IconCheck
                     className={cn(
                       "mt-0.5 size-4 shrink-0",
-                      active ? "text-primary opacity-100" : "opacity-0",
+                      active ? "text-primary-text opacity-100" : "opacity-0",
                     )}
                   />
                   <span className="flex min-w-0 flex-col">
