@@ -21,6 +21,10 @@ import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-displ
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
+// KaTeX + streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
+// Every Core surface that renders markdown reaches ChatMessage, so importing here
+// keeps the stylesheet (and the KaTeX fonts) off routes that render no markdown.
+import "~/styles/chat-markdown.css";
 
 export interface ChatMessageProps {
   message: Message;
