@@ -23,11 +23,13 @@ describe("auto-llm classifier vLLM client", () => {
 
     await classifyPromptForTier("hello", { courseId: null, imagesPresent: false });
 
-    const opts = createOpenAIMock.mock.calls[0]?.[0] as { fetch?: typeof fetch };
-    expect(opts.fetch).toBeTypeOf("function");
+    const firstCall = createOpenAIMock.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall).toBeDefined();
+    const opts = firstCall?.[0] as { fetch?: typeof fetch } | undefined;
+    expect(opts?.fetch).toBeTypeOf("function");
     const realFetch = vi.fn().mockResolvedValue(new Response("{}"));
     vi.stubGlobal("fetch", realFetch);
-    await opts.fetch!("http://localhost:8001/v1/chat/completions", {
+    await opts!.fetch!("http://localhost:8001/v1/chat/completions", {
       method: "POST",
       body: JSON.stringify({ model: "qwen3.5-27b-instruct", messages: [] }),
     });
