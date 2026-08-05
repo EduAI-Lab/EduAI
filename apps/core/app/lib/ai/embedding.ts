@@ -294,6 +294,26 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
   }
 }
 
+/**
+ * Classifies a `findRelevantContent` / `generateEmbedding` failure for callers
+ * that must distinguish "retrieval genuinely failed" from "zero materials
+ * matched" (#225 RAG-01/RAG-02). `findRelevantContent` never throws for an
+ * empty result set — an exception here always means the query embedding
+ * couldn't be generated/compared (stale dimension vs. the stored corpus, or
+ * the embedding provider is unreachable), so callers must not silently treat
+ * it as "no relevant content" and answer ungrounded (or claim materials don't
+ * cover the question) with no signal that RAG never ran.
+ */
+export function classifyRagRetrievalError(
+  error: unknown,
+): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_FAILED" {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/dimension mismatch/i.test(message) || /different vector dimensions/i.test(message)) {
+    return "RAG_DIMENSION_MISMATCH";
+  }
+  return "RAG_RETRIEVAL_FAILED";
+}
+
 const courseSettingsCache = new Map<
   string,
   { settings: EffectiveEmbeddingSettings; expiresAt: number }
@@ -645,15 +665,20 @@ export async function findRelevantContent(
 
   const queryEmbedding = formatPgVectorLiteral(await generateEmbedding(userQuery, courseId));
 
-  // Canvas publish-aware gate (#777): always hide unpublished / selectively
-  // excluded Canvas materials from RAG for every caller.
-  const canvasPublishFilter = Prisma.sql`
-    AND cm."unpublishedAt" IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM canvas_material_exclusions cme
-      WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
-    )
-  `;
+  // Canvas publish-aware gate (#777): hide unpublished / selectively excluded
+  // Canvas materials from RAG for student callers, same as the REST route's
+  // studentVisibilityWhere (courses.materials.$.ts) — staff bypass this, same
+  // as every other student-visibility clause, so a material an instructor can
+  // read directly is never invisible to that instructor in RAG.
+  const canvasPublishFilter = restrictToStudentVisible
+    ? Prisma.sql`
+        AND cm."unpublishedAt" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM canvas_material_exclusions cme
+          WHERE cme."courseId" = cm."courseId" AND cme."canvasFileId" = cm."externalId"
+        )
+      `
+    : Prisma.empty;
 
   // §839 student-visibility gate, injected into both retrieval paths. Empty for
   // staff callers so their retrieval is unchanged.

@@ -371,6 +371,16 @@ describe("GET /api/courses/:courseId/materials/:materialId loader (preview)", ()
     );
   });
 
+  it("returns 403 (not 404) when a student-hidden material actually exists (#1180)", async () => {
+    mockSession("STUDENT");
+    mockAccess({ level: "student", rank: 0 });
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null) // studentGate-filtered read: excluded
+      .mockResolvedValueOnce({ id: "mat-1" } as never); // existence check: it's really there
+    const res = await loader(makePreviewArgs("mat-1"));
+    expect(res.status).toBe(403);
+  });
+
   it("does not filter unpublished materials for an instructor (#777 publish-aware sync)", async () => {
     mockSession("INSTRUCTOR");
     mockAccess({ level: "instructor", rank: 2 });
@@ -603,6 +613,47 @@ describe("POST /api/courses/:courseId/materials action", () => {
 
     const res = await action(stubUploadArgs());
     expect(res.status).toBe(409);
+  });
+
+  it("returns 409 (not 500) when a concurrent upload wins the checksum race (#225 RAG-04)", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "race-checksum", title: "file.pdf", mimeType: "application/pdf",
+      fileSize: 100, content: "text",
+    } as never);
+    // Our findFirst dedupe check sees no existing row (the race window)...
+    vi.mocked(prisma.courseMaterial.findFirst)
+      .mockResolvedValueOnce(null)
+      // ...but a concurrent request's create() already committed by the time
+      // we look the winner up to build the 409 response.
+      .mockResolvedValueOnce({ id: "winner-mat" } as never);
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed on the fields: (`courseId`,`checksum`)"), {
+        code: "P2002",
+      }),
+    );
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.materialId).toBe("winner-mat");
+    expect(processMaterialEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("re-throws a create() failure unrelated to the checksum unique constraint", async () => {
+    mockSession("INSTRUCTOR");
+    vi.mocked(processUploadedFile).mockResolvedValue({
+      checksum: "other-failure", title: "file.pdf", mimeType: "application/pdf",
+      fileSize: 100, content: "text",
+    } as never);
+    vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.courseMaterial.create).mockRejectedValue(new Error("connection refused"));
+
+    const res = await action(stubUploadArgs());
+    expect(res.status).toBe(500);
+    // Only the checksum-conflict path re-queries for a winner; any other
+    // create() failure should not trigger the extra findFirst lookup.
+    expect(prisma.courseMaterial.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it("restores a soft-deleted material on re-upload instead of 409", async () => {

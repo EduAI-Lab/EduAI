@@ -49,9 +49,25 @@ import {
   ESTIMATED_CHARS_PER_TOKEN,
 } from "~/lib/ai/providers.server";
 import { resolveToolMaxOutputTokens } from "~/lib/ai/resolve-tool-max-tokens";
-import { composeSystemPrompt, resolveEffectiveAdhdAssist } from "~/lib/ai/adhd-assist";
-import { buildCourseResponseStylePrompt, appendCourseStyleToSystemPrompt } from "~/lib/ai/response-style-tags";
+import {
+  composeSystemPrompt,
+  resolveEffectiveAdhdAssist,
+} from "~/lib/ai/adhd-assist";
+import {
+  buildCourseResponseStylePrompt,
+  appendCourseStyleToSystemPrompt,
+} from "~/lib/ai/response-style-tags";
 import { needsCourseRag } from "~/lib/ai/chat-intent";
+import {
+  buildCourseScopePolicyPrompt,
+  buildCourseScopeRedirectMessage,
+  courseScopeGuardrailEnabled,
+  resolveCourseScopeVerdict,
+  MAX_COURSE_SCOPE_HISTORY_TURNS,
+  type CourseScopeConversationTurn,
+  type CourseScopeContext,
+  type CourseScopeVerdict,
+} from "~/lib/ai/course-scope-guardrail";
 import {
   buildChatToolRegistry,
   buildToolCallingSystemPrompt,
@@ -73,22 +89,34 @@ import {
   isAdhdOversightEnabled,
   type OversightMethod,
 } from "~/lib/ai/adhd-oversight";
-import { resolveAdhdResponseWordCap, isProfileStructuralPass, computeAdhdResponseMetrics } from "~/lib/ai/adhd-metrics";
+import {
+  resolveAdhdResponseWordCap,
+  isProfileStructuralPass,
+  computeAdhdResponseMetrics,
+} from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
 } from "~/lib/courses/course-code-candidates";
+import { getCourseTopicNamesCached } from "~/lib/courses/server";
 import {
   resolveCourseAccessWithCourse,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
-import { enforceAdminIfApiKey, requireServiceKey } from "~/lib/auth/guards.server";
+import {
+  enforceAdminIfApiKey,
+  requireServiceKey,
+} from "~/lib/auth/guards.server";
+import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
-import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import {
+  getActorContext,
+  getRequestContext,
+} from "~/lib/request-context.server";
 import type { ActionFunctionArgs } from "react-router";
 import {
   buildAdminSystemPrompt,
@@ -97,10 +125,16 @@ import {
   parseChatMode,
 } from "~/lib/agent-tools";
 import prisma from "~/lib/prisma.server";
-import { enqueueQuestionGeneration, isEnqueueRequested } from "~/lib/queue/chat-producer.server";
+import {
+  enqueueQuestionGeneration,
+  isEnqueueRequested,
+} from "~/lib/queue/chat-producer.server";
 import { QueueFullError } from "~/lib/queue/queue-stats.server";
 import { chatApiDebug, chatApiReject, chatApiTrace } from "~/lib/chat-api-log";
-import { clientApiKeysBodySchema, toUserProviderSettings } from "~/lib/chat-api-keys.schema";
+import {
+  clientApiKeysBodySchema,
+  toUserProviderSettings,
+} from "~/lib/chat-api-keys.schema";
 import { getUserProviderSettings } from "~/lib/user-provider-settings.server";
 import { getPolicy } from "~/lib/policy.server";
 import {
@@ -123,7 +157,10 @@ import {
   type HybridRagHit,
 } from "~/lib/chat-rag";
 import { getRoutingModelSettings } from "~/lib/routing-model-settings.server";
-import { withResolvedModelMetadata } from "~/lib/chat/chat-message-metadata";
+import {
+  withResolvedModelMetadata,
+  withCourseScopeRedirectMetadata,
+} from "~/lib/chat/chat-message-metadata";
 
 function autoRoutingHeaders(
   resolvedModelId: string,
@@ -157,9 +194,11 @@ function usageProviderOptions(providerId: string) {
   return undefined;
 }
 
-function resolveAutoRouting(
-  model: string | undefined,
-): { routeWithAuto: boolean; modeOverride?: RouterMode; requestedAuto: string | null } {
+function resolveAutoRouting(model: string | undefined): {
+  routeWithAuto: boolean;
+  modeOverride?: RouterMode;
+  requestedAuto: string | null;
+} {
   if (model === undefined || model === "auto") {
     return { routeWithAuto: true, requestedAuto: model ?? "auto" };
   }
@@ -245,7 +284,10 @@ function reviveStoredMessage(record: StoredMessageRecord): GenericMessage {
  * This lets clients resend the latest user turn without worrying about the
  * server duplicating history.
  */
-function mergeMessages(stored: GenericMessage[], incoming: GenericMessage[]): GenericMessage[] {
+function mergeMessages(
+  stored: GenericMessage[],
+  incoming: GenericMessage[],
+): GenericMessage[] {
   if (incoming.length === 0) {
     return stored;
   }
@@ -327,6 +369,15 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
+ *
+ * SECURITY (#225 AUTH-01 / AUTH-03): the `(provider, externalUserId)` mapping
+ * is the ONLY identity binding here. We never look up an *existing* EduAI
+ * account by `proxyUser.email` and inherit its role — that let any delegating
+ * caller impersonate an arbitrary instructor/admin merely by naming their
+ * email. A brand-new mapping only ever creates a brand-new, least-privilege
+ * STUDENT account, and only when the supplied email clears the same bar as
+ * self-registration (a real UBC address, with `auth.allowPublicRegistration`
+ * on); otherwise we fail closed instead of minting an unvetted account.
  */
 async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
@@ -336,10 +387,8 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     throw new Error("proxyUser.id is required");
   }
 
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
+  const rawEmail = proxyUser.email?.trim().toLowerCase();
+  const suppliedEmail = rawEmail && rawEmail.includes("@") ? rawEmail : null;
 
   const existingMapping = await prisma.externalUser.findUnique({
     where: {
@@ -354,26 +403,49 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   });
 
   if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
+    if (!existingMapping.email && suppliedEmail) {
       await prisma.externalUser.update({
         where: { id: existingMapping.id },
-        data: { email },
+        data: { email: suppliedEmail },
       });
     }
     return existingMapping.user;
   }
 
-  let user = await prisma.user.findUnique({ where: { email } });
+  if (!suppliedEmail || !isUbcEmail(suppliedEmail)) {
+    throw new Error(
+      "proxyUser.email must be a verifiable UBC email address to create a new proxy identity",
+    );
+  }
+  if (!(await getPolicy("auth.allowPublicRegistration"))) {
+    throw new Error(
+      "Cannot create a new proxy identity while public registration is disabled",
+    );
+  }
 
-  if (!user) {
+  let user: User;
+  try {
     user = await prisma.user.create({
       data: {
-        email,
-        name: email,
+        email: suppliedEmail,
+        name: suppliedEmail,
         role: UserRole.STUDENT,
         isActive: true,
       },
     });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      // The email already belongs to an existing EduAI account. Refuse to
+      // bind an external identity onto it — that is exactly the AUTH-01
+      // escalation path this fix closes.
+      throw new Error("An EduAI account with this email already exists");
+    }
+    throw error;
   }
 
   try {
@@ -381,7 +453,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       data: {
         provider,
         externalUserId,
-        email,
+        email: suppliedEmail,
         userId: user.id,
       },
     });
@@ -462,16 +534,21 @@ function clientAbortResponse(): Response {
 export async function action({ request }: ActionFunctionArgs) {
   const requestStartMs = Date.now();
   try {
-    const { response: apiKeyGuard, session: apiKeySession } = await enforceAdminIfApiKey(request);
+    const { response: apiKeyGuard, session: apiKeySession } =
+      await enforceAdminIfApiKey(request);
     if (apiKeyGuard) return apiKeyGuard;
 
-    let session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
+    let session =
+      apiKeySession ??
+      (await auth.api.getSession({ headers: request.headers }));
     let isServiceKeyCaller = false;
     if (!session?.user) {
       const serviceKeyError = await requireServiceKey(request);
       if (serviceKeyError) return serviceKeyError;
       isServiceKeyCaller = true;
-      session = { user: { id: "service", name: "Service", role: "ADMIN" } } as unknown as typeof session;
+      session = {
+        user: { id: "service", name: "Service", role: "ADMIN" },
+      } as unknown as typeof session;
     }
 
     if (!session?.user) {
@@ -482,7 +559,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const body = await request.json();
-    const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
+    const rawMessages: unknown[] = Array.isArray(body.messages)
+      ? body.messages
+      : [];
     let model = typeof body.model === "string" ? body.model.trim() : undefined;
     if (model === "") {
       model = undefined;
@@ -547,9 +626,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const autoRouting = resolveAutoRouting(model);
     const routeWithAuto = autoRouting.routeWithAuto;
-    const courseId = typeof body.courseId === "string" ? body.courseId : undefined;
-    const courseCode = typeof body.courseCode === "string" ? body.courseCode : undefined;
-    const streaming = body.streaming === undefined ? true : Boolean(body.streaming);
+    const courseId =
+      typeof body.courseId === "string" ? body.courseId : undefined;
+    const courseCode =
+      typeof body.courseCode === "string" ? body.courseCode : undefined;
+    const streaming =
+      body.streaming === undefined ? true : Boolean(body.streaming);
     const forceHybridRag = body.forceHybridRag === true;
     const chatId = typeof body.chatId === "string" ? body.chatId : undefined;
     const chatMode = parseChatMode(body.chatMode);
@@ -570,13 +652,21 @@ export async function action({ request }: ActionFunctionArgs) {
       userRole: session.user.role,
     });
     const proxyUserPayload =
-      body.proxyUser && typeof body.proxyUser === "object" ? (body.proxyUser as ProxyUserPayload) : null;
+      body.proxyUser && typeof body.proxyUser === "object"
+        ? (body.proxyUser as ProxyUserPayload)
+        : null;
     const workloadFeature = parseWorkloadFeature(body.routingContext);
 
-    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(body, "adhdAssist");
+    const hasAdhdAssistField = Object.prototype.hasOwnProperty.call(
+      body,
+      "adhdAssist",
+    );
     const adhdAssist = body.adhdAssist === true;
 
-    const hasSystemPromptField = Object.prototype.hasOwnProperty.call(body, "systemPrompt");
+    const hasSystemPromptField = Object.prototype.hasOwnProperty.call(
+      body,
+      "systemPrompt",
+    );
     let trimmedSystemPrompt: string | null = null;
     if (typeof body.systemPrompt === "string") {
       trimmedSystemPrompt = sanitizeSystemPrompt(body.systemPrompt);
@@ -587,10 +677,13 @@ export async function action({ request }: ActionFunctionArgs) {
     let actingUser = session.user;
     if (proxyUserPayload) {
       if (!apiKeySession) {
-        return new Response(JSON.stringify({ error: "proxyUser requires admin API key access" }), {
-          status: 403,
-          headers: { "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "proxyUser requires admin API key access" }),
+          {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       try {
@@ -632,8 +725,13 @@ export async function action({ request }: ActionFunctionArgs) {
     // unmetered here — they're already gated by the EDUAI_API_KEY secret.
     if (actingUser.id !== "service") {
       const chatRateLimit = parseEnvInt(process.env.CHAT_RATE_LIMIT, 20);
-      const chatRateWindowMs = parseEnvInt(process.env.CHAT_RATE_WINDOW_MS, 60_000);
-      if (isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)) {
+      const chatRateWindowMs = parseEnvInt(
+        process.env.CHAT_RATE_WINDOW_MS,
+        60_000,
+      );
+      if (
+        isRateLimited(`chat:${actingUser.id}`, chatRateLimit, chatRateWindowMs)
+      ) {
         const requestContext = getRequestContext(request);
         fireAndForget(
           logSecurityEvent({
@@ -721,14 +819,19 @@ export async function action({ request }: ActionFunctionArgs) {
     // names a *different* course, reject — silently switching would split the
     // chat's RAG context and message history across courses (#685 review).
     const requestedCourseId = resolvedCourseId || courseId || null;
-    if (chat?.courseId && requestedCourseId && requestedCourseId !== chat.courseId) {
+    if (
+      chat?.courseId &&
+      requestedCourseId &&
+      requestedCourseId !== chat.courseId
+    ) {
       return new Response(JSON.stringify({ error: "COURSE_MISMATCH" }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const effectiveCourseId = resolvedCourseId || courseId || chat?.courseId || null;
+    const effectiveCourseId =
+      resolvedCourseId || courseId || chat?.courseId || null;
 
     // #657: the global "general assistant" chat was removed — every interactive
     // chat is now course-scoped. Server-to-server callers (admin API key /
@@ -761,8 +864,15 @@ export async function action({ request }: ActionFunctionArgs) {
     // Hoisted so the web-tools gate (below) can read the caller's course access
     // level — null for general (non-course) chats.
     let courseAccess: AccessLevel | null = null;
-    let effectiveCourse: { responseStyleTags: string[]; aiInstructions: string } | null =
-      null;
+    let effectiveCourse: {
+      name: string;
+      code: string;
+      description: string | null;
+      responseStyleTags: string[];
+      aiInstructions: string | null;
+      courseTopics: string[];
+      courseScopeGuardrailEnabled: boolean;
+    } | null = null;
     if (effectiveCourseId) {
       const { course, access } = await resolveCourseAccessWithCourse(
         actingUser,
@@ -781,9 +891,26 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
       courseAccess = access;
+      // Layer A's policy prompt is injected for every course turn (including
+      // admin preview), so topics are loaded unconditionally here — gating
+      // this fetch the same way the classifier is gated below previously left
+      // admin preview rendering "Topics: none listed" even though the policy
+      // block was injected. See #1152 review (yta3216).
+      let courseTopics: string[] = [];
+      try {
+        courseTopics = await getCourseTopicNamesCached(effectiveCourseId);
+      } catch (error) {
+        console.warn("[course-scope] failed to load course topics", error);
+      }
       effectiveCourse = {
+        name: course.name,
+        code: course.code,
+        description: course.description ?? null,
         responseStyleTags: course.responseStyleTags ?? [],
         aiInstructions: course.aiInstructions ?? null,
+        courseTopics,
+        // Defaulted off (was on) for easier testing
+        courseScopeGuardrailEnabled: course.courseScopeGuardrailEnabled ?? false,
       };
     }
 
@@ -828,7 +955,9 @@ export async function action({ request }: ActionFunctionArgs) {
         return chatApiReject(
           isValidationError ? 400 : 502,
           {
-            error: isValidationError ? "Invalid AI job payload" : "Failed to enqueue AI job",
+            error: isValidationError
+              ? "Invalid AI job payload"
+              : "Failed to enqueue AI job",
             details: error instanceof Error ? error.message : "Unknown error",
           },
           { chatMode, userId: actingUser.id },
@@ -871,21 +1000,33 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Backfill course context onto an existing chat that was created before a
     // course was selected (e.g. user picked the course mid-conversation).
-    if (!ephemeral && chat && effectiveCourseId && chat.courseId !== effectiveCourseId && !chat.courseId) {
+    if (
+      !ephemeral &&
+      chat &&
+      effectiveCourseId &&
+      chat.courseId !== effectiveCourseId &&
+      !chat.courseId
+    ) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { courseId: effectiveCourseId },
       });
     }
 
-    if (!ephemeral && hasAdhdAssistField && chat && chat.adhdAssist !== adhdAssist) {
+    if (
+      !ephemeral &&
+      hasAdhdAssistField &&
+      chat &&
+      chat.adhdAssist !== adhdAssist
+    ) {
       chat = await prisma.chat.update({
         where: { id: chat.id },
         data: { adhdAssist },
       });
     }
 
-    const shouldCreateChat = normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
+    const shouldCreateChat =
+      normalizedIncomingMessages.length > 0 || Boolean(trimmedSystemPrompt);
 
     if (!chat && !shouldCreateChat) {
       return new Response(
@@ -930,10 +1071,13 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     if (!chat) {
-      return new Response(JSON.stringify({ error: "Unable to resolve chat context" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Unable to resolve chat context" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Fetch only the slice of history we plan to send back to the LLM. Stateless
@@ -962,7 +1106,10 @@ export async function action({ request }: ActionFunctionArgs) {
       incomingCount: normalizedIncomingMessages.length,
     });
 
-    const mergedMessages = mergeMessages(storedMessages, normalizedIncomingMessages);
+    const mergedMessages = mergeMessages(
+      storedMessages,
+      normalizedIncomingMessages,
+    );
     const trimmedMessages =
       mergedMessages.length > maxContextMessages
         ? mergedMessages.slice(-maxContextMessages)
@@ -1004,18 +1151,111 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const lastUserMessageForRouting = [...trimmedMessages].reverse().find((m) => m.role === "user");
-    const lastUserMessageTextForRouting = extractMessageText(lastUserMessageForRouting);
+    const lastUserMessageForRouting = [...trimmedMessages]
+      .reverse()
+      .find((m) => m.role === "user");
+    const lastUserMessageTextForRouting = extractMessageText(
+      lastUserMessageForRouting,
+    );
     const imagesPresent = messageHasImageParts(lastUserMessageForRouting);
+    // Scan from the end for the last user-role index directly, instead of
+    // relying on the reverse().find() above returning the same object
+    // reference as trimmedMessages — a lastIndexOf reference lookup would
+    // silently return -1 if that upstream logic ever switched to
+    // .map()/clone. (Array.prototype.findLastIndex needs ES2023 lib, not
+    // available under this project's ES2022 tsconfig target.)
+    let lastUserMessageIndex = -1;
+    for (let i = trimmedMessages.length - 1; i >= 0; i--) {
+      if (trimmedMessages[i].role === "user") {
+        lastUserMessageIndex = i;
+        break;
+      }
+    }
+    // Bound to the last MAX_COURSE_SCOPE_HISTORY_TURNS messages *before*
+    // mapping/extracting text: course-scope-guardrail.ts only keeps the final
+    // few turns anyway, so materializing/extracting text for the entire prior
+    // chat history on every turn (unbounded for a long conversation) was
+    // wasted work on the critical path.
+    const recentCourseScopeConversation: CourseScopeConversationTurn[] =
+      lastUserMessageIndex > 0
+        ? trimmedMessages
+            .slice(0, lastUserMessageIndex)
+            .slice(-MAX_COURSE_SCOPE_HISTORY_TURNS)
+            .filter(
+              (message) =>
+                message.role === "user" || message.role === "assistant",
+            )
+            .map((message) => ({
+              role: message.role as CourseScopeConversationTurn["role"],
+              content: extractMessageText(message),
+            }))
+            .filter((turn) => turn.content.trim().length > 0)
+        : [];
     const hasCourse = Boolean(effectiveCourseId);
-    const courseRagNeeded = needsCourseRag(lastUserMessageTextForRouting, hasCourse);
+    const courseRagNeeded = needsCourseRag(
+      lastUserMessageTextForRouting,
+      hasCourse,
+    );
+    const courseScopeContext: CourseScopeContext | null = effectiveCourse
+      ? {
+          courseName: effectiveCourse.name,
+          courseCode: effectiveCourse.code,
+          courseDescription: effectiveCourse.description,
+          courseTopics: effectiveCourse.courseTopics,
+          aiInstructions: effectiveCourse.aiInstructions,
+        }
+      : null;
+
+    // Course Chat does not expose student image uploads. Reject crafted
+    // image-bearing browser turns explicitly instead of retaining a hidden
+    // multimodal path that the supported product cannot produce.
+    // Admin/service-key integrations retain the existing multimodal routing.
+    if (
+      imagesPresent &&
+      courseScopeContext &&
+      !isServiceKeyCaller &&
+      chatMode !== "admin"
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "IMAGE_MESSAGE_UNSUPPORTED",
+          message: "Course Chat does not support image messages.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Kick off the course-scope classifier alongside the RAG prefetch below so
+    // its round-trip to the tier-1 vLLM host overlaps instead of adding serial
+    // latency. Web-app chat only (#skip for admin preview and service-key
+    // callers — AI Tutor/Question Maker — per design; QM's generation-style
+    // prompts would false-positive against an "off-topic" gate).
+    const courseScopeCheckPromise: Promise<CourseScopeVerdict> | null =
+      courseScopeGuardrailEnabled() &&
+      effectiveCourse?.courseScopeGuardrailEnabled &&
+      courseScopeContext &&
+      !isServiceKeyCaller &&
+      chatMode !== "admin"
+        ? resolveCourseScopeVerdict({
+            message: lastUserMessageTextForRouting,
+            context: courseScopeContext,
+            recentConversation: recentCourseScopeConversation,
+          })
+        : null;
 
     let ragTopSimilarity: number | null = null;
     let ragChunkCount: number | null = null;
     let ragContextTokenEstimate: number | null = null;
     let routerRagPrefetch: HybridRagHit[] | null = null;
 
-    if (routeWithAuto && effectiveCourseId && lastUserMessageTextForRouting.trim().length > 0) {
+    if (
+      routeWithAuto &&
+      effectiveCourseId &&
+      lastUserMessageTextForRouting.trim().length > 0
+    ) {
       try {
         routerRagPrefetch = await findRelevantContent(
           lastUserMessageTextForRouting,
@@ -1081,7 +1321,10 @@ export async function action({ request }: ActionFunctionArgs) {
       resolvedRouterVersion =
         typeof decision.features.routerVersion === "string"
           ? decision.features.routerVersion
-          : activeRouterVersion(autoRouting.modeOverride ?? parseRouterMode(process.env.ROUTER_MODE));
+          : activeRouterVersion(
+              autoRouting.modeOverride ??
+                parseRouterMode(process.env.ROUTER_MODE),
+            );
       chatApiDebug("Auto routing resolved model", {
         resolvedModelId: decision.modelId,
         routingTier: decision.tier,
@@ -1096,7 +1339,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return new Response(
         JSON.stringify({
           error:
-            'Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.',
+            "Invalid model id. Use provider:modelId (e.g. vllm:qwen2.5-7b-instruct). Check Admin → AI Models.",
         }),
         {
           status: 400,
@@ -1146,7 +1389,9 @@ export async function action({ request }: ActionFunctionArgs) {
     // settings for (actingUser.id is the synthetic "service" id), so they
     // must still pass apiKeys in the body, same as before the DB migration.
     // Regular users' keys are always loaded from the DB.
-    let providerSettingsBase: Awaited<ReturnType<typeof getUserProviderSettings>>;
+    let providerSettingsBase: Awaited<
+      ReturnType<typeof getUserProviderSettings>
+    >;
     let validatedApiKeys: ReturnType<typeof mergeLocalInferenceFromEnv>;
     if (isServiceKeyCaller) {
       if (typeof body.apiKeys !== "object" || body.apiKeys === null) {
@@ -1204,7 +1449,9 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const existingMessageIds = new Set(storedMessages.map((message) => message.id).filter(isNonEmptyString));
+    const existingMessageIds = new Set(
+      storedMessages.map((message) => message.id).filter(isNonEmptyString),
+    );
     const appendMessages = async (messages: GenericMessage[]) => {
       // Stateless callers never persist messages (no chat row / no real user).
       if (ephemeral || !chat?.id) return;
@@ -1267,10 +1514,82 @@ export async function action({ request }: ActionFunctionArgs) {
     // their assistant copies carry client-generated ids that never match the
     // server id — persisting those here is what duplicated history on restore.
     await appendMessages(
-      normalizedIncomingMessages.filter((message) => message.role !== "assistant"),
+      normalizedIncomingMessages.filter(
+        (message) => message.role !== "assistant",
+      ),
     );
 
-    const lastUserMessage = [...trimmedMessages].reverse().find((message) => message.role === "user");
+    // Course-scope guardrail: resolve the classifier promise kicked off
+    // earlier (alongside the RAG prefetch) and short-circuit before touching
+    // the fleet admission slot, energy sidecar, or streamText() at all.
+    const courseScopeVerdict = courseScopeCheckPromise
+      ? await courseScopeCheckPromise
+      : null;
+    if (courseScopeVerdict?.blocked) {
+      const redirectText = buildCourseScopeRedirectMessage(
+        effectiveCourse?.name ?? null,
+      );
+      await appendMessages([
+        withCourseScopeRedirectMetadata({
+          id: randomUUID(),
+          role: "assistant",
+          content: redirectText,
+        }),
+      ]);
+      chatApiDebug("Course scope guardrail redirected turn", {
+        chatId: chat.id,
+        courseId: effectiveCourseId,
+        confidence: courseScopeVerdict.classification?.confidence ?? null,
+      });
+      // Emit the same routing/admission headers as every other
+      // createDataStreamResponse return in this route so a redirected turn's
+      // client model badge/routing telemetry isn't blank — that read as an
+      // indistinguishable-from-failure routing gap otherwise.
+      const redirectHeaders: Record<string, string> = {
+        ...autoRoutingHeaders(
+          resolvedModelId,
+          routingTier,
+          wasAuto,
+          resolvedRouterVersion,
+        ),
+      };
+      if (chat.id) {
+        redirectHeaders["X-Chat-Id"] = chat.id;
+      }
+      if (streaming) {
+        return createDataStreamResponse({
+          headers: redirectHeaders,
+          execute: (dataStream) => {
+            dataStream.write(formatDataStreamPart("text", redirectText));
+            dataStream.write(
+              formatDataStreamPart("finish_message", { finishReason: "stop" }),
+            );
+          },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          content: redirectText,
+          model,
+          finishReason: "stop",
+          courseCode,
+          chatId: chat?.id,
+          // Parity with the persisted message (withCourseScopeRedirectMetadata)
+          // and the history-restore path (courseScopeRedirectFromMessage): the
+          // non-streaming response previously carried no redirect marker even
+          // though no model actually ran to produce `content`.
+          courseScopeRedirect: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...redirectHeaders },
+        },
+      );
+    }
+
+    const lastUserMessage = [...trimmedMessages]
+      .reverse()
+      .find((message) => message.role === "user");
     const userQuestion = extractMessageText(lastUserMessage);
 
     let aiModel;
@@ -1281,8 +1600,12 @@ export async function action({ request }: ActionFunctionArgs) {
         typeof err === "object" &&
         err !== null &&
         "availableProviders" in err &&
-        Array.isArray((err as { availableProviders?: string[] }).availableProviders)
-          ? (err as { availableProviders: string[] }).availableProviders.join(", ")
+        Array.isArray(
+          (err as { availableProviders?: string[] }).availableProviders,
+        )
+          ? (err as { availableProviders: string[] }).availableProviders.join(
+              ", ",
+            )
           : enabledProviders.join(", ");
       return new Response(
         JSON.stringify({
@@ -1295,7 +1618,16 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
+    // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —
+    // it does not depend on, and is not depended on by, the model-capability
+    // lookup or course-RAG fetch performed below in each branch. We kick it
+    // off here without awaiting so it resolves concurrently with that
+    // branch-specific work (see the `Promise.all` calls below); we only block
+    // on it at the point it is first actually needed (`buildChatToolRegistry`
+    // in the non-admin branch). The admin branch never reads
+    // `webToolsEnabled`, so there it simply overlaps for free with
+    // `resolveActiveChatModel`.
+    const webToolsEnabledPromise = getPolicy("chat.webToolsEnabled");
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
@@ -1307,6 +1639,10 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagContextText = "";
     let courseRagInject = false;
     let effectiveForceHybridRag = forceHybridRag;
+    // Set in both branches below once `webToolsEnabledPromise` resolves; read
+    // later (outside the branch) for debug logging and the
+    // X-Web-Tools-Enabled response header.
+    let webToolsEnabled: boolean;
     /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
     let adminContextWindow: number | undefined;
     let adminDesiredMaxOutput: number | undefined;
@@ -1333,7 +1669,16 @@ export async function action({ request }: ActionFunctionArgs) {
           customPrompt: resolvedSystemPrompt,
         });
 
-      const activeChatModel = await resolveActiveChatModel(model);
+      // Admin mode never reads `webToolsEnabled`, but we still must observe
+      // the same rejection semantics as the original serial `await getPolicy`
+      // — so it is awaited alongside the model lookup rather than left to
+      // float as an unhandled rejection. Both promises were already in
+      // flight before this branch started, so this await is effectively free.
+      let activeChatModel: Awaited<ReturnType<typeof resolveActiveChatModel>>;
+      [webToolsEnabled, activeChatModel] = await Promise.all([
+        webToolsEnabledPromise,
+        resolveActiveChatModel(model),
+      ]);
       supportsTools = activeChatModel?.supportsTools ?? false;
       const contextWindow = resolveModelContextWindow(
         activeChatModel?.maxTokens,
@@ -1342,7 +1687,10 @@ export async function action({ request }: ActionFunctionArgs) {
       // 16k windows: tool schemas + multi-step list payloads leave little room.
       // Cap completion aggressively; mid-turn tool results are reserved separately.
       const desiredMaxOutput = Math.min(
-        resolveMaxOutputTokens(activeChatModel?.maxTokens, parsedModel.providerId),
+        resolveMaxOutputTokens(
+          activeChatModel?.maxTokens,
+          parsedModel.providerId,
+        ),
         contextWindow <= 16_384 ? 512 : Number.POSITIVE_INFINITY,
       );
 
@@ -1411,16 +1759,71 @@ export async function action({ request }: ActionFunctionArgs) {
         system: buildDefaultSystemPrompt(),
       };
     } else {
+      // §1431 dependency graph: `webToolsEnabledPromise` (kicked off before the
+      // admin/non-admin branch), `getChatModelCapabilities(model)`, and the
+      // course-RAG fetch are mutually independent — none consumes another's
+      // result, they only share inputs (`model`, `effectiveCourseId`,
+      // `userQuestion`) that were already resolved earlier in the request. The
+      // original code awaited them one at a time, serializing three
+      // network/DB round trips into TTFB. We now fire all three at once and
+      // await together.
+      //
+      // Error-handling parity:
+      //   - `getPolicy` (webToolsEnabledPromise) has no local try/catch — a
+      //     rejection must still propagate to the outer request handler
+      //     exactly as the original serial `await` would. It is included in
+      //     `Promise.all` (not `allSettled`) so first-rejection-wins behavior
+      //     is preserved.
+      //   - `getChatModelCapabilities` already catches its own errors
+      //     internally and resolves with a safe fallback — it never rejects.
+      //   - The course-RAG fetch must not reject the whole batch (that would
+      //     mask getPolicy failures and lose parallel progress). It catches
+      //     locally and returns `{ error }` so the consumer can fail closed
+      //     with 503 (#225 RAG-01/RAG-02) instead of treating retrieval
+      //     outages as zero hits.
+      type CourseRagPrefetchResult =
+        | { hits: HybridRagHit[]; error?: undefined }
+        | { hits: []; error: unknown };
+      const courseRagPromise = (async (): Promise<CourseRagPrefetchResult> => {
+        if (!(shouldPrefetchCourseRag(hasCourse) && effectiveCourseId)) {
+          return { hits: [] };
+        }
+        if (routerRagPrefetch) {
+          return { hits: routerRagPrefetch };
+        }
+        try {
+          const hits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictRagToStudentVisible,
+          );
+          return { hits };
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          return { hits: [], error };
+        }
+      })();
+
+      let modelCapabilities: Awaited<ReturnType<typeof getChatModelCapabilities>>;
+      let courseRagResult: Awaited<typeof courseRagPromise>;
+      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all([
+        webToolsEnabledPromise,
+        getChatModelCapabilities(model),
+        courseRagPromise,
+      ]);
+
       const tools = buildChatToolRegistry({
         effectiveCourseId,
         webToolsEnabled,
         restrictToStudentVisible: restrictRagToStudentVisible,
       });
-      const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
       effectiveForceHybridRag =
         forceHybridRag ||
-        (parsedModel.providerId === "vllm" && process.env.VLLM_CHAT_TOOLS !== "1");
+        (parsedModel.providerId === "vllm" &&
+          process.env.VLLM_CHAT_TOOLS !== "1");
       useToolCalling = supportsTools && !effectiveForceHybridRag;
       toolMaxTokens = resolveToolMaxOutputTokens(modelCapabilities.maxTokens);
 
@@ -1430,6 +1833,15 @@ export async function action({ request }: ActionFunctionArgs) {
             effectiveCourse.aiInstructions,
           )
         : "";
+      // Layer A: always-on course-scope policy prompt. Stays in effect even
+      // when an instructor disables the stricter Layer B classifier for the
+      // course, so course chat still behaves like course chat. Service-key
+      // callers (AI Tutor/Question Maker) are exempt — their generation-style
+      // prompts aren't scoped to "this course" the way browser chat is.
+      const courseScopePolicyBlock =
+        courseScopeContext && !isServiceKeyCaller
+          ? buildCourseScopePolicyPrompt(courseScopeContext)
+          : "";
 
       const eduAiCourseDefaultPrompt = `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
@@ -1440,41 +1852,49 @@ ${LATEST_TURN_FOCUS_INSTRUCTION}
 ${courseCode ? `Current course context: ${courseCode} (UBCO). Do not ask the user for the course code if it's provided.` : ""}
 Be helpful, conversational, and accurate. Use markdown for formatting. For mathematical expressions, use LaTeX delimiters: inline math with $$...$$ and display math with $$...$$ on its own line.`;
 
-      const defaultCourseSystemPrompt = appendCourseStyleToSystemPrompt(
-        resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
-        courseStyleBlock,
-      );
+      const defaultCourseSystemPrompt = [
+        appendCourseStyleToSystemPrompt(
+          resolvedSystemPrompt ?? eduAiCourseDefaultPrompt,
+          courseStyleBlock,
+        ),
+        courseScopePolicyBlock,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
-        try {
-          courseRagHits =
-            routerRagPrefetch ??
-            (await findRelevantContent(
-              userQuestion,
-              effectiveCourseId,
-              HYBRID_RAG_MAX_CHUNKS,
-              undefined,
-              restrictRagToStudentVisible,
-            ));
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: courseRagHits,
-          });
-          if (courseRagInject && courseRagHits.length > 0) {
-            courseRagContextText = buildCappedRagContextText(
-              courseRagHits,
-              HYBRID_RAG_MAX_CHUNKS,
-              HYBRID_RAG_MAX_CONTEXT_CHARS,
-            );
-          }
-        } catch (error) {
-          console.error("Error prefetching course RAG context:", error);
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: [],
-          });
+        // #225 RAG-01/RAG-02: an exception during retrieval means the
+        // embedding path failed (stale dimension vs. corpus, or provider
+        // down) — never treat it like a legitimate zero-hit result. Any
+        // failed course prefetch must fail closed: prompts that the intent
+        // heuristic skips (e.g. "Explain polymorphism") can still inject
+        // via strong similarity when retrieval succeeds, so gating 503 on
+        // courseRagNeeded would still answer ungrounded. Deliberately
+        // skipped retrieval never enters the promise body (see
+        // shouldPrefetchCourseRag).
+        if (courseRagResult.error !== undefined) {
+          return chatApiReject(
+            503,
+            {
+              error:
+                "Course materials could not be searched right now. Please try again shortly.",
+              code: classifyRagRetrievalError(courseRagResult.error),
+            },
+            { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
+          );
+        }
+        courseRagHits = courseRagResult.hits;
+        courseRagInject = shouldInjectCourseRag({
+          hasCourse,
+          courseRagNeeded,
+          hits: courseRagHits,
+        });
+        if (courseRagInject && courseRagHits.length > 0) {
+          courseRagContextText = buildCappedRagContextText(
+            courseRagHits,
+            HYBRID_RAG_MAX_CHUNKS,
+            HYBRID_RAG_MAX_CONTEXT_CHARS,
+          );
         }
       }
 
@@ -1512,15 +1932,20 @@ ${buildEmptyCourseRagBlock()}`,
           };
         }
       } else {
-        const baseSystemPrompt = appendCourseStyleToSystemPrompt(
-          resolvedSystemPrompt ??
-            `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
+        const baseSystemPrompt = [
+          appendCourseStyleToSystemPrompt(
+            resolvedSystemPrompt ??
+              `You are EduAI, a helpful AI assistant for students and faculty at UBC Okanagan (UBCO).
 
 IMPORTANT: You have access to the full conversation history in the messages array. When users ask about previous messages or context, refer to the conversation history provided to you. DO NOT claim you cannot remember past messages.
 
 ${LATEST_TURN_FOCUS_INSTRUCTION}`,
-          courseStyleBlock,
-        );
+            courseStyleBlock,
+          ),
+          courseScopePolicyBlock,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
 
         let toolSystemPrompt = buildToolCallingSystemPrompt({
           basePrompt: baseSystemPrompt,
@@ -1562,16 +1987,20 @@ ${buildEmptyCourseRagBlock()}`;
       [...trimmedMessages].reverse().find((message) => message.role === "user"),
     );
     const priorAssistantText = extractMessageText(
-      [...trimmedMessages].reverse().find((message) => message.role === "assistant"),
+      [...trimmedMessages]
+        .reverse()
+        .find((message) => message.role === "assistant"),
     );
 
     let adhdProfile: AdhdTurnProfile | undefined;
     let adhdProfileRequirements:
-      | ReturnType<typeof getProfileRequirements>
-      | undefined;
+      ReturnType<typeof getProfileRequirements> | undefined;
 
     if (effectiveAdhdAssist) {
-      adhdProfile = resolveAdhdTurnProfile({ userText: lastUserText, priorAssistantText });
+      adhdProfile = resolveAdhdTurnProfile({
+        userText: lastUserText,
+        priorAssistantText,
+      });
       adhdProfileRequirements = getProfileRequirements(adhdProfile);
     }
 
@@ -1591,7 +2020,9 @@ ${buildEmptyCourseRagBlock()}`;
       adminDesiredMaxOutput != null
     ) {
       const systemChars =
-        typeof streamConfig.system === "string" ? streamConfig.system.length : 0;
+        typeof streamConfig.system === "string"
+          ? streamConfig.system.length
+          : 0;
       let messageChars = 0;
       for (const message of modelMessages) {
         messageChars += estimateMessageCharsForModel(message);
@@ -1662,7 +2093,8 @@ ${buildEmptyCourseRagBlock()}`;
       isAdhdOversightEnabled() &&
       (adhdProfileRequirements?.runDean ?? true);
     const adhdWordCap =
-      adhdProfileRequirements?.wordCap ?? resolveAdhdResponseWordCap(lastUserText);
+      adhdProfileRequirements?.wordCap ??
+      resolveAdhdResponseWordCap(lastUserText);
 
     const logResponseCompliance = (
       assistantText: string,
@@ -1682,7 +2114,9 @@ ${buildEmptyCourseRagBlock()}`;
     ) => {
       const trimmed = assistantText?.trim();
       if (!trimmed) return;
-      const metrics = computeAdhdResponseMetrics(trimmed, { wordCap: adhdWordCap });
+      const metrics = computeAdhdResponseMetrics(trimmed, {
+        wordCap: adhdWordCap,
+      });
       const profileStructuralPass =
         adhdProfile != null
           ? isProfileStructuralPass(metrics, adhdProfile, trimmed)
@@ -1754,7 +2188,8 @@ ${buildEmptyCourseRagBlock()}`;
         if (err instanceof AdmissionTimeoutError) {
           return new Response(
             JSON.stringify({
-              error: "Server busy — too many concurrent AI requests. Try again shortly.",
+              error:
+                "Server busy — too many concurrent AI requests. Try again shortly.",
               code: "AI_ADMISSION_TIMEOUT",
             }),
             {
@@ -1773,7 +2208,9 @@ ${buildEmptyCourseRagBlock()}`;
       }
     };
     const admissionHeaders = (): Record<string, string> =>
-      admissionWaitedMs > 0 ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) } : {};
+      admissionWaitedMs > 0
+        ? { "X-Admission-Wait-Ms": String(admissionWaitedMs) }
+        : {};
 
     const persistTurnTelemetry = async (params: {
       responseText: string;
@@ -1802,7 +2239,10 @@ ${buildEmptyCourseRagBlock()}`;
       });
     };
 
-    const fleetStreamProbeMs = parseEnvInt(process.env.FLEET_STREAM_PROBE_MS, 10_000);
+    const fleetStreamProbeMs = parseEnvInt(
+      process.env.FLEET_STREAM_PROBE_MS,
+      10_000,
+    );
     // Probe every fleet vLLM turn (streaming, non-streaming, and oversight) so
     // connection/startup failures throw from runStreamText and Slice 2 can retry.
     // Mid-stream / post-soft-timeout failures after the probe settles are not retried.
@@ -1843,7 +2283,8 @@ ${buildEmptyCourseRagBlock()}`;
                 responseText: text ?? "",
                 usage: {
                   promptTokens: normalizedUsage.promptTokens ?? undefined,
-                  completionTokens: normalizedUsage.completionTokens ?? undefined,
+                  completionTokens:
+                    normalizedUsage.completionTokens ?? undefined,
                   totalTokens: normalizedUsage.totalTokens ?? undefined,
                 },
                 finishReason: String(finishReason ?? "stop"),
@@ -1853,12 +2294,20 @@ ${buildEmptyCourseRagBlock()}`;
                 promptTokens: usage?.promptTokens,
                 completionTokens: usage?.completionTokens,
               });
-              const assistantText = text || extractAssistantText(response?.messages);
+              const assistantText =
+                text || extractAssistantText(response?.messages);
               if (assistantText) {
                 await appendMessages([
-                  { id: randomUUID(), role: "assistant", content: assistantText },
+                  {
+                    id: randomUUID(),
+                    role: "assistant",
+                    content: assistantText,
+                  },
                 ]).catch((err) => {
-                  console.error("[chat-api] failed to persist streaming assistant message", err);
+                  console.error(
+                    "[chat-api] failed to persist streaming assistant message",
+                    err,
+                  );
                 });
               }
             },
@@ -2021,7 +2470,8 @@ ${buildEmptyCourseRagBlock()}`;
           responseText: finalText,
           usage: {
             promptTokens: normalizedOversightUsage.promptTokens ?? undefined,
-            completionTokens: normalizedOversightUsage.completionTokens ?? undefined,
+            completionTokens:
+              normalizedOversightUsage.completionTokens ?? undefined,
             totalTokens: normalizedOversightUsage.totalTokens ?? undefined,
           },
           finishReason: String(finishReason ?? "stop"),
@@ -2039,7 +2489,10 @@ ${buildEmptyCourseRagBlock()}`;
         });
 
         const persistOverseenAssistantMessages = async (text: string) => {
-          const toPersist = buildOverseenAssistantMessagesToPersist(response?.messages, text);
+          const toPersist = buildOverseenAssistantMessagesToPersist(
+            response?.messages,
+            text,
+          );
           if (toPersist.length > 0) {
             await appendMessages(toPersist);
           }
@@ -2104,7 +2557,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...(fleetPick?.serverId
+                ? { "X-Fleet-Server": fleetPick.serverId }
+                : {}),
             },
           },
         );
@@ -2172,20 +2627,24 @@ ${buildEmptyCourseRagBlock()}`;
       try {
         await result.consumeStream();
 
-        const [text, usage, finishReason, sources, reasoning, response] = await Promise.all([
-          result.text,
-          result.usage,
-          result.finishReason,
-          result.sources,
-          result.reasoning,
-          result.response,
-        ]);
+        const [text, usage, finishReason, sources, reasoning, response] =
+          await Promise.all([
+            result.text,
+            result.usage,
+            result.finishReason,
+            result.sources,
+            result.reasoning,
+            result.response,
+          ]);
 
         if (response?.messages?.length) {
-          const assistantMessages = response.messages.filter((message) => message.role === "assistant");
+          const assistantMessages = response.messages.filter(
+            (message) => message.role === "assistant",
+          );
           await appendMessages(assistantMessages);
         } else {
-          const assistantText = text || extractAssistantText(response?.messages);
+          const assistantText =
+            text || extractAssistantText(response?.messages);
           if (assistantText) {
             await appendMessages([
               {
@@ -2236,7 +2695,9 @@ ${buildEmptyCourseRagBlock()}`;
             headers: {
               "Content-Type": "application/json",
               ...admissionHeaders(),
-              ...(fleetPick?.serverId ? { "X-Fleet-Server": fleetPick.serverId } : {}),
+              ...(fleetPick?.serverId
+                ? { "X-Fleet-Server": fleetPick.serverId }
+                : {}),
             },
           },
         );
