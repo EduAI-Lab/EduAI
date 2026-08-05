@@ -93,4 +93,13 @@ describe("processMaterialEmbeddings", () => {
     expect(txDeleteMany).not.toHaveBeenCalled();
     expect(txCreateManyAndReturn).toHaveBeenCalled();
   });
+
+  it("throws when chunking yields zero segments (whitespace-only content) (#225 RAG-06)", async () => {
+    await expect(processMaterialEmbeddings("mat-1", "   \n\t  ")).rejects.toThrow(
+      "No content chunks generated",
+    );
+
+    expect(embedMany).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
 });

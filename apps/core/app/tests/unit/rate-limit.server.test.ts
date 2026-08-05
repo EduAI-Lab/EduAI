@@ -78,15 +78,27 @@ describe("isRateLimited", () => {
     expect(isRateLimited("10.0.0.7")).toBe(true);
   });
 
+  // AUTH-05: `Number(env ?? 300)` turns a non-numeric override into NaN, and
+  // `hits.length >= NaN` is always false, so the limiter never trips. The
+  // default parameter must go through `parseEnvInt` and fail closed to the
+  // 300 default instead.
+  it("falls back to the 300 default (fail-closed) when SESSION_VALIDATE_RATE_LIMIT is not numeric", () => {
+    vi.stubEnv("SESSION_VALIDATE_RATE_LIMIT", "not-a-number");
+    for (let i = 0; i < 300; i++) {
+      expect(isRateLimited("10.0.0.8")).toBe(false);
+    }
+    expect(isRateLimited("10.0.0.8")).toBe(true);
+  });
+
   it("excludes a hit exactly at the window boundary (half-open window)", () => {
     vi.useFakeTimers();
     const start = Date.now();
     vi.setSystemTime(start);
 
-    isRateLimited("10.0.0.8", 1, 1_000);
+    isRateLimited("10.0.0.9", 1, 1_000);
     vi.setSystemTime(start + 1_000); // exactly at the boundary, not past it
 
-    expect(isRateLimited("10.0.0.8", 1, 1_000)).toBe(false);
+    expect(isRateLimited("10.0.0.9", 1, 1_000)).toBe(false);
   });
 });
 
