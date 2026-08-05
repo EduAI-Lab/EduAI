@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "katex/dist/katex.min.css";
 @import "../../../packages/ui/src/styles/base.css";
 @import "../../../packages/ui/src/styles/assistive-reading.css";
 @import "./styles/assistive-active-highlight.css";
