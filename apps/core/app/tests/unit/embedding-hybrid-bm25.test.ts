@@ -234,19 +234,6 @@ describe("findRelevantContent — hybrid path (RAG_HYBRID_BM25=1)", () => {
     expect(params[params.length - 1]).toBe(2);
   });
 
-  it("excludes deleted and unpublished materials from the SQL filter", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const sql = capturedSql();
-    expect(sql).toContain('cm."deletedAt" IS NULL');
-    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
-  });
-
-  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const frag = capturedFragmentSql();
-    expect(frag).toContain("NOT EXISTS");
-    expect(frag).toContain("canvas_material_exclusions");
-  });
 });
 
 // ── Pure-vector path (baseline) ───────────────────────────────────────────────
@@ -293,17 +280,6 @@ describe("findRelevantContent — pure-vector path (RAG_HYBRID_BM25 not set)", (
     });
   });
 
-  it("excludes unpublished materials from the SQL filter", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedFragmentSql()).toContain('cm."unpublishedAt" IS NULL');
-  });
-
-  it("excludes materials whose Canvas file is in CanvasMaterialExclusion (retroactive exclusion)", async () => {
-    await findRelevantContent(QUERY, COURSE_ID, 4);
-    const frag = capturedFragmentSql();
-    expect(frag).toContain("NOT EXISTS");
-    expect(frag).toContain("canvas_material_exclusions");
-  });
 });
 
 // ── Student-visibility gate (#839) ────────────────────────────────────────────
@@ -348,7 +324,32 @@ describe("findRelevantContent — student-visibility gate (#839)", () => {
 
   it("does not restrict visibility for staff callers (default)", async () => {
     await findRelevantContent(QUERY, COURSE_ID, 4);
-    expect(capturedFragmentSql()).not.toContain("visibleToStudents");
+    const frag = capturedFragmentSql();
+    expect(frag).not.toContain("visibleToStudents");
+    expect(frag).not.toContain("unpublishedAt");
+    expect(frag).not.toContain("canvas_material_exclusions");
+  });
+
+  // Canvas-unpublished / retroactively-excluded materials are a student-only
+  // gate, same as visibleToStudents/availableAt — mirrors the REST route's
+  // studentVisibilityWhere (courses.materials.$.ts), which staff bypass
+  // entirely. Applying it unconditionally would make a material an instructor
+  // can read directly invisible to that same instructor in RAG.
+  it("excludes Canvas-unpublished and retroactively-excluded materials when restrictToStudentVisible=true (pure-vector)", async () => {
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"unpublishedAt"');
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
+  });
+
+  it("excludes Canvas-unpublished and retroactively-excluded materials when restrictToStudentVisible=true (hybrid)", async () => {
+    process.env.RAG_HYBRID_BM25 = "1";
+    await findRelevantContent(QUERY, COURSE_ID, 4, undefined, true);
+    const frag = capturedFragmentSql();
+    expect(frag).toContain('"unpublishedAt"');
+    expect(frag).toContain("NOT EXISTS");
+    expect(frag).toContain("canvas_material_exclusions");
   });
 
   it("always filters soft-deleted materials in BOTH paths", async () => {
