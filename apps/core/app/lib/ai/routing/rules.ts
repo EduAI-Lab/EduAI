@@ -4,9 +4,21 @@
  * Given a **`Phase1RouterContext`** (prompt text, attachments flag, optional RAG stats),
  * **`matchPhase1Rules`** returns the first matching rule and a **`PickSpec`** telling **`tiers.ts`** how to choose a model.
  *
- * Rule order: images → escalation (web/debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
+ * Rule order: images → escalation (debug/complex/RAG-reasoning/enumeration) → short factual → RAG tier-1 → long RAG → default.
  *
  * **Frozen 2026-06-27** for Paper 1 held-out evaluation — no further dev-suite rule tuning.
+ *
+ * **Web-lookup rule retired 2026-08-04** (PREREG_v3.md §7, RULE_STACK_v3.md):
+ * the live-web-lookup escalation rule pointed at a Firecrawl-backed tool
+ * capability that (a) is not currently deployed/managed as a routed
+ * feature and (b) is explicitly out of scope for this study — PREREG §3.3
+ * excludes all live-web/tool prompts at authoring time, and confirmed via
+ * direct check that zero of the 212 v3 suite prompts have web-lookup
+ * phrasing (`tools_expected: "none"` on all 212 by design). Same
+ * disposition as the images rule: structurally dead, not under-tested.
+ * Removes 3 v2 (`ts-###`) test fixtures that previously exercised this
+ * rule — a disclosed regression against v2's labeled set, acceptable since
+ * PREREG treats v2 as pilot/design-input only, never a co-equal result.
  */
 import type { PickSpec } from "./tiers";
 
@@ -46,12 +58,6 @@ const TIER_3_ESCALATION_PICK: PickSpec = {
   tier: 3,
   tieBreak: "carbon",
 };
-
-const WEB_LOOKUP_PATTERN =
-  /^(look up|find a recent|find the current)\b/i;
-
-const WEB_LOOKUP_TOPIC_PATTERN =
-  /\b(look up|find|search for|current|latest|today'?s?).{0,40}\b(hours|deadline|calendar|intensity|withdrawal|library)\b/i;
 
 const DEBUG_PATTERN = /\bdebug this code\b|\bwhy might the loop\b/i;
 
@@ -113,11 +119,6 @@ export function isShortFactualPrompt(prompt: string, lower: string): boolean {
   return SHORT_FACTUAL_PREFIXES.some((prefix) => lower.startsWith(prefix));
 }
 
-/** Live web lookup phrasing — route to tier 3 for factual freshness. */
-export function isWebLookupPrompt(prompt: string, lower: string): boolean {
-  return WEB_LOOKUP_PATTERN.test(lower) || WEB_LOOKUP_TOPIC_PATTERN.test(lower);
-}
-
 /** Debugging prompts where 7B often mis-explains control flow. */
 export function isDebugEscalationPrompt(lower: string): boolean {
   return DEBUG_PATTERN.test(lower);
@@ -155,7 +156,6 @@ function hasStrongRagHit(ctx: Phase1RouterContext): boolean {
  * Phase 1 rule stack. First match wins.
  *
  * 1. Images → tier ≥ 2
- * 2. Web lookup → tier 3
  * 2b. Debug → tier 3
  * 2c. Complex reasoning / code → tier 3
  * 2d. RAG-reasoning phrasing → tier 3 (before RAG tier-1 shortcuts)
@@ -182,10 +182,6 @@ export function matchPhase1Rules(ctx: Phase1RouterContext): Phase1RuleMatch {
         tieBreak: "energy",
       },
     };
-  }
-
-  if (isWebLookupPrompt(prompt, lower)) {
-    return { rule: "rule2_web_lookup_tier_3", pick: TIER_3_ESCALATION_PICK };
   }
 
   if (isDebugEscalationPrompt(lower)) {

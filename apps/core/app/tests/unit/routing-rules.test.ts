@@ -70,17 +70,6 @@ describe("matchPhase1Rules", () => {
     expect(match.pick).toEqual({ kind: "exactTier", tier: 1, tieBreak: "energy" });
   });
 
-  it("rule 2: web lookup prompts escalate to tier 3", () => {
-    const match = matchPhase1Rules({
-      ...baseCtx,
-      courseId: null,
-      prompt:
-        "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
-    });
-    expect(match.rule).toBe("rule2_web_lookup_tier_3");
-    expect(match.pick).toEqual({ kind: "exactTier", tier: 3, tieBreak: "carbon" });
-  });
-
   it("rule 2b: debug prompts escalate to tier 3", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
@@ -184,13 +173,6 @@ describe("matchPhase1Rules", () => {
         expectedRule: "rule2c_complex_task_tier_3",
       },
       {
-        id: "ts-031",
-        prompt:
-          "Look up the latest UBCO academic calendar deadline for course withdrawal and summarize it.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
-      },
-      {
         id: "ts-037",
         prompt:
           "Debug this code: `for i in range(10): print(i); i = i + 1` — why might the loop behave unexpectedly?",
@@ -215,19 +197,6 @@ describe("matchPhase1Rules", () => {
           "Walk through one partition step of quicksort on [3, 6, 8, 10, 1, 2, 1] using the last element as pivot.",
         ctx: { courseId: null },
         expectedRule: "rule2c_complex_task_tier_3",
-      },
-      {
-        id: "ts-101",
-        prompt: "Look up current UBC Okanagan library Friday closing hours and summarize them.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
-      },
-      {
-        id: "ts-102",
-        prompt:
-          "Find a recent reputable estimate of BC electricity grid carbon intensity and state the value with source.",
-        ctx: { courseId: null },
-        expectedRule: "rule2_web_lookup_tier_3",
       },
       {
         id: "ts-113",
