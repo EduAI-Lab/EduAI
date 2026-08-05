@@ -38,7 +38,24 @@ import { applySecurityHeaders } from "~/lib/security-headers.server";
  * CSP (no nonce needed). Skipping HTML here avoids clobbering the nonce'd CSP.
  */
 export const middleware: Route.MiddlewareFunction[] = [
-  async (_args, next) => {
+  async ({ request }, next) => {
+    const url = new URL(request.url);
+    const isDataDocumentNavigation =
+      url.pathname.endsWith(".data") &&
+      (request.headers.get("sec-fetch-dest") === "document" ||
+        request.headers.get("accept")?.includes("text/html"));
+
+    // React Router uses `.data` internally for client-side loader requests.
+    // Reject only address-bar/document navigation so those implementation
+    // payloads cannot be browsed directly without breaking app navigation.
+    if (isDataDocumentNavigation) {
+      const blocked = new Response("Not Found", { status: 404 });
+      applySecurityHeaders(blocked.headers, {
+        isProd: process.env.NODE_ENV === "production",
+      });
+      return blocked;
+    }
+
     const response = await next();
     const isHtml =
       response.headers
@@ -159,7 +176,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
       </head>
       <body>
-        <ThemeProvider>
+        {/* next-themes injects its own inline no-flash script; without the
+            nonce our `script-src` blocks it. */}
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster />
         </ThemeProvider>

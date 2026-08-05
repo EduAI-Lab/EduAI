@@ -503,6 +503,13 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     adminChatTool: "listUnitChats",
     routeFile: "routes/api/units.chats.$.ts",
   }),
+  entry({
+    method: "GET",
+    path: "/api/courses/:courseId/student-candidates",
+    readiness: "ready",
+    routeFile: "routes/api/courses.student-candidates.$.ts",
+    note: "Search-select backend for the enroll-student/add-TA pickers (#1042); bounded by `limit`, not an admin-chat-tool surface.",
+  }),
 
   // ── Users ───────────────────────────────────────────────────────────────────
   entry({
@@ -703,6 +710,27 @@ export const CORE_API_ENDPOINTS: ApiEndpointEntry[] = [
     readiness: "ready",
     adminChatTool: "deleteAiModel",
     routeFile: "routes/api/ai-models.$.ts",
+  }),
+  entry({
+    method: "GET",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "PATCH",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
+  }),
+  entry({
+    method: "PUT",
+    path: "/api/routing-model-settings",
+    readiness: "ready",
+    errorEnvelope: "standard",
+    routeFile: "routes/api/routing-model-settings.ts",
   }),
   entry({
     method: "GET",

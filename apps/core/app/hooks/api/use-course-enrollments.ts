@@ -37,26 +37,57 @@ function mapEnrollment(courseId: string, row: ApiEnrollment): CourseEnrollment {
   }
 }
 
+/** Cursor "load more" roster (#1042) — bounded per page instead of one unbounded fetch. */
 export function useCourseEnrollments(courseId: string) {
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [total, setTotal] = useState(0)
+
+  const fetchPage = useCallback(async (cursor: string | null) => {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+    const res = await fetch(`/api/courses/${courseId}/enrollments${query}`)
+    if (!res.ok) throw new Error(await res.text())
+    return (await res.json()) as {
+      enrollments: ApiEnrollment[]
+      nextCursor: string | null
+      total: number
+    }
+  }, [courseId])
 
   const fetchEnrollments = useCallback(async () => {
     if (!courseId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/courses/${courseId}/enrollments`)
-      if (!res.ok) throw new Error(await res.text())
-      const data = (await res.json()) as { enrollments: ApiEnrollment[] }
+      const data = await fetchPage(null)
       setEnrollments(data.enrollments.map((row) => mapEnrollment(courseId, row)))
+      setNextCursor(data.nextCursor)
+      setTotal(data.total)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch enrollments')
     } finally {
       setLoading(false)
     }
-  }, [courseId])
+  }, [courseId, fetchPage])
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const data = await fetchPage(nextCursor)
+      setEnrollments((prev) => [...prev, ...data.enrollments.map((row) => mapEnrollment(courseId, row))])
+      setNextCursor(data.nextCursor)
+      setTotal(data.total)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load more enrollments')
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [courseId, fetchPage, nextCursor, loadingMore])
 
   useEffect(() => { fetchEnrollments() }, [fetchEnrollments])
 
@@ -82,6 +113,7 @@ export function useCourseEnrollments(courseId: string) {
       throw new Error(body.error ?? 'Failed to remove enrollment')
     }
     setEnrollments((prev) => prev.filter((e) => e.id !== enrollmentId))
+    setTotal((prev) => Math.max(0, prev - 1))
   }, [courseId])
 
   const updateRole = useCallback(async (enrollmentId: string, role: CourseEnrollment['role']) => {
@@ -101,6 +133,10 @@ export function useCourseEnrollments(courseId: string) {
     enrollments,
     loading,
     error,
+    total,
+    hasMore: nextCursor !== null,
+    loadingMore,
+    loadMore,
     enroll,
     removeEnrollment,
     updateRole,
