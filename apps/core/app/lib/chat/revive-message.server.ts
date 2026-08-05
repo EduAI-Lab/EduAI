@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import {
+  courseScopeRedirectFromMessage,
   resolvedModelIdFromMessage,
   wasAutoRoutedFromMessage,
 } from "~/lib/chat/chat-message-metadata";
@@ -28,7 +29,9 @@ export function messageToText(value: unknown): string {
     const trimmed = value.trim();
     if (
       trimmed.startsWith("{") &&
-      (trimmed.includes('"role"') || trimmed.includes('"parts"') || trimmed.includes('"content"'))
+      (trimmed.includes('"role"') ||
+        trimmed.includes('"parts"') ||
+        trimmed.includes('"content"'))
     ) {
       try {
         const parsed = JSON.parse(trimmed) as Record<string, unknown>;
@@ -43,7 +46,10 @@ export function messageToText(value: unknown): string {
   }
   if (Array.isArray(value)) {
     return value
-      .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")
+      .filter(
+        (p): p is Record<string, unknown> =>
+          p !== null && typeof p === "object",
+      )
       .filter((p) => p.type === "text" || typeof p.text === "string")
       .map((p) => messageToText(p.text))
       .filter((t) => t.length > 0)
@@ -52,8 +58,10 @@ export function messageToText(value: unknown): string {
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
     if (typeof obj.text === "string") return messageToText(obj.text);
-    if (obj.content !== undefined && obj.content !== null) return messageToText(obj.content);
-    if (obj.parts !== undefined && obj.parts !== null) return messageToText(obj.parts);
+    if (obj.content !== undefined && obj.content !== null)
+      return messageToText(obj.content);
+    if (obj.parts !== undefined && obj.parts !== null)
+      return messageToText(obj.parts);
   }
   return "";
 }
@@ -74,20 +82,23 @@ export function reviveStoredMessage(record: {
   content: Prisma.JsonValue;
 }): Record<string, unknown> {
   const parsed: Record<string, unknown> =
-    record.content && typeof record.content === "object" && !Array.isArray(record.content)
+    record.content &&
+    typeof record.content === "object" &&
+    !Array.isArray(record.content)
       ? (record.content as Record<string, unknown>)
       : {};
 
   // Prefer an explicit non-empty string `content`; otherwise pull text out of
   // parts / array content / the whole stored value (handles every legacy shape).
-  const source =
-    isNonEmptyString(parsed.content)
-      ? parsed.content
-      : (parsed.parts ?? parsed.content ?? record.content);
+  const source = isNonEmptyString(parsed.content)
+    ? parsed.content
+    : (parsed.parts ?? parsed.content ?? record.content);
   const text = messageToText(source);
   const role = isNonEmptyString(parsed.role) ? parsed.role : record.role;
   const resolvedModelId =
     role === "assistant" ? resolvedModelIdFromMessage(parsed) : null;
+  const courseScopeRedirect =
+    role === "assistant" ? courseScopeRedirectFromMessage(parsed) : false;
   const wasAutoRouted = role === "assistant" && wasAutoRoutedFromMessage(parsed);
 
   return {
@@ -95,8 +106,13 @@ export function reviveStoredMessage(record: {
     role,
     content: text,
     parts: [{ type: "text", text }],
-    ...(resolvedModelId
-      ? { metadata: { resolvedModelId, wasAutoRouted } }
+    ...(resolvedModelId || courseScopeRedirect
+      ? {
+          metadata: {
+            ...(resolvedModelId ? { resolvedModelId, wasAutoRouted } : {}),
+            ...(courseScopeRedirect ? { courseScopeRedirect: true } : {}),
+          },
+        }
       : {}),
   };
 }
