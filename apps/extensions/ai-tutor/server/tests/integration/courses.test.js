@@ -1106,6 +1106,47 @@ describe('Course publish state — Core write-through (#477)', () => {
     // erroring and short-circuiting before the response is the guarantee.
   });
 
+  // #225 SEAM-04: the write to Core succeeds, but the immediate re-read that
+  // builds the response fails. The route must report the write's own result
+  // rather than letting the failed read fall back to "unpublished" — a
+  // successful publish must never come back looking like a failure.
+  it('publish — re-read failure after a successful write reports isPublished:true, not a false failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
+    }));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(true);
+    expect(res.body.corePublishStale).toBe(true);
+    expect(res.headers['x-core-status']).toBe('unavailable');
+  });
+
+  it('unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
+    }));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(false);
+    expect(res.body.corePublishStale).toBe(true);
+    expect(res.headers['x-core-status']).toBe('unavailable');
+
+    const updatedModule = await prisma.module.findUnique({ where: { id: seed.module.id } });
+    expect(updatedModule.isPublished).toBe(false);
+  });
+
   // The "publish — no Core call when coreOfferingId is null (native course)"
   // scenario this used to cover is no longer constructible: #1072 step 4 made
   // `coreOfferingId` required + unique, so every CourseOffering row is

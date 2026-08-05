@@ -440,6 +440,35 @@ describe("prepareBoundedSessionContext", () => {
     expect(bounded.length).toBeLessThan(messages.length);
     expect(totalModelChars(bounded)).toBeLessThanOrEqual(500);
   });
+
+  it("does not digest when total chars equal the 28k session budget exactly (#225 RAG-11)", () => {
+    const messages = Array.from({ length: 20 }, (_, i) => ({
+      id: String(i),
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "x".repeat(1400),
+    }));
+
+    expect(totalModelChars(messages)).toBe(28_000);
+    expect(prepareBoundedSessionContext(messages, { charBudget: 28_000 })).toBe(messages);
+  });
+
+  it("digests older turns when total chars exceed the 28k budget by one (#225 RAG-11)", () => {
+    const messages = Array.from({ length: 20 }, (_, i) => ({
+      id: String(i),
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: i === 19 ? "x".repeat(1401) : "x".repeat(1400),
+    }));
+
+    expect(totalModelChars(messages)).toBe(28_001);
+    const bounded = prepareBoundedSessionContext(messages, {
+      charBudget: 28_000,
+      recentCount: 6,
+      digestMaxChars: 14_000,
+    });
+
+    expect(bounded[0].id).toBe("session-digest");
+    expect(totalModelChars(bounded)).toBeLessThanOrEqual(28_000);
+  });
 });
 
 describe("resolveMaxContextMessages", () => {
