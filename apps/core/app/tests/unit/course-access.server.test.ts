@@ -17,6 +17,8 @@ import {
   resolveCourseAccessWithCourse,
   buildCourseListFilter,
   stripAnswerForStudents,
+  getAuthorizedUnits,
+  wantsIncludeDeleted,
   type AccessLevel,
 } from "~/lib/auth/course-access.server";
 
@@ -142,6 +144,70 @@ describe("resolveCourseAccess", () => {
   it("treats platform-level TA role as enrollment-driven (no enrollment → null)", async () => {
     const access = await resolveCourseAccess({ id: "u1", role: "TA" }, "c1");
     expect(access).toBeNull();
+  });
+
+  it("does NOT run the UNIT_ADMIN unit-match branch for a non-UNIT_ADMIN role", async () => {
+    // A STUDENT whose (irrelevant) authorizedUnits happens to cover the
+    // course's department must NOT be granted unit access — that field only
+    // matters for role === "UNIT_ADMIN".
+    const access = await resolveCourseAccess(
+      { id: "u1", role: "STUDENT", authorizedUnits: ["COSC"] },
+      "c1",
+    );
+    expect(access).toBeNull();
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not call user.findUnique when UNIT_ADMIN course department is null (§19 unit lock)", async () => {
+    prismaMock.course.findFirst.mockResolvedValue({ ...COURSE, department: null });
+    const access = await resolveCourseAccess({ id: "u1", role: "UNIT_ADMIN" }, "c1");
+    expect(access).toBeNull();
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns null for an enrollment with an unrecognized role", async () => {
+    prismaMock.enrollment.findUnique.mockResolvedValue({ role: "BOGUS", isActive: true });
+    const { access } = await resolveCourseAccessWithCourse({ id: "u1", role: "STUDENT" }, "c1");
+    expect(access).toBeNull();
+  });
+});
+
+describe("getAuthorizedUnits", () => {
+  it("returns [] when the user has no authorizedUnits and the DB row is missing", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(null);
+    const units = await getAuthorizedUnits({ id: "u1" });
+    expect(units).toEqual([]);
+  });
+
+  it("returns [] when the DB row exists but authorizedUnits is null", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({ authorizedUnits: null });
+    const units = await getAuthorizedUnits({ id: "u1" });
+    expect(units).toEqual([]);
+  });
+});
+
+describe("wantsIncludeDeleted", () => {
+  function requestWith(query: string): Request {
+    return new Request(`https://example.com/api/courses${query}`);
+  }
+
+  it("is true for ADMIN with includeDeleted=true", () => {
+    expect(wantsIncludeDeleted(requestWith("?includeDeleted=true"), { role: "ADMIN" })).toBe(true);
+  });
+
+  it("is false for ADMIN without the query param", () => {
+    expect(wantsIncludeDeleted(requestWith(""), { role: "ADMIN" })).toBe(false);
+  });
+
+  it("is false for a non-ADMIN even when includeDeleted=true", () => {
+    expect(wantsIncludeDeleted(requestWith("?includeDeleted=true"), { role: "INSTRUCTOR" })).toBe(
+      false,
+    );
+  });
+
+  it("is false for a null/undefined user", () => {
+    expect(wantsIncludeDeleted(requestWith("?includeDeleted=true"), null)).toBe(false);
+    expect(wantsIncludeDeleted(requestWith("?includeDeleted=true"), undefined)).toBe(false);
   });
 });
 

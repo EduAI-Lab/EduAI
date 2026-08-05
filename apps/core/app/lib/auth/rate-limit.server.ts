@@ -26,6 +26,8 @@ export function parseEnvInt(value: string | undefined, fallback: number): number
 // single-process deployment, since a key with one hit and no return visit is
 // never removed. STALE_ENTRY_MS is comfortably larger than any configured
 // window so a sweep never evicts a key with an active hit count.
+// Cap is read at module load so a misconfigured RATE_LIMIT_MAX_KEYS surfaces
+// at process start rather than on the first request.
 const MAX_STORE_KEYS = parseEnvInt(process.env.RATE_LIMIT_MAX_KEYS, 50_000);
 const STALE_ENTRY_MS = 60 * 60_000;
 // Eviction below targets 90% of the cap rather than exactly MAX_STORE_KEYS,
@@ -48,6 +50,9 @@ export function isRateLimited(
   windowMs = 60_000
 ): boolean {
   const now = Date.now();
+  // Equivalent ArrayDeclaration mutant: replacing `[]` with a non-empty
+  // Stryker sentinel still yields an empty filtered list, because the
+  // sentinel timestamps fail `now - t < windowMs` (NaN comparison).
   const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
   if (hits.length >= limit) {
     store.set(key, hits);
