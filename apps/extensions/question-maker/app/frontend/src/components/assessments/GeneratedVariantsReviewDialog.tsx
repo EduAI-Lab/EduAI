@@ -225,7 +225,7 @@ export function GeneratedVariantsReviewDialog({ open, onOpenChange, result, onRe
         {/* ── Header: identity + intent (mirrors the view modal) ── */}
         <DialogHeader className="space-y-2 border-b border-border px-6 py-5 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-lg font-semibold leading-snug">
-            <IconSparkles className="size-5 text-primary" />
+            <IconSparkles className="size-5 text-primary-text" />
             Review generated variants
           </DialogTitle>
           <DialogDescription className="leading-relaxed">
