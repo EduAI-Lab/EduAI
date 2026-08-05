@@ -2285,8 +2285,10 @@ ${buildEmptyCourseRagBlock()}`;
               if (done) break;
               // draining only; onChunk/onStepFinish above do the signaling.
             }
-          } catch {
-            // Errors surface to the caller via onError -> signalError.
+          } catch (error) {
+            // A rejected probe reader can occur before the SDK emits onError.
+            // Surface it immediately so fleet retry does not wait for timeout.
+            probe.hooks.signalError(error);
           }
         })();
         try {
