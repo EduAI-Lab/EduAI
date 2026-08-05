@@ -50,3 +50,12 @@ export const JobPayloadSchema = z
   });
 
 export type JobPayload = z.infer<typeof JobPayloadSchema>;
+
+/**
+ * Internal Redis envelope. The producer adds the durable row id after creating
+ * the AiJob so a fast worker does not have to wait for bullJobId persistence.
+ */
+export const QueuedJobPayloadSchema = JobPayloadSchema.and(
+  z.object({ aiJobId: z.string().min(1) }),
+);
+export type QueuedJobPayload = z.infer<typeof QueuedJobPayloadSchema>;
