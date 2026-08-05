@@ -7,9 +7,13 @@
  * Callers: Mounted under `/api`; consumed by the model selector and the
  *   "bring-your-own-key" flow in the student/instructor activity UI.
  * Gotchas:
- *   - Model visibility is role-divergent: STUDENT sees only models the admin
- *     policy marks `allowedTutorModelIds`; instructors/admins see everything
- *     so they can preview disallowed models.
+ *   - Model visibility is role-divergent, gated by an allow-list of
+ *     privileged roles (`PRIVILEGED_MODEL_ROLES`): those roles see every
+ *     model so they can preview disallowed ones; everyone else (STUDENT, TA,
+ *     or a missing/unrecognized `req.user.role`) is filtered down to the
+ *     admin policy's `allowedTutorModelIds`. Deliberately an allow-list, not
+ *     a `=== 'STUDENT'` deny-list, so an unrecognized role fails closed
+ *     instead of leaking admin-only models.
  *   - `/validate-key` always returns HTTP 200 with `{ valid: boolean, error? }`
  *     for any 4xx response from the upstream provider — only true network
  *     failures bubble out as 5xx. Consumers should branch on `valid`, NOT on
@@ -21,6 +25,10 @@ import express from 'express';
 import { getAiModelPolicyState } from '../services/aiModelPolicy.js';
 
 const router = express.Router();
+
+// Roles that may preview admin-only models. Everyone else (including a
+// missing or unrecognized req.user.role) gets the allow-list-filtered view.
+const PRIVILEGED_MODEL_ROLES = new Set(['INSTRUCTOR', 'UNIT_ADMIN', 'ADMIN']);
 
 /**
  * GET /ai-models — list tutor-eligible models for the current user.
@@ -37,10 +45,9 @@ router.get('/ai-models', async (req, res) => {
   try {
     const { policy, availableModels, availableModelsError } = await getAiModelPolicyState();
 
-    const visibleModels =
-      req.user?.role === 'STUDENT'
-        ? availableModels.filter((model) => policy.allowedTutorModelIds.includes(model.modelId))
-        : availableModels;
+    const visibleModels = PRIVILEGED_MODEL_ROLES.has(req.user?.role)
+      ? availableModels
+      : availableModels.filter((model) => policy.allowedTutorModelIds.includes(model.modelId));
 
     const models = visibleModels.map((model) => ({
       ...model,
