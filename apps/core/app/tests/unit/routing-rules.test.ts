@@ -100,6 +100,35 @@ describe("matchPhase1Rules", () => {
     expect(match.rule).toBe("rule2c_complex_task_tier_3");
   });
 
+  describe("rule 2b/2c broadened patterns (2026-08-04, v3 dev-sourced)", () => {
+    const namedConstructPrompts = [
+      "Write a Java method that performs BFS on a graph represented as an adjacency list and returns the visited order.",
+      "Write the MIPS assembly for a loop that sums the integers from 1 to 10 into register $t0, using a counter in $t1.",
+      "Write MIPS assembly that implements a while loop equivalent to: while (i < n) { sum = sum + i; i = i + 1; }",
+      "Write pseudocode showing how a Strategy pattern would let a SortingContext class switch between QuickSortStrategy and MergeSortStrategy at runtime.",
+      "Write pseudocode for a Factory Method pattern where a DocumentCreator base class defers to subclasses PdfCreator and WordCreator to decide which concrete class to instantiate.",
+      "Write pseudocode for a producer thread using a mutex and two counting semaphores (emptySlots, fullSlots) to safely add an item to a bounded buffer.",
+      "Write pseudocode for a consumer thread using a mutex and two counting semaphores to safely remove an item from a bounded buffer.",
+      "Implement a Java method that performs quicksort on an int array in place, choosing the last element of each partition as the pivot.",
+      "Write pseudocode for a resource-ordering deadlock-prevention scheme: given a fixed global order over resource types A, B, C, D, show how two threads that each need two of these resources should acquire and release them to guarantee no circular wait can occur.",
+    ];
+
+    it.each(namedConstructPrompts)("escalates to tier 3: %s", (prompt) => {
+      const match = matchPhase1Rules({ ...baseCtx, courseId: null, prompt });
+      expect(match.rule).toBe("rule2c_complex_task_tier_3");
+    });
+
+    it("rule 2b: reasoning-about-a-bug prompts escalate (v3-148 dangling pointer)", () => {
+      const match = matchPhase1Rules({
+        ...baseCtx,
+        courseId: null,
+        prompt:
+          "A pointer is used after the memory it points to has already been freed, and the program behaves unpredictably rather than crashing immediately. Why is this dangerous, and what's the standard term for this bug?",
+      });
+      expect(match.rule).toBe("rule2b_debug_tier_3");
+    });
+  });
+
   it("rule 2d: RAG-reasoning phrasing uses tier 3 before strong-RAG tier-1 shortcut", () => {
     const match = matchPhase1Rules({
       ...baseCtx,
