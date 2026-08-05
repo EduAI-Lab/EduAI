@@ -35,7 +35,6 @@ export default defineConfig({
       'react-dom/client',
       '@tabler/icons-react',
       'lucide-react',
-      'recharts',
       'shiki',
       'marked',
       'react-markdown',
