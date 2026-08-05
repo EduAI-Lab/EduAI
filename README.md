@@ -48,6 +48,8 @@ Core's admin list endpoints (`/api/users`, `/api/courses`, `/api/ai-models`, `/a
 Course-scoped browser lists — roster, chat transcripts, course/unit chat lists, and materials — page via an optional cursor "load more" contract instead: `?cursor=`/`?limit=` (both optional, defaults apply), answering a resource-keyed envelope (`{ enrollments, nextCursor, total }`, `{ chats, nextCursor }`, `{ materials, nextCursor }`; `nextCursor: null` once exhausted). This is separate from the admin-list contract above and does not require the query params. The one external dependency, AI Tutor's `enrollmentSync.js` reading `/api/courses/:id/enrollments` via the service key, is unaffected — that path still returns every row unpaged.
 Core conversations are pinned to a single course so their history and RAG context cannot mix across courses. Selecting another course from an existing conversation starts a fresh chat with that course selected.
 
+Course enrollment pickers use the paginated `/api/users` contract with a managed `courseId`, `role=STUDENT`, `isActive=true`, and `exclude=enrolled` or `exclude=ta`. This narrowly scoped mode is available to course managers only, filters candidates on the server, and does not expose the general user directory.
+
 ### [AI Tutor](apps/extensions/ai-tutor/)
 
 AI tutoring platform with a two-agent supervisor system (primary tutor + pedagogical reviewer). Manages course hierarchies (CourseOffering → Module → Lesson → Activity) and student/instructor/TA roles.
