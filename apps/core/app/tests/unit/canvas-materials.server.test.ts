@@ -9,6 +9,7 @@ vi.mock("~/lib/prisma.server", () => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      delete: vi.fn(),
     },
     canvasMaterialExclusion: {
       findMany: vi.fn(),
@@ -108,6 +109,7 @@ beforeEach(() => {
   vi.mocked(prisma.courseMaterial.findFirst).mockResolvedValue(null);
   vi.mocked(prisma.courseMaterial.create).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(prisma.courseMaterial.update).mockResolvedValue({ id: "mat-1" } as never);
+  vi.mocked(prisma.courseMaterial.delete).mockResolvedValue({ id: "mat-1" } as never);
   vi.mocked(processMaterialEmbeddings).mockResolvedValue(undefined);
   vi.mocked(prisma.canvasMaterialExclusion.findMany).mockResolvedValue([]);
 });
@@ -428,7 +430,10 @@ describe("syncSelectedCanvasMaterials", () => {
 
     expect(result.skipped).toBe(1);
     expect(result.skippedItems).toEqual([{ canvasFileId: "1001", reason: "not-modified" }]);
-    expect(prisma.courseMaterial.create).not.toHaveBeenCalled();
+    // Provisional PROCESSING row is created before extraction (#1018), then
+    // rolled back when another material already owns the content checksum.
+    expect(prisma.courseMaterial.create).toHaveBeenCalled();
+    expect(prisma.courseMaterial.delete).toHaveBeenCalledWith({ where: { id: "mat-1" } });
     expect(processMaterialEmbeddings).not.toHaveBeenCalled();
   });
 });
