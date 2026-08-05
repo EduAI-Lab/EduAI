@@ -6,6 +6,11 @@
  */
 import prisma from "~/lib/prisma.server";
 import { normalizePagination } from "~/lib/pagination.server";
+import {
+  redactErrorForConsole,
+  redactSecretValuesInString,
+  sanitizeSensitiveData,
+} from "~/lib/redact.server";
 
 export type SystemLogLevel = "ERROR" | "WARN" | "INFO";
 
@@ -92,16 +97,27 @@ function normalizeErrorMetadata(error: unknown): { errorName: string | null; sta
 }
 
 export async function createSystemLog(input: CreateSystemLogInput): Promise<void> {
+  // Redact here rather than in the logging facade: this is the single chokepoint every system
+  // log passes through, and `stack` only exists once `normalizeErrorMetadata` has derived it
+  // from the thrown value. Error strings routinely embed URLs with `?access_token=` and
+  // connection strings with `//user:pass@`.
+  //
+  // `details` is normally already sanitized by the facade; re-running it covers direct callers.
+  // Re-application is idempotent because `[REDACTED]` matches none of the patterns.
+  const safeMessage = redactSecretValuesInString(input.message);
+  const safeStack = input.stack ? redactSecretValuesInString(input.stack) : null;
+  const safeDetails = sanitizeSensitiveData(input.details ?? null);
+
   try {
     await prisma.systemLog.create({
       data: {
         level: input.level,
         source: input.source,
         code: input.code,
-        message: input.message,
+        message: safeMessage,
         errorName: input.errorName ?? null,
-        stack: input.stack ?? null,
-        details: (input.details ?? null) as any,
+        stack: safeStack,
+        details: safeDetails as any,
         actorUserId: input.actorUserId ?? null,
         actorRole: input.actorRole ?? null,
         requestId: input.requestId ?? null,
@@ -113,13 +129,14 @@ export async function createSystemLog(input: CreateSystemLogInput): Promise<void
       },
     });
   } catch (error) {
-    // Console fallback preserves the event even when DB is unhealthy.
+    // Console fallback preserves the event even when DB is unhealthy. It must redact too —
+    // a connection failure is exactly the case where the driver error carries DB credentials.
     console.error("[SYSTEM_LOG_WRITE_FAILED]", {
       code: input.code,
       source: input.source,
       level: input.level,
-      message: input.message,
-      error,
+      message: safeMessage,
+      error: redactErrorForConsole(error),
     });
   }
 }

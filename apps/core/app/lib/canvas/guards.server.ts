@@ -1,4 +1,5 @@
 import { UserRole } from "@prisma/client";
+import { parseEnvInt } from "~/lib/auth/rate-limit.server";
 
 const rateLimitStore = new Map<string, number[]>();
 
@@ -16,10 +17,14 @@ function recordRateLimitHit(key: string, limit: number, windowMs: number): boole
   return false;
 }
 
-const SYNC_RATE_LIMIT = Number(process.env.CANVAS_SYNC_RATE_LIMIT ?? 1);
-const SYNC_RATE_WINDOW_MS = Number(process.env.CANVAS_SYNC_RATE_WINDOW_MS ?? 30_000);
-const LINK_RATE_LIMIT = Number(process.env.CANVAS_LINK_ROSTER_RATE_LIMIT ?? 10);
-const LINK_RATE_WINDOW_MS = Number(process.env.CANVAS_LINK_ROSTER_RATE_WINDOW_MS ?? 900_000);
+// AUTH-05/CANVAS-13: `Number(env ?? fallback)` turns a non-numeric override
+// into NaN, and `hits.length >= NaN` is always false — the limiter silently
+// disables itself instead of failing closed. `parseEnvInt` falls back to the
+// default on anything non-finite (including "").
+const SYNC_RATE_LIMIT = parseEnvInt(process.env.CANVAS_SYNC_RATE_LIMIT, 1);
+const SYNC_RATE_WINDOW_MS = parseEnvInt(process.env.CANVAS_SYNC_RATE_WINDOW_MS, 30_000);
+const LINK_RATE_LIMIT = parseEnvInt(process.env.CANVAS_LINK_ROSTER_RATE_LIMIT, 10);
+const LINK_RATE_WINDOW_MS = parseEnvInt(process.env.CANVAS_LINK_ROSTER_RATE_WINDOW_MS, 900_000);
 
 /** Instructor/admin endpoints: connect, courses picker, sync, disconnect. */
 export function canManageCanvasIntegration(role: string | null | undefined): boolean {

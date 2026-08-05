@@ -270,14 +270,14 @@ export function AppSwitcher({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="relative flex w-full items-center gap-[10px] rounded-[7px] px-[14px] py-[9px] text-[13.5px] outline-none select-none data-[state=open]:!bg-[oklch(0.218_0.050_259)]"
+              className="relative flex w-full items-center gap-[10px] rounded-[7px] px-[14px] py-[9px] text-[13.5px] outline-none select-none data-[state=open]:!bg-[var(--color-sidebar-hover)]"
               style={{
                 paddingLeft: "16px",
                 color: "rgba(255,255,255,0.82)",
                 transition: "background 120ms",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "oklch(0.218 0.050 259)"
+                e.currentTarget.style.background = "var(--color-sidebar-hover)"
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent"
