@@ -17,6 +17,7 @@ import {
 } from "~/lib/canvas/student-id.server";
 import { fireAndForget, logAuditAction, logSecurityEvent } from "~/lib/logging.server";
 import { getActorContext, getRequestContext } from "~/lib/request-context.server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import {
   paginatedResponse,
   parseIdsParam,
@@ -77,8 +78,22 @@ export async function handleUsersApiRequest(request: Request) {
   switch (request.method) {
     case "GET": {
       const session = apiKeySession ?? (await auth.api.getSession({ headers: request.headers }));
-      if (!session?.user || session.user.role !== "ADMIN") {
+      if (!session?.user) {
         logAdminDenied(session?.user ?? null);
+        return apiError(403, "Forbidden");
+      }
+
+      // The enrollment picker reuses this paginated endpoint, but only within
+      // a course the caller can manage. Ordinary user-list reads remain ADMIN
+      // only; `courseId` enables a narrowly scoped candidate search.
+      const courseId = url.searchParams.get("courseId")?.trim() || null;
+      let isCourseManager = false;
+      if (courseId && session.user.role !== "ADMIN") {
+        const { course, access } = await resolveCourseAccessWithCourse(session.user, courseId);
+        isCourseManager = Boolean(course && access && access.rank >= 2);
+      }
+      if (session.user.role !== "ADMIN" && !isCourseManager) {
+        logAdminDenied(session.user);
         return apiError(403, "Forbidden");
       }
 
@@ -123,6 +138,29 @@ export async function handleUsersApiRequest(request: Request) {
       }
       if (isActiveParam !== null) {
         where.isActive = isActiveParam === "true";
+      }
+
+      if (courseId) {
+        // This mode is constrained to the picker contract so course managers
+        // cannot turn it into a platform-wide user directory.
+        if (
+          roleFilter.length !== 1 ||
+          roleFilter[0] !== "STUDENT" ||
+          isActiveParam !== "true"
+        ) {
+          return apiError(400, "COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
+        }
+
+        const exclude = url.searchParams.get("exclude");
+        if (exclude !== "enrolled" && exclude !== "ta") {
+          return apiError(400, "COURSE_CANDIDATES_EXCLUDE_REQUIRED");
+        }
+        where.enrollments = {
+          none:
+            exclude === "ta"
+              ? { courseId, role: "TA", isActive: true }
+              : { courseId, isActive: true },
+        };
       }
 
       let pagination: Pagination | null = null;

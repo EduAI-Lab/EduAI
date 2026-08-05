@@ -75,7 +75,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // TA/student candidates are no longer preloaded here (#1042) — the platform-wide
   // STUDENT list used to grow unbounded with total user count. The manager view's
-  // pickers now search on demand via /api/courses/:id/student-candidates.
+  // Candidates are searched on demand through the bounded, paginated users
+  // API; do not preload the platform-wide STUDENT list here.
   const instructors = canManageStaff
     ? await prisma.user.findMany({
         where: { role: 'INSTRUCTOR', isActive: true },
