@@ -18,6 +18,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Close Core AI/RAG/chat PICT models for #1182 — auto-router, chat-entry-admission (incl. course-id source → 404 and persisted not-found → 410), chat-rag-inject (AlwaysSource env vs arg), and byok-vs-platform-key-resolution (registry key-source assertions); census/TESTS dimension counts reconciled. (#1182, @GlowyBlack, 2026-08-05) — [#1340](https://github.com/EduAI-Lab/EduAI/pull/1340)
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ## [Week 12 — July 20–26, 2026]

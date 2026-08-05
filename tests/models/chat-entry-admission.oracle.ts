@@ -2,15 +2,16 @@
  * Oracle for tests/models/chat-entry-admission.pict (census docs/PICT_CENSUS.md § S3).
  *
  * Spec-derived verdict for POST /api/chat admission gates (issue #1182), modeled
- * from routes/api/chat.ts (~462–788) admission order — not downstream RAG or
- * provider routing:
+ * from routes/api/chat.ts admission order — not downstream RAG or provider routing:
  *
  *   1. Unauthenticated callers (no session, no service key) → 401.
  *   2. proxyUser without a verified admin API key session → 403.
  *   3. chatMode=admin blocked for service-key callers and non-ADMIN acting users → 403.
- *   4. Persisted chat chatbotType mismatch → 410; explicit course-pin conflict → 409.
- *   5. Course-scoped access: missing course → 404; no relationship or student on
- *      unpublished course → 403.
+ *   4. Persisted chat missing / wrong owner → 410; chatbotType mismatch → 410;
+ *      explicit course-pin conflict → 409.
+ *   5. Course-scoped access: `effectiveCourseId` comes from CourseIdSource
+ *      (body / body-missing / persisted) — missing course → 404; no relationship
+ *      or student on unpublished course → 403.
  *
  * Service-key callers receive synthetic ADMIN platform role for course-access
  * resolution when a course is present — that is an admission fact, not a claim
@@ -28,7 +29,9 @@ export type ChatEntryAdmissionRow = {
   ChatMode: "user" | "admin";
   CoursePublished: "yes" | "no";
   Enrollment: "none" | "student" | "instructor";
-  PersistedChat: "none" | "ok" | "type-mismatch" | "pin-conflict";
+  /** Where `effectiveCourseId` comes from (mirrors chat.ts resolution order inputs). */
+  CourseIdSource: "none" | "body" | "body-missing" | "persisted";
+  PersistedChat: "none" | "ok" | "type-mismatch" | "pin-conflict" | "not-found";
 };
 
 export type ChatAdmissionVerdict =
@@ -73,8 +76,14 @@ function courseAccessLevel(
   return "admin";
 }
 
-function hasCourseContext(row: ChatEntryAdmissionRow): boolean {
-  return row.Enrollment !== "none" || row.PersistedChat === "pin-conflict";
+/**
+ * Whether chat.ts would compute a non-null `effectiveCourseId` from the modeled
+ * sources (explicit body id, body id for a missing course, or persisted chat).
+ * Course-code resolution is covered by the `body` source in this model (adapter
+ * supplies a resolved course id the same way a successful code lookup would).
+ */
+function hasEffectiveCourseId(row: ChatEntryAdmissionRow): boolean {
+  return row.CourseIdSource !== "none";
 }
 
 function canOmitCourse(row: ChatEntryAdmissionRow): boolean {
@@ -96,6 +105,10 @@ export function chatEntryAdmissionOracle(row: ChatEntryAdmissionRow): ChatAdmiss
     }
   }
 
+  if (row.PersistedChat === "not-found") {
+    return { outcome: "denied", status: 410 };
+  }
+
   if (row.PersistedChat === "type-mismatch") {
     return { outcome: "denied", status: 410 };
   }
@@ -104,12 +117,16 @@ export function chatEntryAdmissionOracle(row: ChatEntryAdmissionRow): ChatAdmiss
     return { outcome: "denied", status: 409 };
   }
 
-  if (!canOmitCourse(row) && !hasCourseContext(row)) {
+  if (!canOmitCourse(row) && !hasEffectiveCourseId(row)) {
     // Constrained away in the .pict model — defensive only.
     return { outcome: "denied", status: 403 };
   }
 
-  if (hasCourseContext(row)) {
+  if (hasEffectiveCourseId(row)) {
+    if (row.CourseIdSource === "body-missing") {
+      return { outcome: "denied", status: 404 };
+    }
+
     const access = courseAccessLevel(row);
     if (access === null) {
       return { outcome: "denied", status: 403 };

@@ -3,8 +3,9 @@
 // PICT drift-contract adapter (#1182, census docs/PICT_CENSUS.md § S3): one committed
 // row table (tests/models/chat-entry-admission.cases.json) and one spec-derived oracle
 // assert POST /api/chat admission gates — auth, proxyUser, admin chatMode, publish/
-// enrollment, chatbotType mismatch (410), course-pin conflict (409) — via mocked
-// session/prisma/course-access like chat.rbac.test.ts (no live DB).
+// enrollment, course-id source (404 vs 403), chatbotType mismatch / not-found (410),
+// course-pin conflict (409) — via mocked session/prisma/course-access like
+// chat.rbac.test.ts (no live DB).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -119,12 +120,29 @@ function mockCourseAccess(row: ChatEntryAdmissionRow) {
   const isPublished = row.CoursePublished === "yes";
   const course = { ...COURSE, isPublished };
 
+  if (row.CourseIdSource === "body-missing") {
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: null,
+      access: null,
+    } as never);
+    return;
+  }
+
+  if (row.CourseIdSource === "none") {
+    return;
+  }
+
   if (row.Enrollment === "none") {
     if (row.Auth === "service-key" || row.Auth === "admin-api-key") {
       vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
         course: course as never,
         access: { level: "admin", rank: 4 } as never,
       });
+    } else {
+      vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+        course: course as never,
+        access: null,
+      } as never);
     }
     return;
   }
@@ -200,6 +218,11 @@ function configurePersistedChat(row: ChatEntryAdmissionRow, userId: string) {
     return;
   }
 
+  if (row.PersistedChat === "not-found") {
+    vi.mocked(prisma.chat.findFirst).mockResolvedValue(null);
+    return;
+  }
+
   const expectedType = row.ChatMode === "admin" ? "ADMIN" : "LEARNING";
   const chatbotType =
     row.PersistedChat === "type-mismatch"
@@ -208,7 +231,11 @@ function configurePersistedChat(row: ChatEntryAdmissionRow, userId: string) {
         : "ADMIN"
       : expectedType;
   const courseId =
-    row.PersistedChat === "pin-conflict" ? COURSE_PINNED : COURSE_ID;
+    row.PersistedChat === "pin-conflict"
+      ? COURSE_PINNED
+      : row.CourseIdSource === "persisted" || row.PersistedChat === "ok"
+        ? COURSE_ID
+        : COURSE_ID;
 
   vi.mocked(prisma.chat.findFirst).mockResolvedValue({
     id: CHAT_ID,
@@ -238,8 +265,8 @@ function buildBody(row: ChatEntryAdmissionRow): Record<string, unknown> {
     body.chatMode = "admin";
   }
 
-  if (row.Enrollment !== "none") {
-    body.courseId = COURSE_ID;
+  if (row.CourseIdSource === "body" || row.CourseIdSource === "body-missing") {
+    body.courseId = row.PersistedChat === "pin-conflict" ? COURSE_REQUEST : COURSE_ID;
   }
 
   if (row.PersistedChat === "pin-conflict") {
@@ -247,7 +274,7 @@ function buildBody(row: ChatEntryAdmissionRow): Record<string, unknown> {
     body.chatId = CHAT_ID;
   } else if (row.PersistedChat !== "none") {
     body.chatId = CHAT_ID;
-    if (row.Enrollment !== "none") {
+    if (row.CourseIdSource === "body" || row.CourseIdSource === "body-missing") {
       body.courseId = COURSE_ID;
     }
   }
@@ -287,7 +314,7 @@ beforeEach(() => {
 });
 
 describe.each(rows.map((row, index) => ({ row, index })))(
-  "chat-entry-admission PICT row #$index $row.Auth/$row.ProxyUser/$row.ChatMode/$row.Enrollment/$row.PersistedChat",
+  "chat-entry-admission PICT row #$index $row.Auth/$row.CourseIdSource/$row.Enrollment/$row.PersistedChat",
   ({ row }) => {
     it("matches the oracle admission verdict via POST /api/chat", async () => {
       configureAuth(row);
