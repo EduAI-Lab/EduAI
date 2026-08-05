@@ -3,7 +3,8 @@
  * request. The AI SDK does not expose this field as a model provider option.
  */
 export function vllmThinkingDisabledFetch(): typeof fetch | undefined {
-  if (process.env.VLLM_DISABLE_THINKING === "0") return undefined;
+  const optOut = process.env.VLLM_DISABLE_THINKING?.trim().toLowerCase();
+  if (["0", "false", "no", "off"].includes(optOut ?? "")) return undefined;
 
   return async (input, init) => {
     if (
@@ -13,13 +14,23 @@ export function vllmThinkingDisabledFetch(): typeof fetch | undefined {
     ) {
       try {
         const body = JSON.parse(init.body);
-        body.chat_template_kwargs = {
+        const chatTemplateKwargs = {
           ...body.chat_template_kwargs,
           enable_thinking: false,
         };
+        body.chat_template_kwargs = chatTemplateKwargs;
+        if (body.extra_body && typeof body.extra_body === "object") {
+          body.extra_body.chat_template_kwargs = {
+            ...body.extra_body.chat_template_kwargs,
+            ...chatTemplateKwargs,
+          };
+        }
         return fetch(input, { ...init, body: JSON.stringify(body) });
-      } catch {
-        // Malformed body — fall through to the unmodified request.
+      } catch (error) {
+        console.warn(
+          "[ai/vllm-thinking] Unable to inject chat_template_kwargs; forwarding request unchanged.",
+          error,
+        );
       }
     }
     return fetch(input, init);
