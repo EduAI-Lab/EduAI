@@ -243,5 +243,163 @@ describe('Topics routes', () => {
 
       expect(res.status).toBe(403);
     });
+
+    it('returns 400 for a non-numeric course id', async () => {
+      const res = await request(app)
+        .post('/api/courses/not-a-number/topics/remap')
+        .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: topicB.id }] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid course id/i);
+    });
+
+    it('returns 404 for a non-existent course', async () => {
+      const res = await request(app)
+        .post('/api/courses/999999/topics/remap')
+        .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: topicB.id }] });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the instructor is not assigned to this course', async () => {
+      const outsider = makeProfessor();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp)
+        .post(`/api/courses/${seed.course.id}/topics/remap`)
+        .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: topicB.id }] });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 500 when fromTopicId does not belong to this course', async () => {
+      const otherCourse = await seedMinimalCourse(prof.id);
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/remap`)
+        .send({ mappings: [{ fromTopicId: otherCourse.topic.id, toTopicId: topicB.id }] });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toMatch(/fromTopicId does not belong/i);
+    });
+
+    it('returns 500 when toTopicId does not belong to this course', async () => {
+      const otherCourse = await seedMinimalCourse(prof.id);
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/remap`)
+        .send({ mappings: [{ fromTopicId: topicA.id, toTopicId: otherCourse.topic.id }] });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toMatch(/toTopicId does not belong/i);
+    });
+  });
+
+  // ── POST /api/courses/:courseId/topics/sync (deprecated, still reachable) ─
+
+  describe('POST /api/courses/:courseId/topics/sync', () => {
+    it('returns 400 for a non-numeric course id', async () => {
+      const res = await request(app).post('/api/courses/not-a-number/topics/sync').send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 for a non-existent course', async () => {
+      const res = await request(app).post('/api/courses/999999/topics/sync').send({});
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the instructor is not assigned to this course', async () => {
+      const outsider = makeProfessor();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp)
+        .post(`/api/courses/${seed.course.id}/topics/sync`)
+        .send({});
+
+      expect(res.status).toBe(403);
+    });
+
+    it('syncs upstream topics and reports names missing locally', async () => {
+      listEduAiCourseTopics.mockResolvedValue([{ id: 'core-1', name: 'New Upstream Topic' }]);
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/sync`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const names = res.body.topics.map((t) => t.name);
+      expect(names).toContain('New Upstream Topic');
+      expect(names).toContain('Test Topic');
+      // 'Test Topic' never appeared upstream, so it's reported as missing.
+      expect(res.body.missingTopics).toMatchObject([{ name: 'Test Topic' }]);
+    });
+
+    it('maps a failed Core sync to the error status carried on the thrown error', async () => {
+      listEduAiCourseTopics.mockRejectedValue(Object.assign(new Error('Core down'), { status: 503 }));
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/sync`)
+        .send({});
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/core down/i);
+    });
+
+    it('falls back to 502 when the sync failure has no status', async () => {
+      listEduAiCourseTopics.mockRejectedValue(new Error('boom'));
+
+      const res = await request(app)
+        .post(`/api/courses/${seed.course.id}/topics/sync`)
+        .send({});
+
+      expect(res.status).toBe(502);
+    });
+  });
+
+  // ── GET/POST auth + validation edge cases ──────────────────────────
+
+  describe('unauthenticated / malformed requests', () => {
+    it('GET returns 400 for a non-numeric course id', async () => {
+      const res = await request(app).get('/api/courses/not-a-number/topics');
+      expect(res.status).toBe(400);
+    });
+
+    it('POST returns 400 for a non-numeric course id', async () => {
+      const res = await request(app)
+        .post('/api/courses/not-a-number/topics')
+        .send({ name: 'X' });
+      expect(res.status).toBe(400);
+    });
+
+    it('POST returns 404 for a non-existent course', async () => {
+      const res = await request(app).post('/api/courses/999999/topics').send({ name: 'X' });
+      expect(res.status).toBe(404);
+    });
+
+    it('POST returns 403 when the instructor is not assigned to this course', async () => {
+      const outsider = makeProfessor();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp)
+        .post(`/api/courses/${seed.course.id}/topics`)
+        .send({ name: 'Outsider Topic' });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('GET returns 401 when no req.user is present on the request', async () => {
+      // Mount the router directly with no auth middleware to exercise the
+      // route's own defensive `if (!req.user)` check (unreachable through
+      // the full app, which gates unauthenticated requests earlier).
+      const express = (await import('express')).default;
+      const { default: topicRoutes } = await import('../../src/routes/topics.js');
+      const bareApp = express();
+      bareApp.use(express.json());
+      bareApp.use('/api', topicRoutes);
+
+      const res = await request(bareApp).get(`/api/courses/${seed.course.id}/topics`);
+      expect(res.status).toBe(401);
+    });
   });
 });
