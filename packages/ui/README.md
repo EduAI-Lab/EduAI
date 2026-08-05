@@ -2,7 +2,11 @@
 
 Shared React component library for the EduAI monorepo. This package is the single source of truth for UI primitives and design-system components — every screen in `apps/core` (and future apps) imports from here instead of redefining its own components.
 
-It implements the **EduAI Design System** (see [`/eduai-design-system`](../../eduai-design-system) for tokens, typography, and guidelines): UBC Blue brand, role-badge palette, the type scale, and dark-mode tokens.
+It implements the **EduAI Design System**: UBC Blue brand, role-badge palette, the type scale, and dark-mode tokens.
+
+The design tokens live in [`src/styles/base.css`](src/styles/base.css) and are the single source of truth for the platform's colours, typography, radii and shadows — Core, AI Tutor and Question Maker all import that one file rather than keeping their own copies (#1272). Each app's own stylesheet holds only `@import "tailwindcss"` (which must stay first), its own `@source` globs, and genuinely app-specific rules. Typography and guideline references live in [`/eduai-design-system`](../../eduai-design-system); its colour tokens are stale and marked superseded.
+
+Changes to `base.css` are guarded by `node scripts/token-parity.mjs check <baseline.json>`, which replays the `@import` cascade and resolves `var()` chains to confirm no resolved token value moved unintentionally.
 
 ## Why this package exists
 
