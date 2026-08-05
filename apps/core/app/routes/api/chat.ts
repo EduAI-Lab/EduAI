@@ -95,7 +95,7 @@ import {
   computeAdhdResponseMetrics,
 } from "~/lib/ai/adhd-metrics";
 import { recordResponseComplianceEvent } from "~/lib/assistive-events.server";
-import { findRelevantContent } from "~/lib/ai/embedding";
+import { classifyRagRetrievalError, findRelevantContent } from "~/lib/ai/embedding";
 import {
   courseCodeLookupCandidates,
   pickCourseIdByCandidatePriority,
@@ -109,6 +109,7 @@ import {
   enforceAdminIfApiKey,
   requireServiceKey,
 } from "~/lib/auth/guards.server";
+import { isUbcEmail } from "~/lib/auth/ubc-email";
 import { isRateLimited, parseEnvInt } from "~/lib/auth/rate-limit.server";
 import { auth } from "~/lib/auth/server";
 import { fireAndForget, logSecurityEvent } from "~/lib/logging.server";
@@ -368,6 +369,15 @@ function extractAssistantText(messages: GenericMessage[] | undefined): string {
  * Maps an external `(provider, id)` pair to an EduAI user, creating the user +
  * `ExternalUser` record when needed. The canonical EduAI email stays unchanged;
  * we only update the mapping's email for reference.
+ *
+ * SECURITY (#225 AUTH-01 / AUTH-03): the `(provider, externalUserId)` mapping
+ * is the ONLY identity binding here. We never look up an *existing* EduAI
+ * account by `proxyUser.email` and inherit its role — that let any delegating
+ * caller impersonate an arbitrary instructor/admin merely by naming their
+ * email. A brand-new mapping only ever creates a brand-new, least-privilege
+ * STUDENT account, and only when the supplied email clears the same bar as
+ * self-registration (a real UBC address, with `auth.allowPublicRegistration`
+ * on); otherwise we fail closed instead of minting an unvetted account.
  */
 async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   const provider = proxyUser.provider?.trim().toLowerCase() || "aitutor";
@@ -377,10 +387,8 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
     throw new Error("proxyUser.id is required");
   }
 
-  let email = proxyUser.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    email = `${externalUserId}@${provider}.local`;
-  }
+  const rawEmail = proxyUser.email?.trim().toLowerCase();
+  const suppliedEmail = rawEmail && rawEmail.includes("@") ? rawEmail : null;
 
   const existingMapping = await prisma.externalUser.findUnique({
     where: {
@@ -395,26 +403,49 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
   });
 
   if (existingMapping?.user) {
-    if (!existingMapping.email && email) {
+    if (!existingMapping.email && suppliedEmail) {
       await prisma.externalUser.update({
         where: { id: existingMapping.id },
-        data: { email },
+        data: { email: suppliedEmail },
       });
     }
     return existingMapping.user;
   }
 
-  let user = await prisma.user.findUnique({ where: { email } });
+  if (!suppliedEmail || !isUbcEmail(suppliedEmail)) {
+    throw new Error(
+      "proxyUser.email must be a verifiable UBC email address to create a new proxy identity",
+    );
+  }
+  if (!(await getPolicy("auth.allowPublicRegistration"))) {
+    throw new Error(
+      "Cannot create a new proxy identity while public registration is disabled",
+    );
+  }
 
-  if (!user) {
+  let user: User;
+  try {
     user = await prisma.user.create({
       data: {
-        email,
-        name: email,
+        email: suppliedEmail,
+        name: suppliedEmail,
         role: UserRole.STUDENT,
         isActive: true,
       },
     });
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      // The email already belongs to an existing EduAI account. Refuse to
+      // bind an external identity onto it — that is exactly the AUTH-01
+      // escalation path this fix closes.
+      throw new Error("An EduAI account with this email already exists");
+    }
+    throw error;
   }
 
   try {
@@ -422,7 +453,7 @@ async function resolveProxyUser(proxyUser: ProxyUserPayload): Promise<User> {
       data: {
         provider,
         externalUserId,
-        email,
+        email: suppliedEmail,
         userId: user.id,
       },
     });
@@ -1745,12 +1776,15 @@ export async function action({ request }: ActionFunctionArgs) {
       //     is preserved.
       //   - `getChatModelCapabilities` already catches its own errors
       //     internally and resolves with a safe fallback — it never rejects.
-      //   - The course-RAG fetch has a *specific* fail-open fallback (log,
-      //     then treat as zero hits) that must not turn into a whole-batch
-      //     rejection. It is wrapped in its own try/catch and run as a plain
-      //     async IIFE inside the same `Promise.all`, so its failure resolves
-      //     to a sentinel instead of rejecting the batch.
-      const courseRagPromise = (async (): Promise<{ hits: HybridRagHit[] }> => {
+      //   - The course-RAG fetch must not reject the whole batch (that would
+      //     mask getPolicy failures and lose parallel progress). It catches
+      //     locally and returns `{ error }` so the consumer can fail closed
+      //     with 503 (#225 RAG-01/RAG-02) instead of treating retrieval
+      //     outages as zero hits.
+      type CourseRagPrefetchResult =
+        | { hits: HybridRagHit[]; error?: undefined }
+        | { hits: []; error: unknown };
+      const courseRagPromise = (async (): Promise<CourseRagPrefetchResult> => {
         if (!(shouldPrefetchCourseRag(hasCourse) && effectiveCourseId)) {
           return { hits: [] };
         }
@@ -1768,7 +1802,7 @@ export async function action({ request }: ActionFunctionArgs) {
           return { hits };
         } catch (error) {
           console.error("Error prefetching course RAG context:", error);
-          return { hits: [] };
+          return { hits: [], error };
         }
       })();
 
@@ -1829,9 +1863,26 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
         .join("\n\n");
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
-        // On failure `courseRagResult.hits` is already `[]` (set inside the
-        // catch above), so this matches the original catch block's behavior
-        // of injecting based on empty hits without a separate branch here.
+        // #225 RAG-01/RAG-02: an exception during retrieval means the
+        // embedding path failed (stale dimension vs. corpus, or provider
+        // down) — never treat it like a legitimate zero-hit result. Any
+        // failed course prefetch must fail closed: prompts that the intent
+        // heuristic skips (e.g. "Explain polymorphism") can still inject
+        // via strong similarity when retrieval succeeds, so gating 503 on
+        // courseRagNeeded would still answer ungrounded. Deliberately
+        // skipped retrieval never enters the promise body (see
+        // shouldPrefetchCourseRag).
+        if (courseRagResult.error !== undefined) {
+          return chatApiReject(
+            503,
+            {
+              error:
+                "Course materials could not be searched right now. Please try again shortly.",
+              code: classifyRagRetrievalError(courseRagResult.error),
+            },
+            { chatMode, userId: actingUser.id, chatId: chat?.id ?? null },
+          );
+        }
         courseRagHits = courseRagResult.hits;
         courseRagInject = shouldInjectCourseRag({
           hasCourse,

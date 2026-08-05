@@ -1,3 +1,14 @@
+/**
+ * AUTH-20: this store (and the equivalent one in `canvas/guards.server.ts`)
+ * is per-process / in-memory — it is NOT shared across horizontally-scaled
+ * instances. With N instances behind a load balancer, a caller's effective
+ * limit is multiplied by up to N (each instance tracks its own hit count for
+ * the same key) instead of being divided across them. No Redis (or other
+ * shared store) is introduced here since none is otherwise used in this
+ * project. If/when Core runs with N > 1 instances, either move this to a
+ * shared store or divide the configured `*_RATE_LIMIT` env vars by the
+ * instance count so the effective limit stays correct.
+ */
 const store = new Map<string, number[]>();
 
 /**
@@ -35,7 +46,7 @@ function evictStaleEntries(now: number): void {
 
 export function isRateLimited(
   key: string,
-  limit = Number(process.env.SESSION_VALIDATE_RATE_LIMIT ?? 300),
+  limit = parseEnvInt(process.env.SESSION_VALIDATE_RATE_LIMIT, 300),
   windowMs = 60_000
 ): boolean {
   const now = Date.now();

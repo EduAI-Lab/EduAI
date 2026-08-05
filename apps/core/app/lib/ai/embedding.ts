@@ -294,6 +294,26 @@ function assertEmbeddingDimension(embedding: number[], context: string): void {
   }
 }
 
+/**
+ * Classifies a `findRelevantContent` / `generateEmbedding` failure for callers
+ * that must distinguish "retrieval genuinely failed" from "zero materials
+ * matched" (#225 RAG-01/RAG-02). `findRelevantContent` never throws for an
+ * empty result set — an exception here always means the query embedding
+ * couldn't be generated/compared (stale dimension vs. the stored corpus, or
+ * the embedding provider is unreachable), so callers must not silently treat
+ * it as "no relevant content" and answer ungrounded (or claim materials don't
+ * cover the question) with no signal that RAG never ran.
+ */
+export function classifyRagRetrievalError(
+  error: unknown,
+): "RAG_DIMENSION_MISMATCH" | "RAG_RETRIEVAL_FAILED" {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/dimension mismatch/i.test(message) || /different vector dimensions/i.test(message)) {
+    return "RAG_DIMENSION_MISMATCH";
+  }
+  return "RAG_RETRIEVAL_FAILED";
+}
+
 const courseSettingsCache = new Map<
   string,
   { settings: EffectiveEmbeddingSettings; expiresAt: number }
