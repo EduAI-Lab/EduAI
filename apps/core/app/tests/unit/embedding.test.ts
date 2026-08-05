@@ -339,9 +339,9 @@ describe("resolveIvfflatProbes", () => {
     expect(resolveIvfflatProbes()).toBe(13);
   });
 
-  it("clamps overrides above the max to 100", () => {
+  it("clamps overrides above the max to 99", () => {
     process.env.RAG_IVFFLAT_PROBES = "9999";
-    expect(resolveIvfflatProbes()).toBe(100);
+    expect(resolveIvfflatProbes()).toBe(99);
   });
 
   it("clamps overrides below the min to 1", () => {
