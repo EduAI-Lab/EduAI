@@ -6,6 +6,7 @@
  * from the same policy source.
  */
 import prisma from "~/lib/prisma.server";
+import { redactErrorForConsole } from "~/lib/redact.server";
 
 const POLICY_ID = "default";
 const DEFAULT_AUDIT_RETENTION_DAYS = 365;
@@ -176,7 +177,9 @@ export async function runConfiguredLogRetentionIfDue(
     // Cleanup failures should be observable but must never block auth or domain mutations.
     // Roll back the throttle timestamp so the next request can retry the sweep.
     lastAutoSweepStartedAt = previousSweepStartedAt;
-    console.error("[LOG_RETENTION_SWEEP_FAILED]", error);
+    // The sweep only ever fails on a DB error, which is exactly the error whose message carries
+    // the connection string — redact it like every other console fallback (PR #1291 review).
+    console.error("[LOG_RETENTION_SWEEP_FAILED]", redactErrorForConsole(error));
   } finally {
     isAutoSweepRunning = false;
   }
