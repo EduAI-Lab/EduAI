@@ -53,9 +53,9 @@ function CronStatusBadge({ status, external, message }: { status: CronJobStatusV
   if (status === "RUNNING") {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-        style={{ background: "var(--color-warning-100, oklch(0.96 0.05 85))", color: "var(--color-warning-700, oklch(0.55 0.12 85))" }}>
+        style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}>
         <span className="w-[5px] h-[5px] rounded-full flex-shrink-0 animate-pulse"
-          style={{ background: "var(--color-warning-500, oklch(0.75 0.15 85))" }} />
+          style={{ background: "var(--color-warning-500)" }} />
         Running
       </span>
     );
@@ -477,7 +477,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
               {runningCount > 0 ? (
                 <span className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full animate-pulse"
-                    style={{ background: "var(--color-warning-500, oklch(0.75 0.15 85))" }} />
+                    style={{ background: "var(--color-warning-500)" }} />
                   {runningCount}
                 </span>
               ) : errorCount > 0 ? (
@@ -496,7 +496,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
           <CardDescription>
             All registered cron jobs (infra shell scripts and extension-managed in-process jobs)
             {hasRunning && (
-              <span className="ml-2 text-xs" style={{ color: "var(--color-warning-700, oklch(0.55 0.12 85))" }}>
+              <span className="ml-2 text-xs" style={{ color: "var(--color-warning-700)" }}>
                 · auto-refreshing
               </span>
             )}
@@ -532,7 +532,7 @@ export function CronJobsAdminView({ jobs: initialJobs }: CronJobsAdminViewProps)
                         </Badge>
                         {job.scheduleOverridden && (
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                            style={{ background: "var(--color-warning-100, oklch(0.96 0.05 85))", color: "var(--color-warning-700, oklch(0.55 0.12 85))" }}>
+                            style={{ background: "var(--color-warning-100)", color: "var(--color-warning-700)" }}>
                             custom
                           </span>
                         )}

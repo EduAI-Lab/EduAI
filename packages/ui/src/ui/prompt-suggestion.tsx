@@ -92,7 +92,7 @@ function PromptSuggestion({
                   {before}
                 </span>
               )}
-              <span className="text-primary font-medium whitespace-pre-wrap">
+              <span className="text-primary-text font-medium whitespace-pre-wrap">
                 {actualHighlightedText}
               </span>
               {after && (
