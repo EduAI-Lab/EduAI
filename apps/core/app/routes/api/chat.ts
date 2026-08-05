@@ -1587,7 +1587,16 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    const webToolsEnabled = await getPolicy("chat.webToolsEnabled");
+    // §1298: `getPolicy` is a cached DB read keyed only on a static flag name —
+    // it does not depend on, and is not depended on by, the model-capability
+    // lookup or course-RAG fetch performed below in each branch. We kick it
+    // off here without awaiting so it resolves concurrently with that
+    // branch-specific work (see the `Promise.all` calls below); we only block
+    // on it at the point it is first actually needed (`buildChatToolRegistry`
+    // in the non-admin branch). The admin branch never reads
+    // `webToolsEnabled`, so there it simply overlaps for free with
+    // `resolveActiveChatModel`.
+    const webToolsEnabledPromise = getPolicy("chat.webToolsEnabled");
     const resolvedSystemPrompt =
       trimmedSystemPrompt ?? sanitizeSystemPrompt(chat.systemPrompt) ?? null;
 
@@ -1599,6 +1608,10 @@ export async function action({ request }: ActionFunctionArgs) {
     let courseRagContextText = "";
     let courseRagInject = false;
     let effectiveForceHybridRag = forceHybridRag;
+    // Set in both branches below once `webToolsEnabledPromise` resolves; read
+    // later (outside the branch) for debug logging and the
+    // X-Web-Tools-Enabled response header.
+    let webToolsEnabled: boolean;
     /** Set for admin so we can re-cap after composeSecurityPrompt expands `system`. */
     let adminContextWindow: number | undefined;
     let adminDesiredMaxOutput: number | undefined;
@@ -1625,7 +1638,16 @@ export async function action({ request }: ActionFunctionArgs) {
           customPrompt: resolvedSystemPrompt,
         });
 
-      const activeChatModel = await resolveActiveChatModel(model);
+      // Admin mode never reads `webToolsEnabled`, but we still must observe
+      // the same rejection semantics as the original serial `await getPolicy`
+      // — so it is awaited alongside the model lookup rather than left to
+      // float as an unhandled rejection. Both promises were already in
+      // flight before this branch started, so this await is effectively free.
+      let activeChatModel: Awaited<ReturnType<typeof resolveActiveChatModel>>;
+      [webToolsEnabled, activeChatModel] = await Promise.all([
+        webToolsEnabledPromise,
+        resolveActiveChatModel(model),
+      ]);
       supportsTools = activeChatModel?.supportsTools ?? false;
       const contextWindow = resolveModelContextWindow(
         activeChatModel?.maxTokens,
@@ -1706,12 +1728,63 @@ export async function action({ request }: ActionFunctionArgs) {
         system: buildDefaultSystemPrompt(),
       };
     } else {
+      // §1431 dependency graph: `webToolsEnabledPromise` (kicked off before the
+      // admin/non-admin branch), `getChatModelCapabilities(model)`, and the
+      // course-RAG fetch are mutually independent — none consumes another's
+      // result, they only share inputs (`model`, `effectiveCourseId`,
+      // `userQuestion`) that were already resolved earlier in the request. The
+      // original code awaited them one at a time, serializing three
+      // network/DB round trips into TTFB. We now fire all three at once and
+      // await together.
+      //
+      // Error-handling parity:
+      //   - `getPolicy` (webToolsEnabledPromise) has no local try/catch — a
+      //     rejection must still propagate to the outer request handler
+      //     exactly as the original serial `await` would. It is included in
+      //     `Promise.all` (not `allSettled`) so first-rejection-wins behavior
+      //     is preserved.
+      //   - `getChatModelCapabilities` already catches its own errors
+      //     internally and resolves with a safe fallback — it never rejects.
+      //   - The course-RAG fetch has a *specific* fail-open fallback (log,
+      //     then treat as zero hits) that must not turn into a whole-batch
+      //     rejection. It is wrapped in its own try/catch and run as a plain
+      //     async IIFE inside the same `Promise.all`, so its failure resolves
+      //     to a sentinel instead of rejecting the batch.
+      const courseRagPromise = (async (): Promise<{ hits: HybridRagHit[] }> => {
+        if (!(shouldPrefetchCourseRag(hasCourse) && effectiveCourseId)) {
+          return { hits: [] };
+        }
+        if (routerRagPrefetch) {
+          return { hits: routerRagPrefetch };
+        }
+        try {
+          const hits = await findRelevantContent(
+            userQuestion,
+            effectiveCourseId,
+            HYBRID_RAG_MAX_CHUNKS,
+            undefined,
+            restrictRagToStudentVisible,
+          );
+          return { hits };
+        } catch (error) {
+          console.error("Error prefetching course RAG context:", error);
+          return { hits: [] };
+        }
+      })();
+
+      let modelCapabilities: Awaited<ReturnType<typeof getChatModelCapabilities>>;
+      let courseRagResult: Awaited<typeof courseRagPromise>;
+      [webToolsEnabled, modelCapabilities, courseRagResult] = await Promise.all([
+        webToolsEnabledPromise,
+        getChatModelCapabilities(model),
+        courseRagPromise,
+      ]);
+
       const tools = buildChatToolRegistry({
         effectiveCourseId,
         webToolsEnabled,
         restrictToStudentVisible: restrictRagToStudentVisible,
       });
-      const modelCapabilities = await getChatModelCapabilities(model);
       supportsTools = modelCapabilities.supportsTools;
       effectiveForceHybridRag =
         forceHybridRag ||
@@ -1756,35 +1829,21 @@ Be helpful, conversational, and accurate. Use markdown for formatting. For mathe
         .join("\n\n");
 
       if (shouldPrefetchCourseRag(hasCourse) && effectiveCourseId) {
-        try {
-          courseRagHits =
-            routerRagPrefetch ??
-            (await findRelevantContent(
-              userQuestion,
-              effectiveCourseId,
-              HYBRID_RAG_MAX_CHUNKS,
-              undefined,
-              restrictRagToStudentVisible,
-            ));
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: courseRagHits,
-          });
-          if (courseRagInject && courseRagHits.length > 0) {
-            courseRagContextText = buildCappedRagContextText(
-              courseRagHits,
-              HYBRID_RAG_MAX_CHUNKS,
-              HYBRID_RAG_MAX_CONTEXT_CHARS,
-            );
-          }
-        } catch (error) {
-          console.error("Error prefetching course RAG context:", error);
-          courseRagInject = shouldInjectCourseRag({
-            hasCourse,
-            courseRagNeeded,
-            hits: [],
-          });
+        // On failure `courseRagResult.hits` is already `[]` (set inside the
+        // catch above), so this matches the original catch block's behavior
+        // of injecting based on empty hits without a separate branch here.
+        courseRagHits = courseRagResult.hits;
+        courseRagInject = shouldInjectCourseRag({
+          hasCourse,
+          courseRagNeeded,
+          hits: courseRagHits,
+        });
+        if (courseRagInject && courseRagHits.length > 0) {
+          courseRagContextText = buildCappedRagContextText(
+            courseRagHits,
+            HYBRID_RAG_MAX_CHUNKS,
+            HYBRID_RAG_MAX_CONTEXT_CHARS,
+          );
         }
       }
 
