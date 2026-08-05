@@ -741,6 +741,8 @@ table silently tests the old row set, which is worse than no coverage because it
 
 ---
 
+| [`users-api-pagination.test.ts`](apps/core/app/tests/unit/users-api-pagination.test.ts) | #1144 regression coverage: a course manager may use the paginated users API only to search active STUDENT candidates for a managed course, excluding already-enrolled users; instructors cannot use the general directory and candidate queries must carry the active-student constraint. |
+
 ## EduAI Integration Tests
 
 **Path:** `apps/core/app/tests/integration/`

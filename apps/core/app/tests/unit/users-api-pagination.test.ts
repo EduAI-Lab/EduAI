@@ -16,6 +16,10 @@ vi.mock("~/lib/auth/guards.server", () => ({
   enforceAdminIfApiKey: vi.fn(async () => ({ response: null, session: null })),
 }));
 
+vi.mock("~/lib/auth/course-access.server", () => ({
+  resolveCourseAccessWithCourse: vi.fn(),
+}));
+
 vi.mock("~/lib/logging.server", () => ({
   fireAndForget: vi.fn(),
   logAuditAction: vi.fn(),
@@ -31,6 +35,7 @@ vi.mock("~/lib/prisma.server", () => ({
 }));
 
 import { auth } from "~/lib/auth/server";
+import { resolveCourseAccessWithCourse } from "~/lib/auth/course-access.server";
 import prisma from "~/lib/prisma.server";
 import { handleUsersApiRequest } from "~/lib/api/users-api.server";
 
@@ -215,5 +220,53 @@ describe("GET /api/users — ?ids= lookup (#1125)", () => {
     ).where;
     expect(where.id).toEqual({ in: ["u1", "u2"] });
     expect(where.OR).toBeDefined();
+  });
+});
+
+describe("GET /api/users course student candidates", () => {
+  const candidateQuery =
+    "?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT&isActive=true&search=ali";
+
+  it("lets a course manager search only active students not already enrolled", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
+    } as never);
+    vi.mocked(resolveCourseAccessWithCourse).mockResolvedValue({
+      course: { id: "c1" },
+      access: { level: "instructor", rank: 2 },
+    } as never);
+    mockPagedTransaction();
+
+    expect((await get(candidateQuery)).status).toBe(200);
+
+    const where = (vi.mocked(prisma.user.findMany).mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    }).where;
+    expect(where).toMatchObject({
+      role: { in: ["STUDENT"] },
+      isActive: true,
+      enrollments: { none: { courseId: "c1", isActive: true } },
+      OR: [
+        { name: { contains: "ali", mode: "insensitive" } },
+        { email: { contains: "ali", mode: "insensitive" } },
+      ],
+    });
+  });
+
+  it("does not turn the endpoint into a general user directory for instructors", async () => {
+    vi.mocked(auth.api.getSession).mockResolvedValue({
+      user: { id: "instructor-1", role: "INSTRUCTOR", email: "instructor@example.com" },
+    } as never);
+
+    expect((await get("?page=1&pageSize=25&role=STUDENT")).status).toBe(403);
+  });
+
+  it("requires the candidate mode to request active students", async () => {
+    mockPagedTransaction();
+
+    const response = await get("?courseId=c1&exclude=enrolled&page=1&pageSize=25&role=STUDENT");
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(await body(response))).toContain("COURSE_CANDIDATES_REQUIRE_ACTIVE_STUDENTS");
   });
 });
