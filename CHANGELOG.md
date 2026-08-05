@@ -6,11 +6,20 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Changed
+
+- [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
 ### Tests
 
+- [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 - [core] test: Route loader/action coverage for `app/routes` (#1213) — adds 46 test files covering every `admin.*.tsx` route's authorization checks, `courses.$courseId.tsx`/`chat.$chatId.tsx` found/not-found/unauthorized branches, every remaining top-level page loader/action, all four `auth/*` routes, and ~20 `app/routes/api/*` handlers that had drifted to 0% coverage since the issue was filed (`dashboard.stats`, `sessions.validate`, `courses.embedding-settings.$`, `questions(.ts/.id.ts)`, `courses.id.rag-settings`, `vllm-models`, `courses.re-embed.$`/`$jobId`, `e2e.promote`, `canvas.$`, `courses.canvas-materials.$`, and others). Statement coverage: `app/routes/api` 63%→86.45% (the issue's stated 72.57% had regressed since filing; now above it), `app/routes/auth` 36%→81.43%, top-level `app/routes` 3.67%→43.32%, combined 54.4%(stale)/59%(re-measured)→76.34%. The remaining gap to the 80% combined target sits almost entirely in top-level route JSX component bodies, which the issue itself scopes out as "not the testable surface" for loader/action work — closing it would require rendering full page components (data fetching, `@eduai/ui` deps), a separate and substantially larger effort. (#1213, @evanbones, 2026-08-05) — [#1397](https://github.com/EduAI-Lab/EduAI/pull/1397)
 
 ## [Week 13 — July 27 – August 2, 2026]
+
+### Changed
+
+- [core] perf: Scope KaTeX and Streamdown CSS to the chunk that renders markdown — both vendor sheets moved out of the always-loaded `app.css` into `app/styles/chat-markdown.css`, imported from `components/chat/chat-message.tsx`, so React Router links them only on the five routes that render chat messages. Root stylesheet drops from 210.0KB raw / 35.5KB gzip to 181.3KB / 27.4KB, and the number of Core page routes shipping KaTeX rules drops from all 25 to 5; the 59 KaTeX font files are now reachable only from the chat stylesheet. The Streamdown `@source` directives stay in `app.css` (its markup needs globally-emitted Tailwind utilities). Also deletes the dead `components/chat/markdown-renderer.tsx`. Closes #1222. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 
 ### Fixed
 
@@ -25,6 +34,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 ### Tests
 
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
+- [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#1158](https://github.com/EduAI-Lab/EduAI/pull/1158)
 - [ai-tutor] fix: Deduplicate hardcoded default tutor model id — aiGuidance.js now imports DEFAULT_TUTOR_MODEL from aiModelPolicy.js instead of a separate literal, and StudentAiChat.tsx picks the default model via the isDefaultTutor flag already returned by GET /ai-models instead of string-matching "gemini-2.5-flash", so the three previously-independent literals can no longer drift out of sync. (#1004, @evanbones, 2026-07-20)
@@ -72,9 +82,11 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Added
 
+- [monorepo] perf: Headless page profiler (`npm run perf:pages`) that drives real Chromium over every UI route in all three apps under the lowest seeded role that can render it and pins the browser-side before-snapshot to `docs/perf/frontend/baseline/`, with #961's endpoint baseline moved to `docs/perf/backend/baseline/` to sit beside it. Closes #1288. (#1288, @abdullahmoh21, 2026-07-30) — [#1289](https://github.com/EduAI-Lab/EduAI/pull/1289)
 - [core] test: PICT pilot — oracle (`material-visibility.oracle.ts`) and world-builder/adapters (`material-visibility.integration.test.ts`) for the material-visibility drift contract (census § S1): one spec-derived verdict function exercised against the REST material read gate and both RAG retrieval branches (hybrid BM25 + pure vector) in `lib/ai/embedding.ts` via the 18 committed PICT rows from #1179. Seeded-regression check confirmed (a deliberately dropped visibility gate fails exactly the row that isolates it, naming the row in the failure). Closes #1180. (#1180, @evanbones, 2026-07-30) — [#1297](https://github.com/EduAI-Lab/EduAI/pull/1297)
 - [core] test: Cover password requirement states, live sign-up guidance, complex-password acceptance, 16-character passphrases, and weak invitation-password rejection. (#1240, @superbolt08, 2026-07-28) — [#1237](https://github.com/EduAI-Lab/EduAI/pull/1237)
 - [core] fix: Nonce the SSR data-stream, theme, and React Suspense-reveal scripts and allow `data:` in `font-src` so CSP stops blocking them on hydration. (#1219, @abdullahmoh21, 2026-07-27) — [#1224](https://github.com/EduAI-Lab/EduAI/pull/1224)
+- [question-maker] test: Raise `src/routes` + `src/config` statement coverage from 60.5% to 89.4% (target was 80%) with new route tests for `questions.js`, `course.js`, `canvas.js`, `eduai.js`, `assessments.js`, `assessmentVariant.js`, `topics.js`, `bug-reports.js`, and `auth.js`, plus a dedicated unit test for `database.js`'s connection-retry/failure/`allowFailure` branches, which were previously only exercised via the happy path. Closes #1217. (#1217, @evanbones, 2026-07-31) — [#1322](https://github.com/EduAI-Lab/EduAI/pull/1322)
 
 ### Removed
 
