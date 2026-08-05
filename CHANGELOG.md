@@ -8,10 +8,12 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Changed
 
+- [core] fix: Broaden Phase 1's `rule2c_complex_task` (named-construct-gated: code-writing verb + a named algorithm/pattern/primitive, or ISA assembly phrasing — deliberately not a bare-topic-word gate, which over-escalated ~50% of routine homework prompts in testing) and `rule2b_debug` (adds "why does X crash/leak/hang/behave unpredictably" phrasing) against v3 research-suite wording; escalation catch rate on the v3 dev split rose from 0/5 to 2/5 with 0 over-serves. (@superbolt08, 2026-08-05) — [#1394](https://github.com/EduAI-Lab/EduAI/pull/1394)
 - [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ### Tests
 
+- [core] test: Add `routing-rules-fp-guardrail.test.ts` — asserts realistic easy/topic-adjacent homework prompts do not escalate under the broadened rules, plus two abstract-question regression tests for a false-positive caught during dev-split re-evaluation. (@superbolt08, 2026-08-05) — [#1394](https://github.com/EduAI-Lab/EduAI/pull/1394)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ## [Week 13 — July 27 – August 2, 2026]
