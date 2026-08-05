@@ -6,6 +6,10 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Removed
+
+- [core] refactor: Retire the dead `rule2_web_lookup_tier_3` Phase 1 escalation rule — confirmed zero of the v3 research suite's 212 prompts have web-lookup phrasing, and the Firecrawl-backed web-search capability it pointed at isn't currently deployed as a managed, per-course-enabled routed feature. Self-contained removal, no dependent override sites. (@superbolt08, 2026-08-05) — [#1395](https://github.com/EduAI-Lab/EduAI/pull/1395)
+
 ### Changed
 
 - [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
