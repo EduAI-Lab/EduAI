@@ -46,25 +46,28 @@ export function canViewMaterial(access: CourseAccess, isPublished: boolean): boo
   return true
 }
 
-// TA can only delete their own uploads; instructor/admin/unit can delete any
+// TA can only delete their own uploads; instructor/admin/unit can delete any.
+// `uploadedBy` is nullable (the uploader's FK is SetNull on user delete) — a
+// null uploader has no owner, so a TA must never match it (#225 AUTH-08).
 export function canDeleteMaterial(
   access: CourseAccess,
   userId: string,
-  uploadedBy: string,
+  uploadedBy: string | null,
 ): boolean {
   if (access === 'admin' || access === 'unit' || access === 'instructor') return true
-  if (access === 'ta') return userId === uploadedBy
+  if (access === 'ta') return uploadedBy !== null && userId === uploadedBy
   return false
 }
 
-// Rename mirrors delete: TA can rename only their own uploads; instructor/admin/unit any
+// Rename mirrors delete: TA can rename only their own uploads; instructor/admin/unit any.
+// Same null-uploader fail-closed rule as canDeleteMaterial (#225 AUTH-08).
 export function canRenameMaterial(
   access: CourseAccess,
   userId: string,
-  uploadedBy: string,
+  uploadedBy: string | null,
 ): boolean {
   if (access === 'admin' || access === 'unit' || access === 'instructor') return true
-  if (access === 'ta') return userId === uploadedBy
+  if (access === 'ta') return uploadedBy !== null && userId === uploadedBy
   return false
 }
 
