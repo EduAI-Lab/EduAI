@@ -39,7 +39,7 @@ export function NavSecondary({
             const linkClassName =
               "relative flex items-center gap-[10px] w-full px-[14px] py-[9px] rounded-[7px] text-[13.5px] outline-none select-none"
             const linkStyle = {
-              background: isActive ? "oklch(0.248 0.055 259)" : "transparent",
+              background: isActive ? "var(--color-sidebar-active)" : "transparent",
               color: isActive ? "#fff" : "rgba(255,255,255,0.82)",
               fontWeight: isActive ? 500 : 400,
               transition: "background 120ms",
@@ -74,7 +74,7 @@ export function NavSecondary({
                     onMouseEnter={(e) => {
                       if (!isActive) {
                         ;(e.currentTarget as HTMLAnchorElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          "var(--color-sidebar-hover)"
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -96,7 +96,7 @@ export function NavSecondary({
                     onMouseEnter={(e: React.MouseEvent<HTMLElement>) => {
                       if (!isActive) {
                         ;(e.currentTarget as HTMLElement).style.background =
-                          "oklch(0.218 0.050 259)"
+                          "var(--color-sidebar-hover)"
                       }
                     }}
                     onMouseLeave={(e: React.MouseEvent<HTMLElement>) => {

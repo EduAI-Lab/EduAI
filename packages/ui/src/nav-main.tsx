@@ -15,8 +15,8 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip"
 
-const SIDEBAR_ACTIVE_BG = "oklch(0.248 0.055 259)"
-const SIDEBAR_HOVER_BG = "oklch(0.218 0.050 259)"
+const SIDEBAR_ACTIVE_BG = "var(--color-sidebar-active)"
+const SIDEBAR_HOVER_BG = "var(--color-sidebar-hover)"
 const SIDEBAR_TEXT_MUTED = "rgba(255,255,255,0.82)"
 
 export interface NavMainItem {
@@ -134,11 +134,11 @@ export function NavMain({
                         const childActive = isActive(currentPath, child.url)
                         const badgeBg =
                           child.badge === "green"
-                            ? "#22c55e"
+                            ? "var(--color-badge-green)"
                             : child.badge === "orange"
-                              ? "#f97316"
+                              ? "var(--color-badge-orange)"
                               : child.badge === "red"
-                                ? "#ef4444"
+                                ? "var(--color-badge-red)"
                                 : undefined
 
                         return (
@@ -217,11 +217,11 @@ export function NavMain({
 
             const badgeBg =
               item.badge === "green"
-                ? "#22c55e"
+                ? "var(--color-badge-green)"
                 : item.badge === "orange"
-                  ? "#f97316"
+                  ? "var(--color-badge-orange)"
                   : item.badge === "red"
-                    ? "#ef4444"
+                    ? "var(--color-badge-red)"
                     : undefined
 
             const linkBody = (
