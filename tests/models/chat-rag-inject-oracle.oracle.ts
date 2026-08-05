@@ -6,7 +6,8 @@
  * `course-rag-policy.ts` — not from chat.ts wiring or retrieval SQL:
  *
  *   1. No course in scope → never inject (prefetch may still run elsewhere).
- *   2. `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` → always inject when course present.
+ *   2. Always-with-course (env `CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE=1` or explicit
+ *      `alwaysWithCourse` arg — modeled by AlwaysSource) → always inject when course present.
  *   3. Intent heuristic (`needsCourseRag` / courseRagNeeded) → inject regardless of hits.
  *   4. Otherwise similarity bands on top-1 hit: strong ≥ 0.8, moderate ≥ 0.55 inject;
  *      weak or no hits → do not inject.
@@ -20,6 +21,8 @@
 export type ChatRagInjectRow = {
   HasCourse: "yes" | "no";
   AlwaysWithCourse: "yes" | "no";
+  /** How the always-with-course flag is supplied when AlwaysWithCourse=yes. */
+  AlwaysSource: "env" | "arg";
   CourseRagNeeded: "yes" | "no";
   TopSimilarity: "none" | "weak" | "moderate" | "strong";
 };

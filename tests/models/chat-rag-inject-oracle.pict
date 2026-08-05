@@ -2,13 +2,17 @@
 # Information-exposure gate: whether retrieved course material may enter the chat
 # system prompt (course-rag-policy.ts shouldInjectCourseRag). Material visibility
 # at retrieval is covered by #1180 — this model covers inject-on-top only.
+# AlwaysSource splits the two production inputs for the always-with-course flag:
+# env (`CHAT_HYBRID_RAG_ALWAYS_WITH_COURSE`) vs explicit `alwaysWithCourse` arg.
 HasCourse:         yes, no
 AlwaysWithCourse:  yes, no
+AlwaysSource:      env, arg
 CourseRagNeeded:   yes, no
 TopSimilarity:     none, weak, moderate, strong
 
 IF [HasCourse] = "no" THEN [AlwaysWithCourse] = "no";
 IF [HasCourse] = "no" THEN [CourseRagNeeded] = "no";
 IF [HasCourse] = "no" THEN [TopSimilarity] = "none";
+IF [AlwaysWithCourse] = "no" THEN [AlwaysSource] = "env";
 IF [AlwaysWithCourse] = "yes" THEN [HasCourse] = "yes";
 IF [CourseRagNeeded] = "yes" THEN [HasCourse] = "yes";
