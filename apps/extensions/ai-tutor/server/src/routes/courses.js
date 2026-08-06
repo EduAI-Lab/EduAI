@@ -35,6 +35,11 @@
  *   - Importing from EduAI fans out into parallel topic + enrollment sync via
  *     `Promise.allSettled` so a partial upstream failure doesn't roll back the
  *     import itself; failures are logged.
+ *   - `GET /courses/:courseId` auto-syncs enrollments from Core before its
+ *     membership check (#1065) — same throttled sync-before-read pattern as
+ *     `routes/topics.js` for #1031. `POST /courses/:courseId/sync-enrollments`
+ *     is now dead code kept for API compatibility, same treatment as the old
+ *     `POST .../topics/sync`.
  *   - Publish has no cascading; unpublish CASCADES to all child modules and
  *     lessons in a transaction so a student can never reach orphaned content.
  *   - `POST /courses` accepts an optional `sourceCourseId` to deep-clone
@@ -47,7 +52,7 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
+import { mapCourseOffering, mapCourseOfferingAfterPublishWrite, mapProgressData } from '../utils/mappers.js';
 import { parsePaginationParams, paginated, PaginationError } from '../utils/pagination.js';
 import { cloneCourseContent, cloneLessonsFromOffering } from '../services/courseCloning.js';
 import { calculateCourseProgress } from '../services/progressCalculation.js';
@@ -66,7 +71,7 @@ import {
 } from '../services/courseResolver.js';
 import { mapEduAiServiceKeyError } from '../services/eduaiServiceKeyErrors.js';
 import { getEduAiCookieForRequest } from '../services/eduaiAuth.js';
-import { syncCourseEnrollments } from '../services/enrollmentSync.js';
+import { AUTO_SYNC_TIMEOUT_MS, AUTO_SYNC_TTL_MS, syncCourseEnrollments } from '../services/enrollmentSync.js';
 import {
   ensureOfferingAnchors,
   importExternalCourseForUser,
@@ -439,6 +444,12 @@ router.post('/courses/import-external', requireRole(['INSTRUCTOR', 'UNIT_ADMIN',
 /**
  * POST /courses/:courseId/sync-enrollments — refresh student enrollments from Core (#578).
  *
+ * Deprecated (#1065): `GET /courses/:courseId` now auto-syncs enrollments on
+ * every read (needed for its own membership check), and the instructor
+ * enrollments UI that called this manual endpoint has zero remaining
+ * callers. Kept unreachable-from-UI for API compatibility, same treatment as
+ * `POST /courses/:courseId/topics/sync` (#1031).
+ *
  * Auth: course admin (LEAD instructor / unit-admin / admin).
  * Only EduAI-imported courses can sync; a native course has no Core roster to
  * pull from, so it returns 400 rather than a misleading empty sync.
@@ -471,6 +482,21 @@ router.post('/courses/:courseId/sync-enrollments', requireRole(['INSTRUCTOR', 'U
   }
 });
 
+/**
+ * GET /courses/:courseId — single course details + membership check.
+ *
+ * Auth: enrolled student, TA, course instructor, unit admin, or admin.
+ *
+ * Why: this route's own membership check reads the local `CourseEnrollment`
+ * mirror, so a stale mirror isn't just a display bug here — it's an
+ * authorization bug (a removed student could still pass the `isMember`
+ * check). Auto-syncs from Core for imported courses before checking
+ * membership (#1065, same sync-before-read pattern `GET
+ * /courses/:courseId/topics` uses for #1031), throttled to
+ * `AUTO_SYNC_TTL_MS` and bounded to `AUTO_SYNC_TIMEOUT_MS`. A failed or
+ * timed-out sync falls back to the local mirror rather than failing the
+ * request — same fail-soft posture as the Core course-field read below.
+ */
 router.get('/courses/:courseId', async (req, res) => {
   const authUser = req.user;
   if (!authUser) return res.status(401).json({ error: 'Authentication required' });
@@ -488,7 +514,6 @@ router.get('/courses/:courseId', async (req, res) => {
       where: { id: courseId },
       include: {
         instructors: { select: { userId: true } },
-        enrollments: { select: { userId: true, role: true } },
       },
     });
 
@@ -496,19 +521,42 @@ router.get('/courses/:courseId', async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
+    if (course.coreOfferingId) {
+      try {
+        await syncCourseEnrollments(courseId, {
+          course,
+          ttlMs: AUTO_SYNC_TTL_MS,
+          signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+        });
+      } catch (e) {
+        const phase = e?.phase === 'write' ? 'local write' : 'Core fetch';
+        console.warn(`[courses] Enrollment auto-sync (${phase}) failed for course ${courseId}, serving local mirror: ${e.message}`);
+      }
+    }
+
+    const enrollments = await prisma.courseEnrollment.findMany({
+      where: { courseOfferingId: courseId },
+      select: { userId: true, role: true },
+    });
+
     // #1072 step 2/4: single-course read-through, resolved once and reused
     // for both the UNIT_ADMIN department check below and the response body
     // — `department` is Core-owned data, not a local column. Degrades to a
     // stale-but-present course (and a closed unit-admin department check) on
-    // any Core failure rather than hard-erroring.
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
+    // any Core failure rather than hard-erroring. Bounded to
+    // `AUTO_SYNC_TIMEOUT_MS` (#1173 review) — without a signal here, a Core
+    // that's up but hung on this lookup defeats the local fallback the
+    // enrollment sync above was just bounded to guarantee.
+    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId, {
+      signal: AbortSignal.timeout(AUTO_SYNC_TIMEOUT_MS),
+    });
     if (coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
 
     const isAdmin = authUser.role === 'ADMIN';
     const isInstructor = course.instructors.some((i) => i.userId === authUser.id);
-    const enrollment = course.enrollments.find((e) => e.userId === authUser.id);
+    const enrollment = enrollments.find((e) => e.userId === authUser.id);
     const unitAdmin = await isUnitAdminForCourse(authUser, course, coreCourse);
     const isMember = isAdmin || isInstructor || enrollment != null || unitAdmin;
 
@@ -736,11 +784,14 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       await setCoreCoursePublishState(course.coreOfferingId, true);
     }
 
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
-    if (coreUnavailable) {
+    // #225 SEAM-04: the write above already succeeded — if this re-read
+    // fails, trust that write instead of letting the failed read report the
+    // opposite ("unpublished") state (see mapCourseOfferingAfterPublishWrite).
+    const resolved = await resolveCoreCourseById(course.coreOfferingId);
+    if (resolved.coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(course, coreCourse));
+    res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -807,13 +858,12 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
 
     // No local courseOffering fields changed by the cascade above, so
     // `courseForAuth` (already fetched) is still an accurate anchor row.
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(
-      courseForAuth.coreOfferingId,
-    );
-    if (coreUnavailable) {
+    // #225 SEAM-04: same re-read-after-write trust as the publish route above.
+    const resolved = await resolveCoreCourseById(courseForAuth.coreOfferingId);
+    if (resolved.coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(courseForAuth, coreCourse));
+    res.json(mapCourseOfferingAfterPublishWrite(courseForAuth, resolved, false));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

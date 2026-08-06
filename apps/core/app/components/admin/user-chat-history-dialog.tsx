@@ -134,8 +134,8 @@ export function UserChatHistoryDialog({
                       <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                         {chat.courseCode && (
                           <div className="flex items-center gap-1">
-                            <IconBook size={11} className="text-primary flex-shrink-0" />
-                            <span className="text-primary font-medium">{chat.courseCode}</span>
+                            <IconBook size={11} className="text-primary-text flex-shrink-0" />
+                            <span className="text-primary-text font-medium">{chat.courseCode}</span>
                           </div>
                         )}
                         <span className="text-[12px]">

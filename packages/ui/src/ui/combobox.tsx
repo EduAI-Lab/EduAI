@@ -170,6 +170,15 @@ export interface MultiSelectProps {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * When provided, `options` is treated as server-driven (e.g. a search-select
+   * backed by an API call): local filtering is skipped and the raw search text
+   * is forwarded here instead so the caller can debounce/fetch. Omit for the
+   * default fully-local behavior.
+   */
+  onSearchChange?: (query: string) => void
+  /** Shows a loading indicator in place of the empty-state text. Only meaningful with `onSearchChange`. */
+  loading?: boolean
 }
 
 export function MultiSelect({
@@ -181,12 +190,18 @@ export function MultiSelect({
   emptyText = "No option found.",
   disabled = false,
   className,
+  onSearchChange,
+  loading = false,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  // When `onSearchChange` makes `options` server-driven, selected rows drop out
+  // of `options` as the user types a new query. Cache labels by value so chips
+  // and checkmarks stay visible until deselected.
+  const selectedOptionsCache = useRef(new Map<string, ComboboxOption>())
 
   const filtered =
-    search.trim() === ""
+    onSearchChange || search.trim() === ""
       ? options
       : options.filter((o) => {
           const q = search.toLowerCase()
@@ -197,6 +212,11 @@ export function MultiSelect({
           )
         })
 
+  const handleSearchChange = (next: string) => {
+    setSearch(next)
+    onSearchChange?.(next)
+  }
+
   const handleSelect = (selectedValue: string) => {
     const isSelected = value.includes(selectedValue)
     onValueChange(
@@ -204,14 +224,27 @@ export function MultiSelect({
     )
   }
 
-  const selectedOptions = options.filter((o) => value.includes(o.value))
+  for (const o of options) {
+    if (value.includes(o.value)) selectedOptionsCache.current.set(o.value, o)
+  }
+  for (const key of [...selectedOptionsCache.current.keys()]) {
+    if (!value.includes(key)) selectedOptionsCache.current.delete(key)
+  }
+  const selectedOptions = value
+    .map((v) => selectedOptionsCache.current.get(v))
+    .filter((o): o is ComboboxOption => o != null)
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (!next) setSearch("")
+        if (!next) {
+          setSearch("")
+          // Clear the server-driven search too — otherwise reopening shows the
+          // previous query's results under a blank input.
+          onSearchChange?.("")
+        }
       }}
       modal={false}
     >
@@ -249,11 +282,11 @@ export function MultiSelect({
           <CommandInput
             placeholder={searchPlaceholder}
             value={search}
-            onValueChange={setSearch}
+            onValueChange={handleSearchChange}
             autoFocus
           />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Searching..." : emptyText}</CommandEmpty>
             <CommandGroup>
               {filtered.map((o) => (
                 <CommandItem

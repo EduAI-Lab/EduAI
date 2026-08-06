@@ -6,12 +6,12 @@ import { DashboardView, type DashboardQuickAction } from './DashboardView';
 import { BugReportTriagePanel } from './BugReportTriagePanel';
 import { toDashboardCourseRow } from './dashboard-helpers';
 
-const PUBLISHED_COLOR = 'oklch(0.60 0.15 150)';
-const DRAFT_COLOR = 'oklch(0.75 0.15 80)';
+const PUBLISHED_COLOR = 'var(--color-series-1)';
+const DRAFT_COLOR = 'var(--color-series-2)';
 
-const STUDENT_COLOR = 'oklch(0.55 0.14 255)';
-const INSTRUCTOR_COLOR = 'oklch(0.62 0.17 295)';
-const OTHER_COLOR = 'oklch(0.70 0.03 255)';
+const STUDENT_COLOR = 'var(--color-series-4)';
+const INSTRUCTOR_COLOR = 'var(--color-series-5)';
+const OTHER_COLOR = 'var(--color-series-6)';
 
 type DashboardAdminViewProps = {
   courses: Course[];

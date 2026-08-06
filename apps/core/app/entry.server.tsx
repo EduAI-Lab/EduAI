@@ -8,6 +8,7 @@ import type { RenderToPipeableStreamOptions } from "react-dom/server";
 import { renderToPipeableStream } from "react-dom/server";
 
 import { NonceProvider } from "~/lib/nonce";
+import { redactErrorForConsole } from "~/lib/redact.server";
 import {
   applySecurityHeaders,
   generateNonce,
@@ -56,9 +57,13 @@ export default function handleRequest(
 
     const { pipe, abort } = renderToPipeableStream(
       <NonceProvider value={nonce}>
-        <ServerRouter context={routerContext} url={request.url} />
+        {/* Nonces the SSR data-stream scripts (`streamController.enqueue`/
+            `.close()`); `<Scripts nonce>` does not cover them. */}
+        <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
       </NonceProvider>,
       {
+        // Nonces React's own `$RC`/`$RV`/`$RB` Suspense-reveal scripts.
+        nonce,
         [readyOption]() {
           shellRendered = true;
           const body = new PassThrough({
@@ -91,7 +96,9 @@ export default function handleRequest(
           // errors encountered during initial shell rendering since they'll
           // reject and get logged in handleDocumentRequest.
           if (shellRendered) {
-            console.error(error);
+            // Loader/action failures surface here with the upstream fetch URL (and its query
+            // string) in the message, so redact before writing to stdout.
+            console.error(redactErrorForConsole(error));
           }
         },
       },

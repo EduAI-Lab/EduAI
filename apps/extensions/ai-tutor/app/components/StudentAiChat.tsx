@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { Link } from 'react-router';
+import { Spinner } from '@eduai/ui';
 import {
   Badge,
   Button,
@@ -42,7 +43,6 @@ import {
   IconAlertCircle,
   IconHistory,
   IconKey,
-  IconLoader2,
   IconMessageCircle,
   IconPencilPlus,
   IconPlayerStop,
@@ -989,7 +989,7 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
             >
               {apiKeyValidating ? (
                 <>
-                  <IconLoader2 className="h-4 w-4 animate-spin" />
+                  <Spinner />
                   Validating…
                 </>
               ) : (

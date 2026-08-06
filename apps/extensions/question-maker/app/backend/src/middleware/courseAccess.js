@@ -83,8 +83,9 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
       // enrollment (cookie remains the fallback when no key is configured).
       coreCourse = await getCourseFromCore(course.coreCourseId, { cookie, preferCookie: false });
     } catch {
-      // Core unreachable — fail closed for the unit lock; fall through to
-      // enrollment (which also fails closed on error).
+      // #225 SEAM-02: do not grant the QM owner instructor on a Core course
+      // lookup failure — linked courses use Core as source of truth. Fall
+      // through to the enrollment check (which itself fails closed on throw).
     }
     const department = coreCourse?.department ?? null;
     if (department !== null) {
@@ -100,7 +101,18 @@ export async function resolveAccessForCourse(reqUser, course, { cookie } = {}) {
     const data = await getCourseEnrollmentsFromCore(course.coreCourseId, { cookie });
     enrollments = data?.enrollments ?? [];
   } catch {
-    // Service key missing or Core unreachable — fail closed (#1114).
+    // #225 SEAM-02 / #1197 product decision: fail-CLOSED here, including for
+    // the QM course owner. Once a course is linked (`coreCourseId` set),
+    // Core enrollments are the sole source of truth for who has access — a
+    // QM course owner is not automatically an instructor for a linked course
+    // (they may have lost their Core enrollment, or the course may have been
+    // relinked/deleted in Core). If Core is unreachable we cannot verify
+    // anyone's access, so nobody gets it. This is intentionally asymmetric
+    // with the unlinked-course branch above, where QM ownership IS the
+    // source of truth and instructor access stays fail-open by design; it's
+    // also asymmetric with the "fetched but not yet on the roster" fallback
+    // below, which is a real, distinguishable state (Core answered; the
+    // linker just isn't synced yet) rather than an unreachable Core.
     return null;
   }
 

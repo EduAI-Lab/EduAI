@@ -23,7 +23,7 @@ import {
   cn,
   EmptyState,
 } from '@eduai/ui';
-import { PermissionGate } from '@/components/rbac/PermissionGate';
+import { PermissionGate } from '@eduai/ui';
 import { CourseNoAccessAlert } from '@/components/rbac/CourseNoAccessAlert';
 import { useQmPermissionsForCourse } from '@/hooks/useQmPermissions';
 import { difficultySolidClass } from '@/lib/difficulty';

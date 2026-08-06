@@ -122,6 +122,57 @@ describe('resolveCourseAccess', () => {
     });
   });
 
+  // Edge-case audit #225 (SEAM-02) / #1197 product decision: fail-CLOSED for
+  // linked courses when Core enrollments are unreachable — including for the
+  // QM course owner. Once a course is linked, Core enrollments are the sole
+  // source of truth for access; an owner is not automatically an instructor
+  // just because they linked the course. Owner-fail-open is preserved only
+  // for unlinked courses (`coreCourseId === null`, tested above).
+  describe('owner fail-closed when Core enrollments unavailable (SEAM-02 / #1197)', () => {
+    it('denies the QM course owner (null access) when getCourseEnrollmentsFromCore throws', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+
+    it('denies a non-owner when getCourseEnrollmentsFromCore throws', async () => {
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'someone-else', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+
+    // Pre-#1114 this branch fell back to owner-only instructor access here
+    // ("linker not synced to the roster yet"). #1114 removes that fallback
+    // too: an empty roster is not distinguishable from "the owner never had
+    // real access" from the caller's side, and duplicating the
+    // #1114 fail-closed test above with the opposite expectation was the
+    // stale case this replaces — see 'fails closed for the owner when no
+    // matching enrollment exists (#1114)' above, same scenario.
+    it('denies the owner when Core answers with an empty roster, same as any other no-match (#1114)', async () => {
+      mockEnrollments.mockResolvedValueOnce({ enrollments: [] });
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'INSTRUCTOR' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+    it('denies a UNIT_ADMIN QM owner when getCourseFromCore and enrollments both throw', async () => {
+      mockCourse.mockRejectedValueOnce(new Error('Core unreachable'));
+      mockEnrollments.mockRejectedValueOnce(new Error('Core unreachable'));
+      const access = await resolveCourseAccess(
+        { id: 'owner-1', role: 'UNIT_ADMIN' },
+        1,
+      );
+      expect(access).toBeNull();
+    });
+  });
+
   describe('UNIT_ADMIN unit lock', () => {
     const unitAdmin = { id: 'ua', role: 'UNIT_ADMIN' };
 

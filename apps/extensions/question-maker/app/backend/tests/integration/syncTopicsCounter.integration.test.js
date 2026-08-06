@@ -52,6 +52,11 @@ vi.mock('../../src/services/coreApiService.js', () => ({
   pushTopicToCore: vi.fn(),
   pushQuestionToCore: vi.fn(),
   patchQuestionTestableOnCore: vi.fn(),
+  // courseAccess.js's requireCourseAccess({ min: 'instructor' }) resolves an
+  // active Core enrollment for linked courses (SEAM-02: fail-closed, so this
+  // must succeed rather than throw) — the instructor is on the roster here.
+  // (id literal duplicates INSTRUCTOR.id below — vi.mock factories are
+  // hoisted above the later `const INSTRUCTOR` and can't reference it.)
   getCourseEnrollmentsFromCore: vi.fn().mockResolvedValue({
     enrollments: [{ studentId: 'user-cuid-inst', role: 'INSTRUCTOR', isActive: true }],
   }),

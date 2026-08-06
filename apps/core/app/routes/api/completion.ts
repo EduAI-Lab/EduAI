@@ -60,12 +60,22 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (outcome.streaming) {
     return outcome.result.toDataStreamResponse({
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        ...(outcome.fleetServerId
+          ? { "X-Fleet-Server": outcome.fleetServerId }
+          : {}),
+      },
     });
   }
 
   return new Response(JSON.stringify(outcome.body), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(outcome.fleetServerId
+        ? { "X-Fleet-Server": outcome.fleetServerId }
+        : {}),
+    },
   });
 }
