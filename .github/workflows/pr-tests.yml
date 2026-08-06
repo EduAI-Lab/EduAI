@@ -145,6 +145,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U ${{ matrix.db_user }}"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      core-redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s
+          --health-timeout 5s --health-retries 12
 
     steps:
       - uses: actions/checkout@v4
@@ -171,6 +178,7 @@ jobs:
               rm -f apps/core/.env
               cat > apps/core/.env.test <<'EOF'
           DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/postgres?schema=public"
+          REDIS_URL="redis://127.0.0.1:6379"
           BETTER_AUTH_SECRET="test-secret-not-for-production"
           BETTER_AUTH_URL="http://localhost:3000"
           COOKIE_DOMAIN="localhost"
@@ -224,6 +232,7 @@ jobs:
         env:
           NODE_ENV: test
           GOOGLE_GENERATIVE_AI_API_KEY: test-key-not-real
+          REDIS_URL: redis://127.0.0.1:6379
           JWT_SECRET: test-jwt-secret-for-ci
           ENCRYPTION_KEY: test-encryption-key-32bytes!!
         run: |
