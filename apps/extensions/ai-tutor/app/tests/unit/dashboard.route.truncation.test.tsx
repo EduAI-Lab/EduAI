@@ -22,11 +22,21 @@ const courses = [
   { id: 1, title: 'MATH 221 Linear Algebra', code: 'MATH 221', isPublished: false },
 ] as Partial<Course>[];
 
-function renderDashboard(role: string, courseTotal: number) {
+/** A page of `n` distinct courses, for asserting on how many of them render. */
+function pageOf(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    title: `Course ${i + 1}`,
+    code: `CS ${100 + i}`,
+    isPublished: false,
+  })) as Partial<Course>[];
+}
+
+function renderDashboard(role: string, courseTotal: number, courseList = courses) {
   const props = {
     loaderData: {
       role,
-      courses,
+      courses: courseList,
       courseTotal,
       submissions: [],
       adminUsers: null,
@@ -45,16 +55,13 @@ function renderDashboard(role: string, courseTotal: number) {
 }
 
 describe('DashboardHome — truncation disclosure (#1208)', () => {
-  it.each(['INSTRUCTOR', 'UNIT_ADMIN'])(
-    'discloses the bounded page to a %s',
-    (role) => {
-      renderDashboard(role, 4312);
+  it.each(['INSTRUCTOR', 'UNIT_ADMIN'])('discloses the bounded page to a %s', (role) => {
+    renderDashboard(role, 4312);
 
-      expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent(
-        'Showing 1 of 4,312 courses',
-      );
-    },
-  );
+    expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent(
+      'Showing 1 of 4,312 courses',
+    );
+  });
 
   it.each(['STUDENT', 'TA'])('discloses the bounded page to a %s', (role) => {
     renderDashboard(role, 900);
@@ -71,6 +78,25 @@ describe('DashboardHome — truncation disclosure (#1208)', () => {
     expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent(
       'Showing 1 of 4,312 courses',
     );
+  });
+
+  it("counts the ADMIN list's rendered rows, not the page it was given", () => {
+    // The list renders a 5-row preview of the page. Reporting the page length
+    // here would claim 40 rows are on screen when 5 are.
+    renderDashboard('ADMIN', 4312, pageOf(40));
+
+    expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent(
+      'Showing 5 of 4,312 courses',
+    );
+  });
+
+  it('still discloses to an ADMIN whose page holds every course', () => {
+    // The regression this pins: with total === page length there is nothing
+    // "past the page", but the 5-row preview still hides the rest, so counting
+    // the page would suppress the notice and truncate silently again.
+    renderDashboard('ADMIN', 8, pageOf(8));
+
+    expect(screen.getByTestId('truncated-list-notice')).toHaveTextContent('Showing 5 of 8 courses');
   });
 
   it('says nothing when the page already holds every course', () => {
