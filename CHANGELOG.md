@@ -33,6 +33,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Drive the lazy fleet stream while awaiting its startup probe, then cancel only the probe's tee branch without awaiting the downstream-dependent cancellation promise. This removes the healthy-host timeout while preserving client-disconnect cancellation and preventing the probe branch from buffering the full response. Closes #1348. (@superbolt08, 2026-08-04) — [#1347](https://github.com/EduAI-Lab/EduAI/pull/1347)
 - [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ### Changed
