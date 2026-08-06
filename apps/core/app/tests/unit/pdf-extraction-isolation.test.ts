@@ -94,12 +94,13 @@ describe("extractPdfTextIsolated", () => {
     // reports V8 heap fatal errors as a plain exit code with OOM stderr — the
     // parent normalizes both to a "killed (signal …)" message.
     //
-    // The wall-clock budget is deliberately generous (~8s to OOM on an idle dev
-    // machine): `timedOut` wins over the OOM branch in the exit handler, so a
-    // contended CI runner that inflates the bomb slowly would otherwise reject
-    // with the wall-clock message and fail this assertion. The timeout path has
-    // its own test below, so nothing is lost by keeping this one far from the
-    // race; the long budget is only ever spent if the heap ceiling regresses.
+    // The wall-clock limit is deliberately far above the time the worker needs to
+    // inflate the bomb and hit the ceiling (~6s on an idle dev machine). The two
+    // termination paths — heap abort and wall-clock kill — race each other, and a
+    // limit anywhere near the observed cost makes this assertion flaky on loaded
+    // CI runners, where the same work takes 4x longer. Lowering maxOldSpaceMb does
+    // not help: the cost is inflation work, not the size of the ceiling. Vitest's
+    // own per-test timeout is the backstop against a genuine hang.
     const bomb = readFileSync(BOMB_FIXTURE);
 
     await expect(

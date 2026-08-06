@@ -52,7 +52,11 @@
 import express from 'express';
 import { prisma } from '../config/database.js';
 import { requireRole, isUnitAdminForCourse, isCourseAdmin } from '../middleware/auth.js';
-import { mapCourseOffering, mapProgressData } from '../utils/mappers.js';
+import {
+  mapCourseOffering,
+  mapCourseOfferingAfterPublishWrite,
+  mapProgressData,
+} from '../utils/mappers.js';
 import {
   parsePaginationParams,
   parseSearchParam,
@@ -858,11 +862,14 @@ router.patch('/courses/:courseId/publish', requireRole(['INSTRUCTOR', 'UNIT_ADMI
       await setCoreCoursePublishState(course.coreOfferingId, true);
     }
 
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(course.coreOfferingId);
-    if (coreUnavailable) {
+    // #225 SEAM-04: the write above already succeeded — if this re-read
+    // fails, trust that write instead of letting the failed read report the
+    // opposite ("unpublished") state (see mapCourseOfferingAfterPublishWrite).
+    const resolved = await resolveCoreCourseById(course.coreOfferingId);
+    if (resolved.coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(course, coreCourse));
+    res.json(mapCourseOfferingAfterPublishWrite(course, resolved, true));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -929,13 +936,12 @@ router.patch('/courses/:courseId/unpublish', requireRole(['INSTRUCTOR', 'UNIT_AD
 
     // No local courseOffering fields changed by the cascade above, so
     // `courseForAuth` (already fetched) is still an accurate anchor row.
-    const { course: coreCourse, coreUnavailable } = await resolveCoreCourseById(
-      courseForAuth.coreOfferingId,
-    );
-    if (coreUnavailable) {
+    // #225 SEAM-04: same re-read-after-write trust as the publish route above.
+    const resolved = await resolveCoreCourseById(courseForAuth.coreOfferingId);
+    if (resolved.coreUnavailable) {
       res.set('X-Core-Status', 'unavailable');
     }
-    res.json(mapCourseOffering(courseForAuth, coreCourse));
+    res.json(mapCourseOfferingAfterPublishWrite(courseForAuth, resolved, false));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
