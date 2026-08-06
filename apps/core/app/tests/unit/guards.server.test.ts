@@ -8,6 +8,7 @@ import {
 } from "~/lib/auth/guards.server";
 import { auth } from "~/lib/auth/server";
 import { isActiveAdminUser } from "~/lib/api-keys/access.server";
+import { invitableRolesFor } from "~/lib/invitations/schemas";
 import { getPolicy, denyByPolicy } from "~/lib/policy.server";
 import { logSecurityEvent } from "~/lib/logging.server";
 import prisma from "~/lib/prisma.server";
@@ -245,6 +246,8 @@ describe("enforceAdminIfApiKey", () => {
         expect(auth.api.verifyApiKey).toHaveBeenCalled();
     });
 
+    // Edge-case audit #225 (AUTH-15): invalid x-api-key + valid non-admin cookie
+    // returns {null,null} and emits no security log (brute-force invisible).
     it("falls through to cookie auth when x-api-key is invalid but a cookie session exists", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue({
             user: { id: "s1", role: "STUDENT", email: "student@test.com" },
@@ -257,6 +260,7 @@ describe("enforceAdminIfApiKey", () => {
         const gate = await enforceAdminIfApiKey(makeRequest(undefined, "bad-key"));
         expect(gate.response).toBeNull();
         expect(gate.session).toBeNull();
+        expect(logSecurityEvent).not.toHaveBeenCalled();
     });
 
     it("returns 401 when x-api-key is invalid and no cookie session exists", async () => {
@@ -656,14 +660,42 @@ describe("requireInviter", () => {
         expect(gate.session).toBeNull();
     });
 
-    it("admits an anonymous caller bearing a valid server-to-server key as a synthetic service ADMIN, bypassing the policy check", async () => {
+    // Edge-case audit #225 (AUTH-02) [SECURITY]: the service-key fallback used
+    // to synthesize a platform ADMIN and skip the UNIT_ADMIN policy gate
+    // entirely, letting any service-key caller mint ADMIN/UNIT_ADMIN
+    // invitations. It must now be capped to a UNIT_ADMIN-tier inviter that is
+    // still subject to `unitAdmins.canInvite` and `invitableRolesFor`'s cap.
+    it("admits an anonymous caller bearing a valid server-to-server key as a capped UNIT_ADMIN-tier inviter, still subject to the policy gate", async () => {
         vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(getPolicy).mockResolvedValue(true);
         const gate = await requireInviter(sessionReq(`Bearer ${VALID_KEY}`), "invitation.create");
         expect(gate.response).toBeNull();
-        expect(gate.session?.user).toEqual({ id: "service", name: "Service", role: "ADMIN" });
-        // The service-key shortcut returns before the UNIT_ADMIN policy check is reached.
-        expect(getPolicy).not.toHaveBeenCalled();
+        expect(gate.session?.user).toEqual({ id: "service", name: "Service", role: "UNIT_ADMIN" });
+        expect(getPolicy).toHaveBeenCalledWith("unitAdmins.canInvite");
         expect(logSecurityEvent).not.toHaveBeenCalled();
+    });
+
+    it("403s a service-key caller when unitAdmins.canInvite is off, same as a real UNIT_ADMIN", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(getPolicy).mockResolvedValue(false);
+        const req = sessionReq(`Bearer ${VALID_KEY}`);
+        const gate = await requireInviter(req, "invitation.create");
+        expect(gate.response?.status).toBe(403);
+        expect(gate.session).toBeNull();
+        expect(denyByPolicy).toHaveBeenCalledWith({
+            policyKey: "unitAdmins.canInvite",
+            user: { id: "service", name: "Service", role: "UNIT_ADMIN" },
+            action: "invitation.create",
+            request: req,
+        });
+    });
+
+    it("never synthesizes a platform ADMIN for a service-key caller (AUTH-02: cannot mint ADMIN/UNIT_ADMIN invitations)", async () => {
+        vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+        vi.mocked(getPolicy).mockResolvedValue(true);
+        const gate = await requireInviter(sessionReq(`Bearer ${VALID_KEY}`), "invitation.create");
+        expect(gate.session?.user.role).not.toBe("ADMIN");
+        expect(invitableRolesFor(gate.session?.user.role)).toEqual(["INSTRUCTOR", "STUDENT"]);
     });
 });
 
@@ -727,5 +759,15 @@ describe("validateRedirectUrl", () => {
     it("normalizes backslashes in accepted relative paths", () => {
         expect(validateRedirectUrl("\\evil.com")).toBe("/evil.com");
         expect(validateRedirectUrl("/foo\\bar")).toBe("/foo/bar");
+    });
+
+    // Edge-case audit #225 (AUTH-16): homoglyph host and trailing-dot FQDN rejected.
+    it("rejects a homoglyph production hostname (Cyrillic с) and returns /dashboard", () => {
+        const homoglyphHost = "eduai.ok.ub\u0441.ca"; // Cyrillic U+0441, not Latin "c"
+        expect(validateRedirectUrl(`https://${homoglyphHost}/dashboard`)).toBe("/dashboard");
+    });
+
+    it("rejects a trailing-dot production FQDN and returns /dashboard", () => {
+        expect(validateRedirectUrl("https://eduai.ok.ubc.ca./dashboard")).toBe("/dashboard");
     });
 });
