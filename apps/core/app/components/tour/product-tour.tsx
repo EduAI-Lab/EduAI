@@ -130,9 +130,11 @@ export function ProductTour({
         startedRef.current = true;
         setActive(true);
       };
-      const ric = window.requestIdleCallback;
-      if (typeof ric === "function") {
-        const id = ric(start, { timeout: 2000 });
+      if (typeof window.requestIdleCallback === "function") {
+        // Call on `window` (not a detached reference) — a bare `ric(start)`
+        // invokes the native method with no receiver and throws
+        // "Illegal invocation" in Chromium/Firefox.
+        const id = window.requestIdleCallback(start, { timeout: 2000 });
         return () => window.cancelIdleCallback?.(id);
       }
       const t = setTimeout(start, 600);
