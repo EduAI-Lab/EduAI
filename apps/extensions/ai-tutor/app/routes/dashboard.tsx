@@ -134,6 +134,7 @@ export default function DashboardHome({ loaderData }: Route.ComponentProps) {
       content = (
         <DashboardAdminView
           courses={courses}
+          courseTotal={courseTotal}
           adminUsers={adminUsers}
           bugReports={adminBugReports}
           dashboardStats={dashboardStats}

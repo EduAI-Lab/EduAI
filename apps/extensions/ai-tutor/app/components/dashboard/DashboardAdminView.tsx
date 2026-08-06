@@ -15,6 +15,12 @@ const OTHER_COLOR = 'oklch(0.70 0.03 255)';
 
 type DashboardAdminViewProps = {
   courses: Course[];
+  /**
+   * Full course count (#1208). Unlike the other roles, admin's right panel is
+   * bug-report triage rather than a course panel, so the course-list bound is
+   * disclosed on the list itself — without this it truncates with no warning.
+   */
+  courseTotal?: number;
   adminUsers: AdminUserPage | null;
   bugReports: AdminBugReportRow[];
   /** Platform-wide rollup from `api.dashboardStats()` — optional/nullable; falls back to client-derived counts below when absent. */
@@ -23,6 +29,7 @@ type DashboardAdminViewProps = {
 
 export function DashboardAdminView({
   courses,
+  courseTotal,
   adminUsers,
   bugReports,
   dashboardStats,
@@ -110,6 +117,7 @@ export function DashboardAdminView({
       courses={courses.map(toDashboardCourseRow)}
       coursesHref="/instructor"
       leftPanelTitle="All courses"
+      courseTotal={courseTotal}
       quickActions={quickActions}
       rightPanelTitle="Bug reports to triage"
       rightPanel={<BugReportTriagePanel bugReports={bugReports} />}

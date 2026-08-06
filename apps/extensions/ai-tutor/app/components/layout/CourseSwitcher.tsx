@@ -38,9 +38,11 @@ export function CourseSwitcher({
   // and repopulate the dropdown with stale results. Only the newest request in
   // flight may write state.
   const latestRequest = React.useRef(0);
+  const [fetching, setFetching] = React.useState(true);
 
   React.useEffect(() => {
     const requestId = ++latestRequest.current;
+    setFetching(true);
     void (async () => {
       try {
         const page = await api.listCourses({ search: debouncedQuery.trim() || undefined });
@@ -49,6 +51,8 @@ export function CourseSwitcher({
       } catch {
         // Non-fatal: a failed lookup must never break the breadcrumb. The
         // trigger keeps whatever it already had.
+      } finally {
+        if (latestRequest.current === requestId) setFetching(false);
       }
     })();
   }, [debouncedQuery]);
@@ -60,8 +64,16 @@ export function CourseSwitcher({
   // the moment the results stop including the course the user is on.
   const searching = query.trim().length > 0;
   const current = splitTitle(currentTitle);
-  const options: CourseSwitcherOption[] =
-    courses.length > 0
+
+  // `courses` still holds the previous query's results until the new response
+  // lands, and the shared switcher never filters — so rendering them here would
+  // leave an unrelated course visible and selectable for the debounce window.
+  // Drop them instead, and tell the switcher we're pending so an empty list
+  // reads as "Searching…" rather than "No courses match" on every keystroke.
+  const pending = fetching || query.trim() !== debouncedQuery.trim();
+  const options: CourseSwitcherOption[] = pending
+    ? []
+    : courses.length > 0
       ? courses.map((c) => ({ id: c.id, ...splitTitle(c.title ?? 'Untitled course') }))
       : searching
         ? []
@@ -76,6 +88,7 @@ export function CourseSwitcher({
       onOpenCurrent={() => navigate(`${basePath}/courses/${courseId}`)}
       onViewAll={() => navigate(basePath)}
       onQueryChange={setQuery}
+      loading={pending}
       emptyLabel="No courses match"
     />
   );
