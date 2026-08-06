@@ -1,0 +1,20 @@
+# docs/PICT_CENSUS.md § S3 — auto-router-model-selection
+# Router mode resolution + pick-source gates (router.ts resolveRoutedModel / resolveRoutedModelLlm).
+RouterMode:        rules, knn, hybrid, llm
+ModeOverride:      none, rules, knn, hybrid, llm
+ClassifierThrows:  yes, no
+ImagesPresent:     yes, no
+Tier3RuleMatch:    yes, no
+KnnConfidence:     high, low
+
+IF [ModeOverride] = "rules" THEN [ClassifierThrows] = "no";
+IF [ModeOverride] = "knn" THEN [ClassifierThrows] = "no";
+IF [ModeOverride] = "hybrid" THEN [ClassifierThrows] = "no";
+IF [ModeOverride] = "none" AND [RouterMode] <> "llm" THEN [ClassifierThrows] = "no";
+IF [ClassifierThrows] = "yes" THEN [ImagesPresent] = "no";
+IF [ClassifierThrows] = "yes" THEN [Tier3RuleMatch] = "no";
+IF [ImagesPresent] = "yes" THEN [ClassifierThrows] = "no";
+IF [Tier3RuleMatch] = "yes" THEN [ClassifierThrows] = "no";
+IF [ImagesPresent] = "yes" THEN [KnnConfidence] = "high";
+IF [ModeOverride] in {"none", "rules", "knn", "llm"} AND [RouterMode] <> "hybrid" THEN [KnnConfidence] = "high";
+IF [ModeOverride] in {"rules", "knn", "llm"} THEN [KnnConfidence] = "high";

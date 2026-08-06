@@ -89,15 +89,74 @@ export interface Paginated<T> {
 const TREE_PAGE_SIZE = 200;
 
 /**
- * Default page size for course lists (#1043 Group A). The server now REQUIRES
- * page/pageSize, so callers that don't drive an explicit pager (dashboards,
- * the course switcher, the command palette, import-source dropdowns) send this
- * bounded page instead of an unbounded read. Views with a real pager pass their
- * own page/pageSize. A deployment with more courses than this in one of those
- * non-pager surfaces truncates — those surfaces are tracked for a follow-up
- * server-search UX (mirrors #1041's landed course-picker decision).
+ * Default page size for course lists (#1043 Group A). The server REQUIRES
+ * page/pageSize, so callers that don't drive an explicit pager send this bounded
+ * page instead of an unbounded read; views with a real pager pass their own.
+ *
+ * #1208: `GET /api/courses` now supports server-side `search`, `term`, `status`
+ * and `progress`, so a course past this bound is reachable by narrowing rather
+ * than by paging. The switcher and command palette search server-side; the
+ * instructor and student lists thread their filters through the loader URL. What
+ * this bound still governs is the unsearched first page — surfaces that render
+ * one (the dashboard panels) must disclose the truncation rather than imply the
+ * list is complete; see `TruncatedListNotice`.
+ *
+ * NB: `listImportableActivities` also borrows this constant (#1207 owns that
+ * call site) — don't rename it without coordinating.
  */
 export const COURSE_LIST_PAGE_SIZE = 200;
+
+/**
+ * Filter/search params accepted by `GET /api/courses` (#1208).
+ *
+ * The array dimensions are repeatable query params — OR within a dimension, AND
+ * across them, matching `CourseListView`'s toolbar semantics.
+ */
+export interface CourseListParams {
+  page?: number;
+  pageSize?: number;
+  /** Free text over title + code. */
+  search?: string;
+  /** Canonical `term::year` keys, e.g. `"W1::2026"`. */
+  term?: string[];
+  /** `"published"` | `"draft"`. */
+  status?: string[];
+  /** `"not-started"` | `"in-progress"` | `"completed"`. */
+  progress?: string[];
+}
+
+/** Filter options for the course list, scoped to the caller (#1208). */
+export interface CourseFacets {
+  terms: string[];
+  statuses: string[];
+  progress: string[];
+  /**
+   * Core was unreachable, so every catalog-side filter fail-closes to zero rows.
+   * The `X-Core-Status` header says the same thing, but `http()` consumes it into
+   * a generic toast and callers never see it — leaving the list to report "No
+   * courses match", which reads as "your course is gone" rather than "search is
+   * degraded". Carried in the body so the routes can say which one it is.
+   */
+  coreUnavailable: boolean;
+}
+
+/**
+ * Serialize course list params. Blank search and empty arrays are omitted
+ * entirely so an unfiltered request is byte-identical to the pre-#1208 one.
+ */
+function courseListQuery(params?: CourseListParams): string {
+  const qs = new URLSearchParams();
+  qs.set('page', String(params?.page ?? 1));
+  qs.set('pageSize', String(params?.pageSize ?? COURSE_LIST_PAGE_SIZE));
+  const search = params?.search?.trim();
+  if (search) qs.set('search', search);
+  for (const key of ['term', 'status', 'progress'] as const) {
+    for (const value of params?.[key] ?? []) {
+      if (value) qs.append(key, value);
+    }
+  }
+  return `?${qs.toString()}`;
+}
 
 /**
  * Serialize pagination params into a query string. Returns '' when empty so
@@ -326,10 +385,14 @@ export const api = {
       cloud: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
       ubc: { state: 'online' | 'offline' | 'loading' | 'unknown'; detail?: string };
     }>,
-  listCourses: (params?: { page?: number; pageSize?: number }) =>
-    http(
-      `/api/courses${pageQuery({ page: 1, pageSize: COURSE_LIST_PAGE_SIZE, ...params })}`,
-    ) as Promise<Paginated<Course>>,
+  listCourses: (params?: CourseListParams) =>
+    http(`/api/courses${courseListQuery(params)}`) as Promise<Paginated<Course>>,
+  /**
+   * Filter options for the course list, spanning the caller's whole accessible
+   * set rather than the loaded page (#1208). Fetch once per mount — these change
+   * rarely, and re-fetching per keystroke would be pure waste.
+   */
+  listCourseFacets: () => http('/api/courses/facets') as Promise<CourseFacets>,
   courseById: (courseId: number) => http(`/api/courses/${courseId}`),
   publishCourse: (courseId: number) =>
     http(`/api/courses/${courseId}/publish`, {

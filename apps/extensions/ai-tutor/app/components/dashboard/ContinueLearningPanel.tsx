@@ -10,34 +10,54 @@ import { IconBooks, IconArrowRight } from '@tabler/icons-react';
 import { Card, CardContent, courseHeroBackgroundStyle } from '@eduai/ui';
 import type { Course } from '~/lib/types';
 import { accentForCourse, courseCode, courseName } from '~/lib/course-display';
+import { TruncatedListNotice } from '~/components/common/TruncatedListNotice';
 import { findResumeCourse, inProgressCourses } from './dashboard-helpers';
 
 type ContinueLearningPanelProps = {
   courses: Course[];
   /** Base path for course drilldown links, e.g. "/student" or "/instructor". */
   coursesBaseHref: string;
+  /**
+   * Full course count (#1208). `courses` is one bounded page, so when more exist
+   * the panel says so instead of implying this is everything.
+   */
+  total?: number;
 };
 
-export function ContinueLearningPanel({ courses, coursesBaseHref }: ContinueLearningPanelProps) {
+export function ContinueLearningPanel({
+  courses,
+  coursesBaseHref,
+  total,
+}: ContinueLearningPanelProps) {
   const navigate = useNavigate();
   const resumeCourse = findResumeCourse(courses);
   const others = inProgressCourses(courses).filter((c) => c.id !== resumeCourse?.id);
 
   if (!resumeCourse || !resumeCourse.progress) {
+    // The notice belongs here too: "nothing in progress" is only true of the
+    // courses on this page, and without it a learner with more courses than the
+    // page size reads an empty panel as a statement about all of them.
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
-          <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <IconBooks size={20} aria-hidden="true" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">Nothing in progress</p>
-            <p className="text-xs text-muted-foreground">
-              Start an activity in one of your courses to pick up here next time.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <IconBooks size={20} aria-hidden="true" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Nothing in progress</p>
+              <p className="text-xs text-muted-foreground">
+                Start an activity in one of your courses to pick up here next time.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <TruncatedListNotice
+          shown={courses.length}
+          total={total ?? courses.length}
+          action="search your courses to find the rest"
+        />
+      </div>
     );
   }
 
@@ -138,6 +158,12 @@ export function ContinueLearningPanel({ courses, coursesBaseHref }: ContinueLear
           </CardContent>
         </Card>
       )}
+
+      <TruncatedListNotice
+        shown={courses.length}
+        total={total ?? courses.length}
+        action="search your courses to find the rest"
+      />
     </div>
   );
 }
