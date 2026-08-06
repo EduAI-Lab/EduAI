@@ -2318,7 +2318,40 @@ ${buildEmptyCourseRagBlock()}`;
       });
 
       if (probe) {
-        await probe.wait();
+        // streamText() sets up the request lazily: onChunk/onStepFinish only
+        // fire once something actually reads the stream. Downstream code
+        // doesn't start reading until after this function returns, so without
+        // a reader here the probe always falls through to its timeout —
+        // it has nothing to be signaled by. Pump a tee'd branch of the
+        // stream (fullStream tees a fresh, independent branch per access, so
+        // this doesn't steal chunks from the real consumer) purely to drive
+        // onChunk while we wait; discard its output. The reader is
+        // startup-only: it's canceled as soon as the probe settles so it
+        // doesn't keep the tee buffering/consuming for the whole generation.
+        const reader = result.fullStream.getReader();
+        const pump = (async () => {
+          try {
+            while (true) {
+              const { done } = await reader.read();
+              if (done) break;
+              // draining only; onChunk/onStepFinish above do the signaling.
+            }
+          } catch (error) {
+            // A rejected probe reader can occur before the SDK emits onError.
+            // Surface it immediately so fleet retry does not wait for timeout.
+            probe.hooks.signalError(error);
+          }
+        })();
+        try {
+          await probe.wait();
+        } finally {
+          // A tee branch's cancel promise does not settle until its sibling
+          // branch also finishes or cancels. Register cancellation, but do not
+          // await that promise here: the sibling is the response stream and
+          // cannot start until runStreamText returns.
+          void reader.cancel().catch(() => {});
+          void pump;
+        }
       }
       return result;
     };

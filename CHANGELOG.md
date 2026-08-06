@@ -14,13 +14,21 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ## [Week 14 — August 3–9, 2026]
 
+### Fixed
+
+- [core] fix: Disable Qwen3.5's default reasoning-mode output for vLLM chat completions, preventing leaked `<think>` blocks in responses; set `VLLM_DISABLE_THINKING=0` only when reasoning output is intended. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
+
 ### Changed
 
+- [core] perf: Bounded concurrency for `reEmbedCourseMaterials` (course re-embed background job) — materials now process up to `REINDEX_CONCURRENCY` (default 4) at a time via `p-limit` instead of strictly serially, cutting large re-embed wall-clock time while each material keeps its own try/catch so one failure never blocks or cancels sibling in-flight work; aggregate `processed`/`failed`/`total` and progress reporting are unchanged. Closes #945. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
 - [core] perf: Parallelize the independent pre-stream lookups in `POST /api/chat` — `getPolicy("chat.webToolsEnabled")`, the model-capability lookup (`resolveActiveChatModel`/`getChatModelCapabilities`), and the course-RAG prefetch (`findRelevantContent`) previously ran as three serial `await`s right before `streamText`, adding their latencies together into time-to-first-token. None of the three consumes another's result, so they now fire concurrently via `Promise.all`, with existing per-branch error-handling/fallback semantics preserved (the course-RAG fetch keeps its fail-open behavior instead of rejecting the whole batch). The chat latency benchmark can now capture streaming TTFB for repeatable baseline/candidate comparisons. Closes #942. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
 
 ### Tests
 
+- [core] test: Add vLLM thinking-mode request-wrapper regression coverage for chat-body rewriting, existing template kwargs, non-chat requests, and the explicit opt-out. Closes #1367. (@superbolt08, 2026-08-05) — [#1349](https://github.com/EduAI-Lab/EduAI/pull/1349)
+- [core] test: `reembed-course-materials.test.ts` — asserts bounded in-flight concurrency (never exceeds the configured limit, proven concurrent via a delayed `embedMany` mock), per-material failure isolation (one rejection doesn't stop siblings), monotonic/consistent progress reporting, and blank/null `rawText` exclusion. (@saadtab01, 2026-08-04) — [#1358](https://github.com/EduAI-Lab/EduAI/pull/1358)
 - [core] test: Add `chat-prestream-concurrency.route.test.ts` (#942) — holds the pre-stream dependencies behind deferred gates and proves all applicable calls start before any is released, for both the default and admin chat-mode branches. This makes serialization regressions fail deterministically without wall-clock thresholds. (@saad, 2026-08-04) — [#1356](https://github.com/EduAI-Lab/EduAI/pull/1356)
+
 
 ## [Week 13 — July 27 – August 2, 2026]
 
@@ -30,6 +38,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Fixed
 
+- [core] fix: Drive the lazy fleet stream while awaiting its startup probe, then cancel only the probe's tee branch without awaiting the downstream-dependent cancellation promise. This removes the healthy-host timeout while preserving client-disconnect cancellation and preventing the probe branch from buffering the full response. Closes #1348. (@superbolt08, 2026-08-04) — [#1347](https://github.com/EduAI-Lab/EduAI/pull/1347)
 - [core] fix: ADHD Dean Track B review follow-ups — `acceptLlm` now requires full `contentOk` / `profileStructuralPass` (no more accepting score-improving rewrites that still miss `**Next?**`); `truncateToWordCap` preserves Markdown newlines and whole fenced blocks (so eduai-diagram fences survive the word cap) and replaces oversized Sources footers instead of overrunning the cap; forced wrap revalidates diagram/Sources after truncation and gates `forced_deterministic` on underCap + contentOk. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 
 ### Changed
