@@ -9,7 +9,7 @@ import {
   MessageAction
 } from "@eduai/ui";
 import { READING_SURFACE_CLASS } from "~/components/assistive/reading-surface";
-import { Tool } from "@eduai/ui";
+import { Tool, MarkdownStylesProvider, type MarkdownStyles } from "@eduai/ui";
 import {
   CHAT_MESSAGE_ACTIVE_CLASS,
   CHAT_MESSAGE_INACTIVE_CLASS,
@@ -21,9 +21,10 @@ import { transformAssistiveDisplayCopy } from "~/components/chat/assistive-displ
 import { EduaiDiagram } from "~/components/chat/diagrams/eduai-diagram";
 import { splitEduaiDiagrams } from "~/components/chat/diagrams/split-eduai-diagrams";
 import { cn } from "~/lib/utils";
-// KaTeX + streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
+// Streamdown CSS, scoped to this chunk instead of the global sheet (#1222).
 // Every Core surface that renders markdown reaches ChatMessage, so importing here
-// keeps the stylesheet (and the KaTeX fonts) off routes that render no markdown.
+// keeps the stylesheet off routes that render no markdown. KaTeX's sheet is not
+// in here — it loads on demand per message, see MARKDOWN_STYLES below (#1342).
 import "~/styles/chat-markdown.css";
 
 export interface ChatMessageProps {
@@ -69,7 +70,24 @@ export function coerceMessageContent(content: unknown): string {
   return JSON.stringify(content);
 }
 
-export function ChatMessage({
+/**
+ * KaTeX's stylesheet is loaded on demand, only for messages that actually
+ * contain math (#1342). Module-level so its identity is stable — the shared
+ * markdown renderer caches a Streamdown variant per loader.
+ */
+const MARKDOWN_STYLES: MarkdownStyles = {
+  loadKatexStyles: () => import("katex/dist/katex.min.css"),
+};
+
+export function ChatMessage(props: ChatMessageProps) {
+  return (
+    <MarkdownStylesProvider value={MARKDOWN_STYLES}>
+      <ChatMessageBody {...props} />
+    </MarkdownStylesProvider>
+  );
+}
+
+function ChatMessageBody({
   message,
   isStreaming = false,
   answeredByLabel,

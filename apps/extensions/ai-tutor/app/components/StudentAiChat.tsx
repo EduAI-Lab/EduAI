@@ -22,6 +22,8 @@ import {
   DialogTitle,
   Input,
   Loader,
+  MarkdownStylesProvider,
+  type MarkdownStyles,
   Message,
   MessageContent,
   PromptInput,
@@ -59,6 +61,19 @@ import { DEFAULT_KNOWLEDGE_LEVEL, knowledgeLevelLabel } from '~/lib/knowledge-le
 import { cn } from '~/lib/utils';
 import api, { ApiTimeoutError } from '../lib/api';
 import type { Activity, AiModel, SuggestedPrompt } from '../lib/types';
+// Streamdown's vendor CSS, scoped to this chunk instead of the global sheet
+// (#1343, following Core's #1222 seam). KaTeX is loaded on demand instead --
+// see MARKDOWN_STYLES below.
+import '~/styles/chat-markdown.css';
+
+/**
+ * KaTeX's stylesheet is loaded on demand, only for messages that actually
+ * contain math (#1342). Module-level so its identity is stable — the shared
+ * markdown renderer caches a Streamdown variant per loader.
+ */
+const MARKDOWN_STYLES: MarkdownStyles = {
+  loadKatexStyles: () => import('katex/dist/katex.min.css'),
+};
 
 type ChatTab = 'teach' | 'guide' | 'custom';
 
@@ -619,9 +634,11 @@ const StudentAiChat = forwardRef<StudentAiChatHandle, StudentAiChatProps>(functi
               Assistant output is normalized first (#1401) so model LaTeX reaches
               KaTeX in the delimiters remark-math accepts — same split Core uses in
               components/chat/chat-message.tsx. User-typed text stays verbatim. */}
-          <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
-            {normalizeMathMarkdown(msg.content)}
-          </MessageContent>
+          <MarkdownStylesProvider value={MARKDOWN_STYLES}>
+            <MessageContent markdown className="max-w-[88%] bg-transparent p-0 text-foreground">
+              {normalizeMathMarkdown(msg.content)}
+            </MessageContent>
+          </MarkdownStylesProvider>
         </Message>
       ),
     );
