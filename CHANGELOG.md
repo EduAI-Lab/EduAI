@@ -58,6 +58,7 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 ### Tests
 
+- [core] test: Close Core AI/RAG/chat PICT models for #1182 — auto-router, chat-entry-admission (incl. course-id source → 404 and persisted not-found → 410), chat-rag-inject (AlwaysSource env vs arg), and byok-vs-platform-key-resolution (registry key-source assertions); census/TESTS dimension counts reconciled. (#1182, @GlowyBlack, 2026-08-05) — [#1340](https://github.com/EduAI-Lab/EduAI/pull/1340)
 - [core] tests: Track B Dean harden + v2.1 review regressions in `adhd-oversight.test.ts` (forced wrap, contentOk gate rejecting partial rewrites, Markdown-preserving truncate, oversized-Sources under-cap, forced contentOk gate, diagram revalidation) and non-streaming compliance telemetry in `chat-oversight.route.test.ts`. (@Ayyhab, 2026-07-24) — [#1174](https://github.com/EduAI-Lab/EduAI/pull/1174)
 - [core] test: `chat-markdown-css-scope.test.ts` guards the #1222 CSS split — fails if `app.css` re-imports katex/streamdown, if the Streamdown `@source` directives are dropped, or if `chat-message.tsx` stops importing the scoped stylesheet. (@yta3216, 2026-08-02) — [#1344](https://github.com/EduAI-Lab/EduAI/pull/1344)
 - [core] fix: Switching courses from a persisted chat now starts a fresh course-scoped conversation instead of reusing the old chat ID and silently receiving `409 COURSE_MISMATCH`; includes unit coverage for persisted, unpersisted, and unchanged selections. (#1157, @superbolt08, 2026-07-23) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
