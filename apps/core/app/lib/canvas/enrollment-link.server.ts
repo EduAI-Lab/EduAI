@@ -11,6 +11,12 @@ import {
 
 export { normalizeStudentId };
 
+type EnrollmentLinkDb = {
+  canvasRosterMember: typeof prisma.canvasRosterMember;
+  user: typeof prisma.user;
+  enrollment: typeof prisma.enrollment;
+};
+
 export function normalizeRosterEmail(value: string | null | undefined): string | null {
   if (value == null) {
     return null;
@@ -22,8 +28,11 @@ export function normalizeRosterEmail(value: string | null | undefined): string |
 /**
  * Links active staging rows to Users with a matching studentId and upserts Enrollments.
  */
-export async function linkEnrollmentsFromStagingForCourse(courseId: string): Promise<number> {
-  const stagingRows = await prisma.canvasRosterMember.findMany({
+export async function linkEnrollmentsFromStagingForCourse(
+  courseId: string,
+  db: EnrollmentLinkDb = prisma,
+): Promise<number> {
+  const stagingRows = await db.canvasRosterMember.findMany({
     where: {
       courseId,
       isActive: true,
@@ -49,7 +58,7 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
     ),
   ];
 
-  const users = await prisma.user.findMany({
+  const users = await db.user.findMany({
     where: studentIdsMatchFilter(sisIds),
     select: { id: true, studentId: true },
   });
@@ -73,7 +82,7 @@ export async function linkEnrollmentsFromStagingForCourse(courseId: string): Pro
       continue;
     }
 
-    await prisma.enrollment.upsert({
+    await db.enrollment.upsert({
       where: {
         courseId_userId: { courseId, userId },
       },
@@ -174,8 +183,11 @@ export async function resolveCanvasEnrollmentsForUser(userId: string): Promise<n
 }
 
 /** Deactivates canvas-sourced enrollments for users no longer on the active roster. */
-export async function deactivateDroppedCanvasEnrollments(courseId: string): Promise<number> {
-  const activeStaging = await prisma.canvasRosterMember.findMany({
+export async function deactivateDroppedCanvasEnrollments(
+  courseId: string,
+  db: EnrollmentLinkDb = prisma,
+): Promise<number> {
+  const activeStaging = await db.canvasRosterMember.findMany({
     where: { courseId, isActive: true },
     select: { sisUserId: true, canvasUserId: true },
   });
@@ -186,7 +198,7 @@ export async function deactivateDroppedCanvasEnrollments(courseId: string): Prom
       .filter((id): id is string => id != null),
   );
 
-  const canvasEnrollments = await prisma.enrollment.findMany({
+  const canvasEnrollments = await db.enrollment.findMany({
     where: {
       courseId,
       externalSource: CANVAS_EXTERNAL_SOURCE,
@@ -210,7 +222,7 @@ export async function deactivateDroppedCanvasEnrollments(courseId: string): Prom
     return 0;
   }
 
-  await prisma.enrollment.updateMany({
+  await db.enrollment.updateMany({
     where: {
       id: { in: toDeactivate.map((enrollment) => enrollment.id) },
     },
