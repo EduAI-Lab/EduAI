@@ -318,11 +318,21 @@ export function AssessmentQuestionPicker({
                   <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <IconSearch className="size-5" />
                   </div>
-                  <p className="text-sm font-medium text-foreground">No questions match</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasActiveFilters ? 'Try clearing or loosening the filters.' : 'This course has no questions to add yet.'}
+                  <p className="text-sm font-medium text-foreground">
+                    {hasActiveFilters && availableQuestions.length > 0
+                      ? 'No questions match'
+                      : availableQuestions.length === 0 && questionBank.length > 0
+                        ? 'No more questions'
+                        : 'No questions to add'}
                   </p>
-                  {hasActiveFilters && (
+                  <p className="text-xs text-muted-foreground">
+                    {hasActiveFilters && availableQuestions.length > 0
+                      ? 'Try clearing or loosening the filters.'
+                      : availableQuestions.length === 0 && questionBank.length > 0
+                        ? 'No more questions. Add more in the question library.'
+                        : 'This course has no questions yet. Add some in the question library.'}
+                  </p>
+                  {hasActiveFilters && availableQuestions.length > 0 && (
                     <Button type="button" variant="outline" size="sm" onClick={handleClearFilters} className="mt-1 gap-1.5">
                       <IconFilterOff className="size-3.5" /> Clear filters
                     </Button>
