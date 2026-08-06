@@ -4,6 +4,22 @@ All notable changes across the EduAI monorepo (AI Tutor, Question Maker, EduAI) 
 
 > See [How to use this changelog](#how-to-use-this-changelog) at the bottom for entry format, categories, and the sprint template.
 
+## [Week 14 — August 3–9, 2026]
+
+### Fixed
+
+- [ai-tutor] fix: Model LaTeX rendered as literal text in AI Tutor chat — `normalizeMathMarkdown` (which maps `\(…\)`, `\[…\]` and intentional `$x$` into the `$$…$$` delimiters remark-math accepts, with currency guards) lived in `apps/core` and `StudentAiChat.tsx` passed `msg.content` straight to `MessageContent`. Moved to `packages/ui/src/lib/math-markdown.ts` as `@eduai/ui/math-markdown` (a pure `string → string` transform, so a shared module rather than a Core endpoint — AI Tutor's chat does not route through Core) and applied in both apps, assistant messages only. Closes #1401. (@yta3216, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Changed
+
+- [ai-tutor] feat: AI Tutor gets the chunk-scoped chat stylesheet Core has had since #1222 — new `app/styles/chat-markdown.css` (Streamdown's vendor sheet plus the `code-block-actions` pointer-events rule) imported from `StudentAiChat.tsx`, the app's only `MessageContent markdown` surface, so it links only on routes that render markdown. Also adds `katex`, `@streamdown/code` and `@streamdown/math` to AI Tutor's manifest at Core's ranges; they had been resolving only through monorepo hoisting. Closes #1343. (@yta3216, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [core][ai-tutor] perf: KaTeX's stylesheet is now loaded on demand instead of statically imported — ~18KB of rules plus 59 font files were reaching every chat surface, including the many courses whose chats contain no math at all (the catalog is bimodal: MATH/STAT/DATA/PHYS versus HIST/ENGL/PSYO). Apps supply a loader through the new `MarkdownStylesProvider`, and `packages/ui`'s markdown renderer fires it only for blocks matching `MATH_STYLE_PATTERN` — `/(?<!\\)\$\$/`, the only delimiter that typesets today, since `@streamdown/math`'s `createMathPlugin()` defaults `singleDollarTextMath` to false. The existing looser `MATH_PATTERN` is untouched; it governs block splitting, where false positives are harmless. The sheet resolves inside the same suspended promise as Streamdown, so math cannot paint before its CSS lands. Core's `chat-message` CSS chunk drops from 29.7KB to 418B and `katex.min.css` becomes a standalone chunk with no eager parent in both apps. Closes #1342. (@yta3216, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
+### Tests
+
+- [ui] test: `math-style-gate.test.ts` pins the #1342 gate against the false positives that motivated a separate pattern (`The textbook costs $45 …`, `$x^2 + 1$`, bare `\frac`, `a ^ b` in prose) and asserts it fires on `normalizeMathMarkdown`'s output for `\(…\)` / `\[…\]` / `$x$` — the gate must read post-normalization text or math renders unstyled. `math-markdown.test.ts` moves from `apps/core` with the module. (@yta3216, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+- [ai-tutor] test: `chat-markdown-css-scope.test.ts` mirrors Core's #1222 guard for AI Tutor — fails if `app.css` re-imports the vendor sheets, if the Streamdown `@source` directives are dropped, if `StudentAiChat.tsx` stops importing the scoped stylesheet or stops normalizing assistant markdown, or if KaTeX is re-added as a static `@import`. Core's guard gains the same on-demand-KaTeX assertion. (@yta3216, 2026-08-05) — [#PR](https://github.com/EduAI-Lab/EduAI/pull/PR)
+
 ## [Week 13 — July 27 – August 2, 2026]
 
 ### Changed
