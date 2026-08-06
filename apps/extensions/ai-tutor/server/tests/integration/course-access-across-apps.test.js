@@ -2,11 +2,13 @@
  * PICT flagship (#1181) — AI Tutor adapter for course-access-across-apps.
  * Exercises GET /courses/:courseId membership against the shared oracle.
  *
- * Known drift vs rbac-matrix §3/§19 (filed, not fixed here):
- *   - Detail membership does not check enrollment isActive.
- *   - Detail membership does not apply the student publish gate.
- * Those rows use it.fails so a future fix flips them to hard failures until
- * the it.fails wrapper is removed.
+ * App is an adapter parameter — every generated row is replayed here (and in
+ * Core / QM) so shared inputs are identical across apps.
+ *
+ * Known drift vs rbac-matrix §3/§19 (#1405, not fixed here):
+ *   Detail membership does not apply the student publish gate. For those rows
+ *   we assert the buggy allow (HTTP 200) rather than a broad it.fails that
+ *   would also swallow 500s / unexpected statuses.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
@@ -70,21 +72,21 @@ const {
   platformRoleForRow,
 } = await import(path.join(repoRoot, 'tests/models/course-access-across-apps.oracle.ts'));
 
-const rows = allCases.filter((r) => r.App === 'ai-tutor');
+const APP = 'ai-tutor';
+const rows = allCases;
 const DEPARTMENT = 'COSC';
 const OTHER_DEPARTMENT = 'MATH';
 
-/** Rows where AT detail membership diverges from the shared contract. */
-function isKnownAtDrift(row, expected) {
-  // GET /courses/:id does not apply the student publish gate (rbac-matrix §19).
-  return expected.reason === 'unpublished-student';
+/** Rows where AT detail membership diverges from the shared contract (#1405). */
+function isUnpublishedStudentDrift(expected) {
+  return expected.outcome === 'denied' && expected.reason === 'unpublished-student';
 }
 
 function actualFromStatus(status, levelWhenAllowed) {
   if (status === 404) return { outcome: 'denied', reason: 'no-course' };
   if (status === 403 || status === 401) return { outcome: 'denied', reason: 'no-access' };
   if (status === 200) return { outcome: 'allowed', level: levelWhenAllowed };
-  return { outcome: 'denied', reason: 'no-access' };
+  throw new Error(`unexpected HTTP status ${status} (not mapped to a course-access verdict)`);
 }
 
 function levelFromEnrollment(row) {
@@ -95,6 +97,64 @@ function levelFromEnrollment(row) {
   if (enrollment === 'active-TA') return 'ta';
   if (enrollment === 'active-STUDENT') return 'student';
   return 'student';
+}
+
+async function runRow(row) {
+  const platformRole = platformRoleForRow(row, APP);
+
+  let user;
+  if (platformRole === 'ADMIN') {
+    user = makeAdmin();
+  } else if (platformRole === 'UNIT_ADMIN') {
+    user = makeUnitAdmin([DEPARTMENT]);
+  } else {
+    user = makeStudent({ role: platformRole });
+  }
+
+  let courseId;
+  let levelWhenAllowed = levelFromEnrollment(row);
+
+  if (row.CourseState === 'deleted') {
+    courseId = 999999;
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue(null);
+  } else {
+    const seed = await seedMinimalCourse(null);
+    courseId = seed.course.id;
+
+    let department = DEPARTMENT;
+    if (row.Role === 'UNIT_ADMIN') {
+      if (row.UnitMatch === 'null-dept') department = null;
+      else if (row.UnitMatch === 'out-of-unit') department = OTHER_DEPARTMENT;
+    }
+
+    vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
+      id: seed.course.coreOfferingId,
+      name: 'PICT Course',
+      department,
+      isPublished: row.CourseState === 'published',
+    });
+
+    const enrollment = effectiveEnrollment(row);
+    if (enrollment === 'active-INSTRUCTOR') {
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: courseId, userId: user.id, role: 'INSTRUCTOR' },
+      });
+    } else if (enrollment === 'active-TA') {
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: courseId, userId: user.id, role: 'TA' },
+      });
+    } else if (enrollment === 'active-STUDENT') {
+      await prisma.courseEnrollment.create({
+        data: { courseOfferingId: courseId, userId: user.id, role: 'STUDENT' },
+      });
+    }
+    // Enrollment=inactive: AT CourseEnrollment has no isActive column; omitting
+    // the row matches Core's "inactive → no access" after a good sync.
+  }
+
+  const app = await createApp({ mockUser: user });
+  const res = await request(app).get(`/api/courses/${courseId}`);
+  return { res, levelWhenAllowed };
 }
 
 beforeEach(async () => {
@@ -109,67 +169,25 @@ afterEach(async () => {
 describe.each(rows.map((row, index) => [index, row]))(
   'course-access-across-apps AI Tutor PICT row #%i',
   (index, row) => {
-    const expected = courseAccessOracle(row);
-    const run = isKnownAtDrift(row, expected) ? it.fails : it;
+    const expected = courseAccessOracle(row, APP);
 
-    run(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} matches oracle`, async () => {
-      const platformRole = platformRoleForRow(row);
+    if (isUnpublishedStudentDrift(expected)) {
+      // #1405 — GET /courses/:id skips the student publish gate (rbac-matrix §19).
+      // Pin the known buggy allow; anything else (403, 500, …) fails the suite.
+      it(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} known AT drift #1405 (allows unpublished student)`, async () => {
+        const { res } = await runRow(row);
+        expect(
+          res.status,
+          `${formatCourseAccessRow(row, APP)} — expected buggy allow (200) for unpublished-student denial; see #1405`,
+        ).toBe(200);
+      });
+      return;
+    }
 
-      let user;
-      if (platformRole === 'ADMIN') {
-        user = makeAdmin();
-      } else if (platformRole === 'UNIT_ADMIN') {
-        user = makeUnitAdmin([DEPARTMENT]);
-      } else {
-        user = makeStudent({ role: platformRole });
-      }
-
-      let courseId;
-      let levelWhenAllowed = levelFromEnrollment(row);
-
-      if (row.CourseState === 'deleted') {
-        courseId = 999999;
-        vi.mocked(fetchCoreCourseSafe).mockResolvedValue(null);
-      } else {
-        const seed = await seedMinimalCourse(null);
-        courseId = seed.course.id;
-
-        let department = DEPARTMENT;
-        if (row.Role === 'UNIT_ADMIN') {
-          if (row.UnitMatch === 'null-dept') department = null;
-          else if (row.UnitMatch === 'out-of-unit') department = OTHER_DEPARTMENT;
-        }
-
-        vi.mocked(fetchCoreCourseSafe).mockResolvedValue({
-          id: seed.course.coreOfferingId,
-          name: 'PICT Course',
-          department,
-          isPublished: row.CourseState === 'published',
-        });
-
-        const enrollment = effectiveEnrollment(row);
-        if (enrollment === 'active-INSTRUCTOR') {
-          await prisma.courseEnrollment.create({
-            data: { courseOfferingId: courseId, userId: user.id, role: 'INSTRUCTOR' },
-          });
-        } else if (enrollment === 'active-TA') {
-          await prisma.courseEnrollment.create({
-            data: { courseOfferingId: courseId, userId: user.id, role: 'TA' },
-          });
-        } else if (enrollment === 'active-STUDENT') {
-          await prisma.courseEnrollment.create({
-            data: { courseOfferingId: courseId, userId: user.id, role: 'STUDENT' },
-          });
-        }
-        // Enrollment=inactive: AT CourseEnrollment has no isActive column; omitting
-        // the row matches Core's "inactive → no access" after a good sync.
-      }
-
-      const app = await createApp({ mockUser: user });
-      const res = await request(app).get(`/api/courses/${courseId}`);
+    it(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} matches oracle`, async () => {
+      const { res, levelWhenAllowed } = await runRow(row);
       const actual = actualFromStatus(res.status, levelWhenAllowed);
-
-      expect(actual, formatCourseAccessRow(row)).toEqual(expected);
+      expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
     });
   },
 );

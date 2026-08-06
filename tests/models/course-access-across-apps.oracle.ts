@@ -10,16 +10,20 @@
  * not from any single handler. The only declared per-app branch is the floor;
  * everything else must compute identically across Core, QM, and AI Tutor.
  *
+ * App is an adapter parameter (not a PICT dimension): every generated row is
+ * replayed through all three adapters with identical shared inputs.
+ *
  * Seeding convention (world-builders):
  *   - Core / AI Tutor: ADMIN|UNIT_ADMIN = platform role; INSTRUCTOR|TA|STUDENT =
  *     platform STUDENT + Enrollment / TaWidening.
  *   - Question Maker: platform role = Role for ADMIN|UNIT_ADMIN|INSTRUCTOR;
- *     Role=TA seeds platform STUDENT (fails QM_AUTHORIZED floor).
+ *     Role=TA|STUDENT seeds platform STUDENT (fails QM_AUTHORIZED floor).
  */
+
+export type CourseAccessApp = "core" | "ai-tutor" | "question-maker";
 
 export type CourseAccessRow = {
   Role: "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT";
-  App: "core" | "ai-tutor" | "question-maker";
   Enrollment:
     | "none"
     | "inactive"
@@ -48,10 +52,11 @@ export type CourseAccessVerdict =
  */
 export function platformRoleForRow(
   row: CourseAccessRow,
+  app: CourseAccessApp,
 ): "ADMIN" | "UNIT_ADMIN" | "INSTRUCTOR" | "STUDENT" {
-  if (row.App === "question-maker") {
-    // Role=TA is seeded as platform STUDENT so QM_AUTHORIZED denies at the floor.
-    if (row.Role === "TA") return "STUDENT";
+  if (app === "question-maker") {
+    // Role=TA|STUDENT is seeded as platform STUDENT so QM_AUTHORIZED denies at the floor.
+    if (row.Role === "TA" || row.Role === "STUDENT") return "STUDENT";
     return row.Role;
   }
   if (row.Role === "ADMIN" || row.Role === "UNIT_ADMIN") return row.Role;
@@ -63,7 +68,7 @@ export function platformRoleForRow(
  * Mirrors QM_AUTHORIZED = ADMIN | UNIT_ADMIN | INSTRUCTOR.
  */
 export function passesAppRoleFloor(
-  app: CourseAccessRow["App"],
+  app: CourseAccessApp,
   platformRole: string,
 ): boolean {
   if (app === "question-maker") {
@@ -114,8 +119,11 @@ export function sharedCourseRbac(row: CourseAccessRow): SharedResult {
 }
 
 /** Full effective access: shared_course_rbac ∩ app_role_floor (+ student publish gate). */
-export function courseAccessOracle(row: CourseAccessRow): CourseAccessVerdict {
-  if (!passesAppRoleFloor(row.App, platformRoleForRow(row))) {
+export function courseAccessOracle(
+  row: CourseAccessRow,
+  app: CourseAccessApp,
+): CourseAccessVerdict {
+  if (!passesAppRoleFloor(app, platformRoleForRow(row, app))) {
     return { outcome: "denied", reason: "app-floor" };
   }
 
@@ -131,9 +139,12 @@ export function courseAccessOracle(row: CourseAccessRow): CourseAccessVerdict {
 }
 
 /** Compact row label for failure messages. */
-export function formatCourseAccessRow(row: CourseAccessRow): string {
+export function formatCourseAccessRow(
+  row: CourseAccessRow,
+  app?: CourseAccessApp,
+): string {
   return [
-    `App=${row.App}`,
+    ...(app ? [`App=${app}`] : []),
     `Role=${row.Role}`,
     `Enrollment=${row.Enrollment}`,
     `CourseState=${row.CourseState}`,

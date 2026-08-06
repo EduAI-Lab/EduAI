@@ -201,7 +201,7 @@ Oracle: `Deleted=yes` → 404 for everyone on every path · staff roles → 200,
 
 | Model | Dims | Location | Tier |
 |---|---|---|---|
-| `course-access-across-apps` ⭐ | 6 | Core `lib/auth/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
+| `course-access-across-apps` ⭐ | 5 | Core `lib/auth/course-access.server.ts:59` · QM `courseAccess.js:62` · ai-tutor `routes/courses.js` | **BUILD** |
 
 ```
 effective_access(user, app, course) =
@@ -214,20 +214,23 @@ apps. The floor is allowed to differ: QM excludes STUDENT (`QUESTION_MAKER_ROLES
 STUDENT as first-class, Core is full. Without the split, an intentional floor difference is
 indistinguishable from an accidental RBAC divergence.
 
+`App` is **not** a model dimension — it is an adapter parameter. Every generated row is replayed
+through all three adapters (`×3`) so Core, QM, and AI Tutor receive identical shared inputs. The
+QM role floor is applied only when the adapter passes `app === "question-maker"` to the oracle.
+
 ```
 Role:        ADMIN, UNIT_ADMIN, INSTRUCTOR, TA, STUDENT
-App:         core, ai-tutor, question-maker
 Enrollment:  none, inactive, active-INSTRUCTOR, active-TA, active-STUDENT
-CourseState: present, deleted, published, unpublished
+CourseState: deleted, published, unpublished
 UnitMatch:   in-unit, out-of-unit, null-dept
 TaWidening:  plain-STUDENT, STUDENT-with-TA-enrollment
 
-IF [App] = "question-maker" THEN [Role] in {"ADMIN","UNIT_ADMIN","INSTRUCTOR","TA"};
 # UnitMatch is only meaningful for UNIT_ADMIN — constrain, or the table wastes rows
 ```
 
 Cost: three per-app adapters (separate codebases, different ORMs, different harnesses). Model and
-oracle are single-sourced; only the world-builders differ.
+oracle are single-sourced; only the world-builders differ. Each adapter replays the full case
+table.
 
 ### S3 — Core AI / RAG / chat
 

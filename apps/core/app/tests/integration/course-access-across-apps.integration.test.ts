@@ -5,6 +5,9 @@
 // (tests/models/course-access-across-apps.oracle.ts), committed rows from
 // `npm run test:pict:gen`, world-builder here via helpers/rbac.ts.
 //
+// App is an adapter parameter — every generated row is replayed here (and in
+// the QM / AI Tutor adapters) so shared inputs are identical across apps.
+//
 // Invokes production resolveCourseAccessWithCourse, then the student publish
 // gate that callers apply outside the resolver (rbac-matrix.md §3 / §19).
 
@@ -24,10 +27,11 @@ import {
   type CourseAccessVerdict,
 } from "../../../../../tests/models/course-access-across-apps.oracle";
 
+const APP = "core" as const;
 const DEPARTMENT = "COSC";
 const OTHER_DEPARTMENT = "MATH";
 
-const rows = (courseAccessCases as CourseAccessRow[]).filter((r) => r.App === "core");
+const rows = courseAccessCases as CourseAccessRow[];
 
 const seededUserIds: string[] = [];
 const seededCourseIds: string[] = [];
@@ -64,7 +68,7 @@ async function buildRow(row: CourseAccessRow) {
   });
   seededCourseIds.push(course.id);
 
-  const platformRole = platformRoleForRow(row);
+  const platformRole = platformRoleForRow(row, APP);
   const authorizedUnits =
     row.Role === "UNIT_ADMIN"
       ? row.UnitMatch === "out-of-unit"
@@ -108,7 +112,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
   "course-access-across-apps Core PICT row #$index $row.Role/$row.Enrollment/$row.CourseState/$row.UnitMatch/$row.TaWidening",
   ({ row }) => {
     it(`matches the oracle verdict`, async () => {
-      const expected = courseAccessOracle(row);
+      const expected = courseAccessOracle(row, APP);
       const seeded = await buildRow(row);
       const { course, access } = await resolveCourseAccessWithCourse(seeded.user, seeded.courseId);
       const actual = actualFromResolve({
@@ -116,7 +120,7 @@ describe.each(rows.map((row, index) => ({ row, index })))(
         access: access ? { level: access.level } : null,
       });
 
-      expect(actual, formatCourseAccessRow(row)).toEqual(expected);
+      expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
     });
   },
 );

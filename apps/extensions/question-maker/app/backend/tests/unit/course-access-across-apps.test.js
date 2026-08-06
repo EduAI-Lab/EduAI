@@ -2,6 +2,10 @@
  * PICT flagship (#1181) — Question Maker adapter for course-access-across-apps.
  * shared_course_rbac ∩ app_role_floor against resolveAccessForCourse + QM_AUTHORIZED.
  * Mocks Prisma + Core HTTP (same harness as courseAccess.test.js).
+ *
+ * App is an adapter parameter — every generated row is replayed here (and in
+ * Core / AI Tutor) so shared inputs are identical across apps. QM_AUTHORIZED
+ * floor denials (Role=TA|STUDENT) are asserted via the oracle app-floor branch.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -40,7 +44,8 @@ const {
   platformRoleForRow,
 } = await import(path.join(repoRoot, 'tests/models/course-access-across-apps.oracle.ts'));
 
-const rows = allCases.filter((r) => r.App === 'question-maker');
+const APP = 'question-maker';
+const rows = allCases;
 
 const DEPARTMENT = 'COSC';
 const OTHER_DEPARTMENT = 'MATH';
@@ -65,8 +70,8 @@ describe.each(rows.map((row, index) => [index, row]))(
   'course-access-across-apps QM PICT row #%i',
   (index, row) => {
     it(`${row.Role}/${row.Enrollment}/${row.CourseState}/${row.UnitMatch} matches oracle`, async () => {
-      const expected = courseAccessOracle(row);
-      const platformRole = platformRoleForRow(row);
+      const expected = courseAccessOracle(row, APP);
+      const platformRole = platformRoleForRow(row, APP);
       const user = {
         id: 'u1',
         role: platformRole,
@@ -76,14 +81,14 @@ describe.each(rows.map((row, index) => [index, row]))(
       // App floor runs before per-course resolve (production requireRole(QM_AUTHORIZED)).
       if (!QM_AUTHORIZED.includes(platformRole)) {
         const actual = actualFromQm({ floorDenied: true });
-        expect(actual, formatCourseAccessRow(row)).toEqual(expected);
+        expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
         return;
       }
 
       if (row.CourseState === 'deleted') {
         mockCourseFindOne.mockResolvedValue(null);
         const actual = actualFromQm({ courseMissing: true });
-        expect(actual, formatCourseAccessRow(row)).toEqual(expected);
+        expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
         return;
       }
 
@@ -118,7 +123,7 @@ describe.each(rows.map((row, index) => [index, row]))(
         unpublished: row.CourseState === 'unpublished',
       });
 
-      expect(actual, formatCourseAccessRow(row)).toEqual(expected);
+      expect(actual, formatCourseAccessRow(row, APP)).toEqual(expected);
     });
   },
 );
