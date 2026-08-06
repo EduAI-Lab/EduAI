@@ -1,5 +1,5 @@
 /**
- * Non-streaming POST /api/chat latency benchmark.
+ * POST /api/chat latency and optional streaming TTFB benchmark.
  *
  * Auth (pick one):
  *   - Admin: CHAT_BENCH_X_API_KEY + session implied by API key plugin
@@ -17,6 +17,8 @@
  *   CHAT_BENCH_WARMUP=1   one extra request before timing (not counted)
  *   CHAT_BENCH_COUNT=10   default 10
  *   CHAT_BENCH_SLEEP_MS   delay between requests (default 0)
+ *   CHAT_BENCH_STREAMING=1 request the streaming route and measure time to
+ *                          first response byte (TTFB) as well as total time
  *
  * Usage:
  *   cd apps/core && node ./scripts/chat-latency-bench.mjs
@@ -25,6 +27,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_PROMPTS = [
   "Reply with exactly the word: ok.",
@@ -60,6 +63,12 @@ function readEnv(name, fallback = undefined) {
   return v === undefined || v === "" ? fallback : v;
 }
 
+export function responseChatId(response, json) {
+  const headerChatId = response.headers.get("X-Chat-Id");
+  if (headerChatId) return headerChatId;
+  return json && typeof json.chatId === "string" ? json.chatId : null;
+}
+
 function parseArgs() {
   const out = { label: readEnv("CHAT_BENCH_LABEL") };
   for (const a of process.argv.slice(2)) {
@@ -82,6 +91,7 @@ async function main() {
   const warmup = readEnv("CHAT_BENCH_WARMUP") === "1";
   const count = Math.max(1, Number(readEnv("CHAT_BENCH_COUNT", "10")) || 10);
   const sleepMs = Math.max(0, Number(readEnv("CHAT_BENCH_SLEEP_MS", "0")) || 0);
+  const streaming = readEnv("CHAT_BENCH_STREAMING") === "1";
 
   if (!url || !model || !apiKeysJson) {
     console.error(
@@ -125,14 +135,18 @@ async function main() {
   console.log("courseCode:", courseCode || "(none)");
   console.log("auth:", authMode);
   console.log("warmup:", warmup ? "yes (not counted)" : "no");
+  console.log("streaming:", streaming ? "yes (TTFB measured)" : "no");
   console.log("requests:", prompts.length, warmup ? `(+1 warmup → ${totalRuns} HTTP calls)` : "");
   console.log("sleep_ms:", sleepMs);
   console.log("");
-  console.log("Running non-streaming POST /api/chat — this can take a while per request (especially Ollama).");
+  console.log(
+    `Running ${streaming ? "streaming" : "non-streaming"} POST /api/chat — this can take a while per request (especially Ollama).`,
+  );
   console.log("");
 
   let chatId = null;
   const timingsMs = [];
+  const ttfbTimingsMs = [];
   const rows = [];
 
   async function oneRequest(prompt) {
@@ -141,7 +155,7 @@ async function main() {
       model,
       apiKeys,
       messages: [{ id: messageId, role: "user", content: prompt }],
-      streaming: false,
+      streaming,
       ...(chatId ? { chatId } : {}),
       ...(courseCode ? { courseCode } : {}),
     };
@@ -152,7 +166,23 @@ async function main() {
       headers,
       body: JSON.stringify(body),
     });
-    const text = await res.text();
+    let ttfbMs = performance.now() - t0;
+    let text;
+    if (streaming && res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      const first = await reader.read();
+      ttfbMs = performance.now() - t0;
+      text = first.done ? "" : decoder.decode(first.value, { stream: true });
+      while (!first.done) {
+        const next = await reader.read();
+        if (next.done) break;
+        text += decoder.decode(next.value, { stream: true });
+      }
+      text += decoder.decode();
+    } else {
+      text = await res.text();
+    }
     const t1 = performance.now();
     const ms = t1 - t0;
 
@@ -163,11 +193,11 @@ async function main() {
       /* ignore */
     }
 
-    if (!chatId && json && typeof json.chatId === "string") {
-      chatId = json.chatId;
+    if (!chatId) {
+      chatId = responseChatId(res, json);
     }
 
-    return { ms, status: res.status, json, rawLen: text.length };
+    return { ms, ttfbMs, status: res.status, json, rawLen: text.length };
   }
 
   if (warmup) {
@@ -181,12 +211,21 @@ async function main() {
     const preview = prompt.length > 60 ? `${prompt.slice(0, 57)}…` : prompt;
     console.log(`[${i + 1}/${prompts.length}] POST ${url}`);
     console.log(`  prompt: ${preview}`);
-    const { ms, status, json } = await oneRequest(prompt);
+    const { ms, ttfbMs, status, json } = await oneRequest(prompt);
     timingsMs.push(ms);
+    ttfbTimingsMs.push(ttfbMs);
     const err = json?.error || (status >= 400 ? json?.details || textSnippet(json) : "");
-    rows.push({ i: i + 1, ms: Math.round(ms), status, err: err ? String(err).slice(0, 120) : "" });
+    rows.push({
+      i: i + 1,
+      ttfbMs: Math.round(ttfbMs),
+      ms: Math.round(ms),
+      status,
+      err: err ? String(err).slice(0, 120) : "",
+    });
     const note = err ? ` — ${String(err).slice(0, 80)}` : "";
-    console.log(`  done: ${Math.round(ms)} ms, HTTP ${status}${note}\n`);
+    console.log(
+      `  done: TTFB ${Math.round(ttfbMs)} ms, total ${Math.round(ms)} ms, HTTP ${status}${note}\n`,
+    );
     if (sleepMs) await sleep(sleepMs);
   }
 
@@ -196,12 +235,15 @@ async function main() {
   console.log("model:", model);
   console.log("courseCode:", courseCode || "(none)");
   console.log("warmup:", warmup ? "yes" : "no");
+  console.log("streaming:", streaming ? "yes" : "no");
   console.log("");
 
-  console.log("| # | ms | HTTP | notes |");
-  console.log("|---:|---:|---:|---|");
+  console.log("| # | TTFB ms | total ms | HTTP | notes |");
+  console.log("|---:|---:|---:|---:|---|");
   for (const r of rows) {
-    console.log(`| ${r.i} | ${r.ms} | ${r.status} | ${r.err.replace(/\|/g, "\\|")} |`);
+    console.log(
+      `| ${r.i} | ${r.ttfbMs} | ${r.ms} | ${r.status} | ${r.err.replace(/\|/g, "\\|")} |`,
+    );
   }
 
   console.log("");
@@ -211,10 +253,16 @@ async function main() {
   console.log("  median_ms:", Math.round(median(timingsMs)));
   console.log("  min_ms:", Math.round(Math.min(...timingsMs)));
   console.log("  max_ms:", Math.round(Math.max(...timingsMs)));
+  console.log("  mean_ttfb_ms:", Math.round(mean(ttfbTimingsMs)));
+  console.log("  median_ttfb_ms:", Math.round(median(ttfbTimingsMs)));
+  console.log("  min_ttfb_ms:", Math.round(Math.min(...ttfbTimingsMs)));
+  console.log("  max_ttfb_ms:", Math.round(Math.max(...ttfbTimingsMs)));
   console.log("");
   console.log("tsv (paste into spreadsheet)");
-  console.log(["label", "run_index", "ms", "http_status"].join("\t"));
-  rows.forEach((r) => console.log([label, r.i, r.ms, r.status].join("\t")));
+  console.log(["label", "run_index", "ttfb_ms", "total_ms", "http_status"].join("\t"));
+  rows.forEach((r) =>
+    console.log([label, r.i, r.ttfbMs, r.ms, r.status].join("\t")),
+  );
 }
 
 function textSnippet(json) {
@@ -226,7 +274,9 @@ function textSnippet(json) {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
