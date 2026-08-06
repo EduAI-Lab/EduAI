@@ -449,7 +449,11 @@ async function main() {
         index: i,
         content: `Chunk ${i} of material ${m}, course ${c}. Synthetic text for vector-scan latency.`,
       }));
-      const chunks = await prisma.materialChunk.createManyAndReturn({ data: chunkRows });
+      await prisma.materialChunk.createMany({ data: chunkRows });
+      const chunks = await prisma.materialChunk.findMany({
+        where: { materialId: material.id },
+        orderBy: { index: "asc" },
+      });
       nChunks += chunks.length;
 
       if (CFG.embeddings) {

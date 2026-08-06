@@ -1267,8 +1267,12 @@ export async function processMaterialEmbeddings(
       await tx.materialChunk.deleteMany({ where: { materialId } });
     }
 
-    const createdChunks = await tx.materialChunk.createManyAndReturn({
+    await tx.materialChunk.createMany({
       data: chunks.map((chunkContent, i) => ({ materialId, index: i, content: chunkContent })),
+    });
+    const createdChunks = await tx.materialChunk.findMany({
+      where: { materialId },
+      orderBy: { index: "asc" },
     });
 
     const chunksByIndex = [...createdChunks].sort((a, b) => a.index - b.index);
