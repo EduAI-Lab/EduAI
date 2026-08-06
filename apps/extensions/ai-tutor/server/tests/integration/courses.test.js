@@ -21,6 +21,7 @@ vi.mock('../../src/services/eduaiClient.js', async (importOriginal) => {
     fetchCoreCourseSafe: vi.fn(),
     syncExternalCourseTopics: vi.fn(),
     syncCourseEnrollments: vi.fn(),
+    listEduAiCourseEnrollmentsServiceKey: vi.fn(),
   };
 });
 
@@ -29,6 +30,7 @@ import {
   findEduAiCourseById,
   listEduAiCourses,
   listEduAiCoursesServiceKey,
+  listEduAiCourseEnrollmentsServiceKey,
 } from '../../src/services/eduaiClient.js';
 import { syncExternalCourseTopics } from '../../src/services/topicSync.js';
 import { syncCourseEnrollments } from '../../src/services/enrollmentSync.js';
@@ -69,6 +71,7 @@ describe('Courses routes', () => {
     vi.mocked(listEduAiCoursesServiceKey).mockReset();
     vi.mocked(syncExternalCourseTopics).mockClear();
     vi.mocked(syncCourseEnrollments).mockClear();
+    vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockReset().mockResolvedValue([]);
 
     // Course-owned fields (title/isPublished/etc) are Core-owned (#1072 step
     // 2/4) — default the seeded course to a resolved, published Core course
@@ -648,6 +651,276 @@ describe('Courses routes', () => {
       );
       expect(res.status).toBe(400);
     });
+
+    it('400 when skip is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/submissions?skip=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('400 when activityId is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/submissions?activityId=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('filters by a valid activityId', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/submissions?activityId=${activity.id}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+    });
+
+    it('resolves studentName from the EduAI service-key enrollment lookup', async () => {
+      const enrolledStudent = await prisma.submission.findFirst({
+        where: { activityId: activity.id },
+      });
+      vi.mocked(listEduAiCourseEnrollmentsServiceKey).mockResolvedValue([
+        { studentId: enrolledStudent.userId, studentName: 'Ada Lovelace' },
+      ]);
+
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/submissions`);
+
+      expect(res.status).toBe(200);
+      expect(res.body[0].studentName).toBe('Ada Lovelace');
+    });
+  });
+
+  // ── GET /api/courses/:courseId/feedback ────────────────────────────
+
+  describe('GET /api/courses/:courseId/feedback', () => {
+    let activity;
+    let student;
+
+    beforeEach(async () => {
+      activity = await prisma.activity.create({
+        data: {
+          lessonId: seed.lesson.id,
+          mainTopicId: seed.topic.id,
+          instructionsMd: 'Answer.',
+          config: { question: 'What is 2+2?', questionType: 'MCQ', options: ['3', '4'] },
+        },
+      });
+      student = await enrollStudent();
+      await prisma.activityFeedback.create({
+        data: { activityId: activity.id, userId: student.id, rating: 5, note: 'Great!' },
+      });
+    });
+
+    it('returns 401 when unauthenticated', async () => {
+      const express = (await import('express')).default;
+      const { default: courseRoutes } = await import('../../src/routes/courses.js');
+      const bareApp = express();
+      bareApp.use(express.json());
+      bareApp.use('/api', courseRoutes);
+
+      const res = await request(bareApp).get(`/api/courses/${seed.course.id}/feedback`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 400 for a non-numeric course id', async () => {
+      const res = await request(profApp).get('/api/courses/not-a-number/feedback');
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 for a non-existent course', async () => {
+      const res = await request(profApp).get('/api/courses/999999/feedback');
+      expect(res.status).toBe(404);
+    });
+
+    it('instructor reads course feedback', async () => {
+      const res = await request(profApp).get(`/api/courses/${seed.course.id}/feedback`);
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+      expect(res.body[0]).toMatchObject({ rating: 5, note: 'Great!', userId: student.id });
+    });
+
+    it('enrolled TA can read feedback', async () => {
+      const ta = await enrollTa();
+      const taApp = await createApp({ mockUser: ta });
+      const res = await request(taApp).get(`/api/courses/${seed.course.id}/feedback`);
+      expect(res.status).toBe(200);
+    });
+
+    it('STUDENT (non-TA) gets 403', async () => {
+      const studentApp = await createApp({ mockUser: student });
+      const res = await request(studentApp).get(`/api/courses/${seed.course.id}/feedback`);
+      expect(res.status).toBe(403);
+    });
+
+    it('400 when take is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/feedback?take=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('400 when skip is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/feedback?skip=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('400 when activityId is not a number', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/feedback?activityId=lots`,
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('filters by studentId', async () => {
+      const res = await request(profApp).get(
+        `/api/courses/${seed.course.id}/feedback?studentId=${student.id}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBe(1);
+    });
+  });
+
+  // ── POST /api/courses/:courseId/import (module/lesson cloning) ────
+
+  describe('POST /api/courses/:courseId/import', () => {
+    let srcSeed;
+
+    beforeEach(async () => {
+      srcSeed = await seedMinimalCourse(prof.id);
+    });
+
+    it('returns 400 for a non-numeric course id', async () => {
+      const res = await request(profApp)
+        .post('/api/courses/not-a-number/import')
+        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for a non-numeric sourceCourseId', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/import`)
+        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: 'abc' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/sourceCourseId/i);
+    });
+
+    it('returns 400 when neither moduleIds nor lessonIds are provided', async () => {
+      const res = await request(profApp)
+        .post(`/api/courses/${seed.course.id}/import`)
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/nothing to import/i);
+    });
+
+    it('returns 404 when the destination course does not exist', async () => {
+      const res = await request(profApp)
+        .post('/api/courses/999999/import')
+        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 when the caller is not authorized for the destination course', async () => {
+      const outsider = makeProfessor();
+      const outsiderApp = await createApp({ mockUser: outsider });
+
+      const res = await request(outsiderApp)
+        .post(`/api/courses/${seed.course.id}/import`)
+        .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/this course/i);
+    });
+
+    describe('module import', () => {
+      it('returns 400 when sourceCourseId is missing', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ moduleIds: [srcSeed.module.id] });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/sourceCourseId required/i);
+      });
+
+      it('returns 403 when the caller is not authorized for the source course', async () => {
+        const otherProf = makeProfessor();
+        const otherSeed = await seedMinimalCourse(otherProf.id);
+
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ moduleIds: [otherSeed.module.id], sourceCourseId: otherSeed.course.id });
+        expect(res.status).toBe(403);
+        expect(res.body.error).toMatch(/source course/i);
+      });
+
+      it('returns 400 when a module does not belong to the source course', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ moduleIds: [seed.module.id], sourceCourseId: srcSeed.course.id });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/do not belong to source course/i);
+      });
+
+      it('clones the module into the destination course', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ moduleIds: [srcSeed.module.id], sourceCourseId: srcSeed.course.id });
+
+        expect(res.status).toBe(200);
+        const modules = await prisma.module.findMany({
+          where: { courseOfferingId: seed.course.id },
+        });
+        // Original module + the newly-cloned one.
+        expect(modules.length).toBe(2);
+        expect(modules.some((m) => m.title === srcSeed.module.title)).toBe(true);
+      });
+    });
+
+    describe('lesson import', () => {
+      it('returns 400 when targetModuleId is missing', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ lessonIds: [srcSeed.lesson.id] });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/targetModuleId required/i);
+      });
+
+      it('returns 400 when targetModuleId does not belong to the destination course', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ lessonIds: [srcSeed.lesson.id], targetModuleId: srcSeed.module.id });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/does not belong to destination course/i);
+      });
+
+      it('returns 400 when a lesson id does not exist', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ lessonIds: [999999], targetModuleId: seed.module.id });
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/were not found/i);
+      });
+
+      it('returns 403 when the caller is not authorized for the lesson source course', async () => {
+        const otherProf = makeProfessor();
+        const otherSeed = await seedMinimalCourse(otherProf.id);
+
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ lessonIds: [otherSeed.lesson.id], targetModuleId: seed.module.id });
+        expect(res.status).toBe(403);
+        expect(res.body.error).toMatch(/lesson source course/i);
+      });
+
+      it('clones the lesson into the destination module', async () => {
+        const res = await request(profApp)
+          .post(`/api/courses/${seed.course.id}/import`)
+          .send({ lessonIds: [srcSeed.lesson.id], targetModuleId: seed.module.id });
+
+        expect(res.status).toBe(200);
+        const lessons = await prisma.lesson.findMany({ where: { moduleId: seed.module.id } });
+        expect(lessons.length).toBe(2);
+        expect(lessons.some((l) => l.title === srcSeed.lesson.title)).toBe(true);
+      });
+    });
   });
 
   // ── GET /api/me/dashboard-stats (role-aware rollup) ───────────────
@@ -831,6 +1104,47 @@ describe('Course publish state — Core write-through (#477)', () => {
     // No local `isPublished` column exists anymore (#1072 step 4) — there is
     // nothing local left to leave "untouched"; the write-through call
     // erroring and short-circuiting before the response is the guarantee.
+  });
+
+  // #225 SEAM-04: the write to Core succeeds, but the immediate re-read that
+  // builds the response fails. The route must report the write's own result
+  // rather than letting the failed read fall back to "unpublished" — a
+  // successful publish must never come back looking like a failure.
+  it('publish — re-read failure after a successful write reports isPublished:true, not a false failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: true }),
+    }));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/publish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(true);
+    expect(res.body.corePublishStale).toBe(true);
+    expect(res.headers['x-core-status']).toBe('unavailable');
+  });
+
+  it('unpublish — re-read failure after a successful write reports isPublished:false, still cascades locally', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve({ id: CORE_OFFERING_ID, isPublished: false }),
+    }));
+    vi.mocked(fetchCoreCourseSafe).mockRejectedValue(new Error('Core unavailable'));
+
+    const res = await request(profApp).patch(`/api/courses/${seed.course.id}/unpublish`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.isPublished).toBe(false);
+    expect(res.body.corePublishStale).toBe(true);
+    expect(res.headers['x-core-status']).toBe('unavailable');
+
+    const updatedModule = await prisma.module.findUnique({ where: { id: seed.module.id } });
+    expect(updatedModule.isPublished).toBe(false);
   });
 
   // The "publish — no Core call when coreOfferingId is null (native course)"

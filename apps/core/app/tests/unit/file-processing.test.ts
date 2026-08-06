@@ -3,6 +3,7 @@ import {
   sanitizeTextContent,
   generateChecksum,
   validateFile,
+  validateFileSignature,
   applySemanticChunking,
   applyChunkOverlap,
   enforceMaxChunkLength,
@@ -16,7 +17,14 @@ import {
   MAX_ZIP_ENTRIES,
   MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES,
   MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
+  MAX_EXTRACTED_CONTENT_CHARS,
+  assertExtractedContentWithinLimit,
 } from "~/lib/ai/file-processing";
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 // ---------------------------------------------------------------------------
 // sanitizeTextContent
@@ -137,6 +145,98 @@ describe("validateFile", () => {
   it("accepts a file exactly at the 50 MB boundary", () => {
     const exactly50MB = 50 * 1024 * 1024;
     expect(validateFile(makeFile("text/plain", exactly50MB)).isValid).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateFileSignature (#225 RAG-05 — declared MIME vs. actual bytes)
+// ---------------------------------------------------------------------------
+
+describe("validateFileSignature", () => {
+  const buf = (bytes: number[]) => new Uint8Array(bytes).buffer;
+
+  it("accepts a real PDF declared as application/pdf", async () => {
+    const bytes = [...Buffer.from("%PDF-1.4\n%rest of file")];
+    const file = new File([buf(bytes)], "doc.pdf", { type: "application/pdf" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("rejects plain text mislabeled as application/pdf", async () => {
+    const file = new File(["just some plain text, not a pdf"], "fake.pdf", {
+      type: "application/pdf",
+    });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain("application/pdf");
+  });
+
+  it("accepts a real ZIP container declared as DOCX", async () => {
+    const bytes = [0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0];
+    const file = new File([buf(bytes)], "doc.docx", { type: DOCX_MIME });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("accepts a real ZIP container declared as PPTX", async () => {
+    const bytes = [0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0];
+    const file = new File([buf(bytes)], "slides.pptx", { type: PPTX_MIME });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("rejects plain text mislabeled as DOCX", async () => {
+    const file = new File(["not actually a zip file"], "fake.docx", { type: DOCX_MIME });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain(DOCX_MIME);
+  });
+
+  it("accepts plain ASCII text declared as text/plain", async () => {
+    const file = new File(["Hello, this is normal course notes text."], "notes.txt", {
+      type: "text/plain",
+    });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("accepts plain text declared as text/markdown", async () => {
+    const file = new File(["# Heading\n\nSome notes."], "notes.md", { type: "text/markdown" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("rejects a PDF mislabeled as text/plain", async () => {
+    const bytes = [...Buffer.from("%PDF-1.4\nbinary noise follows")];
+    const file = new File([buf(bytes)], "renamed.txt", { type: "text/plain" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain("text/plain");
+  });
+
+  it("rejects a ZIP/Office file mislabeled as text/plain", async () => {
+    const bytes = [0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0];
+    const file = new File([buf(bytes)], "renamed.txt", { type: "text/plain" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(false);
+  });
+
+  it("rejects binary noise (NUL bytes) mislabeled as text/plain", async () => {
+    const bytes = [0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00];
+    const file = new File([buf(bytes)], "renamed.txt", { type: "text/plain" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(false);
+  });
+
+  it("does not sniff unrecognized declared types (validateFile already rejects those)", async () => {
+    const file = new File(["<binary>"], "image.png", { type: "image/png" });
+    const result = await validateFileSignature(file);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("passes through when the file has no arrayBuffer method", async () => {
+    const result = await validateFileSignature({ type: "text/plain", size: 10 });
+    expect(result.isValid).toBe(true);
   });
 });
 
@@ -522,5 +622,25 @@ describe("enrichExtractedDocumentContent", () => {
     expect(Date.now() - started).toBeLessThan(1000);
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks.some((chunk) => chunk.includes("$$"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assertExtractedContentWithinLimit — flood guard (#225 RAG-06)
+// ---------------------------------------------------------------------------
+
+describe("assertExtractedContentWithinLimit (#225 RAG-06)", () => {
+  it("accepts content exactly at the 20M character cap", () => {
+    expect(() =>
+      assertExtractedContentWithinLimit("a".repeat(MAX_EXTRACTED_CONTENT_CHARS)),
+    ).not.toThrow();
+  });
+
+  it("rejects content one character over the 20M cap", () => {
+    expect(() =>
+      assertExtractedContentWithinLimit("a".repeat(MAX_EXTRACTED_CONTENT_CHARS + 1)),
+    ).toThrow(
+      `Extracted content of ${MAX_EXTRACTED_CONTENT_CHARS + 1} characters exceeds the maximum of ${MAX_EXTRACTED_CONTENT_CHARS}`,
+    );
   });
 });

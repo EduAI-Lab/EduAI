@@ -1,6 +1,6 @@
-export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'TA' | 'STUDENT';
+export type UserRole = 'ADMIN' | 'UNIT_ADMIN' | 'INSTRUCTOR' | 'STUDENT';
 export type EnrollmentRole = 'INSTRUCTOR' | 'TA' | 'STUDENT';
-export declare const USER_ROLE_VALUES: readonly ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "TA", "STUDENT"];
+export declare const USER_ROLE_VALUES: readonly ["ADMIN", "UNIT_ADMIN", "INSTRUCTOR", "STUDENT"];
 export declare const ENROLLMENT_ROLE_VALUES: readonly ["INSTRUCTOR", "TA", "STUDENT"];
 /**
  * Prefer an explicit has* flag from the list API; otherwise treat a non-empty
