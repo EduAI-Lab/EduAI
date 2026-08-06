@@ -10,8 +10,10 @@
  *   4. Persisted chat missing / wrong owner → 410; chatbotType mismatch → 410;
  *      explicit course-pin conflict → 409.
  *   5. Course-scoped access: `effectiveCourseId` comes from CourseIdSource
- *      (body / body-missing / persisted) — missing course → 404; no relationship
- *      or student on unpublished course → 403.
+ *      (body / body-missing / persisted) — missing course → 404; known course
+ *      with no relationship (`Enrollment: none` on a real source for session
+ *      callers → resolveCourseAccess returns course + null access) → 403;
+ *      student on unpublished course → 403.
  *
  * Service-key callers receive synthetic ADMIN platform role for course-access
  * resolution when a course is present — that is an admission fact, not a claim

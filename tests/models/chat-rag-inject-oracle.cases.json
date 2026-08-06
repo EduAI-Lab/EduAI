@@ -3,8 +3,22 @@
     "HasCourse": "yes",
     "AlwaysWithCourse": "no",
     "AlwaysSource": "env",
+    "CourseRagNeeded": "no",
+    "TopSimilarity": "none"
+  },
+  {
+    "HasCourse": "yes",
+    "AlwaysWithCourse": "yes",
+    "AlwaysSource": "arg",
+    "CourseRagNeeded": "no",
+    "TopSimilarity": "moderate"
+  },
+  {
+    "HasCourse": "yes",
+    "AlwaysWithCourse": "yes",
+    "AlwaysSource": "arg",
     "CourseRagNeeded": "yes",
-    "TopSimilarity": "strong"
+    "TopSimilarity": "none"
   },
   {
     "HasCourse": "yes",
@@ -15,10 +29,31 @@
   },
   {
     "HasCourse": "yes",
+    "AlwaysWithCourse": "no",
+    "AlwaysSource": "env",
+    "CourseRagNeeded": "yes",
+    "TopSimilarity": "weak"
+  },
+  {
+    "HasCourse": "yes",
     "AlwaysWithCourse": "yes",
     "AlwaysSource": "env",
     "CourseRagNeeded": "no",
-    "TopSimilarity": "none"
+    "TopSimilarity": "weak"
+  },
+  {
+    "HasCourse": "yes",
+    "AlwaysWithCourse": "no",
+    "AlwaysSource": "env",
+    "CourseRagNeeded": "yes",
+    "TopSimilarity": "moderate"
+  },
+  {
+    "HasCourse": "yes",
+    "AlwaysWithCourse": "no",
+    "AlwaysSource": "env",
+    "CourseRagNeeded": "no",
+    "TopSimilarity": "strong"
   },
   {
     "HasCourse": "no",
@@ -31,35 +66,7 @@
     "HasCourse": "yes",
     "AlwaysWithCourse": "yes",
     "AlwaysSource": "arg",
-    "CourseRagNeeded": "no",
-    "TopSimilarity": "moderate"
-  },
-  {
-    "HasCourse": "yes",
-    "AlwaysWithCourse": "no",
-    "AlwaysSource": "env",
     "CourseRagNeeded": "yes",
-    "TopSimilarity": "moderate"
-  },
-  {
-    "HasCourse": "yes",
-    "AlwaysWithCourse": "yes",
-    "AlwaysSource": "arg",
-    "CourseRagNeeded": "no",
     "TopSimilarity": "strong"
-  },
-  {
-    "HasCourse": "yes",
-    "AlwaysWithCourse": "yes",
-    "AlwaysSource": "arg",
-    "CourseRagNeeded": "yes",
-    "TopSimilarity": "none"
-  },
-  {
-    "HasCourse": "yes",
-    "AlwaysWithCourse": "no",
-    "AlwaysSource": "env",
-    "CourseRagNeeded": "no",
-    "TopSimilarity": "weak"
   }
 ]
